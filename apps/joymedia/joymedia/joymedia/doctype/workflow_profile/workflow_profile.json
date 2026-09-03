@@ -1,0 +1,127 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "autoname": "WFP-.#####",
+ "creation": "2026-09-03 22:40:37.870869",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow_identity_section",
+  "profile_name",
+  "workflow_code",
+  "status",
+  "execution_section",
+  "generation_mode",
+  "execution_backend",
+  "documentation_section",
+  "intended_use",
+  "description"
+ ],
+ "fields": [
+  {
+   "description": "what workflow family this is",
+   "fieldname": "workflow_identity_section",
+   "fieldtype": "Section Break",
+   "label": "Workflow Identity"
+  },
+  {
+   "fieldname": "profile_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Profile Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "workflow_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Workflow Code",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Active\nExperimental\nDeprecated\nDisabled",
+   "reqd": 1
+  },
+  {
+   "fieldname": "execution_section",
+   "fieldtype": "Section Break",
+   "label": "Execution"
+  },
+  {
+   "fieldname": "generation_mode",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Generation Mode",
+   "options": "Image to Video",
+   "reqd": 1
+  },
+  {
+   "fieldname": "documentation_section",
+   "fieldtype": "Section Break",
+   "label": "Documentation"
+  },
+  {
+   "fieldname": "intended_use",
+   "fieldtype": "Small Text",
+   "label": "Intended Use"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Long Text",
+   "label": "Description"
+  },
+  {
+   "default": "ComfyUI",
+   "fieldname": "execution_backend",
+   "fieldtype": "Select",
+   "label": "Execution Backend",
+   "options": "ComfyUI",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-03 23:17:54.186036",
+ "modified_by": "Administrator",
+ "module": "JoyMedia",
+ "name": "Workflow Profile",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "JoyMedia Specialist",
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "profile_name",
+ "track_changes": 1
+}

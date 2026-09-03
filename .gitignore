@@ -1,0 +1,13 @@
+env/
+sites/
+logs/
+config/
+Procfile
+patches.txt
+config/pids/
+apps/*/.git/
+**/__pycache__/
+**/*.pyc
+**/node_modules/
+**/.cache/
+
