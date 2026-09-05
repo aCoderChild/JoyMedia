@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_bulk_edit": 1,
+ "allow_rename": 1,
  "creation": "2026-09-03 23:34:39.315469",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -21,7 +22,7 @@
    "fieldname": "binding_key",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Binding Key",
+  "label": "Binding Key",
    "reqd": 1
   },
   {
@@ -49,11 +50,11 @@
    "reqd": 1
   },
   {
-   "depends_on": "eval:doc.value_source==\"Generation Input\"",
+    "depends_on": "eval:doc.value_source==\"Generation Input\"",
    "fieldname": "required_input_role",
    "fieldtype": "Select",
    "label": "Required Input Role",
-   "mandatory_depends_on": "eval:doc.value_source==\"Generation Input\"",
+    "mandatory_depends_on": "eval:doc.value_source==\"Generation Input\"",
    "options": "First Frame"
   },
   {
@@ -85,7 +86,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-04 22:54:31.811607",
+ "modified": "2026-09-03 23:45:50.195856",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Workflow Binding",

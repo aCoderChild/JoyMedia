@@ -1,0 +1,99 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "creation": "2026-09-03 23:34:39.315469",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "binding_key",
+  "node_key",
+  "input_name",
+  "value_source",
+  "required_input_role",
+  "value_type",
+  "required",
+  "allow_override",
+  "description"
+ ],
+ "fields": [
+  {
+   "description": "Stable JoyMedia identifier for this dynamic workflow value.",
+   "fieldname": "binding_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Binding Key",
+   "reqd": 1
+  },
+  {
+   "description": "Top-level node key in the ComfyUI workflow JSON containing the dynamic input.",
+   "fieldname": "node_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Node Key",
+   "reqd": 1
+  },
+  {
+   "description": "Input key inside the selected ComfyUI node's inputs object.",
+   "fieldname": "input_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Input Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "value_source",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Value Source",
+   "options": "Generation Input\nCompiled Prompt\nAttempt Seed\nJob Value\nRuntime Value",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.value_source==\"Generation Input\"",
+   "fieldname": "required_input_role",
+   "fieldtype": "Select",
+   "label": "Required Input Role",
+   "mandatory_depends_on": "eval:doc.value_source==\"Generation Input\"",
+   "options": "First Frame"
+  },
+  {
+   "fieldname": "value_type",
+   "fieldtype": "Select",
+   "label": "Value Type",
+   "options": "Text\nInteger\nFloat\nBoolean\nFile Path\nJSON",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "required",
+   "fieldtype": "Check",
+   "label": "Required"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_override",
+   "fieldtype": "Check",
+   "label": "Allow Override"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-04 22:54:31.811607",
+ "modified_by": "Administrator",
+ "module": "JoyMedia",
+ "name": "Workflow Binding",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

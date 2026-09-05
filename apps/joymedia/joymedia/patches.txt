@@ -4,5 +4,3 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
-joymedia.patches.v1_0.backfill_asset_contracts
-joymedia.patches.v1_0.add_composite_unique_indexes
