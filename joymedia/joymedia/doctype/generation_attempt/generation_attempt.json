@@ -24,7 +24,11 @@
   "output_asset_version",
   "failure_section",
   "error_summary",
-  "error_details"
+  "error_details",
+  "retry_of",
+  "retry_reason",
+  "failure_class",
+  "retryable"
  ],
  "fields": [
   {
@@ -56,7 +60,7 @@
   },
   {
    "fieldname": "seed",
-    "fieldtype": "Int",
+   "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Seed",
    "reqd": 1
@@ -147,12 +151,39 @@
    "label": "Status",
    "options": "Pending\nQueued\nRunning\nCompleted\nFailed\nCancelled",
    "reqd": 1
+  },
+  {
+   "description": "Previous Generation Attempt that caused this retry.",
+   "fieldname": "retry_of",
+   "fieldtype": "Link",
+   "label": "Retry Of ",
+   "options": "Generation Attempt",
+   "read_only_depends_on": "eval:!doc.__islocal"
+  },
+  {
+   "fieldname": "retry_reason",
+   "fieldtype": "Select",
+   "label": "Retry Reason",
+   "options": "Execution Failure\nQA Failure\nHuman Review Rejection\nPrompt Revision\nWorkflow Revision\nInput Revision\nOther",
+   "read_only_depends_on": "eval:!doc.__islocal"
+  },
+  {
+   "fieldname": "failure_class",
+   "fieldtype": "Select",
+   "label": "Failure Class",
+   "options": "Infrastructure\nWorkflow\nInput\nPrompt\nVisual Quality\nIdentity Consistency\nTemporal Consistency\nOther\nUnknown"
+  },
+  {
+   "default": "0",
+   "fieldname": "retryable",
+   "fieldtype": "Check",
+   "label": "Retryable"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-04 00:45:28.403283",
+ "modified": "2026-09-05 23:49:02.199533",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Attempt",

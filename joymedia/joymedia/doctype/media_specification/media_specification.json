@@ -11,6 +11,9 @@
   "media_project",
   "version_number",
   "status",
+  "generation_setup_section",
+  "generation_workflow_version",
+  "prompt_template_version",
   "deliverable_requirements_section",
   "total_duration_seconds",
   "delivery_preset",
@@ -21,7 +24,9 @@
   "required_elements",
   "consistency_requirements",
   "forbidden_elements",
-  "acceptance_criteria"
+  "acceptance_criteria",
+  "final_deliverable_section",
+  "final_asset_version"
  ],
  "fields": [
   {
@@ -36,6 +41,7 @@
    "in_standard_filter": 1,
    "label": "Media Project",
    "options": "Media Project",
+   "read_only_depends_on": "eval:!doc.__islocal",
    "reqd": 1
   },
   {
@@ -43,6 +49,7 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Version Number",
+   "read_only_depends_on": "eval:!doc.__islocal",
    "reqd": 1
   },
   {
@@ -56,6 +63,29 @@
    "reqd": 1
   },
   {
+   "fieldname": "generation_setup_section",
+   "fieldtype": "Section Break",
+   "label": "Generation Setup"
+  },
+  {
+   "description": "Exact Workflow Version used as the default generation workflow for this specification.",
+   "fieldname": "generation_workflow_version",
+   "fieldtype": "Link",
+   "label": "Generation Workflow Version",
+   "mandatory_depends_on": "eval:doc.status==\"Ready\"",
+   "options": "Workflow Version",
+   "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\""
+  },
+  {
+   "description": "Exact Prompt Template Version used to compile prompts for this specification.",
+   "fieldname": "prompt_template_version",
+   "fieldtype": "Link",
+   "label": "Prompt Template Version",
+   "mandatory_depends_on": "eval:doc.status==\"Ready\"",
+   "options": "Prompt Template Version",
+   "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\""
+  },
+  {
    "description": "FINAL video the customer expects",
    "fieldname": "deliverable_requirements_section",
    "fieldtype": "Section Break",
@@ -64,12 +94,14 @@
   {
    "fieldname": "delivery_width",
    "fieldtype": "Int",
-   "label": "Delivery Width"
+   "label": "Delivery Width",
+   "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\""
   },
   {
    "fieldname": "delivery_height",
    "fieldtype": "Int",
-   "label": "Delivery Height"
+   "label": "Delivery Height",
+   "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\""
   },
   {
    "default": "24",
@@ -119,6 +151,18 @@
    "fieldname": "required_elements",
    "fieldtype": "Long Text",
    "label": "Required Elements"
+  },
+  {
+   "fieldname": "final_deliverable_section",
+   "fieldtype": "Section Break",
+   "label": "Final Deliverable"
+  },
+  {
+   "fieldname": "final_asset_version",
+   "fieldtype": "Link",
+   "label": "Final Asset Version",
+   "options": "Asset Version",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

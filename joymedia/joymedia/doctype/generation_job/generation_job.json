@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_bulk_edit": 1,
+ "allow_bulk_edit": 0,
  "autoname": "JOB-.#####",
  "creation": "2026-09-03 16:54:08.685597",
  "doctype": "DocType",
@@ -32,12 +32,14 @@
    "label": "Job Overview"
   },
   {
+   "description": "Shot being executed by this generation job.",
    "fieldname": "shot_specification",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Shot Specification",
    "options": "Shot Specification",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\"",
    "reqd": 1
   },
   {
@@ -49,11 +51,13 @@
    "reqd": 1
   },
   {
+   "default": "__user",
    "fieldname": "requested_by",
    "fieldtype": "Link",
    "in_standard_filter": 1,
    "label": "Requested By",
    "options": "User",
+   "read_only_depends_on": "eval:!doc.__islocal",
    "reqd": 1
   },
   {
@@ -64,6 +68,7 @@
    "in_standard_filter": 1,
    "label": "Priority",
    "options": "Low\nNormal\nHigh\nUrgent",
+   "read_only_depends_on": "eval:doc.status==\"Running\" || doc.status==\"Completed\" || doc.status==\"Partially Completed\" || doc.status==\"Failed\" || doc.status==\"Cancelled\"",
    "reqd": 1
   },
   {
@@ -73,10 +78,11 @@
   },
   {
    "default": "1",
-   "description": "Generation Attempt will represent the actual runs",
+   "description": "Number of output variants requested. Each executable variant should produce its own Generation Attempt.",
    "fieldname": "requested_variants",
    "fieldtype": "Int",
    "label": "Requested Variants",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\"",
    "reqd": 1
   },
   {
@@ -129,26 +135,31 @@
    "read_only": 1
   },
   {
-   "description": "human-readable high-level error",
+   "description": "High-level job failure summary aggregated from execution attempts.",
    "fieldname": "error_summary",
    "fieldtype": "Long Text",
-   "label": "Error Summary"
+   "label": "Error Summary",
+   "read_only": 1
   },
   {
+   "description": "Exact Workflow Version used for execution. Normally inherited from the Media Specification.",
    "fieldname": "workflow_version",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Workflow Version",
    "options": "Workflow Version",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\"",
    "reqd": 1
   },
   {
+   "description": "Exact compiled prompt snapshot used by this generation job.",
    "fieldname": "compiled_prompt",
    "fieldtype": "Link",
     "in_list_view": 1,
    "label": "Compiled Prompt",
    "options": "Compiled Prompt",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\"",
    "reqd": 1
   }
  ],

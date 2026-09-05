@@ -38,6 +38,7 @@
    "in_standard_filter": 1,
    "label": "Workflow Profile",
    "options": "Workflow Profile",
+   "read_only_depends_on": "eval:!doc.__islocal",
    "reqd": 1
   },
   {
@@ -46,6 +47,7 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Version Number",
+   "read_only_depends_on": "eval:!doc.__islocal",
    "reqd": 1
   },
   {
@@ -144,13 +146,14 @@
    "fieldname": "bindings",
    "fieldtype": "Table",
    "label": "Bindings",
-   "options": "Workflow Binding"
+   "options": "Workflow Binding",
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\""
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-03 23:49:52.985575",
+ "modified": "2026-09-06 00:01:49.295524",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Workflow Version",

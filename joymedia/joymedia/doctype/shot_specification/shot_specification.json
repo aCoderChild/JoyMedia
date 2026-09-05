@@ -11,6 +11,7 @@
   "shot_number",
   "shot_name",
   "duration_seconds",
+  "generation_inputs",
   "shot_purpose",
   "visual_direction_section",
   "camera_direction",
@@ -136,12 +137,19 @@
    "fieldname": "audio_section",
    "fieldtype": "Section Break",
    "label": "Audio"
+  },
+  {
+   "description": "Assets assigned to workflow input roles for this shot, such as first_frame, last_frame, mask, or product_reference.",
+   "fieldname": "generation_inputs",
+   "fieldtype": "Table",
+   "label": "Generation Inputs",
+   "options": "Shot Input Mapping"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-03 23:13:34.061543",
+ "modified": "2026-09-05 23:34:57.534602",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Shot Specification",

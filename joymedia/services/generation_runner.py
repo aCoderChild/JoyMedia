@@ -56,8 +56,8 @@ def _stage_generation_inputs(job):
 	rows = frappe.get_all(
 		"Generation Input",
 		filters={"generation_job": job.name},
-		fields=["name", "asset_version", "input_role", "input_order"],
-		order_by="input_order asc, creation asc",
+		fields=["name", "asset_version", "input_role"],
+		order_by="creation asc",
 	)
 	if not rows:
 		frappe.throw(_("Generation Job {0} has no Generation Inputs.").format(job.name))

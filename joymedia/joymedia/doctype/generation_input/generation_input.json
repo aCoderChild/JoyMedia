@@ -10,7 +10,6 @@
   "generation_job",
   "asset_version",
   "input_role",
-  "input_order",
   "notes"
  ],
  "fields": [
@@ -21,21 +20,6 @@
    "label": "Asset Version",
    "options": "Asset Version",
    "reqd": 1
-  },
-  {
-   "fieldname": "input_role",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Input Role",
-   "options": "First Frame\nOther",
-   "reqd": 1
-  },
-  {
-   "default": "1",
-   "fieldname": "input_order",
-   "fieldtype": "Int",
-   "label": "Input Order"
   },
   {
    "description": "Optional execution context explaining how this asset version should be used for this shot.",
@@ -57,12 +41,21 @@
    "label": "Generation Job",
    "options": "Generation Job",
    "reqd": 1
+  },
+  {
+   "description": "Stable workflow input role key. e.g. first_frame, last_frame, mask, product_reference.",
+   "fieldname": "input_role",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Input Role Key",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-03 23:14:26.174253",
+ "modified": "2026-09-05 23:05:06.179051",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Input",
