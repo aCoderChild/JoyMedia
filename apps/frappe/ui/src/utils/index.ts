@@ -1,1 +1,0 @@
-export { setScoped } from "./scopedRegistry";
