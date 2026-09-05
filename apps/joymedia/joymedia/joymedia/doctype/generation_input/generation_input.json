@@ -16,7 +16,7 @@
  "fields": [
   {
    "fieldname": "asset_version",
-   "fieldtype": "Link",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Asset Version",
    "options": "Asset Version",
@@ -24,7 +24,7 @@
   },
   {
    "fieldname": "input_role",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Input Role",
