@@ -1,0 +1,114 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "autoname": "COMP-.#####",
+ "creation": "2026-09-04 20:20:00.856910",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "identity_section",
+  "media_specification",
+  "composition_name",
+  "status",
+  "composition_items",
+  "settings_section",
+  "transition_mode",
+  "output_section",
+  "output_asset_version"
+ ],
+ "fields": [
+  {
+   "fieldname": "identity_section",
+   "fieldtype": "Section Break",
+   "label": "Identity"
+  },
+  {
+   "fieldname": "media_specification",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Media Specification",
+   "options": "Media Specification",
+   "reqd": 1
+  },
+  {
+   "fieldname": "composition_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Composition Name",
+   "reqd": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Draft\nReady\nProcessing\nCompleted\nFailed",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "composition_items",
+   "fieldtype": "Table",
+   "label": "Composition Items",
+   "options": "Composition Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "settings_section",
+   "fieldtype": "Section Break",
+   "label": "Settings"
+  },
+  {
+   "default": "Cut",
+   "fieldname": "transition_mode",
+   "fieldtype": "Select",
+   "label": "Transition Mode",
+   "options": "Cut",
+   "reqd": 1
+  },
+  {
+   "fieldname": "output_section",
+   "fieldtype": "Section Break",
+   "label": "Output",
+   "read_only": 1
+  },
+  {
+   "fieldname": "output_asset_version",
+   "fieldtype": "Link",
+   "label": "Output Asset Version",
+   "options": "Asset Version",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-04 22:57:43.814848",
+ "modified_by": "Administrator",
+ "module": "JoyMedia",
+ "name": "Media Composition",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "composition_name",
+ "track_changes": 1
+}
