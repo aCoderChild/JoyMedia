@@ -12,6 +12,8 @@
   "shot_name",
   "duration_seconds",
   "generation_inputs",
+  "selected_output_section",
+  "selected_output_asset_version",
   "shot_purpose",
   "visual_direction_section",
   "camera_direction",
@@ -144,6 +146,18 @@
    "fieldtype": "Table",
    "label": "Generation Inputs",
    "options": "Shot Input Mapping"
+  },
+  {
+   "fieldname": "selected_output_section",
+   "fieldtype": "Section Break",
+   "label": "Selected Output"
+  },
+  {
+   "description": "Completed generated video selected for this shot's final composition.",
+   "fieldname": "selected_output_asset_version",
+   "fieldtype": "Link",
+   "label": "Selected Output Asset Version",
+   "options": "Asset Version"
   }
  ],
  "grid_page_length": 50,

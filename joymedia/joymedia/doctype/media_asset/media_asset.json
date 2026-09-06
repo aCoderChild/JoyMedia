@@ -57,7 +57,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Asset Category",
-   "options": "Product\nCharacter\nBackground\nBrand\nStoryboard\nReference\nOther",
+   "options": "Product\nCharacter\nBackground\nBrand\nStoryboard\nReference\nShot Output\nFinal Deliverable\nOther",
    "reqd": 1
   },
   {

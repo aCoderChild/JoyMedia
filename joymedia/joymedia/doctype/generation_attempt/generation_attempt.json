@@ -43,6 +43,7 @@
    "in_standard_filter": 1,
    "label": "Generation Job",
    "options": "Generation Job",
+   "read_only_depends_on": "eval:!doc.__islocal",
    "reqd": 1
   },
   {
@@ -51,6 +52,7 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Attempt Number",
+   "read_only_depends_on": "eval:!doc.__islocal",
    "reqd": 1
   },
   {
@@ -63,6 +65,7 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Seed",
+   "read_only_depends_on": "eval:!doc.__islocal",
    "reqd": 1
   },
   {
@@ -161,20 +164,24 @@
    "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
+   "depends_on": "eval:doc.retry_of",
    "fieldname": "retry_reason",
    "fieldtype": "Select",
    "label": "Retry Reason",
-   "options": "Execution Failure\nQA Failure\nHuman Review Rejection\nPrompt Revision\nWorkflow Revision\nInput Revision\nOther",
+   "mandatory_depends_on": "eval:doc.retry_of",
+   "options": "\nExecution Failure\nQA Failure\nHuman Review Rejection\nPrompt Revision\nWorkflow Revision\nInput Revision\nOther",
    "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
+   "depends_on": "eval:doc.status==\"Failed\"",
    "fieldname": "failure_class",
    "fieldtype": "Select",
    "label": "Failure Class",
-   "options": "Infrastructure\nWorkflow\nInput\nPrompt\nVisual Quality\nIdentity Consistency\nTemporal Consistency\nOther\nUnknown"
+   "options": "\nInfrastructure\nWorkflow\nInput\nPrompt\nVisual Quality\nIdentity Consistency\nTemporal Consistency\nOther\nUnknown"
   },
   {
    "default": "0",
+   "depends_on": "eval:doc.status==\"Failed\"",
    "fieldname": "retryable",
    "fieldtype": "Check",
    "label": "Retryable"

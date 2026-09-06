@@ -8,6 +8,27 @@ from frappe.model.document import Document
 class ShotSpecification(Document):
 	def validate(self):
 		self.validate_required_workflow_input_mappings()
+		self.validate_selected_output_asset_version()
+
+	def validate_selected_output_asset_version(self):
+		if not self.selected_output_asset_version:
+			return
+
+		generation_jobs = frappe.get_all(
+			"Generation Attempt",
+			filters={
+				"output_asset_version": self.selected_output_asset_version,
+				"status": "Completed",
+			},
+			pluck="generation_job",
+		)
+		if not generation_jobs or not frappe.db.exists(
+			"Generation Job",
+			{"name": ["in", generation_jobs], "shot_specification": self.name},
+		):
+			frappe.throw(
+				"Selected Output Asset Version must be a completed Generation Attempt output for this Shot."
+			)
 
 	def validate_required_workflow_input_mappings(self):
 		workflow_versions = {

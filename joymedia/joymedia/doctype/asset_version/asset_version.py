@@ -15,7 +15,8 @@ class AssetVersion(Document):
 		latest_version = frappe.db.get_value(
 			"Asset Version",
 			{"media_asset": self.media_asset},
-			"max(version_number)",
+			[{"MAX": "version_number"}],
+			order_by=None,
 		)
 		self.version_number = (latest_version or 0) + 1
 

@@ -58,7 +58,7 @@
    "reqd": 1
   },
   {
-   "default": "Testing",
+   "default": "Draft",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -83,6 +83,7 @@
    "fieldtype": "Code",
    "label": "Workflow JSON",
    "options": "JSON",
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\"",
    "reqd": 1
   },
   {

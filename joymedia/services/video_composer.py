@@ -1,77 +1,48 @@
+import json
 import subprocess
 import tempfile
 from pathlib import Path
 
 import frappe
 from frappe import _
-from frappe.utils import now
 
 
-def compose_video(composition_name: str):
-	composition = frappe.get_doc("Media Composition", composition_name)
-	if composition.transition_mode != "Cut":
-		frappe.throw(_("Only Cut transition mode is supported."))
-	if not composition.composition_items:
-		frappe.throw(_("Media Composition requires at least one Composition Item."))
-
-	items = sorted(composition.composition_items, key=lambda item: item.sequence_order)
-	paths = [_get_asset_version_path(item.asset_version) for item in items]
-	composition.status = "Processing"
-	composition.save(ignore_permissions=True)
+def compose_media_specification(media_specification_name: str):
+	"""Create a silent, normalized final video from selected shot outputs."""
+	media_specification = frappe.get_doc("Media Specification", media_specification_name)
+	profile = _get_delivery_profile(media_specification)
+	shots = frappe.get_all(
+		"Shot Specification",
+		filters={"media_specification": media_specification.name},
+		fields=["name", "shot_number", "duration_seconds", "selected_output_asset_version"],
+		order_by="shot_number asc",
+	)
+	_validate_shots(shots, media_specification.name)
 
 	try:
-		with tempfile.TemporaryDirectory() as temp_dir:
-			concat_file = Path(temp_dir) / "inputs.txt"
-			output_file = Path(temp_dir) / f"{composition.name}.mp4"
-			concat_file.write_text(
-				"\n".join(f"file '{_escape_concat_path(path)}'" for path in paths) + "\n"
-			)
-			subprocess.run(
-				[
-					"ffmpeg",
-					"-y",
-					"-f",
-					"concat",
-					"-safe",
-					"0",
-					"-i",
-					str(concat_file),
-					"-c",
-					"copy",
-					str(output_file),
-				],
-				capture_output=True,
-				text=True,
-				check=True,
-			)
-			video_bytes = output_file.read_bytes()
-	except (OSError, subprocess.CalledProcessError) as exc:
-		composition.status = "Failed"
-		composition.save(ignore_permissions=True)
-		frappe.throw(_("Unable to compose video: {0}").format(str(exc)))
+		with tempfile.TemporaryDirectory(prefix="joymedia-compose-") as temp_dir:
+			temporary_path = Path(temp_dir)
+			normalized_paths = []
+			for shot in shots:
+				source_path = _get_shot_output_path(shot)
+				_inspect_video(source_path)
+				normalized_path = temporary_path / f"{shot.shot_number:04d}-{shot.name}.mp4"
+				_normalize_shot(source_path, normalized_path, profile)
+				_validate_normalized_video(normalized_path, profile)
+				normalized_paths.append(normalized_path)
 
-	media_spec = frappe.get_doc("Media Specification", composition.media_specification)
-	asset_name = f"{composition.name} Composed Video"
-	asset_id = frappe.db.get_value("Media Asset", {"asset_name": asset_name}, "name")
-	if asset_id:
-		output_asset = frappe.get_doc("Media Asset", asset_id)
-	else:
-		output_asset = frappe.get_doc(
-			{
-				"doctype": "Media Asset",
-				"asset_name": asset_name,
-				"asset_scope": "Project",
-				"media_type": "Video",
-				"asset_category": "Final Deliverable",
-				"media_project": media_spec.media_project,
-			}
-		)
-		output_asset.insert(ignore_permissions=True)
+			output_path = temporary_path / f"{media_specification.name}.mp4"
+			_concatenate_normalized_shots(normalized_paths, output_path, profile)
+			_validate_normalized_video(output_path, profile)
+			video_bytes = output_path.read_bytes()
+	except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+		frappe.throw(_("Unable to compose final video: {0}").format(_command_error(exc)))
 
+	output_asset = _get_or_create_final_asset(media_specification)
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",
-			"file_name": f"{composition.name}.mp4",
+			"file_name": f"{media_specification.name}.mp4",
 			"content": video_bytes,
 			"is_private": 1,
 			"attached_to_doctype": "Media Asset",
@@ -86,20 +57,55 @@ def compose_video(composition_name: str):
 			"media_asset": output_asset.name,
 			"file": file_doc.file_url,
 			"source": "Composed",
+			"duration_seconds": sum(shot.duration_seconds for shot in shots),
+			"fps": profile["fps"],
+			"notes": "Silent master composed from normalized selected shot outputs.",
 		}
 	)
 	asset_version.insert(ignore_permissions=True)
 
-	composition.output_asset_version = asset_version.name
-	composition.status = "Completed"
-	composition.save(ignore_permissions=True)
-	return {"status": composition.status, "output_asset_version": asset_version.name, "completed_at": now()}
+	media_specification.final_asset_version = asset_version.name
+	media_specification.save(ignore_permissions=True)
+	return {"final_asset_version": asset_version.name}
 
 
-def _get_asset_version_path(asset_version_name):
-	asset_version = frappe.get_doc("Asset Version", asset_version_name)
+def _get_delivery_profile(media_specification):
+	if not (
+		media_specification.delivery_width
+		and media_specification.delivery_height
+		and media_specification.target_fps
+	):
+		frappe.throw(_("Media Specification must have delivery width, height, and target FPS before composition."))
+	return {
+		"width": int(media_specification.delivery_width),
+		"height": int(media_specification.delivery_height),
+		"fps": float(media_specification.target_fps),
+	}
+
+
+def _validate_shots(shots, media_specification_name):
+	if not shots:
+		frappe.throw(_("Media Specification {0} has no Shot Specifications.").format(media_specification_name))
+
+	seen_numbers = set()
+	for shot in shots:
+		if shot.shot_number < 1:
+			frappe.throw(_("Shot {0} must have a shot number of at least 1.").format(shot.name))
+		if shot.shot_number in seen_numbers:
+			frappe.throw(_("Shot number {0} is duplicated in this Media Specification.").format(shot.shot_number))
+		seen_numbers.add(shot.shot_number)
+		if not shot.selected_output_asset_version:
+			frappe.throw(_("Shot {0} has no selected output asset version.").format(shot.name))
+
+
+def _get_shot_output_path(shot):
+	asset_version = frappe.get_doc("Asset Version", shot.selected_output_asset_version)
+	media_asset = frappe.get_doc("Media Asset", asset_version.media_asset)
+	if media_asset.media_type != "Video":
+		frappe.throw(_("Shot {0} selected output must be a video Asset Version.").format(shot.name))
 	if not asset_version.file:
 		frappe.throw(_("Asset Version {0} has no attached file.").format(asset_version.name))
+
 	file_doc = frappe.get_doc("File", {"file_url": asset_version.file})
 	path = Path(file_doc.get_full_path())
 	if not path.exists():
@@ -107,5 +113,140 @@ def _get_asset_version_path(asset_version_name):
 	return path
 
 
+def _normalize_shot(source_path, normalized_path, profile):
+	video_filter = (
+		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=decrease,"
+		f"pad={profile['width']}:{profile['height']}:(ow-iw)/2:(oh-ih)/2,fps={profile['fps']:g}"
+	)
+	_run_ffmpeg(
+		[
+			"ffmpeg",
+			"-y",
+			"-i",
+			str(source_path),
+			"-map",
+			"0:v:0",
+			"-vf",
+			video_filter,
+			"-an",
+			"-c:v",
+			"libx264",
+			"-profile:v",
+			"high",
+			"-pix_fmt",
+			"yuv420p",
+			"-movflags",
+			"+faststart",
+			str(normalized_path),
+		]
+	)
+
+
+def _concatenate_normalized_shots(paths, output_path, profile):
+	concat_file = output_path.with_suffix(".txt")
+	concat_file.write_text("\n".join(f"file '{_escape_concat_path(path)}'" for path in paths) + "\n")
+	_run_ffmpeg(
+		[
+			"ffmpeg",
+			"-y",
+			"-f",
+			"concat",
+			"-safe",
+			"0",
+			"-i",
+			str(concat_file),
+			"-map",
+			"0:v:0",
+			"-an",
+			"-c:v",
+			"libx264",
+			"-profile:v",
+			"high",
+			"-pix_fmt",
+			"yuv420p",
+			"-r",
+			f"{profile['fps']:g}",
+			"-movflags",
+			"+faststart",
+			str(output_path),
+		]
+	)
+
+
+def _inspect_video(path):
+	result = subprocess.run(
+		[
+			"ffprobe",
+			"-v",
+			"error",
+			"-select_streams",
+			"v:0",
+			"-show_entries",
+			"stream=codec_name,profile,width,height,pix_fmt,r_frame_rate",
+			"-of",
+			"json",
+			str(path),
+		],
+		capture_output=True,
+		text=True,
+		check=True,
+	)
+	streams = json.loads(result.stdout).get("streams", [])
+	if not streams:
+		raise ValueError(f"{path} does not contain a video stream")
+	return streams[0]
+
+
+def _validate_normalized_video(path, profile):
+	stream = _inspect_video(path)
+	if (
+		stream.get("codec_name") != "h264"
+		or stream.get("profile") != "High"
+		or stream.get("pix_fmt") != "yuv420p"
+		or stream.get("width") != profile["width"]
+		or stream.get("height") != profile["height"]
+		or abs(_frame_rate(stream.get("r_frame_rate")) - profile["fps"]) > 0.001
+	):
+		raise ValueError(f"{path} does not match the normalized delivery profile")
+
+
+def _frame_rate(value):
+	try:
+		numerator, denominator = str(value).split("/", 1)
+		return int(numerator) / int(denominator)
+	except (TypeError, ValueError, ZeroDivisionError) as exc:
+		raise ValueError(f"Invalid video frame rate: {value}") from exc
+
+
+def _get_or_create_final_asset(media_specification):
+	asset_name = f"{media_specification.name} Final Video"
+	asset_id = frappe.db.get_value("Media Asset", {"asset_name": asset_name}, "name")
+	if asset_id:
+		return frappe.get_doc("Media Asset", asset_id)
+
+	output_asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": asset_name,
+			"asset_scope": "Project",
+			"media_type": "Video",
+			"asset_category": "Final Deliverable",
+			"media_project": media_specification.media_project,
+		}
+	)
+	output_asset.insert(ignore_permissions=True)
+	return output_asset
+
+
+def _run_ffmpeg(command):
+	subprocess.run(command, capture_output=True, text=True, check=True)
+
+
 def _escape_concat_path(path):
 	return str(path).replace("'", "'\\''")
+
+
+def _command_error(exc):
+	if isinstance(exc, subprocess.CalledProcessError):
+		return exc.stderr.strip() or str(exc)
+	return str(exc)
