@@ -1,0 +1,99 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 0,
+ "allow_rename": 0,
+ "autoname": "CUIW-.#####",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "worker_configuration_section",
+  "worker_name",
+  "status",
+  "routing_priority",
+  "endpoint_url",
+  "input_dir",
+  "model_cache_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "worker_configuration_section",
+   "fieldtype": "Section Break",
+   "label": "Worker Configuration"
+  },
+  {
+   "fieldname": "worker_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Worker Name",
+   "reqd": 1
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Active\nDisabled",
+   "reqd": 1
+  },
+  {
+   "default": "100",
+   "description": "Lower values are selected first when several active workers serve the same Model Cache Key.",
+   "fieldname": "routing_priority",
+   "fieldtype": "Int",
+   "label": "Routing Priority",
+   "reqd": 1
+  },
+  {
+   "description": "Base URL for this ComfyUI worker, for example http://worker-1:8188.",
+   "fieldname": "endpoint_url",
+   "fieldtype": "Data",
+   "label": "Endpoint URL",
+   "options": "URL",
+   "reqd": 1
+  },
+  {
+   "description": "Absolute ComfyUI input directory on this worker. Leave blank only when the worker uses the site default comfyui_input_dir.",
+   "fieldname": "input_dir",
+   "fieldtype": "Data",
+   "label": "Input Directory"
+  },
+  {
+   "description": "Exact Model Cache Key this worker keeps warm. Leave blank for a general-purpose fallback worker.",
+   "fieldname": "model_cache_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Cache Key"
+  }
+ ],
+ "module": "JoyMedia",
+ "name": "ComfyUI Worker",
+ "naming_rule": "Expression",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "JoyMedia Specialist",
+   "share": 1
+  }
+ ],
+ "sort_field": "routing_priority",
+ "sort_order": "ASC",
+ "title_field": "worker_name",
+ "track_changes": 1
+}

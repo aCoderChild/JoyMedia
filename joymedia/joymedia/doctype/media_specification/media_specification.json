@@ -20,6 +20,9 @@
   "delivery_width",
   "delivery_height",
   "target_fps",
+  "audio_mix_section",
+  "global_bgm_asset_version",
+  "voiceover_asset_version",
   "global_content_requirements_section",
   "required_elements",
   "consistency_requirements",
@@ -41,7 +44,7 @@
    "in_standard_filter": 1,
    "label": "Media Project",
    "options": "Media Project",
-   "read_only_depends_on": "eval:!doc.__islocal",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
@@ -49,7 +52,7 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Version Number",
-   "read_only_depends_on": "eval:!doc.__islocal",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
@@ -72,18 +75,18 @@
    "fieldname": "generation_workflow_version",
    "fieldtype": "Link",
    "label": "Generation Workflow Version",
-   "mandatory_depends_on": "eval:doc.status==\"Ready\"",
+   "mandatory_depends_on": "eval:doc.status==\"Ready\";",
    "options": "Workflow Version",
-   "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\""
+   "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\";"
   },
   {
    "description": "Exact Prompt Template Version used to compile prompts for this specification.",
    "fieldname": "prompt_template_version",
    "fieldtype": "Link",
    "label": "Prompt Template Version",
-   "mandatory_depends_on": "eval:doc.status==\"Ready\"",
+   "mandatory_depends_on": "eval:doc.status==\"Ready\";",
    "options": "Prompt Template Version",
-   "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\""
+   "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\";"
   },
   {
    "description": "FINAL video the customer expects",
@@ -95,13 +98,13 @@
    "fieldname": "delivery_width",
    "fieldtype": "Int",
    "label": "Delivery Width",
-   "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\""
+   "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\";"
   },
   {
    "fieldname": "delivery_height",
    "fieldtype": "Int",
    "label": "Delivery Height",
-   "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\""
+   "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\";"
   },
   {
    "default": "24",
@@ -109,6 +112,25 @@
    "fieldtype": "Float",
    "label": "Target FPS",
    "reqd": 1
+  },
+  {
+   "fieldname": "audio_mix_section",
+   "fieldtype": "Section Break",
+   "label": "Audio Mix"
+  },
+  {
+   "description": "Optional background music mixed once across the completed visual timeline.",
+   "fieldname": "global_bgm_asset_version",
+   "fieldtype": "Link",
+   "label": "Global BGM Asset Version",
+   "options": "Asset Version"
+  },
+  {
+   "description": "Optional voiceover mixed across the completed visual timeline.",
+   "fieldname": "voiceover_asset_version",
+   "fieldtype": "Link",
+   "label": "Voiceover Asset Version",
+   "options": "Asset Version"
   },
   {
    "fieldname": "global_content_requirements_section",

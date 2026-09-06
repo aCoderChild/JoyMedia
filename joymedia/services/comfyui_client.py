@@ -8,18 +8,18 @@ from frappe import _
 DEFAULT_TIMEOUT = 60
 
 
-def get_base_url():
-	base_url = frappe.conf.get("comfyui_base_url")
+def get_base_url(base_url: str | None = None):
+	base_url = base_url or frappe.conf.get("comfyui_base_url")
 	if not base_url:
 		frappe.throw(_("comfyui_base_url is not configured."))
 	return base_url.rstrip("/")
 
 
-def get_input_dir():
-	return frappe.conf.get("comfyui_input_dir", "/home/ubuntu/ComfyUI/input")
+def get_input_dir(input_dir: str | None = None):
+	return input_dir or frappe.conf.get("comfyui_input_dir", "/home/ubuntu/ComfyUI/input")
 
 
-def upload_frappe_file(file_url: str) -> dict:
+def upload_frappe_file(file_url: str, *, base_url: str | None = None, input_dir: str | None = None) -> dict:
 	if not file_url:
 		frappe.throw(_("File URL is required."))
 
@@ -31,7 +31,7 @@ def upload_frappe_file(file_url: str) -> dict:
 	try:
 		with open(local_path, "rb") as file_handle:
 			response = requests.post(
-				f"{get_base_url()}/upload/image",
+				f"{get_base_url(base_url)}/upload/image",
 				files={"image": (Path(local_path).name, file_handle)},
 				data={"type": "input", "overwrite": "true"},
 				timeout=DEFAULT_TIMEOUT,
@@ -43,7 +43,7 @@ def upload_frappe_file(file_url: str) -> dict:
 	result = response.json()
 	name = result["name"]
 	subfolder = result.get("subfolder", "")
-	server_path = PurePosixPath(get_input_dir())
+	server_path = PurePosixPath(get_input_dir(input_dir))
 	if subfolder:
 		server_path /= subfolder
 	server_path /= name
@@ -51,11 +51,11 @@ def upload_frappe_file(file_url: str) -> dict:
 	return {**result, "server_path": str(server_path)}
 
 
-def submit_workflow(workflow: dict) -> dict:
+def submit_workflow(workflow: dict, *, base_url: str | None = None) -> dict:
 	client_id = str(uuid.uuid4())
 	try:
 		response = requests.post(
-			f"{get_base_url()}/prompt",
+			f"{get_base_url(base_url)}/prompt",
 			json={"prompt": workflow, "client_id": client_id},
 			timeout=DEFAULT_TIMEOUT,
 		)
@@ -68,10 +68,10 @@ def submit_workflow(workflow: dict) -> dict:
 	return result
 
 
-def get_history(prompt_id: str) -> dict:
+def get_history(prompt_id: str, *, base_url: str | None = None) -> dict:
 	try:
 		response = requests.get(
-			f"{get_base_url()}/history/{prompt_id}",
+			f"{get_base_url(base_url)}/history/{prompt_id}",
 			timeout=DEFAULT_TIMEOUT,
 		)
 	except requests.ConnectionError as exc:
@@ -80,10 +80,12 @@ def get_history(prompt_id: str) -> dict:
 	return response.json()
 
 
-def download_output(filename: str, subfolder: str = "", file_type: str = "output") -> bytes:
+def download_output(
+	filename: str, subfolder: str = "", file_type: str = "output", *, base_url: str | None = None
+) -> bytes:
 	try:
 		response = requests.get(
-			f"{get_base_url()}/view",
+			f"{get_base_url(base_url)}/view",
 			params={"filename": filename, "subfolder": subfolder, "type": file_type},
 			timeout=120,
 		)

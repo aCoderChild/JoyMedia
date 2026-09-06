@@ -2,7 +2,8 @@ import frappe
 from frappe import _
 from frappe.utils import now
 
-from .comfyui_client import submit_workflow, upload_frappe_file
+from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file
+from .execution_router import select_worker
 from .result_ingestor import sync_attempt_result
 from .workflow_resolver import resolve_attempt
 
@@ -77,11 +78,15 @@ def submit_attempt(attempt_name: str):
 
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
 	job.validate_for_execution()
-	staged_inputs = _stage_generation_inputs(job)
+	worker = select_worker(job.workflow_version)
+	staged_inputs = _stage_generation_inputs(job, worker)
 	workflow = resolve_attempt(attempt.name, staged_inputs=staged_inputs)
 	attempt.reload()
-	result = submit_workflow(workflow)
+	endpoint_url = worker.endpoint_url if worker else get_base_url()
+	result = submit_workflow(workflow, base_url=endpoint_url)
 
+	attempt.comfyui_worker = worker.name if worker else None
+	attempt.comfyui_endpoint_url = endpoint_url
 	attempt.external_job_id = result["prompt_id"]
 	attempt.status = "Queued"
 	attempt.queued_at = now()
@@ -89,7 +94,7 @@ def submit_attempt(attempt_name: str):
 	return result
 
 
-def _stage_generation_inputs(job):
+def _stage_generation_inputs(job, worker=None):
 	rows = frappe.get_all(
 		"Generation Input",
 		filters={"generation_job": job.name},
@@ -104,6 +109,10 @@ def _stage_generation_inputs(job):
 		asset_version = frappe.get_doc("Asset Version", row.asset_version)
 		if not asset_version.file:
 			frappe.throw(_("Asset Version {0} has no file.").format(asset_version.name))
-		uploaded = upload_frappe_file(asset_version.file)
+		uploaded = upload_frappe_file(
+			asset_version.file,
+			base_url=worker.endpoint_url if worker else None,
+			input_dir=worker.input_dir if worker else None,
+		)
 		staged[row.input_role] = uploaded["server_path"]
 	return staged

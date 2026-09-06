@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "job_overview_section",
+  "generation_run",
   "shot_specification",
   "workflow_version",
   "compiled_prompt",
@@ -32,6 +33,15 @@
    "label": "Job Overview"
   },
   {
+   "description": "Optional parent run used to orchestrate related shots with the same workflow/model.",
+   "fieldname": "generation_run",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Generation Run",
+   "options": "Generation Run",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
+  },
+  {
    "description": "Shot being executed by this generation job.",
    "fieldname": "shot_specification",
    "fieldtype": "Link",
@@ -39,7 +49,7 @@
    "in_standard_filter": 1,
    "label": "Shot Specification",
    "options": "Shot Specification",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\"",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
   },
   {
@@ -57,7 +67,7 @@
    "in_standard_filter": 1,
    "label": "Requested By",
    "options": "User",
-   "read_only_depends_on": "eval:!doc.__islocal",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
@@ -68,7 +78,7 @@
    "in_standard_filter": 1,
    "label": "Priority",
    "options": "Low\nNormal\nHigh\nUrgent",
-   "read_only_depends_on": "eval:doc.status==\"Running\" || doc.status==\"Completed\" || doc.status==\"Partially Completed\" || doc.status==\"Failed\" || doc.status==\"Cancelled\"",
+   "read_only_depends_on": "eval:doc.status==\"Running\" || doc.status==\"Completed\" || doc.status==\"Partially Completed\" || doc.status==\"Failed\" || doc.status==\"Cancelled\";",
    "reqd": 1
   },
   {
@@ -82,7 +92,7 @@
    "fieldname": "requested_variants",
    "fieldtype": "Int",
    "label": "Requested Variants",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\"",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
   },
   {
@@ -149,7 +159,7 @@
    "in_standard_filter": 1,
    "label": "Workflow Version",
    "options": "Workflow Version",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\"",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
   },
   {
@@ -159,7 +169,7 @@
     "in_list_view": 1,
    "label": "Compiled Prompt",
    "options": "Compiled Prompt",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\"",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
   }
  ],

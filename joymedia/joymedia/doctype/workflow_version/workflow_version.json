@@ -22,6 +22,8 @@
   "output_fps",
   "produces_video",
   "produces_audio",
+  "routing_section",
+  "model_cache_key",
   "dynamic_bindings_section",
   "bindings"
  ],
@@ -38,7 +40,7 @@
    "in_standard_filter": 1,
    "label": "Workflow Profile",
    "options": "Workflow Profile",
-   "read_only_depends_on": "eval:!doc.__islocal",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
@@ -47,7 +49,7 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Version Number",
-   "read_only_depends_on": "eval:!doc.__islocal",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
@@ -83,7 +85,7 @@
    "fieldtype": "Code",
    "label": "Workflow JSON",
    "options": "JSON",
-   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\"",
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";",
    "reqd": 1
   },
   {
@@ -139,6 +141,18 @@
    "read_only": 1
   },
   {
+   "fieldname": "routing_section",
+   "fieldtype": "Section Break",
+   "label": "Execution Routing"
+  },
+  {
+   "description": "Stable key for workers that keep this workflow model loaded. Leave blank to route by this exact Workflow Version.",
+   "fieldname": "model_cache_key",
+   "fieldtype": "Data",
+   "label": "Model Cache Key",
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";"
+  },
+  {
    "fieldname": "dynamic_bindings_section",
    "fieldtype": "Section Break",
    "label": "Dynamic Bindings"
@@ -148,7 +162,7 @@
    "fieldtype": "Table",
    "label": "Bindings",
    "options": "Workflow Binding",
-   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\""
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";"
   }
  ],
  "grid_page_length": 50,

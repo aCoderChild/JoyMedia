@@ -12,6 +12,8 @@
   "status",
   "execution_section",
   "seed",
+  "comfyui_worker",
+  "comfyui_endpoint_url",
   "external_job_id",
   "queued_at",
   "started_at",
@@ -43,7 +45,7 @@
    "in_standard_filter": 1,
    "label": "Generation Job",
    "options": "Generation Job",
-   "read_only_depends_on": "eval:!doc.__islocal",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
@@ -52,7 +54,7 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Attempt Number",
-   "read_only_depends_on": "eval:!doc.__islocal",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
@@ -65,8 +67,23 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Seed",
-   "read_only_depends_on": "eval:!doc.__islocal",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
+  },
+  {
+   "description": "ComfyUI worker selected when this attempt was submitted. Kept as an execution snapshot for result synchronization.",
+   "fieldname": "comfyui_worker",
+   "fieldtype": "Link",
+   "label": "ComfyUI Worker",
+   "options": "ComfyUI Worker",
+   "read_only": 1
+  },
+  {
+   "description": "ComfyUI endpoint used when this attempt was submitted. Kept as an execution snapshot for result synchronization.",
+   "fieldname": "comfyui_endpoint_url",
+   "fieldtype": "Data",
+   "label": "ComfyUI Endpoint URL",
+   "read_only": 1
   },
   {
    "description": "Identifier returned by the external execution backend for this attempt.",
@@ -161,19 +178,19 @@
    "fieldtype": "Link",
    "label": "Retry Of ",
    "options": "Generation Attempt",
-   "read_only_depends_on": "eval:!doc.__islocal"
+   "read_only_depends_on": "eval:!doc.__islocal;"
   },
   {
-   "depends_on": "eval:doc.retry_of",
+   "depends_on": "eval:doc.retry_of;",
    "fieldname": "retry_reason",
    "fieldtype": "Select",
    "label": "Retry Reason",
-   "mandatory_depends_on": "eval:doc.retry_of",
+   "mandatory_depends_on": "eval:doc.retry_of;",
    "options": "\nExecution Failure\nQA Failure\nHuman Review Rejection\nPrompt Revision\nWorkflow Revision\nInput Revision\nOther",
-   "read_only_depends_on": "eval:!doc.__islocal"
+   "read_only_depends_on": "eval:!doc.__islocal;"
   },
   {
-   "depends_on": "eval:doc.status==\"Failed\"",
+   "depends_on": "eval:doc.status==\"Failed\";",
    "fieldname": "failure_class",
    "fieldtype": "Select",
    "label": "Failure Class",
@@ -181,7 +198,7 @@
   },
   {
    "default": "0",
-   "depends_on": "eval:doc.status==\"Failed\"",
+   "depends_on": "eval:doc.status==\"Failed\";",
    "fieldname": "retryable",
    "fieldtype": "Check",
    "label": "Retryable"

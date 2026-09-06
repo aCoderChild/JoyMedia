@@ -6,6 +6,30 @@ from frappe import _
 from frappe.utils import get_datetime, now
 
 from .comfyui_client import download_output, get_history
+from .execution_router import get_worker
+
+
+def sync_active_attempts():
+	"""Poll active ComfyUI attempts and ingest any completed outputs."""
+	results = []
+	for attempt in frappe.get_all(
+		"Generation Attempt",
+		filters={"status": ["in", ["Queued", "Running"]]},
+		fields=["name", "external_job_id"],
+	):
+		if not attempt.external_job_id:
+			continue
+
+		try:
+			result = sync_attempt_result(attempt.name)
+			frappe.db.commit()
+			results.append({"attempt": attempt.name, **result})
+		except Exception:
+			frappe.db.rollback()
+			frappe.logger("joymedia.result_sync").exception(
+				"Unable to synchronize Generation Attempt %s", attempt.name
+			)
+	return results
 
 
 def sync_attempt_result(attempt_name):
@@ -18,7 +42,9 @@ def sync_attempt_result(attempt_name):
 	if not attempt.external_job_id:
 		frappe.throw(_("Generation Attempt {0} has no ComfyUI prompt ID.").format(attempt.name))
 
-	history = get_history(attempt.external_job_id)
+	worker = get_worker(attempt.comfyui_worker)
+	base_url = attempt.comfyui_endpoint_url or (worker.endpoint_url if worker else None)
+	history = get_history(attempt.external_job_id, base_url=base_url)
 	history = history.get(attempt.external_job_id, history)
 	status = history.get("status", {})
 	status_string = status.get("status_str")
@@ -45,7 +71,9 @@ def sync_attempt_result(attempt_name):
 	if not output:
 		frappe.throw(_("ComfyUI completed without a primary MP4 output."))
 
-	video_bytes = download_output(output["filename"], output.get("subfolder", ""), output.get("type", "output"))
+	video_bytes = download_output(
+		output["filename"], output.get("subfolder", ""), output.get("type", "output"), base_url=base_url
+	)
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
 	shot = frappe.get_doc("Shot Specification", job.shot_specification)
 	media_spec = frappe.get_doc("Media Specification", shot.media_specification)
@@ -99,7 +127,16 @@ def sync_attempt_result(attempt_name):
 			0, (get_datetime(attempt.completed_at) - get_datetime(attempt.started_at)).total_seconds()
 		)
 	attempt.save(ignore_permissions=True)
+	_auto_select_single_variant_output(job, shot, asset_version.name)
 	return {"status": attempt.status, "output_asset_version": asset_version.name}
+
+
+def _auto_select_single_variant_output(job, shot, asset_version_name):
+	if job.requested_variants != 1:
+		return
+
+	shot.selected_output_asset_version = asset_version_name
+	shot.save(ignore_permissions=True)
 
 
 def _execution_timestamp(history, message_name):

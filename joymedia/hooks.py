@@ -155,23 +155,11 @@ app_license = "mit"
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"joymedia.tasks.all"
-# 	],
-# 	"daily": [
-# 		"joymedia.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"joymedia.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"joymedia.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"joymedia.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"all": [
+		"joymedia.services.result_ingestor.sync_active_attempts",
+	],
+}
 
 # Testing
 # -------
@@ -261,4 +249,3 @@ app_license = "mit"
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

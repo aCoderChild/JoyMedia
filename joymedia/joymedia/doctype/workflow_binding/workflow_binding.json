@@ -50,12 +50,12 @@
    "reqd": 1
   },
   {
-   "depends_on": "eval:doc.value_source==\"Generation Input\"",
+   "depends_on": "eval:doc.value_source==\"Generation Input\";",
    "description": "JoyMedia input role supplied by Shot Input Mapping / Generation Input, e.g. first_frame, last_frame, mask.",
    "fieldname": "required_input_role",
    "fieldtype": "Data",
    "label": "Input Role Key",
-   "mandatory_depends_on": "eval:doc.value_source==\"Generation Input\""
+   "mandatory_depends_on": "eval:doc.value_source==\"Generation Input\";"
   },
   {
    "fieldname": "value_type",

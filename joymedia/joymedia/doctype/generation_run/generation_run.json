@@ -1,0 +1,136 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 0,
+ "allow_rename": 0,
+ "autoname": "RUN-.#####",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "run_overview_section",
+  "media_specification",
+  "workflow_version",
+  "model_cache_key",
+  "status",
+  "requested_by",
+  "execution_section",
+  "queued_at",
+  "started_at",
+  "completed_at",
+  "error_summary"
+ ],
+ "fields": [
+  {
+   "fieldname": "run_overview_section",
+   "fieldtype": "Section Break",
+   "label": "Run Overview"
+  },
+  {
+   "description": "Media Specification whose shots are executed by this run.",
+   "fieldname": "media_specification",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Media Specification",
+   "options": "Media Specification",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
+  },
+  {
+   "description": "Exact Workflow Version inherited from the Media Specification.",
+   "fieldname": "workflow_version",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Workflow Version",
+   "options": "Workflow Version",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
+  },
+  {
+   "description": "Stable worker-routing key. Derived from the Workflow Version so jobs using the same model can stay on a warm worker.",
+   "fieldname": "model_cache_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Cache Key",
+   "read_only": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nReady\nQueued\nRunning\nCompleted\nPartially Completed\nFailed\nCancelled",
+   "reqd": 1
+  },
+  {
+   "default": "__user",
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Requested By",
+   "options": "User",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
+  },
+  {
+   "fieldname": "execution_section",
+   "fieldtype": "Section Break",
+   "label": "Execution"
+  },
+  {
+   "fieldname": "queued_at",
+   "fieldtype": "Datetime",
+   "label": "Queued At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error_summary",
+   "fieldtype": "Long Text",
+   "label": "Error Summary",
+   "read_only": 1
+  }
+ ],
+ "module": "JoyMedia",
+ "name": "Generation Run",
+ "naming_rule": "Expression",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "JoyMedia Specialist",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

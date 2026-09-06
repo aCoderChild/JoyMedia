@@ -38,6 +38,7 @@ class GenerationJob(Document):
 
 		shot = frappe.get_doc("Shot Specification", self.shot_specification)
 		media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+		self._validate_generation_run(media_specification)
 		compiled_prompt_shot = frappe.db.get_value(
 			"Compiled Prompt", self.compiled_prompt, "shot_specification"
 		)
@@ -67,6 +68,18 @@ class GenerationJob(Document):
 		if not workflow_profile or not prompt_profile or workflow_profile != prompt_profile:
 			frappe.throw(_("Workflow and prompt template profiles must match."))
 		return frappe.get_doc("Workflow Version", self.workflow_version)
+
+	def _validate_generation_run(self, media_specification):
+		if not self.generation_run:
+			return
+
+		run = frappe.get_doc("Generation Run", self.generation_run)
+		if run.media_specification != media_specification.name:
+			frappe.throw(
+				_("Generation Run Media Specification must match the Generation Job Shot Specification.")
+			)
+		if run.workflow_version != self.workflow_version:
+			frappe.throw(_("Generation Run Workflow Version must match the Generation Job Workflow Version."))
 
 	def get_shot_input_snapshot(self):
 		shot = frappe.get_doc("Shot Specification", self.shot_specification)

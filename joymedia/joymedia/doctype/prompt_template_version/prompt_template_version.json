@@ -31,7 +31,7 @@
    "in_list_view": 1,
    "label": "Prompt Template",
    "options": "Prompt Template",
-   "read_only_depends_on": "eval:!doc.__islocal",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
@@ -39,7 +39,7 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Version Number",
-   "read_only_depends_on": "eval:!doc.__islocal",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
