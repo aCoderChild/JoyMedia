@@ -12,3 +12,9 @@ class MediaAsset(Document):
 
 		if self.asset_scope == "Project" and not self.media_project:
 			frappe.throw("Media Project is required for Project-scoped assets")
+
+		if self.asset_category == "Shot Output" and self.media_type != "Video":
+			frappe.throw("Shot Output assets must have media type Video")
+
+		if self.asset_category == "Shot Output" and self.asset_scope != "Project":
+			frappe.throw("Shot Output assets must be Project-scoped")

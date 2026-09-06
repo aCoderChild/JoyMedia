@@ -153,7 +153,7 @@
    "label": "Selected Output"
   },
   {
-   "description": "Completed generated video selected for this shot's final composition.",
+   "description": "Project-scoped Video Shot Output selected for this shot's final composition. It may be generated, imported, or edited.",
    "fieldname": "selected_output_asset_version",
    "fieldtype": "Link",
    "label": "Selected Output Asset Version",

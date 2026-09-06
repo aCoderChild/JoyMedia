@@ -50,6 +50,7 @@
    "reqd": 1
   },
   {
+   "description": "How this version was created. Use Imported for footage created outside JoyMedia.",
    "default": "Uploaded",
    "fieldname": "source",
    "fieldtype": "Select",

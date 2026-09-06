@@ -7,6 +7,14 @@ import frappe
 from frappe import _
 
 
+@frappe.whitelist()
+def compose_media_specification_from_ui(media_specification_name: str):
+	frappe.has_permission("Media Specification", "write", media_specification_name, throw=True)
+	result = compose_media_specification(media_specification_name)
+	frappe.db.commit()
+	return result
+
+
 def compose_media_specification(media_specification_name: str):
 	"""Create a silent, normalized final video from selected shot outputs."""
 	media_specification = frappe.get_doc("Media Specification", media_specification_name)

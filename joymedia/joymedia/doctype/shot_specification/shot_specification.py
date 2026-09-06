@@ -14,20 +14,18 @@ class ShotSpecification(Document):
 		if not self.selected_output_asset_version:
 			return
 
-		generation_jobs = frappe.get_all(
-			"Generation Attempt",
-			filters={
-				"output_asset_version": self.selected_output_asset_version,
-				"status": "Completed",
-			},
-			pluck="generation_job",
-		)
-		if not generation_jobs or not frappe.db.exists(
-			"Generation Job",
-			{"name": ["in", generation_jobs], "shot_specification": self.name},
+		asset_version = frappe.get_doc("Asset Version", self.selected_output_asset_version)
+		media_asset = frappe.get_doc("Media Asset", asset_version.media_asset)
+		media_specification = frappe.get_doc("Media Specification", self.media_specification)
+		if (
+			media_asset.media_type != "Video"
+			or media_asset.asset_category != "Shot Output"
+			or media_asset.asset_scope != "Project"
+			or media_asset.media_project != media_specification.media_project
 		):
 			frappe.throw(
-				"Selected Output Asset Version must be a completed Generation Attempt output for this Shot."
+				"Selected Output Asset Version must belong to a project-scoped Video Shot Output "
+				"for this Media Specification's Media Project."
 			)
 
 	def validate_required_workflow_input_mappings(self):
