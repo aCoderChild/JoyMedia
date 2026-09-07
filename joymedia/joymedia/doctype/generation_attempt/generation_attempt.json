@@ -2,7 +2,7 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "autoname": "ATT-.#####",
- "creation": "2026-09-04 00:33:18.607849",
+ "creation": "2026-09-07 09:37:13.060632",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -14,6 +14,7 @@
   "seed",
   "comfyui_worker",
   "comfyui_endpoint_url",
+  "gpu_cost_per_hour",
   "external_job_id",
   "queued_at",
   "started_at",
@@ -24,6 +25,7 @@
   "resolved_workflow_hash",
   "output_section",
   "output_asset_version",
+  "output_artifact",
   "failure_section",
   "error_summary",
   "error_details",
@@ -86,6 +88,13 @@
    "read_only": 1
   },
   {
+   "description": "Estimated GPU cost per hour copied from the selected ComfyUI Worker at submission time. Blank means cost is unavailable.",
+   "fieldname": "gpu_cost_per_hour",
+   "fieldtype": "Float",
+   "label": "GPU Cost Per Hour",
+   "read_only": 1
+  },
+  {
    "description": "Identifier returned by the external execution backend for this attempt.",
    "fieldname": "external_job_id",
    "fieldtype": "Data",
@@ -141,7 +150,7 @@
   {
    "fieldname": "output_asset_version",
    "fieldtype": "Link",
-   "label": "Output Asset Version",
+   "label": "Promoted Output Asset Version",
    "options": "Asset Version",
    "read_only": 1
   },
@@ -202,12 +211,19 @@
    "fieldname": "retryable",
    "fieldtype": "Check",
    "label": "Retryable"
+  },
+  {
+   "fieldname": "output_artifact",
+   "fieldtype": "Link",
+   "label": "Output Artifact",
+   "options": "Generation Artifact",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-05 23:49:02.199533",
+ "modified": "2026-09-07 09:49:46.046143",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Attempt",

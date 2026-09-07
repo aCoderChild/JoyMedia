@@ -20,7 +20,7 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 			patch.object(
 				result_ingestor,
 				"sync_attempt_result",
-				return_value={"status": "Completed", "output_asset_version": "ASTV-00001"},
+				return_value={"status": "Completed", "output_artifact": "GART-00001"},
 			) as sync_attempt_result,
 			patch.object(result_ingestor.frappe.db, "commit") as commit,
 		):
@@ -39,7 +39,7 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 				{
 					"attempt": "ATT-EXTERNAL",
 					"status": "Completed",
-					"output_asset_version": "ASTV-00001",
+					"output_artifact": "GART-00001",
 				}
 			],
 		)

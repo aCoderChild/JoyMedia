@@ -80,6 +80,18 @@ def get_history(prompt_id: str, *, base_url: str | None = None) -> dict:
 	return response.json()
 
 
+def get_system_stats(*, base_url: str | None = None) -> dict:
+	try:
+		response = requests.get(
+			f"{get_base_url(base_url)}/system_stats",
+			timeout=DEFAULT_TIMEOUT,
+		)
+	except requests.ConnectionError as exc:
+		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
+	_raise_for_comfyui_error(response)
+	return response.json()
+
+
 def download_output(
 	filename: str, subfolder: str = "", file_type: str = "output", *, base_url: str | None = None
 ) -> bytes:

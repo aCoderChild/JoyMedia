@@ -1,11 +1,10 @@
-from pathlib import Path
 from datetime import datetime, timezone
 
 import frappe
 from frappe import _
-from frappe.utils import get_datetime, now
+from frappe.utils import add_to_date, get_datetime, now, now_datetime
 
-from .comfyui_client import download_output, get_history
+from .comfyui_client import get_history
 from .execution_router import get_worker
 
 
@@ -34,11 +33,15 @@ def sync_active_attempts():
 
 def sync_attempt_result(attempt_name):
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
-	if attempt.output_asset_version and attempt.status == "Completed":
+	if attempt.status == "Completed" and attempt.output_artifact:
+		_refresh_parent_execution_state(attempt.name)
 		return {
 			"status": attempt.status,
-			"output_asset_version": attempt.output_asset_version,
+			"output_artifact": attempt.output_artifact,
 		}
+	if attempt.status == "Completed" and attempt.output_asset_version:
+		_refresh_parent_execution_state(attempt.name)
+		return {"status": attempt.status, "output_asset_version": attempt.output_asset_version}
 	if not attempt.external_job_id:
 		frappe.throw(_("Generation Attempt {0} has no ComfyUI prompt ID.").format(attempt.name))
 
@@ -55,6 +58,7 @@ def sync_attempt_result(attempt_name):
 		attempt.error_summary = _("ComfyUI execution failed.")
 		attempt.error_details = str(messages)
 		attempt.save(ignore_permissions=True)
+		_refresh_parent_execution_state(attempt.name)
 		return {"status": attempt.status}
 
 	if not status.get("completed"):
@@ -65,59 +69,15 @@ def sync_attempt_result(attempt_name):
 		else:
 			attempt.status = "Queued"
 		attempt.save(ignore_permissions=True)
+		_refresh_parent_execution_state(attempt.name)
 		return {"status": attempt.status}
 
 	output = _find_primary_mp4(history)
 	if not output:
 		frappe.throw(_("ComfyUI completed without a primary MP4 output."))
 
-	video_bytes = download_output(
-		output["filename"], output.get("subfolder", ""), output.get("type", "output"), base_url=base_url
-	)
-	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	shot = frappe.get_doc("Shot Specification", job.shot_specification)
-	media_spec = frappe.get_doc("Media Specification", shot.media_specification)
-
-	asset_name = f"{shot.name} Generated Video"
-	asset_name = frappe.db.get_value("Media Asset", {"asset_name": asset_name}, "name")
-	if asset_name:
-		output_asset = frappe.get_doc("Media Asset", asset_name)
-	else:
-		output_asset = frappe.get_doc(
-			{
-				"doctype": "Media Asset",
-				"asset_name": f"{shot.name} Generated Video",
-				"asset_scope": "Project",
-				"media_type": "Video",
-				"asset_category": "Shot Output",
-				"media_project": media_spec.media_project,
-			}
-		)
-		output_asset.insert(ignore_permissions=True)
-
-	file_doc = frappe.get_doc(
-		{
-			"doctype": "File",
-			"file_name": Path(output["filename"]).name,
-			"content": video_bytes,
-			"is_private": 1,
-			"attached_to_doctype": "Media Asset",
-			"attached_to_name": output_asset.name,
-		}
-	)
-	file_doc.insert(ignore_permissions=True)
-
-	asset_version = frappe.get_doc(
-		{
-			"doctype": "Asset Version",
-			"media_asset": output_asset.name,
-			"file": file_doc.file_url,
-			"source": "Generated",
-		}
-	)
-	asset_version.insert(ignore_permissions=True)
-
-	attempt.output_asset_version = asset_version.name
+	artifact = _create_primary_artifact(attempt, output)
+	attempt.output_artifact = artifact.name
 	attempt.status = "Completed"
 	if not attempt.started_at:
 		attempt.started_at = _execution_timestamp(history, "execution_start") or now()
@@ -127,16 +87,39 @@ def sync_attempt_result(attempt_name):
 			0, (get_datetime(attempt.completed_at) - get_datetime(attempt.started_at)).total_seconds()
 		)
 	attempt.save(ignore_permissions=True)
-	_auto_select_single_variant_output(job, shot, asset_version.name)
-	return {"status": attempt.status, "output_asset_version": asset_version.name}
+	_refresh_parent_execution_state(attempt.name)
+	return {"status": attempt.status, "output_artifact": artifact.name}
 
 
-def _auto_select_single_variant_output(job, shot, asset_version_name):
-	if job.requested_variants != 1:
-		return
+def _create_primary_artifact(attempt, output):
+	artifact_key = f"{attempt.name}:primary_video"
+	existing = frappe.db.get_value("Generation Artifact", {"artifact_key": artifact_key}, "name")
+	if existing:
+		return frappe.get_doc("Generation Artifact", existing)
 
-	shot.selected_output_asset_version = asset_version_name
-	shot.save(ignore_permissions=True)
+	artifact = frappe.get_doc(
+		{
+			"doctype": "Generation Artifact",
+			"artifact_key": artifact_key,
+			"generation_attempt": attempt.name,
+			"artifact_role": "Primary Video",
+			"media_type": "Video",
+			"storage_backend": "ComfyUI",
+			"remote_filename": output["filename"],
+			"remote_subfolder": output.get("subfolder", ""),
+			"remote_file_type": output.get("type", "output"),
+			"lifecycle_status": "Temporary",
+			"expires_at": add_to_date(now_datetime(), hours=72),
+		}
+	)
+	artifact.insert(ignore_permissions=True)
+	return artifact
+
+
+def _refresh_parent_execution_state(attempt_name):
+	from .generation_orchestrator import refresh_generation_state_for_attempt
+
+	refresh_generation_state_for_attempt(attempt_name)
 
 
 def _execution_timestamp(history, message_name):

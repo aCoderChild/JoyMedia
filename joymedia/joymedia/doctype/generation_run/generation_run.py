@@ -17,3 +17,7 @@ class GenerationRun(Document):
 			)
 
 		self.model_cache_key = get_model_cache_key(self.workflow_version)
+		if (self.requested_variants_per_shot or 0) < 1:
+			frappe.throw(_("Requested Variants Per Shot must be greater than zero."))
+		if (self.max_retries or 0) < 0:
+			frappe.throw(_("Max Retries cannot be negative."))

@@ -5,6 +5,8 @@ import json
 import frappe
 from frappe import _
 
+from joymedia.workflow_adapters.base import canonical_workflow_json
+
 
 def resolve_attempt(attempt_name: str, staged_inputs=None):
 	staged_inputs = staged_inputs or {}
@@ -26,7 +28,7 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 			frappe.throw(_("Invalid Workflow Binding: {0}").format(binding.binding_key))
 		node["inputs"][binding.input_name] = value
 
-	canonical = json.dumps(workflow, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+	canonical = canonical_workflow_json(workflow)
 	attempt.resolved_workflow_json = json.dumps(workflow, indent=2, ensure_ascii=False)
 	attempt.resolved_workflow_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 	attempt.save()

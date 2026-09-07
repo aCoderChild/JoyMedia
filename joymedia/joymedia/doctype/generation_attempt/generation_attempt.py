@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import now
 
 
 class GenerationAttempt(Document):
@@ -16,3 +17,78 @@ class GenerationAttempt(Document):
 				)
 			)
 		job.validate_for_execution()
+		self._validate_retry_reference()
+		latest_attempt_number = frappe.db.get_value(
+			"Generation Attempt",
+			{"generation_job": self.generation_job},
+			[{"MAX": "attempt_number"}],
+		)
+		self.attempt_number = (latest_attempt_number or 0) + 1
+
+	def _validate_retry_reference(self):
+		if not self.retry_of:
+			if self.retry_reason:
+				frappe.throw(_("Retry Reason requires Retry Of."))
+			return
+
+		previous_attempt = frappe.db.get_value(
+			"Generation Attempt",
+			self.retry_of,
+			["generation_job", "status"],
+			as_dict=True,
+		)
+		if not previous_attempt or previous_attempt.generation_job != self.generation_job:
+			frappe.throw(_("Retry Of must belong to the same Generation Job."))
+		if previous_attempt.status != "Failed":
+			frappe.throw(_("Retry Of must be a failed Generation Attempt."))
+		if not self.retry_reason:
+			frappe.throw(_("Retry Reason is required when Retry Of is set."))
+
+		_validate_retry_reason(self.retry_reason)
+
+
+@frappe.whitelist()
+def create_retry_attempt(failed_attempt_name: str, reason: str):
+	"""Create a new Pending attempt linked to one failed attempt."""
+	frappe.has_permission("Generation Attempt", "create", throw=True)
+	reason = (reason or "").strip()
+	_validate_retry_reason(reason)
+	failed_attempt = frappe.get_doc("Generation Attempt", failed_attempt_name)
+	if failed_attempt.status != "Failed":
+		frappe.throw(_("Only failed Generation Attempts can be retried."))
+
+	job = frappe.get_doc("Generation Job", failed_attempt.generation_job)
+	if job.status not in ("Ready", "Queued", "Failed"):
+		frappe.throw(
+			_("Generation Job {0} cannot be retried from status {1}.").format(job.name, job.status)
+		)
+
+	job.status = "Queued"
+	job.queued_at = now()
+	job.save(ignore_permissions=True)
+
+	retry_attempt = frappe.get_doc(
+		{
+			"doctype": "Generation Attempt",
+			"generation_job": job.name,
+			"seed": failed_attempt.seed,
+			"retry_of": failed_attempt.name,
+			"retry_reason": reason,
+			"status": "Pending",
+		}
+	).insert(ignore_permissions=True)
+	if job.generation_run:
+		from joymedia.services.generation_orchestrator import refresh_generation_state_for_attempt
+
+		refresh_generation_state_for_attempt(retry_attempt.name)
+	return retry_attempt
+
+
+def _validate_retry_reason(reason):
+	valid_reasons = {
+		value
+		for value in (frappe.get_meta("Generation Attempt").get_field("retry_reason").options or "").splitlines()
+		if value
+	}
+	if reason not in valid_reasons:
+		frappe.throw(_("Retry Reason must use the Generation Attempt retry taxonomy."))

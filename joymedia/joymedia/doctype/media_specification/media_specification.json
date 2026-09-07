@@ -21,8 +21,7 @@
   "delivery_height",
   "target_fps",
   "audio_mix_section",
-  "global_bgm_asset_version",
-  "voiceover_asset_version",
+  "audio_cues",
   "global_content_requirements_section",
   "required_elements",
   "consistency_requirements",
@@ -119,18 +118,11 @@
    "label": "Audio Mix"
   },
   {
-   "description": "Optional background music mixed once across the completed visual timeline.",
-   "fieldname": "global_bgm_asset_version",
-   "fieldtype": "Link",
-   "label": "Global BGM Asset Version",
-   "options": "Asset Version"
-  },
-  {
-   "description": "Optional voiceover mixed across the completed visual timeline.",
-   "fieldname": "voiceover_asset_version",
-   "fieldtype": "Link",
-   "label": "Voiceover Asset Version",
-   "options": "Asset Version"
+   "description": "Timeline-level BGM, voiceover, and sound-effect cues used during final composition.",
+   "fieldname": "audio_cues",
+   "fieldtype": "Table",
+   "label": "Audio Cues",
+   "options": "Audio Cue"
   },
   {
    "fieldname": "global_content_requirements_section",

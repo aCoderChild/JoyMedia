@@ -4,6 +4,7 @@ from frappe.utils import now
 
 from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file
 from .execution_router import select_worker
+from .worker_monitor import refresh_worker
 from .result_ingestor import sync_attempt_result
 from .workflow_resolver import resolve_attempt
 
@@ -69,7 +70,7 @@ def prepare_generation_job(job_name: str):
 
 def submit_attempt(attempt_name: str):
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
-	if attempt.status not in ("Pending", "Failed"):
+	if attempt.status != "Pending":
 		frappe.throw(
 			_("Attempt {0} cannot be submitted from status {1}.").format(
 				attempt.name, attempt.status
@@ -87,10 +88,18 @@ def submit_attempt(attempt_name: str):
 
 	attempt.comfyui_worker = worker.name if worker else None
 	attempt.comfyui_endpoint_url = endpoint_url
+	attempt.gpu_cost_per_hour = worker.gpu_cost_per_hour if worker else None
 	attempt.external_job_id = result["prompt_id"]
 	attempt.status = "Queued"
 	attempt.queued_at = now()
 	attempt.save(ignore_permissions=True)
+	if worker:
+		try:
+			refresh_worker(worker.name)
+		except Exception:
+			frappe.logger("joymedia.worker_monitor").exception(
+				"Unable to refresh ComfyUI Worker %s after submission", worker.name
+			)
 	return result
 
 

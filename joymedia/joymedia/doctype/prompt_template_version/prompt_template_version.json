@@ -54,7 +54,8 @@
   {
    "fieldname": "change_notes",
    "fieldtype": "Small Text",
-   "label": "Change Notes"
+   "label": "Change Notes",
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";"
   },
   {
    "fieldname": "template_definition_section",
@@ -64,7 +65,8 @@
   {
    "fieldname": "compilation_instructions",
    "fieldtype": "Long Text",
-   "label": "Compilation Instructions"
+   "label": "Compilation Instructions",
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";"
   },
   {
    "fieldname": "integrity_section",
@@ -81,6 +83,7 @@
    "fieldname": "version_label",
    "fieldtype": "Data",
    "label": "Version Label",
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";",
    "reqd": 1
   },
   {
@@ -88,6 +91,7 @@
    "fieldname": "template_body",
    "fieldtype": "Long Text",
    "label": "Template Body",
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";",
    "reqd": 1
   }
  ],

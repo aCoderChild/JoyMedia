@@ -1,0 +1,165 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 0,
+ "allow_rename": 0,
+ "autoname": "QREV-.#####",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "review_context_section",
+  "shot_specification",
+  "generation_attempt",
+  "asset_version",
+  "review_type",
+  "status",
+  "quality_scores_section",
+  "visual_quality_score",
+  "identity_score",
+  "temporal_consistency_score",
+  "prompt_adherence_score",
+  "failure_class",
+  "reviewer_section",
+  "reviewer",
+  "reviewed_at",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "review_context_section",
+   "fieldtype": "Section Break",
+   "label": "Review Context"
+  },
+  {
+   "fieldname": "shot_specification",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Shot Specification",
+   "options": "Shot Specification",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
+  },
+  {
+   "fieldname": "generation_attempt",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Generation Attempt",
+   "options": "Generation Attempt",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
+  },
+  {
+   "fieldname": "asset_version",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Asset Version",
+   "options": "Asset Version",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
+  },
+  {
+   "fieldname": "review_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Review Type",
+   "options": "Automated\nHuman",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nApproved\nRejected\nNeeds Revision",
+   "reqd": 1
+  },
+  {
+   "fieldname": "quality_scores_section",
+   "fieldtype": "Section Break",
+   "label": "Quality Scores"
+  },
+  {
+   "fieldname": "visual_quality_score",
+   "fieldtype": "Float",
+   "label": "Visual Quality Score"
+  },
+  {
+   "fieldname": "identity_score",
+   "fieldtype": "Float",
+   "label": "Identity Score"
+  },
+  {
+   "fieldname": "temporal_consistency_score",
+   "fieldtype": "Float",
+   "label": "Temporal Consistency Score"
+  },
+  {
+   "fieldname": "prompt_adherence_score",
+   "fieldtype": "Float",
+   "label": "Prompt Adherence Score"
+  },
+  {
+   "depends_on": "eval:doc.status==\"Rejected\" || doc.status==\"Needs Revision\";",
+   "fieldname": "failure_class",
+   "fieldtype": "Select",
+   "label": "Failure Class",
+   "options": "\nInfrastructure\nWorkflow\nInput\nPrompt\nVisual Quality\nIdentity Consistency\nTemporal Consistency\nOther\nUnknown"
+  },
+  {
+   "fieldname": "reviewer_section",
+   "fieldtype": "Section Break",
+   "label": "Reviewer"
+  },
+  {
+   "depends_on": "eval:doc.review_type==\"Human\";",
+   "fieldname": "reviewer",
+   "fieldtype": "Link",
+   "label": "Reviewer",
+   "mandatory_depends_on": "eval:doc.review_type==\"Human\";",
+   "options": "User"
+  },
+  {
+   "fieldname": "reviewed_at",
+   "fieldtype": "Datetime",
+   "label": "Reviewed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Long Text",
+   "label": "Notes"
+  }
+ ],
+ "module": "JoyMedia",
+ "name": "Quality Review",
+ "naming_rule": "Expression",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "JoyMedia Specialist",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

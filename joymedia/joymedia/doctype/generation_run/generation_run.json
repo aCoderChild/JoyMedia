@@ -12,10 +12,21 @@
   "model_cache_key",
   "status",
   "requested_by",
+  "run_options_section",
+  "requested_variants_per_shot",
+  "max_retries",
+  "auto_compose",
+  "execution_summary_section",
+  "total_jobs",
+  "completed_jobs",
+  "failed_jobs",
+  "running_jobs",
+  "progress",
   "execution_section",
   "queued_at",
   "started_at",
   "completed_at",
+  "final_asset_version",
   "error_summary"
  ],
  "fields": [
@@ -61,6 +72,7 @@
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Draft\nReady\nQueued\nRunning\nCompleted\nPartially Completed\nFailed\nCancelled",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -71,6 +83,77 @@
    "options": "User",
    "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
+  },
+  {
+   "fieldname": "run_options_section",
+   "fieldtype": "Section Break",
+   "label": "Run Options"
+  },
+  {
+   "default": "1",
+   "description": "Number of output variants requested for every shot Job created by this run.",
+   "fieldname": "requested_variants_per_shot",
+   "fieldtype": "Int",
+   "label": "Requested Variants Per Shot",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Maximum additional attempts per Job after an execution failure. Zero disables automatic retries.",
+   "fieldname": "max_retries",
+   "fieldtype": "Int",
+   "label": "Max Retries",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Compose the final video in a background job only after every Job completes successfully.",
+   "fieldname": "auto_compose",
+   "fieldtype": "Check",
+   "label": "Auto Compose",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
+  },
+  {
+   "fieldname": "execution_summary_section",
+   "fieldtype": "Section Break",
+   "label": "Execution Summary"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_jobs",
+   "fieldtype": "Int",
+   "label": "Total Jobs",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "completed_jobs",
+   "fieldtype": "Int",
+   "label": "Completed Jobs",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "failed_jobs",
+   "fieldtype": "Int",
+   "label": "Failed Jobs",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "running_jobs",
+   "fieldtype": "Int",
+   "label": "Running Jobs",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "progress",
+   "fieldtype": "Percent",
+   "label": "Progress",
+   "read_only": 1
   },
   {
    "fieldname": "execution_section",
@@ -93,6 +176,13 @@
    "fieldname": "completed_at",
    "fieldtype": "Datetime",
    "label": "Completed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "final_asset_version",
+   "fieldtype": "Link",
+   "label": "Final Asset Version",
+   "options": "Asset Version",
    "read_only": 1
   },
   {

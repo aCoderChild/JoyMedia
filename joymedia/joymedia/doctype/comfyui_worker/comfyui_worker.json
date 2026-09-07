@@ -9,10 +9,20 @@
   "worker_configuration_section",
   "worker_name",
   "status",
+  "health_status",
   "routing_priority",
+  "max_concurrent_jobs",
+  "gpu_cost_per_hour",
+  "active_jobs",
   "endpoint_url",
   "input_dir",
-  "model_cache_key"
+  "model_cache_key",
+  "observed_model_cache_key",
+  "telemetry_section",
+  "last_heartbeat_at",
+  "gpu_name",
+  "vram_total_mib",
+  "vram_free_mib"
  ],
  "fields": [
   {
@@ -37,12 +47,43 @@
    "reqd": 1
   },
   {
+   "default": "Offline",
+   "description": "Healthy workers can receive jobs. Draining prevents new assignments while existing jobs finish.",
+   "fieldname": "health_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Health Status",
+   "options": "Healthy\nDegraded\nOffline\nDraining",
+   "reqd": 1
+  },
+  {
    "default": "100",
-   "description": "Lower values are selected first when several active workers serve the same Model Cache Key.",
+   "description": "Tie-breaker only. Routing first prefers a warm worker and then the lowest current load.",
    "fieldname": "routing_priority",
    "fieldtype": "Int",
    "label": "Routing Priority",
    "reqd": 1
+  },
+  {
+   "default": "1",
+   "description": "Maximum JoyMedia attempts that may be Queued or Running on this worker.",
+   "fieldname": "max_concurrent_jobs",
+   "fieldtype": "Int",
+   "label": "Max Concurrent Jobs",
+   "reqd": 1
+  },
+  {
+   "description": "Optional estimated operating cost for one GPU hour. Leave blank when cost reporting is unavailable.",
+   "fieldname": "gpu_cost_per_hour",
+   "fieldtype": "Float",
+   "label": "GPU Cost Per Hour"
+  },
+  {
+   "description": "Current Queued or Running JoyMedia attempts assigned to this worker. Recomputed by the worker monitor.",
+   "fieldname": "active_jobs",
+   "fieldtype": "Int",
+   "label": "Active Jobs",
+   "read_only": 1
   },
   {
    "description": "Base URL for this ComfyUI worker, for example http://worker-1:8188.",
@@ -59,11 +100,48 @@
    "label": "Input Directory"
   },
   {
-   "description": "Exact Model Cache Key this worker keeps warm. Leave blank for a general-purpose fallback worker.",
+   "description": "Model cache key this worker is intended to keep warm. Leave blank for a general-purpose fallback worker.",
    "fieldname": "model_cache_key",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Model Cache Key"
+   "label": "Desired Model Cache Key"
+  },
+  {
+   "description": "Model cache key confirmed by trusted worker-side telemetry. Standard ComfyUI system statistics do not provide this value.",
+   "fieldname": "observed_model_cache_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Observed Model Cache Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "telemetry_section",
+   "fieldtype": "Section Break",
+   "label": "Worker Telemetry"
+  },
+  {
+   "fieldname": "last_heartbeat_at",
+   "fieldtype": "Datetime",
+   "label": "Last Heartbeat At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gpu_name",
+   "fieldtype": "Data",
+   "label": "GPU Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "vram_total_mib",
+   "fieldtype": "Float",
+   "label": "VRAM Total (MiB)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "vram_free_mib",
+   "fieldtype": "Float",
+   "label": "VRAM Free (MiB)",
+   "read_only": 1
   }
  ],
  "module": "JoyMedia",

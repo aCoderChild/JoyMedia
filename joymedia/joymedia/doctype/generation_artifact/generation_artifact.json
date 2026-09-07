@@ -1,0 +1,174 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "autoname": "GART-.#####",
+ "creation": "2026-09-07 09:34:58.166373",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "artifact_identity_section",
+  "artifact_key",
+  "generation_attempt",
+  "artifact_role",
+  "media_type",
+  "storage_section",
+  "storage_backend",
+  "remote_filename",
+  "remote_subfolder",
+  "remote_file_type",
+  "storage_uri",
+  "mime_type",
+  "size_bytes",
+  "retention_section",
+  "lifecycle_status",
+  "expires_at",
+  "promoted_asset_version"
+ ],
+ "fields": [
+  {
+   "fieldname": "artifact_identity_section",
+   "fieldtype": "Section Break",
+   "label": "Artifact Identity"
+  },
+  {
+   "fieldname": "artifact_key",
+   "fieldtype": "Data",
+   "label": "Artifact Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "generation_attempt",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Generation Attempt",
+   "options": "Generation Attempt",
+   "reqd": 1
+  },
+  {
+   "default": "Primary Video",
+   "fieldname": "artifact_role",
+   "fieldtype": "Select",
+   "label": "Artifact Role",
+   "options": "Primary Video\nPreview\nAudio\nMetadata\nOther"
+  },
+  {
+   "default": "Video",
+   "fieldname": "media_type",
+   "fieldtype": "Select",
+   "label": "Media Type",
+   "options": "Video\nAudio\nImage\nJSON\nOther"
+  },
+  {
+   "fieldname": "storage_section",
+   "fieldtype": "Section Break",
+   "label": "Storage"
+  },
+  {
+   "default": "ComfyUI",
+   "fieldname": "storage_backend",
+   "fieldtype": "Select",
+   "label": "Storage Backend",
+   "options": "ComfyUI\nFrappe File\nObject Storage"
+  },
+  {
+   "fieldname": "remote_filename",
+   "fieldtype": "Data",
+   "label": "Remote Filename",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remote_subfolder",
+   "fieldtype": "Data",
+   "label": "Remote Subfolder",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remote_file_type",
+   "fieldtype": "Data",
+   "label": "Remote File Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "storage_uri",
+   "fieldtype": "Data",
+   "label": "Storage URI",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mime_type",
+   "fieldtype": "Data",
+   "label": "MIME Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "size_bytes",
+   "fieldtype": "Int",
+   "label": "Size Bytes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "retention_section",
+   "fieldtype": "Section Break",
+   "label": "Retention"
+  },
+  {
+   "default": "Temporary",
+   "fieldname": "lifecycle_status",
+   "fieldtype": "Select",
+   "label": "Lifecycle Status",
+   "options": "Temporary\nRetained\nPromoted\nExpired\nDeleted"
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Expires At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "promoted_asset_version",
+   "fieldtype": "Link",
+   "label": "Promoted Asset Version",
+   "options": "Asset Version",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-07 09:48:29.561970",
+ "modified_by": "Administrator",
+ "module": "JoyMedia",
+ "name": "Generation Artifact",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "JoyMedia Specialist",
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

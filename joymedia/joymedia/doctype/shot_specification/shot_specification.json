@@ -26,8 +26,7 @@
   "ending_state",
   "continuity_requirements",
   "audio_section",
-  "audio_direction",
-  "sound_effect_asset_version"
+  "audio_direction"
  ],
  "fields": [
   {
@@ -140,13 +139,6 @@
    "fieldname": "audio_section",
    "fieldtype": "Section Break",
    "label": "Audio"
-  },
-  {
-   "description": "Optional sound effect mixed at the beginning of this shot in the final timeline.",
-   "fieldname": "sound_effect_asset_version",
-   "fieldtype": "Link",
-   "label": "Sound Effect Asset Version",
-   "options": "Asset Version"
   },
   {
    "description": "Assets assigned to workflow input roles for this shot, such as first_frame, last_frame, mask, or product_reference.",

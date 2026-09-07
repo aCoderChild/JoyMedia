@@ -158,6 +158,11 @@ app_license = "mit"
 scheduler_events = {
 	"all": [
 		"joymedia.services.result_ingestor.sync_active_attempts",
+		"joymedia.services.worker_monitor.refresh_workers",
+		"joymedia.services.generation_orchestrator.refresh_active_runs",
+	],
+	"hourly": [
+		"joymedia.services.artifact_service.expire_generation_artifacts",
 	],
 }
 

@@ -27,7 +27,6 @@ def compose_media_specification(media_specification_name: str):
 			"shot_number",
 			"duration_seconds",
 			"selected_output_asset_version",
-			"sound_effect_asset_version",
 		],
 		order_by="shot_number asc",
 	)
@@ -50,7 +49,7 @@ def compose_media_specification(media_specification_name: str):
 			_concatenate_normalized_shots(normalized_paths, silent_master_path, profile)
 			_validate_normalized_video(silent_master_path, profile)
 
-			audio_sources = _get_audio_sources(media_specification, shots, normalized_paths)
+			audio_sources = _get_audio_sources(media_specification, _get_video_duration(silent_master_path))
 			delivery_path = silent_master_path
 			if audio_sources:
 				delivery_path = temporary_path / f"{media_specification.name}.mp4"
@@ -141,36 +140,32 @@ def _get_shot_output_path(shot):
 	return path
 
 
-def _get_audio_sources(media_specification, shots, normalized_paths):
+def _get_audio_sources(media_specification, video_duration):
 	sources = []
-	if media_specification.global_bgm_asset_version:
+	for cue in media_specification.get("audio_cues") or []:
+		start_seconds = float(cue.start_seconds or 0)
+		end_seconds = min(float(cue.end_seconds or video_duration), video_duration)
+		if start_seconds >= video_duration:
+			frappe.throw(_("Audio Cue {0} starts after the composed video ends.").format(cue.idx))
+		if end_seconds <= start_seconds:
+			frappe.throw(_("Audio Cue {0} has no usable timeline duration.").format(cue.idx))
+		cue_duration = end_seconds - start_seconds
+		fade_in_seconds = float(cue.fade_in_seconds or 0)
+		fade_out_seconds = float(cue.fade_out_seconds or 0)
+		if fade_in_seconds + fade_out_seconds > cue_duration:
+			frappe.throw(_("Audio Cue {0} fades exceed its timeline duration.").format(cue.idx))
 		sources.append(
 			{
-				"path": _get_audio_asset_path(media_specification.global_bgm_asset_version),
-				"start_seconds": 0,
-				"loop": True,
+				"path": _get_audio_asset_path(cue.asset_version),
+				"start_seconds": start_seconds,
+				"duration_seconds": cue_duration,
+				"gain_db": float(cue.gain_db or 0),
+				"fade_in_seconds": fade_in_seconds,
+				"fade_out_seconds": fade_out_seconds,
+				"duck_others": bool(cue.duck_others),
+				"loop": cue.role == "BGM",
 			}
 		)
-	if media_specification.voiceover_asset_version:
-		sources.append(
-			{
-				"path": _get_audio_asset_path(media_specification.voiceover_asset_version),
-				"start_seconds": 0,
-				"loop": False,
-			}
-		)
-
-	shot_start_seconds = 0
-	for shot, normalized_path in zip(shots, normalized_paths, strict=True):
-		if shot.sound_effect_asset_version:
-			sources.append(
-				{
-					"path": _get_audio_asset_path(shot.sound_effect_asset_version),
-					"start_seconds": shot_start_seconds,
-					"loop": False,
-				}
-			)
-		shot_start_seconds += _get_video_duration(normalized_path)
 	return sources
 
 
@@ -252,25 +247,38 @@ def _concatenate_normalized_shots(paths, output_path, profile):
 
 
 def _mix_audio(silent_master_path, audio_sources, delivery_path):
-	video_duration = _get_video_duration(silent_master_path)
 	command = ["ffmpeg", "-y", "-i", str(silent_master_path)]
 	filter_parts = []
-	input_labels = []
+	duck_labels = []
+	base_labels = []
 	for index, source in enumerate(audio_sources, start=1):
 		if source["loop"]:
 			command.extend(["-stream_loop", "-1"])
 		command.extend(["-i", str(source["path"])])
 
-		filter = f"[{index}:a]atrim=duration={video_duration:.6f}"
+		filter = f"[{index}:a]atrim=duration={source['duration_seconds']:.6f},asetpts=PTS-STARTPTS"
+		filter += f",volume={source['gain_db']:.6f}dB"
+		if source["fade_in_seconds"]:
+			filter += f",afade=t=in:st=0:d={source['fade_in_seconds']:.6f}"
+		if source["fade_out_seconds"]:
+			fade_start = source["duration_seconds"] - source["fade_out_seconds"]
+			filter += f",afade=t=out:st={fade_start:.6f}:d={source['fade_out_seconds']:.6f}"
 		if source["start_seconds"]:
 			filter += f",adelay={round(source['start_seconds'] * 1000)}:all=1"
 		filter_parts.append(f"{filter}[audio{index}]")
-		input_labels.append(f"[audio{index}]")
+		(duck_labels if source["duck_others"] else base_labels).append(f"[audio{index}]")
 
-	filter_parts.append(
-		"".join(input_labels)
-		+ f"amix=inputs={len(input_labels)}:duration=longest:normalize=1,atrim=duration={video_duration:.6f}[mixed]"
-	)
+	if duck_labels:
+		_mix_labels(filter_parts, duck_labels, "duck_source")
+		if base_labels:
+			_mix_labels(filter_parts, base_labels, "base")
+			filter_parts.append("[duck_source]asplit=2[duck_sidechain][duck_mix]")
+			filter_parts.append("[base][duck_sidechain]sidechaincompress[ducked]")
+			_mix_labels(filter_parts, ["[ducked]", "[duck_mix]"], "mixed")
+		else:
+			filter_parts.append("[duck_source]anull[mixed]")
+	else:
+		_mix_labels(filter_parts, base_labels, "mixed")
 	command.extend(
 		[
 			"-filter_complex",
@@ -295,6 +303,15 @@ def _mix_audio(silent_master_path, audio_sources, delivery_path):
 		]
 	)
 	_run_ffmpeg(command)
+
+
+def _mix_labels(filter_parts, labels, output_label):
+	if len(labels) == 1:
+		filter_parts.append(f"{labels[0]}anull[{output_label}]")
+		return
+	filter_parts.append(
+		"".join(labels) + f"amix=inputs={len(labels)}:duration=longest:normalize=0[{output_label}]"
+	)
 
 
 def _inspect_video(path):

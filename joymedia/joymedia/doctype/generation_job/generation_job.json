@@ -58,6 +58,7 @@
    "fieldtype": "Select",
    "label": "Status",
    "options": "Draft\nReady\nQueued\nRunning\nCompleted\nPartially Completed\nFailed\nCancelled",
+   "read_only": 1,
    "reqd": 1
   },
   {

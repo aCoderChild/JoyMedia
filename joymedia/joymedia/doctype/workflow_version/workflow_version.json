@@ -57,6 +57,7 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Version Label",
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";",
    "reqd": 1
   },
   {
@@ -72,7 +73,8 @@
   {
    "fieldname": "change_notes",
    "fieldtype": "Small Text",
-   "label": "Change Notes"
+   "label": "Change Notes",
+   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";"
   },
   {
    "description": "Paste the entire JSON workflow you uploaded into this field",

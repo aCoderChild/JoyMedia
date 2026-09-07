@@ -3,11 +3,12 @@ name: CI
 on:
   push:
     branches:
+      - main
       - version-16
   pull_request:
 
 concurrency:
-  group: version-16-joymedia-${{ github.event.number }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -75,10 +76,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-
 
-      - name: Install MariaDB Client
+      - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt-get install mariadb-client
+          sudo apt-get install --yes mariadb-client ffmpeg
 
       - name: Setup
         run: |
