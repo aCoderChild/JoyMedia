@@ -33,6 +33,7 @@ class MediaSpecification(Document):
 
 	def validate(self):
 		self._validate_version_immutability()
+		self._validate_timeline()
 		if self.delivery_preset in self.PRESET_DIMENSIONS:
 			self.delivery_width, self.delivery_height = self.PRESET_DIMENSIONS[self.delivery_preset]
 		elif self.delivery_preset == "Custom" and (
@@ -44,6 +45,18 @@ class MediaSpecification(Document):
 			frappe.throw("Custom delivery presets require a positive width and height")
 
 		self._validate_workflow_delivery_orientation()
+
+	def on_update(self):
+		if self.has_value_changed("total_duration_seconds") or self.has_value_changed("target_fps"):
+			from joymedia.services.shot_duration_planner import recalculate_shot_durations
+
+			recalculate_shot_durations(self.name)
+
+	def _validate_timeline(self):
+		if (self.total_duration_seconds or 0) <= 0:
+			frappe.throw(_("Total Duration must be greater than zero."))
+		if (self.target_fps or 0) <= 0:
+			frappe.throw(_("Target FPS must be greater than zero."))
 
 	def _validate_version_immutability(self):
 		if self.is_new():

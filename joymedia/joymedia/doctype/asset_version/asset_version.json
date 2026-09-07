@@ -2,7 +2,7 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "autoname": "ASTV-.#####",
- "creation": "2026-09-03 08:22:10.614908",
+ "creation": "2026-09-06 17:25:01.367402",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -50,8 +50,8 @@
    "reqd": 1
   },
   {
-   "description": "How this version was created. Use Imported for footage created outside JoyMedia.",
    "default": "Uploaded",
+   "description": "How this version was created. Use Imported for footage created outside JoyMedia.",
    "fieldname": "source",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -68,24 +68,26 @@
   {
    "fieldname": "width",
    "fieldtype": "Int",
-    "label": "Width",
-    "read_only": 1
+   "label": "Width",
+   "read_only": 1
   },
   {
    "fieldname": "height",
    "fieldtype": "Int",
-    "label": "Height",
-    "read_only": 1
+   "label": "Height",
+   "read_only": 1
   },
   {
    "fieldname": "duration_seconds",
    "fieldtype": "Float",
-   "label": "Duration Seconds"
+   "label": "Duration Seconds",
+   "read_only": 1
   },
   {
    "fieldname": "fps",
    "fieldtype": "Float",
-   "label": "FPS"
+   "label": "FPS",
+   "read_only": 1
   },
   {
    "fieldname": "lineage_section",
@@ -109,7 +111,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-03 08:40:36.371399",
+ "modified": "2026-09-07 15:37:53.446697",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Asset Version",

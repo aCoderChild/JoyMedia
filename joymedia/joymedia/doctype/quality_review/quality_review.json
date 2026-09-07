@@ -141,6 +141,7 @@
    "fieldtype": "Link",
    "label": "Generation Artifact",
    "options": "Generation Artifact",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   }
  ],

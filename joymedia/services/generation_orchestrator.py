@@ -6,6 +6,7 @@ from frappe.utils import now
 
 from joymedia.joymedia.doctype.generation_attempt.generation_attempt import create_retry_attempt
 
+from .execution_router import has_configured_workers, select_worker
 from .generation_runner import prepare_generation_job, submit_attempt
 from .prompt_compiler import compile_prompt
 from .result_ingestor import sync_attempt_result
@@ -29,6 +30,10 @@ def start_run(run_name: str):
 	media_specification = frappe.get_doc("Media Specification", run.media_specification)
 	if media_specification.status != "Ready":
 		frappe.throw(_("Media Specification {0} must be Ready to start a Generation Run.").format(media_specification.name))
+
+	from .shot_duration_planner import recalculate_shot_durations
+
+	recalculate_shot_durations(media_specification.name)
 
 	run.status = "Queued"
 	run.queued_at = now()
@@ -113,10 +118,8 @@ def submit_run(run_name: str):
 		if job.status != "Queued":
 			continue
 
-		for attempt_name in _create_initial_attempts(job):
-			_submit_attempt_or_record_failure(attempt_name)
-
-		for attempt_name in _get_pending_attempt_names(job.name):
+		attempt_names = _create_initial_attempts(job) + _get_pending_attempt_names(job.name)
+		for attempt_name in dict.fromkeys(attempt_names):
 			_submit_attempt_or_record_failure(attempt_name)
 
 	return refresh_run(run.name)
@@ -140,7 +143,9 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 	for job in jobs:
 		_update_job_summary(job)
 
-	if _create_retry_attempt(run, jobs) or _get_pending_attempt_names_for_run(run.name):
+	if _create_retry_attempt(run, jobs):
+		_enqueue("submit_run", run.name)
+	elif _get_pending_attempt_names_for_run(run.name) and _has_submission_capacity(run):
 		_enqueue("submit_run", run.name)
 
 	_refresh_run_counters(run)
@@ -174,13 +179,25 @@ def enqueue_finalization_if_ready(run_name: str):
 	return _run_summary(run)
 
 
+@frappe.whitelist()
+def finalize_run_from_ui(run_name: str):
+	frappe.has_permission("Generation Run", "write", run_name, throw=True)
+	result = finalize_run(run_name)
+	frappe.db.commit()
+	return result
+
+
 def finalize_run(run_name: str):
 	"""Compose a finalizing run's approved selected outputs into its final Asset Version."""
 	run = frappe.get_doc("Generation Run", run_name)
 	refresh_run(run.name, enqueue_finalization=False)
 	run.reload()
-	if run.status != "Finalizing":
-		frappe.throw(_("Generation Run {0} must be Finalizing before composition.").format(run.name))
+	if run.status not in ("Finalizing", "Ready for Composition"):
+		frappe.throw(
+			_("Generation Run {0} must be Finalizing or Ready for Composition before composition.").format(
+				run.name
+			)
+		)
 	if run.final_asset_version:
 		return _run_summary(run)
 
@@ -330,8 +347,8 @@ def _refresh_run_counters(run):
 		if run.final_asset_version:
 			run.status = "Completed"
 			run.completed_at = run.completed_at or now()
-		elif _run_outputs_are_selected(run.name) and run.auto_compose:
-			run.status = "Finalizing"
+		elif _run_outputs_are_selected(run.name):
+			run.status = "Finalizing" if run.auto_compose else "Ready for Composition"
 			run.completed_at = None
 		else:
 			run.status = "Awaiting Review"
@@ -413,6 +430,13 @@ def _get_pending_attempt_names_for_run(run_name):
 		filters={"generation_job": ["in", job_names], "status": "Pending"},
 		pluck="name",
 	)
+
+
+def _has_submission_capacity(run):
+	"""Avoid re-enqueue churn while a configured worker pool is full or offline."""
+	if not has_configured_workers():
+		return True
+	return select_worker(run.workflow_version) is not None
 
 
 def _enqueue(method_name, run_name):

@@ -10,6 +10,23 @@ class ShotSpecification(Document):
 		self.validate_required_workflow_input_mappings()
 		self.validate_selected_output_asset_version()
 
+	def after_insert(self):
+		self._recalculate_durations()
+
+	def on_update(self):
+		previous = self.get_doc_before_save()
+		if previous and previous.media_specification != self.media_specification:
+			self._recalculate_durations(previous.media_specification)
+			self._recalculate_durations()
+
+	def after_delete(self):
+		self._recalculate_durations()
+
+	def _recalculate_durations(self, media_specification=None):
+		from joymedia.services.shot_duration_planner import recalculate_shot_durations
+
+		recalculate_shot_durations(media_specification or self.media_specification)
+
 	def validate_selected_output_asset_version(self):
 		if not self.selected_output_asset_version:
 			return

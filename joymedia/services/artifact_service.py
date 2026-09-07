@@ -10,6 +10,35 @@ from .comfyui_client import download_output
 
 
 @frappe.whitelist()
+def stream_review_artifact(quality_review_name: str):
+	"""Return an inline preview of a temporary ComfyUI video for its Quality Review."""
+	frappe.has_permission("Quality Review", "read", quality_review_name, throw=True)
+	review = frappe.get_doc("Quality Review", quality_review_name)
+	if not review.generation_artifact:
+		frappe.throw(_("Quality Review {0} has no Generation Artifact.").format(review.name))
+
+	artifact = frappe.get_doc("Generation Artifact", review.generation_artifact)
+	if artifact.lifecycle_status not in ("Temporary", "Retained"):
+		frappe.throw(_("Only Temporary or Retained Generation Artifacts can be previewed."))
+	if artifact.storage_backend != "ComfyUI" or artifact.media_type != "Video":
+		frappe.throw(_("Only ComfyUI video artifacts can currently be previewed."))
+	if not artifact.remote_filename:
+		frappe.throw(_("Generation Artifact {0} has no remote filename.").format(artifact.name))
+
+	attempt = frappe.get_doc("Generation Attempt", artifact.generation_attempt)
+	frappe.local.response.filename = Path(artifact.remote_filename).name
+	frappe.local.response.filecontent = download_output(
+		artifact.remote_filename,
+		artifact.remote_subfolder or "",
+		artifact.remote_file_type or "output",
+		base_url=attempt.comfyui_endpoint_url,
+	)
+	frappe.local.response.content_type = artifact.mime_type or "video/mp4"
+	frappe.local.response.display_content_as = "inline"
+	frappe.local.response.type = "download"
+
+
+@frappe.whitelist()
 def promote_artifact_from_ui(artifact_name: str):
 	frappe.has_permission("Generation Artifact", "write", artifact_name, throw=True)
 	result = promote_artifact(artifact_name)

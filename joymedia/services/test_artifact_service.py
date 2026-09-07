@@ -32,6 +32,41 @@ class TestArtifactExpiry(FrappeTestCase):
 
 
 class TestArtifactPromotion(FrappeTestCase):
+	@patch("joymedia.services.artifact_service.download_output", return_value=b"video-bytes")
+	@patch("joymedia.services.artifact_service.frappe.has_permission")
+	@patch("joymedia.services.artifact_service.frappe.get_doc")
+	def test_quality_review_can_stream_a_temporary_video_artifact(
+		self, get_doc, has_permission, download_output
+	):
+		review = frappe._dict(name="QREV-00001", generation_artifact="GART-00001")
+		artifact = frappe._dict(
+			name="GART-00001",
+			lifecycle_status="Temporary",
+			storage_backend="ComfyUI",
+			media_type="Video",
+			remote_filename="outputs/video.mp4",
+			remote_subfolder="outputs",
+			remote_file_type="output",
+			mime_type=None,
+			generation_attempt="ATT-00001",
+		)
+		attempt = frappe._dict(comfyui_endpoint_url="http://worker:8188")
+		get_doc.side_effect = [review, artifact, attempt]
+
+		from joymedia.services.artifact_service import stream_review_artifact
+
+		stream_review_artifact(review.name)
+
+		has_permission.assert_called_once_with("Quality Review", "read", review.name, throw=True)
+		download_output.assert_called_once_with(
+			"outputs/video.mp4", "outputs", "output", base_url="http://worker:8188"
+		)
+		self.assertEqual(frappe.local.response.filename, "video.mp4")
+		self.assertEqual(frappe.local.response.filecontent, b"video-bytes")
+		self.assertEqual(frappe.local.response.content_type, "video/mp4")
+		self.assertEqual(frappe.local.response.display_content_as, "inline")
+		self.assertEqual(frappe.local.response.type, "download")
+
 	@patch("joymedia.services.artifact_service.download_output")
 	@patch("joymedia.services.artifact_service.frappe.has_permission")
 	@patch("joymedia.services.artifact_service.frappe.db.exists", return_value=False)

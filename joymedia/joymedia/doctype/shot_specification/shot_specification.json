@@ -10,6 +10,7 @@
   "media_specification",
   "shot_number",
   "shot_name",
+  "planned_frame_count",
   "duration_seconds",
   "generation_inputs",
   "selected_output_section",
@@ -61,7 +62,17 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Duration (Seconds)",
+   "read_only": 1,
+   "default": "0",
+   "description": "Derived from the Media Specification total duration and number of Shots. Not directly editable.",
    "reqd": 1
+  },
+  {
+   "fieldname": "planned_frame_count",
+   "fieldtype": "Int",
+   "label": "Planned Frame Count",
+   "read_only": 1,
+   "description": "Frame-exact share of the Media Specification timeline assigned to this shot."
   },
   {
    "description": "Purpose of this shot independently within the final video.",

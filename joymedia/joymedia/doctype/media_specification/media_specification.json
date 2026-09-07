@@ -147,6 +147,7 @@
    "label": "Acceptance Criteria"
   },
   {
+   "description": "Canonical intended duration for the final media. Shot durations are derived from this value in frames.",
    "fieldname": "total_duration_seconds",
    "fieldtype": "Float",
    "label": "Total Duration (Seconds)",
