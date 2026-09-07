@@ -12,7 +12,7 @@ from .result_ingestor import sync_attempt_result
 from .video_composer import compose_media_specification
 
 
-ACTIVE_RUN_STATUSES = ("Queued", "Running")
+ACTIVE_RUN_STATUSES = ("Queued", "Running", "Finalizing")
 ACTIVE_ATTEMPT_STATUSES = ("Pending", "Queued", "Running")
 TERMINAL_ATTEMPT_STATUSES = ("Completed", "Failed", "Cancelled")
 TERMINAL_JOB_STATUSES = ("Completed", "Partially Completed", "Failed", "Cancelled")
@@ -175,12 +175,12 @@ def enqueue_finalization_if_ready(run_name: str):
 
 
 def finalize_run(run_name: str):
-	"""Compose a completed run's selected outputs into its final Asset Version."""
+	"""Compose a finalizing run's approved selected outputs into its final Asset Version."""
 	run = frappe.get_doc("Generation Run", run_name)
 	refresh_run(run.name, enqueue_finalization=False)
 	run.reload()
-	if run.status != "Completed":
-		frappe.throw(_("Generation Run {0} must complete before finalization.").format(run.name))
+	if run.status != "Finalizing":
+		frappe.throw(_("Generation Run {0} must be Finalizing before composition.").format(run.name))
 	if run.final_asset_version:
 		return _run_summary(run)
 
@@ -191,6 +191,8 @@ def finalize_run(run_name: str):
 		return _run_summary(run)
 
 	run.final_asset_version = result["final_asset_version"]
+	run.status = "Completed"
+	run.completed_at = now()
 	run.save(ignore_permissions=True)
 	return _run_summary(run)
 
@@ -325,8 +327,15 @@ def _refresh_run_counters(run):
 	terminal_jobs = sum(job.status in TERMINAL_JOB_STATUSES for job in jobs)
 	partially_completed_jobs = sum(job.status == "Partially Completed" for job in jobs)
 	if run.total_jobs and run.completed_jobs == run.total_jobs:
-		run.status = "Completed"
-		run.completed_at = run.completed_at or now()
+		if run.final_asset_version:
+			run.status = "Completed"
+			run.completed_at = run.completed_at or now()
+		elif _run_outputs_are_selected(run.name) and run.auto_compose:
+			run.status = "Finalizing"
+			run.completed_at = None
+		else:
+			run.status = "Awaiting Review"
+			run.completed_at = None
 	elif run.total_jobs and terminal_jobs == run.total_jobs:
 		run.status = "Partially Completed" if run.completed_jobs or partially_completed_jobs else "Failed"
 		run.completed_at = run.completed_at or now()
@@ -337,7 +346,7 @@ def _refresh_run_counters(run):
 
 def _enqueue_finalization_if_ready(run):
 	if (
-		run.status != "Completed"
+		run.status != "Finalizing"
 		or not run.auto_compose
 		or run.final_asset_version
 		or not _run_outputs_are_selected(run.name)

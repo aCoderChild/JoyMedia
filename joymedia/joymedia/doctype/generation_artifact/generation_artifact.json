@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_bulk_edit": 1,
+ "allow_bulk_edit": 0,
  "autoname": "GART-.#####",
  "creation": "2026-09-07 09:34:58.166373",
  "doctype": "DocType",
@@ -43,6 +43,7 @@
    "in_list_view": 1,
    "label": "Generation Attempt",
    "options": "Generation Attempt",
+   "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
@@ -90,18 +91,21 @@
    "read_only": 1
   },
   {
+   "description": "Optional remote object URI. It is blank when the source does not provide one.",
    "fieldname": "storage_uri",
    "fieldtype": "Data",
    "label": "Storage URI",
    "read_only": 1
   },
   {
+   "description": "Optional source metadata. It is blank when the source does not provide it.",
    "fieldname": "mime_type",
    "fieldtype": "Data",
    "label": "MIME Type",
    "read_only": 1
   },
   {
+   "description": "Optional source metadata. It is blank when the source does not provide it.",
    "fieldname": "size_bytes",
    "fieldtype": "Int",
    "label": "Size Bytes",
@@ -114,12 +118,14 @@
   },
   {
    "default": "Temporary",
+   "description": "Expired prevents promotion in JoyMedia. It does not delete the remote ComfyUI or object-storage file.",
    "fieldname": "lifecycle_status",
    "fieldtype": "Select",
    "label": "Lifecycle Status",
    "options": "Temporary\nRetained\nPromoted\nExpired\nDeleted"
   },
   {
+   "description": "Logical expiry time. Physical deletion requires a worker cleanup API or storage lifecycle policy.",
    "fieldname": "expires_at",
    "fieldtype": "Datetime",
    "label": "Expires At",

@@ -11,8 +11,14 @@ from .comfyui_client import download_output
 
 @frappe.whitelist()
 def promote_artifact_from_ui(artifact_name: str):
-	"""Persist a completed ComfyUI artifact as a project-scoped shot-output asset."""
 	frappe.has_permission("Generation Artifact", "write", artifact_name, throw=True)
+	result = promote_artifact(artifact_name)
+	frappe.db.commit()
+	return result
+
+
+def promote_artifact(artifact_name: str):
+	"""Persist an approved ComfyUI artifact as a project-scoped shot-output asset."""
 	artifact = frappe.get_doc("Generation Artifact", artifact_name)
 
 	if artifact.lifecycle_status == "Promoted":
@@ -27,6 +33,10 @@ def promote_artifact_from_ui(artifact_name: str):
 		frappe.throw(_("Only primary video artifacts can currently be promoted."))
 	if not artifact.remote_filename:
 		frappe.throw(_("Generation Artifact {0} has no remote filename.").format(artifact.name))
+	if not frappe.db.exists(
+		"Quality Review", {"generation_artifact": artifact.name, "status": "Approved"}
+	):
+		frappe.throw(_("Generation Artifact {0} requires an approved Quality Review before promotion.").format(artifact.name))
 
 	attempt = frappe.get_doc("Generation Attempt", artifact.generation_attempt)
 	if attempt.status != "Completed":
@@ -70,8 +80,6 @@ def promote_artifact_from_ui(artifact_name: str):
 	artifact.save(ignore_permissions=True)
 	attempt.output_asset_version = asset_version.name
 	attempt.save(ignore_permissions=True)
-	_create_pending_quality_review(shot.name, attempt.name, asset_version.name)
-	frappe.db.commit()
 	return {"asset_version": asset_version.name}
 
 
@@ -95,31 +103,8 @@ def _get_or_create_shot_output_asset(shot_name, media_project):
 	return media_asset
 
 
-def _create_pending_quality_review(shot_name, attempt_name, asset_version_name):
-	if frappe.db.exists(
-		"Quality Review",
-		{
-			"generation_attempt": attempt_name,
-			"asset_version": asset_version_name,
-			"review_type": "Automated",
-		},
-	):
-		return
-
-	frappe.get_doc(
-		{
-			"doctype": "Quality Review",
-			"shot_specification": shot_name,
-			"generation_attempt": attempt_name,
-			"asset_version": asset_version_name,
-			"review_type": "Automated",
-			"status": "Pending",
-		}
-	).insert(ignore_permissions=True)
-
-
 def expire_generation_artifacts():
-	"""Mark expired temporary artifacts unavailable for later promotion."""
+	"""Logically expire temporary artifacts; remote content is not deleted in Phase 1."""
 	artifacts = frappe.get_all(
 		"Generation Artifact",
 		filters={
@@ -130,6 +115,7 @@ def expire_generation_artifacts():
 	)
 	for name in artifacts:
 		artifact = frappe.get_doc("Generation Artifact", name)
+		# Physical cleanup requires a worker deletion API or an object-storage lifecycle policy.
 		artifact.lifecycle_status = "Expired"
 		artifact.save(ignore_permissions=True)
 	frappe.db.commit()

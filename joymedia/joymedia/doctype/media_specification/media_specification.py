@@ -4,10 +4,25 @@
 from typing import ClassVar
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
 class MediaSpecification(Document):
+	IDENTITY_FIELDS: ClassVar[tuple[str, ...]] = ("media_project", "version_number")
+	EXECUTION_CONTRACT_FIELDS: ClassVar[tuple[str, ...]] = (
+		"generation_workflow_version",
+		"prompt_template_version",
+		"total_duration_seconds",
+		"delivery_preset",
+		"delivery_width",
+		"delivery_height",
+		"target_fps",
+		"required_elements",
+		"consistency_requirements",
+		"forbidden_elements",
+		"acceptance_criteria",
+	)
 	PRESET_DIMENSIONS: ClassVar[dict[str, tuple[int, int]]] = {
 		"Landscape 720p": (1280, 720),
 		"Landscape 1080p": (1920, 1080),
@@ -17,6 +32,7 @@ class MediaSpecification(Document):
 	}
 
 	def validate(self):
+		self._validate_version_immutability()
 		if self.delivery_preset in self.PRESET_DIMENSIONS:
 			self.delivery_width, self.delivery_height = self.PRESET_DIMENSIONS[self.delivery_preset]
 		elif self.delivery_preset == "Custom" and (
@@ -28,6 +44,43 @@ class MediaSpecification(Document):
 			frappe.throw("Custom delivery presets require a positive width and height")
 
 		self._validate_workflow_delivery_orientation()
+
+	def _validate_version_immutability(self):
+		if self.is_new():
+			return
+
+		previous = self.get_doc_before_save()
+		if not previous:
+			return
+
+		for fieldname in MediaSpecification.IDENTITY_FIELDS:
+			if self.get(fieldname) != previous.get(fieldname):
+				frappe.throw(_("Media Specification {0} cannot be changed after creation.").format(fieldname))
+
+		if previous.status != "Draft" and self.status == "Draft":
+			frappe.throw(_("A Ready, Superseded, or Archived Media Specification cannot return to Draft."))
+
+		if not MediaSpecification._execution_has_started(self):
+			return
+
+		for fieldname in MediaSpecification.EXECUTION_CONTRACT_FIELDS:
+			if self.get(fieldname) != previous.get(fieldname):
+				frappe.throw(
+					_("Execution contract field {0} cannot change after Generation Jobs or Runs exist.").format(
+						fieldname
+					)
+				)
+
+	def _execution_has_started(self):
+		if frappe.db.exists("Generation Run", {"media_specification": self.name}):
+			return True
+		shot_names = frappe.get_all(
+			"Shot Specification", filters={"media_specification": self.name}, pluck="name"
+		)
+		return bool(
+			shot_names
+			and frappe.db.exists("Generation Job", {"shot_specification": ["in", shot_names]})
+		)
 
 	def _validate_workflow_delivery_orientation(self):
 		"""Reject a workflow whose configured execution orientation contradicts delivery."""

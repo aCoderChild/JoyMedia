@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from joymedia.services.result_ingestor import _create_primary_artifact
+from joymedia.services.result_ingestor import _create_pending_quality_review, _create_primary_artifact
 
 
 class TestGenerationArtifactCreation(FrappeTestCase):
@@ -54,3 +54,26 @@ class TestGenerationArtifactCreation(FrappeTestCase):
 		self.assertIs(result, artifact)
 		get_doc.assert_called_once_with("Generation Artifact", "GART-00001")
 		artifact.insert.assert_not_called()
+
+	@patch("joymedia.services.result_ingestor.frappe.get_doc")
+	@patch("joymedia.services.result_ingestor.frappe.db.get_value", return_value="SHOT-00001")
+	@patch("joymedia.services.result_ingestor.frappe.db.exists", return_value=False)
+	def test_completed_artifact_creates_a_pending_quality_review(self, exists, get_value, get_doc):
+		review = MagicMock()
+		get_doc.return_value = review
+		attempt = frappe._dict(name="ATT-00001", generation_job="JOB-00001")
+		artifact = frappe._dict(name="GART-00001")
+
+		_create_pending_quality_review(attempt, artifact)
+
+		get_doc.assert_called_once_with(
+			{
+				"doctype": "Quality Review",
+				"shot_specification": "SHOT-00001",
+				"generation_attempt": "ATT-00001",
+				"generation_artifact": "GART-00001",
+				"review_type": "Automated",
+				"status": "Pending",
+			}
+		)
+		review.insert.assert_called_once_with(ignore_permissions=True)

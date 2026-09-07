@@ -38,6 +38,11 @@ def select_worker(workflow_version_name: str):
 	)
 
 
+def has_configured_workers():
+	"""Whether this site has opted into managed ComfyUI Worker routing."""
+	return bool(frappe.db.exists("ComfyUI Worker"))
+
+
 def get_worker(worker_name: str | None):
 	if not worker_name:
 		return None

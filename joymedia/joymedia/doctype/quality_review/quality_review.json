@@ -1,14 +1,14 @@
 {
  "actions": [],
- "allow_bulk_edit": 0,
- "allow_rename": 0,
  "autoname": "QREV-.#####",
+ "creation": "2026-09-07 09:16:23.266936",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "review_context_section",
   "shot_specification",
   "generation_attempt",
+  "generation_artifact",
   "asset_version",
   "review_type",
   "status",
@@ -48,13 +48,14 @@
    "reqd": 1
   },
   {
+   "description": "populated after promotion",
    "fieldname": "asset_version",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Asset Version",
    "options": "Asset Version",
-   "read_only_depends_on": "eval:!doc.__islocal;",
-   "reqd": 1
+   "read_only": 1,
+   "read_only_depends_on": "eval:!doc.__islocal;"
   },
   {
    "fieldname": "review_type",
@@ -80,21 +81,25 @@
    "label": "Quality Scores"
   },
   {
+   "description": "Normalized machine score from 0.0 to 1.0. UI may display it as a percentage.",
    "fieldname": "visual_quality_score",
    "fieldtype": "Float",
    "label": "Visual Quality Score"
   },
   {
+   "description": "Normalized machine score from 0.0 to 1.0. UI may display it as a percentage.",
    "fieldname": "identity_score",
    "fieldtype": "Float",
    "label": "Identity Score"
   },
   {
+   "description": "Normalized machine score from 0.0 to 1.0. UI may display it as a percentage.",
    "fieldname": "temporal_consistency_score",
    "fieldtype": "Float",
    "label": "Temporal Consistency Score"
   },
   {
+   "description": "Normalized machine score from 0.0 to 1.0. UI may display it as a percentage.",
    "fieldname": "prompt_adherence_score",
    "fieldtype": "Float",
    "label": "Prompt Adherence Score"
@@ -129,11 +134,23 @@
    "fieldname": "notes",
    "fieldtype": "Long Text",
    "label": "Notes"
+  },
+  {
+   "description": "primary review target",
+   "fieldname": "generation_artifact",
+   "fieldtype": "Link",
+   "label": "Generation Artifact",
+   "options": "Generation Artifact",
+   "reqd": 1
   }
  ],
+ "links": [],
+ "modified": "2026-09-07 10:57:41.111289",
+ "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Quality Review",
  "naming_rule": "Expression",
+ "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -159,7 +176,9 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
+ "states": [],
  "track_changes": 1
 }

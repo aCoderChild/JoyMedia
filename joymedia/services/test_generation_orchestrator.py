@@ -48,6 +48,37 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(run.status, "Running")
 		run.save.assert_called_once_with(ignore_permissions=True)
 
+	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=False)
+	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
+	def test_completed_execution_awaits_output_review(self, get_all, outputs_are_selected):
+		run = MagicMock()
+		run.name = "RUN-00001"
+		run.completed_at = None
+		run.final_asset_version = None
+		run.auto_compose = 1
+		get_all.return_value = [frappe._dict(status="Completed"), frappe._dict(status="Completed")]
+
+		generation_orchestrator._refresh_run_counters(run)
+
+		self.assertEqual(run.status, "Awaiting Review")
+		self.assertIsNone(run.completed_at)
+		outputs_are_selected.assert_called_once_with(run.name)
+
+	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=True)
+	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
+	def test_approved_outputs_move_a_run_to_finalizing(self, get_all, outputs_are_selected):
+		run = MagicMock()
+		run.name = "RUN-00001"
+		run.completed_at = None
+		run.final_asset_version = None
+		run.auto_compose = 1
+		get_all.return_value = [frappe._dict(status="Completed")]
+
+		generation_orchestrator._refresh_run_counters(run)
+
+		self.assertEqual(run.status, "Finalizing")
+		self.assertIsNone(run.completed_at)
+
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
 	def test_job_is_partially_completed_when_terminal_attempts_include_successes_and_failures(self, get_all):
 		job = frappe._dict(name="JOB-00001", requested_variants=2, completed_at=None)
@@ -67,12 +98,35 @@ class TestGenerationOrchestrator(FrappeTestCase):
 
 	@patch("joymedia.services.generation_orchestrator._enqueue")
 	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=True)
-	def test_completed_run_with_selected_outputs_queues_finalization(self, outputs_are_selected, enqueue):
+	def test_finalizing_run_with_selected_outputs_queues_finalization(self, outputs_are_selected, enqueue):
 		run = frappe._dict(
-			name="RUN-00001", status="Completed", auto_compose=1, final_asset_version=None
+			name="RUN-00001", status="Finalizing", auto_compose=1, final_asset_version=None
 		)
 
 		generation_orchestrator._enqueue_finalization_if_ready(run)
 
 		outputs_are_selected.assert_called_once_with(run.name)
 		enqueue.assert_called_once_with("finalize_run", run.name)
+
+	@patch("joymedia.services.generation_orchestrator.compose_media_specification")
+	@patch("joymedia.services.generation_orchestrator.refresh_run")
+	@patch("joymedia.services.generation_orchestrator.frappe.get_doc")
+	def test_finalization_sets_completed_only_after_composition(
+		self, get_doc, refresh_run, compose_media_specification
+	):
+		run = MagicMock()
+		run.name = "RUN-00001"
+		run.status = "Finalizing"
+		run.media_specification = "SPEC-00001"
+		run.final_asset_version = None
+		get_doc.return_value = run
+		compose_media_specification.return_value = {"final_asset_version": "ASTV-00001"}
+
+		generation_orchestrator.finalize_run(run.name)
+
+		refresh_run.assert_called_once_with(run.name, enqueue_finalization=False)
+		compose_media_specification.assert_called_once_with("SPEC-00001")
+		self.assertEqual(run.status, "Completed")
+		self.assertEqual(run.final_asset_version, "ASTV-00001")
+		self.assertIsNotNone(run.completed_at)
+		run.save.assert_called_once_with(ignore_permissions=True)

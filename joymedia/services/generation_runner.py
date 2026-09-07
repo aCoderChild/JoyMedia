@@ -3,7 +3,7 @@ from frappe import _
 from frappe.utils import now
 
 from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file
-from .execution_router import select_worker
+from .execution_router import has_configured_workers, select_worker
 from .worker_monitor import refresh_worker
 from .result_ingestor import sync_attempt_result
 from .workflow_resolver import resolve_attempt
@@ -80,6 +80,11 @@ def submit_attempt(attempt_name: str):
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
 	job.validate_for_execution()
 	worker = select_worker(job.workflow_version)
+	if worker is None and has_configured_workers():
+		return {
+			"deferred": True,
+			"reason": _("No healthy ComfyUI Worker currently has available capacity."),
+		}
 	staged_inputs = _stage_generation_inputs(job, worker)
 	workflow = resolve_attempt(attempt.name, staged_inputs=staged_inputs)
 	attempt.reload()

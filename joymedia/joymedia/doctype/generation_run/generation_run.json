@@ -66,12 +66,13 @@
   },
   {
    "default": "Draft",
+   "description": "Completed requires the final Asset Version. Awaiting Review means execution completed but approved shot outputs are still missing.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Draft\nReady\nQueued\nRunning\nCompleted\nPartially Completed\nFailed\nCancelled",
+   "options": "Draft\nQueued\nRunning\nAwaiting Review\nFinalizing\nCompleted\nPartially Completed\nFailed\nCancelled",
    "read_only": 1,
    "reqd": 1
   },
