@@ -16,6 +16,8 @@ class TestArtifactExpiry(FrappeTestCase):
 	):
 		first_artifact = MagicMock()
 		second_artifact = MagicMock()
+		first_artifact.frappe_file = None
+		second_artifact.frappe_file = None
 		get_doc.side_effect = [first_artifact, second_artifact]
 
 		expire_generation_artifacts()

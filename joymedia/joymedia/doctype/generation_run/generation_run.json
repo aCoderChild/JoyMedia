@@ -27,6 +27,7 @@
   "started_at",
   "completed_at",
   "final_asset_version",
+  "failure_class",
   "error_summary"
  ],
  "fields": [
@@ -184,6 +185,12 @@
    "fieldtype": "Link",
    "label": "Final Asset Version",
    "options": "Asset Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "failure_class",
+   "fieldtype": "Data",
+   "label": "Failure Class",
    "read_only": 1
   },
   {

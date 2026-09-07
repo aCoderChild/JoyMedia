@@ -13,6 +13,7 @@
   "media_type",
   "storage_section",
   "storage_backend",
+  "frappe_file",
   "remote_filename",
   "remote_subfolder",
   "remote_file_type",
@@ -71,6 +72,13 @@
    "fieldtype": "Select",
    "label": "Storage Backend",
    "options": "ComfyUI\nFrappe File\nObject Storage"
+  },
+  {
+   "description": "Temporary private video downloaded into Frappe for Quality Review. It is retained until promotion or expiry.",
+   "fieldname": "frappe_file",
+   "fieldtype": "Attach",
+   "label": "Frappe File",
+   "read_only": 1
   },
   {
    "fieldname": "remote_filename",

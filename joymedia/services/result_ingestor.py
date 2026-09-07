@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
+from pathlib import Path
 
 import frappe
 from frappe import _
 from frappe.utils import add_to_date, get_datetime, now, now_datetime
 
-from .comfyui_client import get_history
+from .comfyui_client import download_output, get_history
 from .execution_router import get_worker
 
 
@@ -34,6 +35,8 @@ def sync_active_attempts():
 def sync_attempt_result(attempt_name):
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	if attempt.status == "Completed" and attempt.output_artifact:
+		artifact = frappe.get_doc("Generation Artifact", attempt.output_artifact)
+		_store_artifact_file_in_frappe(artifact, attempt)
 		_refresh_parent_execution_state(attempt.name)
 		return {
 			"status": attempt.status,
@@ -77,6 +80,7 @@ def sync_attempt_result(attempt_name):
 		frappe.throw(_("ComfyUI completed without a primary MP4 output."))
 
 	artifact = _create_primary_artifact(attempt, output)
+	_store_artifact_file_in_frappe(artifact, attempt)
 	attempt.output_artifact = artifact.name
 	attempt.status = "Completed"
 	if not attempt.started_at:
@@ -114,6 +118,39 @@ def _create_primary_artifact(attempt, output):
 		}
 	)
 	artifact.insert(ignore_permissions=True)
+	return artifact
+
+
+def _store_artifact_file_in_frappe(artifact, attempt):
+	"""Copy a temporary ComfyUI output into Frappe for review without promoting it."""
+	if artifact.frappe_file:
+		return artifact
+	if not artifact.remote_filename:
+		frappe.throw(_("Generation Artifact {0} has no remote filename.").format(artifact.name))
+
+	video_bytes = download_output(
+		artifact.remote_filename,
+		artifact.remote_subfolder or "",
+		artifact.remote_file_type or "output",
+		base_url=attempt.comfyui_endpoint_url,
+	)
+	file_doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": Path(artifact.remote_filename).name,
+			"content": video_bytes,
+			"is_private": 1,
+			"attached_to_doctype": "Generation Artifact",
+			"attached_to_name": artifact.name,
+		}
+	)
+	file_doc.insert(ignore_permissions=True)
+	artifact.storage_backend = "Frappe File"
+	artifact.frappe_file = file_doc.file_url
+	artifact.storage_uri = file_doc.file_url
+	artifact.mime_type = "video/mp4"
+	artifact.size_bytes = len(video_bytes)
+	artifact.save(ignore_permissions=True)
 	return artifact
 
 

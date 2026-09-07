@@ -58,7 +58,7 @@ def create_retry_attempt(failed_attempt_name: str, reason: str):
 		frappe.throw(_("Only failed Generation Attempts can be retried."))
 
 	job = frappe.get_doc("Generation Job", failed_attempt.generation_job)
-	if job.status not in ("Ready", "Queued", "Failed"):
+	if job.status not in ("Ready", "Queued", "Partially Completed", "Failed"):
 		frappe.throw(
 			_("Generation Job {0} cannot be retried from status {1}.").format(job.name, job.status)
 		)

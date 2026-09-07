@@ -73,6 +73,32 @@ class TestGenerationAttempt(FrappeTestCase):
 		)
 		retry_attempt.insert.assert_called_once_with(ignore_permissions=True)
 
+	def test_partially_completed_job_can_create_a_retry_attempt(self):
+		failed_attempt = frappe._dict(
+			name="ATT-00001", status="Failed", generation_job="JOB-00001", seed=42
+		)
+		job = frappe._dict(name="JOB-00001", status="Partially Completed")
+		job.save = MagicMock()
+		retry_attempt = MagicMock()
+		retry_attempt.insert.return_value = retry_attempt
+
+		with (
+			patch(
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.has_permission"
+			),
+			patch(
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt._validate_retry_reason"
+			),
+			patch(
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.get_doc",
+				side_effect=[failed_attempt, job, retry_attempt],
+			),
+		):
+			result = create_retry_attempt(failed_attempt.name, "Execution Failure")
+
+		self.assertIs(result, retry_attempt)
+		self.assertEqual("Queued", job.status)
+
 	def test_failed_attempt_cannot_be_submitted_again(self):
 		attempt = frappe._dict(name="ATT-00001", status="Failed")
 		with patch("joymedia.services.generation_runner.frappe.get_doc", return_value=attempt):

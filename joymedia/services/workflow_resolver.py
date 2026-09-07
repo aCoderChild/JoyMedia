@@ -52,12 +52,13 @@ def _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs):
 def _resolve_generation_input(job, required_role, staged_inputs):
 	if not required_role:
 		frappe.throw(_("Generation Input binding requires Required Input Role."))
-	staged_value = staged_inputs.get(required_role)
+	normalized_role = frappe.scrub(required_role)
+	staged_value = staged_inputs.get(normalized_role)
 	if staged_value:
 		return staged_value
 	frappe.throw(
 		_("No staged ComfyUI input found for role '{0}' on Generation Job {1}.").format(
-			required_role, job.name
+			normalized_role, job.name
 		)
 	)
 

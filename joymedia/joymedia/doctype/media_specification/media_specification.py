@@ -44,8 +44,6 @@ class MediaSpecification(Document):
 		):
 			frappe.throw("Custom delivery presets require a positive width and height")
 
-		self._validate_workflow_delivery_orientation()
-
 	def on_update(self):
 		if self.has_value_changed("total_duration_seconds") or self.has_value_changed("target_fps"):
 			from joymedia.services.shot_duration_planner import recalculate_shot_durations
@@ -94,37 +92,3 @@ class MediaSpecification(Document):
 			shot_names
 			and frappe.db.exists("Generation Job", {"shot_specification": ["in", shot_names]})
 		)
-
-	def _validate_workflow_delivery_orientation(self):
-		"""Reject a workflow whose configured execution orientation contradicts delivery."""
-		if not (
-			self.generation_workflow_version
-			and self.delivery_width
-			and self.delivery_height
-		):
-			return
-
-		workflow_dimensions = frappe.db.get_value(
-			"Workflow Version",
-			self.generation_workflow_version,
-			["execution_width", "execution_height"],
-			as_dict=True,
-		)
-		if not (
-			workflow_dimensions
-			and workflow_dimensions.execution_width
-			and workflow_dimensions.execution_height
-		):
-			return
-
-		delivery_orientation = (self.delivery_width > self.delivery_height) - (
-			self.delivery_width < self.delivery_height
-		)
-		execution_orientation = (
-			workflow_dimensions.execution_width > workflow_dimensions.execution_height
-		) - (workflow_dimensions.execution_width < workflow_dimensions.execution_height)
-		if delivery_orientation != execution_orientation:
-			frappe.throw(
-			"Generation Workflow Version execution dimensions must have the same orientation "
-			"as the Media Specification delivery dimensions."
-			)

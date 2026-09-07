@@ -24,6 +24,7 @@
   "result_summary_section",
   "successful_variants",
   "failed_variants",
+  "failure_class",
   "error_summary"
  ],
  "fields": [
@@ -143,6 +144,12 @@
    "fieldname": "failed_variants",
    "fieldtype": "Int",
    "label": "Failed Variants",
+   "read_only": 1
+  },
+  {
+   "fieldname": "failure_class",
+   "fieldtype": "Data",
+   "label": "Failure Class",
    "read_only": 1
   },
   {

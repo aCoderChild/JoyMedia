@@ -2,6 +2,7 @@ import secrets
 
 import frappe
 from frappe import _
+from frappe.utils.synchronization import filelock
 from frappe.utils import now
 
 from joymedia.joymedia.doctype.generation_attempt.generation_attempt import create_retry_attempt
@@ -94,35 +95,36 @@ def prepare_run(run_name: str):
 
 def submit_run(run_name: str):
 	"""Create and submit outstanding attempts for prepared Jobs in this run."""
-	run = frappe.get_doc("Generation Run", run_name)
-	if run.status == "Cancelled":
-		return _run_summary(run)
-	if run.status not in ACTIVE_RUN_STATUSES:
-		return _run_summary(run)
+	with filelock(f"joymedia-submit-run-{run_name}"):
+		run = frappe.get_doc("Generation Run", run_name)
+		if run.status == "Cancelled":
+			return _run_summary(run)
+		if run.status not in ACTIVE_RUN_STATUSES:
+			return _run_summary(run)
 
-	run.status = "Running"
-	if not run.started_at:
-		run.started_at = now()
-	run.save(ignore_permissions=True)
+		run.status = "Running"
+		if not run.started_at:
+			run.started_at = now()
+		run.save(ignore_permissions=True)
 
-	for job_name in _get_run_job_names(run.name):
-		job = frappe.get_doc("Generation Job", job_name)
-		if job.status in ("Completed", "Partially Completed", "Failed", "Cancelled", "Running"):
-			continue
+		for job_name in _get_run_job_names(run.name):
+			job = frappe.get_doc("Generation Job", job_name)
+			if job.status in ("Completed", "Partially Completed", "Failed", "Cancelled", "Running"):
+				continue
 
-		if job.status == "Ready":
-			job.status = "Queued"
-			job.queued_at = now()
-			job.save(ignore_permissions=True)
+			if job.status == "Ready":
+				job.status = "Queued"
+				job.queued_at = now()
+				job.save(ignore_permissions=True)
 
-		if job.status != "Queued":
-			continue
+			if job.status != "Queued":
+				continue
 
-		attempt_names = _create_initial_attempts(job) + _get_pending_attempt_names(job.name)
-		for attempt_name in dict.fromkeys(attempt_names):
-			_submit_attempt_or_record_failure(attempt_name)
+			attempt_names = _create_initial_attempts(job) + _get_pending_attempt_names(job.name)
+			for attempt_name in dict.fromkeys(attempt_names):
+				_submit_attempt_or_record_failure(attempt_name)
 
-	return refresh_run(run.name)
+		return refresh_run(run.name)
 
 
 def refresh_run(run_name: str, enqueue_finalization: bool = True):
@@ -145,7 +147,7 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 
 	if _create_retry_attempt(run, jobs):
 		_enqueue("submit_run", run.name)
-	elif _get_pending_attempt_names_for_run(run.name) and _has_submission_capacity(run):
+	elif _has_submittable_work(run.name) and _has_submission_capacity(run):
 		_enqueue("submit_run", run.name)
 
 	_refresh_run_counters(run)
@@ -185,6 +187,56 @@ def finalize_run_from_ui(run_name: str):
 	result = finalize_run(run_name)
 	frappe.db.commit()
 	return result
+
+
+@frappe.whitelist()
+def retry_failed_jobs_from_ui(run_name: str):
+	"""Retry and submit the latest failed Attempt chain for every failed Job in a Run."""
+	frappe.has_permission("Generation Run", "write", run_name, throw=True)
+	with filelock(f"joymedia-retry-run-{run_name}"):
+		run = frappe.get_doc("Generation Run", run_name)
+		if run.status not in ("Failed", "Partially Completed"):
+			frappe.throw(_("Only Failed or Partially Completed runs can be retried."))
+
+		job_names = frappe.get_all(
+			"Generation Job",
+			filters={
+				"generation_run": run.name,
+				"status": ["in", ["Failed", "Partially Completed"]],
+			},
+			pluck="name",
+		)
+		if not job_names:
+			frappe.throw(_("This run has no failed Jobs to retry."))
+
+		results = []
+		for job_name in job_names:
+			job = frappe.get_doc("Generation Job", job_name)
+			results.extend(_retry_and_submit_latest_failed_attempts(job, "Execution Failure"))
+
+		if not results:
+			frappe.throw(_("No retry Attempts could be created."))
+
+		frappe.db.commit()
+		run.reload()
+		return {"run": run.name, "status": run.status, "attempts": results}
+
+
+@frappe.whitelist()
+def retry_generation_job_from_ui(job_name: str, reason: str = "Execution Failure"):
+	"""Create and immediately submit successor Attempts for a failed Job."""
+	frappe.has_permission("Generation Job", "write", job_name, throw=True)
+	with filelock(f"joymedia-retry-job-{job_name}"):
+		job = frappe.get_doc("Generation Job", job_name)
+		if job.status not in ("Failed", "Partially Completed"):
+			frappe.throw(_("Only Failed or Partially Completed Generation Jobs can be retried."))
+
+		results = _retry_and_submit_latest_failed_attempts(job, reason)
+		if not results:
+			frappe.throw(_("This Generation Job has no failed Attempts to retry."))
+
+		frappe.db.commit()
+		return {"generation_job": job.name, "attempts": results}
 
 
 def finalize_run(run_name: str):
@@ -290,9 +342,34 @@ def _create_retry_attempt(run, jobs):
 	return False
 
 
+def _retry_and_submit_latest_failed_attempts(job, reason):
+	"""Create and submit exactly one successor for each terminal failed attempt chain."""
+	attempts = _get_job_attempts(job.name)
+	retried_attempts = {attempt.retry_of for attempt in attempts if attempt.retry_of}
+	failed_attempt_names = [
+		attempt.name
+		for attempt in attempts
+		if attempt.status == "Failed" and attempt.name not in retried_attempts
+	]
+	results = []
+	for attempt_name in failed_attempt_names:
+		retry_attempt = create_retry_attempt(attempt_name, reason)
+		submission = _submit_attempt_or_record_failure(retry_attempt.name)
+		refresh_generation_state_for_attempt(retry_attempt.name)
+		attempt = frappe.get_doc("Generation Attempt", retry_attempt.name)
+		results.append(
+			{
+				"name": attempt.name,
+				"status": attempt.status,
+				"deferred": bool(submission and submission.get("deferred")),
+			}
+		)
+	return results
+
+
 def _submit_attempt_or_record_failure(attempt_name):
 	try:
-		submit_attempt(attempt_name)
+		return submit_attempt(attempt_name)
 	except Exception as exc:
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
 		if attempt.status == "Pending":
@@ -300,12 +377,14 @@ def _submit_attempt_or_record_failure(attempt_name):
 			attempt.error_summary = _("Submission to ComfyUI failed.")
 			attempt.error_details = str(exc)
 			attempt.save(ignore_permissions=True)
+		return {"error": str(exc)}
 
 
 def _update_job_summary(job):
 	attempts = _get_job_attempts(job.name)
 	successful_variants = sum(attempt.status == "Completed" for attempt in attempts)
 	failed_variants = sum(attempt.status == "Failed" for attempt in attempts)
+	failed_attempts = [attempt for attempt in attempts if attempt.status == "Failed"]
 	statuses = {attempt.status for attempt in attempts}
 
 	job.successful_variants = successful_variants
@@ -314,6 +393,7 @@ def _update_job_summary(job):
 	if successful_variants >= job.requested_variants:
 		job.status = "Completed"
 		job.completed_at = job.completed_at or now()
+		job.failure_class = None
 		job.error_summary = None
 	elif "Running" in statuses:
 		job.status = "Running"
@@ -323,17 +403,38 @@ def _update_job_summary(job):
 	elif attempts and statuses <= set(TERMINAL_ATTEMPT_STATUSES):
 		job.status = "Partially Completed" if successful_variants else "Failed"
 		job.completed_at = job.completed_at or now()
-		job.error_summary = _("Only {0} of {1} requested variants completed.").format(
-			successful_variants, job.requested_variants
+		latest_failure = failed_attempts[-1] if failed_attempts else None
+		job.failure_class = latest_failure.get("failure_class") if latest_failure else None
+		job.error_summary = (
+			latest_failure.get("error_summary")
+			if latest_failure and latest_failure.get("error_summary")
+			else _("Only {0} of {1} requested variants completed.").format(
+				successful_variants, job.requested_variants
+			)
 		)
-	job.save(ignore_permissions=True)
+	# Job counters are derived from immutable Attempt history. A retry creates an
+	# Attempt immediately after moving its Job to Queued, so a normal ORM save can
+	# race with that state transition and roll the retry transaction back.
+	job.db_set(
+		{
+			"successful_variants": job.successful_variants,
+			"failed_variants": job.failed_variants,
+			"progress": job.progress,
+			"status": job.status,
+			"started_at": job.started_at,
+			"completed_at": job.completed_at,
+			"failure_class": job.failure_class,
+			"error_summary": job.error_summary,
+		},
+		notify=True,
+	)
 
 
 def _refresh_run_counters(run):
 	jobs = frappe.get_all(
 		"Generation Job",
 		filters={"generation_run": run.name},
-		fields=["status"],
+		fields=["status", "failure_class", "error_summary"],
 	)
 	run.total_jobs = len(jobs)
 	run.completed_jobs = sum(job.status == "Completed" for job in jobs)
@@ -356,9 +457,41 @@ def _refresh_run_counters(run):
 	elif run.total_jobs and terminal_jobs == run.total_jobs:
 		run.status = "Partially Completed" if run.completed_jobs or partially_completed_jobs else "Failed"
 		run.completed_at = run.completed_at or now()
-	elif run.total_jobs and any(job.status in ("Ready", "Queued", "Running") for job in jobs):
+		latest_failed_job = next(
+			(
+				job
+				for job in reversed(jobs)
+				if job.status in ("Failed", "Partially Completed") and job.error_summary
+			),
+			None,
+		)
+		run.failure_class = latest_failed_job.failure_class if latest_failed_job else None
+		run.error_summary = latest_failed_job.error_summary if latest_failed_job else None
+	elif run.total_jobs and any(job.status == "Running" for job in jobs):
 		run.status = "Running"
-	run.save(ignore_permissions=True)
+		run.failure_class = None
+		run.error_summary = None
+	elif run.total_jobs and any(job.status in ("Ready", "Queued") for job in jobs):
+		run.status = "Queued"
+		run.failure_class = None
+		run.error_summary = None
+	# Run counters are derived system state. Result ingestion can update the same
+	# Run while this aggregation is in progress, so an ORM save of a stale document
+	# would roll back the whole background job after ComfyUI has accepted a prompt.
+	run.db_set(
+		{
+			"total_jobs": run.total_jobs,
+			"completed_jobs": run.completed_jobs,
+			"failed_jobs": run.failed_jobs,
+			"running_jobs": run.running_jobs,
+			"progress": run.progress,
+			"status": run.status,
+			"completed_at": run.completed_at,
+			"failure_class": run.failure_class,
+			"error_summary": run.error_summary,
+		},
+		notify=True,
+	)
 
 
 def _enqueue_finalization_if_ready(run):
@@ -396,7 +529,7 @@ def _get_job_attempts(job_name):
 	return frappe.get_all(
 		"Generation Attempt",
 		filters={"generation_job": job_name},
-		fields=["name", "status", "retry_of"],
+		fields=["name", "status", "retry_of", "failure_class", "error_summary"],
 		order_by="attempt_number asc, creation asc",
 	)
 
@@ -432,6 +565,17 @@ def _get_pending_attempt_names_for_run(run_name):
 	)
 
 
+def _has_submittable_work(run_name):
+	if _get_pending_attempt_names_for_run(run_name):
+		return True
+	return bool(
+		frappe.db.exists(
+			"Generation Job",
+			{"generation_run": run_name, "status": "Ready"},
+		)
+	)
+
+
 def _has_submission_capacity(run):
 	"""Avoid re-enqueue churn while a configured worker pool is full or offline."""
 	if not has_configured_workers():
@@ -445,6 +589,8 @@ def _enqueue(method_name, run_name):
 		queue="long",
 		run_name=run_name,
 		enqueue_after_commit=True,
+		job_id=f"joymedia:{method_name}:{run_name}",
+		deduplicate=True,
 	)
 
 
