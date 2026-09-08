@@ -5,7 +5,10 @@ from frappe import _
 from frappe.utils.synchronization import filelock
 from frappe.utils import now
 
-from joymedia.joymedia.doctype.generation_attempt.generation_attempt import create_retry_attempt
+from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
+	QA_RETRY_REASONS,
+	create_retry_attempt,
+)
 
 from .execution_router import has_configured_workers, select_worker
 from .generation_runner import prepare_generation_job, submit_attempt
@@ -382,7 +385,13 @@ def _submit_attempt_or_record_failure(attempt_name):
 
 def _update_job_summary(job):
 	attempts = _get_job_attempts(job.name)
-	successful_variants = sum(attempt.status == "Completed" for attempt in attempts)
+	qa_retried_attempts = {
+		attempt.retry_of for attempt in attempts if attempt.retry_reason in QA_RETRY_REASONS
+	}
+	successful_variants = sum(
+		attempt.status == "Completed" and attempt.name not in qa_retried_attempts
+		for attempt in attempts
+	)
 	failed_variants = sum(attempt.status == "Failed" for attempt in attempts)
 	failed_attempts = [attempt for attempt in attempts if attempt.status == "Failed"]
 	statuses = {attempt.status for attempt in attempts}
@@ -529,7 +538,7 @@ def _get_job_attempts(job_name):
 	return frappe.get_all(
 		"Generation Attempt",
 		filters={"generation_job": job_name},
-		fields=["name", "status", "retry_of", "failure_class", "error_summary"],
+		fields=["name", "status", "retry_of", "retry_reason", "failure_class", "error_summary"],
 		order_by="attempt_number asc, creation asc",
 	)
 

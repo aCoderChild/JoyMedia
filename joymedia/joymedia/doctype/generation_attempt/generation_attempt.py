@@ -7,6 +7,9 @@ from frappe.model.document import Document
 from frappe.utils import now
 
 
+QA_RETRY_REASONS = {"QA Failure", "Human Review Rejection"}
+
+
 class GenerationAttempt(Document):
 	def before_insert(self):
 		job = frappe.get_doc("Generation Job", self.generation_job)
@@ -39,12 +42,17 @@ class GenerationAttempt(Document):
 		)
 		if not previous_attempt or previous_attempt.generation_job != self.generation_job:
 			frappe.throw(_("Retry Of must belong to the same Generation Job."))
-		if previous_attempt.status != "Failed":
-			frappe.throw(_("Retry Of must be a failed Generation Attempt."))
 		if not self.retry_reason:
 			frappe.throw(_("Retry Reason is required when Retry Of is set."))
 
 		_validate_retry_reason(self.retry_reason)
+		if previous_attempt.status == "Failed":
+			return
+		if previous_attempt.status == "Completed" and self.retry_reason in QA_RETRY_REASONS:
+			return
+		frappe.throw(
+			_("Retry Of must be a failed Generation Attempt, unless this is a QA retry of a completed Attempt.")
+		)
 
 
 @frappe.whitelist()
@@ -57,8 +65,27 @@ def create_retry_attempt(failed_attempt_name: str, reason: str):
 	if failed_attempt.status != "Failed":
 		frappe.throw(_("Only failed Generation Attempts can be retried."))
 
-	job = frappe.get_doc("Generation Job", failed_attempt.generation_job)
-	if job.status not in ("Ready", "Queued", "Partially Completed", "Failed"):
+	return _create_successor_attempt(failed_attempt, reason)
+
+
+def create_qa_retry_attempt(completed_attempt_name: str, reason: str = "Human Review Rejection"):
+	"""Create a Pending QA successor for a completed Attempt rejected in review."""
+	frappe.has_permission("Generation Attempt", "create", throw=True)
+	reason = (reason or "").strip()
+	if reason not in QA_RETRY_REASONS:
+		frappe.throw(_("QA retries must use QA Failure or Human Review Rejection."))
+	_validate_retry_reason(reason)
+	completed_attempt = frappe.get_doc("Generation Attempt", completed_attempt_name)
+	if completed_attempt.status != "Completed":
+		frappe.throw(_("Only completed Generation Attempts can be retried after QA review."))
+	if frappe.db.exists("Generation Attempt", {"retry_of": completed_attempt.name}):
+		frappe.throw(_("Generation Attempt {0} already has a retry successor.").format(completed_attempt.name))
+	return _create_successor_attempt(completed_attempt, reason)
+
+
+def _create_successor_attempt(previous_attempt, reason):
+	job = frappe.get_doc("Generation Job", previous_attempt.generation_job)
+	if job.status not in ("Ready", "Queued", "Completed", "Partially Completed", "Failed"):
 		frappe.throw(
 			_("Generation Job {0} cannot be retried from status {1}.").format(job.name, job.status)
 		)
@@ -71,8 +98,8 @@ def create_retry_attempt(failed_attempt_name: str, reason: str):
 		{
 			"doctype": "Generation Attempt",
 			"generation_job": job.name,
-			"seed": failed_attempt.seed,
-			"retry_of": failed_attempt.name,
+			"seed": previous_attempt.seed,
+			"retry_of": previous_attempt.name,
 			"retry_reason": reason,
 			"status": "Pending",
 		}

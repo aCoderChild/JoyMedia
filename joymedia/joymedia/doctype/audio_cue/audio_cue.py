@@ -19,3 +19,23 @@ class AudioCue(Document):
 			self.end_seconds - self.start_seconds
 		):
 			frappe.throw(_("Audio Cue fades cannot exceed the cue duration."))
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_audio_asset_versions(doctype, txt, searchfield, start, page_len, filters):
+	"""Return Asset Versions whose parent Media Asset is audio."""
+	asset_version = frappe.qb.DocType("Asset Version")
+	media_asset = frappe.qb.DocType("Media Asset")
+	return (
+		frappe.qb.from_(asset_version)
+		.inner_join(media_asset)
+		.on(asset_version.media_asset == media_asset.name)
+		.select(asset_version.name)
+		.where(media_asset.media_type == "Audio")
+		.where(asset_version.name.like(f"%{txt}%"))
+		.orderby(asset_version.name)
+		.limit(page_len)
+		.offset(start)
+		.run(as_list=True)
+	)

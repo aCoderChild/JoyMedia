@@ -7,6 +7,14 @@ frappe.ui.form.on("Quality Review", {
 			return;
 		}
 
+		if (frm.doc.status === "Rejected") {
+			frm.add_custom_button(
+				__("Regenerate Shot"),
+				() => regenerate_shot(frm),
+				__("Review")
+			);
+		}
+
 		frappe.db
 			.get_value(
 				"Generation Artifact",
@@ -47,4 +55,35 @@ function show_artifact_preview(frm) {
 		</video>`
 	);
 	dialog.show();
+}
+
+function regenerate_shot(frm) {
+	frappe.prompt(
+		[
+			{
+				fieldname: "reason",
+				fieldtype: "Select",
+				label: __("Retry Reason"),
+				options: "Human Review Rejection\nQA Failure",
+				default: "Human Review Rejection",
+				reqd: 1,
+			},
+		],
+		(values) => {
+			frappe.call({
+				method:
+					"joymedia.joymedia.doctype.quality_review.quality_review.regenerate_shot_from_ui",
+				args: { quality_review_name: frm.doc.name, reason: values.reason },
+				freeze: true,
+				freeze_message: __("Creating and submitting QA retry..."),
+				callback(r) {
+					if (!r.exc && r.message?.name) {
+						frappe.set_route("Form", "Generation Attempt", r.message.name);
+					}
+				},
+			});
+		},
+		__("Regenerate Shot"),
+		__("Regenerate")
+	);
 }

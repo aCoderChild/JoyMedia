@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from .generation_attempt import GenerationAttempt, create_retry_attempt
+from .generation_attempt import GenerationAttempt, create_qa_retry_attempt, create_retry_attempt
 from joymedia.services.generation_runner import submit_attempt
 
 
@@ -98,6 +98,40 @@ class TestGenerationAttempt(FrappeTestCase):
 
 		self.assertIs(result, retry_attempt)
 		self.assertEqual("Queued", job.status)
+
+	def test_completed_attempt_can_create_one_qa_retry_successor(self):
+		completed_attempt = frappe._dict(
+			name="ATT-00001", status="Completed", generation_job="JOB-00001", seed=42
+		)
+		job = frappe._dict(name="JOB-00001", status="Completed")
+		job.save = MagicMock()
+		retry_attempt = MagicMock()
+		retry_attempt.insert.return_value = retry_attempt
+
+		with (
+			patch(
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.has_permission"
+			),
+			patch(
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt._validate_retry_reason"
+			),
+			patch(
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.db.exists",
+				return_value=False,
+			),
+			patch(
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.get_doc",
+				side_effect=[completed_attempt, job, retry_attempt],
+			) as get_doc,
+		):
+			result = create_qa_retry_attempt(completed_attempt.name, "Human Review Rejection")
+
+		self.assertIs(result, retry_attempt)
+		self.assertEqual(job.status, "Queued")
+		self.assertEqual(
+			get_doc.call_args_list[2].args[0]["retry_reason"], "Human Review Rejection"
+		)
+		self.assertEqual(get_doc.call_args_list[2].args[0]["retry_of"], completed_attempt.name)
 
 	def test_failed_attempt_cannot_be_submitted_again(self):
 		attempt = frappe._dict(name="ATT-00001", status="Failed")

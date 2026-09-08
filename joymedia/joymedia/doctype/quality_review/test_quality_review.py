@@ -4,7 +4,7 @@ import frappe
 from frappe.exceptions import ValidationError
 from frappe.tests.utils import FrappeTestCase
 
-from .quality_review import QualityReview
+from .quality_review import QualityReview, regenerate_shot_from_ui
 
 
 class TestQualityReview(FrappeTestCase):
@@ -89,3 +89,32 @@ class TestQualityReview(FrappeTestCase):
 		self.assertEqual(artifact.lifecycle_status, "Expired")
 		artifact.save.assert_called_once_with(ignore_permissions=True)
 		shot.save.assert_not_called()
+
+	def test_rejected_review_creates_and_submits_a_qa_retry(self):
+		review = frappe._dict(name="QREV-00001", status="Rejected", generation_attempt="ATT-00001")
+		retry_attempt = frappe._dict(name="ATT-00002")
+
+		with (
+			patch(
+				"joymedia.joymedia.doctype.quality_review.quality_review.frappe.has_permission"
+			),
+			patch(
+				"joymedia.joymedia.doctype.quality_review.quality_review.frappe.get_doc",
+				return_value=review,
+			),
+			patch(
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.create_qa_retry_attempt",
+				return_value=retry_attempt,
+			) as create_retry,
+			patch("joymedia.services.generation_runner.submit_attempt", return_value={"prompt_id": "prompt-1"}) as submit,
+			patch(
+				"joymedia.joymedia.doctype.quality_review.quality_review.frappe.db.get_value",
+				return_value="Queued",
+			),
+			patch("joymedia.joymedia.doctype.quality_review.quality_review.frappe.db.commit"),
+		):
+			result = regenerate_shot_from_ui(review.name)
+
+		create_retry.assert_called_once_with("ATT-00001", "Human Review Rejection")
+		submit.assert_called_once_with("ATT-00002")
+		self.assertEqual(result["name"], "ATT-00002")

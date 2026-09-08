@@ -247,6 +247,27 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		job.db_set.assert_called_once()
 
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
+	def test_qa_retry_replaces_the_rejected_completed_variant(self, get_all):
+		job = frappe._dict(name="JOB-00001", requested_variants=1, completed_at=None)
+		job.db_set = MagicMock()
+		get_all.return_value = [
+			frappe._dict(
+				name="ATT-00001", status="Completed", retry_of=None, retry_reason=None
+			),
+			frappe._dict(
+				name="ATT-00002",
+				status="Pending",
+				retry_of="ATT-00001",
+				retry_reason="Human Review Rejection",
+			),
+		]
+
+		generation_orchestrator._update_job_summary(job)
+
+		self.assertEqual(job.successful_variants, 0)
+		self.assertEqual(job.status, "Queued")
+
+	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
 	def test_job_summary_uses_the_latest_failed_attempt_details(self, get_all):
 		job = frappe._dict(name="JOB-00001", requested_variants=1, completed_at=None)
 		job.db_set = MagicMock()

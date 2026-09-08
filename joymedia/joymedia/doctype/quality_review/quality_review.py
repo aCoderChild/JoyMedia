@@ -63,6 +63,7 @@ class QualityReview(Document):
 
 				enqueue_finalization_if_ready(run_name)
 
+
 	def _validate_attempt_artifact_context(self):
 		attempt = frappe.db.get_value(
 			"Generation Attempt",
@@ -100,3 +101,24 @@ class QualityReview(Document):
 				frappe.throw(_("{0} must be a number from 0.0 to 1.0.").format(fieldname))
 			if not 0.0 <= score <= 1.0:
 				frappe.throw(_("{0} must be from 0.0 to 1.0.").format(fieldname))
+
+
+@frappe.whitelist()
+def regenerate_shot_from_ui(quality_review_name: str, reason: str = "Human Review Rejection"):
+	"""Create and submit one QA retry for a rejected review's completed Attempt."""
+	frappe.has_permission("Quality Review", "write", quality_review_name, throw=True)
+	review = frappe.get_doc("Quality Review", quality_review_name)
+	if review.status != "Rejected":
+		frappe.throw(_("Only rejected Quality Reviews can regenerate a Shot."))
+
+	from joymedia.joymedia.doctype.generation_attempt.generation_attempt import create_qa_retry_attempt
+	from joymedia.services.generation_runner import submit_attempt
+
+	retry_attempt = create_qa_retry_attempt(review.generation_attempt, reason)
+	submission = submit_attempt(retry_attempt.name)
+	frappe.db.commit()
+	return {
+		"name": retry_attempt.name,
+		"status": frappe.db.get_value("Generation Attempt", retry_attempt.name, "status"),
+		"deferred": bool(submission and submission.get("deferred")),
+	}
