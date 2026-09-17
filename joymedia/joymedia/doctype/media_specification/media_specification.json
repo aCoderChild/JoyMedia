@@ -13,7 +13,6 @@
   "status",
   "generation_setup_section",
   "generation_workflow_version",
-  "prompt_template_version",
   "deliverable_requirements_section",
   "total_duration_seconds",
   "delivery_preset",
@@ -23,10 +22,7 @@
   "audio_mix_section",
   "audio_cues",
   "global_content_requirements_section",
-  "required_elements",
-  "consistency_requirements",
-  "forbidden_elements",
-  "acceptance_criteria",
+  "generation_instructions",
   "final_deliverable_section",
   "final_asset_version"
  ],
@@ -79,15 +75,6 @@
    "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\";"
   },
   {
-   "description": "Exact Prompt Template Version used to compile prompts for this specification.",
-   "fieldname": "prompt_template_version",
-   "fieldtype": "Link",
-   "label": "Prompt Template Version",
-   "mandatory_depends_on": "eval:doc.status==\"Ready\";",
-   "options": "Prompt Template Version",
-   "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\";"
-  },
-  {
    "description": "FINAL video the customer expects",
    "fieldname": "deliverable_requirements_section",
    "fieldtype": "Section Break",
@@ -127,24 +114,7 @@
   {
    "fieldname": "global_content_requirements_section",
    "fieldtype": "Section Break",
-   "label": "Global Content Requirements"
-  },
-  {
-   "description": "Global visual or identity properties that MUST REMAIN CONSISTENT across shots.",
-   "fieldname": "consistency_requirements",
-   "fieldtype": "Long Text",
-   "label": "Consistency Requirements"
-  },
-  {
-   "fieldname": "forbidden_elements",
-   "fieldtype": "Long Text",
-   "label": "Forbidden Elements"
-  },
-  {
-   "description": "For QA later",
-   "fieldname": "acceptance_criteria",
-   "fieldtype": "Long Text",
-   "label": "Acceptance Criteria"
+   "label": "Generation"
   },
   {
    "description": "Canonical intended duration for the final media. Shot durations are derived from this value in frames.",
@@ -162,12 +132,6 @@
    "reqd": 1
   },
   {
-   "description": "Elements that must appear somewhere in the final media deliverable.",
-   "fieldname": "required_elements",
-   "fieldtype": "Long Text",
-   "label": "Required Elements"
-  },
-  {
    "fieldname": "final_deliverable_section",
    "fieldtype": "Section Break",
    "label": "Final Deliverable"
@@ -178,12 +142,17 @@
    "label": "Final Asset Version",
    "options": "Asset Version",
    "read_only": 1
+  },
+  {
+   "fieldname": "generation_instructions",
+   "fieldtype": "Long Text",
+   "label": "Generation Instructions"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-03 23:12:48.370819",
+ "modified": "2026-09-16 17:02:59.661212",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Specification",

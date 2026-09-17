@@ -16,11 +16,7 @@
   "client_and_ownership",
   "client_organization",
   "project_owner",
-  "project_brief_section",
-  "objective",
-  "key_message",
-  "creative_direction",
-  "project_context",
+  "column_break_txky",
   "product_and_audience_section",
   "product_name",
   "target_audience"
@@ -59,36 +55,6 @@
    "label": "Project Type",
    "options": "Product Commercial\nProduct Demo\nBrand Film\nSocial Media Creative\nCampaign\nInternal R&D\nOther",
    "reqd": 1
-  },
-  {
-   "fieldname": "project_brief_section",
-   "fieldtype": "Section Break",
-   "label": "Project Brief"
-  },
-  {
-   "description": "What business/communication outcome do we want?",
-   "fieldname": "objective",
-   "fieldtype": "Small Text",
-   "label": "Objective",
-   "reqd": 1
-  },
-  {
-   "description": "What should the viewer remember?What should the viewer remember?",
-   "fieldname": "key_message",
-   "fieldtype": "Small Text",
-   "label": "Key Message"
-  },
-  {
-   "description": "What should the work broadly feel/look like?",
-   "fieldname": "creative_direction",
-   "fieldtype": "Long Text",
-   "label": "Creative Direction"
-  },
-  {
-   "description": "Background information needed by the production team",
-   "fieldname": "project_context",
-   "fieldtype": "Long Text",
-   "label": "Project Context"
   },
   {
    "fieldname": "product_and_audience_section",
@@ -135,12 +101,16 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Target Delivery Date"
+  },
+  {
+   "fieldname": "column_break_txky",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-03 07:58:09.146352",
+ "modified": "2026-09-16 16:38:16.454377",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Project",

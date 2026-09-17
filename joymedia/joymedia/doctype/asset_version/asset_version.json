@@ -17,8 +17,7 @@
   "duration_seconds",
   "fps",
   "lineage_section",
-  "derived_from",
-  "notes"
+  "derived_from"
  ],
  "fields": [
   {
@@ -100,18 +99,12 @@
    "fieldtype": "Link",
    "label": "Derived From",
    "options": "Asset Version"
-  },
-  {
-   "description": "Explain how this version was created or how it differs\nfrom its parent version.",
-   "fieldname": "notes",
-   "fieldtype": "Small Text",
-   "label": "Notes"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-07 15:37:53.446697",
+ "modified": "2026-09-16 16:56:01.585029",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Asset Version",

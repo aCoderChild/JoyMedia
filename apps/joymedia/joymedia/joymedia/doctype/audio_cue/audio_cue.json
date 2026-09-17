@@ -1,0 +1,83 @@
+{
+ "actions": [],
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "role",
+  "asset_version",
+  "start_seconds",
+  "end_seconds",
+  "gain_db",
+  "fade_in_seconds",
+  "fade_out_seconds",
+  "duck_others"
+ ],
+ "fields": [
+  {
+   "fieldname": "role",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Role",
+   "options": "BGM\nVoiceover\nSFX",
+   "reqd": 1
+  },
+  {
+   "fieldname": "asset_version",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Asset Version",
+   "options": "Asset Version",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "start_seconds",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Start Seconds",
+   "reqd": 1
+  },
+  {
+   "description": "Timeline end time. Leave blank to continue until the end of the composed video.",
+   "fieldname": "end_seconds",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "End Seconds"
+  },
+  {
+   "default": "0",
+   "fieldname": "gain_db",
+   "fieldtype": "Float",
+   "label": "Gain dB",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "fade_in_seconds",
+   "fieldtype": "Float",
+   "label": "Fade In (Seconds)",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "fade_out_seconds",
+   "fieldtype": "Float",
+   "label": "Fade Out (Seconds)",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "When enabled, this cue sidechain-ducks other cues while it is audible.",
+   "fieldname": "duck_others",
+   "fieldtype": "Check",
+   "label": "Duck Others"
+  }
+ ],
+ "istable": 1,
+ "module": "JoyMedia",
+ "name": "Audio Cue",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "ASC"
+}

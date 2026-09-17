@@ -1,0 +1,1 @@
+"""Generation Failure Distribution report."""
