@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - version-16
   pull_request:
 
 concurrency:
@@ -28,12 +27,12 @@ jobs:
         ports:
           - 11000:6379
       mariadb:
-        image: mariadb:11.8
+        image: mariadb:10.6
         env:
-          MYSQL_ROOT_PASSWORD: root
+          MARIADB_ROOT_PASSWORD: root
         ports:
           - 3306:3306
-        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+        options: --health-cmd="mariadb-admin ping -h localhost -u root -proot" --health-interval=5s --health-timeout=2s --health-retries=20
 
     steps:
       - name: Clone
@@ -84,7 +83,7 @@ jobs:
       - name: Setup
         run: |
           pip install frappe-bench
-          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
+          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" --frappe-branch version-16 ~/frappe-bench
 
       - name: Install
         working-directory: /home/runner/frappe-bench
