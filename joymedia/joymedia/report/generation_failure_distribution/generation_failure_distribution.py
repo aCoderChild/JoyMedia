@@ -17,6 +17,13 @@ COLUMNS = [
 def execute(filters=None):
 	attempts, reviews = get_attempt_analytics(filters)
 	attempts_by_name = {attempt.name: attempt for attempt in attempts}
+	artifact_names = {review.generation_artifact for review in reviews if review.generation_artifact}
+	artifacts = frappe.get_all(
+		"Generation Artifact",
+		filters={"name": ["in", list(artifact_names)]} if artifact_names else {"name": ["in", [""]]},
+		fields=["name", "generation_attempt"],
+	)
+	attempt_by_artifact = {artifact.name: artifact.generation_attempt for artifact in artifacts}
 	buckets = defaultdict(int)
 
 	for attempt in attempts:
@@ -33,7 +40,7 @@ def execute(filters=None):
 			] += 1
 
 	for review in reviews:
-		attempt = attempts_by_name.get(review.generation_attempt)
+		attempt = attempts_by_name.get(attempt_by_artifact.get(review.generation_artifact))
 		if not attempt or review.status not in ("Rejected", "Needs Revision") or not review.failure_class:
 			continue
 		buckets[

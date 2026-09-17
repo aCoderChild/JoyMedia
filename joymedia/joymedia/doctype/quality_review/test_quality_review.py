@@ -31,33 +31,25 @@ class TestQualityReview(FrappeTestCase):
 
 	def test_approval_promotes_and_selects_the_reviewed_artifact(self):
 		review = frappe.new_doc("Quality Review")
-		review.shot_specification = "SHOT-00001"
-		review.generation_attempt = "ATT-00001"
 		review.generation_artifact = "GART-00001"
 		review.review_type = "Human"
 		review.reviewer = "Administrator"
 		review.status = "Approved"
 		review.db_set = MagicMock()
+		artifact = frappe._dict(name="GART-00001", generation_attempt="ATT-00001")
+		attempt = frappe._dict(
+			name="ATT-00001",
+			generation_job="JOB-00001",
+			output_artifact="GART-00001",
+			status="Completed",
+		)
+		job = frappe._dict(name="JOB-00001", generation_run=None, shot_specification="SHOT-00001")
 		shot = MagicMock(selected_output_asset_version=None)
 
 		with (
 			patch(
-				"joymedia.joymedia.doctype.quality_review.quality_review.frappe.db.get_value",
-					side_effect=[
-						frappe._dict(
-							generation_job="JOB-00001",
-							output_artifact="GART-00001",
-							status="Completed",
-						),
-						"SHOT-00001",
-						"ATT-00001",
-						"JOB-00001",
-						None,
-					],
-			),
-			patch(
 				"joymedia.joymedia.doctype.quality_review.quality_review.frappe.get_doc",
-				return_value=shot,
+				side_effect=[artifact, attempt, job, shot, artifact, attempt, job, shot],
 			),
 			patch(
 				"joymedia.services.artifact_service.promote_artifact",
@@ -74,15 +66,18 @@ class TestQualityReview(FrappeTestCase):
 
 	def test_rejection_expires_a_temporary_artifact(self):
 		review = frappe.new_doc("Quality Review")
-		review.shot_specification = "SHOT-00001"
 		review.generation_artifact = "GART-00001"
 		review.status = "Rejected"
 		shot = MagicMock(selected_output_asset_version=None)
 		artifact = MagicMock(lifecycle_status="Temporary", promoted_asset_version=None)
+		artifact.name = "GART-00001"
+		artifact.generation_attempt = "ATT-00001"
+		attempt = frappe._dict(name="ATT-00001", generation_job="JOB-00001")
+		job = frappe._dict(name="JOB-00001", shot_specification="SHOT-00001")
 
 		with patch(
 			"joymedia.joymedia.doctype.quality_review.quality_review.frappe.get_doc",
-			side_effect=[shot, artifact],
+			side_effect=[artifact, attempt, job, shot, artifact],
 		):
 			QualityReview._apply_review_outcome(review)
 
@@ -91,8 +86,9 @@ class TestQualityReview(FrappeTestCase):
 		shot.save.assert_not_called()
 
 	def test_rejected_review_creates_and_submits_a_qa_retry(self):
-		review = frappe._dict(name="QREV-00001", status="Rejected", generation_attempt="ATT-00001")
+		review = frappe._dict(name="QREV-00001", status="Rejected", generation_artifact="GART-00001")
 		retry_attempt = frappe._dict(name="ATT-00002")
+		artifact = frappe._dict(name="GART-00001", generation_attempt="ATT-00001")
 
 		with (
 			patch(
@@ -100,7 +96,7 @@ class TestQualityReview(FrappeTestCase):
 			),
 			patch(
 				"joymedia.joymedia.doctype.quality_review.quality_review.frappe.get_doc",
-				return_value=review,
+				side_effect=[review, artifact],
 			),
 			patch(
 				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.create_qa_retry_attempt",

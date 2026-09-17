@@ -21,7 +21,7 @@ class QualityReview(Document):
 		self._validate_attempt_artifact_context()
 		self._validate_failure_class()
 		self._validate_scores()
-		if self.review_type == "Human" and not self.reviewer:
+		if self.get("review_type") == "Human" and not self.get("reviewer"):
 			frappe.throw(_("Human Quality Reviews require a Reviewer."))
 		if self.status in FINAL_REVIEW_STATUSES and not self.reviewed_at:
 			self.reviewed_at = now()
@@ -36,7 +36,7 @@ class QualityReview(Document):
 		if self.status not in FINAL_REVIEW_STATUSES:
 			return
 
-		shot = frappe.get_doc("Shot Specification", self.shot_specification)
+		artifact, attempt, _job, shot = self._get_review_context()
 		if self.status == "Approved":
 			from joymedia.services.artifact_service import promote_artifact
 
@@ -56,38 +56,44 @@ class QualityReview(Document):
 			return
 		shot.save(ignore_permissions=True)
 		if self.status == "Approved":
-			job_name = frappe.db.get_value("Generation Attempt", self.generation_attempt, "generation_job")
-			run_name = frappe.db.get_value("Generation Job", job_name, "generation_run")
-			if run_name:
+			if attempt.generation_job and _job.generation_run:
 				from joymedia.services.generation_orchestrator import enqueue_finalization_if_ready
 
-				enqueue_finalization_if_ready(run_name)
+				enqueue_finalization_if_ready(_job.generation_run)
 
 
 	def _validate_attempt_artifact_context(self):
-		attempt = frappe.db.get_value(
-			"Generation Attempt",
-			self.generation_attempt,
-			["generation_job", "output_artifact", "status"],
-			as_dict=True,
-		)
-		if not attempt or attempt.status != "Completed":
+		artifact, attempt, _job, _shot = self._get_review_context()
+		if attempt.status != "Completed":
 			frappe.throw(_("Quality Review requires a completed Generation Attempt."))
-		attempt_shot = frappe.db.get_value("Generation Job", attempt.generation_job, "shot_specification")
-		if attempt_shot != self.shot_specification:
-			frappe.throw(_("Quality Review Shot Specification must match the Generation Attempt."))
-		artifact_attempt = frappe.db.get_value(
-			"Generation Artifact", self.generation_artifact, "generation_attempt"
-		)
-		if artifact_attempt != self.generation_attempt or attempt.output_artifact != self.generation_artifact:
+		if attempt.output_artifact != artifact.name:
 			frappe.throw(_("Quality Review Generation Artifact must match the Generation Attempt output."))
 
+	def _get_review_context(self):
+		if not self.generation_artifact:
+			frappe.throw(_("Quality Review requires a Generation Artifact."))
+
+		artifact = frappe.get_doc("Generation Artifact", self.generation_artifact)
+		if not artifact.generation_attempt:
+			frappe.throw(_("Generation Artifact {0} has no Generation Attempt.").format(artifact.name))
+
+		attempt = frappe.get_doc("Generation Attempt", artifact.generation_attempt)
+		if not attempt.generation_job:
+			frappe.throw(_("Generation Attempt {0} has no Generation Job.").format(attempt.name))
+
+		job = frappe.get_doc("Generation Job", attempt.generation_job)
+		if not job.shot_specification:
+			frappe.throw(_("Generation Job {0} has no Shot Specification.").format(job.name))
+
+		shot = frappe.get_doc("Shot Specification", job.shot_specification)
+		return artifact, attempt, job, shot
+
 	def _validate_failure_class(self):
-		if not self.failure_class:
+		if not self.get("failure_class"):
 			return
 		failure_class_field = frappe.get_meta("Generation Attempt").get_field("failure_class")
 		valid_failure_classes = set((failure_class_field.options or "").splitlines())
-		if self.failure_class not in valid_failure_classes:
+		if self.get("failure_class") not in valid_failure_classes:
 			frappe.throw(_("Quality Review Failure Class must use the Generation Attempt taxonomy."))
 
 	def _validate_scores(self):
@@ -110,11 +116,12 @@ def regenerate_shot_from_ui(quality_review_name: str, reason: str = "Human Revie
 	review = frappe.get_doc("Quality Review", quality_review_name)
 	if review.status != "Rejected":
 		frappe.throw(_("Only rejected Quality Reviews can regenerate a Shot."))
+	artifact = frappe.get_doc("Generation Artifact", review.generation_artifact)
 
 	from joymedia.joymedia.doctype.generation_attempt.generation_attempt import create_qa_retry_attempt
 	from joymedia.services.generation_runner import submit_attempt
 
-	retry_attempt = create_qa_retry_attempt(review.generation_attempt, reason)
+	retry_attempt = create_qa_retry_attempt(artifact.generation_attempt, reason)
 	submission = submit_attempt(retry_attempt.name)
 	frappe.db.commit()
 	return {

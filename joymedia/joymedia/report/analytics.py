@@ -64,14 +64,33 @@ def get_attempt_analytics(filters=None):
 	}
 
 	attempt_names = [attempt.name for attempt in attempts]
+	artifact_names = {
+		artifact.name
+		for artifact in frappe.get_all(
+			"Generation Artifact",
+			filters={"generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
+			fields=["name"],
+		)
+	}
 	reviews = frappe.get_all(
 		"Quality Review",
-		filters={"generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
-		fields=["generation_attempt", "status", "failure_class"],
+		filters={"generation_artifact": ["in", list(artifact_names)]}
+		if artifact_names
+		else {"name": ["in", [""]]},
+		fields=["generation_artifact", "status", "failure_class"],
 	)
+	artifact_attempts = frappe.get_all(
+		"Generation Artifact",
+		filters={"name": ["in", list(artifact_names)]} if artifact_names else {"name": ["in", [""]]},
+		fields=["name", "generation_attempt"],
+	)
+	attempt_by_artifact = {artifact.name: artifact.generation_attempt for artifact in artifact_attempts}
 	review_outcomes = defaultdict(lambda: {"approved": False, "reviewed": False})
 	for review in reviews:
-		outcome = review_outcomes[review.generation_attempt]
+		attempt_name = attempt_by_artifact.get(review.generation_artifact)
+		if not attempt_name:
+			continue
+		outcome = review_outcomes[attempt_name]
 		outcome["approved"] = outcome["approved"] or review.status == "Approved"
 		outcome["reviewed"] = outcome["reviewed"] or review.status in TERMINAL_REVIEW_STATUSES
 

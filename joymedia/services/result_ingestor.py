@@ -158,21 +158,15 @@ def _create_pending_quality_review(attempt, artifact):
 	if frappe.db.exists(
 		"Quality Review",
 		{
-			"generation_attempt": attempt.name,
 			"generation_artifact": artifact.name,
 			"review_type": "Automated",
 		},
 	):
 		return
 
-	shot_name = frappe.db.get_value("Generation Job", attempt.generation_job, "shot_specification")
-	if not shot_name:
-		frappe.throw(_("Generation Attempt {0} has no Shot Specification.").format(attempt.name))
 	frappe.get_doc(
 		{
 			"doctype": "Quality Review",
-			"shot_specification": shot_name,
-			"generation_attempt": attempt.name,
 			"generation_artifact": artifact.name,
 			"review_type": "Automated",
 			"status": "Pending",
