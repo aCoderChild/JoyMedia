@@ -69,8 +69,6 @@ class TestGenerationArtifactCreation(FrappeTestCase):
 		get_doc.assert_called_once_with(
 			{
 				"doctype": "Quality Review",
-				"shot_specification": "SHOT-00001",
-				"generation_attempt": "ATT-00001",
 				"generation_artifact": "GART-00001",
 				"review_type": "Automated",
 				"status": "Pending",

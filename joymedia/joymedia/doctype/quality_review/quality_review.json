@@ -6,8 +6,6 @@
  "engine": "InnoDB",
  "field_order": [
   "review_context_section",
-  "shot_specification",
-  "generation_attempt",
   "generation_artifact",
   "asset_version",
   "status",
@@ -21,24 +19,6 @@
    "fieldname": "review_context_section",
    "fieldtype": "Section Break",
    "label": "Review Context"
-  },
-  {
-   "fieldname": "shot_specification",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Shot Specification",
-   "options": "Shot Specification",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "generation_attempt",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Generation Attempt",
-   "options": "Generation Attempt",
-   "read_only": 1,
-   "reqd": 1
   },
   {
    "description": "populated after promotion",
