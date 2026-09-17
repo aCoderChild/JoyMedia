@@ -164,9 +164,15 @@ def _create_pending_quality_review(attempt, artifact):
 	):
 		return
 
+	shot_specification = frappe.db.get_value(
+		"Generation Job", attempt.generation_job, "shot_specification"
+	)
+
 	frappe.get_doc(
 		{
 			"doctype": "Quality Review",
+			"shot_specification": shot_specification,
+			"generation_attempt": attempt.name,
 			"generation_artifact": artifact.name,
 			"review_type": "Automated",
 			"status": "Pending",
