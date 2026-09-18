@@ -10,6 +10,7 @@ class GenerationJob(Document):
 	def validate(self):
 		self._validate_requested_variants()
 		workflow_version = self._validate_execution_references()
+		self._validate_segment_frame_count(workflow_version)
 		if self.status != "Draft":
 			self._validate_generation_input_snapshot(workflow_version)
 
@@ -27,6 +28,19 @@ class GenerationJob(Document):
 	def _validate_requested_variants(self):
 		if not self.requested_variants or self.requested_variants < 1:
 			frappe.throw(_("Requested Variants must be greater than zero."))
+
+	def _validate_segment_frame_count(self, workflow_version):
+		if (
+			not self.segment_frame_count
+			or self.segment_frame_count < 1
+			or self.segment_frame_count > workflow_version.frame_count
+		):
+			frappe.throw(
+				_("Segment Frame Count must be between 1 and {0} for Workflow Version {1}.").format(
+					workflow_version.frame_count,
+					workflow_version.name,
+				)
+			)
 
 	def _validate_execution_references(self):
 		if not self.shot_specification or not frappe.db.exists("Shot Specification", self.shot_specification):
