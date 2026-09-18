@@ -1,5 +1,34 @@
+import json
+
 import frappe
 from frappe import _
+
+
+@frappe.whitelist()
+def apply_video_plan_from_ui(media_specification_name: str, plan_json: str):
+	frappe.has_permission(
+		"Media Specification",
+		"write",
+		media_specification_name,
+		throw=True,
+	)
+
+	try:
+		plan = json.loads(plan_json)
+	except (TypeError, ValueError, json.JSONDecodeError):
+		frappe.throw(_("Invalid video plan JSON."))
+
+	created_shots = apply_video_plan(
+		media_specification_name=media_specification_name,
+		plan=plan,
+	)
+
+	frappe.db.commit()
+
+	return {
+		"media_specification": media_specification_name,
+		"shots": created_shots,
+	}
 
 
 def apply_video_plan(media_specification_name: str, plan: dict):
