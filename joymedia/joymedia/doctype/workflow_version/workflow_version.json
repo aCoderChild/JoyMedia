@@ -16,8 +16,6 @@
   "workflow_json",
   "workflow_hash",
   "execution_characteristics_section",
-  "execution_width",
-  "execution_height",
   "frame_count",
   "output_fps",
   "produces_video",
@@ -120,20 +118,6 @@
    "fieldname": "produces_audio",
    "fieldtype": "Check",
    "label": "Produces Audio",
-   "read_only": 1
-  },
-  {
-   "fieldname": "execution_width",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Execution Width",
-   "read_only": 1
-  },
-  {
-   "fieldname": "execution_height",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Execution Height",
    "read_only": 1
   },
   {

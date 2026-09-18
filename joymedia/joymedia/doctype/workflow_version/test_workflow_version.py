@@ -25,8 +25,6 @@ class TestWorkflowVersion(FrappeTestCase):
 				b'{"minimax_cond":{"inputs":{"height":1920,"length":90,"width":1080}},"save_video":{"inputs":{"frame_rate":30}}}'
 			).hexdigest(),
 		)
-		self.assertEqual(doc.execution_width, 1080)
-		self.assertEqual(doc.execution_height, 1920)
 		self.assertEqual(doc.frame_count, 90)
 		self.assertEqual(doc.output_fps, 30)
 

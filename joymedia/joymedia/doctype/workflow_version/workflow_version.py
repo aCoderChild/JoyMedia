@@ -20,8 +20,6 @@ IMMUTABLE_FIELDS = (
 	"model_cache_key",
 	"change_notes",
 	"bindings",
-	"execution_width",
-	"execution_height",
 	"frame_count",
 	"output_fps",
 	"produces_video",
