@@ -3,7 +3,7 @@
  "allow_bulk_edit": 1,
  "allow_rename": 1,
  "autoname": "PRJ-.#####",
- "creation": "2026-09-18 07:45:27.036372",
+ "creation": "2026-09-18 09:26:46.325414",
  "description": "Top-level container for a JoyMedia production project. Assets, media specifications, generation jobs and outputs are linked to a Media Project.",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -12,6 +12,8 @@
   "project_name",
   "product_name",
   "target_audience",
+  "video_idea",
+  "reference_template",
   "status"
  ],
  "fields": [
@@ -37,6 +39,7 @@
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Draft\nGenerating\nReview\nCompleted\nNeeds Attention\nCancelled",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -51,12 +54,23 @@
    "fieldtype": "Small Text",
    "label": "Target Audience",
    "reqd": 1
+  },
+  {
+   "fieldname": "video_idea",
+   "fieldtype": "Small Text",
+   "label": "Video Idea"
+  },
+  {
+   "fieldname": "reference_template",
+   "fieldtype": "Link",
+   "label": "Reference Template",
+   "options": "Video Reference Template"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-18 09:25:31.512869",
+ "modified": "2026-09-18 11:07:50.307034",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Project",

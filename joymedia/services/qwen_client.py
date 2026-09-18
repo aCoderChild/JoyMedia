@@ -1,0 +1,90 @@
+import json
+
+import frappe
+import requests
+from frappe import _
+
+
+DEFAULT_TIMEOUT = 120
+
+
+def generate_video_plan(
+	*,
+	product_name: str,
+	target_audience: str,
+	video_idea: str,
+	reference_template: dict | None = None,
+) -> dict:
+	base_url = frappe.conf.get("qwen_base_url")
+	model = frappe.conf.get("qwen_model")
+	if not base_url:
+		frappe.throw(_("qwen_base_url is not configured."))
+	if not model:
+		frappe.throw(_("qwen_model is not configured."))
+
+	if reference_template:
+		instruction = (
+			"Create a new MiniMax H3 commercial plan based on the supplied reference template.\n\n"
+			"Preserve its cinematography, pacing, composition, motion style and lighting style.\n\n"
+			"Adapt the subject and product-specific content to the new product."
+		)
+	else:
+		instruction = (
+			"Create an original MiniMax H3 commercial plan from scratch using the supplied product, "
+			"target audience and video idea."
+		)
+
+	user_prompt = (
+		f"{instruction}\n\n"
+		f"PRODUCT NAME\n{product_name}\n\n"
+		f"TARGET AUDIENCE\n{target_audience}\n\n"
+		f"VIDEO IDEA\n{video_idea or ''}\n\n"
+		"Return only valid JSON with this shape:\n"
+		'{"shots":[{"shot_number":1,"camera":"...","subject":"...",'
+		'"motion":"...","lighting":"...","audio":"...","final_prompt":"..."}]}'
+	)
+	if reference_template:
+		user_prompt += "\n\nREFERENCE TEMPLATE\n" + json.dumps(reference_template, ensure_ascii=False)
+
+	try:
+		response = requests.post(
+			f"{base_url.rstrip('/')}/chat/completions",
+			json={
+				"model": model,
+				"messages": [
+					{
+						"role": "system",
+						"content": "You produce structured JSON video plans. Do not include markdown fences or commentary.",
+					},
+					{"role": "user", "content": user_prompt},
+				],
+				"response_format": {"type": "json_object"},
+			},
+			timeout=DEFAULT_TIMEOUT,
+		)
+	except requests.ConnectionError as exc:
+		frappe.throw(_("Unable to connect to Qwen: {0}").format(str(exc)))
+
+	if not response.ok:
+		frappe.throw(
+			_("Qwen request failed ({0}): {1}").format(response.status_code, response.text)
+		)
+
+	try:
+		content = response.json()["choices"][0]["message"]["content"]
+		result = json.loads(content)
+	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+		frappe.throw(_("Qwen returned invalid video plan JSON: {0}").format(str(exc)))
+
+	_validate_video_plan(result)
+	return result
+
+
+def _validate_video_plan(result):
+	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
+		frappe.throw(_("Qwen video plan must contain a shots list."))
+
+	required_fields = {"shot_number", "camera", "subject", "motion", "lighting", "audio", "final_prompt"}
+	for shot in result["shots"]:
+		if not isinstance(shot, dict) or not required_fields.issubset(shot):
+			frappe.throw(_("Each Qwen shot must contain the required video plan fields."))

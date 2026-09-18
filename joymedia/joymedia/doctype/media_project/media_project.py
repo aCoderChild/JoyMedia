@@ -36,3 +36,19 @@ class MediaProject(Document):
 
 		if self.status not in ALLOWED_STATUSES:
 			frappe.throw(_("Invalid Media Project status."))
+
+	@frappe.whitelist()
+	def generate_video_plan(self):
+		from joymedia.services.qwen_client import generate_video_plan
+
+		template = None
+		if self.reference_template:
+			ref = frappe.get_doc("Video Reference Template", self.reference_template)
+			template = frappe.parse_json(ref.template_json)
+
+		return generate_video_plan(
+			product_name=self.product_name,
+			target_audience=self.target_audience,
+			video_idea=self.video_idea,
+			reference_template=template,
+		)
