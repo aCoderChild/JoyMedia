@@ -84,7 +84,28 @@ def _validate_video_plan(result):
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		frappe.throw(_("Qwen video plan must contain a shots list."))
 
+	if not result["shots"]:
+		frappe.throw(_("Qwen video plan must contain at least one shot."))
+
 	required_fields = {"shot_number", "camera", "subject", "motion", "lighting", "audio"}
+	normalized_shots = []
+
 	for shot in result["shots"]:
 		if not isinstance(shot, dict) or not required_fields.issubset(shot):
 			frappe.throw(_("Each Qwen shot must contain the required video plan fields."))
+
+		if not isinstance(shot["shot_number"], int) or shot["shot_number"] < 1:
+			frappe.throw(_("Shot number must be a positive integer."))
+
+		normalized_shots.append(
+			{
+				"shot_number": shot["shot_number"],
+				"camera": str(shot["camera"]).strip(),
+				"subject": str(shot["subject"]).strip(),
+				"motion": str(shot["motion"]).strip(),
+				"lighting": str(shot["lighting"]).strip(),
+				"audio": str(shot["audio"]).strip(),
+			}
+		)
+
+	result["shots"] = normalized_shots
