@@ -12,6 +12,7 @@ from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
 
 from .execution_router import has_configured_workers, select_worker
 from .generation_runner import prepare_generation_job, submit_attempt
+from .generation_segment_planner import plan_generation_segments
 from .prompt_compiler import compile_prompt
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_media_specification
@@ -56,10 +57,14 @@ def prepare_run(run_name: str):
 		frappe.throw(_("Generation Run {0} cannot be prepared from status {1}.").format(run.name, run.status))
 
 	media_specification = frappe.get_doc("Media Specification", run.media_specification)
+	workflow_version = frappe.get_doc(
+		"Workflow Version",
+		run.workflow_version,
+	)
 	shots = frappe.get_all(
 		"Shot Specification",
 		filters={"media_specification": media_specification.name},
-		fields=["name"],
+		fields=["name", "planned_frame_count"],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
@@ -73,6 +78,23 @@ def prepare_run(run_name: str):
 			):
 				continue
 
+			segments = plan_generation_segments(
+				shot.planned_frame_count,
+				max_segment_frames=workflow_version.frame_count,
+			)
+
+			if len(segments) != 1:
+				frappe.throw(
+					_(
+						"Shot {0} requires {1} generation segments. "
+						"Multi-segment execution is not enabled yet."
+					).format(
+						shot.name,
+						len(segments),
+					)
+				)
+
+			segment = segments[0]
 			compiled_prompt = compile_prompt(shot.name, media_specification.prompt_template_version)
 			job = frappe.get_doc(
 				{
@@ -84,6 +106,8 @@ def prepare_run(run_name: str):
 					"requested_by": run.requested_by,
 					"requested_variants": run.requested_variants_per_shot,
 					"status": "Draft",
+					"segment_index": segment["segment_index"],
+					"segment_frame_count": segment["segment_frame_count"],
 				}
 			).insert(ignore_permissions=True)
 			prepare_generation_job(job.name)
