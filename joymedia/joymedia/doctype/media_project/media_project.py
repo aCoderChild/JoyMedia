@@ -1,6 +1,10 @@
 # Copyright (c) 2026, JoyMedia and contributors
 # For license information, please see license.txt
 
+import base64
+import mimetypes
+from pathlib import Path
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -51,4 +55,44 @@ class MediaProject(Document):
 			target_audience=self.target_audience,
 			video_idea=self.video_idea,
 			reference_template=template,
+			reference_images=self._get_project_image_data_urls(),
 		)
+
+	def _get_project_image_data_urls(self):
+		media_asset_names = frappe.get_all(
+			"Media Asset",
+			filters={
+				"media_project": self.name,
+				"media_type": "Image",
+				"status": "Active",
+			},
+			pluck="name",
+		)
+		if not media_asset_names:
+			return []
+
+		asset_versions = frappe.get_all(
+			"Asset Version",
+			filters={"media_asset": ["in", media_asset_names]},
+			fields=["name", "media_asset", "version_number", "file"],
+			order_by="media_asset asc, version_number desc",
+		)
+		latest_versions = {}
+		for version in asset_versions:
+			latest_versions.setdefault(version.media_asset, version)
+
+		image_data_urls = []
+		for version in latest_versions.values():
+			if not version.file:
+				frappe.throw(_("Asset Version {0} has no image file.").format(version.name))
+
+			file_doc = frappe.get_doc("File", {"file_url": version.file})
+			file_path = Path(file_doc.get_full_path())
+			if not file_path.exists():
+				frappe.throw(_("Asset Version file does not exist: {0}").format(version.file))
+
+			mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+			encoded_file = base64.b64encode(file_path.read_bytes()).decode("ascii")
+			image_data_urls.append(f"data:{mime_type};base64,{encoded_file}")
+
+		return image_data_urls

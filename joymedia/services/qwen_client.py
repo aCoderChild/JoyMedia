@@ -14,6 +14,7 @@ def generate_video_plan(
 	target_audience: str,
 	video_idea: str,
 	reference_template: dict | None = None,
+	reference_images: list[str] | None = None,
 ) -> dict:
 	base_url = frappe.conf.get("qwen_base_url")
 	model = frappe.conf.get("qwen_model")
@@ -45,6 +46,16 @@ def generate_video_plan(
 	)
 	if reference_template:
 		user_prompt += "\n\nREFERENCE TEMPLATE\n" + json.dumps(reference_template, ensure_ascii=False)
+	if reference_images:
+		user_prompt += (
+			"\n\nPROJECT IMAGES\n"
+			"Use the attached project images as visual ground truth for the product, appearance, "
+			"materials, colors and identity in the shot plan."
+		)
+
+	user_content = [{"type": "text", "text": user_prompt}]
+	for image in reference_images or []:
+		user_content.append({"type": "image_url", "image_url": {"url": image}})
 
 	try:
 		response = requests.post(
@@ -56,7 +67,7 @@ def generate_video_plan(
 						"role": "system",
 						"content": "You produce structured JSON video plans. Do not include markdown fences or commentary.",
 					},
-					{"role": "user", "content": user_prompt},
+					{"role": "user", "content": user_content},
 				],
 				"response_format": {"type": "json_object"},
 			},
