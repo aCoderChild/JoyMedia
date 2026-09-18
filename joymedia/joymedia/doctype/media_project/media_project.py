@@ -38,8 +38,21 @@ class MediaProject(Document):
 			frappe.throw(_("Invalid Media Project status."))
 
 	@frappe.whitelist()
-	def generate_video_plan(self):
+	def generate_video_plan(self, media_specification_name, scene_count):
 		from joymedia.services.qwen_client import generate_video_plan
+
+		media_specification = frappe.get_doc("Media Specification", media_specification_name)
+		if media_specification.media_project != self.name:
+			frappe.throw(_("Media Specification must belong to this Media Project."))
+		if media_specification.status != "Draft":
+			frappe.throw(_("Video plans can only be generated for Draft Media Specifications."))
+
+		try:
+			scene_count = int(scene_count)
+		except (TypeError, ValueError):
+			frappe.throw(_("Number of Scenes must be a positive integer."))
+		if scene_count < 1:
+			frappe.throw(_("Number of Scenes must be at least 1."))
 
 		template = None
 		if self.reference_template:
@@ -50,6 +63,9 @@ class MediaProject(Document):
 			product_name=self.product_name,
 			target_audience=self.target_audience,
 			video_idea=self.video_idea,
+			total_video_duration=media_specification.total_duration_seconds,
+			target_fps=media_specification.target_fps,
+			scene_count=scene_count,
 			reference_template=template,
 			reference_images=self._get_project_image_inputs(),
 		)

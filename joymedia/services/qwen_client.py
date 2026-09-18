@@ -13,6 +13,9 @@ def generate_video_plan(
 	product_name: str,
 	target_audience: str,
 	video_idea: str,
+	total_video_duration: float,
+	target_fps: float,
+	scene_count: int,
 	reference_template: dict | None = None,
 	reference_images: list[dict] | None = None,
 ) -> dict:
@@ -48,6 +51,10 @@ def generate_video_plan(
 		f"PRODUCT NAME\n{product_name}\n\n"
 		f"TARGET AUDIENCE\n{target_audience}\n\n"
 		f"VIDEO IDEA\n{video_idea or ''}\n\n"
+		f"TOTAL VIDEO DURATION: {total_video_duration} seconds\n"
+		f"TARGET FPS: {target_fps}\n"
+		f"NUMBER OF SCENES: {scene_count}\n\n"
+		f"Return exactly {scene_count} shots.\n\n"
 		"Return only valid JSON with this shape:\n"
 		f"{response_shape}"
 	)
@@ -107,16 +114,23 @@ def generate_video_plan(
 	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
 		frappe.throw(_("Qwen returned invalid video plan JSON: {0}").format(str(exc)))
 
-	_validate_video_plan(result, reference_image_count=len(reference_images or []))
+	_validate_video_plan(
+		result,
+		reference_image_count=len(reference_images or []),
+		scene_count=scene_count,
+	)
 	return result
 
 
-def _validate_video_plan(result, reference_image_count=0):
+def _validate_video_plan(result, reference_image_count=0, scene_count=None):
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		frappe.throw(_("Qwen video plan must contain a shots list."))
 
 	if not result["shots"]:
 		frappe.throw(_("Qwen video plan must contain at least one shot."))
+
+	if scene_count is not None and len(result["shots"]) != scene_count:
+		frappe.throw(_("Qwen returned {0} shots; expected {1}.").format(len(result["shots"]), scene_count))
 
 	required_fields = {"shot_number", "camera", "subject", "motion", "lighting", "audio"}
 	if reference_image_count:
