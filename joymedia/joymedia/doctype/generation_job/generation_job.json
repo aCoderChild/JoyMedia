@@ -1,8 +1,7 @@
 {
  "actions": [],
- "allow_bulk_edit": 0,
  "autoname": "JOB-.#####",
- "creation": "2026-09-03 16:54:08.685597",
+ "creation": "2026-09-08 03:41:02.158157",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -21,6 +20,9 @@
   "started_at",
   "completed_at",
   "progress",
+  "segment_execution_section",
+  "segment_index",
+  "segment_frame_count",
   "result_summary_section",
   "successful_variants",
   "failed_variants",
@@ -174,17 +176,33 @@
    "description": "Exact compiled prompt snapshot used by this generation job.",
    "fieldname": "compiled_prompt",
    "fieldtype": "Link",
-    "in_list_view": 1,
+   "in_list_view": 1,
    "label": "Compiled Prompt",
    "options": "Compiled Prompt",
    "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
+  },
+  {
+   "fieldname": "segment_execution_section",
+   "fieldtype": "Section Break",
+   "label": "Segment Execution"
+  },
+  {
+   "default": "1",
+   "fieldname": "segment_index",
+   "fieldtype": "Int",
+   "label": "Segment Index"
+  },
+  {
+   "fieldname": "segment_frame_count",
+   "fieldtype": "Int",
+   "label": "Segment Frame Count"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-04 01:14:34.554692",
+ "modified": "2026-09-19 00:20:23.917597",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Job",

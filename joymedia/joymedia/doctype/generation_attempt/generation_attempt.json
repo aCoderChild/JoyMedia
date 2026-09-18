@@ -2,7 +2,7 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "autoname": "ATT-.#####",
- "creation": "2026-09-07 09:37:13.060632",
+ "creation": "2026-09-07 10:02:16.337308",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -25,6 +25,7 @@
   "resolved_workflow_hash",
   "output_section",
   "output_asset_version",
+  "last_frame_asset_version",
   "output_artifact",
   "failure_section",
   "error_summary",
@@ -218,12 +219,19 @@
    "label": "Output Artifact",
    "options": "Generation Artifact",
    "read_only": 1
+  },
+  {
+   "fieldname": "last_frame_asset_version",
+   "fieldtype": "Link",
+   "label": "Last Frame Asset Version",
+   "options": "Asset Version",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-07 09:49:46.046143",
+ "modified": "2026-09-19 00:30:16.483709",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Attempt",
