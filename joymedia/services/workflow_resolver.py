@@ -72,6 +72,10 @@ def _resolve_runtime_value(binding_key, job, attempt):
 		if binding_key == "delivery_width":
 			return int(media_spec.delivery_width)
 		return int(media_spec.delivery_height)
+	if binding_key == "segment_last_frame_index":
+		return int(job.segment_frame_count) - 1
+	if binding_key == "last_frame_filename_prefix":
+		return f"{job.name}_{attempt.name}_last_frame"
 	frappe.throw(_("Unsupported Runtime Value binding: {0}").format(binding_key))
 
 
