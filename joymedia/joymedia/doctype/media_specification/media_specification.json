@@ -158,7 +158,7 @@
    "fieldtype": "Select",
    "in_standard_filter": 1,
    "label": "Delivery Preset",
-   "options": "Landscape 720p\nLandscape 1080p\nPortrait 720p\nPortrait 1080p\nSquare 1080p\nCustom",
+   "options": "Landscape\nPortrait\nSquare\nCustom",
    "reqd": 1
   },
   {

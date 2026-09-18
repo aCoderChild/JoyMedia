@@ -24,11 +24,9 @@ class MediaSpecification(Document):
 		"acceptance_criteria",
 	)
 	PRESET_DIMENSIONS: ClassVar[dict[str, tuple[int, int]]] = {
-		"Landscape 720p": (1280, 720),
-		"Landscape 1080p": (1920, 1080),
-		"Portrait 720p": (720, 1280),
-		"Portrait 1080p": (1080, 1920),
-		"Square 1080p": (1080, 1080),
+		"Landscape": (1344, 768),
+		"Portrait": (768, 1344),
+		"Square": (1024, 1024),
 	}
 
 	def validate(self):
