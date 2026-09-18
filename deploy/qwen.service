@@ -7,7 +7,8 @@ Wants=network-online.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu
-ExecStart=/home/ubuntu/qwen_env/bin/python /home/ubuntu/qwen_env/bin/vllm serve /home/ubuntu/models/Qwen2.5-VL-72B-AWQ --served-model-name joymedia-qwen --host 127.0.0.1 --port 8001 --dtype auto --gpu-memory-utilization 0.55 --max-model-len 16384
+Environment=VLLM_USE_FLASHINFER_SAMPLER=0
+ExecStart=/home/ubuntu/qwen_env/bin/python /home/ubuntu/qwen_env/bin/vllm serve /home/ubuntu/models/Qwen2.5-VL-72B-AWQ --served-model-name joymedia-qwen --host 127.0.0.1 --port 8001 --dtype auto --kv-cache-memory-bytes 6442450944 --max-model-len 16384 --enforce-eager
 Restart=always
 RestartSec=5
 
