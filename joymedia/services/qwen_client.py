@@ -14,7 +14,7 @@ def generate_video_plan(
 	target_audience: str,
 	video_idea: str,
 	reference_template: dict | None = None,
-	reference_images: list[str] | None = None,
+	reference_images: list[dict] | None = None,
 ) -> dict:
 	base_url = frappe.conf.get("qwen_base_url")
 	model = frappe.conf.get("qwen_model")
@@ -35,27 +35,47 @@ def generate_video_plan(
 			"target audience and video idea."
 		)
 
+	response_shape = (
+		'{"shots":[{"shot_number":1,"reference_image_index":1,"camera":"...",'
+		'"subject":"...","motion":"...","lighting":"...","audio":"..."}]}'
+		if reference_images
+		else '{"shots":[{"shot_number":1,"camera":"...","subject":"...",'
+		'"motion":"...","lighting":"...","audio":"..."}]}'
+	)
+
 	user_prompt = (
 		f"{instruction}\n\n"
 		f"PRODUCT NAME\n{product_name}\n\n"
 		f"TARGET AUDIENCE\n{target_audience}\n\n"
 		f"VIDEO IDEA\n{video_idea or ''}\n\n"
 		"Return only valid JSON with this shape:\n"
-		'{"shots":[{"shot_number":1,"camera":"...","subject":"...",'
-		'"motion":"...","lighting":"...","audio":"..."}]}'
+		f"{response_shape}"
 	)
 	if reference_template:
 		user_prompt += "\n\nREFERENCE TEMPLATE\n" + json.dumps(reference_template, ensure_ascii=False)
 	if reference_images:
 		user_prompt += (
 			"\n\nPROJECT IMAGES\n"
-			"Use the attached project images as visual ground truth for the product, appearance, "
-			"materials, colors and identity in the shot plan."
+			f"You are given {len(reference_images)} numbered project images.\n"
+			"For every shot, choose the ONE project image that visually grounds that shot and "
+			"return its number as reference_image_index.\n"
+			"reference_image_index must be an integer between 1 and "
+			f"{len(reference_images)}.\n"
+			"Do not invent rooms, objects, architecture, or product details that are not visible "
+			"in the selected reference image."
 		)
 
 	user_content = [{"type": "text", "text": user_prompt}]
 	for image in reference_images or []:
-		user_content.append({"type": "image_url", "image_url": {"url": image}})
+		user_content.append(
+			{
+				"type": "text",
+				"text": f"REFERENCE IMAGE {image['index']}: {image['asset_name']}",
+			}
+		)
+		user_content.append(
+			{"type": "image_url", "image_url": {"url": image["data_url"]}}
+		)
 
 	try:
 		response = requests.post(
@@ -87,11 +107,11 @@ def generate_video_plan(
 	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
 		frappe.throw(_("Qwen returned invalid video plan JSON: {0}").format(str(exc)))
 
-	_validate_video_plan(result)
+	_validate_video_plan(result, reference_image_count=len(reference_images or []))
 	return result
 
 
-def _validate_video_plan(result):
+def _validate_video_plan(result, reference_image_count=0):
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		frappe.throw(_("Qwen video plan must contain a shots list."))
 
@@ -99,24 +119,33 @@ def _validate_video_plan(result):
 		frappe.throw(_("Qwen video plan must contain at least one shot."))
 
 	required_fields = {"shot_number", "camera", "subject", "motion", "lighting", "audio"}
+	if reference_image_count:
+		required_fields.add("reference_image_index")
+
 	normalized_shots = []
 
 	for shot in result["shots"]:
 		if not isinstance(shot, dict) or not required_fields.issubset(shot):
 			frappe.throw(_("Each Qwen shot must contain the required video plan fields."))
 
-		if not isinstance(shot["shot_number"], int) or shot["shot_number"] < 1:
+		if type(shot["shot_number"]) is not int or shot["shot_number"] < 1:
 			frappe.throw(_("Shot number must be a positive integer."))
 
-		normalized_shots.append(
-			{
-				"shot_number": shot["shot_number"],
-				"camera": str(shot["camera"]).strip(),
-				"subject": str(shot["subject"]).strip(),
-				"motion": str(shot["motion"]).strip(),
-				"lighting": str(shot["lighting"]).strip(),
-				"audio": str(shot["audio"]).strip(),
-			}
-		)
+		normalized = {
+			"shot_number": shot["shot_number"],
+			"camera": str(shot["camera"]).strip(),
+			"subject": str(shot["subject"]).strip(),
+			"motion": str(shot["motion"]).strip(),
+			"lighting": str(shot["lighting"]).strip(),
+			"audio": str(shot["audio"]).strip(),
+		}
+
+		if reference_image_count:
+			index = shot["reference_image_index"]
+			if type(index) is not int or index < 1 or index > reference_image_count:
+				frappe.throw(_("Invalid reference image index."))
+			normalized["reference_image_index"] = index
+
+		normalized_shots.append(normalized)
 
 	result["shots"] = normalized_shots

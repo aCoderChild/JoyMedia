@@ -55,25 +55,26 @@ class MediaProject(Document):
 			target_audience=self.target_audience,
 			video_idea=self.video_idea,
 			reference_template=template,
-			reference_images=self._get_project_image_data_urls(),
+			reference_images=self._get_project_image_inputs(),
 		)
 
-	def _get_project_image_data_urls(self):
-		media_asset_names = frappe.get_all(
+	def _get_project_image_inputs(self):
+		media_assets = frappe.get_all(
 			"Media Asset",
 			filters={
 				"media_project": self.name,
 				"media_type": "Image",
 				"status": "Active",
 			},
-			pluck="name",
+			fields=["name", "asset_name"],
+			order_by="asset_name asc, name asc",
 		)
-		if not media_asset_names:
+		if not media_assets:
 			return []
 
 		asset_versions = frappe.get_all(
 			"Asset Version",
-			filters={"media_asset": ["in", media_asset_names]},
+			filters={"media_asset": ["in", [asset.name for asset in media_assets]]},
 			fields=["name", "media_asset", "version_number", "file"],
 			order_by="media_asset asc, version_number desc",
 		)
@@ -81,8 +82,12 @@ class MediaProject(Document):
 		for version in asset_versions:
 			latest_versions.setdefault(version.media_asset, version)
 
-		image_data_urls = []
-		for version in latest_versions.values():
+		reference_images = []
+		for asset in media_assets:
+			version = latest_versions.get(asset.name)
+			if not version:
+				continue
+
 			if not version.file:
 				frappe.throw(_("Asset Version {0} has no image file.").format(version.name))
 
@@ -93,6 +98,14 @@ class MediaProject(Document):
 
 			mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
 			encoded_file = base64.b64encode(file_path.read_bytes()).decode("ascii")
-			image_data_urls.append(f"data:{mime_type};base64,{encoded_file}")
+			reference_images.append(
+				{
+					"index": len(reference_images) + 1,
+					"media_asset": asset.name,
+					"asset_name": asset.asset_name,
+					"asset_version": version.name,
+					"data_url": f"data:{mime_type};base64,{encoded_file}",
+				}
+			)
 
-		return image_data_urls
+		return reference_images
