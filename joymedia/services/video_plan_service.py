@@ -51,6 +51,33 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 	if len(shot_numbers) != len(set(shot_numbers)):
 		frappe.throw(_("Video plan contains duplicate shot numbers."))
 
+	reference_image_indexes = {
+		shot["reference_image_index"] for shot in plan["shots"] if "reference_image_index" in shot
+	}
+	asset_version_by_index = {}
+	required_input_role = None
+	if reference_image_indexes:
+		from joymedia.services.project_image_manifest import get_project_image_manifest
+
+		image_manifest = get_project_image_manifest(media_spec.media_project)
+		asset_version_by_index = {image["index"]: image["asset_version"] for image in image_manifest}
+		if not media_spec.generation_workflow_version:
+			frappe.throw(_("The Media Specification requires a Generation Workflow Version."))
+
+		workflow_version = frappe.get_doc("Workflow Version", media_spec.generation_workflow_version)
+		required_input_roles = {
+			frappe.scrub(binding.required_input_role)
+			for binding in workflow_version.bindings
+			if binding.value_source == "Generation Input"
+			and binding.required
+			and binding.required_input_role
+		}
+		if len(required_input_roles) > 1:
+			frappe.throw(
+				_("Video plan application requires exactly one required Generation Input role.")
+			)
+		required_input_role = next(iter(required_input_roles), None)
+
 	created_shots = []
 
 	for shot in plan["shots"]:
@@ -66,6 +93,19 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 				"audio_direction": shot["audio"],
 			}
 		)
+		if "reference_image_index" in shot:
+			asset_version = asset_version_by_index.get(shot["reference_image_index"])
+			if not asset_version:
+				frappe.throw(_("Video plan references an unavailable project image."))
+			if not required_input_role:
+				frappe.throw(_("The Media Specification workflow has no required Generation Input role."))
+			doc.append(
+				"generation_inputs",
+				{
+					"input_role": required_input_role,
+					"asset_version": asset_version,
+				},
+			)
 		doc.insert(ignore_permissions=True)
 		created_shots.append(doc.name)
 

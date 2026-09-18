@@ -1,10 +1,6 @@
 # Copyright (c) 2026, JoyMedia and contributors
 # For license information, please see license.txt
 
-import base64
-import mimetypes
-from pathlib import Path
-
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -59,53 +55,6 @@ class MediaProject(Document):
 		)
 
 	def _get_project_image_inputs(self):
-		media_assets = frappe.get_all(
-			"Media Asset",
-			filters={
-				"media_project": self.name,
-				"media_type": "Image",
-				"status": "Active",
-			},
-			fields=["name", "asset_name"],
-			order_by="asset_name asc, name asc",
-		)
-		if not media_assets:
-			return []
+		from joymedia.services.project_image_manifest import get_project_image_manifest
 
-		asset_versions = frappe.get_all(
-			"Asset Version",
-			filters={"media_asset": ["in", [asset.name for asset in media_assets]]},
-			fields=["name", "media_asset", "version_number", "file"],
-			order_by="media_asset asc, version_number desc",
-		)
-		latest_versions = {}
-		for version in asset_versions:
-			latest_versions.setdefault(version.media_asset, version)
-
-		reference_images = []
-		for asset in media_assets:
-			version = latest_versions.get(asset.name)
-			if not version:
-				continue
-
-			if not version.file:
-				frappe.throw(_("Asset Version {0} has no image file.").format(version.name))
-
-			file_doc = frappe.get_doc("File", {"file_url": version.file})
-			file_path = Path(file_doc.get_full_path())
-			if not file_path.exists():
-				frappe.throw(_("Asset Version file does not exist: {0}").format(version.file))
-
-			mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
-			encoded_file = base64.b64encode(file_path.read_bytes()).decode("ascii")
-			reference_images.append(
-				{
-					"index": len(reference_images) + 1,
-					"media_asset": asset.name,
-					"asset_name": asset.asset_name,
-					"asset_version": version.name,
-					"data_url": f"data:{mime_type};base64,{encoded_file}",
-				}
-			)
-
-		return reference_images
+		return get_project_image_manifest(self.name, include_data_url=True)
