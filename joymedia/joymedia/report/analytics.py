@@ -5,7 +5,7 @@ import frappe
 from frappe.utils import add_days, flt, get_datetime, getdate
 
 
-TERMINAL_REVIEW_STATUSES = {"Approved", "Rejected", "Needs Revision"}
+TERMINAL_REVIEW_STATUSES = {"Approved", "Rejected"}
 
 
 def get_attempt_analytics(filters=None):
@@ -77,7 +77,7 @@ def get_attempt_analytics(filters=None):
 		filters={"generation_artifact": ["in", list(artifact_names)]}
 		if artifact_names
 		else {"name": ["in", [""]]},
-		fields=["generation_artifact", "status", "failure_class"],
+		fields=["generation_artifact", "status"],
 	)
 	artifact_attempts = frappe.get_all(
 		"Generation Artifact",

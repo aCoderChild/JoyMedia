@@ -157,10 +157,7 @@ def _store_artifact_file_in_frappe(artifact, attempt):
 def _create_pending_quality_review(attempt, artifact):
 	if frappe.db.exists(
 		"Quality Review",
-		{
-			"generation_artifact": artifact.name,
-			"review_type": "Automated",
-		},
+		{"generation_artifact": artifact.name},
 	):
 		return
 
@@ -168,7 +165,6 @@ def _create_pending_quality_review(attempt, artifact):
 		{
 			"doctype": "Quality Review",
 			"generation_artifact": artifact.name,
-			"review_type": "Automated",
 			"status": "Pending",
 		}
 	).insert(ignore_permissions=True)

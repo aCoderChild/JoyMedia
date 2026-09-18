@@ -70,7 +70,6 @@ class TestGenerationArtifactCreation(FrappeTestCase):
 			{
 				"doctype": "Quality Review",
 				"generation_artifact": "GART-00001",
-				"review_type": "Automated",
 				"status": "Pending",
 			}
 		)

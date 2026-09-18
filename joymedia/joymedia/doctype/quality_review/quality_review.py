@@ -7,106 +7,125 @@ from frappe.model.document import Document
 from frappe.utils import now
 
 
-FINAL_REVIEW_STATUSES = ("Approved", "Rejected", "Needs Revision")
-SCORE_FIELDS = (
-	"visual_quality_score",
-	"identity_score",
-	"temporal_consistency_score",
-	"prompt_adherence_score",
-)
+FINAL_STATUSES = {"Approved", "Rejected"}
 
 
 class QualityReview(Document):
 	def validate(self):
-		self._validate_attempt_artifact_context()
-		self._validate_failure_class()
-		self._validate_scores()
-		if self.get("review_type") == "Human" and not self.get("reviewer"):
-			frappe.throw(_("Human Quality Reviews require a Reviewer."))
-		if self.status in FINAL_REVIEW_STATUSES and not self.reviewed_at:
-			self.reviewed_at = now()
-
-	def after_insert(self):
-		self._apply_review_outcome()
+		self._validate_artifact_context()
+		self._validate_status_transition()
+		self._validate_finalization()
 
 	def on_update(self):
-		self._apply_review_outcome()
-
-	def _apply_review_outcome(self):
-		if self.status not in FINAL_REVIEW_STATUSES:
+		previous = self.get_doc_before_save()
+		if not previous or previous.status == self.status:
 			return
+		if self.status in FINAL_STATUSES:
+			self._apply_review_outcome()
 
-		artifact, attempt, _job, shot = self._get_review_context()
-		if self.status == "Approved":
-			from joymedia.services.artifact_service import promote_artifact
-
-			asset_version = promote_artifact(self.generation_artifact)["asset_version"]
-			self.db_set("asset_version", asset_version, update_modified=False)
-			shot.selected_output_asset_version = asset_version
-		elif self.status == "Rejected":
-			artifact = frappe.get_doc("Generation Artifact", self.generation_artifact)
-			if artifact.lifecycle_status in ("Temporary", "Retained"):
-				artifact.lifecycle_status = "Expired"
-				artifact.save(ignore_permissions=True)
-			if artifact.promoted_asset_version and shot.selected_output_asset_version == artifact.promoted_asset_version:
-				shot.selected_output_asset_version = None
-			else:
-				return
-		else:
-			return
-		shot.save(ignore_permissions=True)
-		if self.status == "Approved":
-			if attempt.generation_job and _job.generation_run:
-				from joymedia.services.generation_orchestrator import enqueue_finalization_if_ready
-
-				enqueue_finalization_if_ready(_job.generation_run)
-
-
-	def _validate_attempt_artifact_context(self):
-		artifact, attempt, _job, _shot = self._get_review_context()
-		if attempt.status != "Completed":
-			frappe.throw(_("Quality Review requires a completed Generation Attempt."))
-		if attempt.output_artifact != artifact.name:
-			frappe.throw(_("Quality Review Generation Artifact must match the Generation Attempt output."))
-
-	def _get_review_context(self):
+	def _validate_artifact_context(self):
 		if not self.generation_artifact:
 			frappe.throw(_("Quality Review requires a Generation Artifact."))
 
 		artifact = frappe.get_doc("Generation Artifact", self.generation_artifact)
 		if not artifact.generation_attempt:
-			frappe.throw(_("Generation Artifact {0} has no Generation Attempt.").format(artifact.name))
+			frappe.throw(
+				_("Generation Artifact {0} has no Generation Attempt.").format(artifact.name)
+			)
 
 		attempt = frappe.get_doc("Generation Attempt", artifact.generation_attempt)
-		if not attempt.generation_job:
-			frappe.throw(_("Generation Attempt {0} has no Generation Job.").format(attempt.name))
+		if attempt.status != "Completed":
+			frappe.throw(_("Only completed Generation Attempts can be reviewed."))
+		if attempt.output_artifact != artifact.name:
+			frappe.throw(_("Generation Artifact does not match the Attempt output."))
 
+	def _validate_status_transition(self):
+		if self.is_new():
+			if self.status != "Pending":
+				frappe.throw(_("New Quality Reviews must start as Pending."))
+			return
+
+		previous = self.get_doc_before_save()
+		if previous and previous.status in FINAL_STATUSES and self.status != previous.status:
+			frappe.throw(_("A completed review decision cannot be changed."))
+
+	def _validate_finalization(self):
+		if self.status not in FINAL_STATUSES:
+			return
+		if not self.reviewer:
+			frappe.throw(_("Reviewer is required."))
+		if not self.reviewed_at:
+			frappe.throw(_("Reviewed At is required."))
+
+	def _get_context(self):
+		artifact = frappe.get_doc("Generation Artifact", self.generation_artifact)
+		attempt = frappe.get_doc("Generation Attempt", artifact.generation_attempt)
 		job = frappe.get_doc("Generation Job", attempt.generation_job)
-		if not job.shot_specification:
-			frappe.throw(_("Generation Job {0} has no Shot Specification.").format(job.name))
-
 		shot = frappe.get_doc("Shot Specification", job.shot_specification)
 		return artifact, attempt, job, shot
 
-	def _validate_failure_class(self):
-		if not self.get("failure_class"):
-			return
-		failure_class_field = frappe.get_meta("Generation Attempt").get_field("failure_class")
-		valid_failure_classes = set((failure_class_field.options or "").splitlines())
-		if self.get("failure_class") not in valid_failure_classes:
-			frappe.throw(_("Quality Review Failure Class must use the Generation Attempt taxonomy."))
+	def _apply_review_outcome(self):
+		artifact, attempt, job, shot = self._get_context()
+		if self.status == "Approved":
+			self._approve_artifact(artifact, attempt, job, shot)
+		elif self.status == "Rejected":
+			self._reject_artifact(artifact, shot)
 
-	def _validate_scores(self):
-		for fieldname in SCORE_FIELDS:
-			value = self.get(fieldname)
-			if value in (None, ""):
-				continue
-			try:
-				score = float(value)
-			except (TypeError, ValueError):
-				frappe.throw(_("{0} must be a number from 0.0 to 1.0.").format(fieldname))
-			if not 0.0 <= score <= 1.0:
-				frappe.throw(_("{0} must be from 0.0 to 1.0.").format(fieldname))
+	def _approve_artifact(self, artifact, attempt, job, shot):
+		if self.asset_version:
+			return
+
+		from joymedia.services.artifact_service import promote_artifact
+
+		asset_version = promote_artifact(artifact.name)["asset_version"]
+		self.db_set("asset_version", asset_version, update_modified=False)
+		shot.selected_output_asset_version = asset_version
+		shot.save(ignore_permissions=True)
+
+		if job.generation_run:
+			from joymedia.services.generation_orchestrator import enqueue_finalization_if_ready
+
+			enqueue_finalization_if_ready(job.generation_run)
+
+	def _reject_artifact(self, artifact, shot):
+		if artifact.lifecycle_status in ("Temporary", "Retained"):
+			artifact.lifecycle_status = "Expired"
+			artifact.save(ignore_permissions=True)
+
+		if (
+			artifact.promoted_asset_version
+			and shot.selected_output_asset_version == artifact.promoted_asset_version
+		):
+			shot.selected_output_asset_version = None
+			shot.save(ignore_permissions=True)
+
+
+@frappe.whitelist()
+def approve_review(review_name: str):
+	frappe.has_permission("Quality Review", "write", review_name, throw=True)
+	review = frappe.get_doc("Quality Review", review_name)
+	if review.status != "Pending":
+		frappe.throw(_("Only Pending reviews can be approved."))
+	review.status = "Approved"
+	review.reviewer = frappe.session.user
+	review.reviewed_at = now()
+	review.save()
+	return {"name": review.name, "status": review.status, "asset_version": review.asset_version}
+
+
+@frappe.whitelist()
+def reject_review(review_name: str, notes: str | None = None):
+	frappe.has_permission("Quality Review", "write", review_name, throw=True)
+	review = frappe.get_doc("Quality Review", review_name)
+	if review.status != "Pending":
+		frappe.throw(_("Only Pending reviews can be rejected."))
+	review.status = "Rejected"
+	review.reviewer = frappe.session.user
+	review.reviewed_at = now()
+	if notes:
+		review.notes = notes.strip()
+	review.save()
+	return {"name": review.name, "status": review.status}
 
 
 @frappe.whitelist()
