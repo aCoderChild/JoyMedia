@@ -6,6 +6,16 @@ import frappe
 from frappe import _
 
 
+REFERENCE_IMAGE_CATEGORIES = [
+	"Product",
+	"Character",
+	"Background",
+	"Brand",
+	"Storyboard",
+	"Reference",
+]
+
+
 def get_project_image_manifest(media_project: str, *, include_data_url: bool = False):
 	media_assets = frappe.get_all(
 		"Media Asset",
@@ -13,6 +23,7 @@ def get_project_image_manifest(media_project: str, *, include_data_url: bool = F
 			"media_project": media_project,
 			"media_type": "Image",
 			"status": "Active",
+			"asset_category": ["in", REFERENCE_IMAGE_CATEGORIES],
 		},
 		fields=["name", "asset_name"],
 		order_by="asset_name asc, name asc",

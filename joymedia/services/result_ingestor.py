@@ -165,7 +165,7 @@ def _get_or_create_continuation_asset(shot_name, media_project):
 			"asset_name": asset_name,
 			"asset_scope": "Project",
 			"media_type": "Image",
-			"asset_category": "Reference",
+			"asset_category": "Other",
 			"media_project": media_project,
 		}
 	)
