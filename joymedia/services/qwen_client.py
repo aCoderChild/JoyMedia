@@ -41,7 +41,7 @@ def generate_video_plan(
 		f"VIDEO IDEA\n{video_idea or ''}\n\n"
 		"Return only valid JSON with this shape:\n"
 		'{"shots":[{"shot_number":1,"camera":"...","subject":"...",'
-		'"motion":"...","lighting":"...","audio":"...","final_prompt":"..."}]}'
+		'"motion":"...","lighting":"...","audio":"..."}]}'
 	)
 	if reference_template:
 		user_prompt += "\n\nREFERENCE TEMPLATE\n" + json.dumps(reference_template, ensure_ascii=False)
@@ -84,7 +84,7 @@ def _validate_video_plan(result):
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		frappe.throw(_("Qwen video plan must contain a shots list."))
 
-	required_fields = {"shot_number", "camera", "subject", "motion", "lighting", "audio", "final_prompt"}
+	required_fields = {"shot_number", "camera", "subject", "motion", "lighting", "audio"}
 	for shot in result["shots"]:
 		if not isinstance(shot, dict) or not required_fields.issubset(shot):
 			frappe.throw(_("Each Qwen shot must contain the required video plan fields."))
