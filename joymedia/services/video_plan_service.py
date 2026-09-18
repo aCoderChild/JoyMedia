@@ -93,17 +93,23 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 				"audio_direction": shot["audio"],
 			}
 		)
-		if "reference_image_index" in shot:
-			asset_version = asset_version_by_index.get(shot["reference_image_index"])
-			if not asset_version:
-				frappe.throw(_("Video plan references an unavailable project image."))
+		reference_image_index = shot.get("reference_image_index")
+		resolved_asset_version = None
+		if reference_image_index is not None:
+			resolved_asset_version = asset_version_by_index.get(reference_image_index)
+			if not resolved_asset_version:
+				frappe.throw(
+					_("Reference image index {0} could not be resolved.").format(reference_image_index)
+				)
+
+		if resolved_asset_version:
 			if not required_input_role:
 				frappe.throw(_("The Media Specification workflow has no required Generation Input role."))
 			doc.append(
 				"generation_inputs",
 				{
 					"input_role": required_input_role,
-					"asset_version": asset_version,
+					"asset_version": resolved_asset_version,
 				},
 			)
 		doc.insert(ignore_permissions=True)
