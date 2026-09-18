@@ -35,4 +35,4 @@ class MediaProject(Document):
 			frappe.throw(_("Target Audience is required."))
 
 		if self.status not in ALLOWED_STATUSES:
-			frappe.throw(_("Invalid project status."))
+			frappe.throw(_("Invalid Media Project status."))
