@@ -97,16 +97,22 @@ def compose_media_specification(media_specification_name: str):
 
 
 def _get_delivery_profile(media_specification):
-	if not (
-		media_specification.delivery_width
-		and media_specification.delivery_height
-		and media_specification.target_fps
-	):
-		frappe.throw(_("Media Specification must have delivery width, height, and target FPS before composition."))
+	if not media_specification.delivery_width or not media_specification.delivery_height:
+		frappe.throw(_("Media Specification must have delivery width and height before composition."))
+	if not media_specification.generation_workflow_version:
+		frappe.throw(_("Media Specification must have a Generation Workflow Version before composition."))
+
+	workflow_version = frappe.get_doc(
+		"Workflow Version",
+		media_specification.generation_workflow_version,
+	)
+	if not workflow_version.output_fps:
+		frappe.throw(_("Workflow Version must have output FPS before composition."))
+
 	return {
 		"width": int(media_specification.delivery_width),
 		"height": int(media_specification.delivery_height),
-		"fps": float(media_specification.target_fps),
+		"fps": float(workflow_version.output_fps),
 	}
 
 

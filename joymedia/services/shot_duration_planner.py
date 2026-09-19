@@ -20,9 +20,15 @@ def recalculate_shot_durations(media_specification_name: str):
 	if not shots:
 		return {"total_frames": 0, "shots": 0}
 
-	fps = float(media_specification.target_fps or 0)
+	if not media_specification.generation_workflow_version:
+		frappe.throw(_("Media Specification must have a Generation Workflow Version."))
+	workflow_version = frappe.get_doc(
+		"Workflow Version",
+		media_specification.generation_workflow_version,
+	)
+	fps = float(workflow_version.output_fps or 0)
 	if fps <= 0:
-		frappe.throw(_("Media Specification Target FPS must be greater than zero."))
+		frappe.throw(_("Workflow Version output FPS must be greater than zero."))
 
 	total_frames = round(float(media_specification.total_duration_seconds or 0) * fps)
 	if total_frames < len(shots):

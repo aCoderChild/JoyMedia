@@ -46,6 +46,13 @@ class MediaProject(Document):
 			frappe.throw(_("Media Specification must belong to this Media Project."))
 		if media_specification.status != "Draft":
 			frappe.throw(_("Video plans can only be generated for Draft Media Specifications."))
+		if not media_specification.generation_workflow_version:
+			frappe.throw(_("Media Specification must have a Generation Workflow Version."))
+
+		workflow_version = frappe.get_doc(
+			"Workflow Version",
+			media_specification.generation_workflow_version,
+		)
 
 		try:
 			scene_count = int(scene_count)
@@ -64,7 +71,7 @@ class MediaProject(Document):
 			target_audience=self.target_audience,
 			video_idea=self.video_idea,
 			total_video_duration=media_specification.total_duration_seconds,
-			target_fps=media_specification.target_fps,
+			target_fps=workflow_version.output_fps,
 			scene_count=scene_count,
 			reference_template=template,
 			reference_images=self._get_project_image_inputs(),

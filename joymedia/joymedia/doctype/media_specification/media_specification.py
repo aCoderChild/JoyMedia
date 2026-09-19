@@ -17,7 +17,6 @@ class MediaSpecification(Document):
 		"delivery_preset",
 		"delivery_width",
 		"delivery_height",
-		"target_fps",
 		"required_elements",
 		"consistency_requirements",
 		"forbidden_elements",
@@ -43,7 +42,7 @@ class MediaSpecification(Document):
 			frappe.throw("Custom delivery presets require a positive width and height")
 
 	def on_update(self):
-		if self.has_value_changed("total_duration_seconds") or self.has_value_changed("target_fps"):
+		if self.has_value_changed("total_duration_seconds"):
 			from joymedia.services.shot_duration_planner import recalculate_shot_durations
 
 			recalculate_shot_durations(self.name)
@@ -51,8 +50,10 @@ class MediaSpecification(Document):
 	def _validate_timeline(self):
 		if (self.total_duration_seconds or 0) <= 0:
 			frappe.throw(_("Total Duration must be greater than zero."))
-		if (self.target_fps or 0) <= 0:
-			frappe.throw(_("Target FPS must be greater than zero."))
+		if self.generation_workflow_version:
+			workflow_version = frappe.get_doc("Workflow Version", self.generation_workflow_version)
+			if (workflow_version.output_fps or 0) <= 0:
+				frappe.throw(_("Workflow Version output FPS must be greater than zero."))
 
 	def _validate_version_immutability(self):
 		if self.is_new():
