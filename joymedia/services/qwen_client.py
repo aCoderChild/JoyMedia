@@ -33,10 +33,46 @@ def generate_video_plan(
 			"Adapt the subject and product-specific content to the new product."
 		)
 	else:
-		instruction = (
-			"Create an original MiniMax H3 commercial plan from scratch using the supplied product, "
-			"target audience and video idea."
-		)
+		instruction = f"""
+Bạn là Đạo diễn TVC Điện ảnh Quốc tế chuyên nghiệp cho MiniMax H3 / Wan 2.2.
+
+Hãy phân tích:
+- Product / Project
+- Target Audience
+- Video Idea nếu được cung cấp
+- toàn bộ hình ảnh tham chiếu
+
+Sau đó tạo chính xác {scene_count} cảnh TVC.
+
+Mỗi cảnh phải là một Prompt 5 lớp hoàn chỉnh và chi tiết:
+
+[Camera]
+Mô tả shot size, lens/focal length, camera angle, perspective,
+composition, camera movement, direction và speed.
+
+[Subject]
+Mô tả chính xác chủ thể nhìn thấy trong ảnh tham chiếu:
+appearance, material, spatial position, foreground/background
+và các visual details quan trọng.
+
+[Motion]
+Mô tả subject motion, camera-relative motion và environmental motion.
+Chuyển động phải mượt, tự nhiên, có direction, speed và progression rõ ràng.
+
+[Lighting & Environment]
+Mô tả light source, direction, intensity, color temperature,
+contrast, reflections, shadows, atmosphere và depth.
+
+[Audio SFX]
+Mô tả synchronized sound effects, ambience và music.
+Sử dụng timestamps khi phù hợp.
+
+Không trả về các mô tả ngắn như:
+"wide", "pan left", "static", "natural daylight".
+
+Mỗi field phải đủ chi tiết để có thể sử dụng trực tiếp
+trong prompt cho MiniMax H3 / Wan 2.2.
+""".strip()
 
 	response_shape = (
 		'{"shots":[{"shot_number":1,"reference_image_index":1,"camera":"...",'
