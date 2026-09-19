@@ -35,6 +35,7 @@ def start_run(run_name: str):
 	media_specification = frappe.get_doc("Media Specification", run.media_specification)
 	if media_specification.status != "Ready":
 		frappe.throw(_("Media Specification {0} must be Ready to start a Generation Run.").format(media_specification.name))
+	media_specification.validate_generation_setup()
 
 	from .shot_duration_planner import recalculate_shot_durations
 

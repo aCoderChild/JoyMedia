@@ -31,6 +31,7 @@ class MediaSpecification(Document):
 	def validate(self):
 		self._validate_version_immutability()
 		self._validate_timeline()
+		self.validate_generation_setup()
 		if self.delivery_preset in self.PRESET_DIMENSIONS:
 			self.delivery_width, self.delivery_height = self.PRESET_DIMENSIONS[self.delivery_preset]
 		elif self.delivery_preset == "Custom" and (
@@ -40,6 +41,49 @@ class MediaSpecification(Document):
 			or self.delivery_height <= 0
 		):
 			frappe.throw("Custom delivery presets require a positive width and height")
+
+	def validate_generation_setup(self):
+		if self.status != "Ready":
+			return
+
+		if not self.generation_workflow_version:
+			frappe.throw(_("Ready Media Specifications require a Generation Workflow Version."))
+
+		if not self.prompt_template_version:
+			frappe.throw(_("Ready Media Specifications require a Prompt Template Version."))
+
+		workflow_version = frappe.get_doc(
+			"Workflow Version",
+			self.generation_workflow_version,
+		)
+
+		if workflow_version.status not in ("Testing", "Production"):
+			frappe.throw(
+				_("Workflow Version {0} must be Testing or Production.").format(
+					workflow_version.name
+				)
+			)
+
+		prompt_version = frappe.get_doc(
+			"Prompt Template Version",
+			self.prompt_template_version,
+		)
+
+		if prompt_version.status not in ("Testing", "Production"):
+			frappe.throw(
+				_("Prompt Template Version {0} must be Testing or Production.").format(
+					prompt_version.name
+				)
+			)
+
+		prompt_profile = frappe.db.get_value(
+			"Prompt Template",
+			prompt_version.prompt_template,
+			"workflow_profile",
+		)
+
+		if prompt_profile != workflow_version.workflow_profile:
+			frappe.throw(_("Prompt Template Version must match the selected Workflow Profile."))
 
 	def on_update(self):
 		if self.has_value_changed("total_duration_seconds"):
