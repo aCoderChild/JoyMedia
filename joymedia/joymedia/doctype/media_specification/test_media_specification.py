@@ -26,6 +26,7 @@ class TestMediaSpecification(FrappeTestCase):
 			generation_workflow_version=None,
 			prompt_template_version=None,
 		)
+		specification.has_value_changed = lambda fieldname: True
 
 		with patch(
 			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.get_doc",
