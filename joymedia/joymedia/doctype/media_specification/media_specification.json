@@ -12,6 +12,7 @@
   "version_number",
   "status",
   "generation_setup_section",
+  "workflow_profile",
   "generation_workflow_version",
   "prompt_template_version",
   "deliverable_requirements_section",
@@ -19,14 +20,10 @@
   "delivery_preset",
   "delivery_width",
   "delivery_height",
-  "target_fps",
   "audio_mix_section",
   "audio_cues",
   "global_content_requirements_section",
-  "required_elements",
-  "consistency_requirements",
-  "forbidden_elements",
-  "acceptance_criteria",
+  "generation_instructions",
   "final_deliverable_section",
   "final_asset_version"
  ],
@@ -70,22 +67,31 @@
    "label": "Generation Setup"
   },
   {
+   "description": "Workflow family used to select the default generation setup.",
+   "fieldname": "workflow_profile",
+   "fieldtype": "Link",
+   "label": "Generation Mode",
+   "options": "Workflow Profile",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
+   "reqd": 1
+  },
+  {
    "description": "Exact Workflow Version used as the default generation workflow for this specification.",
    "fieldname": "generation_workflow_version",
    "fieldtype": "Link",
    "label": "Generation Workflow Version",
-   "mandatory_depends_on": "eval:doc.status==\"Ready\";",
+   "hidden": 1,
    "options": "Workflow Version",
-   "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\";"
+   "read_only": 1
   },
   {
    "description": "Exact Prompt Template Version used to compile prompts for this specification.",
    "fieldname": "prompt_template_version",
    "fieldtype": "Link",
    "label": "Prompt Template Version",
-   "mandatory_depends_on": "eval:doc.status==\"Ready\";",
+   "hidden": 1,
    "options": "Prompt Template Version",
-   "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\";"
+   "read_only": 1
   },
   {
    "description": "FINAL video the customer expects",
@@ -106,13 +112,6 @@
    "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\";"
   },
   {
-   "default": "24",
-   "fieldname": "target_fps",
-   "fieldtype": "Float",
-   "label": "Target FPS",
-   "reqd": 1
-  },
-  {
    "fieldname": "audio_mix_section",
    "fieldtype": "Section Break",
    "label": "Audio Mix"
@@ -127,24 +126,7 @@
   {
    "fieldname": "global_content_requirements_section",
    "fieldtype": "Section Break",
-   "label": "Global Content Requirements"
-  },
-  {
-   "description": "Global visual or identity properties that MUST REMAIN CONSISTENT across shots.",
-   "fieldname": "consistency_requirements",
-   "fieldtype": "Long Text",
-   "label": "Consistency Requirements"
-  },
-  {
-   "fieldname": "forbidden_elements",
-   "fieldtype": "Long Text",
-   "label": "Forbidden Elements"
-  },
-  {
-   "description": "For QA later",
-   "fieldname": "acceptance_criteria",
-   "fieldtype": "Long Text",
-   "label": "Acceptance Criteria"
+   "label": "Generation"
   },
   {
    "description": "Canonical intended duration for the final media. Shot durations are derived from this value in frames.",
@@ -162,12 +144,6 @@
    "reqd": 1
   },
   {
-   "description": "Elements that must appear somewhere in the final media deliverable.",
-   "fieldname": "required_elements",
-   "fieldtype": "Long Text",
-   "label": "Required Elements"
-  },
-  {
    "fieldname": "final_deliverable_section",
    "fieldtype": "Section Break",
    "label": "Final Deliverable"
@@ -178,12 +154,17 @@
    "label": "Final Asset Version",
    "options": "Asset Version",
    "read_only": 1
+  },
+  {
+   "fieldname": "generation_instructions",
+   "fieldtype": "Long Text",
+   "label": "Generation Instructions"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-03 23:12:48.370819",
+ "modified": "2026-09-19 02:25:12.619639",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Specification",

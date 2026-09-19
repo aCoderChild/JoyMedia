@@ -11,7 +11,6 @@
   "version_number",
   "version_label",
   "status",
-  "change_notes",
   "workflow_definition_section",
   "workflow_json",
   "workflow_hash",
@@ -67,12 +66,6 @@
    "label": "Status",
    "options": "Draft\nTesting\nProduction\nDeprecated",
    "reqd": 1
-  },
-  {
-   "fieldname": "change_notes",
-   "fieldtype": "Small Text",
-   "label": "Change Notes",
-   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";"
   },
   {
    "description": "Paste the entire JSON workflow you uploaded into this field",
@@ -154,7 +147,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-19 00:17:37.115363",
+ "modified": "2026-09-19 01:51:42.957950",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Workflow Version",

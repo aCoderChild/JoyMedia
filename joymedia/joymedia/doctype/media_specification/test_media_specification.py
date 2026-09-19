@@ -19,6 +19,27 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 class TestMediaSpecification(FrappeTestCase):
+	def test_generation_setup_resolves_from_workflow_profile(self):
+		specification = _existing_specification(
+			status="Draft",
+			workflow_profile="WFP-00001",
+			generation_workflow_version=None,
+			prompt_template_version=None,
+		)
+
+		with patch(
+			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.get_doc",
+			return_value=frappe._dict(
+				name="WFP-00001",
+				default_workflow_version="WFV-00001",
+				default_prompt_template_version="PTV-00001",
+			),
+		):
+			MediaSpecification._resolve_generation_setup(specification)
+
+		self.assertEqual("WFV-00001", specification.generation_workflow_version)
+		self.assertEqual("PTV-00001", specification.prompt_template_version)
+
 	def test_ready_specification_requires_workflow_version(self):
 		specification = _existing_specification(status="Ready", prompt_template_version="PTV-00001")
 

@@ -10,12 +10,9 @@
   "profile_name",
   "workflow_code",
   "status",
-  "execution_section",
-  "generation_mode",
-  "execution_backend",
-  "documentation_section",
-  "intended_use",
-  "description"
+  "execution_defaults_section",
+  "default_workflow_version",
+  "default_prompt_template_version"
  ],
  "fields": [
   {
@@ -49,46 +46,27 @@
    "reqd": 1
   },
   {
-   "fieldname": "execution_section",
+   "fieldname": "execution_defaults_section",
    "fieldtype": "Section Break",
-   "label": "Execution"
+   "label": "Execution Defaults"
   },
   {
-   "fieldname": "generation_mode",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Generation Mode",
-   "options": "Image to Video",
-   "reqd": 1
+   "fieldname": "default_workflow_version",
+   "fieldtype": "Link",
+   "label": "Default Workflow Version",
+   "options": "Workflow Version"
   },
   {
-   "fieldname": "documentation_section",
-   "fieldtype": "Section Break",
-   "label": "Documentation"
-  },
-  {
-   "fieldname": "intended_use",
-   "fieldtype": "Small Text",
-   "label": "Intended Use"
-  },
-  {
-   "fieldname": "description",
-   "fieldtype": "Long Text",
-   "label": "Description"
-  },
-  {
-   "default": "ComfyUI",
-   "fieldname": "execution_backend",
-   "fieldtype": "Select",
-   "label": "Execution Backend",
-   "options": "ComfyUI",
-   "reqd": 1
+   "fieldname": "default_prompt_template_version",
+   "fieldtype": "Link",
+   "label": "Default Prompt Template Version",
+   "options": "Prompt Template Version"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-03 23:17:54.186036",
+ "modified": "2026-09-19 01:28:59.772281",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Workflow Profile",

@@ -11,6 +11,7 @@ from frappe.model.document import Document
 class MediaSpecification(Document):
 	IDENTITY_FIELDS: ClassVar[tuple[str, ...]] = ("media_project", "version_number")
 	EXECUTION_CONTRACT_FIELDS: ClassVar[tuple[str, ...]] = (
+		"workflow_profile",
 		"generation_workflow_version",
 		"prompt_template_version",
 		"total_duration_seconds",
@@ -29,6 +30,7 @@ class MediaSpecification(Document):
 	}
 
 	def validate(self):
+		self._resolve_generation_setup()
 		self._validate_version_immutability()
 		self._validate_timeline()
 		self.validate_generation_setup()
@@ -41,6 +43,31 @@ class MediaSpecification(Document):
 			or self.delivery_height <= 0
 		):
 			frappe.throw("Custom delivery presets require a positive width and height")
+
+	def _resolve_generation_setup(self):
+		if not self.workflow_profile:
+			return
+
+		profile_changed = self.is_new() or self.has_value_changed("workflow_profile")
+		if (
+			not profile_changed
+			and self.generation_workflow_version
+			and self.prompt_template_version
+		):
+			return
+
+		profile = frappe.get_doc("Workflow Profile", self.workflow_profile)
+		if not profile.default_workflow_version:
+			frappe.throw(
+				_("Workflow Profile {0} has no Default Workflow Version.").format(profile.name)
+			)
+		if not profile.default_prompt_template_version:
+			frappe.throw(
+				_("Workflow Profile {0} has no Default Prompt Template Version.").format(profile.name)
+			)
+
+		self.generation_workflow_version = profile.default_workflow_version
+		self.prompt_template_version = profile.default_prompt_template_version
 
 	def validate_generation_setup(self):
 		if self.status != "Ready":

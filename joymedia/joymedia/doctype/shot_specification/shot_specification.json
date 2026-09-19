@@ -2,7 +2,7 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "autoname": "SHOT-.#####",
- "creation": "2026-09-03 15:58:29.097326",
+ "creation": "2026-09-18 22:23:31.729117",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -13,21 +13,15 @@
   "planned_frame_count",
   "duration_seconds",
   "generation_inputs",
-  "selected_output_section",
-  "selected_output_asset_version",
-  "shot_purpose",
   "visual_direction_section",
   "camera_direction",
   "subject_identity",
   "action_plot",
   "environment",
-  "spatial_composition",
-  "continuity_section",
-  "opening_state",
-  "ending_state",
-  "continuity_requirements",
   "audio_section",
-  "audio_direction"
+  "audio_direction",
+  "selected_output_section",
+  "selected_output_asset_version"
  ],
  "fields": [
   {
@@ -58,27 +52,21 @@
    "label": "Shot Name"
   },
   {
+   "default": "0",
+   "description": "Derived from the Media Specification total duration and number of Shots. Not directly editable.",
    "fieldname": "duration_seconds",
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Duration (Seconds)",
    "read_only": 1,
-   "default": "0",
-   "description": "Derived from the Media Specification total duration and number of Shots. Not directly editable.",
    "reqd": 1
   },
   {
+   "description": "Frame-exact share of the Media Specification timeline assigned to this shot.",
    "fieldname": "planned_frame_count",
    "fieldtype": "Int",
    "label": "Planned Frame Count",
-   "read_only": 1,
-   "description": "Frame-exact share of the Media Specification timeline assigned to this shot."
-  },
-  {
-   "description": "Purpose of this shot independently within the final video.",
-   "fieldname": "shot_purpose",
-   "fieldtype": "Small Text",
-   "label": "Shot Purpose"
+   "read_only": 1
   },
   {
    "fieldname": "visual_direction_section",
@@ -102,49 +90,20 @@
    "description": "Describes what happens during the shot, including state changes and interactions.",
    "fieldname": "action_plot",
    "fieldtype": "Long Text",
-   "label": "Action / Plot",
+   "label": "Action / Motion",
    "reqd": 1
   },
   {
    "description": "Defines the physical setting, background, lighting environment and scene context.",
    "fieldname": "environment",
    "fieldtype": "Long Text",
-   "label": "Environment"
-  },
-  {
-   "description": "Defines important relative positions, orientation, depth and spatial relationships between subjects and scene elements. Define where objects exist RELATIVE to each other",
-   "fieldname": "spatial_composition",
-   "fieldtype": "Long Text",
-   "label": "Spatial Composition"
-  },
-  {
-   "fieldname": "continuity_section",
-   "fieldtype": "Section Break",
-   "label": "Continuity"
-  },
-  {
-   "description": "What must be true at the BEGINNING of the shot.",
-   "fieldname": "opening_state",
-   "fieldtype": "Long Text",
-   "label": "Opening State"
-  },
-  {
-   "description": "Important state that must be true at the END of this shot and may carry into the NEXT shot.",
-   "fieldname": "ending_state",
-   "fieldtype": "Long Text",
-   "label": "Ending State"
-  },
-  {
-   "description": "Shot-specific identity or state properties that must remain consistent with ADJACIENT SHOTS, NOT the Whole video.",
-   "fieldname": "continuity_requirements",
-   "fieldtype": "Long Text",
-   "label": "Continuity Requirements"
+   "label": "Lighting & Environment"
   },
   {
    "description": "Describes the desired sound, ambience, dialogue, music characteristics, or sound effects for this shot. This is TEXTUAL INTENT, not an attached audio file.",
    "fieldname": "audio_direction",
    "fieldtype": "Long Text",
-   "label": "Audio Direction"
+   "label": "Audio SFX"
   },
   {
    "fieldname": "audio_section",
@@ -174,7 +133,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-05 23:34:57.534602",
+ "modified": "2026-09-19 17:03:22.898740",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Shot Specification",
