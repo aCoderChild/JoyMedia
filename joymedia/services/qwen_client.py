@@ -5,7 +5,7 @@ import requests
 from frappe import _
 
 
-DEFAULT_TIMEOUT = 120
+DEFAULT_TIMEOUT = 600
 
 
 def generate_video_plan(
@@ -26,6 +26,14 @@ def generate_video_plan(
 	if not model:
 		frappe.throw(_("qwen_model is not configured."))
 
+	timeout = frappe.conf.get("qwen_timeout", DEFAULT_TIMEOUT)
+	try:
+		timeout = float(timeout)
+	except (TypeError, ValueError):
+		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
+	if timeout <= 0:
+		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
+
 	if reference_template:
 		instruction = (
 			"Create a new MiniMax H3 commercial plan based on the supplied reference template.\n\n"
@@ -34,7 +42,7 @@ def generate_video_plan(
 		)
 	else:
 		instruction = f"""
-Bạn là Đạo diễn TVC Điện ảnh Quốc tế chuyên nghiệp cho MiniMax H3 / Wan 2.2.
+Bạn là Đạo diễn TVC Điện ảnh Quốc tế chuyên nghiệp cho mô hình MiniMax H3.
 
 Hãy phân tích:
 - Product / Project
@@ -134,10 +142,14 @@ trong prompt cho MiniMax H3 / Wan 2.2.
 				],
 				"response_format": {"type": "json_object"},
 			},
-			timeout=DEFAULT_TIMEOUT,
+			timeout=timeout,
 		)
 	except requests.ConnectionError as exc:
 		frappe.throw(_("Unable to connect to Qwen: {0}").format(str(exc)))
+	except requests.Timeout:
+		frappe.throw(
+			_("Qwen did not return a video plan within {0} seconds.").format(int(timeout))
+		)
 
 	if not response.ok:
 		frappe.throw(
