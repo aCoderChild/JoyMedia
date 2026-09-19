@@ -125,6 +125,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		run.status = "Draft"
 		run.media_specification = "SPEC-00001"
 		media_specification = frappe._dict(name="SPEC-00001", status="Ready")
+		media_specification.validate_generation_setup = MagicMock()
 		get_doc.side_effect = [run, media_specification]
 
 		result = generation_orchestrator.start_run(run.name)

@@ -23,13 +23,13 @@ class TestMediaSpecification(FrappeTestCase):
 		specification = _existing_specification(status="Ready", prompt_template_version="PTV-00001")
 
 		with self.assertRaises(ValidationError):
-			specification.validate_generation_setup()
+			MediaSpecification.validate_generation_setup(specification)
 
 	def test_ready_specification_requires_prompt_template_version(self):
 		specification = _existing_specification(status="Ready", generation_workflow_version="WFV-00001")
 
 		with self.assertRaises(ValidationError):
-			specification.validate_generation_setup()
+			MediaSpecification.validate_generation_setup(specification)
 
 	def test_ready_specification_rejects_non_executable_versions(self):
 		specification = _existing_specification(
@@ -43,7 +43,7 @@ class TestMediaSpecification(FrappeTestCase):
 			return_value=frappe._dict(name="WFV-00001", status="Draft"),
 		):
 			with self.assertRaises(ValidationError):
-				specification.validate_generation_setup()
+				MediaSpecification.validate_generation_setup(specification)
 
 	def test_ready_specification_rejects_incompatible_profiles(self):
 		specification = _existing_specification(
@@ -63,7 +63,7 @@ class TestMediaSpecification(FrappeTestCase):
 			return_value="WFP-00002",
 		):
 			with self.assertRaises(ValidationError):
-				specification.validate_generation_setup()
+				MediaSpecification.validate_generation_setup(specification)
 
 	def test_ready_specification_accepts_matching_executable_versions(self):
 		specification = _existing_specification(
@@ -82,7 +82,7 @@ class TestMediaSpecification(FrappeTestCase):
 			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.db.get_value",
 			return_value="WFP-00001",
 		):
-			specification.validate_generation_setup()
+			MediaSpecification.validate_generation_setup(specification)
 
 	def test_ready_specification_cannot_return_to_draft(self):
 		specification = _existing_specification(status="Draft")
