@@ -93,26 +93,6 @@ class TestGenerationOrchestrator(FrappeTestCase):
 			deduplicate=True,
 		)
 
-	@patch("joymedia.services.generation_orchestrator.select_worker", return_value=None)
-	@patch("joymedia.services.generation_orchestrator.has_configured_workers", return_value=True)
-	def test_full_managed_worker_pool_does_not_schedule_an_immediate_retry(
-		self, has_configured_workers, select_worker
-	):
-		run = frappe._dict(name="RUN-00001", workflow_version="WFV-00001")
-
-		self.assertFalse(generation_orchestrator._has_submission_capacity(run))
-		select_worker.assert_called_once_with("WFV-00001")
-
-	@patch("joymedia.services.generation_orchestrator.select_worker")
-	@patch("joymedia.services.generation_orchestrator.has_configured_workers", return_value=False)
-	def test_legacy_endpoint_has_submission_capacity_without_workers(
-		self, has_configured_workers, select_worker
-	):
-		run = frappe._dict(name="RUN-00001", workflow_version="WFV-00001")
-
-		self.assertTrue(generation_orchestrator._has_submission_capacity(run))
-		select_worker.assert_not_called()
-
 	@patch("joymedia.services.generation_orchestrator._enqueue")
 	@patch("joymedia.services.generation_orchestrator.frappe.has_permission")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_doc")

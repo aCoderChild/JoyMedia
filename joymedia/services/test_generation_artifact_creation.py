@@ -38,7 +38,7 @@ class TestGenerationArtifactCreation(FrappeTestCase):
 		artifact = MagicMock()
 		get_doc.return_value = artifact
 
-		result = _create_primary_artifact(frappe._dict(name="ATT-00001"), {"filename": "video.mp4"})
+		result = _create_primary_artifact(frappe._dict(name="ATT-00001"))
 
 		self.assertIs(result, artifact)
 		get_doc.assert_called_once_with("Generation Artifact", "GART-00001")

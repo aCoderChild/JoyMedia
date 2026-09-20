@@ -108,6 +108,8 @@ class TestArtifactPromotion(FrappeTestCase):
 				return shot
 			if doctype_or_values == "Media Specification":
 				return media_specification
+			if doctype_or_values == "File":
+				return file_doc
 			if isinstance(doctype_or_values, dict):
 				return {
 					"Media Asset": media_asset,
