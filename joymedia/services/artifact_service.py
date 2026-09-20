@@ -8,7 +8,7 @@ from frappe import _
 
 @frappe.whitelist()
 def stream_review_artifact(quality_review_name: str):
-	"""Return an inline preview of a temporary ComfyUI video for its Quality Review."""
+	"""Return an inline preview of a temporary generated video."""
 	frappe.has_permission("Quality Review", "read", quality_review_name, throw=True)
 	review = frappe.get_doc("Quality Review", quality_review_name)
 	if not review.generation_artifact:
@@ -42,7 +42,7 @@ def promote_artifact_from_ui(artifact_name: str):
 
 
 def promote_artifact(artifact_name: str):
-	"""Persist an approved ComfyUI artifact as a project-scoped shot-output asset."""
+	"""Promote an approved generated video to a project Asset Version."""
 	artifact = frappe.get_doc("Generation Artifact", artifact_name)
 
 	if artifact.lifecycle_status == "Promoted":

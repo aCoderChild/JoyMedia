@@ -34,53 +34,50 @@ def generate_video_plan(
 	if timeout <= 0:
 		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
 
-	if reference_template:
-		instruction = (
-			"Create a new MiniMax H3 commercial plan based on the supplied reference template.\n\n"
-			"Preserve its cinematography, pacing, composition, motion style and lighting style.\n\n"
-			"Adapt the subject and product-specific content to the new product."
-		)
-	else:
-		instruction = f"""
-Bạn là Đạo diễn TVC Điện ảnh Quốc tế chuyên nghiệp cho mô hình MiniMax H3.
+	base_instruction = """
+You are a professional cinematic commercial director for MiniMax H3.
 
-Hãy phân tích:
-- Product / Project
-- Target Audience
-- Video Idea nếu được cung cấp
-- toàn bộ hình ảnh tham chiếu
-
-Sau đó tạo chính xác {scene_count} cảnh TVC.
-
-Mỗi cảnh phải là một Prompt 5 lớp hoàn chỉnh và chi tiết:
+For every shot provide detailed:
 
 [Camera]
-Mô tả shot size, lens/focal length, camera angle, perspective,
-composition, camera movement, direction và speed.
+Shot size, lens, camera angle, composition, movement,
+direction and speed.
 
 [Subject]
-Mô tả chính xác chủ thể nhìn thấy trong ảnh tham chiếu:
-appearance, material, spatial position, foreground/background
-và các visual details quan trọng.
+Exact subject identity, appearance, materials,
+position and visible details.
 
 [Motion]
-Mô tả subject motion, camera-relative motion và environmental motion.
-Chuyển động phải mượt, tự nhiên, có direction, speed và progression rõ ràng.
+Subject motion, camera-relative motion,
+environmental motion, direction, speed and progression.
 
 [Lighting & Environment]
-Mô tả light source, direction, intensity, color temperature,
-contrast, reflections, shadows, atmosphere và depth.
+Light source, direction, intensity, temperature,
+reflections, shadows, atmosphere and depth.
 
 [Audio SFX]
-Mô tả synchronized sound effects, ambience và music.
-Sử dụng timestamps khi phù hợp.
+Synchronized sound effects, ambience and music.
 
-Không trả về các mô tả ngắn như:
+Avoid vague descriptions such as:
 "wide", "pan left", "static", "natural daylight".
-
-Mỗi field phải đủ chi tiết để có thể sử dụng trực tiếp
-trong prompt cho MiniMax H3 / Wan 2.2.
 """.strip()
+
+	if reference_template:
+		instruction = (
+			base_instruction
+			+ """
+
+REFERENCE TEMPLATE:
+Preserve the reference template's cinematography,
+pacing, composition, scene progression, motion style
+and lighting language.
+
+Adapt the content to the supplied product, audience,
+marketing goal and project reference images.
+"""
+		).strip()
+	else:
+		instruction = base_instruction
 
 	response_shape = (
 		'{"shots":[{"shot_number":1,"reference_image_index":1,"camera":"...",'

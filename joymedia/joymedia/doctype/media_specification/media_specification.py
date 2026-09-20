@@ -18,10 +18,7 @@ class MediaSpecification(Document):
 		"delivery_preset",
 		"delivery_width",
 		"delivery_height",
-		"required_elements",
-		"consistency_requirements",
-		"forbidden_elements",
-		"acceptance_criteria",
+		"generation_instructions",
 	)
 	PRESET_DIMENSIONS: ClassVar[dict[str, tuple[int, int]]] = {
 		"Landscape": (1344, 768),
