@@ -22,10 +22,10 @@ class TestArtifactExpiry(FrappeTestCase):
 
 		expire_generation_artifacts()
 
-		self.assertEqual(first_artifact.lifecycle_status, "Expired")
-		self.assertEqual(second_artifact.lifecycle_status, "Expired")
-		first_artifact.save.assert_called_once_with(ignore_permissions=True)
-		second_artifact.save.assert_called_once_with(ignore_permissions=True)
+		self.assertEqual(first_artifact.lifecycle_status, "Temporary")
+		self.assertEqual(second_artifact.lifecycle_status, "Temporary")
+		first_artifact.save.assert_not_called()
+		second_artifact.save.assert_not_called()
 		get_all.assert_called_once()
 		filters = get_all.call_args.kwargs["filters"]
 		self.assertEqual(filters["lifecycle_status"], "Temporary")
@@ -34,65 +34,51 @@ class TestArtifactExpiry(FrappeTestCase):
 
 
 class TestArtifactPromotion(FrappeTestCase):
-	@patch("joymedia.services.artifact_service.download_output", return_value=b"video-bytes")
 	@patch("joymedia.services.artifact_service.frappe.has_permission")
 	@patch("joymedia.services.artifact_service.frappe.get_doc")
 	def test_quality_review_can_stream_a_temporary_video_artifact(
-		self, get_doc, has_permission, download_output
+		self, get_doc, has_permission
 	):
 		review = frappe._dict(name="QREV-00001", generation_artifact="GART-00001")
 		artifact = frappe._dict(
 			name="GART-00001",
 			lifecycle_status="Temporary",
-			storage_backend="ComfyUI",
 			media_type="Video",
-			remote_filename="outputs/video.mp4",
-			remote_subfolder="outputs",
-			remote_file_type="output",
-			mime_type=None,
-			generation_attempt="ATT-00001",
+			frappe_file="/private/files/video.mp4",
 		)
-		attempt = frappe._dict(comfyui_endpoint_url="http://worker:8188")
-		get_doc.side_effect = [review, artifact, attempt]
+		file_doc = frappe._dict(file_name="video.mp4", get_content=lambda: b"video-bytes")
+		get_doc.side_effect = [review, artifact, file_doc]
 
 		from joymedia.services.artifact_service import stream_review_artifact
 
 		stream_review_artifact(review.name)
 
 		has_permission.assert_called_once_with("Quality Review", "read", review.name, throw=True)
-		download_output.assert_called_once_with(
-			"outputs/video.mp4", "outputs", "output", base_url="http://worker:8188"
-		)
 		self.assertEqual(frappe.local.response.filename, "video.mp4")
 		self.assertEqual(frappe.local.response.filecontent, b"video-bytes")
 		self.assertEqual(frappe.local.response.content_type, "video/mp4")
 		self.assertEqual(frappe.local.response.display_content_as, "inline")
 		self.assertEqual(frappe.local.response.type, "download")
 
-	@patch("joymedia.services.artifact_service.download_output")
 	@patch("joymedia.services.artifact_service.frappe.has_permission")
 	@patch("joymedia.services.artifact_service.frappe.db.exists", return_value=False)
 	@patch("joymedia.services.artifact_service.frappe.get_doc")
-	def test_unapproved_artifact_cannot_be_promoted(self, get_doc, exists, has_permission, download_output):
+	def test_unapproved_artifact_cannot_be_promoted(self, get_doc, exists, has_permission):
 		artifact = frappe._dict(
 			name="GART-00001",
 			lifecycle_status="Temporary",
-			storage_backend="ComfyUI",
-			artifact_role="Primary Video",
 			media_type="Video",
-			remote_filename="video.mp4",
+			frappe_file="/private/files/video.mp4",
 		)
 		get_doc.return_value = artifact
 
 		with self.assertRaises(ValidationError):
 			promote_artifact_from_ui(artifact.name)
 
-		download_output.assert_not_called()
 
-	@patch("joymedia.services.artifact_service.download_output")
 	@patch("joymedia.services.artifact_service.frappe.has_permission")
 	@patch("joymedia.services.artifact_service.frappe.get_doc")
-	def test_promoted_artifact_is_not_downloaded_again(self, get_doc, has_permission, download_output):
+	def test_promoted_artifact_is_not_downloaded_again(self, get_doc, has_permission):
 		artifact = frappe._dict(
 			name="GART-00001",
 			lifecycle_status="Promoted",
@@ -104,26 +90,20 @@ class TestArtifactPromotion(FrappeTestCase):
 
 		self.assertEqual(result, {"asset_version": "ASTV-00001"})
 		has_permission.assert_called_once_with("Generation Artifact", "write", artifact.name, throw=True)
-		download_output.assert_not_called()
 
 	@patch("joymedia.services.artifact_service.frappe.db.commit")
 	@patch("joymedia.services.artifact_service.frappe.db.exists", return_value=True)
 	@patch("joymedia.services.artifact_service.frappe.db.get_value", return_value=None)
-	@patch("joymedia.services.artifact_service.download_output", return_value=b"video-bytes")
 	@patch("joymedia.services.artifact_service.frappe.has_permission")
 	@patch("joymedia.services.artifact_service.frappe.get_doc")
 	def test_approved_artifact_promotion_persists_video(
-		self, get_doc, has_permission, download_output, get_value, exists, commit
+		self, get_doc, has_permission, get_value, exists, commit
 	):
 		artifact = frappe._dict(
 			name="GART-00001",
 			lifecycle_status="Temporary",
-			storage_backend="ComfyUI",
-			artifact_role="Primary Video",
 			media_type="Video",
-			remote_filename="outputs/video.mp4",
-			remote_subfolder="outputs",
-			remote_file_type="output",
+			frappe_file="/private/files/video.mp4",
 			generation_attempt="ATT-00001",
 		)
 		artifact.save = MagicMock()
@@ -167,9 +147,6 @@ class TestArtifactPromotion(FrappeTestCase):
 		result = promote_artifact_from_ui(artifact.name)
 
 		self.assertEqual(result, {"asset_version": "ASTV-00001"})
-		download_output.assert_called_once_with(
-			"outputs/video.mp4", "outputs", "output", base_url="http://worker:8188"
-		)
 		self.assertEqual(artifact.lifecycle_status, "Promoted")
 		self.assertEqual(artifact.promoted_asset_version, "ASTV-00001")
 		self.assertEqual(attempt.output_asset_version, "ASTV-00001")

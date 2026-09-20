@@ -9,9 +9,7 @@ from frappe.model.document import Document
 IDENTITY_FIELDS = (
 	"artifact_key",
 	"generation_attempt",
-	"remote_filename",
-	"remote_subfolder",
-	"remote_file_type",
+	"media_type",
 )
 
 
@@ -31,11 +29,6 @@ class GenerationArtifact(Document):
 		)
 		if not previous:
 			return
-		if previous.lifecycle_status == "Deleted" and self.lifecycle_status != "Deleted":
-			frappe.throw(_("Deleted Generation Artifacts are terminal."))
-		if previous.lifecycle_status == "Expired" and self.lifecycle_status == "Temporary":
-			frappe.throw(_("Expired Generation Artifacts cannot return to Temporary."))
-
 		for fieldname in IDENTITY_FIELDS:
 			if (self.get(fieldname) or "") != (previous.get(fieldname) or ""):
 				frappe.throw(_("Generation Artifact {0} cannot be changed after creation.").format(fieldname))

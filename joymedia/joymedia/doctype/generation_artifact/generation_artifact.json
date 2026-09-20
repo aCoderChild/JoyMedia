@@ -1,25 +1,15 @@
 {
  "actions": [],
- "allow_bulk_edit": 0,
  "autoname": "GART-.#####",
- "creation": "2026-09-07 09:34:58.166373",
+ "creation": "2026-09-08 04:23:39.820818",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "artifact_identity_section",
   "artifact_key",
   "generation_attempt",
-  "artifact_role",
   "media_type",
-  "storage_section",
-  "storage_backend",
   "frappe_file",
-  "remote_filename",
-  "remote_subfolder",
-  "remote_file_type",
-  "storage_uri",
-  "mime_type",
-  "size_bytes",
   "retention_section",
   "lifecycle_status",
   "expires_at",
@@ -34,6 +24,7 @@
   {
    "fieldname": "artifact_key",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Artifact Key",
    "read_only": 1,
    "unique": 1
@@ -48,89 +39,32 @@
    "reqd": 1
   },
   {
-   "default": "Primary Video",
-   "fieldname": "artifact_role",
-   "fieldtype": "Select",
-   "label": "Artifact Role",
-   "options": "Primary Video\nPreview\nAudio\nMetadata\nOther"
-  },
-  {
    "default": "Video",
    "fieldname": "media_type",
    "fieldtype": "Select",
-   "label": "Media Type",
-   "options": "Video\nAudio\nImage\nJSON\nOther"
-  },
-  {
-   "fieldname": "storage_section",
-   "fieldtype": "Section Break",
-   "label": "Storage"
-  },
-  {
-   "default": "ComfyUI",
-   "fieldname": "storage_backend",
-   "fieldtype": "Select",
-   "label": "Storage Backend",
-   "options": "ComfyUI\nFrappe File\nObject Storage"
+   "label": "Artifact Type",
+   "options": "Video\nAudio\nImage\nJSON\nOther",
+   "read_only": 1
   },
   {
    "description": "Temporary private video downloaded into Frappe for Quality Review. It is retained until promotion or expiry.",
    "fieldname": "frappe_file",
    "fieldtype": "Attach",
-   "label": "Frappe File",
-   "read_only": 1
-  },
-  {
-   "fieldname": "remote_filename",
-   "fieldtype": "Data",
-   "label": "Remote Filename",
-   "read_only": 1
-  },
-  {
-   "fieldname": "remote_subfolder",
-   "fieldtype": "Data",
-   "label": "Remote Subfolder",
-   "read_only": 1
-  },
-  {
-   "fieldname": "remote_file_type",
-   "fieldtype": "Data",
-   "label": "Remote File Type",
-   "read_only": 1
-  },
-  {
-   "description": "Optional remote object URI. It is blank when the source does not provide one.",
-   "fieldname": "storage_uri",
-   "fieldtype": "Data",
-   "label": "Storage URI",
-   "read_only": 1
-  },
-  {
-   "description": "Optional source metadata. It is blank when the source does not provide it.",
-   "fieldname": "mime_type",
-   "fieldtype": "Data",
-   "label": "MIME Type",
-   "read_only": 1
-  },
-  {
-   "description": "Optional source metadata. It is blank when the source does not provide it.",
-   "fieldname": "size_bytes",
-   "fieldtype": "Int",
-   "label": "Size Bytes",
+   "label": "Video File",
    "read_only": 1
   },
   {
    "fieldname": "retention_section",
    "fieldtype": "Section Break",
-   "label": "Retention"
+   "label": "Review / Promotion"
   },
   {
    "default": "Temporary",
-   "description": "Expired prevents promotion in JoyMedia. It does not delete the remote ComfyUI or object-storage file.",
+   "description": "Artifacts past Expires At cannot be promoted. The private Frappe video file is retained until promotion or expiry.",
    "fieldname": "lifecycle_status",
    "fieldtype": "Select",
-   "label": "Lifecycle Status",
-   "options": "Temporary\nRetained\nPromoted\nExpired\nDeleted"
+   "label": "Status",
+   "options": "Temporary\nPromoted"
   },
   {
    "description": "Logical expiry time. Physical deletion requires a worker cleanup API or storage lifecycle policy.",
@@ -150,7 +84,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-07 09:48:29.561970",
+ "modified": "2026-09-20 09:52:48.124711",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Artifact",

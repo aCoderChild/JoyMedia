@@ -88,10 +88,6 @@ class QualityReview(Document):
 			enqueue_finalization_if_ready(job.generation_run)
 
 	def _reject_artifact(self, artifact, shot):
-		if artifact.lifecycle_status in ("Temporary", "Retained"):
-			artifact.lifecycle_status = "Expired"
-			artifact.save(ignore_permissions=True)
-
 		if (
 			artifact.promoted_asset_version
 			and shot.selected_output_asset_version == artifact.promoted_asset_version

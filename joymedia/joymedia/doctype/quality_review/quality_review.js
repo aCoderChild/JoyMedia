@@ -20,7 +20,7 @@ function add_preview_button(frm) {
 	frappe.db
 		.get_value("Generation Artifact", frm.doc.generation_artifact, "lifecycle_status")
 		.then(({ message }) => {
-			if (!message || !["Temporary", "Retained"].includes(message.lifecycle_status)) return;
+			if (!message || message.lifecycle_status !== "Temporary") return;
 
 			frm.add_custom_button(
 				__("Preview Artifact"),

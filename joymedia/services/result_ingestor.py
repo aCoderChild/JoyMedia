@@ -80,7 +80,7 @@ def sync_attempt_result(attempt_name):
 		frappe.throw(_("ComfyUI completed without a primary MP4 output."))
 
 	artifact = _create_primary_artifact(attempt, output)
-	_store_artifact_file_in_frappe(artifact, attempt)
+	_store_artifact_file_in_frappe(artifact, attempt, output)
 	last_frame = _find_last_frame_image(history)
 	if not last_frame:
 		frappe.throw(_("ComfyUI completed without a last-frame image output."))
@@ -184,12 +184,7 @@ def _create_primary_artifact(attempt, output):
 			"doctype": "Generation Artifact",
 			"artifact_key": artifact_key,
 			"generation_attempt": attempt.name,
-			"artifact_role": "Primary Video",
 			"media_type": "Video",
-			"storage_backend": "ComfyUI",
-			"remote_filename": output["filename"],
-			"remote_subfolder": output.get("subfolder", ""),
-			"remote_file_type": output.get("type", "output"),
 			"lifecycle_status": "Temporary",
 			"expires_at": add_to_date(now_datetime(), hours=72),
 		}
@@ -198,23 +193,28 @@ def _create_primary_artifact(attempt, output):
 	return artifact
 
 
-def _store_artifact_file_in_frappe(artifact, attempt):
+def _store_artifact_file_in_frappe(artifact, attempt, output=None):
 	"""Copy a temporary ComfyUI output into Frappe for review without promoting it."""
 	if artifact.frappe_file:
 		return artifact
-	if not artifact.remote_filename:
-		frappe.throw(_("Generation Artifact {0} has no remote filename.").format(artifact.name))
+
+	if output is None:
+		history = get_history(attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
+		history = history.get(attempt.external_job_id, history)
+		output = _find_primary_mp4(history)
+	if not output:
+		frappe.throw(_("Generation Artifact {0} has no available video output.").format(artifact.name))
 
 	video_bytes = download_output(
-		artifact.remote_filename,
-		artifact.remote_subfolder or "",
-		artifact.remote_file_type or "output",
+		output["filename"],
+		output.get("subfolder", ""),
+		output.get("type", "output"),
 		base_url=attempt.comfyui_endpoint_url,
 	)
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",
-			"file_name": Path(artifact.remote_filename).name,
+			"file_name": Path(output["filename"]).name,
 			"content": video_bytes,
 			"is_private": 1,
 			"attached_to_doctype": "Generation Artifact",
@@ -222,11 +222,7 @@ def _store_artifact_file_in_frappe(artifact, attempt):
 		}
 	)
 	file_doc.insert(ignore_permissions=True)
-	artifact.storage_backend = "Frappe File"
 	artifact.frappe_file = file_doc.file_url
-	artifact.storage_uri = file_doc.file_url
-	artifact.mime_type = "video/mp4"
-	artifact.size_bytes = len(video_bytes)
 	artifact.save(ignore_permissions=True)
 	return artifact
 

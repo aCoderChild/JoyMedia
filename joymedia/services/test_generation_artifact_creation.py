@@ -12,7 +12,7 @@ class TestGenerationArtifactCreation(FrappeTestCase):
 	@patch("joymedia.services.result_ingestor.add_to_date", return_value=datetime(2026, 9, 10, 12, 0))
 	@patch("joymedia.services.result_ingestor.frappe.get_doc")
 	@patch("joymedia.services.result_ingestor.frappe.db.get_value", return_value=None)
-	def test_primary_artifact_records_remote_output_without_download(
+	def test_primary_artifact_starts_as_temporary_frappe_file_artifact(
 		self, get_value, get_doc, add_to_date, now_datetime
 	):
 		artifact = MagicMock()
@@ -31,12 +31,7 @@ class TestGenerationArtifactCreation(FrappeTestCase):
 				"doctype": "Generation Artifact",
 				"artifact_key": "ATT-00001:primary_video",
 				"generation_attempt": "ATT-00001",
-				"artifact_role": "Primary Video",
 				"media_type": "Video",
-				"storage_backend": "ComfyUI",
-				"remote_filename": "video.mp4",
-				"remote_subfolder": "joymedia",
-				"remote_file_type": "output",
 				"lifecycle_status": "Temporary",
 				"expires_at": datetime(2026, 9, 10, 12, 0),
 			}
