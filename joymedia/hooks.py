@@ -160,18 +160,12 @@ fixtures = [
 # ---------------
 
 scheduler_events = {
-	"all": [
-		"joymedia.services.worker_monitor.refresh_workers",
-	],
 	"cron": {
 		"* * * * *": [
 			"joymedia.services.result_ingestor.sync_active_attempts",
 			"joymedia.services.generation_orchestrator.refresh_active_runs",
 		],
 	},
-	"hourly": [
-		"joymedia.services.artifact_service.expire_generation_artifacts",
-	],
 }
 
 # Testing

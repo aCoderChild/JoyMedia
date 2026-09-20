@@ -2,7 +2,7 @@ from collections import defaultdict
 from math import ceil
 
 import frappe
-from frappe.utils import add_days, flt, get_datetime, getdate
+from frappe.utils import add_days, get_datetime, getdate
 
 
 TERMINAL_REVIEW_STATUSES = {"Approved", "Rejected"}
@@ -32,11 +32,9 @@ def get_attempt_analytics(filters=None):
 			"retry_of",
 			"retry_reason",
 			"failure_class",
-			"comfyui_worker",
 			"runtime_seconds",
 			"queued_at",
 			"started_at",
-			"gpu_cost_per_hour",
 		],
 	)
 	job_names = {attempt.generation_job for attempt in attempts if attempt.generation_job}
@@ -127,14 +125,6 @@ def queue_wait_seconds(attempt):
 	if not attempt.queued_at or not attempt.started_at:
 		return None
 	return max(0, (get_datetime(attempt.started_at) - get_datetime(attempt.queued_at)).total_seconds())
-
-
-def estimated_cost(attempt):
-	runtime_seconds = flt(attempt.runtime_seconds)
-	cost_per_hour = flt(attempt.gpu_cost_per_hour)
-	if not runtime_seconds or not cost_per_hour:
-		return None
-	return runtime_seconds / 3600 * cost_per_hour
 
 
 def percent(numerator, denominator):

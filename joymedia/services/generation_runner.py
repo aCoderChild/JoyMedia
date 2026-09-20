@@ -4,8 +4,6 @@ from frappe.utils import now
 from frappe.utils.synchronization import filelock
 
 from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file
-from .execution_router import has_configured_workers, select_worker
-from .worker_monitor import refresh_worker
 from .result_ingestor import sync_attempt_result
 from .workflow_resolver import resolve_attempt
 
@@ -81,36 +79,21 @@ def submit_attempt(attempt_name: str):
 
 		job = frappe.get_doc("Generation Job", attempt.generation_job)
 		job.validate_for_execution()
-		worker = select_worker(job.workflow_version)
-		if worker is None and has_configured_workers():
-			return {
-				"deferred": True,
-				"reason": _("No healthy ComfyUI Worker currently has available capacity."),
-			}
-		staged_inputs = _stage_generation_inputs(job, worker)
+		staged_inputs = _stage_generation_inputs(job)
 		workflow = resolve_attempt(attempt.name, staged_inputs=staged_inputs)
 		attempt.reload()
-		endpoint_url = worker.endpoint_url if worker else get_base_url()
+		endpoint_url = get_base_url()
 		result = submit_workflow(workflow, base_url=endpoint_url)
 
-		attempt.comfyui_worker = worker.name if worker else None
 		attempt.comfyui_endpoint_url = endpoint_url
-		attempt.gpu_cost_per_hour = worker.gpu_cost_per_hour if worker else None
 		attempt.external_job_id = result["prompt_id"]
 		attempt.status = "Queued"
 		attempt.queued_at = now()
 		attempt.save(ignore_permissions=True)
-		if worker:
-			try:
-				refresh_worker(worker.name)
-			except Exception:
-				frappe.logger("joymedia.worker_monitor").exception(
-					"Unable to refresh ComfyUI Worker %s after submission", worker.name
-				)
 		return result
 
 
-def _stage_generation_inputs(job, worker=None):
+def _stage_generation_inputs(job):
 	rows = frappe.get_all(
 		"Generation Input",
 		filters={"generation_job": job.name},
@@ -127,8 +110,6 @@ def _stage_generation_inputs(job, worker=None):
 			frappe.throw(_("Asset Version {0} has no file.").format(asset_version.name))
 		uploaded = upload_frappe_file(
 			asset_version.file,
-			base_url=worker.endpoint_url if worker else None,
-			input_dir=worker.input_dir if worker else None,
 		)
 		role = frappe.scrub(row.input_role or "")
 		staged[role] = uploaded["server_path"]

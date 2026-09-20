@@ -1,4 +1,3 @@
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -8,19 +7,15 @@ from joymedia.services.result_ingestor import _create_pending_quality_review, _c
 
 
 class TestGenerationArtifactCreation(FrappeTestCase):
-	@patch("joymedia.services.result_ingestor.now_datetime", return_value=datetime(2026, 9, 7, 12, 0))
-	@patch("joymedia.services.result_ingestor.add_to_date", return_value=datetime(2026, 9, 10, 12, 0))
 	@patch("joymedia.services.result_ingestor.frappe.get_doc")
 	@patch("joymedia.services.result_ingestor.frappe.db.get_value", return_value=None)
 	def test_primary_artifact_starts_as_temporary_frappe_file_artifact(
-		self, get_value, get_doc, add_to_date, now_datetime
+		self, get_value, get_doc
 	):
 		artifact = MagicMock()
 		get_doc.return_value = artifact
 		attempt = frappe._dict(name="ATT-00001")
-		output = {"filename": "video.mp4", "subfolder": "joymedia", "type": "output"}
-
-		result = _create_primary_artifact(attempt, output)
+		result = _create_primary_artifact(attempt)
 
 		self.assertIs(result, artifact)
 		get_value.assert_called_once_with(
@@ -33,7 +28,6 @@ class TestGenerationArtifactCreation(FrappeTestCase):
 				"generation_attempt": "ATT-00001",
 				"media_type": "Video",
 				"lifecycle_status": "Temporary",
-				"expires_at": datetime(2026, 9, 10, 12, 0),
 			}
 		)
 		artifact.insert.assert_called_once_with(ignore_permissions=True)

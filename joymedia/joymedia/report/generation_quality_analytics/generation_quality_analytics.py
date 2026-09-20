@@ -1,7 +1,6 @@
 from collections import defaultdict
 
 from joymedia.joymedia.report.analytics import (
-	estimated_cost,
 	get_attempt_analytics,
 	percent,
 	percentile_95,
@@ -21,7 +20,6 @@ COLUMNS = [
 	{"fieldname": "p95_runtime_seconds", "label": "p95 Runtime (s)", "fieldtype": "Float", "width": 110},
 	{"fieldname": "avg_queue_wait_seconds", "label": "Avg Queue Wait (s)", "fieldtype": "Float", "width": 125},
 	{"fieldname": "gpu_seconds_per_approved_shot", "label": "GPU Seconds / Approved Shot", "fieldtype": "Float", "width": 180},
-	{"fieldname": "estimated_cost_per_approved_shot", "label": "Estimated Cost / Approved Shot", "fieldtype": "Float", "width": 190},
 ]
 
 
@@ -46,15 +44,12 @@ def execute(filters=None):
 		if attempt.selected_output:
 			if attempt.runtime_seconds is not None:
 				bucket["approved_runtime_seconds"].append(float(attempt.runtime_seconds))
-			if cost := estimated_cost(attempt):
-				bucket["approved_costs"].append(cost)
 
 	data = []
 	for (workflow_version, prompt_template_version), bucket in sorted(buckets.items()):
 		runtime_values = bucket["runtime_seconds"]
 		queue_wait_values = bucket["queue_wait_seconds"]
 		approved_runtime_values = bucket["approved_runtime_seconds"]
-		approved_costs = bucket["approved_costs"]
 		data.append(
 			{
 				"workflow_version": workflow_version,
@@ -70,7 +65,6 @@ def execute(filters=None):
 				"p95_runtime_seconds": percentile_95(runtime_values),
 				"avg_queue_wait_seconds": _average(queue_wait_values),
 				"gpu_seconds_per_approved_shot": _average(approved_runtime_values),
-				"estimated_cost_per_approved_shot": _average(approved_costs),
 			}
 		)
 	return COLUMNS, data
@@ -88,7 +82,6 @@ def _new_bucket():
 		"runtime_seconds": [],
 		"queue_wait_seconds": [],
 		"approved_runtime_seconds": [],
-		"approved_costs": [],
 	}
 
 

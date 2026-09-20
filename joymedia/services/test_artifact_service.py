@@ -4,33 +4,7 @@ import frappe
 from frappe.exceptions import ValidationError
 from frappe.tests.utils import FrappeTestCase
 
-from joymedia.services.artifact_service import expire_generation_artifacts, promote_artifact_from_ui
-
-
-class TestArtifactExpiry(FrappeTestCase):
-	@patch("joymedia.services.artifact_service.frappe.db.commit")
-	@patch("joymedia.services.artifact_service.frappe.get_doc")
-	@patch("joymedia.services.artifact_service.frappe.get_all", return_value=["GART-00001", "GART-00002"])
-	def test_expire_generation_artifacts_marks_only_due_temporary_artifacts(
-		self, get_all, get_doc, commit
-	):
-		first_artifact = MagicMock()
-		second_artifact = MagicMock()
-		first_artifact.frappe_file = None
-		second_artifact.frappe_file = None
-		get_doc.side_effect = [first_artifact, second_artifact]
-
-		expire_generation_artifacts()
-
-		self.assertEqual(first_artifact.lifecycle_status, "Temporary")
-		self.assertEqual(second_artifact.lifecycle_status, "Temporary")
-		first_artifact.save.assert_not_called()
-		second_artifact.save.assert_not_called()
-		get_all.assert_called_once()
-		filters = get_all.call_args.kwargs["filters"]
-		self.assertEqual(filters["lifecycle_status"], "Temporary")
-		self.assertEqual(filters["expires_at"][0], "<")
-		commit.assert_called_once()
+from joymedia.services.artifact_service import promote_artifact_from_ui
 
 
 class TestArtifactPromotion(FrappeTestCase):

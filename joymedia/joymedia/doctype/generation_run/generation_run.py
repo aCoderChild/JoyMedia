@@ -5,9 +5,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from joymedia.services.execution_router import get_model_cache_key
-
-
 class GenerationRun(Document):
 	def validate(self):
 		media_specification = frappe.get_doc("Media Specification", self.media_specification)
@@ -19,7 +16,8 @@ class GenerationRun(Document):
 				_("Generation Run Workflow Version must match the Media Specification Workflow Version.")
 			)
 
-		self.model_cache_key = get_model_cache_key(self.workflow_version)
+		workflow_version = frappe.get_doc("Workflow Version", self.workflow_version)
+		self.model_cache_key = (workflow_version.model_cache_key or "").strip() or workflow_version.name
 		if (self.requested_variants_per_shot or 0) < 1:
 			frappe.throw(_("Requested Variants Per Shot must be greater than zero."))
 		if (self.max_retries or 0) < 0:

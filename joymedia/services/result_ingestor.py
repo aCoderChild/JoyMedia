@@ -3,10 +3,9 @@ from pathlib import Path
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, get_datetime, now, now_datetime
+from frappe.utils import get_datetime, now
 
 from .comfyui_client import download_output, get_history
-from .execution_router import get_worker
 
 
 def sync_active_attempts():
@@ -48,9 +47,7 @@ def sync_attempt_result(attempt_name):
 	if not attempt.external_job_id:
 		frappe.throw(_("Generation Attempt {0} has no ComfyUI prompt ID.").format(attempt.name))
 
-	worker = get_worker(attempt.comfyui_worker)
-	base_url = attempt.comfyui_endpoint_url or (worker.endpoint_url if worker else None)
-	history = get_history(attempt.external_job_id, base_url=base_url)
+	history = get_history(attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
 	history = history.get(attempt.external_job_id, history)
 	status = history.get("status", {})
 	status_string = status.get("status_str")
@@ -79,7 +76,7 @@ def sync_attempt_result(attempt_name):
 	if not output:
 		frappe.throw(_("ComfyUI completed without a primary MP4 output."))
 
-	artifact = _create_primary_artifact(attempt, output)
+	artifact = _create_primary_artifact(attempt)
 	_store_artifact_file_in_frappe(artifact, attempt, output)
 	last_frame = _find_last_frame_image(history)
 	if not last_frame:
@@ -173,7 +170,7 @@ def _get_or_create_continuation_asset(shot_name, media_project):
 	return media_asset
 
 
-def _create_primary_artifact(attempt, output):
+def _create_primary_artifact(attempt):
 	artifact_key = f"{attempt.name}:primary_video"
 	existing = frappe.db.get_value("Generation Artifact", {"artifact_key": artifact_key}, "name")
 	if existing:
@@ -186,7 +183,6 @@ def _create_primary_artifact(attempt, output):
 			"generation_attempt": attempt.name,
 			"media_type": "Video",
 			"lifecycle_status": "Temporary",
-			"expires_at": add_to_date(now_datetime(), hours=72),
 		}
 	)
 	artifact.insert(ignore_permissions=True)

@@ -10,7 +10,6 @@ from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
 	create_retry_attempt,
 )
 
-from .execution_router import has_configured_workers, select_worker
 from .generation_runner import prepare_generation_job, submit_attempt
 from .generation_segment_planner import plan_generation_segments
 from .prompt_compiler import compile_prompt
@@ -611,10 +610,7 @@ def _has_submittable_work(run_name):
 
 
 def _has_submission_capacity(run):
-	"""Avoid re-enqueue churn while a configured worker pool is full or offline."""
-	if not has_configured_workers():
-		return True
-	return select_worker(run.workflow_version) is not None
+	return True
 
 
 def _enqueue(method_name, run_name):

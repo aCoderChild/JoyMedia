@@ -37,6 +37,8 @@ tags
 MANIFEST
 
 # Environments
+/apps/
+
 .env
 .venv
 env/

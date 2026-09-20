@@ -12,7 +12,6 @@
   "frappe_file",
   "retention_section",
   "lifecycle_status",
-  "expires_at",
   "promoted_asset_version"
  ],
  "fields": [
@@ -65,13 +64,6 @@
    "fieldtype": "Select",
    "label": "Status",
    "options": "Temporary\nPromoted"
-  },
-  {
-   "description": "Logical expiry time. Physical deletion requires a worker cleanup API or storage lifecycle policy.",
-   "fieldname": "expires_at",
-   "fieldtype": "Datetime",
-   "label": "Expires At",
-   "read_only": 1
   },
   {
    "fieldname": "promoted_asset_version",

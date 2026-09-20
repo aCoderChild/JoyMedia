@@ -12,9 +12,7 @@
   "status",
   "execution_section",
   "seed",
-  "comfyui_worker",
   "comfyui_endpoint_url",
-  "gpu_cost_per_hour",
   "external_job_id",
   "queued_at",
   "started_at",
@@ -74,25 +72,10 @@
    "reqd": 1
   },
   {
-   "description": "ComfyUI worker selected when this attempt was submitted. Kept as an execution snapshot for result synchronization.",
-   "fieldname": "comfyui_worker",
-   "fieldtype": "Link",
-   "label": "ComfyUI Worker",
-   "options": "ComfyUI Worker",
-   "read_only": 1
-  },
-  {
    "description": "ComfyUI endpoint used when this attempt was submitted. Kept as an execution snapshot for result synchronization.",
    "fieldname": "comfyui_endpoint_url",
    "fieldtype": "Data",
    "label": "ComfyUI Endpoint URL",
-   "read_only": 1
-  },
-  {
-   "description": "Estimated GPU cost per hour copied from the selected ComfyUI Worker at submission time. Blank means cost is unavailable.",
-   "fieldname": "gpu_cost_per_hour",
-   "fieldtype": "Float",
-   "label": "GPU Cost Per Hour",
    "read_only": 1
   },
   {

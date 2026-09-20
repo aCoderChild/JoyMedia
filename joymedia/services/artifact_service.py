@@ -5,7 +5,6 @@ from pathlib import Path
 
 import frappe
 from frappe import _
-from frappe.utils import get_datetime, now_datetime
 
 @frappe.whitelist()
 def stream_review_artifact(quality_review_name: str):
@@ -18,8 +17,6 @@ def stream_review_artifact(quality_review_name: str):
 	artifact = frappe.get_doc("Generation Artifact", review.generation_artifact)
 	if artifact.lifecycle_status != "Temporary":
 		frappe.throw(_("Only Temporary Generation Artifacts can be previewed."))
-	if artifact.expires_at and get_datetime(artifact.expires_at) <= now_datetime():
-		frappe.throw(_("Generation Artifact {0} has expired.").format(artifact.name))
 	if artifact.media_type != "Video":
 		frappe.throw(_("Only video artifacts can currently be previewed."))
 
@@ -56,8 +53,6 @@ def promote_artifact(artifact_name: str):
 		frappe.throw(_("Only video artifacts can currently be promoted."))
 	if not artifact.frappe_file:
 		frappe.throw(_("Generation Artifact {0} has no Frappe video file.").format(artifact.name))
-	if artifact.expires_at and get_datetime(artifact.expires_at) <= now_datetime():
-		frappe.throw(_("Generation Artifact {0} has expired.").format(artifact.name))
 	if not frappe.db.exists(
 		"Quality Review", {"generation_artifact": artifact.name, "status": "Approved"}
 	):
@@ -116,22 +111,3 @@ def _get_or_create_shot_output_asset(shot_name, media_project):
 	)
 	media_asset.insert(ignore_permissions=True)
 	return media_asset
-
-
-def expire_generation_artifacts():
-	"""Logically expire temporary artifacts; remote content is not deleted in Phase 1."""
-	artifacts = frappe.get_all(
-		"Generation Artifact",
-		filters={
-			"lifecycle_status": "Temporary",
-			"expires_at": ["<", frappe.utils.now()],
-		},
-		pluck="name",
-	)
-	for name in artifacts:
-		artifact = frappe.get_doc("Generation Artifact", name)
-		if artifact.frappe_file:
-			file_name = frappe.db.get_value("File", {"file_url": artifact.frappe_file}, "name")
-			if file_name:
-				frappe.delete_doc("File", file_name, ignore_permissions=True, force=True)
-	frappe.db.commit()
