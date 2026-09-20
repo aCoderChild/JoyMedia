@@ -1,15 +1,13 @@
 {
  "actions": [],
- "allow_bulk_edit": 0,
- "allow_rename": 0,
  "autoname": "RUN-.#####",
+ "creation": "2026-09-19 19:28:17.206578",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "run_overview_section",
   "media_specification",
   "workflow_version",
-  "model_cache_key",
   "status",
   "requested_by",
   "run_options_section",
@@ -50,19 +48,11 @@
   {
    "description": "Exact Workflow Version inherited from the Media Specification.",
    "fieldname": "workflow_version",
-   "hidden": 1,
    "fieldtype": "Link",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Workflow Version",
    "options": "Workflow Version",
-   "read_only": 1
-  },
-  {
-   "description": "Stable worker-routing key. Derived from the Workflow Version so jobs using the same model can stay on a warm worker.",
-   "fieldname": "model_cache_key",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Model Cache Key",
    "read_only": 1
   },
   {
@@ -96,6 +86,7 @@
    "description": "Number of output variants requested for every shot Job created by this run.",
    "fieldname": "requested_variants_per_shot",
    "fieldtype": "Int",
+   "hidden": 1,
    "label": "Requested Variants Per Shot",
    "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
@@ -105,6 +96,7 @@
    "description": "Maximum additional attempts per Job after an execution failure. Zero disables automatic retries.",
    "fieldname": "max_retries",
    "fieldtype": "Int",
+   "hidden": 1,
    "label": "Max Retries",
    "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
@@ -114,6 +106,7 @@
    "description": "Compose the final video in a background job only after every Job completes successfully.",
    "fieldname": "auto_compose",
    "fieldtype": "Check",
+   "hidden": 1,
    "label": "Auto Compose",
    "read_only_depends_on": "eval:doc.status!=\"Draft\";"
   },
@@ -200,9 +193,13 @@
    "read_only": 1
   }
  ],
+ "links": [],
+ "modified": "2026-09-20 18:12:21.500056",
+ "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Run",
  "naming_rule": "Expression",
+ "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -228,7 +225,9 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
+ "states": [],
  "track_changes": 1
 }

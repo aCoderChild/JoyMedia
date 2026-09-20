@@ -17,7 +17,6 @@ IMMUTABLE_FIELDS = (
 	"version_number",
 	"version_label",
 	"workflow_json",
-	"model_cache_key",
 	"change_notes",
 	"bindings",
 	"frame_count",
