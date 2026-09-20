@@ -100,12 +100,14 @@
    "label": "Deliverable Requirements"
   },
   {
+   "depends_on": "eval:doc.delivery_preset==\"Custom\";",
    "fieldname": "delivery_width",
    "fieldtype": "Int",
    "label": "Delivery Width",
    "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\";"
   },
   {
+   "depends_on": "eval:doc.delivery_preset==\"Custom\";",
    "fieldname": "delivery_height",
    "fieldtype": "Int",
    "label": "Delivery Height",
