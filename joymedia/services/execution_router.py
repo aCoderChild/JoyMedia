@@ -40,6 +40,8 @@ def select_worker(workflow_version_name: str):
 
 def has_configured_workers():
 	"""Whether this site has opted into managed ComfyUI Worker routing."""
+	if not _has_worker_doctype():
+		return False
 	return bool(frappe.db.exists("ComfyUI Worker"))
 
 
@@ -50,6 +52,9 @@ def get_worker(worker_name: str | None):
 
 
 def _get_routable_workers():
+	if not _has_worker_doctype():
+		return []
+
 	workers = frappe.get_all(
 		"ComfyUI Worker",
 		filters={"status": "Active", "health_status": "Healthy"},
@@ -64,6 +69,10 @@ def _get_routable_workers():
 		],
 	)
 	return [frappe._dict(worker) for worker in workers]
+
+
+def _has_worker_doctype():
+	return bool(frappe.db.exists("DocType", "ComfyUI Worker"))
 
 
 def _cache_affinity_rank(worker, model_cache_key: str):

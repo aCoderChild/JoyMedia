@@ -3,29 +3,24 @@
  "allow_bulk_edit": 1,
  "allow_rename": 1,
  "autoname": "PRJ-.#####",
- "creation": "2026-09-02 09:31:22.492763",
- "description": "Top-level container for a JoyMedia production project. Stores project intent, commercial context, creative direction and target audience group information. Assets, media specifications, generation jobs and outputs are linked to a Media Project.",
+ "creation": "2026-09-18 09:26:46.325414",
+ "description": "Top-level container for a JoyMedia production project. Assets, media specifications, generation jobs and outputs are linked to a Media Project.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "project_overview_section",
   "project_name",
-  "status",
-  "project_type",
-  "target_delivery_date",
-  "client_and_ownership",
-  "client_organization",
-  "project_owner",
-  "column_break_txky",
-  "product_and_audience_section",
   "product_name",
-  "target_audience"
+  "target_audience",
+  "video_idea",
+  "reference_template",
+  "status"
  ],
  "fields": [
   {
    "fieldname": "project_overview_section",
    "fieldtype": "Section Break",
-   "label": "Project Overview"
+   "label": "Video Project"
   },
   {
    "fieldname": "project_name",
@@ -43,74 +38,39 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Draft\nBriefing\nReady for Production\nProduction\nReview\nClient Delivery\nRevision\nCompleted\nOn Hold\nCancelled",
+   "options": "Draft\nGenerating\nReview\nCompleted\nNeeds Attention\nCancelled",
+   "read_only": 1,
    "reqd": 1
-  },
-  {
-   "default": "Product Commercial",
-   "fieldname": "project_type",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Project Type",
-   "options": "Product Commercial\nProduct Demo\nBrand Film\nSocial Media Creative\nCampaign\nInternal R&D\nOther",
-   "reqd": 1
-  },
-  {
-   "fieldname": "product_and_audience_section",
-   "fieldtype": "Section Break",
-   "label": "Product And Audience"
   },
   {
    "fieldname": "product_name",
    "fieldtype": "Data",
    "in_global_search": 1,
-   "label": "Product Name"
+   "label": "Product Name",
+   "reqd": 1
   },
   {
    "fieldname": "target_audience",
    "fieldtype": "Small Text",
-   "label": "Target Audience"
-  },
-  {
-   "fieldname": "client_and_ownership",
-   "fieldtype": "Section Break",
-   "label": "Client And Ownership"
-  },
-  {
-   "fieldname": "client_organization",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Client Organization",
-   "options": "Client Organization"
-  },
-  {
-   "fieldname": "project_owner",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Project Owner",
-   "options": "User",
+   "label": "Target Audience",
    "reqd": 1
   },
   {
-   "description": "Which work is due soon?",
-   "fieldname": "target_delivery_date",
-   "fieldtype": "Date",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Target Delivery Date"
+   "fieldname": "video_idea",
+   "fieldtype": "Small Text",
+   "label": "Video Idea"
   },
   {
-   "fieldname": "column_break_txky",
-   "fieldtype": "Column Break"
+   "fieldname": "reference_template",
+   "fieldtype": "Link",
+   "label": "Reference Template",
+   "options": "Video Reference Template"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-16 16:38:16.454377",
+ "modified": "2026-09-18 11:07:50.307034",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Project",

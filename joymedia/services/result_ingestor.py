@@ -81,6 +81,10 @@ def sync_attempt_result(attempt_name):
 
 	artifact = _create_primary_artifact(attempt, output)
 	_store_artifact_file_in_frappe(artifact, attempt)
+	last_frame = _find_last_frame_image(history)
+	if not last_frame:
+		frappe.throw(_("ComfyUI completed without a last-frame image output."))
+	_store_last_frame(attempt, last_frame)
 	attempt.output_artifact = artifact.name
 	attempt.status = "Completed"
 	if not attempt.started_at:
@@ -93,7 +97,80 @@ def sync_attempt_result(attempt_name):
 	attempt.save(ignore_permissions=True)
 	_create_pending_quality_review(attempt, artifact)
 	_refresh_parent_execution_state(attempt.name)
-	return {"status": attempt.status, "output_artifact": artifact.name}
+	return {
+		"status": attempt.status,
+		"output_artifact": artifact.name,
+		"last_frame_asset_version": attempt.last_frame_asset_version,
+	}
+
+
+def _find_last_frame_image(history):
+	node_output = (history.get("outputs") or {}).get("save_last_frame", {})
+	for output in node_output.get("images", []):
+		filename = str(output.get("filename", "")).lower()
+		if filename.endswith((".png", ".jpg", ".jpeg", ".webp")):
+			return output
+	return None
+
+
+def _store_last_frame(attempt, output):
+	if attempt.last_frame_asset_version:
+		return frappe.get_doc("Asset Version", attempt.last_frame_asset_version)
+
+	job = frappe.get_doc("Generation Job", attempt.generation_job)
+	shot = frappe.get_doc("Shot Specification", job.shot_specification)
+	media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+	media_asset = _get_or_create_continuation_asset(shot.name, media_specification.media_project)
+
+	image_bytes = download_output(
+		output["filename"],
+		output.get("subfolder", ""),
+		output.get("type", "output"),
+		base_url=attempt.comfyui_endpoint_url,
+	)
+	file_doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": Path(output["filename"]).name,
+			"content": image_bytes,
+			"is_private": 1,
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": media_asset.name,
+		}
+	)
+	file_doc.insert(ignore_permissions=True)
+
+	asset_version = frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": media_asset.name,
+			"file": file_doc.file_url,
+			"source": "Generated",
+		}
+	)
+	asset_version.insert(ignore_permissions=True)
+	attempt.last_frame_asset_version = asset_version.name
+	return asset_version
+
+
+def _get_or_create_continuation_asset(shot_name, media_project):
+	asset_name = f"{shot_name} Continuation Frames"
+	media_asset_name = frappe.db.get_value("Media Asset", {"asset_name": asset_name}, "name")
+	if media_asset_name:
+		return frappe.get_doc("Media Asset", media_asset_name)
+
+	media_asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": asset_name,
+			"asset_scope": "Project",
+			"media_type": "Image",
+			"asset_category": "Other",
+			"media_project": media_project,
+		}
+	)
+	media_asset.insert(ignore_permissions=True)
+	return media_asset
 
 
 def _create_primary_artifact(attempt, output):
@@ -157,24 +234,14 @@ def _store_artifact_file_in_frappe(artifact, attempt):
 def _create_pending_quality_review(attempt, artifact):
 	if frappe.db.exists(
 		"Quality Review",
-		{
-			"generation_attempt": attempt.name,
-			"generation_artifact": artifact.name,
-			"review_type": "Automated",
-		},
+		{"generation_artifact": artifact.name},
 	):
 		return
 
-	shot_name = frappe.db.get_value("Generation Job", attempt.generation_job, "shot_specification")
-	if not shot_name:
-		frappe.throw(_("Generation Attempt {0} has no Shot Specification.").format(attempt.name))
 	frappe.get_doc(
 		{
 			"doctype": "Quality Review",
-			"shot_specification": shot_name,
-			"generation_attempt": attempt.name,
 			"generation_artifact": artifact.name,
-			"review_type": "Automated",
 			"status": "Pending",
 		}
 	).insert(ignore_permissions=True)

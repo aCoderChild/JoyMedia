@@ -2,8 +2,6 @@ from .base import GenericWorkflowAdapter
 
 
 H3_DEFAULTS = {
-	"execution_width": 1344,
-	"execution_height": 768,
 	"output_fps": 24,
 	"frame_count": 124,
 	"produces_video": 1,
@@ -11,8 +9,6 @@ H3_DEFAULTS = {
 }
 
 H3_VALUE_PATHS = {
-	"execution_width": ("minimax_cond", "inputs", "width"),
-	"execution_height": ("minimax_cond", "inputs", "height"),
 	"frame_count": ("minimax_cond", "inputs", "length"),
 	"output_fps": ("save_video", "inputs", "frame_rate"),
 }

@@ -5,6 +5,10 @@ app_description = "AI Video Generation for product commercialization"
 app_email = "maianh.pham@reliable-ai.org"
 app_license = "mit"
 
+fixtures = [
+	{"dt": "Workspace", "filters": [["name", "=", "JoyMedia"]]},
+]
+
 # Apps
 # ------------------
 

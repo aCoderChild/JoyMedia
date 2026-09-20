@@ -2,7 +2,7 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "autoname": "SHOT-.#####",
- "creation": "2026-09-03 15:58:29.097326",
+ "creation": "2026-09-18 22:23:31.729117",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -10,10 +10,16 @@
   "media_specification",
   "shot_number",
   "shot_name",
-  "shot_brief",
   "planned_frame_count",
   "duration_seconds",
   "generation_inputs",
+  "visual_direction_section",
+  "camera_direction",
+  "subject_identity",
+  "action_plot",
+  "environment",
+  "audio_section",
+  "audio_direction",
   "selected_output_section",
   "selected_output_asset_version"
  ],
@@ -63,6 +69,48 @@
    "read_only": 1
   },
   {
+   "fieldname": "visual_direction_section",
+   "fieldtype": "Section Break",
+   "label": "Visual Direction"
+  },
+  {
+   "description": "Shot framing, camera movement, lens perspective, focus behavior and composition instructions.\nDefine where/how the camera sees the world",
+   "fieldname": "camera_direction",
+   "fieldtype": "Long Text",
+   "label": "Camera Direction"
+  },
+  {
+   "description": "Defines the primary subject and identity properties that must be preserved within this shot.",
+   "fieldname": "subject_identity",
+   "fieldtype": "Long Text",
+   "label": "Subject Identity",
+   "reqd": 1
+  },
+  {
+   "description": "Describes what happens during the shot, including state changes and interactions.",
+   "fieldname": "action_plot",
+   "fieldtype": "Long Text",
+   "label": "Action / Motion",
+   "reqd": 1
+  },
+  {
+   "description": "Defines the physical setting, background, lighting environment and scene context.",
+   "fieldname": "environment",
+   "fieldtype": "Long Text",
+   "label": "Lighting & Environment"
+  },
+  {
+   "description": "Describes the desired sound, ambience, dialogue, music characteristics, or sound effects for this shot. This is TEXTUAL INTENT, not an attached audio file.",
+   "fieldname": "audio_direction",
+   "fieldtype": "Long Text",
+   "label": "Audio SFX"
+  },
+  {
+   "fieldname": "audio_section",
+   "fieldtype": "Section Break",
+   "label": "Audio"
+  },
+  {
    "description": "Assets assigned to workflow input roles for this shot, such as first_frame, last_frame, mask, or product_reference.",
    "fieldname": "generation_inputs",
    "fieldtype": "Table",
@@ -80,17 +128,12 @@
    "fieldtype": "Link",
    "label": "Selected Output Asset Version",
    "options": "Asset Version"
-  },
-  {
-   "fieldname": "shot_brief",
-   "fieldtype": "Long Text",
-   "label": "Shot Brief"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-16 17:06:47.493048",
+ "modified": "2026-09-19 17:03:22.898740",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Shot Specification",
@@ -106,17 +149,6 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "JoyMedia Specialist",
    "share": 1,
    "write": 1
   }

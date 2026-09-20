@@ -12,13 +12,14 @@
   "version_number",
   "status",
   "generation_setup_section",
+  "workflow_profile",
   "generation_workflow_version",
+  "prompt_template_version",
   "deliverable_requirements_section",
   "total_duration_seconds",
   "delivery_preset",
   "delivery_width",
   "delivery_height",
-  "target_fps",
   "audio_mix_section",
   "audio_cues",
   "global_content_requirements_section",
@@ -66,13 +67,31 @@
    "label": "Generation Setup"
   },
   {
+   "description": "Workflow family used to select the default generation setup.",
+   "fieldname": "workflow_profile",
+   "fieldtype": "Link",
+   "label": "Generation Mode",
+   "options": "Workflow Profile",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
+   "reqd": 1
+  },
+  {
    "description": "Exact Workflow Version used as the default generation workflow for this specification.",
    "fieldname": "generation_workflow_version",
    "fieldtype": "Link",
    "label": "Generation Workflow Version",
-   "mandatory_depends_on": "eval:doc.status==\"Ready\";",
+   "hidden": 1,
    "options": "Workflow Version",
-   "read_only_depends_on": "eval:doc.status==\"Ready\" || doc.status==\"Superseded\" || doc.status==\"Archived\";"
+   "read_only": 1
+  },
+  {
+   "description": "Exact Prompt Template Version used to compile prompts for this specification.",
+   "fieldname": "prompt_template_version",
+   "fieldtype": "Link",
+   "label": "Prompt Template Version",
+   "hidden": 1,
+   "options": "Prompt Template Version",
+   "read_only": 1
   },
   {
    "description": "FINAL video the customer expects",
@@ -91,13 +110,6 @@
    "fieldtype": "Int",
    "label": "Delivery Height",
    "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\";"
-  },
-  {
-   "default": "24",
-   "fieldname": "target_fps",
-   "fieldtype": "Float",
-   "label": "Target FPS",
-   "reqd": 1
   },
   {
    "fieldname": "audio_mix_section",
@@ -128,7 +140,7 @@
    "fieldtype": "Select",
    "in_standard_filter": 1,
    "label": "Delivery Preset",
-   "options": "Landscape 720p\nLandscape 1080p\nPortrait 720p\nPortrait 1080p\nSquare 1080p\nCustom",
+   "options": "Landscape\nPortrait\nSquare\nCustom",
    "reqd": 1
   },
   {
@@ -152,7 +164,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-16 17:02:59.661212",
+ "modified": "2026-09-19 02:25:12.619639",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Specification",

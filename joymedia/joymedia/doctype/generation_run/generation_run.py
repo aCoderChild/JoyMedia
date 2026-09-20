@@ -11,6 +11,9 @@ from joymedia.services.execution_router import get_model_cache_key
 class GenerationRun(Document):
 	def validate(self):
 		media_specification = frappe.get_doc("Media Specification", self.media_specification)
+		if not self.workflow_version:
+			self.workflow_version = media_specification.generation_workflow_version
+
 		if self.workflow_version != media_specification.generation_workflow_version:
 			frappe.throw(
 				_("Generation Run Workflow Version must match the Media Specification Workflow Version.")

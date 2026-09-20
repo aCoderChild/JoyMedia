@@ -9,6 +9,9 @@ MIB = 1024 * 1024
 
 def refresh_workers():
 	"""Refresh health and device telemetry for all enabled ComfyUI workers."""
+	if not frappe.db.exists("DocType", "ComfyUI Worker"):
+		return
+
 	for worker_name in frappe.get_all("ComfyUI Worker", filters={"status": "Active"}, pluck="name"):
 		try:
 			refresh_worker(worker_name)

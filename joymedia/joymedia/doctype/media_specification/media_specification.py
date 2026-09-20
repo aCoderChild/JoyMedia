@@ -11,29 +11,29 @@ from frappe.model.document import Document
 class MediaSpecification(Document):
 	IDENTITY_FIELDS: ClassVar[tuple[str, ...]] = ("media_project", "version_number")
 	EXECUTION_CONTRACT_FIELDS: ClassVar[tuple[str, ...]] = (
+		"workflow_profile",
 		"generation_workflow_version",
 		"prompt_template_version",
 		"total_duration_seconds",
 		"delivery_preset",
 		"delivery_width",
 		"delivery_height",
-		"target_fps",
 		"required_elements",
 		"consistency_requirements",
 		"forbidden_elements",
 		"acceptance_criteria",
 	)
 	PRESET_DIMENSIONS: ClassVar[dict[str, tuple[int, int]]] = {
-		"Landscape 720p": (1280, 720),
-		"Landscape 1080p": (1920, 1080),
-		"Portrait 720p": (720, 1280),
-		"Portrait 1080p": (1080, 1920),
-		"Square 1080p": (1080, 1080),
+		"Landscape": (1344, 768),
+		"Portrait": (768, 1344),
+		"Square": (1024, 1024),
 	}
 
 	def validate(self):
+		self._resolve_generation_setup()
 		self._validate_version_immutability()
 		self._validate_timeline()
+		self.validate_generation_setup()
 		if self.delivery_preset in self.PRESET_DIMENSIONS:
 			self.delivery_width, self.delivery_height = self.PRESET_DIMENSIONS[self.delivery_preset]
 		elif self.delivery_preset == "Custom" and (
@@ -44,8 +44,76 @@ class MediaSpecification(Document):
 		):
 			frappe.throw("Custom delivery presets require a positive width and height")
 
+	def _resolve_generation_setup(self):
+		if not self.workflow_profile:
+			return
+
+		profile_changed = self.is_new() or self.has_value_changed("workflow_profile")
+		if (
+			not profile_changed
+			and self.generation_workflow_version
+			and self.prompt_template_version
+		):
+			return
+
+		profile = frappe.get_doc("Workflow Profile", self.workflow_profile)
+		if not profile.default_workflow_version:
+			frappe.throw(
+				_("Workflow Profile {0} has no Default Workflow Version.").format(profile.name)
+			)
+		if not profile.default_prompt_template_version:
+			frappe.throw(
+				_("Workflow Profile {0} has no Default Prompt Template Version.").format(profile.name)
+			)
+
+		self.generation_workflow_version = profile.default_workflow_version
+		self.prompt_template_version = profile.default_prompt_template_version
+
+	def validate_generation_setup(self):
+		if self.status != "Ready":
+			return
+
+		if not self.generation_workflow_version:
+			frappe.throw(_("Ready Media Specifications require a Generation Workflow Version."))
+
+		if not self.prompt_template_version:
+			frappe.throw(_("Ready Media Specifications require a Prompt Template Version."))
+
+		workflow_version = frappe.get_doc(
+			"Workflow Version",
+			self.generation_workflow_version,
+		)
+
+		if workflow_version.status not in ("Testing", "Production"):
+			frappe.throw(
+				_("Workflow Version {0} must be Testing or Production.").format(
+					workflow_version.name
+				)
+			)
+
+		prompt_version = frappe.get_doc(
+			"Prompt Template Version",
+			self.prompt_template_version,
+		)
+
+		if prompt_version.status not in ("Testing", "Production"):
+			frappe.throw(
+				_("Prompt Template Version {0} must be Testing or Production.").format(
+					prompt_version.name
+				)
+			)
+
+		prompt_profile = frappe.db.get_value(
+			"Prompt Template",
+			prompt_version.prompt_template,
+			"workflow_profile",
+		)
+
+		if prompt_profile != workflow_version.workflow_profile:
+			frappe.throw(_("Prompt Template Version must match the selected Workflow Profile."))
+
 	def on_update(self):
-		if self.has_value_changed("total_duration_seconds") or self.has_value_changed("target_fps"):
+		if self.has_value_changed("total_duration_seconds"):
 			from joymedia.services.shot_duration_planner import recalculate_shot_durations
 
 			recalculate_shot_durations(self.name)
@@ -53,8 +121,10 @@ class MediaSpecification(Document):
 	def _validate_timeline(self):
 		if (self.total_duration_seconds or 0) <= 0:
 			frappe.throw(_("Total Duration must be greater than zero."))
-		if (self.target_fps or 0) <= 0:
-			frappe.throw(_("Target FPS must be greater than zero."))
+		if self.generation_workflow_version:
+			workflow_version = frappe.get_doc("Workflow Version", self.generation_workflow_version)
+			if (workflow_version.output_fps or 0) <= 0:
+				frappe.throw(_("Workflow Version output FPS must be greater than zero."))
 
 	def _validate_version_immutability(self):
 		if self.is_new():

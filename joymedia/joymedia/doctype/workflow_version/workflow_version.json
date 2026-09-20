@@ -2,7 +2,7 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "autoname": "WFV-.#####",
- "creation": "2026-09-03 22:53:31.355257",
+ "creation": "2026-09-07 09:55:08.375895",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -11,13 +11,10 @@
   "version_number",
   "version_label",
   "status",
-  "change_notes",
   "workflow_definition_section",
   "workflow_json",
   "workflow_hash",
   "execution_characteristics_section",
-  "execution_width",
-  "execution_height",
   "frame_count",
   "output_fps",
   "produces_video",
@@ -71,12 +68,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "change_notes",
-   "fieldtype": "Small Text",
-   "label": "Change Notes",
-   "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";"
-  },
-  {
    "description": "Paste the entire JSON workflow you uploaded into this field",
    "fieldname": "workflow_definition_section",
    "fieldtype": "Section Break",
@@ -123,20 +114,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "execution_width",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Execution Width",
-   "read_only": 1
-  },
-  {
-   "fieldname": "execution_height",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Execution Height",
-   "read_only": 1
-  },
-  {
    "fieldname": "workflow_hash",
    "fieldtype": "Data",
    "label": "Workflow Hash",
@@ -170,7 +147,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-06 00:01:49.295524",
+ "modified": "2026-09-19 01:51:42.957950",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Workflow Version",
