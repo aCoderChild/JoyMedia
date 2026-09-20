@@ -21,12 +21,12 @@ function generate_video_plan(frm) {
 		},
 		callback(r) {
 			if (r.exc) return;
-			show_plan_request_dialog(frm, r.message > 0 ? r.message : 0);
+			show_plan_request_dialog(frm);
 		},
 	});
 }
 
-function show_plan_request_dialog(frm, image_count) {
+function show_plan_request_dialog(frm) {
 	const dialog = new frappe.ui.Dialog({
 		title: __("Generate Video Plan"),
 		fields: [
@@ -49,7 +49,7 @@ function show_plan_request_dialog(frm, image_count) {
 				fieldname: "scene_count",
 				fieldtype: "Int",
 				label: __("Number of Scenes"),
-				default: image_count === 6 ? 6 : 3,
+				default: 3,
 				reqd: 1,
 			},
 		],
@@ -73,12 +73,12 @@ function generate_video_plan_request(frm, request_dialog, media_specification, s
 		(r) => {
 			if (r.exc || !r.message) return;
 
-			show_video_plan_dialog(frm, media_specification, r.message);
+				show_video_plan_dialog(frm, media_specification, scene_count, r.message);
 		}
 	);
 }
 
-function show_video_plan_dialog(frm, media_specification, plan) {
+function show_video_plan_dialog(frm, media_specification, scene_count, plan) {
 	const dialog = new frappe.ui.Dialog({
 		title: __("Generated Video Plan"),
 		fields: [
@@ -91,26 +91,64 @@ function show_video_plan_dialog(frm, media_specification, plan) {
 		primary_action(values) {
 			apply_video_plan(frm, dialog, media_specification, plan);
 		},
+		secondary_action_label: __("Regenerate Plan"),
+		secondary_action() {
+			regenerate_video_plan(frm, dialog, media_specification, scene_count);
+		},
 	});
 
-	const escaped_plan = frappe.utils.escape_html(JSON.stringify(plan, null, 2));
-
-	dialog.fields_dict.plan_preview.$wrapper.html(`
-		<div style="margin-top: 16px;">
-			<strong>${__("Qwen Plan")}</strong>
-			<pre style="
-				margin-top: 8px;
-				max-height: 400px;
-				overflow: auto;
-				padding: 12px;
-				background: var(--subtle-fg);
-				border-radius: 6px;
-				white-space: pre-wrap;
-			">${escaped_plan}</pre>
-		</div>
-	`);
+	dialog.fields_dict.plan_preview.$wrapper.html(render_storyboard(plan));
 
 	dialog.show();
+}
+
+function regenerate_video_plan(frm, dialog, media_specification, scene_count) {
+	dialog.hide();
+	frm.call(
+		"generate_video_plan",
+		{
+			media_specification_name: media_specification,
+			scene_count,
+		},
+		(r) => {
+			if (r.exc || !r.message) return;
+			show_video_plan_dialog(frm, media_specification, scene_count, r.message);
+		}
+	);
+}
+
+function render_storyboard(plan) {
+	const shots = plan.shots || [];
+	const cards = shots
+		.map((shot) => {
+			const reference = shot.reference_image_index
+				? `<div style="margin-bottom: 12px; color: var(--text-muted);">${__("Reference image {0}", [shot.reference_image_index])}</div>`
+				: "";
+
+			return `
+				<div style="padding: 16px 0; border-bottom: 1px solid var(--border-color);">
+					<h4 style="margin: 0 0 12px;">${__("Shot {0}", [shot.shot_number])}</h4>
+					${reference}
+					${storyboard_field("Camera", shot.camera)}
+					${storyboard_field("Subject", shot.subject)}
+					${storyboard_field("Motion", shot.motion)}
+					${storyboard_field("Lighting", shot.lighting)}
+					${storyboard_field("Audio", shot.audio)}
+				</div>
+			`;
+		})
+		.join("");
+
+	return `<div style="max-height: 520px; overflow: auto;">${cards}</div>`;
+}
+
+function storyboard_field(label, value) {
+	return `
+		<div style="margin: 10px 0;">
+			<strong>${__(label)}</strong>
+			<div style="margin-top: 4px; white-space: pre-wrap;">${frappe.utils.escape_html(value || "")}</div>
+		</div>
+	`;
 }
 
 function apply_video_plan(frm, dialog, media_specification, plan) {

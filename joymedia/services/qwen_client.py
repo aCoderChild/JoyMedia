@@ -72,8 +72,8 @@ Preserve the reference template's cinematography,
 pacing, composition, scene progression, motion style
 and lighting language.
 
-Adapt the content to the supplied product, audience,
-marketing goal and project reference images.
+Adapt the content to the supplied product, target audience,
+video idea and project reference images.
 """
 		).strip()
 	else:
