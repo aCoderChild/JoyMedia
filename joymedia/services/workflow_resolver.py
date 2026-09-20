@@ -8,6 +8,9 @@ from frappe import _
 from joymedia.workflow_adapters.base import canonical_workflow_json
 
 
+_SKIP_BINDING = object()
+
+
 def resolve_attempt(attempt_name: str, staged_inputs=None):
 	staged_inputs = staged_inputs or {}
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
@@ -26,6 +29,8 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		node = workflow.get(binding.node_key)
 		if node is None or binding.input_name not in node.get("inputs", {}):
 			frappe.throw(_("Invalid Workflow Binding: {0}").format(binding.binding_key))
+		if value is _SKIP_BINDING:
+			continue
 		node["inputs"][binding.input_name] = value
 
 	canonical = canonical_workflow_json(workflow)
@@ -37,7 +42,12 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 
 def _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs):
 	if binding.value_source == "Generation Input":
-		return _resolve_generation_input(job, binding.required_input_role, staged_inputs)
+		return _resolve_generation_input(
+			job,
+			binding.required_input_role,
+			staged_inputs,
+			required=bool(binding.required),
+		)
 	if binding.value_source == "Compiled Prompt":
 		return compiled_prompt.prompt_text
 	if binding.value_source == "Attempt Seed":
@@ -49,13 +59,15 @@ def _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs):
 	frappe.throw(_("Unsupported Workflow Binding Value Source: {0}").format(binding.value_source))
 
 
-def _resolve_generation_input(job, required_role, staged_inputs):
+def _resolve_generation_input(job, required_role, staged_inputs, required=True):
 	if not required_role:
 		frappe.throw(_("Generation Input binding requires Required Input Role."))
 	normalized_role = frappe.scrub(required_role)
 	staged_value = staged_inputs.get(normalized_role)
 	if staged_value:
 		return staged_value
+	if not required:
+		return _SKIP_BINDING
 	frappe.throw(
 		_("No staged ComfyUI input found for role '{0}' on Generation Job {1}.").format(
 			normalized_role, job.name

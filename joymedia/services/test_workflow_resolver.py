@@ -3,7 +3,11 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from joymedia.services.workflow_resolver import _resolve_generation_input, _resolve_runtime_value
+from joymedia.services.workflow_resolver import (
+	_SKIP_BINDING,
+	_resolve_generation_input,
+	_resolve_runtime_value,
+)
 
 
 class TestWorkflowResolver(FrappeTestCase):
@@ -17,6 +21,18 @@ class TestWorkflowResolver(FrappeTestCase):
 		)
 
 		self.assertEqual("first.png", value)
+
+	def test_optional_last_frame_is_skipped_when_not_staged(self):
+		job = frappe._dict(name="JOB-00001")
+
+		value = _resolve_generation_input(
+			job,
+			"LAST FRAME",
+			{},
+			required=False,
+		)
+
+		self.assertIs(value, _SKIP_BINDING)
 
 	@patch("joymedia.services.workflow_resolver.frappe.get_doc")
 	def test_runtime_delivery_dimensions_come_from_media_specification(self, get_doc):
