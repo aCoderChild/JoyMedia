@@ -2,7 +2,7 @@
  "actions": [],
  "allow_bulk_edit": 1,
  "autoname": "AST-.#####",
- "creation": "2026-09-03 07:05:09.078888",
+ "creation": "2026-09-06 00:58:06.875483",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -12,7 +12,6 @@
   "media_type",
   "asset_category",
   "status",
-  "description",
   "ownership_section",
   "client_organization",
   "media_project"
@@ -57,13 +56,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Asset Category",
-   "options": "Product\nCharacter\nBackground\nBrand\nStoryboard\nReference\nShot Output\nFinal Deliverable\nOther",
+   "options": "Product\nCharacter\nBackground\nBrand\nStyle\nOther",
    "reqd": 1
-  },
-  {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description"
   },
   {
    "default": "Active",
@@ -99,7 +93,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-03 23:09:23.805579",
+ "modified": "2026-09-16 16:42:24.862761",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Asset",
