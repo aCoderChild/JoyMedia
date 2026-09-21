@@ -41,7 +41,7 @@
 
       <section class="workspace-card">
         <div class="section-heading"><div><p class="eyebrow">Production</p><h2>{{ production?.status || "Ready to generate" }}</h2></div><div class="button-row"><Button v-if="production && production.failed_jobs > 0 && ['Failed', 'Partially Completed'].includes(production.status)" label="Retry failed scenes" :loading="retryingFailedScenes" @click="retryFailedScenes" /><Button label="Generate video" :loading="generatingVideo" :disabled="!workspace.storyboard?.length || !settings || Boolean(production && production.status !== 'Draft')" @click="generateVideo" /></div></div>
-        <div v-if="production" class="progress-panel"><div class="progress-label"><span>{{ production.completed_jobs || 0 }} / {{ production.total_jobs || 0 }} scenes complete</span><span>{{ production.progress || 0 }}%</span></div><div class="progress-track"><div class="progress-value" :style="{ width: `${production.progress || 0}%` }" /></div><p v-if="production.error_summary" class="error-text">{{ production.error_summary }}</p></div>
+        <div v-if="production" class="progress-panel"><div class="progress-label"><span>{{ production.completed_jobs || 0 }} / {{ production.total_jobs || 0 }} scenes complete</span><span>{{ production.progress || 0 }}%</span></div><div class="progress-track"><div class="progress-value" :style="{ width: `${production.progress || 0}%` }" /></div><p v-if="production.error_summary" class="error-text">{{ production.error_summary }}</p><Button v-if="requiresStoryboardRevision" label="Create a valid storyboard revision" :loading="revisingStoryboard" @click="reviseForGeneration" /></div>
       </section>
 
       <section class="workspace-card">
@@ -75,6 +75,7 @@ const applyError = ref("");
 const applySuccess = ref(false);
 const generatingVideo = ref(false);
 const retryingFailedScenes = ref(false);
+const revisingStoryboard = ref(false);
 const uploadingImages = ref(false);
 const uploadProgress = ref(0);
 const uploadTotal = ref(0);
@@ -84,6 +85,7 @@ const workspace = computed(() => campaign.data);
 const settings = computed(() => workspace.value?.video_settings);
 const production = computed(() => workspace.value?.production);
 const minimumSceneCount = computed(() => workspace.value?.video_settings?.minimum_scene_count || 1);
+const requiresStoryboardRevision = computed(() => production.value?.error_summary?.includes("Multi-segment execution is not enabled yet."));
 const storyboardTitle = computed(() => {
   const count = plan.value?.shots?.length || workspace.value?.storyboard?.length || 0;
   return count ? `${count} scene${count === 1 ? "" : "s"}` : "Plan your scenes";
@@ -168,6 +170,20 @@ async function retryFailedScenes() {
     toast({ title: "Unable to retry video", text: error.message || "Please try again.", type: "error" });
   } finally {
     retryingFailedScenes.value = false;
+  }
+}
+async function reviseForGeneration() {
+  revisingStoryboard.value = true;
+  try {
+    await call("joymedia.joymedia.doctype.media_project.media_project.revise_campaign_storyboard", { campaign_name: route.params.name });
+    await campaign.reload();
+    sceneCount.value = minimumSceneCount.value;
+    sceneCountInitialized.value = true;
+    await generatePlan();
+  } catch (error) {
+    toast({ title: "Unable to create storyboard revision", text: error.message || "Please try again.", type: "error" });
+  } finally {
+    revisingStoryboard.value = false;
   }
 }
 function referenceAssetForShot(shot) {
