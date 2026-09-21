@@ -30,10 +30,12 @@
 
       <section class="workspace-card">
         <div class="section-heading"><div><p class="eyebrow">Storyboard</p><h2>{{ storyboardTitle }}</h2></div><div class="button-row"><FormControl v-model="sceneCount" type="number" label="Scenes" /><Button label="Generate storyboard" :loading="generatingPlan" :disabled="!settings" @click="generatePlan" /></div></div>
-        <div v-if="plan?.shots?.length" class="storyboard-grid"><article v-for="shot in plan.shots" :key="shot.shot_number" class="storyboard-card"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><p><strong>Camera</strong>{{ shot.camera }}</p><p><strong>Subject</strong>{{ shot.subject }}</p><p><strong>Motion</strong>{{ shot.motion }}</p><p><strong>Lighting</strong>{{ shot.lighting }}</p><p><strong>Audio</strong>{{ shot.audio }}</p></article></div>
+        <div v-if="plan?.shots?.length" class="storyboard-grid"><article v-for="shot in plan.shots" :key="shot.shot_number" class="storyboard-card"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><FormControl v-if="shot.reference_image_index != null" v-model="shot.reference_image_index" type="number" label="Reference image" /><FormControl v-model="shot.camera" type="textarea" label="Camera" /><FormControl v-model="shot.subject" type="textarea" label="Subject" /><FormControl v-model="shot.motion" type="textarea" label="Motion" /><FormControl v-model="shot.lighting" type="textarea" label="Lighting & environment" /><FormControl v-model="shot.audio" type="textarea" label="Audio SFX" /></article></div>
         <div v-else-if="workspace.storyboard?.length" class="storyboard-grid"><article v-for="shot in workspace.storyboard" :key="shot.name" class="storyboard-card"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><p><strong>Camera</strong>{{ shot.camera_direction }}</p><p><strong>Subject</strong>{{ shot.subject_identity }}</p><p><strong>Motion</strong>{{ shot.action_plot }}</p><p><strong>Lighting</strong>{{ shot.environment }}</p><p><strong>Audio</strong>{{ shot.audio_direction }}</p></article></div>
         <div v-else class="empty-panel"><p>No storyboard has been generated yet.</p><Button label="Generate storyboard" :disabled="!settings" @click="generatePlan" /></div>
-        <div v-if="plan?.shots?.length" class="button-row"><Button appearance="minimal" label="Discard plan" @click="plan = null" /><Button label="Apply storyboard" :loading="applyingPlan" @click="applyPlan" /></div>
+        <div v-if="plan?.shots?.length" class="button-row"><Button appearance="minimal" label="Discard plan" :disabled="applyingPlan" @click="plan = null" /><Button label="Apply storyboard" :loading="applyingPlan" @click.stop="applyPlan" /></div>
+        <p v-if="applyError" class="action-message error-text">{{ applyError }}</p>
+        <p v-if="applySuccess" class="action-message success-text">Storyboard applied successfully.</p>
       </section>
 
       <section class="workspace-card">
@@ -66,6 +68,8 @@ const showSettings = ref(false);
 const savingSettings = ref(false);
 const generatingPlan = ref(false);
 const applyingPlan = ref(false);
+const applyError = ref("");
+const applySuccess = ref(false);
 const generatingVideo = ref(false);
 const uploadingImages = ref(false);
 const uploadProgress = ref(0);
@@ -128,9 +132,31 @@ async function generatePlan() {
   finally { generatingPlan.value = false; }
 }
 async function applyPlan() {
+  if (!plan.value?.shots?.length) return;
   applyingPlan.value = true;
-  try { await call("joymedia.joymedia.doctype.media_project.media_project.apply_campaign_video_plan", { campaign_name: route.params.name, plan_json: JSON.stringify(plan.value) }); await refresh(); }
-  catch (error) { toast({ title: "Unable to apply storyboard", text: error.message || "Please try again.", type: "error" }); }
+  applyError.value = "";
+  applySuccess.value = false;
+  try {
+    const payload = {
+      ...plan.value,
+      shots: plan.value.shots.map((shot) => ({
+        ...shot,
+        ...(shot.reference_image_index != null
+          ? { reference_image_index: Number(shot.reference_image_index) }
+          : {}),
+      })),
+    };
+    const result = await call("joymedia.joymedia.doctype.media_project.media_project.apply_campaign_video_plan", { campaign_name: route.params.name, plan_json: JSON.stringify(payload) });
+    if (!result?.shots?.length) throw new Error("No shots were created.");
+    applySuccess.value = true;
+    await campaign.reload();
+    plan.value = null;
+    toast({ title: "Storyboard applied", text: `${result.shots.length} scene${result.shots.length === 1 ? "" : "s"} created.`, type: "success" });
+  }
+  catch (error) {
+    applyError.value = error.message || "The storyboard could not be applied.";
+    toast({ title: "Unable to apply storyboard", text: applyError.value, type: "error" });
+  }
   finally { applyingPlan.value = false; }
 }
 async function generateVideo() {

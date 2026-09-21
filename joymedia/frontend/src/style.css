@@ -83,6 +83,9 @@ h2 { margin: 0; }
 .storyboard-number { margin-bottom: 14px; color: #fff; font-size: 16px; font-weight: 700; }
 .storyboard-card p { margin: 10px 0 0; color: #bdbdbd; line-height: 1.5; }
 .storyboard-card strong { display: block; margin-bottom: 3px; color: #7f7f7f; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.storyboard-card .form-control { margin-top: 14px; }
+.action-message { margin: 16px 0 0; }
+.success-text { color: #74c69d; }
 .empty-panel { display: grid; place-items: center; gap: 12px; min-height: 150px; color: #929292; text-align: center; }
 .empty-panel p { margin: 0; }
 .progress-panel { margin-top: 18px; }
