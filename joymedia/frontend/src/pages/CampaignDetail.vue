@@ -29,11 +29,11 @@
       </section>
 
       <section class="workspace-card">
-        <div class="section-heading"><div><p class="eyebrow">Storyboard</p><h2>{{ storyboardTitle }}</h2></div><div class="button-row"><FormControl v-model="sceneCount" type="number" label="Scenes" /><Button label="Generate storyboard" :loading="generatingPlan" :disabled="!settings" @click="generatePlan" /></div></div>
-        <div v-if="plan?.shots?.length" class="storyboard-grid"><article v-for="shot in plan.shots" :key="shot.shot_number" class="storyboard-card"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><FormControl v-if="shot.reference_image_index != null" v-model="shot.reference_image_index" type="number" label="Reference image" /><FormControl v-model="shot.camera" type="textarea" label="Camera" /><FormControl v-model="shot.subject" type="textarea" label="Subject" /><FormControl v-model="shot.motion" type="textarea" label="Motion" /><FormControl v-model="shot.lighting" type="textarea" label="Lighting & environment" /><FormControl v-model="shot.audio" type="textarea" label="Audio SFX" /></article></div>
-        <div v-else-if="workspace.storyboard?.length" class="storyboard-grid"><article v-for="shot in workspace.storyboard" :key="shot.name" class="storyboard-card"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><p><strong>Camera</strong>{{ shot.camera_direction }}</p><p><strong>Subject</strong>{{ shot.subject_identity }}</p><p><strong>Motion</strong>{{ shot.action_plot }}</p><p><strong>Lighting</strong>{{ shot.environment }}</p><p><strong>Audio</strong>{{ shot.audio_direction }}</p></article></div>
+        <div class="section-heading storyboard-heading"><div><p class="eyebrow">Storyboard</p><h2>{{ storyboardTitle }}</h2></div><div class="storyboard-controls"><FormControl v-model="sceneCount" type="number" label="Scenes" /><Button label="Generate storyboard" :loading="generatingPlan" :disabled="!settings" @click="generatePlan" /></div></div>
+        <div v-if="plan?.shots?.length" class="storyboard-grid"><article v-for="shot in plan.shots" :key="shot.shot_number" class="storyboard-card"><div class="storyboard-card-heading"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><span v-if="referenceAssetForShot(shot)" class="reference-label">Reference: {{ referenceAssetForShot(shot).asset_name }}</span></div><img v-if="referenceAssetForShot(shot)?.file" class="storyboard-reference-image" :src="referenceAssetForShot(shot).file" :alt="referenceAssetForShot(shot).asset_name" /><div v-else-if="shot.reference_image_index != null" class="storyboard-reference-placeholder">Reference image {{ shot.reference_image_index }}</div><FormControl v-if="shot.reference_image_index != null" v-model="shot.reference_image_index" type="number" label="Reference image" /><FormControl v-model="shot.camera" type="textarea" label="Camera & framing" /><FormControl v-model="shot.subject" type="textarea" label="What appears on screen" /><FormControl v-model="shot.motion" type="textarea" label="Movement" /><FormControl v-model="shot.lighting" type="textarea" label="Look & setting" /><FormControl v-model="shot.audio" type="textarea" label="Sound" /></article></div>
+        <div v-else-if="workspace.storyboard?.length" class="storyboard-grid"><article v-for="shot in workspace.storyboard" :key="shot.name" class="storyboard-card"><div class="storyboard-card-heading"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><span v-if="shot.reference_asset_name" class="reference-label">Reference: {{ shot.reference_asset_name }}</span></div><img v-if="shot.reference_image" class="storyboard-reference-image" :src="shot.reference_image" :alt="shot.reference_asset_name || `Shot ${shot.shot_number} reference`" /><p><strong>Camera & framing</strong>{{ shot.camera_direction }}</p><p><strong>What appears on screen</strong>{{ shot.subject_identity }}</p><p><strong>Movement</strong>{{ shot.action_plot }}</p><p><strong>Look & setting</strong>{{ shot.environment }}</p><p><strong>Sound</strong>{{ shot.audio_direction }}</p></article></div>
         <div v-else class="empty-panel"><p>No storyboard has been generated yet.</p><Button label="Generate storyboard" :disabled="!settings" @click="generatePlan" /></div>
-        <div v-if="plan?.shots?.length" class="button-row"><Button appearance="minimal" label="Discard plan" :disabled="applyingPlan" @click="plan = null" /><Button label="Apply storyboard" :loading="applyingPlan" @click.stop="applyPlan" /></div>
+        <div v-if="plan?.shots?.length" class="button-row storyboard-actions"><Button appearance="minimal" label="Discard plan" :disabled="applyingPlan" @click="plan = null" /><Button appearance="minimal" label="Regenerate storyboard" :loading="generatingPlan" :disabled="applyingPlan || generatingPlan || !settings" @click="generatePlan" /><Button label="Apply storyboard" :loading="applyingPlan" @click.stop="applyPlan" /></div>
         <p v-if="applyError" class="action-message error-text">{{ applyError }}</p>
         <p v-if="applySuccess" class="action-message success-text">Storyboard applied successfully.</p>
       </section>
@@ -79,7 +79,10 @@ const settingsForm = reactive({ duration: 8, format: "Landscape" });
 const workspace = computed(() => campaign.data);
 const settings = computed(() => workspace.value?.video_settings);
 const production = computed(() => workspace.value?.production);
-const storyboardTitle = computed(() => workspace.value?.storyboard?.length ? `${workspace.value.storyboard.length} scenes` : "Plan your scenes");
+const storyboardTitle = computed(() => {
+  const count = plan.value?.shots?.length || workspace.value?.storyboard?.length || 0;
+  return count ? `${count} scene${count === 1 ? "" : "s"}` : "Plan your scenes";
+});
 watch(settings, (value) => {
   if (!value) return;
   settingsForm.duration = value.duration;
@@ -127,9 +130,45 @@ async function saveSettings() {
 }
 async function generatePlan() {
   generatingPlan.value = true;
-  try { plan.value = await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video_plan", { campaign_name: route.params.name, scene_count: sceneCount.value }); }
+  try {
+    const generatedPlan = await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video_plan", { campaign_name: route.params.name, scene_count: sceneCount.value });
+    plan.value = normalizePlanForEditor(generatedPlan);
+  }
   catch (error) { toast({ title: "Unable to generate storyboard", text: error.message || "Please try again.", type: "error" }); }
   finally { generatingPlan.value = false; }
+}
+function referenceAssetForShot(shot) {
+  const index = Number(shot.reference_image_index);
+  return index > 0 ? workspace.value?.assets?.[index - 1] : null;
+}
+function readablePlanValue(value) {
+  if (value == null) return "";
+  if (typeof value !== "string") {
+    return Object.entries(value).map(([key, item]) => `${humanizeKey(key)}: ${item}`).join(". ");
+  }
+  const text = value.trim();
+  if (!text.startsWith("{") || !text.endsWith("}")) return value;
+  try {
+    return readablePlanValue(JSON.parse(text));
+  } catch {
+    return text.slice(1, -1).replace(/[\'"]([^\'"]+)[\'"]\s*:\s*[\'"]([^\'"]*)[\'"]/g, (_, key, item) => `${humanizeKey(key)}: ${item}`).replace(/,\s*/g, ". ");
+  }
+}
+function humanizeKey(key) {
+  return key.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+function normalizePlanForEditor(value) {
+  return {
+    ...value,
+    shots: (value?.shots || []).map((shot) => ({
+      ...shot,
+      camera: readablePlanValue(shot.camera),
+      subject: readablePlanValue(shot.subject),
+      motion: readablePlanValue(shot.motion),
+      lighting: readablePlanValue(shot.lighting),
+      audio: readablePlanValue(shot.audio),
+    })),
+  };
 }
 async function applyPlan() {
   if (!plan.value?.shots?.length) return;

@@ -117,6 +117,33 @@ def get_campaign_workspace(name):
 			],
 			order_by="shot_number asc, name asc",
 		)
+		for shot in storyboard:
+			input_rows = frappe.get_all(
+				"Shot Input Mapping",
+				filters={"parent": shot["name"]},
+				fields=["input_role", "asset_version"],
+				limit_page_length=20,
+			)
+			first_frame = next(
+				(
+					row
+					for row in input_rows
+					if frappe.scrub(row.input_role or "") == "first_frame"
+				),
+				None,
+			)
+			if first_frame:
+				asset_version = frappe.db.get_value(
+					"Asset Version",
+					first_frame.asset_version,
+					["file", "media_asset"],
+					as_dict=True,
+				)
+				if asset_version:
+					shot["reference_image"] = asset_version.file
+					shot["reference_asset_name"] = frappe.db.get_value(
+						"Media Asset", asset_version.media_asset, "asset_name"
+					)
 
 		run = frappe.get_all(
 			"Generation Run",

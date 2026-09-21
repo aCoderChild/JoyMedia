@@ -78,14 +78,20 @@ h2 { margin: 0; }
 .campaign-summary p:not(.eyebrow) { margin: 0; color: #c6c6c6; line-height: 1.6; }
 .inline-form { display: flex; align-items: end; gap: 16px; margin-top: 22px; }
 .inline-form .form-control { max-width: 240px; }
-.storyboard-grid, .review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.storyboard-grid, .review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .storyboard-card, .review-card { padding: 18px; border: 1px solid #363636; border-radius: 9px; background: #191919; }
+.storyboard-card-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .storyboard-number { margin-bottom: 14px; color: #fff; font-size: 16px; font-weight: 700; }
+.reference-label { color: #929292; font-size: 12px; }
+.storyboard-reference-image, .storyboard-reference-placeholder { width: 100%; height: 150px; margin-bottom: 4px; object-fit: cover; border-radius: 7px; }
+.storyboard-reference-placeholder { display: grid; place-items: center; background: #292929; color: #929292; font-size: 13px; }
 .storyboard-card p { margin: 10px 0 0; color: #bdbdbd; line-height: 1.5; }
 .storyboard-card strong { display: block; margin-bottom: 3px; color: #7f7f7f; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .storyboard-card .form-control { margin-top: 14px; }
 .action-message { margin: 16px 0 0; }
 .success-text { color: #74c69d; }
+.storyboard-controls, .storyboard-actions { align-items: end; }
+.storyboard-controls { display: flex; gap: 10px; }
 .empty-panel { display: grid; place-items: center; gap: 12px; min-height: 150px; color: #929292; text-align: center; }
 .empty-panel p { margin: 0; }
 .progress-panel { margin-top: 18px; }
@@ -97,4 +103,4 @@ h2 { margin: 0; }
 .review-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
 .review-actions span { margin-right: auto; color: #c6c6c6; font-size: 13px; }
 @media (max-width: 900px) { .sidebar { width: 190px; flex-basis: 190px; } .card-grid, .simple-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .detail-body { grid-template-columns: 1fr; } }
-@media (max-width: 640px) { .app-shell { display: block; } .sidebar { width: 100%; min-height: auto; padding: 14px; } .brand { padding-bottom: 14px; } .sidebar-nav { display: flex; overflow-x: auto; } .sidebar-footer { display: none; } .topbar { height: 58px; padding: 0 18px; } .page-content { padding: 28px 18px 50px; } .page-heading, .toolbar { align-items: stretch; flex-direction: column; } .card-grid, .simple-grid, .storyboard-grid, .review-grid, .campaign-summary { grid-template-columns: 1fr; } .inline-form { align-items: stretch; flex-direction: column; } .button-row { justify-content: flex-start; flex-wrap: wrap; } }
+@media (max-width: 640px) { .app-shell { display: block; } .sidebar { width: 100%; min-height: auto; padding: 14px; } .brand { padding-bottom: 14px; } .sidebar-nav { display: flex; overflow-x: auto; } .sidebar-footer { display: none; } .topbar { height: 58px; padding: 0 18px; } .page-content { padding: 28px 18px 50px; } .page-heading, .toolbar, .storyboard-heading { align-items: stretch; flex-direction: column; } .card-grid, .simple-grid, .storyboard-grid, .review-grid, .campaign-summary { grid-template-columns: 1fr; } .inline-form, .storyboard-controls { align-items: stretch; flex-direction: column; } .button-row { justify-content: flex-start; flex-wrap: wrap; } }
