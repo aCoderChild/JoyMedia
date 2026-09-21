@@ -1,6 +1,8 @@
 # Copyright (c) 2026, JoyMedia and Contributors
 # See license.txt
 
+import base64
+
 import frappe
 from contextlib import nullcontext
 from unittest.mock import patch
@@ -9,6 +11,67 @@ from frappe.utils import now_datetime
 
 
 class IntegrationTestMediaProject(IntegrationTestCase):
+	def test_campaign_workspace_aggregates_assets_and_current_storyboard(self):
+		campaign, specification = _create_campaign("Campaign Workspace")
+		asset = frappe.get_doc(
+			{
+				"doctype": "Media Asset",
+				"asset_name": "Workspace Product Image",
+				"asset_scope": "Project",
+				"media_type": "Image",
+				"asset_category": "Product",
+				"media_project": campaign.name,
+				"client_organization": campaign.client_organization,
+			}
+		).insert(ignore_permissions=True)
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "workspace-product.png",
+				"content": base64.b64decode(
+					"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+				),
+				"is_private": 1,
+				"attached_to_doctype": "Media Asset",
+				"attached_to_name": asset.name,
+			}
+		).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Asset Version",
+				"media_asset": asset.name,
+				"file": file_doc.file_url,
+				"source": "Uploaded",
+			}
+		).insert(ignore_permissions=True)
+
+		from joymedia.services.video_plan_service import apply_video_plan
+
+		apply_video_plan(
+			specification.name,
+			{
+				"shots": [
+					{
+						"shot_number": 1,
+						"camera": "Camera",
+						"subject": "Subject",
+						"motion": "Motion",
+						"lighting": "Lighting",
+						"audio": "Audio",
+					}
+				]
+			},
+		)
+
+		from joymedia.joymedia.doctype.media_project.media_project import get_campaign_workspace
+
+		workspace = get_campaign_workspace(campaign.name)
+		self.assertEqual(workspace["campaign"]["name"], campaign.name)
+		self.assertEqual(workspace["video_settings"]["name"], specification.name)
+		self.assertEqual(workspace["storyboard"][0]["shot_number"], 1)
+		self.assertEqual(workspace["assets"][0]["file"], file_doc.file_url)
+		self.assertIsNone(workspace["production"])
+
 	def test_video_settings_create_and_update_latest_draft_specification(self):
 		campaign, specification = _create_campaign("Video Settings")
 		frappe.delete_doc("Media Specification", specification.name, ignore_permissions=True)

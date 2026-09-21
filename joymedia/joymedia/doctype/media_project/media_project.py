@@ -68,23 +68,7 @@ def get_campaign_detail(name):
 	frappe.has_permission("Media Project", "read", name, throw=True)
 	project = frappe.get_doc("Media Project", name)
 	media_specification = get_latest_media_specification(project.name)
-	assets = frappe.get_list(
-		"Media Asset",
-		filters={"media_project": project.name, "status": "Active"},
-		fields=["name", "asset_name", "media_type", "asset_category"],
-		order_by="modified desc",
-		limit_page_length=100,
-	)
-
-	for asset in assets:
-		version = frappe.get_all(
-			"Asset Version",
-			filters={"media_asset": asset.name},
-			fields=["file", "version_number"],
-			order_by="version_number desc",
-			limit_page_length=1,
-		)
-		asset["file"] = version[0].file if version else None
+	assets = _get_campaign_assets(project.name)
 
 	return {
 		"name": project.name,
@@ -103,6 +87,109 @@ def get_campaign_detail(name):
 		else None,
 		"assets": assets,
 	}
+
+
+@frappe.whitelist()
+def get_campaign_workspace(name):
+	frappe.has_permission("Media Project", "read", name, throw=True)
+	project = frappe.get_doc("Media Project", name)
+	media_specification = get_latest_media_specification(project.name)
+	assets = _get_campaign_assets(project.name)
+	storyboard = []
+	production = None
+	reviews = []
+	final_video = None
+
+	if media_specification:
+		storyboard = frappe.get_all(
+			"Shot Specification",
+			filters={"media_specification": media_specification.name},
+			fields=[
+				"name",
+				"shot_number",
+				"camera_direction",
+				"subject_identity",
+				"action_plot",
+				"environment",
+				"audio_direction",
+				"planned_frame_count",
+				"selected_output_asset_version",
+			],
+			order_by="shot_number asc, name asc",
+		)
+
+		run = frappe.get_all(
+			"Generation Run",
+			filters={"media_specification": media_specification.name},
+			fields=[
+				"name",
+				"status",
+				"progress",
+				"completed_jobs",
+				"total_jobs",
+				"error_summary",
+				"final_asset_version",
+			],
+			order_by="creation desc",
+			limit_page_length=1,
+		)
+		if run:
+			production = run[0]
+			reviews = project._get_review_cards(["Pending", "Rejected"])
+			if production.final_asset_version:
+				final_file = frappe.db.get_value(
+					"Asset Version", production.final_asset_version, "file"
+				)
+				final_video = {
+					"asset_version": production.final_asset_version,
+					"file": final_file,
+				}
+
+	return {
+		"campaign": {
+			"name": project.name,
+			"project_name": project.project_name,
+			"client_organization": project.client_organization,
+			"product_name": project.product_name,
+			"target_audience": project.target_audience,
+			"video_idea": project.video_idea,
+			"status": project.status,
+		},
+		"assets": assets,
+		"video_settings": {
+			"name": media_specification.name,
+			"version_number": media_specification.version_number,
+			"status": media_specification.status,
+			"duration": media_specification.total_duration_seconds,
+			"delivery_preset": media_specification.delivery_preset,
+		}
+		if media_specification
+		else None,
+		"storyboard": storyboard,
+		"production": production,
+		"reviews": reviews,
+		"final_video": final_video,
+	}
+
+
+def _get_campaign_assets(media_project):
+	assets = frappe.get_list(
+		"Media Asset",
+		filters={"media_project": media_project, "status": "Active"},
+		fields=["name", "asset_name", "media_type", "asset_category"],
+		order_by="modified desc",
+		limit_page_length=100,
+	)
+	for asset in assets:
+		versions = frappe.get_all(
+			"Asset Version",
+			filters={"media_asset": asset.name},
+			fields=["file", "version_number"],
+			order_by="version_number desc",
+			limit_page_length=1,
+		)
+		asset["file"] = versions[0].file if versions else None
+	return assets
 
 
 @frappe.whitelist()
@@ -156,6 +243,36 @@ def regenerate_campaign_review(
 ):
 	campaign = frappe.get_doc("Media Project", campaign_name)
 	return campaign.regenerate_campaign_review(review_name, reason)
+
+
+@frappe.whitelist()
+def save_campaign_video_settings(campaign_name, total_duration_seconds, delivery_preset):
+	campaign = frappe.get_doc("Media Project", campaign_name)
+	return campaign.save_video_settings(total_duration_seconds, delivery_preset)
+
+
+@frappe.whitelist()
+def generate_campaign_video_plan(campaign_name, scene_count):
+	campaign = frappe.get_doc("Media Project", campaign_name)
+	return campaign.generate_video_plan(scene_count)
+
+
+@frappe.whitelist()
+def apply_campaign_video_plan(campaign_name, plan_json):
+	campaign = frappe.get_doc("Media Project", campaign_name)
+	return campaign.apply_video_plan(plan_json)
+
+
+@frappe.whitelist()
+def generate_campaign_video(campaign_name):
+	campaign = frappe.get_doc("Media Project", campaign_name)
+	return campaign.generate_video()
+
+
+@frappe.whitelist()
+def revise_campaign_storyboard(campaign_name):
+	campaign = frappe.get_doc("Media Project", campaign_name)
+	return campaign.create_storyboard_revision()
 
 
 @frappe.whitelist()
@@ -510,6 +627,9 @@ class MediaProject(Document):
 	@frappe.whitelist()
 	def get_pending_reviews(self):
 		self._require_read_access()
+		return self._get_review_cards(["Pending"])
+
+	def _get_review_cards(self, statuses):
 		media_specification = get_latest_media_specification(self.name)
 		if not media_specification:
 			return []
@@ -542,14 +662,15 @@ class MediaProject(Document):
 
 		reviews = frappe.get_all(
 			"Quality Review",
-			filters={"generation_artifact": ["in", artifacts], "status": "Pending"},
-			fields=["name", "generation_artifact"],
+			filters={"generation_artifact": ["in", artifacts], "status": ["in", statuses]},
+			fields=["name", "generation_artifact", "status"],
 			order_by="creation asc",
 		)
 		return [
 			{
 				"name": review.name,
 				"generation_artifact": review.generation_artifact,
+				"status": review.status,
 				"preview_url": (
 					"/api/method/joymedia.joymedia.doctype.media_project.media_project."
 					f"stream_campaign_review?campaign_name={self.name}&review_name={review.name}"
