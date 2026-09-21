@@ -32,6 +32,37 @@ def get_latest_media_specification(media_project):
 	return frappe.get_doc("Media Specification", specifications[0].name)
 
 
+@frappe.whitelist()
+def get_campaign_cards():
+	campaigns = frappe.get_all(
+		"Media Project",
+		fields=["name", "project_name", "product_name", "target_audience", "video_idea", "status"],
+		order_by="modified desc",
+		limit_page_length=100,
+	)
+
+	for campaign in campaigns:
+		latest_specification = frappe.get_all(
+			"Media Specification",
+			filters={"media_project": campaign.name},
+			fields=["name", "total_duration_seconds", "delivery_preset"],
+			order_by="version_number desc",
+			limit=1,
+		)
+		campaign["assets_count"] = frappe.db.count(
+			"Media Asset", {"media_project": campaign.name}
+		)
+		campaign["shots_count"] = 0
+		if latest_specification:
+			campaign.update(latest_specification[0])
+			campaign["shots_count"] = frappe.db.count(
+				"Shot Specification",
+				{"media_specification": latest_specification[0].name},
+			)
+
+	return campaigns
+
+
 class MediaProject(Document):
 	def before_insert(self):
 		self.status = "Draft"
