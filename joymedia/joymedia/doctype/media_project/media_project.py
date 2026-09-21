@@ -698,7 +698,16 @@ class MediaProject(Document):
 					"media_specification": latest.name,
 					"version_number": latest.version_number,
 				}
-			if self.status not in ("Review", "Needs Attention", "Completed"):
+			latest_run_status = frappe.db.get_value(
+				"Generation Run",
+				{"media_specification": latest.name},
+				"status",
+				order_by="creation desc",
+			)
+			if self.status not in ("Review", "Needs Attention", "Completed") and latest_run_status not in (
+				"Failed",
+				"Partially Completed",
+			):
 				frappe.throw(_("Storyboard revision is not available in the current Campaign state."))
 			revision = frappe.get_doc(
 				{

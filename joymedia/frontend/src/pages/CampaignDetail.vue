@@ -157,6 +157,7 @@ async function saveSettings() {
 }
 async function generatePlan() {
   generatingPlan.value = true;
+  plan.value = null;
   try {
     const generatedPlan = await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video_plan", { campaign_name: route.params.name, scene_count: sceneCount.value });
     plan.value = normalizePlanForEditor(generatedPlan);
@@ -177,6 +178,7 @@ async function retryFailedScenes() {
 }
 async function reviseForGeneration() {
   revisingStoryboard.value = true;
+  plan.value = null;
   try {
     await call("joymedia.joymedia.doctype.media_project.media_project.revise_campaign_storyboard", { campaign_name: route.params.name });
     await campaign.reload();
