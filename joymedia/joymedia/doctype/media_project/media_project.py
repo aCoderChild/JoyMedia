@@ -740,7 +740,6 @@ class MediaProject(Document):
 			):
 				frappe.throw(_("Storyboard revision is not available in the current Campaign state."))
 			generation_workflow_version = latest.generation_workflow_version
-			prompt_template_version = latest.prompt_template_version
 			if isinstance(use_current_workflow_defaults, str):
 				use_current_workflow_defaults = frappe.parse_json(use_current_workflow_defaults)
 			if use_current_workflow_defaults:
@@ -753,14 +752,7 @@ class MediaProject(Document):
 							profile.name
 						)
 					)
-				if not profile.default_prompt_template_version:
-					frappe.throw(
-						_("Workflow Profile {0} has no Default Prompt Template Version.").format(
-							profile.name
-						)
-					)
 				generation_workflow_version = profile.default_workflow_version
-				prompt_template_version = profile.default_prompt_template_version
 
 			revision = frappe.get_doc(
 				{
@@ -770,7 +762,6 @@ class MediaProject(Document):
 					"status": "Draft",
 					"workflow_profile": latest.workflow_profile,
 					"generation_workflow_version": generation_workflow_version,
-					"prompt_template_version": prompt_template_version,
 					"total_duration_seconds": latest.total_duration_seconds,
 					"delivery_preset": latest.delivery_preset,
 					"delivery_width": latest.delivery_width,

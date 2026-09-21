@@ -9,7 +9,6 @@
  "field_order": [
   "source_section",
   "shot_specification",
-  "prompt_template_version",
   "output_section",
   "prompt_text",
   "compiled_at",
@@ -29,14 +28,6 @@
    "in_list_view": 1,
    "label": "Shot Specification",
    "options": "Shot Specification",
-   "reqd": 1
-  },
-  {
-   "fieldname": "prompt_template_version",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Prompt Template Version",
-   "options": "Prompt Template Version",
    "reqd": 1
   },
   {

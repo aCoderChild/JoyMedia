@@ -110,7 +110,7 @@ def prepare_run(run_name: str):
 				)
 
 			segment = segments[0]
-			compiled_prompt = compile_prompt(shot.name, media_specification.prompt_template_version)
+			compiled_prompt = compile_prompt(shot.name)
 			job = frappe.get_doc(
 				{
 					"doctype": "Generation Job",

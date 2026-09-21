@@ -11,8 +11,7 @@
   "workflow_code",
   "status",
   "execution_defaults_section",
-  "default_workflow_version",
-  "default_prompt_template_version"
+  "default_workflow_version"
  ],
  "fields": [
   {
@@ -55,12 +54,6 @@
    "fieldtype": "Link",
    "label": "Default Workflow Version",
    "options": "Workflow Version"
-  },
-  {
-   "fieldname": "default_prompt_template_version",
-   "fieldtype": "Link",
-   "label": "Default Prompt Template Version",
-   "options": "Prompt Template Version"
   }
  ],
  "grid_page_length": 50,

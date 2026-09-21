@@ -8,11 +8,5 @@ frappe.query_reports["Generation Failure Distribution"] = {
 			fieldtype: "Link",
 			options: "Workflow Version",
 		},
-		{
-			fieldname: "prompt_template_version",
-			label: "Prompt Template Version",
-			fieldtype: "Link",
-			options: "Prompt Template Version",
-		},
 	],
 };

@@ -64,23 +64,6 @@ class GenerationJob(Document):
 		if self.workflow_version != media_specification.generation_workflow_version:
 			frappe.throw(_("Generation Job Workflow Version must match the Media Specification Workflow Version."))
 
-		prompt_template_version = frappe.db.get_value(
-			"Compiled Prompt", self.compiled_prompt, "prompt_template_version"
-		)
-		if prompt_template_version != media_specification.prompt_template_version:
-			frappe.throw(
-				_("Compiled Prompt Template Version must match the Media Specification Prompt Template Version.")
-			)
-
-		prompt_template = frappe.db.get_value(
-			"Prompt Template Version", prompt_template_version, "prompt_template"
-		)
-		workflow_profile = frappe.db.get_value(
-			"Workflow Version", self.workflow_version, "workflow_profile"
-		)
-		prompt_profile = frappe.db.get_value("Prompt Template", prompt_template, "workflow_profile")
-		if not workflow_profile or not prompt_profile or workflow_profile != prompt_profile:
-			frappe.throw(_("Workflow and prompt template profiles must match."))
 		return frappe.get_doc("Workflow Version", self.workflow_version)
 
 	def _validate_generation_run(self, media_specification):

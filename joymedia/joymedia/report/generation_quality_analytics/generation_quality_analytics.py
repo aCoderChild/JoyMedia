@@ -10,7 +10,6 @@ from joymedia.joymedia.report.analytics import (
 
 COLUMNS = [
 	{"fieldname": "workflow_version", "label": "Workflow Version", "fieldtype": "Link", "options": "Workflow Version", "width": 150},
-	{"fieldname": "prompt_template_version", "label": "Prompt Template Version", "fieldtype": "Link", "options": "Prompt Template Version", "width": 170},
 	{"fieldname": "attempts", "label": "Attempts", "fieldtype": "Int", "width": 90},
 	{"fieldname": "success_rate", "label": "Success Rate %", "fieldtype": "Percent", "width": 100},
 	{"fieldname": "retry_rate", "label": "Retry Rate %", "fieldtype": "Percent", "width": 100},
@@ -26,7 +25,7 @@ COLUMNS = [
 def execute(filters=None):
 	buckets = defaultdict(_new_bucket)
 	for attempt in get_attempt_analytics(filters)[0]:
-		key = (attempt.workflow_version or "Unassigned", attempt.prompt_template_version or "Unassigned")
+		key = attempt.workflow_version or "Unassigned"
 		bucket = buckets[key]
 		bucket["attempts"] += 1
 		bucket["completed"] += attempt.status == "Completed"
@@ -46,14 +45,13 @@ def execute(filters=None):
 				bucket["approved_runtime_seconds"].append(float(attempt.runtime_seconds))
 
 	data = []
-	for (workflow_version, prompt_template_version), bucket in sorted(buckets.items()):
+	for workflow_version, bucket in sorted(buckets.items()):
 		runtime_values = bucket["runtime_seconds"]
 		queue_wait_values = bucket["queue_wait_seconds"]
 		approved_runtime_values = bucket["approved_runtime_seconds"]
 		data.append(
 			{
 				"workflow_version": workflow_version,
-				"prompt_template_version": prompt_template_version,
 				"attempts": bucket["attempts"],
 				"success_rate": percent(bucket["completed"], bucket["attempts"]),
 				"retry_rate": percent(bucket["retries"], bucket["attempts"]),

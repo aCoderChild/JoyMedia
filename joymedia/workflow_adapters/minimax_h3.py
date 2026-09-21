@@ -17,6 +17,9 @@ H3_VALUE_PATHS = {
 class MiniMaxH3WorkflowAdapter(GenericWorkflowAdapter):
 	"""Extract MiniMax H3 execution characteristics from its known ComfyUI nodes."""
 
+	def compile_prompt(self, shot, media_spec):
+		return super().compile_prompt(shot, media_spec)
+
 	def extract_execution_metadata(self, workflow_data):
 		metadata = {}
 		for fieldname, default in H3_DEFAULTS.items():

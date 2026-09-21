@@ -24,7 +24,6 @@ class TestMediaSpecification(FrappeTestCase):
 			status="Draft",
 			workflow_profile="WFP-00001",
 			generation_workflow_version=None,
-			prompt_template_version=None,
 		)
 		specification.has_value_changed = lambda fieldname: True
 
@@ -33,22 +32,14 @@ class TestMediaSpecification(FrappeTestCase):
 			return_value=frappe._dict(
 				name="WFP-00001",
 				default_workflow_version="WFV-00001",
-				default_prompt_template_version="PTV-00001",
 			),
 		):
 			MediaSpecification._resolve_generation_setup(specification)
 
 		self.assertEqual("WFV-00001", specification.generation_workflow_version)
-		self.assertEqual("PTV-00001", specification.prompt_template_version)
 
 	def test_ready_specification_requires_workflow_version(self):
-		specification = _existing_specification(status="Ready", prompt_template_version="PTV-00001")
-
-		with self.assertRaises(ValidationError):
-			MediaSpecification.validate_generation_setup(specification)
-
-	def test_ready_specification_requires_prompt_template_version(self):
-		specification = _existing_specification(status="Ready", generation_workflow_version="WFV-00001")
+		specification = _existing_specification(status="Ready")
 
 		with self.assertRaises(ValidationError):
 			MediaSpecification.validate_generation_setup(specification)
@@ -57,7 +48,6 @@ class TestMediaSpecification(FrappeTestCase):
 		specification = _existing_specification(
 			status="Ready",
 			generation_workflow_version="WFV-00001",
-			prompt_template_version="PTV-00001",
 		)
 
 		with patch(
@@ -71,18 +61,11 @@ class TestMediaSpecification(FrappeTestCase):
 		specification = _existing_specification(
 			status="Ready",
 			generation_workflow_version="WFV-00001",
-			prompt_template_version="PTV-00001",
 		)
 
 		with patch(
 			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.get_doc",
-			side_effect=[
-				frappe._dict(name="WFV-00001", status="Production", workflow_profile="WFP-00001"),
-				frappe._dict(name="PTV-00001", status="Production", prompt_template="PT-00001"),
-			],
-		), patch(
-			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.db.get_value",
-			return_value="WFP-00002",
+			return_value=frappe._dict(name="WFV-00001", status="Production", workflow_profile="WFP-00002"),
 		):
 			with self.assertRaises(ValidationError):
 				MediaSpecification.validate_generation_setup(specification)
@@ -91,18 +74,12 @@ class TestMediaSpecification(FrappeTestCase):
 		specification = _existing_specification(
 			status="Ready",
 			generation_workflow_version="WFV-00001",
-			prompt_template_version="PTV-00001",
+			workflow_profile="WFP-00001",
 		)
 
 		with patch(
 			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.get_doc",
-			side_effect=[
-				frappe._dict(name="WFV-00001", status="Production", workflow_profile="WFP-00001"),
-				frappe._dict(name="PTV-00001", status="Production", prompt_template="PT-00001"),
-			],
-		), patch(
-			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.db.get_value",
-			return_value="WFP-00001",
+			return_value=frappe._dict(name="WFV-00001", status="Production", workflow_profile="WFP-00001"),
 		):
 			MediaSpecification.validate_generation_setup(specification)
 
@@ -120,7 +97,6 @@ class TestMediaSpecification(FrappeTestCase):
 			media_project="PROJ-00001",
 			version_number=1,
 			generation_workflow_version="WFV-00001",
-			prompt_template_version=None,
 			total_duration_seconds=None,
 			delivery_preset=None,
 			delivery_width=None,
@@ -155,7 +131,6 @@ def _existing_specification(**values):
 		"media_project": "PROJ-00001",
 		"version_number": 1,
 		"generation_workflow_version": None,
-		"prompt_template_version": None,
 		"total_duration_seconds": None,
 		"delivery_preset": None,
 		"delivery_width": None,

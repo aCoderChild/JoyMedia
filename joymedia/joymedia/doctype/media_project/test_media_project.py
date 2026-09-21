@@ -375,7 +375,6 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			revision.generation_workflow_version,
 			previous.generation_workflow_version,
 		)
-		self.assertEqual(revision.prompt_template_version, previous.prompt_template_version)
 		self.assertEqual(revision.total_duration_seconds, previous.total_duration_seconds)
 		self.assertEqual(revision.delivery_preset, previous.delivery_preset)
 		self.assertEqual(revision.generation_instructions, previous.generation_instructions)
@@ -514,19 +513,11 @@ def _file_review_artifact(review_name):
 
 
 def _get_test_workflow_profile():
-	profile_name = frappe.db.get_value(
-		"Workflow Profile",
-		{"workflow_code": "MINIMAX-H3"},
-		"name",
-	)
-	if profile_name:
-		return profile_name
-
 	profile = frappe.get_doc(
 		{
 			"doctype": "Workflow Profile",
-			"profile_name": "Campaign Integration H3",
-			"workflow_code": "MINIMAX-H3",
+			"profile_name": "Campaign Integration H3 Test",
+			"workflow_code": f"TEST-MINIMAX-H3-{frappe.generate_hash(length=8)}",
 			"status": "Active",
 		}
 	).insert(ignore_permissions=True)
@@ -556,29 +547,7 @@ def _get_test_workflow_profile():
 	)
 	workflow_version.save(ignore_permissions=True)
 
-	prompt_template = frappe.get_doc(
-		{
-			"doctype": "Prompt Template",
-			"template_name": "Campaign Integration Prompt",
-			"template_code": "TEST-CAMPAIGN-PROMPT",
-			"workflow_profile": profile.name,
-			"status": "Active",
-		}
-	).insert(ignore_permissions=True)
-
-	prompt_version = frappe.get_doc(
-		{
-			"doctype": "Prompt Template Version",
-			"prompt_template": prompt_template.name,
-			"version_number": 1,
-			"version_label": "Integration Test Prompt",
-			"status": "Testing",
-			"template_body": "[Subject] {subject_identity}",
-		}
-	).insert(ignore_permissions=True)
-
 	profile.default_workflow_version = workflow_version.name
-	profile.default_prompt_template_version = prompt_version.name
 	profile.save(ignore_permissions=True)
 	return profile.name
 
@@ -590,7 +559,7 @@ def _create_pending_review(media_specification, suffix):
 	media_project = frappe.db.get_value(
 		"Media Specification", media_specification, "media_project"
 	)
-	required_input_role = frappe.db.get_value(
+	required_input_roles = frappe.get_all(
 		"Workflow Binding",
 		{
 			"parent": workflow_version,
@@ -599,14 +568,14 @@ def _create_pending_review(media_specification, suffix):
 			"value_source": "Generation Input",
 			"required": 1,
 		},
-		"required_input_role",
+		pluck="required_input_role",
 	)
 	generation_inputs = []
-	if required_input_role:
+	for required_input_role in set(required_input_roles):
 		asset = frappe.get_doc(
 			{
 				"doctype": "Media Asset",
-				"asset_name": f"Review Input {suffix}",
+				"asset_name": f"Review Input {suffix} {required_input_role}",
 				"asset_scope": "Project",
 				"media_type": "Image",
 				"asset_category": "Product",
@@ -616,7 +585,7 @@ def _create_pending_review(media_specification, suffix):
 		file_doc = frappe.get_doc(
 			{
 				"doctype": "File",
-				"file_name": f"review-input-{suffix}.png",
+				"file_name": f"review-input-{suffix}-{required_input_role}.png",
 				"content": base64.b64decode(
 					"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
 				),
@@ -633,12 +602,12 @@ def _create_pending_review(media_specification, suffix):
 				"source": "Uploaded",
 			}
 		).insert(ignore_permissions=True)
-		generation_inputs = [
+		generation_inputs.append(
 			{
 				"input_role": required_input_role,
 				"asset_version": asset_version.name,
 			}
-		]
+		)
 	shot_number = frappe.db.sql(
 		"""
 		select coalesce(max(shot_number), 0) + 1

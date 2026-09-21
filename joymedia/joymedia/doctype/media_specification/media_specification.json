@@ -14,7 +14,6 @@
   "generation_setup_section",
   "workflow_profile",
   "generation_workflow_version",
-  "prompt_template_version",
   "deliverable_requirements_section",
   "total_duration_seconds",
   "delivery_preset",
@@ -84,15 +83,6 @@
    "label": "Generation Workflow Version",
    "hidden": 1,
    "options": "Workflow Version",
-   "read_only": 1
-  },
-  {
-   "description": "Exact Prompt Template Version used to compile prompts for this specification.",
-   "fieldname": "prompt_template_version",
-   "fieldtype": "Link",
-   "label": "Prompt Template Version",
-   "hidden": 1,
-   "options": "Prompt Template Version",
    "read_only": 1
   },
   {

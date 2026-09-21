@@ -13,7 +13,6 @@ class MediaSpecification(Document):
 	EXECUTION_CONTRACT_FIELDS: ClassVar[tuple[str, ...]] = (
 		"workflow_profile",
 		"generation_workflow_version",
-		"prompt_template_version",
 		"total_duration_seconds",
 		"delivery_preset",
 		"delivery_width",
@@ -46,11 +45,7 @@ class MediaSpecification(Document):
 			return
 
 		profile_changed = self.is_new() or self.has_value_changed("workflow_profile")
-		if (
-			not profile_changed
-			and self.generation_workflow_version
-			and self.prompt_template_version
-		):
+		if not profile_changed and self.generation_workflow_version:
 			return
 
 		profile = frappe.get_doc("Workflow Profile", self.workflow_profile)
@@ -58,13 +53,7 @@ class MediaSpecification(Document):
 			frappe.throw(
 				_("Workflow Profile {0} has no Default Workflow Version.").format(profile.name)
 			)
-		if not profile.default_prompt_template_version:
-			frappe.throw(
-				_("Workflow Profile {0} has no Default Prompt Template Version.").format(profile.name)
-			)
-
 		self.generation_workflow_version = profile.default_workflow_version
-		self.prompt_template_version = profile.default_prompt_template_version
 
 	def validate_generation_setup(self):
 		if self.status != "Ready":
@@ -72,9 +61,6 @@ class MediaSpecification(Document):
 
 		if not self.generation_workflow_version:
 			frappe.throw(_("Ready Media Specifications require a Generation Workflow Version."))
-
-		if not self.prompt_template_version:
-			frappe.throw(_("Ready Media Specifications require a Prompt Template Version."))
 
 		workflow_version = frappe.get_doc(
 			"Workflow Version",
@@ -88,26 +74,8 @@ class MediaSpecification(Document):
 				)
 			)
 
-		prompt_version = frappe.get_doc(
-			"Prompt Template Version",
-			self.prompt_template_version,
-		)
-
-		if prompt_version.status not in ("Testing", "Production"):
-			frappe.throw(
-				_("Prompt Template Version {0} must be Testing or Production.").format(
-					prompt_version.name
-				)
-			)
-
-		prompt_profile = frappe.db.get_value(
-			"Prompt Template",
-			prompt_version.prompt_template,
-			"workflow_profile",
-		)
-
-		if prompt_profile != workflow_version.workflow_profile:
-			frappe.throw(_("Prompt Template Version must match the selected Workflow Profile."))
+		if workflow_version.workflow_profile != self.workflow_profile:
+			frappe.throw(_("Workflow Version must match the selected Workflow Profile."))
 
 	def on_update(self):
 		if self.has_value_changed("total_duration_seconds"):

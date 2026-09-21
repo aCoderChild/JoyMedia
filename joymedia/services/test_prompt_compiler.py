@@ -1,7 +1,8 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from joymedia.services.prompt_compiler import _build_source_snapshot, _render_template
+from joymedia.services.prompt_compiler import _build_source_snapshot
+from joymedia.workflow_adapters.minimax_h3 import MiniMaxH3WorkflowAdapter
 
 
 class TestPromptCompiler(FrappeTestCase):
@@ -37,16 +38,8 @@ class TestPromptCompiler(FrappeTestCase):
 		self.assertNotIn("required_elements", snapshot)
 		self.assertNotIn("spatial_composition", snapshot)
 
-		prompt = _render_template(
-			"[Camera]: {camera_direction}\n"
-			"[Subject]: {subject_identity}\n"
-			"[Motion]: {action_plot}\n"
-			"[Lighting & Environment]: {environment}\n"
-			"[Audio SFX]: {audio_direction}\n"
-			"{generation_instructions}",
-			snapshot,
-		)
+		prompt = MiniMaxH3WorkflowAdapter().compile_prompt(shot, media_specification)
 
-		self.assertIn("[Camera]: Slow dolly-in.", prompt)
-		self.assertIn("[Audio SFX]: Soft glass movement and ambience.", prompt)
+		self.assertIn("Camera & Framing:\nSlow dolly-in.", prompt)
+		self.assertIn("Audio:\nSoft glass movement and ambience.", prompt)
 		self.assertIn("Keep the product identity consistent.", prompt)

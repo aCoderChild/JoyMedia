@@ -44,13 +44,6 @@ def get_attempt_analytics(filters=None):
 		fields=["name", "workflow_version", "compiled_prompt", "shot_specification"],
 	)
 	jobs_by_name = {job.name: job for job in jobs}
-	prompt_names = {job.compiled_prompt for job in jobs if job.compiled_prompt}
-	prompts = frappe.get_all(
-		"Compiled Prompt",
-		filters={"name": ["in", list(prompt_names)]} if prompt_names else {"name": ["in", [""]]},
-		fields=["name", "prompt_template_version"],
-	)
-	prompts_by_name = {prompt.name: prompt for prompt in prompts}
 	shot_names = {job.shot_specification for job in jobs if job.shot_specification}
 	shots = frappe.get_all(
 		"Shot Specification",
@@ -95,9 +88,7 @@ def get_attempt_analytics(filters=None):
 	enriched_attempts = []
 	for attempt in attempts:
 		job = jobs_by_name.get(attempt.generation_job)
-		prompt = prompts_by_name.get(job.compiled_prompt) if job else None
 		attempt.workflow_version = job.workflow_version if job else None
-		attempt.prompt_template_version = prompt.prompt_template_version if prompt else None
 		attempt.review_outcome = review_outcomes[attempt.name]
 		attempt.selected_output = bool(
 			job
@@ -106,8 +97,6 @@ def get_attempt_analytics(filters=None):
 			and selected_outputs_by_shot.get(job.shot_specification) == attempt.output_asset_version
 		)
 		if filters.workflow_version and attempt.workflow_version != filters.workflow_version:
-			continue
-		if filters.prompt_template_version and attempt.prompt_template_version != filters.prompt_template_version:
 			continue
 		enriched_attempts.append(attempt)
 
