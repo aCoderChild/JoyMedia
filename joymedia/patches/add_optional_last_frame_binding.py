@@ -2,7 +2,20 @@ import frappe
 
 
 def execute():
-	workflow_version_name = frappe.db.exists("Workflow Version", "WFV-00001")
+	workflow_profile = frappe.db.get_value(
+		"Workflow Profile",
+		{"workflow_code": "MINIMAX-H3", "status": "Active"},
+		"name",
+	)
+	if not workflow_profile:
+		return
+
+	workflow_version_name = frappe.db.get_value(
+		"Workflow Version",
+		{"workflow_profile": workflow_profile, "status": ["in", ["Draft", "Testing", "Production"]]},
+		"name",
+		order_by="version_number desc",
+	)
 	if not workflow_version_name:
 		return
 

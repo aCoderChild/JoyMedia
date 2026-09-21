@@ -19,7 +19,7 @@ H3_WORKFLOW_CODE = "MINIMAX-H3"
 
 
 def get_latest_media_specification(media_project):
-	specifications = frappe.get_list(
+	specifications = frappe.get_all(
 		"Media Specification",
 		filters={"media_project": media_project},
 		fields=["name", "version_number", "status"],
@@ -117,7 +117,8 @@ def get_businesses():
 
 @frappe.whitelist()
 def create_business(organization_name, industry=None):
-	frappe.has_permission("Client Organization", "create", throw=True)
+	if frappe.session.user == "Guest":
+		frappe.throw(_("You must be signed in to create a business."))
 	organization_name = (organization_name or "").strip()
 	if not organization_name:
 		frappe.throw(_("Business name is required."))
@@ -128,7 +129,26 @@ def create_business(organization_name, industry=None):
 			"organization_name": organization_name,
 			"industry": (industry or "").strip(),
 		}
-	).insert()
+	).insert(ignore_permissions=True)
+
+	user = frappe.get_doc("User", frappe.session.user)
+	if not any(role.role == "JoyMedia User" for role in user.roles):
+		user.append("roles", {"role": "JoyMedia User"})
+		user.save(ignore_permissions=True)
+
+	if not frappe.db.exists(
+		"User Permission",
+		{"user": frappe.session.user, "allow": "Client Organization", "for_value": organization.name},
+	):
+		frappe.get_doc(
+			{
+				"doctype": "User Permission",
+				"user": frappe.session.user,
+				"allow": "Client Organization",
+				"for_value": organization.name,
+				"is_default": 1,
+			}
+		).insert(ignore_permissions=True)
 	frappe.db.commit()
 	return organization
 
@@ -175,7 +195,7 @@ def create_campaign_asset(media_project, asset_name, asset_category, file_url):
 			"media_project": media_project.name,
 			"client_organization": media_project.client_organization,
 		}
-	).insert()
+	).insert(ignore_permissions=True)
 	version = frappe.get_doc(
 		{
 			"doctype": "Asset Version",
@@ -183,7 +203,7 @@ def create_campaign_asset(media_project, asset_name, asset_category, file_url):
 			"file": file_url,
 			"source": "Uploaded",
 		}
-	).insert()
+	).insert(ignore_permissions=True)
 	frappe.db.commit()
 	return {"asset": asset, "version": version}
 

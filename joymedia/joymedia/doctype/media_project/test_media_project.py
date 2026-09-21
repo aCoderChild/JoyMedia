@@ -236,6 +236,9 @@ def _get_test_workflow_profile():
 
 
 def _create_pending_review(media_specification, suffix):
+	workflow_version = frappe.db.get_value(
+		"Media Specification", media_specification, "generation_workflow_version"
+	)
 	shot = frappe.get_doc(
 		{
 			"doctype": "Shot Specification",
@@ -257,7 +260,7 @@ def _create_pending_review(media_specification, suffix):
 			"requested_variants": 1,
 			"status": "Draft",
 			"priority": "Normal",
-			"workflow_version": "WFV-00001",
+			"workflow_version": workflow_version,
 			"compiled_prompt": f"CPR-TEST-{suffix}",
 			"segment_index": 1,
 			"segment_frame_count": 1,

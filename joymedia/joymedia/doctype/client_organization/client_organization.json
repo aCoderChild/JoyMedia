@@ -84,6 +84,11 @@
    "role": "JoyMedia Specialist",
    "share": 1,
    "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "JoyMedia User"
   }
  ],
  "row_format": "Dynamic",
