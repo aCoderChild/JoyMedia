@@ -9,8 +9,12 @@
       <div class="form-stack">
         <FormControl v-model="form.project_name" label="Campaign Name" required placeholder="Summer launch" />
         <div class="field-row">
-          <FormControl v-model="form.client_organization" type="select" label="Business" required :options="businessOptions" />
-          <Button appearance="minimal" label="New business" @click="showBusinessForm = true" />
+          <FormControl v-if="hasBusinesses" v-model="form.client_organization" type="select" label="Business" required :options="businessOptions" />
+          <div v-else class="empty-field">
+            <label>Business <span>*</span></label>
+            <p>No business has been created yet.</p>
+          </div>
+          <Button appearance="minimal" :label="hasBusinesses ? 'New business' : 'Create business'" @click="showBusinessForm = true" />
         </div>
         <FormControl v-model="form.product_name" label="Product" required placeholder="Cold brew bottle" />
         <FormControl v-model="form.target_audience" type="textarea" label="Target Audience" required placeholder="Young professionals aged 20–35" />
@@ -45,8 +49,14 @@ const creatingBusiness = ref(false);
 const creatingCampaign = ref(false);
 const businesses = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_businesses", auto: true });
 const businessOptions = computed(() => (businesses.data || []).map((item) => ({ label: item.organization_name, value: item.name })));
+const hasBusinesses = computed(() => businessOptions.value.length > 0);
 
 async function createBusiness() {
+  if (!business.name.trim()) {
+    toast({ title: "Business name is required", type: "error" });
+    return;
+  }
+
   creatingBusiness.value = true;
   try {
     const created = await call("joymedia.joymedia.doctype.media_project.media_project.create_business", { organization_name: business.name, industry: business.industry });
@@ -55,10 +65,18 @@ async function createBusiness() {
     business.industry = "";
     showBusinessForm.value = false;
     await businesses.reload();
+  } catch (error) {
+    toast({ title: "Unable to create business", text: error.message || "Please try again.", type: "error" });
   } finally { creatingBusiness.value = false; }
 }
 
 async function createCampaign() {
+  if (!form.project_name.trim() || !form.client_organization || !form.product_name.trim() || !form.target_audience.trim()) {
+    toast({ title: "Complete the required fields", text: "Campaign name, Business, Product, and Target Audience are required.", type: "error" });
+    if (!hasBusinesses.value) showBusinessForm.value = true;
+    return;
+  }
+
   creatingCampaign.value = true;
   try {
     const campaign = await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign", form);
