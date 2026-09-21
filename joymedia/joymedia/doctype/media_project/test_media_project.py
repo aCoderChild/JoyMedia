@@ -542,6 +542,20 @@ def _get_test_workflow_profile():
 		}
 	).insert(ignore_permissions=True)
 
+	workflow_version.append(
+		"bindings",
+		{
+			"binding_key": "first_frame",
+			"node_key": "load_img",
+			"input_name": "image",
+			"value_source": "Generation Input",
+			"required_input_role": "first_frame",
+			"value_type": "File Path",
+			"required": 1,
+		},
+	)
+	workflow_version.save(ignore_permissions=True)
+
 	prompt_template = frappe.get_doc(
 		{
 			"doctype": "Prompt Template",
@@ -573,6 +587,58 @@ def _create_pending_review(media_specification, suffix):
 	workflow_version = frappe.db.get_value(
 		"Media Specification", media_specification, "generation_workflow_version"
 	)
+	media_project = frappe.db.get_value(
+		"Media Specification", media_specification, "media_project"
+	)
+	required_input_role = frappe.db.get_value(
+		"Workflow Binding",
+		{
+			"parent": workflow_version,
+			"parenttype": "Workflow Version",
+			"parentfield": "bindings",
+			"value_source": "Generation Input",
+			"required": 1,
+		},
+		"required_input_role",
+	)
+	generation_inputs = []
+	if required_input_role:
+		asset = frappe.get_doc(
+			{
+				"doctype": "Media Asset",
+				"asset_name": f"Review Input {suffix}",
+				"asset_scope": "Project",
+				"media_type": "Image",
+				"asset_category": "Product",
+				"media_project": media_project,
+			}
+		).insert(ignore_permissions=True)
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"review-input-{suffix}.png",
+				"content": base64.b64decode(
+					"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+				),
+				"is_private": 1,
+				"attached_to_doctype": "Media Asset",
+				"attached_to_name": asset.name,
+			}
+		).insert(ignore_permissions=True)
+		asset_version = frappe.get_doc(
+			{
+				"doctype": "Asset Version",
+				"media_asset": asset.name,
+				"file": file_doc.file_url,
+				"source": "Uploaded",
+			}
+		).insert(ignore_permissions=True)
+		generation_inputs = [
+			{
+				"input_role": required_input_role,
+				"asset_version": asset_version.name,
+			}
+		]
 	shot_number = frappe.db.sql(
 		"""
 		select coalesce(max(shot_number), 0) + 1
@@ -590,6 +656,7 @@ def _create_pending_review(media_specification, suffix):
 			"duration_seconds": 10,
 			"subject_identity": "Test subject",
 			"action_plot": "Test motion",
+			"generation_inputs": generation_inputs,
 		}
 	).insert(ignore_permissions=True)
 
