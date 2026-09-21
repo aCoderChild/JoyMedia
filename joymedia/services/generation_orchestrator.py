@@ -44,6 +44,14 @@ def start_run(run_name: str):
 	run.queued_at = now()
 	run.error_summary = None
 	run.save(ignore_permissions=True)
+	if media_specification.media_project:
+		frappe.db.set_value(
+			"Media Project",
+			media_specification.media_project,
+			"status",
+			"Generating",
+			update_modified=False,
+		)
 	_enqueue("prepare_run", run.name)
 	return {"name": run.name, "status": run.status}
 
@@ -290,6 +298,14 @@ def finalize_run(run_name: str):
 	run.status = "Completed"
 	run.completed_at = now()
 	run.save(ignore_permissions=True)
+	if run.media_specification:
+		media_project = frappe.db.get_value(
+			"Media Specification", run.media_specification, "media_project"
+		)
+		if media_project:
+			frappe.db.set_value(
+				"Media Project", media_project, "status", "Completed", update_modified=False
+			)
 	return _run_summary(run)
 
 
@@ -318,12 +334,84 @@ def refresh_active_runs():
 	):
 		try:
 			refresh_run(run_name)
+			sync_media_project_status_for_run(run_name)
 			frappe.db.commit()
 		except Exception:
 			frappe.db.rollback()
 			frappe.logger("joymedia.generation_run").exception(
 				"Unable to refresh Generation Run %s", run_name
 			)
+
+
+def sync_media_project_status_for_run(run_name: str):
+	"""Derive the customer-facing Campaign status from its generation state."""
+	run = frappe.get_doc("Generation Run", run_name)
+	media_project = frappe.db.get_value(
+		"Media Specification", run.media_specification, "media_project"
+	)
+	if not media_project:
+		return
+
+	specifications = frappe.get_all(
+		"Media Specification",
+		filters={"media_project": media_project},
+		pluck="name",
+	)
+	runs = (
+		frappe.get_all(
+			"Generation Run",
+			filters={"media_specification": ["in", specifications]},
+			fields=["name", "status", "final_asset_version"],
+		)
+		if specifications
+		else []
+	)
+
+	if any(item.status in ACTIVE_RUN_STATUSES for item in runs):
+		status = "Generating"
+	elif any(item.final_asset_version for item in runs):
+		status = "Completed"
+	else:
+		run_names = [item.name for item in runs]
+		jobs = (
+			frappe.get_all(
+				"Generation Job",
+				filters={"generation_run": ["in", run_names]},
+				pluck="name",
+			)
+			if run_names
+			else []
+		)
+		attempts = (
+			frappe.get_all(
+				"Generation Attempt",
+				filters={"generation_job": ["in", jobs]},
+				pluck="name",
+			)
+			if jobs
+			else []
+		)
+		artifacts = (
+			frappe.get_all(
+				"Generation Artifact",
+				filters={"generation_attempt": ["in", attempts]},
+				pluck="name",
+			)
+			if attempts
+			else []
+		)
+
+		if artifacts and frappe.db.exists(
+			"Quality Review",
+			{"generation_artifact": ["in", artifacts], "status": "Pending"},
+		):
+			status = "Review"
+		elif any(item.status in ("Failed", "Partially Completed") for item in runs):
+			status = "Needs Attention"
+		else:
+			status = "Draft"
+
+	frappe.db.set_value("Media Project", media_project, "status", status, update_modified=False)
 
 
 def _create_initial_attempts(job):

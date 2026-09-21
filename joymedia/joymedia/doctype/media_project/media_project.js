@@ -5,6 +5,12 @@ frappe.ui.form.on("Media Project", {
 		frm.add_custom_button(__("Generate Video Plan"), () => {
 			generate_video_plan(frm);
 		});
+
+		if (frm.doc.status === "Draft") {
+			frm.add_custom_button(__("Generate Video"), () => {
+				show_generate_video_dialog(frm);
+			});
+		}
 	},
 });
 
@@ -73,7 +79,7 @@ function generate_video_plan_request(frm, request_dialog, media_specification, s
 		(r) => {
 			if (r.exc || !r.message) return;
 
-				show_video_plan_dialog(frm, media_specification, scene_count, r.message);
+			show_video_plan_dialog(frm, media_specification, scene_count, r.message);
 		}
 	);
 }
@@ -164,6 +170,7 @@ function apply_video_plan(frm, dialog, media_specification, plan) {
 			if (r.exc) return;
 
 			dialog.hide();
+			frm.reload_doc();
 
 			const shots = r.message?.shots || [];
 
@@ -174,4 +181,45 @@ function apply_video_plan(frm, dialog, media_specification, plan) {
 			});
 		},
 	});
+}
+
+function show_generate_video_dialog(frm) {
+	const dialog = new frappe.ui.Dialog({
+		title: __("Generate Video"),
+		fields: [
+			{
+				fieldname: "media_specification",
+				fieldtype: "Link",
+				label: __("Video Settings"),
+				options: "Media Specification",
+				reqd: 1,
+				get_query() {
+					return {
+						filters: {
+							media_project: frm.doc.name,
+							status: "Draft",
+						},
+					};
+				},
+			},
+		],
+		primary_action_label: __("Generate Video"),
+		primary_action(values) {
+			dialog.hide();
+			frm.call(
+				"generate_video",
+				{ media_specification_name: values.media_specification },
+				(r) => {
+					if (r.exc || !r.message) return;
+					frm.reload_doc();
+					frappe.show_alert({
+						message: __("Video generation started."),
+						indicator: "green",
+					});
+				}
+			);
+		},
+	});
+
+	dialog.show();
 }

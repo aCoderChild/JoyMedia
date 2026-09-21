@@ -68,10 +68,10 @@
     "icon": null,
     "kanban_board": null,
     "label": "Generating Videos",
-    "link_to": "Generation Run",
+    "link_to": "Media Project",
     "report_ref_doctype": null,
     "restrict_to_domain": null,
-    "stats_filter": "[[\"Generation Run\",\"status\",\"in\",[\"Queued\",\"Running\"]]]",
+    "stats_filter": "[[\"Media Project\",\"status\",\"=\",\"Generating\"]]",
     "type": "DocType",
     "url": null
    },

@@ -80,6 +80,37 @@ class MediaProject(Document):
 			reference_images=self._get_project_image_inputs(),
 		)
 
+	@frappe.whitelist()
+	def generate_video(self, media_specification_name):
+		from joymedia.services.generation_orchestrator import start_run
+
+		media_specification = frappe.get_doc("Media Specification", media_specification_name)
+		if media_specification.media_project != self.name:
+			frappe.throw(_("Media Specification must belong to this Media Project."))
+		if media_specification.status != "Draft":
+			frappe.throw(_("Video generation can only start from a Draft Media Specification."))
+		if not frappe.db.exists("Shot Specification", {"media_specification": media_specification.name}):
+			frappe.throw(_("Apply a video plan before generating the video."))
+
+		media_specification.status = "Ready"
+		media_specification.save(ignore_permissions=True)
+
+		run = frappe.get_doc(
+			{
+				"doctype": "Generation Run",
+				"media_specification": media_specification.name,
+				"requested_by": frappe.session.user,
+				"requested_variants_per_shot": 1,
+				"max_retries": 0,
+				"auto_compose": 1,
+				"status": "Draft",
+			}
+		).insert(ignore_permissions=True)
+
+		result = start_run(run.name)
+		frappe.db.commit()
+		return {"run": run.name, "status": result["status"]}
+
 	def _get_project_image_inputs(self):
 		from joymedia.services.project_image_manifest import get_project_image_manifest
 
