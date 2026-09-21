@@ -538,7 +538,7 @@ def _get_test_workflow_profile():
 			"version_number": 1,
 			"version_label": "Integration Test H3",
 			"status": "Testing",
-			"workflow_json": '{"minimax_cond":{"inputs":{"length":124}},"save_video":{"inputs":{"frame_rate":24}}}',
+			"workflow_json": '{"load_img":{"inputs":{"image":""}},"minimax_cond":{"inputs":{"length":124}},"save_video":{"inputs":{"frame_rate":24}}}',
 		}
 	).insert(ignore_permissions=True)
 

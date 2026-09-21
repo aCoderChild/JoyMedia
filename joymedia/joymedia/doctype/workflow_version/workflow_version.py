@@ -32,6 +32,9 @@ class WorkflowVersion(Document):
 		workflow_data = frappe.parse_json(self.workflow_json)
 		if not isinstance(workflow_data, dict):
 			frappe.throw(_("Workflow JSON must define a JSON object."))
+		from joymedia.services.workflow_resolver import validate_workflow_bindings
+
+		validate_workflow_bindings(self)
 		self.workflow_hash = hashlib.sha256(canonical_workflow_json(workflow_data).encode("utf-8")).hexdigest()
 
 		profile = frappe.get_doc("Workflow Profile", self.workflow_profile)
