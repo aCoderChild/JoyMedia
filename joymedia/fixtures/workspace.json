@@ -2,7 +2,7 @@
  {
   "app": null,
   "charts": [],
-  "content": "[{\"id\":\"U16bYqqqhF\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>JoyMedia</b></span>\",\"col\":12}},{\"id\":\"S4aRcRHFCe\",\"type\":\"paragraph\",\"data\":{\"text\":\"Create AI-powered product videos for small businesses.\",\"col\":12}},{\"id\":\"9Us0pXG6b0\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Create Video\",\"col\":3}},{\"id\":\"418RochFJE\",\"type\":\"quick_list\",\"data\":{\"quick_list_name\":\"Recent Projects\",\"col\":4}},{\"id\":\"BlmUMDvzQp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Assets\",\"col\":3}},{\"id\":\"8I7YJ76gta\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Production<b></b></span>\",\"col\":12}},{\"id\":\"W7hUVJE_NO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Generating Videos\",\"col\":3}},{\"id\":\"NjrdiotEUh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Review Videos\",\"col\":3}}]",
+  "content": "[{\"id\":\"U16bYqqqhF\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>JoyMedia</b></span>\",\"col\":12}},{\"id\":\"S4aRcRHFCe\",\"type\":\"paragraph\",\"data\":{\"text\":\"Create AI-powered product videos for small businesses.\",\"col\":12}},{\"id\":\"9Us0pXG6b0\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Campaigns\",\"col\":3}},{\"id\":\"418RochFJE\",\"type\":\"quick_list\",\"data\":{\"quick_list_name\":\"Recent Campaigns\",\"col\":4}},{\"id\":\"BlmUMDvzQp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Assets\",\"col\":3}},{\"id\":\"8I7YJ76gta\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Production<b></b></span>\",\"col\":12}},{\"id\":\"W7hUVJE_NO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Generating Videos\",\"col\":3}},{\"id\":\"NjrdiotEUh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Review Videos\",\"col\":3}}]",
   "custom_blocks": [],
   "docstatus": 0,
   "doctype": "Workspace",
@@ -25,7 +25,7 @@
   "quick_lists": [
    {
     "document_type": "Media Project",
-    "label": "Recent Projects",
+    "label": "Recent Campaigns",
     "quick_list_filter": "[]"
    }
   ],
@@ -39,7 +39,7 @@
     "format": null,
     "icon": null,
     "kanban_board": null,
-    "label": "Create Video",
+    "label": "Campaigns",
     "link_to": "Media Project",
     "report_ref_doctype": null,
     "restrict_to_domain": null,

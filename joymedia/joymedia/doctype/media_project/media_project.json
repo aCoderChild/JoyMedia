@@ -4,7 +4,7 @@
  "allow_rename": 1,
  "autoname": "PRJ-.#####",
  "creation": "2026-09-18 09:26:46.325414",
- "description": "Top-level container for a JoyMedia production project. Assets, media specifications, generation jobs and outputs are linked to a Media Project.",
+ "description": "Top-level campaign container for a JoyMedia production. Assets, media specifications, generation jobs and outputs are linked to a Media Project.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -21,7 +21,7 @@
   {
    "fieldname": "project_overview_section",
    "fieldtype": "Section Break",
-   "label": "Video Project"
+   "label": "Campaign"
   },
   {
    "fieldname": "project_name",
@@ -29,7 +29,7 @@
    "in_global_search": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Project Name",
+   "label": "Campaign Name",
    "reqd": 1
   },
   {
@@ -54,7 +54,7 @@
    "fieldname": "product_name",
    "fieldtype": "Data",
    "in_global_search": 1,
-   "label": "Product Name",
+   "label": "Product",
    "reqd": 1
   },
   {
