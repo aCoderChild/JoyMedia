@@ -77,7 +77,7 @@ def get_campaign_detail(name):
 	)
 
 	for asset in assets:
-		version = frappe.get_list(
+		version = frappe.get_all(
 			"Asset Version",
 			filters={"media_asset": asset.name},
 			fields=["file", "version_number"],
@@ -126,6 +126,36 @@ def get_pending_review_cards():
 				}
 			)
 	return reviews
+
+
+@frappe.whitelist()
+def stream_campaign_review(campaign_name: str, review_name: str):
+	campaign = frappe.get_doc("Media Project", campaign_name)
+	return campaign.stream_campaign_review(review_name)
+
+
+@frappe.whitelist()
+def approve_campaign_review(campaign_name: str, review_name: str):
+	campaign = frappe.get_doc("Media Project", campaign_name)
+	return campaign.approve_campaign_review(review_name)
+
+
+@frappe.whitelist()
+def reject_campaign_review(
+	campaign_name: str, review_name: str, notes: str | None = None
+):
+	campaign = frappe.get_doc("Media Project", campaign_name)
+	return campaign.reject_campaign_review(review_name, notes)
+
+
+@frappe.whitelist()
+def regenerate_campaign_review(
+	campaign_name: str,
+	review_name: str,
+	reason: str = "Human Review Rejection",
+):
+	campaign = frappe.get_doc("Media Project", campaign_name)
+	return campaign.regenerate_campaign_review(review_name, reason)
 
 
 @frappe.whitelist()
@@ -380,7 +410,7 @@ class MediaProject(Document):
 	@frappe.whitelist()
 	def generate_video(self):
 		self._require_write_access()
-		from joymedia.services.generation_orchestrator import start_run
+		from joymedia.services.generation_orchestrator import start_run_internal
 
 		with filelock(f"joymedia-generate-video-{self.name}"):
 			media_specification = get_latest_media_specification(self.name)
@@ -417,23 +447,29 @@ class MediaProject(Document):
 				}
 			).insert(ignore_permissions=True)
 
-			result = start_run(run.name)
+			result = start_run_internal(run.name)
 			frappe.db.commit()
 			return {"run": run.name, "status": result["status"]}
 
 	@frappe.whitelist()
 	def apply_video_plan(self, plan_json):
 		self._require_write_access()
-		from joymedia.services.video_plan_service import apply_video_plan_from_ui
+		from joymedia.services.video_plan_service import apply_video_plan, parse_video_plan
 
 		media_specification = get_latest_media_specification(self.name)
 		if not media_specification:
 			frappe.throw(_("Create Video Settings before applying a storyboard."))
 
-		return apply_video_plan_from_ui(
+		plan = parse_video_plan(plan_json)
+		created_shots = apply_video_plan(
 			media_specification_name=media_specification.name,
-			plan_json=plan_json,
+			plan=plan,
 		)
+		frappe.db.commit()
+		return {
+			"media_specification": media_specification.name,
+			"shots": created_shots,
+		}
 
 	@frappe.whitelist()
 	def create_storyboard_revision(self):
@@ -515,12 +551,62 @@ class MediaProject(Document):
 				"name": review.name,
 				"generation_artifact": review.generation_artifact,
 				"preview_url": (
-					"/api/method/joymedia.services.artifact_service.stream_review_artifact"
-					f"?quality_review_name={review.name}"
+					"/api/method/joymedia.joymedia.doctype.media_project.media_project."
+					f"stream_campaign_review?campaign_name={self.name}&review_name={review.name}"
 				),
 			}
 			for review in reviews
 		]
+
+	def _resolve_campaign_review(self, review_name):
+		review = frappe.get_doc("Quality Review", review_name)
+		artifact = frappe.get_doc("Generation Artifact", review.generation_artifact)
+		attempt = frappe.get_doc("Generation Attempt", artifact.generation_attempt)
+		job = frappe.get_doc("Generation Job", attempt.generation_job)
+		shot = frappe.get_doc("Shot Specification", job.shot_specification)
+		media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+		latest = get_latest_media_specification(self.name)
+		if media_specification.media_project != self.name or not latest or latest.name != media_specification.name:
+			frappe.throw(_("This review does not belong to the current Campaign revision."))
+		return review
+
+	@frappe.whitelist()
+	def stream_campaign_review(self, review_name):
+		self._require_read_access()
+		review = self._resolve_campaign_review(review_name)
+		from joymedia.services.artifact_service import stream_review_artifact_internal
+
+		return stream_review_artifact_internal(review.name)
+
+	@frappe.whitelist()
+	def approve_campaign_review(self, review_name):
+		self._require_write_access()
+		review = self._resolve_campaign_review(review_name)
+		from joymedia.joymedia.doctype.quality_review.quality_review import approve_review_internal
+
+		result = approve_review_internal(review.name)
+		frappe.db.commit()
+		return result
+
+	@frappe.whitelist()
+	def reject_campaign_review(self, review_name, notes=None):
+		self._require_write_access()
+		review = self._resolve_campaign_review(review_name)
+		from joymedia.joymedia.doctype.quality_review.quality_review import reject_review_internal
+
+		result = reject_review_internal(review.name, notes)
+		frappe.db.commit()
+		return result
+
+	@frappe.whitelist()
+	def regenerate_campaign_review(self, review_name, reason="Human Review Rejection"):
+		self._require_write_access()
+		review = self._resolve_campaign_review(review_name)
+		from joymedia.joymedia.doctype.quality_review.quality_review import regenerate_shot_internal
+
+		result = regenerate_shot_internal(review.name, reason)
+		frappe.db.commit()
+		return result
 
 	def _get_project_image_inputs(self):
 		from joymedia.services.project_image_manifest import get_project_image_manifest

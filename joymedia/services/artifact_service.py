@@ -10,6 +10,11 @@ from frappe import _
 def stream_review_artifact(quality_review_name: str):
 	"""Return an inline preview of a temporary generated video."""
 	frappe.has_permission("Quality Review", "read", quality_review_name, throw=True)
+	return stream_review_artifact_internal(quality_review_name)
+
+
+def stream_review_artifact_internal(quality_review_name: str):
+	"""Return an inline preview after the caller has authorized the review."""
 	review = frappe.get_doc("Quality Review", quality_review_name)
 	if not review.generation_artifact:
 		frappe.throw(_("Quality Review {0} has no Generation Artifact.").format(review.name))

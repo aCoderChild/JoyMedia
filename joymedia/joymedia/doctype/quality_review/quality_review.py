@@ -99,19 +99,27 @@ class QualityReview(Document):
 @frappe.whitelist()
 def approve_review(review_name: str):
 	frappe.has_permission("Quality Review", "write", review_name, throw=True)
+	return approve_review_internal(review_name)
+
+
+def approve_review_internal(review_name: str):
 	review = frappe.get_doc("Quality Review", review_name)
 	if review.status != "Pending":
 		frappe.throw(_("Only Pending reviews can be approved."))
 	review.status = "Approved"
 	review.reviewer = frappe.session.user
 	review.reviewed_at = now()
-	review.save()
+	review.save(ignore_permissions=True)
 	return {"name": review.name, "status": review.status, "asset_version": review.asset_version}
 
 
 @frappe.whitelist()
 def reject_review(review_name: str, notes: str | None = None):
 	frappe.has_permission("Quality Review", "write", review_name, throw=True)
+	return reject_review_internal(review_name, notes)
+
+
+def reject_review_internal(review_name: str, notes: str | None = None):
 	review = frappe.get_doc("Quality Review", review_name)
 	if review.status != "Pending":
 		frappe.throw(_("Only Pending reviews can be rejected."))
@@ -120,7 +128,7 @@ def reject_review(review_name: str, notes: str | None = None):
 	review.reviewed_at = now()
 	if notes:
 		review.notes = notes.strip()
-	review.save()
+	review.save(ignore_permissions=True)
 	return {"name": review.name, "status": review.status}
 
 
@@ -128,6 +136,13 @@ def reject_review(review_name: str, notes: str | None = None):
 def regenerate_shot_from_ui(quality_review_name: str, reason: str = "Human Review Rejection"):
 	"""Create and submit one QA retry for a rejected review's completed Attempt."""
 	frappe.has_permission("Quality Review", "write", quality_review_name, throw=True)
+	return regenerate_shot_internal(quality_review_name, reason)
+
+
+def regenerate_shot_internal(
+	quality_review_name: str, reason: str = "Human Review Rejection"
+):
+	"""Create and submit a QA retry after the caller has authorized the Campaign."""
 	review = frappe.get_doc("Quality Review", quality_review_name)
 	if review.status != "Rejected":
 		frappe.throw(_("Only rejected Quality Reviews can regenerate a Shot."))

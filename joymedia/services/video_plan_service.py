@@ -13,10 +13,7 @@ def apply_video_plan_from_ui(media_specification_name: str, plan_json: str):
 		throw=True,
 	)
 
-	try:
-		plan = json.loads(plan_json)
-	except (TypeError, ValueError, json.JSONDecodeError):
-		frappe.throw(_("Invalid video plan JSON."))
+	plan = parse_video_plan(plan_json)
 
 	created_shots = apply_video_plan(
 		media_specification_name=media_specification_name,
@@ -29,6 +26,13 @@ def apply_video_plan_from_ui(media_specification_name: str, plan_json: str):
 		"media_specification": media_specification_name,
 		"shots": created_shots,
 	}
+
+
+def parse_video_plan(plan_json: str):
+	try:
+		return json.loads(plan_json)
+	except (TypeError, ValueError, json.JSONDecodeError):
+		frappe.throw(_("Invalid video plan JSON."))
 
 
 def apply_video_plan(media_specification_name: str, plan: dict):

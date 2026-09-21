@@ -123,8 +123,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		"joymedia.joymedia.doctype.media_project.media_project.filelock",
 		return_value=nullcontext(),
 	)
-	@patch("joymedia.services.generation_orchestrator.start_run")
-	def test_generate_video_returns_existing_run_on_repeat(self, start_run, filelock):
+	@patch("joymedia.services.generation_orchestrator.start_run_internal")
+	def test_generate_video_returns_existing_run_on_repeat(self, start_run_internal, filelock):
 		campaign, specification = _create_campaign("Generation Idempotency")
 		_create_pending_review(specification.name, frappe.generate_hash(length=8))
 
@@ -132,7 +132,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			frappe.db.set_value("Generation Run", run_name, "status", "Queued")
 			return {"name": run_name, "status": "Queued"}
 
-		start_run.side_effect = queue_run
+		start_run_internal.side_effect = queue_run
 		first_result = campaign.generate_video()
 		second_result = campaign.generate_video()
 
@@ -141,7 +141,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			frappe.db.count("Generation Run", {"media_specification": specification.name}),
 			1,
 		)
-		start_run.assert_called_once_with(first_result["run"])
+		start_run_internal.assert_called_once_with(first_result["run"])
 
 
 def _create_campaign(label):

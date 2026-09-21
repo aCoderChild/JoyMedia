@@ -27,6 +27,11 @@ TERMINAL_JOB_STATUSES = ("Completed", "Partially Completed", "Failed", "Cancelle
 def start_run(run_name: str):
 	"""Start a Draft Generation Run and hand the remaining workflow to background jobs."""
 	frappe.has_permission("Generation Run", "write", run_name, throw=True)
+	return start_run_internal(run_name)
+
+
+def start_run_internal(run_name: str):
+	"""Start a run after the caller has authorized its owning Campaign."""
 	run = frappe.get_doc("Generation Run", run_name)
 	if run.status != "Draft":
 		frappe.throw(_("Generation Run {0} must be Draft to start.").format(run.name))
