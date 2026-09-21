@@ -2,6 +2,7 @@
 # See license.txt
 
 import base64
+import json
 
 import frappe
 from contextlib import nullcontext
@@ -11,6 +12,186 @@ from frappe.utils import now_datetime
 
 
 class IntegrationTestMediaProject(IntegrationTestCase):
+	def test_real_customer_portal_permissions_and_tenant_isolation(self):
+		from joymedia.joymedia.doctype.media_project.media_project import (
+			apply_campaign_video_plan,
+			create_business,
+			create_campaign,
+			create_campaign_asset,
+			generate_campaign_video,
+			get_campaign_cards,
+			get_campaign_workspace,
+			save_campaign_video_settings,
+		)
+
+		original_user = frappe.session.user
+		user_a = _create_portal_user("JoyMedia Customer A")
+		user_b = _create_portal_user("JoyMedia Customer B")
+
+		try:
+			frappe.set_user(user_a)
+			organization_a = create_business("Customer A Business")
+			frappe.clear_cache()
+			frappe.set_user(user_a)
+			campaign_a = create_campaign(
+				project_name="Customer A Campaign",
+				client_organization=organization_a.name,
+				product_name="Customer A Product",
+				target_audience="Customer A Audience",
+			)
+			self.assertIn("JoyMedia User", frappe.get_roles(user_a))
+			self.assertTrue(
+				frappe.db.exists(
+					"User Permission",
+					{
+						"user": user_a,
+						"allow": "Client Organization",
+						"for_value": organization_a.name,
+					},
+				)
+			)
+
+			frappe.set_user(user_b)
+			organization_b = create_business("Customer B Business")
+			frappe.clear_cache()
+			frappe.set_user(user_b)
+			campaign_b = create_campaign(
+				project_name="Customer B Campaign",
+				client_organization=organization_b.name,
+				product_name="Customer B Product",
+				target_audience="Customer B Audience",
+			)
+
+			frappe.set_user(user_a)
+			for doctype in (
+				"Media Specification",
+				"Generation Run",
+				"Generation Attempt",
+				"Quality Review",
+				"Asset Version",
+			):
+				self.assertFalse(frappe.has_permission(doctype, "read"), doctype)
+
+			cards = get_campaign_cards()
+			self.assertEqual([card.name for card in cards], [campaign_a.name])
+			self.assertEqual(get_campaign_workspace(campaign_a.name)["campaign"]["name"], campaign_a.name)
+
+			settings = save_campaign_video_settings(campaign_a.name, 8, "Landscape")
+			self.assertEqual(settings["delivery_preset"], "Landscape")
+
+			file_doc = _create_uploaded_file(user_a, "customer-a-product.png")
+			create_campaign_asset(
+				campaign_a.name,
+				"Customer A Product Image",
+				"Product",
+				file_doc.file_url,
+			)
+
+			apply_campaign_video_plan(campaign_a.name, json.dumps(_video_plan()))
+			with patch("joymedia.services.generation_orchestrator._enqueue"):
+				generation_result = generate_campaign_video(campaign_a.name)
+			self.assertEqual(generation_result["status"], "Queued")
+
+			with self.assertRaises(frappe.PermissionError):
+				get_campaign_workspace(campaign_b.name)
+			with self.assertRaises(frappe.PermissionError):
+				save_campaign_video_settings(campaign_b.name, 8, "Landscape")
+			with self.assertRaises(frappe.PermissionError):
+				create_campaign_asset(
+					campaign_b.name,
+					"Customer B Product Image",
+					"Product",
+					file_doc.file_url,
+				)
+			with self.assertRaises(frappe.PermissionError):
+				apply_campaign_video_plan(campaign_b.name, json.dumps(_video_plan()))
+			with self.assertRaises(frappe.PermissionError):
+				generate_campaign_video(campaign_b.name)
+		finally:
+			frappe.set_user(original_user)
+
+	def test_real_customer_review_permissions_and_tenant_isolation(self):
+		from joymedia.joymedia.doctype.media_project.media_project import (
+			approve_campaign_review,
+			create_business,
+			create_campaign,
+			reject_campaign_review,
+			regenerate_campaign_review,
+			stream_campaign_review,
+		)
+
+		original_user = frappe.session.user
+		user_a = _create_portal_user("JoyMedia Review Customer A")
+		user_b = _create_portal_user("JoyMedia Review Customer B")
+
+		try:
+			frappe.set_user(user_a)
+			organization_a = create_business("Review Customer A Business")
+			frappe.clear_cache()
+			frappe.set_user(user_a)
+			campaign_a = create_campaign(
+				project_name="Review Customer A Campaign",
+				client_organization=organization_a.name,
+				product_name="Customer A Product",
+				target_audience="Customer A Audience",
+			)
+			frappe.set_user(user_b)
+			organization_b = create_business("Review Customer B Business")
+			frappe.clear_cache()
+			frappe.set_user(user_b)
+			campaign_b = create_campaign(
+				project_name="Review Customer B Campaign",
+				client_organization=organization_b.name,
+				product_name="Customer B Product",
+				target_audience="Customer B Audience",
+			)
+
+			# Give each campaign a current specification before creating review fixtures.
+			frappe.set_user("Administrator")
+			campaign_a.save_video_settings(8, "Landscape")
+			campaign_b.save_video_settings(8, "Landscape")
+			specification_a = get_latest_media_specification_for_test(campaign_a.name)
+			specification_b = get_latest_media_specification_for_test(campaign_b.name)
+			review_a = _create_pending_review(specification_a.name, frappe.generate_hash(length=8))
+			review_b = _create_pending_review(specification_b.name, frappe.generate_hash(length=8))
+			_file_review_artifact(review_a)
+			_file_review_artifact(review_b)
+
+			frappe.set_user(user_a)
+			stream_campaign_review(campaign_a.name, review_a)
+			self.assertIn(frappe.local.response.filecontent, ("video", b"video"))
+			with patch(
+				"joymedia.joymedia.doctype.asset_version.asset_version.AssetVersion.set_file_metadata"
+			):
+				approve_campaign_review(campaign_a.name, review_a)
+
+			review_for_regeneration = _create_pending_review(
+				specification_a.name, frappe.generate_hash(length=8)
+			)
+			frappe.db.set_value("Quality Review", review_for_regeneration, "status", "Pending")
+			reject_campaign_review(campaign_a.name, review_for_regeneration, "Needs another take")
+			with patch(
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.create_qa_retry_attempt_internal",
+				return_value=type("RetryAttempt", (), {"name": "ATT-PORTAL-RETRY"})(),
+			), patch(
+				"joymedia.services.generation_runner.submit_attempt",
+				return_value={"deferred": True},
+			):
+				regeneration = regenerate_campaign_review(
+					campaign_a.name, review_for_regeneration
+				)
+			self.assertTrue(regeneration["deferred"])
+
+			with self.assertRaises(frappe.PermissionError):
+				stream_campaign_review(campaign_b.name, review_b)
+			with self.assertRaises(frappe.PermissionError):
+				approve_campaign_review(campaign_b.name, review_b)
+			with self.assertRaises(frappe.PermissionError):
+				reject_campaign_review(campaign_b.name, review_b)
+			with self.assertRaises(frappe.PermissionError):
+				regenerate_campaign_review(campaign_b.name, review_b)
+		finally:
+			frappe.set_user(original_user)
 	def test_campaign_workspace_aggregates_assets_and_current_storyboard(self):
 		campaign, specification = _create_campaign("Campaign Workspace")
 		asset = frappe.get_doc(
@@ -265,6 +446,73 @@ def _create_campaign(label):
 	return campaign, specification
 
 
+def _create_portal_user(first_name):
+	email = f"{frappe.generate_hash(length=12)}@example.com"
+	return frappe.get_doc(
+		{
+			"doctype": "User",
+			"email": email,
+			"first_name": first_name,
+			"enabled": 1,
+			"send_welcome_email": 0,
+		}
+	).insert(ignore_permissions=True).name
+
+
+def _create_uploaded_file(owner, file_name):
+	return frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": file_name,
+			"content": base64.b64decode(
+				"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+			),
+			"is_private": 1,
+			"owner": owner,
+		}
+	).insert(ignore_permissions=True)
+
+
+def _video_plan():
+	return {
+		"shots": [
+			{
+				"shot_number": 1,
+				"camera": "A controlled product close-up.",
+				"subject": "The product centered in frame.",
+				"motion": "A slow forward camera movement.",
+				"lighting": "Soft commercial lighting with a clean background.",
+				"audio": "Subtle product movement and ambient sound.",
+			}
+		]
+	}
+
+
+def get_latest_media_specification_for_test(media_project):
+	return frappe.get_doc(
+		"Media Specification",
+		frappe.db.get_value(
+			"Media Specification",
+			{"media_project": media_project},
+			"name",
+			order_by="version_number desc",
+		),
+	)
+
+
+def _file_review_artifact(review_name):
+	artifact_name = frappe.db.get_value("Quality Review", review_name, "generation_artifact")
+	file_doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"{review_name}.mp4",
+			"content": b"video",
+			"is_private": 1,
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.set_value("Generation Artifact", artifact_name, "frappe_file", file_doc.file_url)
+
+
 def _get_test_workflow_profile():
 	profile_name = frappe.db.get_value(
 		"Workflow Profile",
@@ -325,12 +573,20 @@ def _create_pending_review(media_specification, suffix):
 	workflow_version = frappe.db.get_value(
 		"Media Specification", media_specification, "generation_workflow_version"
 	)
+	shot_number = frappe.db.sql(
+		"""
+		select coalesce(max(shot_number), 0) + 1
+		from `tabShot Specification`
+		where media_specification = %s
+		""",
+		media_specification,
+	)[0][0]
 	shot = frappe.get_doc(
 		{
 			"doctype": "Shot Specification",
 			"name": f"SHOT-TEST-{suffix}",
 			"media_specification": media_specification,
-			"shot_number": 1,
+			"shot_number": shot_number,
 			"duration_seconds": 10,
 			"subject_identity": "Test subject",
 			"action_plot": "Test motion",
