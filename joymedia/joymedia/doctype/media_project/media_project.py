@@ -63,6 +63,126 @@ def get_campaign_cards():
 	return campaigns
 
 
+@frappe.whitelist()
+def get_campaign_detail(name):
+	project = frappe.get_doc("Media Project", name)
+	media_specification = get_latest_media_specification(project.name)
+	assets = frappe.get_list(
+		"Media Asset",
+		filters={"media_project": project.name, "status": "Active"},
+		fields=["name", "asset_name", "media_type", "asset_category"],
+		order_by="modified desc",
+		limit_page_length=100,
+	)
+
+	for asset in assets:
+		version = frappe.get_list(
+			"Asset Version",
+			filters={"media_asset": asset.name},
+			fields=["file", "version_number"],
+			order_by="version_number desc",
+			limit_page_length=1,
+		)
+		asset["file"] = version[0].file if version else None
+
+	return {
+		"name": project.name,
+		"project_name": project.project_name,
+		"client_organization": project.client_organization,
+		"product_name": project.product_name,
+		"target_audience": project.target_audience,
+		"video_idea": project.video_idea,
+		"status": project.status,
+		"video_settings": {
+			"name": media_specification.name,
+			"duration": media_specification.total_duration_seconds,
+			"delivery_preset": media_specification.delivery_preset,
+		}
+		if media_specification
+		else None,
+		"assets": assets,
+	}
+
+
+@frappe.whitelist()
+def get_businesses():
+	return frappe.get_list(
+		"Client Organization",
+		fields=["name", "organization_name", "industry"],
+		order_by="organization_name asc",
+		limit_page_length=100,
+	)
+
+
+@frappe.whitelist()
+def create_business(organization_name, industry=None):
+	organization_name = (organization_name or "").strip()
+	if not organization_name:
+		frappe.throw(_("Business name is required."))
+
+	organization = frappe.get_doc(
+		{
+			"doctype": "Client Organization",
+			"organization_name": organization_name,
+			"industry": (industry or "").strip(),
+		}
+	).insert()
+	frappe.db.commit()
+	return organization
+
+
+@frappe.whitelist()
+def create_campaign(
+	project_name,
+	client_organization,
+	product_name,
+	target_audience,
+	video_idea=None,
+):
+	project = frappe.get_doc(
+		{
+			"doctype": "Media Project",
+			"project_name": project_name,
+			"client_organization": client_organization,
+			"product_name": product_name,
+			"target_audience": target_audience,
+			"video_idea": video_idea,
+		}
+	).insert()
+	frappe.db.commit()
+	return project
+
+
+@frappe.whitelist()
+def create_campaign_asset(media_project, asset_name, asset_category, file_url):
+	media_project = frappe.get_doc("Media Project", media_project)
+	file_doc = frappe.get_doc("File", {"file_url": file_url})
+	if file_doc.owner != frappe.session.user and frappe.session.user != "Administrator":
+		frappe.throw(_("You can only attach files uploaded by your account."))
+
+	asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": asset_name,
+			"asset_scope": "Project",
+			"media_type": "Image",
+			"asset_category": asset_category,
+			"media_project": media_project.name,
+			"client_organization": media_project.client_organization,
+		}
+	).insert()
+	version = frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": asset.name,
+			"file": file_url,
+			"source": "Uploaded",
+		}
+	).insert()
+	frappe.db.commit()
+	return {"asset": asset, "version": version}
+
+
 class MediaProject(Document):
 	def before_insert(self):
 		self.status = "Draft"

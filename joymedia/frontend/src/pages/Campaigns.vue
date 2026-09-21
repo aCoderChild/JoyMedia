@@ -71,7 +71,7 @@ function openCampaign(name) {
 }
 
 function createCampaign() {
-  window.location.href = "/app/media-project/new-media-project";
+  window.location.href = "/joymedia/campaigns/new";
 }
 
 function coverClass(status) {

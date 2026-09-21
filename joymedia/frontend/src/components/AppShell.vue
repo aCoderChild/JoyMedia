@@ -18,7 +18,8 @@
     <main class="main-content">
       <header class="topbar">
         <span class="breadcrumb">JoyMedia</span>
-        <Button appearance="minimal" label="Open Desk" @click="openDesk" />
+        <span class="account-name">{{ user }}</span>
+        <Button appearance="minimal" label="Log out" :loading="logout.loading" @click="logout.submit()" />
       </header>
       <div class="page-content"><slot /></div>
     </main>
@@ -27,8 +28,7 @@
 
 <script setup>
 import { Button } from "frappe-ui";
+import { useSession } from "../stores/session";
 
-function openDesk() {
-  window.location.href = "/app/joymedia";
-}
+const { user, logout } = useSession();
 </script>
