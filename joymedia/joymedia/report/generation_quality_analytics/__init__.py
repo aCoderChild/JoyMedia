@@ -1,1 +1,0 @@
-"""Generation Quality Analytics report."""
