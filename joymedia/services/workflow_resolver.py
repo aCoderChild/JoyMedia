@@ -24,11 +24,10 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		frappe.throw(_("Invalid Workflow JSON: {0}").format(str(exc)))
 
 	workflow = copy.deepcopy(base_workflow)
+	_validate_workflow_bindings(workflow_version, workflow)
 	for binding in workflow_version.bindings:
 		value = _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs)
-		node = workflow.get(binding.node_key)
-		if node is None or binding.input_name not in node.get("inputs", {}):
-			frappe.throw(_("Invalid Workflow Binding: {0}").format(binding.binding_key))
+		node = workflow[binding.node_key]
 		if value is _SKIP_BINDING:
 			continue
 		node["inputs"][binding.input_name] = value
@@ -38,6 +37,35 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 	attempt.resolved_workflow_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 	attempt.save()
 	return workflow
+
+
+def validate_workflow_bindings(workflow_version):
+	try:
+		workflow = json.loads(workflow_version.workflow_json)
+	except json.JSONDecodeError as exc:
+		frappe.throw(_("Invalid Workflow JSON: {0}").format(str(exc)))
+
+	if not isinstance(workflow, dict):
+		frappe.throw(_("Workflow JSON must define a JSON object."))
+
+	_validate_workflow_bindings(workflow_version, workflow)
+
+
+def _validate_workflow_bindings(workflow_version, workflow):
+	for binding in workflow_version.bindings:
+		node = workflow.get(binding.node_key)
+		if node is None or binding.input_name not in node.get("inputs", {}):
+			frappe.throw(
+				_(
+					"Invalid Workflow Binding {0} for Workflow Version {1}: "
+					"node '{2}' or input '{3}' is missing from the workflow JSON."
+				).format(
+					binding.binding_key,
+					workflow_version.name,
+					binding.node_key,
+					binding.input_name,
+				)
+			)
 
 
 def _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs):

@@ -15,6 +15,7 @@ from .generation_segment_planner import plan_generation_segments
 from .prompt_compiler import compile_prompt
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_media_specification
+from .workflow_resolver import validate_workflow_bindings
 
 
 ACTIVE_RUN_STATUSES = ("Queued", "Running", "Finalizing")
@@ -85,6 +86,7 @@ def prepare_run(run_name: str):
 		return _run_summary(run)
 
 	try:
+		validate_workflow_bindings(workflow_version)
 		for shot in shots:
 			if frappe.db.exists(
 				"Generation Job", {"generation_run": run.name, "shot_specification": shot.name}
@@ -125,7 +127,7 @@ def prepare_run(run_name: str):
 			).insert(ignore_permissions=True)
 			prepare_generation_job(job.name)
 	except Exception as exc:
-		_raise_run_error(run, str(exc))
+		_raise_run_error(run, _exception_message(exc))
 		return _run_summary(run)
 
 	_refresh_run_counters(run)
@@ -303,7 +305,7 @@ def finalize_run(run_name: str):
 	try:
 		result = compose_media_specification(run.media_specification)
 	except Exception as exc:
-		_raise_run_error(run, str(exc))
+		_raise_run_error(run, _exception_message(exc))
 		return _run_summary(run)
 
 	run.final_asset_version = result["final_asset_version"]
@@ -469,11 +471,12 @@ def _submit_attempt_or_record_failure(attempt_name):
 	except Exception as exc:
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
 		if attempt.status == "Pending":
+			error_message = _exception_message(exc)
 			attempt.status = "Failed"
-			attempt.error_summary = _("Submission to ComfyUI failed.")
-			attempt.error_details = str(exc)
+			attempt.error_summary = error_message
+			attempt.error_details = error_message
 			attempt.save(ignore_permissions=True)
-		return {"error": str(exc)}
+		return {"error": _exception_message(exc)}
 
 
 def _update_job_summary(job):
@@ -508,8 +511,12 @@ def _update_job_summary(job):
 		latest_failure = failed_attempts[-1] if failed_attempts else None
 		job.failure_class = latest_failure.get("failure_class") if latest_failure else None
 		job.error_summary = (
-			latest_failure.get("error_summary")
-			if latest_failure and latest_failure.get("error_summary")
+			(
+				latest_failure.get("error_details")
+				or latest_failure.get("error_summary")
+			)
+			if latest_failure
+			and (latest_failure.get("error_details") or latest_failure.get("error_summary"))
 			else _("Only {0} of {1} requested variants completed.").format(
 				successful_variants, job.requested_variants
 			)
@@ -631,7 +638,15 @@ def _get_job_attempts(job_name):
 	return frappe.get_all(
 		"Generation Attempt",
 		filters={"generation_job": job_name},
-		fields=["name", "status", "retry_of", "retry_reason", "failure_class", "error_summary"],
+		fields=[
+			"name",
+			"status",
+			"retry_of",
+			"retry_reason",
+			"failure_class",
+			"error_summary",
+			"error_details",
+		],
 		order_by="attempt_number asc, creation asc",
 	)
 
@@ -695,10 +710,14 @@ def _enqueue(method_name, run_name):
 
 def _raise_run_error(run, message):
 	run.status = "Failed"
-	run.error_summary = message
+	run.error_summary = message or _("Generation run failed.")
 	run.completed_at = now()
 	run.save(ignore_permissions=True)
 	sync_media_project_status_for_run(run.name)
+
+
+def _exception_message(exc):
+	return str(exc).strip() or exc.__class__.__name__
 
 
 def _run_summary(run):
