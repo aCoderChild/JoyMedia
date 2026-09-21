@@ -76,7 +76,7 @@ class TestQualityReview(FrappeTestCase):
 				side_effect=[review, artifact],
 			),
 			patch(
-				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.create_qa_retry_attempt",
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.create_qa_retry_attempt_internal",
 				return_value=retry_attempt,
 			) as create_retry,
 			patch("joymedia.services.generation_runner.submit_attempt", return_value={"prompt_id": "prompt-1"}) as submit,

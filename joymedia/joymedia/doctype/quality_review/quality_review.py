@@ -148,10 +148,12 @@ def regenerate_shot_internal(
 		frappe.throw(_("Only rejected Quality Reviews can regenerate a Shot."))
 	artifact = frappe.get_doc("Generation Artifact", review.generation_artifact)
 
-	from joymedia.joymedia.doctype.generation_attempt.generation_attempt import create_qa_retry_attempt
+	from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
+		create_qa_retry_attempt_internal,
+	)
 	from joymedia.services.generation_runner import submit_attempt
 
-	retry_attempt = create_qa_retry_attempt(artifact.generation_attempt, reason)
+	retry_attempt = create_qa_retry_attempt_internal(artifact.generation_attempt, reason)
 	submission = submit_attempt(retry_attempt.name)
 	frappe.db.commit()
 	return {

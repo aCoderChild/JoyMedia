@@ -209,6 +209,8 @@ def get_pending_review_cards():
 					"campaign": campaign.name,
 					"campaign_name": campaign.project_name,
 					"generation_artifact": review["generation_artifact"],
+					"status": review["status"],
+					"asset_version": review.get("asset_version"),
 					"preview_url": review["preview_url"],
 				}
 			)
@@ -663,7 +665,7 @@ class MediaProject(Document):
 		reviews = frappe.get_all(
 			"Quality Review",
 			filters={"generation_artifact": ["in", artifacts], "status": ["in", statuses]},
-			fields=["name", "generation_artifact", "status"],
+			fields=["name", "generation_artifact", "status", "asset_version"],
 			order_by="creation asc",
 		)
 		return [
@@ -671,6 +673,7 @@ class MediaProject(Document):
 				"name": review.name,
 				"generation_artifact": review.generation_artifact,
 				"status": review.status,
+				"asset_version": review.asset_version,
 				"preview_url": (
 					"/api/method/joymedia.joymedia.doctype.media_project.media_project."
 					f"stream_campaign_review?campaign_name={self.name}&review_name={review.name}"
