@@ -37,16 +37,6 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 	if media_spec.status != "Draft":
 		frappe.throw(_("Video plans can only be applied to Draft Media Specifications."))
 
-	existing_shots = frappe.get_all(
-		"Shot Specification",
-		filters={"media_specification": media_spec.name},
-		limit=1,
-	)
-	if existing_shots:
-		frappe.throw(
-			_("Video plan can only be applied to a Media Specification with no existing shots.")
-		)
-
 	shot_numbers = [shot["shot_number"] for shot in plan["shots"]]
 	if len(shot_numbers) != len(set(shot_numbers)):
 		frappe.throw(_("Video plan contains duplicate shot numbers."))
@@ -77,6 +67,23 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 				_("Video plan application requires exactly one required Generation Input role.")
 			)
 		required_input_role = next(iter(required_input_roles), None)
+
+	existing_shots = frappe.get_all(
+		"Shot Specification",
+		filters={"media_specification": media_spec.name},
+		pluck="name",
+	)
+	if existing_shots:
+		if frappe.db.exists("Generation Run", {"media_specification": media_spec.name}):
+			frappe.throw(
+				_(
+					"This storyboard cannot be replaced after generation starts. "
+					"Create a new revision instead."
+				)
+			)
+
+		for shot_name in existing_shots:
+			frappe.delete_doc("Shot Specification", shot_name, ignore_permissions=True)
 
 	created_shots = []
 

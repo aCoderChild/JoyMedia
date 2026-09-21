@@ -8,6 +8,10 @@ frappe.ui.form.on("Media Project", {
 			});
 		});
 
+		frm.add_custom_button(__("Video Settings"), () => {
+			show_video_settings_dialog(frm);
+		});
+
 		frm.add_custom_button(__("Storyboard"), () => {
 			open_latest_storyboard(frm);
 		});
@@ -35,7 +39,57 @@ frappe.ui.form.on("Media Project", {
 });
 
 function generate_video_plan(frm) {
-	show_plan_request_dialog(frm);
+	frm.call("get_video_settings", {}, (r) => {
+		if (r.exc) return;
+		if (!r.message) {
+			show_video_settings_dialog(frm, () => show_plan_request_dialog(frm));
+			return;
+		}
+		show_plan_request_dialog(frm);
+	});
+}
+
+function show_video_settings_dialog(frm, after_save) {
+	frm.call("get_video_settings", {}, (r) => {
+		if (r.exc) return;
+
+		const settings = r.message || {};
+		const dialog = new frappe.ui.Dialog({
+			title: __("Video Settings"),
+			fields: [
+				{
+					fieldname: "total_duration_seconds",
+					fieldtype: "Float",
+					label: __("Duration (seconds)"),
+					default: settings.total_duration_seconds || 8,
+					reqd: 1,
+				},
+				{
+					fieldname: "delivery_preset",
+					fieldtype: "Select",
+					label: __("Format"),
+					options: "Landscape\nPortrait\nSquare",
+					default: settings.delivery_preset || "Landscape",
+					reqd: 1,
+				},
+			],
+			primary_action_label: __("Save"),
+			primary_action(values) {
+				dialog.hide();
+				frm.call("save_video_settings", values, (save_response) => {
+					if (save_response.exc) return;
+					frm.reload_doc().then(() => {
+						frappe.show_alert({
+							message: __("Video Settings saved."),
+							indicator: "green",
+						});
+						if (after_save) after_save();
+					});
+				});
+			},
+		});
+		dialog.show();
+	});
 }
 
 function open_latest_storyboard(frm) {

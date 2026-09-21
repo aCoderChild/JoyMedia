@@ -9,6 +9,67 @@ from frappe.utils import now_datetime
 
 
 class IntegrationTestMediaProject(IntegrationTestCase):
+	def test_video_settings_create_and_update_latest_draft_specification(self):
+		campaign, specification = _create_campaign("Video Settings")
+		frappe.delete_doc("Media Specification", specification.name, ignore_permissions=True)
+
+		created_result = campaign.save_video_settings(8, "Portrait")
+		result = campaign.save_video_settings(12, "Square")
+		updated = frappe.get_doc("Media Specification", created_result["media_specification"])
+
+		self.assertEqual(result["media_specification"], created_result["media_specification"])
+		self.assertEqual(updated.total_duration_seconds, 12)
+		self.assertEqual(updated.delivery_preset, "Square")
+		self.assertEqual(updated.delivery_width, 1024)
+		self.assertEqual(updated.delivery_height, 1024)
+		self.assertEqual(
+			frappe.db.get_value("Workflow Profile", updated.workflow_profile, "workflow_code"),
+			"MINIMAX-H3",
+		)
+
+	def test_draft_storyboard_can_be_replaced_before_generation(self):
+		from joymedia.services.video_plan_service import apply_video_plan
+
+		campaign, specification = _create_campaign("Storyboard Replacement")
+		first_plan = {
+			"shots": [
+				{
+					"shot_number": 1,
+					"camera": "First camera",
+					"subject": "First subject",
+					"motion": "First motion",
+					"lighting": "First lighting",
+					"audio": "First audio",
+				}
+			]
+		}
+		second_plan = {
+			"shots": [
+				{
+					"shot_number": 1,
+					"camera": "Second camera",
+					"subject": "Second subject",
+					"motion": "Second motion",
+					"lighting": "Second lighting",
+					"audio": "Second audio",
+				}
+			]
+		}
+
+		first_shots = apply_video_plan(specification.name, first_plan)
+		second_shots = apply_video_plan(specification.name, second_plan)
+
+		self.assertEqual(len(first_shots), 1)
+		self.assertEqual(len(second_shots), 1)
+		self.assertEqual(
+			frappe.db.count("Shot Specification", {"media_specification": specification.name}),
+			1,
+		)
+		self.assertEqual(
+			frappe.db.get_value("Shot Specification", second_shots[0], "subject_identity"),
+			"Second subject",
+		)
+
 	def test_pending_reviews_are_isolated_between_campaigns(self):
 		campaign_a, specification_a = _create_campaign("Review Isolation A")
 		campaign_b, specification_b = _create_campaign("Review Isolation B")
@@ -121,7 +182,7 @@ def _create_campaign(label):
 def _get_test_workflow_profile():
 	profile_name = frappe.db.get_value(
 		"Workflow Profile",
-		{"workflow_code": "TEST-H3-CAMPAIGN"},
+		{"workflow_code": "MINIMAX-H3"},
 		"name",
 	)
 	if profile_name:
@@ -131,7 +192,7 @@ def _get_test_workflow_profile():
 		{
 			"doctype": "Workflow Profile",
 			"profile_name": "Campaign Integration H3",
-			"workflow_code": "TEST-H3-CAMPAIGN",
+			"workflow_code": "MINIMAX-H3",
 			"status": "Active",
 		}
 	).insert(ignore_permissions=True)

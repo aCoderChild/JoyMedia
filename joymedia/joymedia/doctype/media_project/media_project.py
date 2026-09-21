@@ -15,6 +15,7 @@ ALLOWED_STATUSES = {
 	"Needs Attention",
 	"Cancelled",
 }
+H3_WORKFLOW_CODE = "MINIMAX-H3"
 
 
 def get_latest_media_specification(media_project):
@@ -54,6 +55,79 @@ class MediaProject(Document):
 
 		if self.status not in ALLOWED_STATUSES:
 			frappe.throw(_("Invalid Media Project status."))
+
+	@frappe.whitelist()
+	def get_video_settings(self):
+		media_specification = get_latest_media_specification(self.name)
+		if not media_specification:
+			return None
+
+		return {
+			"name": media_specification.name,
+			"version_number": media_specification.version_number,
+			"status": media_specification.status,
+			"total_duration_seconds": media_specification.total_duration_seconds,
+			"delivery_preset": media_specification.delivery_preset,
+		}
+
+	@frappe.whitelist()
+	def save_video_settings(self, total_duration_seconds, delivery_preset):
+		try:
+			total_duration_seconds = float(total_duration_seconds)
+		except (TypeError, ValueError):
+			frappe.throw(_("Duration must be greater than zero."))
+
+		if total_duration_seconds <= 0:
+			frappe.throw(_("Duration must be greater than zero."))
+		if delivery_preset not in ("Landscape", "Portrait", "Square"):
+			frappe.throw(_("Select Landscape, Portrait, or Square format."))
+
+		with filelock(f"joymedia-video-settings-{self.name}"):
+			latest = get_latest_media_specification(self.name)
+			if latest and latest.status != "Draft":
+				frappe.throw(
+					_(
+						"Video Settings cannot be changed after generation starts. "
+						"Use Revise Storyboard first."
+					)
+				)
+
+			workflow_profile = frappe.db.get_value(
+				"Workflow Profile",
+				{"workflow_code": H3_WORKFLOW_CODE, "status": "Active"},
+				"name",
+			)
+			if not workflow_profile:
+				frappe.throw(
+					_("No active MiniMax H3 Workflow Profile is configured.")
+				)
+
+			if latest:
+				latest.total_duration_seconds = total_duration_seconds
+				latest.delivery_preset = delivery_preset
+				latest.save(ignore_permissions=True)
+				media_specification = latest
+			else:
+				media_specification = frappe.get_doc(
+					{
+						"doctype": "Media Specification",
+						"media_project": self.name,
+						"version_number": 1,
+						"status": "Draft",
+						"workflow_profile": workflow_profile,
+						"total_duration_seconds": total_duration_seconds,
+						"delivery_preset": delivery_preset,
+					}
+				).insert(ignore_permissions=True)
+
+		frappe.db.set_value("Media Project", self.name, "status", "Draft", update_modified=False)
+		frappe.db.commit()
+		return {
+			"media_specification": media_specification.name,
+			"version_number": media_specification.version_number,
+			"total_duration_seconds": media_specification.total_duration_seconds,
+			"delivery_preset": media_specification.delivery_preset,
+		}
 
 	@frappe.whitelist()
 	def generate_video_plan(self, scene_count):
