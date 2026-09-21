@@ -37,6 +37,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Media Project",
+   "mandatory_depends_on": "eval:doc.asset_scope==\"Project\";",
    "options": "Media Project"
   },
   {
@@ -87,7 +88,9 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Client Organization",
-   "options": "Client Organization"
+   "mandatory_depends_on": "eval:doc.asset_scope==\"Organization\";",
+   "options": "Client Organization",
+   "read_only_depends_on": "eval:doc.asset_scope==\"Project\";"
   }
  ],
  "grid_page_length": 50,

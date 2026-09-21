@@ -37,7 +37,8 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Business",
-   "options": "Client Organization"
+   "options": "Client Organization",
+   "reqd": 1
   },
   {
    "default": "Draft",
