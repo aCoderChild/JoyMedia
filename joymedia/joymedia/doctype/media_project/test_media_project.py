@@ -90,6 +90,29 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			"MINIMAX-H3",
 		)
 
+	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.has_permission")
+	def test_create_campaign_uses_controlled_business_access(self, has_permission):
+		organization = frappe.get_doc(
+			{
+				"doctype": "Client Organization",
+				"organization_name": "Controlled Campaign Business",
+			}
+		).insert(ignore_permissions=True)
+
+		from joymedia.joymedia.doctype.media_project.media_project import create_campaign
+
+		campaign = create_campaign(
+			project_name="Controlled Campaign",
+			client_organization=organization.name,
+			product_name="Test Product",
+			target_audience="Test Audience",
+		)
+
+		self.assertTrue(frappe.db.exists("Media Project", campaign.name))
+		has_permission.assert_called_once_with(
+		"Client Organization", "read", organization.name, throw=True
+		)
+
 	def test_draft_storyboard_can_be_replaced_before_generation(self):
 		from joymedia.services.video_plan_service import apply_video_plan
 

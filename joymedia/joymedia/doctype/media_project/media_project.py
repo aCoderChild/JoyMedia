@@ -333,8 +333,11 @@ def create_campaign(
 	target_audience,
 	video_idea=None,
 ):
-	frappe.has_permission("Media Project", "create", throw=True)
 	frappe.has_permission("Client Organization", "read", client_organization, throw=True)
+	if not set(frappe.get_roles()).intersection(
+		{"JoyMedia User", "JoyMedia Specialist", "System Manager"}
+	):
+		frappe.throw(_("You do not have permission to create a Campaign."))
 	project = frappe.get_doc(
 		{
 			"doctype": "Media Project",
@@ -344,7 +347,7 @@ def create_campaign(
 			"target_audience": target_audience,
 			"video_idea": video_idea,
 		}
-	).insert()
+	).insert(ignore_permissions=True)
 	frappe.db.commit()
 	return project
 
