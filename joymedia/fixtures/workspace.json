@@ -2,7 +2,7 @@
  {
   "app": null,
   "charts": [],
-  "content": "[{\"id\":\"U16bYqqqhF\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>JoyMedia</b></span>\",\"col\":12}},{\"id\":\"S4aRcRHFCe\",\"type\":\"paragraph\",\"data\":{\"text\":\"Create AI-powered product videos for small businesses.\",\"col\":12}},{\"id\":\"9Us0pXG6b0\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Campaigns\",\"col\":3}},{\"id\":\"418RochFJE\",\"type\":\"quick_list\",\"data\":{\"quick_list_name\":\"Recent Campaigns\",\"col\":4}},{\"id\":\"BlmUMDvzQp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Assets\",\"col\":3}},{\"id\":\"8I7YJ76gta\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Production<b></b></span>\",\"col\":12}},{\"id\":\"W7hUVJE_NO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Generating Videos\",\"col\":3}},{\"id\":\"NjrdiotEUh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Review Videos\",\"col\":3}}]",
+  "content": "[{\"id\":\"U16bYqqqhF\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>JoyMedia</b></span>\",\"col\":12}},{\"id\":\"S4aRcRHFCe\",\"type\":\"paragraph\",\"data\":{\"text\":\"Create AI-powered product videos for small businesses.\",\"col\":12}},{\"id\":\"9Us0pXG6b0\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Campaigns\",\"col\":3}},{\"id\":\"418RochFJE\",\"type\":\"quick_list\",\"data\":{\"quick_list_name\":\"Recent Campaigns\",\"col\":4}},{\"id\":\"BlmUMDvzQp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Assets\",\"col\":3}},{\"id\":\"8I7YJ76gta\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Production<b></b></span>\",\"col\":12}},{\"id\":\"W7hUVJE_NO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Generating Videos\",\"col\":3}},{\"id\":\"NjrdiotEUh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Review Videos\",\"col\":3}},{\"id\":\"joymedia-system-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">System configuration</span>\",\"col\":12}},{\"id\":\"joymedia-workflow-profiles\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Workflow Profiles\",\"col\":3}},{\"id\":\"joymedia-workflow-versions\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Workflow Versions\",\"col\":3}}]",
   "custom_blocks": [],
   "docstatus": 0,
   "doctype": "Workspace",
@@ -16,7 +16,7 @@
   "link_to": null,
   "link_type": "DocType",
   "links": [],
-  "modified": "2026-09-18 08:51:35.498804",
+  "modified": "2026-09-22 06:10:00.000000",
   "module": null,
   "name": "JoyMedia",
   "number_cards": [],
@@ -86,6 +86,34 @@
     "report_ref_doctype": null,
     "restrict_to_domain": null,
     "stats_filter": "[[\"Quality Review\",\"status\",\"=\",\"Pending\"]]",
+    "type": "DocType",
+    "url": null
+   },
+   {
+    "color": "Grey",
+    "doc_view": "List",
+    "format": null,
+    "icon": null,
+    "kanban_board": null,
+    "label": "Workflow Profiles",
+    "link_to": "Workflow Profile",
+    "report_ref_doctype": null,
+    "restrict_to_domain": null,
+    "stats_filter": "[]",
+    "type": "DocType",
+    "url": null
+   },
+   {
+    "color": "Grey",
+    "doc_view": "List",
+    "format": null,
+    "icon": null,
+    "kanban_board": null,
+    "label": "Workflow Versions",
+    "link_to": "Workflow Version",
+    "report_ref_doctype": null,
+    "restrict_to_domain": null,
+    "stats_filter": "[]",
     "type": "DocType",
     "url": null
    }
