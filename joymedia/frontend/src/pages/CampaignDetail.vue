@@ -84,7 +84,9 @@ const automaticShotCount = computed(() => workspace.value?.video_settings?.autom
 const referenceAssetCount = computed(() => workspace.value?.video_settings?.reference_asset_count || 0);
 const requiresStoryboardRevision = computed(() => {
   const status = production.value?.status;
-  return ["Failed", "Needs Attention"].includes(status) && !(production.value?.total_jobs || 0);
+  return ["Failed", "Needs Attention"].includes(status) && (
+    workflowSetupInvalid.value || !(production.value?.total_jobs || 0)
+  );
 });
 const workflowSetupInvalid = computed(() => production.value?.error_summary?.startsWith("Invalid Workflow Binding"));
 const canRetryProduction = computed(() => (
