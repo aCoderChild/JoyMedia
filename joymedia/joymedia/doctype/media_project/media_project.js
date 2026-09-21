@@ -178,14 +178,23 @@ function approve_campaign_review(frm, dialog, review_name) {
 
 function regenerate_campaign_review(frm, dialog, review_name) {
 	frappe.call({
-		method: "joymedia.joymedia.doctype.quality_review.quality_review.regenerate_shot_from_ui",
-		args: { quality_review_name: review_name, reason: "Human Review Rejection" },
+		method: "joymedia.joymedia.doctype.quality_review.quality_review.reject_review",
+		args: { review_name, notes: "Regenerated from Campaign review." },
 		freeze: true,
-		freeze_message: __("Regenerating shot..."),
+		freeze_message: __("Rejecting video..."),
 		callback(r) {
 			if (r.exc) return;
-			dialog.hide();
-			frm.reload_doc();
+			frappe.call({
+				method: "joymedia.joymedia.doctype.quality_review.quality_review.regenerate_shot_from_ui",
+				args: { quality_review_name: review_name, reason: "Human Review Rejection" },
+				freeze: true,
+				freeze_message: __("Regenerating shot..."),
+				callback(retry_response) {
+					if (retry_response.exc) return;
+					dialog.hide();
+					frm.reload_doc();
+				},
+			});
 		},
 	});
 }

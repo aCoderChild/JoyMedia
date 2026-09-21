@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils.synchronization import filelock
 
 
 ALLOWED_STATUSES = {
@@ -113,33 +114,34 @@ class MediaProject(Document):
 
 	@frappe.whitelist()
 	def create_storyboard_revision(self):
-		specifications = frappe.get_all(
-			"Media Specification",
-			filters={"media_project": self.name},
-			fields=["name", "version_number"],
-			order_by="version_number desc",
-			limit=1,
-		)
-		if not specifications:
-			frappe.throw(_("This Campaign has no Video Settings to revise."))
+		with filelock(f"joymedia-storyboard-revision-{self.name}"):
+			specifications = frappe.get_all(
+				"Media Specification",
+				filters={"media_project": self.name},
+				fields=["name", "version_number"],
+				order_by="version_number desc",
+				limit=1,
+			)
+			if not specifications:
+				frappe.throw(_("This Campaign has no Video Settings to revise."))
 
-		latest = frappe.get_doc("Media Specification", specifications[0].name)
-		revision = frappe.get_doc(
-			{
-				"doctype": "Media Specification",
-				"media_project": self.name,
-				"version_number": (latest.version_number or 0) + 1,
-				"status": "Draft",
-				"workflow_profile": latest.workflow_profile,
-				"generation_workflow_version": latest.generation_workflow_version,
-				"prompt_template_version": latest.prompt_template_version,
-				"total_duration_seconds": latest.total_duration_seconds,
-				"delivery_preset": latest.delivery_preset,
-				"delivery_width": latest.delivery_width,
-				"delivery_height": latest.delivery_height,
-				"generation_instructions": latest.generation_instructions,
-			}
-		).insert(ignore_permissions=True)
+			latest = frappe.get_doc("Media Specification", specifications[0].name)
+			revision = frappe.get_doc(
+				{
+					"doctype": "Media Specification",
+					"media_project": self.name,
+					"version_number": (latest.version_number or 0) + 1,
+					"status": "Draft",
+					"workflow_profile": latest.workflow_profile,
+					"generation_workflow_version": latest.generation_workflow_version,
+					"prompt_template_version": latest.prompt_template_version,
+					"total_duration_seconds": latest.total_duration_seconds,
+					"delivery_preset": latest.delivery_preset,
+					"delivery_width": latest.delivery_width,
+					"delivery_height": latest.delivery_height,
+					"generation_instructions": latest.generation_instructions,
+				}
+			).insert(ignore_permissions=True)
 
 		frappe.db.set_value("Media Project", self.name, "status", "Draft", update_modified=False)
 		frappe.db.commit()
