@@ -7,7 +7,7 @@ import NewCampaign from "./pages/NewCampaign.vue";
 import Onboarding from "./pages/Onboarding.vue";
 import { useSession } from "./stores/session";
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory("/joymedia"),
   routes: [
     { path: "/", redirect: "/campaigns" },
@@ -27,3 +27,5 @@ router.beforeEach((to) => {
     return false;
   }
 });
+
+export default router;
