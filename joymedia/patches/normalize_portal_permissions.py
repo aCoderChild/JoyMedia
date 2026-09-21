@@ -5,7 +5,7 @@ def execute():
 	for doctype in ("Client Organization", "Media Project", "Media Asset"):
 		for permission in frappe.get_all(
 			"Custom DocPerm",
-			filters={"parent": doctype},
+			filters={"parent": doctype, "role": "JoyMedia User"},
 			pluck="name",
 		):
 			frappe.delete_doc(
