@@ -2,7 +2,7 @@
  {
   "app": null,
   "charts": [],
-  "content": "[{\"id\":\"joymedia-get-started\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Get Started</b></span>\",\"col\":12}},{\"id\":\"joymedia-create-campaign\",\"type\":\"paragraph\",\"data\":{\"text\":\"<a href=\\\"/app/media-project/new-media-project-1\\\">Create a Campaign</a>\",\"col\":4}},{\"id\":\"joymedia-view-campaigns\",\"type\":\"paragraph\",\"data\":{\"text\":\"<a href=\\\"/app/media-project\\\">View Campaigns</a>\",\"col\":4}},{\"id\":\"joymedia-upload-assets\",\"type\":\"paragraph\",\"data\":{\"text\":\"<a href=\\\"/app/media-asset\\\">Upload Assets</a>\",\"col\":4}},{\"id\":\"joymedia-production\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Production</b></span>\",\"col\":12}},{\"id\":\"joymedia-campaigns\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Campaigns\",\"col\":4}},{\"id\":\"joymedia-assets\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Assets\",\"col\":4}},{\"id\":\"joymedia-generating\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Generating Videos\",\"col\":4}},{\"id\":\"joymedia-reviews\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Review Videos\",\"col\":4}},{\"id\":\"joymedia-recent\",\"type\":\"quick_list\",\"data\":{\"quick_list_name\":\"Recent Campaigns\",\"col\":8}}]",
+  "content": "[{\"id\":\"U16bYqqqhF\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>JoyMedia</b></span>\",\"col\":12}},{\"id\":\"S4aRcRHFCe\",\"type\":\"paragraph\",\"data\":{\"text\":\"Create AI-powered product videos for small businesses.\",\"col\":12}},{\"id\":\"9Us0pXG6b0\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Campaigns\",\"col\":3}},{\"id\":\"418RochFJE\",\"type\":\"quick_list\",\"data\":{\"quick_list_name\":\"Recent Campaigns\",\"col\":4}},{\"id\":\"BlmUMDvzQp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Assets\",\"col\":3}},{\"id\":\"8I7YJ76gta\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Production<b></b></span>\",\"col\":12}},{\"id\":\"W7hUVJE_NO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Generating Videos\",\"col\":3}},{\"id\":\"NjrdiotEUh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Review Videos\",\"col\":3}}]",
   "custom_blocks": [],
   "docstatus": 0,
   "doctype": "Workspace",
@@ -68,10 +68,10 @@
     "icon": null,
     "kanban_board": null,
     "label": "Generating Videos",
-    "link_to": "Generation Run",
+    "link_to": "Media Project",
     "report_ref_doctype": null,
     "restrict_to_domain": null,
-    "stats_filter": "[[\"Generation Run\",\"status\",\"in\",[\"Queued\",\"Running\",\"Finalizing\"]]]",
+    "stats_filter": "[[\"Media Project\",\"status\",\"=\",\"Generating\"]]",
     "type": "DocType",
     "url": null
    },
