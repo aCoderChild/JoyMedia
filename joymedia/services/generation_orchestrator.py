@@ -193,6 +193,7 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 	_refresh_run_counters(run)
 	if enqueue_finalization:
 		_enqueue_finalization_if_ready(run)
+	sync_media_project_status_for_run(run.name)
 	return _run_summary(run)
 
 
@@ -234,6 +235,11 @@ def finalize_run_from_ui(run_name: str):
 def retry_failed_jobs_from_ui(run_name: str):
 	"""Retry and submit the latest failed Attempt chain for every failed Job in a Run."""
 	frappe.has_permission("Generation Run", "write", run_name, throw=True)
+	return retry_failed_jobs_internal(run_name)
+
+
+def retry_failed_jobs_internal(run_name: str):
+	"""Retry failed Jobs after the owning Campaign has authorized the operation."""
 	with filelock(f"joymedia-retry-run-{run_name}"):
 		run = frappe.get_doc("Generation Run", run_name)
 		if run.status not in ("Failed", "Partially Completed"):
@@ -692,6 +698,7 @@ def _raise_run_error(run, message):
 	run.error_summary = message
 	run.completed_at = now()
 	run.save(ignore_permissions=True)
+	sync_media_project_status_for_run(run.name)
 
 
 def _run_summary(run):

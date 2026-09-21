@@ -1,6 +1,8 @@
 # Copyright (c) 2026, JoyMedia and contributors
 # For license information, please see license.txt
 
+import math
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -82,6 +84,7 @@ def get_campaign_detail(name):
 			"name": media_specification.name,
 			"duration": media_specification.total_duration_seconds,
 			"delivery_preset": media_specification.delivery_preset,
+			"minimum_scene_count": _minimum_scene_count(media_specification),
 		}
 		if media_specification
 		else None,
@@ -154,6 +157,7 @@ def get_campaign_workspace(name):
 				"progress",
 				"completed_jobs",
 				"total_jobs",
+				"failed_jobs",
 				"error_summary",
 				"final_asset_version",
 			],
@@ -189,6 +193,7 @@ def get_campaign_workspace(name):
 			"status": media_specification.status,
 			"duration": media_specification.total_duration_seconds,
 			"delivery_preset": media_specification.delivery_preset,
+			"minimum_scene_count": _minimum_scene_count(media_specification),
 		}
 		if media_specification
 		else None,
@@ -217,6 +222,28 @@ def _get_campaign_assets(media_project):
 		)
 		asset["file"] = versions[0].file if versions else None
 	return assets
+
+
+def _minimum_scene_count(media_specification):
+	if not media_specification or not media_specification.generation_workflow_version:
+		return 1
+
+	workflow_version = frappe.get_doc(
+		"Workflow Version", media_specification.generation_workflow_version
+	)
+	frame_count = int(workflow_version.frame_count or 0)
+	output_fps = float(workflow_version.output_fps or 0)
+	if frame_count < 1 or output_fps <= 0:
+		return 1
+
+	return max(
+		1,
+		math.ceil(
+			float(media_specification.total_duration_seconds or 0)
+			* output_fps
+			/ frame_count
+		),
+	)
 
 
 @frappe.whitelist()
@@ -296,6 +323,12 @@ def apply_campaign_video_plan(campaign_name, plan_json):
 def generate_campaign_video(campaign_name):
 	campaign = frappe.get_doc("Media Project", campaign_name)
 	return campaign.generate_video()
+
+
+@frappe.whitelist()
+def retry_campaign_failed_jobs(campaign_name):
+	campaign = frappe.get_doc("Media Project", campaign_name)
+	return campaign.retry_failed_jobs()
 
 
 @frappe.whitelist()
@@ -540,6 +573,15 @@ class MediaProject(Document):
 		if scene_count < 1:
 			frappe.throw(_("Number of Scenes must be at least 1."))
 
+		minimum_scene_count = _minimum_scene_count(media_specification)
+		if scene_count < minimum_scene_count:
+			frappe.throw(
+				_(
+					"This video requires at least {0} scenes for the selected "
+					"MiniMax H3 workflow."
+				).format(minimum_scene_count)
+			)
+
 		template = None
 		if self.reference_template:
 			ref = frappe.get_doc("Video Reference Template", self.reference_template)
@@ -599,6 +641,29 @@ class MediaProject(Document):
 			result = start_run_internal(run.name)
 			frappe.db.commit()
 			return {"run": run.name, "status": result["status"]}
+
+	@frappe.whitelist()
+	def retry_failed_jobs(self):
+		self._require_write_access()
+		from joymedia.services.generation_orchestrator import retry_failed_jobs_internal
+
+		media_specification = get_latest_media_specification(self.name)
+		if not media_specification:
+			frappe.throw(_("This Campaign has no Video Settings."))
+
+		run_name = frappe.db.get_value(
+			"Generation Run",
+			{
+				"media_specification": media_specification.name,
+				"status": ["in", ["Failed", "Partially Completed"]],
+			},
+			"name",
+			order_by="creation desc",
+		)
+		if not run_name:
+			frappe.throw(_("This Campaign has no failed video run to retry."))
+
+		return retry_failed_jobs_internal(run_name)
 
 	@frappe.whitelist()
 	def apply_video_plan(self, plan_json):

@@ -99,6 +99,7 @@ h2 { margin: 0; }
 .progress-track { height: 8px; margin-top: 10px; overflow: hidden; border-radius: 999px; background: #373737; }
 .progress-value { height: 100%; border-radius: inherit; background: #635bdb; transition: width .2s ease; }
 .error-text { color: #e68a8a; }
+.warning-text { margin: 0 0 18px; color: #e5c07b; }
 .review-card video, .final-video { display: block; width: 100%; max-height: 360px; border-radius: 8px; background: #111; }
 .review-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
 .review-actions span { margin-right: auto; color: #c6c6c6; font-size: 13px; }
