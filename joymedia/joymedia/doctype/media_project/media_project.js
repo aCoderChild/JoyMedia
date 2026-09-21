@@ -2,11 +2,25 @@ frappe.ui.form.on("Media Project", {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
-		frm.add_custom_button(__("Generate Video Plan"), () => {
-			generate_video_plan(frm);
+		frm.add_custom_button(__("Assets"), () => {
+			frappe.set_route("List", "Media Asset", {
+				media_project: frm.doc.name,
+			});
+		});
+
+		frm.add_custom_button(__("Storyboard"), () => {
+			open_latest_storyboard(frm);
+		});
+
+		frm.add_custom_button(__("Review Videos"), () => {
+			frappe.set_route("List", "Quality Review", { status: "Pending" });
 		});
 
 		if (frm.doc.status === "Draft") {
+			frm.add_custom_button(__("Generate Video Plan"), () => {
+				generate_video_plan(frm);
+			});
+
 			frm.add_custom_button(__("Generate Video"), () => {
 				show_generate_video_dialog(frm);
 			});
@@ -30,6 +44,58 @@ function generate_video_plan(frm) {
 			show_plan_request_dialog(frm);
 		},
 	});
+}
+
+function open_latest_storyboard(frm) {
+	frappe.db
+		.get_list("Media Specification", {
+			filters: { media_project: frm.doc.name },
+			fields: ["name"],
+			order_by: "version_number desc",
+			limit: 1,
+		})
+		.then((specifications) => {
+			if (!specifications.length) {
+				frappe.msgprint(__("This Campaign has no Video Settings yet."));
+				return;
+			}
+
+			return frappe.db.get_list("Shot Specification", {
+				filters: { media_specification: specifications[0].name },
+				fields: [
+					"shot_number",
+					"camera_direction",
+					"subject_identity",
+					"action_plot",
+					"environment",
+					"audio_direction",
+				],
+				order_by: "shot_number asc",
+			});
+		})
+		.then((shots) => {
+			if (!shots) return;
+			const plan = {
+				shots: shots.map((shot) => ({
+					shot_number: shot.shot_number,
+					camera: shot.camera_direction,
+					subject: shot.subject_identity,
+					motion: shot.action_plot,
+					lighting: shot.environment,
+					audio: shot.audio_direction,
+				})),
+			};
+			const dialog = new frappe.ui.Dialog({
+				title: __("Storyboard"),
+				fields: [{ fieldtype: "HTML", fieldname: "storyboard" }],
+				primary_action_label: __("Close"),
+				primary_action() {
+					dialog.hide();
+				},
+			});
+			dialog.fields_dict.storyboard.$wrapper.html(render_storyboard(plan));
+			dialog.show();
+		});
 }
 
 function show_plan_request_dialog(frm) {

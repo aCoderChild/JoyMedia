@@ -204,6 +204,7 @@ def refresh_generation_state_for_attempt(attempt_name: str):
 		return _run_summary(run)
 	_refresh_run_counters(run)
 	_enqueue_finalization_if_ready(run)
+	sync_media_project_status_for_run(run.name)
 	return _run_summary(run)
 
 
@@ -367,49 +368,18 @@ def sync_media_project_status_for_run(run_name: str):
 		else []
 	)
 
-	if any(item.status in ACTIVE_RUN_STATUSES for item in runs):
+	if not runs:
+		status = "Draft"
+	elif any(item.status in ACTIVE_RUN_STATUSES for item in runs):
 		status = "Generating"
 	elif any(item.final_asset_version for item in runs):
 		status = "Completed"
+	elif any(item.status == "Awaiting Review" for item in runs):
+		status = "Review"
+	elif any(item.status in ("Failed", "Partially Completed") for item in runs):
+		status = "Needs Attention"
 	else:
-		run_names = [item.name for item in runs]
-		jobs = (
-			frappe.get_all(
-				"Generation Job",
-				filters={"generation_run": ["in", run_names]},
-				pluck="name",
-			)
-			if run_names
-			else []
-		)
-		attempts = (
-			frappe.get_all(
-				"Generation Attempt",
-				filters={"generation_job": ["in", jobs]},
-				pluck="name",
-			)
-			if jobs
-			else []
-		)
-		artifacts = (
-			frappe.get_all(
-				"Generation Artifact",
-				filters={"generation_attempt": ["in", attempts]},
-				pluck="name",
-			)
-			if attempts
-			else []
-		)
-
-		if artifacts and frappe.db.exists(
-			"Quality Review",
-			{"generation_artifact": ["in", artifacts], "status": "Pending"},
-		):
-			status = "Review"
-		elif any(item.status in ("Failed", "Partially Completed") for item in runs):
-			status = "Needs Attention"
-		else:
-			status = "Draft"
+		status = "Draft"
 
 	frappe.db.set_value("Media Project", media_project, "status", status, update_modified=False)
 
