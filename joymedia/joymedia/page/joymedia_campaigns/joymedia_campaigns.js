@@ -30,6 +30,13 @@ class JoyMediaCampaignsPage {
 	render() {
 		this.page.main.html(`
 			<div class="joymedia-campaigns-page">
+				<aside class="joymedia-campaigns-sidebar">
+					<div class="joymedia-brand">${__("JoyMedia")}</div>
+					<button class="joymedia-nav-item active" data-route="joymedia-campaigns">${__("Campaigns")}</button>
+					<button class="joymedia-nav-item" data-route="Media Asset">${__("Assets")}</button>
+					<button class="joymedia-nav-item" data-route="Generation Run">${__("Generation Runs")}</button>
+					<button class="joymedia-nav-item" data-route="Quality Review">${__("Review Videos")}</button>
+				</aside>
 				<section class="joymedia-campaigns-content">
 					<div class="joymedia-campaigns-heading">
 						<div>
@@ -59,6 +66,11 @@ class JoyMediaCampaignsPage {
 		this.page.main.on("input", ".joymedia-campaign-search", () => this.render_cards());
 		this.page.main.on("click", ".joymedia-campaign-card", (event) => {
 			frappe.set_route("Form", "Media Project", event.currentTarget.dataset.name);
+		});
+		this.page.main.on("click", ".joymedia-nav-item", (event) => {
+			const route = event.currentTarget.dataset.route;
+			if (route === "joymedia-campaigns") return;
+			frappe.set_route("List", route);
 		});
 	}
 
