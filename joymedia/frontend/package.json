@@ -1,0 +1,18 @@
+{
+  "name": "joymedia-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build && node scripts/copy-entry.mjs",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "frappe-ui": "1.0.0-beta.77",
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "vite": "^5.4.0"
+  }
+}
