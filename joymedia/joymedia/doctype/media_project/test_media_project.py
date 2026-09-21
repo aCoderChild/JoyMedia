@@ -1,95 +1,150 @@
 # Copyright (c) 2026, JoyMedia and Contributors
 # See license.txt
 
-from contextlib import nullcontext
-from unittest.mock import MagicMock, patch
-
 import frappe
 from frappe.tests import IntegrationTestCase
-
-from .media_project import MediaProject
-
-
-# On IntegrationTestCase, the doctype test records and all
-# link-field test record dependencies are recursively loaded
-# Use these module variables to add/remove to/from that list
-EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-
+from frappe.utils import now_datetime
 
 
 class IntegrationTestMediaProject(IntegrationTestCase):
-	"""
-	Integration tests for MediaProject.
-	Use this class for testing interactions between multiple components.
-	"""
+	def test_pending_reviews_are_isolated_between_campaigns(self):
+		campaign_a, specification_a = _create_campaign("Review Isolation A")
+		campaign_b, specification_b = _create_campaign("Review Isolation B")
+		suffix_a = frappe.generate_hash(length=8)
+		suffix_b = frappe.generate_hash(length=8)
 
-	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.db.commit")
-	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.db.set_value")
-	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.get_doc")
-	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.get_all")
-	@patch(
-		"joymedia.joymedia.doctype.media_project.media_project.filelock",
-		return_value=nullcontext(),
-	)
-	def test_revision_copies_settings_without_mutating_previous_spec(
-		self, filelock, get_all, get_doc, set_value, commit
-	):
-		project = MediaProject({"doctype": "Media Project", "name": "PRJ-TEST"})
-		previous = frappe._dict(
-			name="SPEC-00001",
-			version_number=1,
-			workflow_profile="WFP-00001",
-			generation_workflow_version="WFV-00001",
-			prompt_template_version="PTV-00001",
-			total_duration_seconds=10,
-			delivery_preset="Landscape",
-			delivery_width=1344,
-			delivery_height=768,
-			generation_instructions="Keep the product centered.",
-		)
-		revision = MagicMock(version_number=2)
-		revision.name = "SPEC-00002"
-		revision.insert.return_value = revision
-		get_all.return_value = [frappe._dict(name=previous.name, version_number=1)]
-		get_doc.side_effect = [previous, revision]
+		review_a = _create_pending_review(specification_a.name, suffix_a)
+		_create_pending_review(specification_b.name, suffix_b)
 
-		result = project.create_storyboard_revision()
+		reviews = campaign_a.get_pending_reviews()
 
-		self.assertEqual(result["version_number"], 2)
+		self.assertEqual([review["name"] for review in reviews], [review_a])
+		self.assertNotIn(f"QREV-TEST-{suffix_b}", [review["name"] for review in reviews])
+
+	def test_storyboard_revision_is_persisted_without_mutating_previous_spec(self):
+		campaign, specification = _create_campaign("Revision Persistence")
+		specification.generation_instructions = "Keep the original product framing."
+		specification.save(ignore_permissions=True)
+
+		result = campaign.create_storyboard_revision()
+
+		previous = frappe.get_doc("Media Specification", specification.name)
+		revision = frappe.get_doc("Media Specification", result["media_specification"])
+
 		self.assertEqual(previous.version_number, 1)
-		filelock.assert_called_once_with("joymedia-storyboard-revision-PRJ-TEST")
-		revision.insert.assert_called_once_with(ignore_permissions=True)
-		set_value.assert_called_once_with(
-			"Media Project", "PRJ-TEST", "status", "Draft", update_modified=False
-		)
-		commit.assert_called_once_with()
-
-	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.get_all")
-	def test_pending_reviews_are_filtered_to_the_campaign(self, get_all):
-		project = MediaProject({"doctype": "Media Project", "name": "PRJ-A"})
-		get_all.side_effect = [
-			["SPEC-A"],
-			["SHOT-A"],
-			["JOB-A"],
-			["ATT-A"],
-			["GART-A"],
-			[frappe._dict(name="QREV-A", generation_artifact="GART-A")],
-		]
-
-		result = project.get_pending_reviews()
-
-		self.assertEqual(result[0]["name"], "QREV-A")
-		review_call = get_all.call_args_list[-1]
-		self.assertEqual(review_call.kwargs["filters"]["status"], "Pending")
+		self.assertEqual(previous.status, "Draft")
+		self.assertEqual(revision.version_number, 2)
+		self.assertEqual(revision.status, "Draft")
+		self.assertEqual(revision.media_project, campaign.name)
+		self.assertEqual(revision.workflow_profile, previous.workflow_profile)
 		self.assertEqual(
-			review_call.kwargs["filters"]["generation_artifact"], ["in", ["GART-A"]]
+			revision.generation_workflow_version,
+			previous.generation_workflow_version,
 		)
+		self.assertEqual(revision.prompt_template_version, previous.prompt_template_version)
+		self.assertEqual(revision.total_duration_seconds, previous.total_duration_seconds)
+		self.assertEqual(revision.delivery_preset, previous.delivery_preset)
+		self.assertEqual(revision.generation_instructions, previous.generation_instructions)
+		self.assertEqual(frappe.db.get_value("Media Project", campaign.name, "status"), "Draft")
 
-	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.get_all")
-	def test_pending_reviews_returns_empty_for_campaign_without_shots(self, get_all):
-		project = MediaProject({"doctype": "Media Project", "name": "PRJ-A"})
-		get_all.side_effect = [["SPEC-A"], []]
 
-		self.assertEqual(project.get_pending_reviews(), [])
-		self.assertEqual(get_all.call_count, 2)
+def _create_campaign(label):
+	organization = frappe.get_doc(
+		{
+			"doctype": "Client Organization",
+			"organization_name": f"{label} Business",
+		}
+	).insert(ignore_permissions=True)
+
+	campaign = frappe.get_doc(
+		{
+			"doctype": "Media Project",
+			"project_name": label,
+			"client_organization": organization.name,
+			"product_name": "Test Product",
+			"target_audience": "Test Audience",
+			"status": "Draft",
+		}
+	).insert(ignore_permissions=True)
+
+	specification = frappe.get_doc(
+		{
+			"doctype": "Media Specification",
+			"media_project": campaign.name,
+			"version_number": 1,
+			"status": "Draft",
+			"workflow_profile": "WFP-00001",
+			"total_duration_seconds": 10,
+			"delivery_preset": "Landscape",
+		}
+	).insert(ignore_permissions=True)
+
+	return campaign, specification
+
+
+def _create_pending_review(media_specification, suffix):
+	shot = frappe.get_doc(
+		{
+			"doctype": "Shot Specification",
+			"name": f"SHOT-TEST-{suffix}",
+			"media_specification": media_specification,
+			"shot_number": 1,
+			"duration_seconds": 10,
+			"subject_identity": "Test subject",
+			"action_plot": "Test motion",
+		}
+	).insert(ignore_permissions=True)
+
+	job = frappe.get_doc(
+		{
+			"doctype": "Generation Job",
+			"name": f"JOB-TEST-{suffix}",
+			"shot_specification": shot.name,
+			"requested_by": "Administrator",
+			"requested_variants": 1,
+			"status": "Draft",
+			"priority": "Normal",
+			"workflow_version": "WFV-00001",
+			"compiled_prompt": f"CPR-TEST-{suffix}",
+			"segment_index": 1,
+			"segment_frame_count": 1,
+		}
+	)
+	job.db_insert()
+
+	attempt = frappe.get_doc(
+		{
+			"doctype": "Generation Attempt",
+			"name": f"ATT-TEST-{suffix}",
+			"generation_job": job.name,
+			"attempt_number": 1,
+			"seed": 1,
+			"status": "Completed",
+			"completed_at": now_datetime(),
+		}
+	)
+	attempt.db_insert()
+
+	artifact = frappe.get_doc(
+		{
+			"doctype": "Generation Artifact",
+			"name": f"GART-TEST-{suffix}",
+			"artifact_key": f"test-artifact-{suffix}",
+			"generation_attempt": attempt.name,
+			"media_type": "Video",
+			"lifecycle_status": "Temporary",
+		}
+	)
+	artifact.db_insert()
+	frappe.db.set_value("Generation Attempt", attempt.name, "output_artifact", artifact.name)
+
+	review = frappe.get_doc(
+		{
+			"doctype": "Quality Review",
+			"name": f"QREV-TEST-{suffix}",
+			"generation_artifact": artifact.name,
+			"status": "Pending",
+		}
+	)
+	review.db_insert()
+	return review.name
