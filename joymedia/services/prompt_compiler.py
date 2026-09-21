@@ -47,17 +47,11 @@ def _build_source_snapshot(shot, media_spec):
 	return {
 		"media_specification": media_spec.name,
 		"shot_specification": shot.name,
-		"required_elements": getattr(media_spec, "required_elements", None) or "",
-		"media_consistency_requirements": media_spec.consistency_requirements or "",
-		"forbidden_elements": media_spec.forbidden_elements or "",
+		"generation_instructions": media_spec.generation_instructions or "",
 		"camera_direction": shot.camera_direction or "",
 		"subject_identity": shot.subject_identity or "",
 		"action_plot": shot.action_plot or "",
 		"environment": shot.environment or "",
-		"spatial_composition": shot.spatial_composition or "",
-		"opening_state": shot.opening_state or "",
-		"ending_state": shot.ending_state or "",
-		"continuity_requirements": shot.continuity_requirements or "",
 		"audio_direction": shot.audio_direction or "",
 	}
 
