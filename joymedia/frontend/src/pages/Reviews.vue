@@ -14,8 +14,7 @@
 <script setup>
 import { Button, createResource } from "frappe-ui";
 const reviews = createResource({
-  url: "frappe.client.get_list",
-  params: { doctype: "Quality Review", fields: ["name", "status", "asset_version"], filters: { status: "Pending" }, order_by: "modified desc", limit_page_length: 48 },
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_pending_review_cards",
   auto: true,
 });
 function openCampaigns() { window.location.href = "/joymedia/campaigns"; }

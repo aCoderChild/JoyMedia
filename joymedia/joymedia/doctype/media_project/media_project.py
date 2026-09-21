@@ -106,6 +106,29 @@ def get_campaign_detail(name):
 
 
 @frappe.whitelist()
+def get_pending_review_cards():
+	reviews = []
+	for campaign in frappe.get_list(
+		"Media Project",
+		fields=["name", "project_name"],
+		order_by="modified desc",
+		limit_page_length=100,
+	):
+		project = frappe.get_doc("Media Project", campaign.name)
+		for review in project.get_pending_reviews():
+			reviews.append(
+				{
+					"name": review["name"],
+					"campaign": campaign.name,
+					"campaign_name": campaign.project_name,
+					"generation_artifact": review["generation_artifact"],
+					"preview_url": review["preview_url"],
+				}
+			)
+	return reviews
+
+
+@frappe.whitelist()
 def get_businesses():
 	return frappe.get_list(
 		"Client Organization",
@@ -209,6 +232,12 @@ def create_campaign_asset(media_project, asset_name, asset_category, file_url):
 
 
 class MediaProject(Document):
+	def _require_read_access(self):
+		self.check_permission("read")
+
+	def _require_write_access(self):
+		self.check_permission("write")
+
 	def before_insert(self):
 		self.status = "Draft"
 
@@ -234,6 +263,7 @@ class MediaProject(Document):
 
 	@frappe.whitelist()
 	def get_video_settings(self):
+		self._require_read_access()
 		media_specification = get_latest_media_specification(self.name)
 		if not media_specification:
 			return None
@@ -248,6 +278,7 @@ class MediaProject(Document):
 
 	@frappe.whitelist()
 	def save_video_settings(self, total_duration_seconds, delivery_preset):
+		self._require_write_access()
 		try:
 			total_duration_seconds = float(total_duration_seconds)
 		except (TypeError, ValueError):
@@ -307,6 +338,7 @@ class MediaProject(Document):
 
 	@frappe.whitelist()
 	def generate_video_plan(self, scene_count):
+		self._require_read_access()
 		from joymedia.services.qwen_client import generate_video_plan
 
 		media_specification = get_latest_media_specification(self.name)
@@ -347,6 +379,7 @@ class MediaProject(Document):
 
 	@frappe.whitelist()
 	def generate_video(self):
+		self._require_write_access()
 		from joymedia.services.generation_orchestrator import start_run
 
 		with filelock(f"joymedia-generate-video-{self.name}"):
@@ -390,6 +423,7 @@ class MediaProject(Document):
 
 	@frappe.whitelist()
 	def apply_video_plan(self, plan_json):
+		self._require_write_access()
 		from joymedia.services.video_plan_service import apply_video_plan_from_ui
 
 		media_specification = get_latest_media_specification(self.name)
@@ -403,6 +437,7 @@ class MediaProject(Document):
 
 	@frappe.whitelist()
 	def create_storyboard_revision(self):
+		self._require_write_access()
 		with filelock(f"joymedia-storyboard-revision-{self.name}"):
 			latest = get_latest_media_specification(self.name)
 			if not latest:
@@ -438,6 +473,7 @@ class MediaProject(Document):
 
 	@frappe.whitelist()
 	def get_pending_reviews(self):
+		self._require_read_access()
 		media_specification = get_latest_media_specification(self.name)
 		if not media_specification:
 			return []
