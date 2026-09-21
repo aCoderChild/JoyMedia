@@ -1,41 +1,34 @@
-// Copyright (c) 2026, JoyMedia and contributors
-// For license information, please see license.txt
-
-frappe.ui.form.on("Generation Job", {
+frappe.ui.form.on("Generation Artifact", {
 	refresh(frm) {
-		if (frm.is_new() || !["Failed", "Partially Completed"].includes(frm.doc.status)) {
+		if (frm.is_new() || frm.doc.media_type !== "Video" || !frm.doc.frappe_file) {
 			return;
 		}
 
-		frm.add_custom_button("Retry Failed Attempts", () => {
-			frappe.prompt(
-				[
-					{
-						fieldname: "reason",
-						fieldtype: "Select",
-						label: "Retry Reason",
-						options:
-							"Execution Failure\nQA Failure\nHuman Review Rejection\nPrompt Revision\nWorkflow Revision\nInput Revision\nOther",
-						default: "Execution Failure",
-						reqd: 1
-					}
-				],
-				(values) => {
-					frappe.call({
-						method: "joymedia.services.generation_orchestrator.retry_generation_job_from_ui",
-						args: { job_name: frm.doc.name, reason: values.reason },
-						freeze: true,
-						freeze_message: "Creating and submitting retry attempts...",
-						callback(r) {
-							if (!r.exc) {
-								frm.reload_doc();
-							}
-						}
-					});
-				},
-				"Retry Failed Attempts",
-				"Retry and Submit"
-			);
-		}, "Execution");
-	}
+		frm.add_custom_button(__("View Video"), () => {
+			show_video_preview(frm.doc.frappe_file);
+		});
+
+		frm.add_custom_button(__("Open Video File"), () => {
+			window.open(frm.doc.frappe_file, "_blank", "noopener");
+		});
+	},
 });
+
+function show_video_preview(file_url) {
+	const dialog = new frappe.ui.Dialog({
+		title: __("Generated Video"),
+		fields: [{ fieldtype: "HTML", fieldname: "video_preview" }],
+		primary_action_label: __("Close"),
+		primary_action() {
+			dialog.hide();
+		},
+	});
+
+	dialog.fields_dict.video_preview.$wrapper.html(`
+		<video controls autoplay style="width: 100%; max-height: 70vh;">
+			<source src="${frappe.utils.escape_html(file_url)}" type="video/mp4">
+			${__("Your browser does not support video playback.")}
+		</video>
+	`);
+	dialog.show();
+}
