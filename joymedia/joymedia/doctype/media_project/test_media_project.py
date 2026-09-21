@@ -49,6 +49,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 
 def _create_campaign(label):
+	workflow_profile = _get_test_workflow_profile()
 	organization = frappe.get_doc(
 		{
 			"doctype": "Client Organization",
@@ -73,13 +74,69 @@ def _create_campaign(label):
 			"media_project": campaign.name,
 			"version_number": 1,
 			"status": "Draft",
-			"workflow_profile": "WFP-00001",
+			"workflow_profile": workflow_profile,
 			"total_duration_seconds": 10,
 			"delivery_preset": "Landscape",
 		}
 	).insert(ignore_permissions=True)
 
 	return campaign, specification
+
+
+def _get_test_workflow_profile():
+	profile_name = frappe.db.get_value(
+		"Workflow Profile",
+		{"workflow_code": "TEST-H3-CAMPAIGN"},
+		"name",
+	)
+	if profile_name:
+		return profile_name
+
+	profile = frappe.get_doc(
+		{
+			"doctype": "Workflow Profile",
+			"profile_name": "Campaign Integration H3",
+			"workflow_code": "TEST-H3-CAMPAIGN",
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
+
+	workflow_version = frappe.get_doc(
+		{
+			"doctype": "Workflow Version",
+			"workflow_profile": profile.name,
+			"version_number": 1,
+			"version_label": "Integration Test H3",
+			"status": "Testing",
+			"workflow_json": '{"minimax_cond":{"inputs":{"length":124}},"save_video":{"inputs":{"frame_rate":24}}}',
+		}
+	).insert(ignore_permissions=True)
+
+	prompt_template = frappe.get_doc(
+		{
+			"doctype": "Prompt Template",
+			"template_name": "Campaign Integration Prompt",
+			"template_code": "TEST-CAMPAIGN-PROMPT",
+			"workflow_profile": profile.name,
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
+
+	prompt_version = frappe.get_doc(
+		{
+			"doctype": "Prompt Template Version",
+			"prompt_template": prompt_template.name,
+			"version_number": 1,
+			"version_label": "Integration Test Prompt",
+			"status": "Testing",
+			"template_body": "[Subject] {subject_identity}",
+		}
+	).insert(ignore_permissions=True)
+
+	profile.default_workflow_version = workflow_version.name
+	profile.default_prompt_template_version = prompt_version.name
+	profile.save(ignore_permissions=True)
+	return profile.name
 
 
 def _create_pending_review(media_specification, suffix):
