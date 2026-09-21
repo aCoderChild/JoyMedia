@@ -10,6 +10,7 @@
  "field_order": [
   "project_overview_section",
   "project_name",
+  "client_organization",
   "product_name",
   "target_audience",
   "video_idea",
@@ -30,6 +31,13 @@
    "in_standard_filter": 1,
    "label": "Project Name",
    "reqd": 1
+  },
+  {
+   "fieldname": "client_organization",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Business",
+   "options": "Client Organization"
   },
   {
    "default": "Draft",

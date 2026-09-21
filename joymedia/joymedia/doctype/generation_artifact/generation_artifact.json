@@ -46,7 +46,7 @@
    "read_only": 1
   },
   {
-   "description": "Temporary private video downloaded into Frappe for Quality Review. It is retained until promotion or expiry.",
+   "description": "Generated video stored in Frappe for review.",
    "fieldname": "frappe_file",
    "fieldtype": "Attach",
    "label": "Video File",
@@ -59,7 +59,7 @@
   },
   {
    "default": "Temporary",
-   "description": "Artifacts past Expires At cannot be promoted. The private Frappe video file is retained until promotion or expiry.",
+   "description": "Temporary until approved and promoted to an Asset Version.",
    "fieldname": "lifecycle_status",
    "fieldtype": "Select",
    "label": "Status",
@@ -76,7 +76,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-20 09:52:48.124711",
+ "modified": "2026-09-20 18:13:07.011752",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Artifact",
@@ -94,15 +94,6 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
-  },
-  {
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "JoyMedia Specialist",
-   "share": 1
   }
  ],
  "row_format": "Dynamic",
