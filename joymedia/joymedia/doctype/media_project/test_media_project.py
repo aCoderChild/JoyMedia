@@ -2,6 +2,8 @@
 # See license.txt
 
 import frappe
+from contextlib import nullcontext
+from unittest.mock import patch
 from frappe.tests import IntegrationTestCase
 from frappe.utils import now_datetime
 
@@ -30,6 +32,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		campaign.status = "Completed"
 
 		result = campaign.create_storyboard_revision()
+		repeated_result = campaign.create_storyboard_revision()
 
 		previous = frappe.get_doc("Media Specification", specification.name)
 		revision = frappe.get_doc("Media Specification", result["media_specification"])
@@ -49,6 +52,35 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual(revision.delivery_preset, previous.delivery_preset)
 		self.assertEqual(revision.generation_instructions, previous.generation_instructions)
 		self.assertEqual(frappe.db.get_value("Media Project", campaign.name, "status"), "Draft")
+		self.assertEqual(repeated_result, result)
+		self.assertEqual(
+			frappe.db.count("Media Specification", {"media_project": campaign.name}),
+			2,
+		)
+
+	@patch(
+		"joymedia.joymedia.doctype.media_project.media_project.filelock",
+		return_value=nullcontext(),
+	)
+	@patch("joymedia.services.generation_orchestrator.start_run")
+	def test_generate_video_returns_existing_run_on_repeat(self, start_run, filelock):
+		campaign, specification = _create_campaign("Generation Idempotency")
+		_create_pending_review(specification.name, frappe.generate_hash(length=8))
+
+		def queue_run(run_name):
+			frappe.db.set_value("Generation Run", run_name, "status", "Queued")
+			return {"name": run_name, "status": "Queued"}
+
+		start_run.side_effect = queue_run
+		first_result = campaign.generate_video()
+		second_result = campaign.generate_video()
+
+		self.assertEqual(second_result, first_result)
+		self.assertEqual(
+			frappe.db.count("Generation Run", {"media_specification": specification.name}),
+			1,
+		)
+		start_run.assert_called_once_with(first_result["run"])
 
 
 def _create_campaign(label):

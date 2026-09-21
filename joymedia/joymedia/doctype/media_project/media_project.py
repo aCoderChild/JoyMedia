@@ -105,15 +105,20 @@ class MediaProject(Document):
 				frappe.throw(_("This Campaign has no Video Settings."))
 
 			media_specification.reload()
+			existing_run = frappe.db.get_value(
+				"Generation Run",
+				{"media_specification": media_specification.name},
+				["name", "status"],
+				as_dict=True,
+			)
+			if existing_run:
+				return {"run": existing_run.name, "status": existing_run.status}
 			if media_specification.status != "Draft":
 				frappe.throw(_("This Campaign revision has already been submitted."))
 			if not frappe.db.exists(
 				"Shot Specification", {"media_specification": media_specification.name}
 			):
 				frappe.throw(_("Generate and apply a storyboard first."))
-			if frappe.db.exists("Generation Run", {"media_specification": media_specification.name}):
-				frappe.throw(_("Video generation has already been started."))
-
 			media_specification.status = "Ready"
 			media_specification.save(ignore_permissions=True)
 
@@ -153,7 +158,11 @@ class MediaProject(Document):
 			if not latest:
 				frappe.throw(_("This Campaign has no Video Settings to revise."))
 			if latest.status == "Draft":
-				frappe.throw(_("This Campaign already has a Draft revision."))
+				frappe.db.set_value("Media Project", self.name, "status", "Draft", update_modified=False)
+				return {
+					"media_specification": latest.name,
+					"version_number": latest.version_number,
+				}
 			if self.status not in ("Review", "Needs Attention", "Completed"):
 				frappe.throw(_("Storyboard revision is not available in the current Campaign state."))
 			revision = frappe.get_doc(
