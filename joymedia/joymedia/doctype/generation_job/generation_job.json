@@ -9,7 +9,8 @@
   "generation_run",
   "shot_specification",
   "workflow_version",
-  "compiled_prompt",
+  "prompt_text",
+  "prompt_hash",
   "status",
   "requested_by",
   "priority",
@@ -173,13 +174,17 @@
    "reqd": 1
   },
   {
-   "description": "Exact compiled prompt snapshot used by this generation job.",
-   "fieldname": "compiled_prompt",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Compiled Prompt",
-   "options": "Compiled Prompt",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
+   "description": "Exact prompt snapshot sent to the generation workflow.",
+   "fieldname": "prompt_text",
+   "fieldtype": "Long Text",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "prompt_hash",
+   "fieldtype": "Data",
+   "label": "Prompt Hash",
+   "read_only": 1,
    "reqd": 1
   },
   {

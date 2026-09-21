@@ -46,7 +46,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Value Source",
-   "options": "Generation Input\nCompiled Prompt\nAttempt Seed\nJob Value\nRuntime Value",
+   "options": "Generation Input\nGeneration Prompt\nAttempt Seed\nJob Value\nRuntime Value",
    "reqd": 1
   },
   {

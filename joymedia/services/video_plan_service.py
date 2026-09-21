@@ -102,6 +102,7 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 				"action_plot": shot["motion"],
 				"environment": shot["lighting"],
 				"audio_direction": shot["audio"],
+				"generation_prompt": shot.get("generation_prompt") or _fallback_generation_prompt(shot),
 			}
 		)
 		reference_image_index = shot.get("reference_image_index")
@@ -127,3 +128,17 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 		created_shots.append(doc.name)
 
 	return created_shots
+
+
+def _fallback_generation_prompt(shot):
+	return "\n".join(
+		line
+		for line in (
+			f"Camera & Framing: {shot.get('camera', '')}",
+			f"Subject: {shot.get('subject', '')}",
+			f"Motion: {shot.get('motion', '')}",
+			f"Lighting & Environment: {shot.get('lighting', '')}",
+			f"Audio: {shot.get('audio', '')}",
+		)
+		if line.split(": ", 1)[1].strip()
+	)

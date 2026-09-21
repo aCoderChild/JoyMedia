@@ -58,6 +58,12 @@ reflections, shadows, atmosphere and depth.
 [Audio SFX]
 Synchronized sound effects, ambience and music.
 
+Also provide one coherent generation_prompt that combines the five sections
+into a single prompt suitable for MiniMax H3. Do not contradict Camera and
+Motion. Distinguish optical zoom from physical camera movement. Do not
+describe camera equipment or dolly sounds as the audio unless they are an
+intentional audible story element.
+
 Avoid vague descriptions such as:
 "wide", "pan left", "static", "natural daylight".
 """.strip()
@@ -81,10 +87,12 @@ video idea and project reference images.
 
 	response_shape = (
 		'{"shots":[{"shot_number":1,"reference_image_index":1,"camera":"...",'
-		'"subject":"...","motion":"...","lighting":"...","audio":"..."}]}'
+		'"subject":"...","motion":"...","lighting":"...","audio":"...",'
+		'"generation_prompt":"..."}]}'
 		if reference_images
 		else '{"shots":[{"shot_number":1,"camera":"...","subject":"...",'
-		'"motion":"...","lighting":"...","audio":"..."}]}'
+		'"motion":"...","lighting":"...","audio":"...",'
+		'"generation_prompt":"..."}]}'
 	)
 
 	user_prompt = (
@@ -177,7 +185,15 @@ def _validate_video_plan(result, reference_image_count=0, shot_count=None):
 	if shot_count is not None and len(result["shots"]) != shot_count:
 		frappe.throw(_("Qwen returned {0} shots; expected {1}.").format(len(result["shots"]), shot_count))
 
-	required_fields = {"shot_number", "camera", "subject", "motion", "lighting", "audio"}
+	required_fields = {
+		"shot_number",
+		"camera",
+		"subject",
+		"motion",
+		"lighting",
+		"audio",
+		"generation_prompt",
+	}
 	if reference_image_count:
 		required_fields.add("reference_image_index")
 
@@ -197,6 +213,7 @@ def _validate_video_plan(result, reference_image_count=0, shot_count=None):
 			"motion": str(shot["motion"]).strip(),
 			"lighting": str(shot["lighting"]).strip(),
 			"audio": str(shot["audio"]).strip(),
+			"generation_prompt": str(shot["generation_prompt"]).strip(),
 		}
 
 		if reference_image_count:

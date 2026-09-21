@@ -47,20 +47,14 @@ class GenerationJob(Document):
 			frappe.throw(_("Generation Job requires an existing Shot Specification."))
 		if not self.workflow_version or not frappe.db.exists("Workflow Version", self.workflow_version):
 			frappe.throw(_("Generation Job requires an existing Workflow Version."))
-		if not self.compiled_prompt or not frappe.db.exists("Compiled Prompt", self.compiled_prompt):
-			frappe.throw(_("Generation Job requires an existing Compiled Prompt."))
+		if not self.prompt_text:
+			frappe.throw(_("Generation Job requires a prompt text snapshot."))
+		if not self.prompt_hash:
+			frappe.throw(_("Generation Job requires a prompt hash."))
 
 		shot = frappe.get_doc("Shot Specification", self.shot_specification)
 		media_specification = frappe.get_doc("Media Specification", shot.media_specification)
 		self._validate_generation_run(media_specification)
-		compiled_prompt_shot = frappe.db.get_value(
-			"Compiled Prompt", self.compiled_prompt, "shot_specification"
-		)
-		if compiled_prompt_shot != self.shot_specification:
-			frappe.throw(
-				_("Generation Job Shot Specification must match the Compiled Prompt Shot Specification.")
-			)
-
 		if self.workflow_version != media_specification.generation_workflow_version:
 			frappe.throw(_("Generation Job Workflow Version must match the Media Specification Workflow Version."))
 

@@ -16,8 +16,6 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
 	workflow_version = frappe.get_doc("Workflow Version", job.workflow_version)
-	compiled_prompt = frappe.get_doc("Compiled Prompt", job.compiled_prompt)
-
 	try:
 		base_workflow = json.loads(workflow_version.workflow_json)
 	except json.JSONDecodeError as exc:
@@ -26,7 +24,7 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 	workflow = copy.deepcopy(base_workflow)
 	_validate_workflow_bindings(workflow_version, workflow)
 	for binding in workflow_version.bindings:
-		value = _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs)
+		value = _resolve_binding(binding, job, attempt, staged_inputs)
 		node = workflow[binding.node_key]
 		if value is _SKIP_BINDING:
 			continue
@@ -68,7 +66,7 @@ def _validate_workflow_bindings(workflow_version, workflow):
 			)
 
 
-def _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs):
+def _resolve_binding(binding, job, attempt, staged_inputs):
 	if binding.value_source == "Generation Input":
 		return _resolve_generation_input(
 			job,
@@ -76,8 +74,8 @@ def _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs):
 			staged_inputs,
 			required=bool(binding.required),
 		)
-	if binding.value_source == "Compiled Prompt":
-		return compiled_prompt.prompt_text
+	if binding.value_source in {"Generation Prompt", "Compiled Prompt"}:
+		return job.prompt_text
 	if binding.value_source == "Attempt Seed":
 		return int(attempt.seed)
 	if binding.value_source == "Runtime Value":

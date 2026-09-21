@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 
 import frappe
@@ -110,14 +111,15 @@ def prepare_run(run_name: str):
 				)
 
 			segment = segments[0]
-			compiled_prompt = compile_prompt(shot.name)
+			prompt_text = compile_prompt(shot.name)
 			job = frappe.get_doc(
 				{
 					"doctype": "Generation Job",
 					"generation_run": run.name,
 					"shot_specification": shot.name,
 					"workflow_version": run.workflow_version,
-					"compiled_prompt": compiled_prompt.name,
+					"prompt_text": prompt_text,
+					"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
 					"requested_by": run.requested_by,
 					"requested_variants": run.requested_variants_per_shot,
 					"status": "Draft",

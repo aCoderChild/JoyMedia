@@ -18,6 +18,7 @@
   "subject_identity",
   "action_plot",
   "environment",
+  "generation_prompt",
   "audio_section",
   "audio_direction",
   "selected_output_section",
@@ -98,6 +99,12 @@
    "fieldname": "environment",
    "fieldtype": "Long Text",
    "label": "Lighting & Environment"
+  },
+  {
+   "description": "Final coherent prompt sent to the selected generation workflow.",
+   "fieldname": "generation_prompt",
+   "fieldtype": "Long Text",
+   "label": "Generation Prompt"
   },
   {
    "description": "Describes the desired sound, ambience, dialogue, music characteristics, or sound effects for this shot. This is TEXTUAL INTENT, not an attached audio file.",

@@ -41,7 +41,7 @@ def get_attempt_analytics(filters=None):
 	jobs = frappe.get_all(
 		"Generation Job",
 		filters={"name": ["in", list(job_names)]} if job_names else {"name": ["in", [""]]},
-		fields=["name", "workflow_version", "compiled_prompt", "shot_specification"],
+		fields=["name", "workflow_version", "shot_specification"],
 	)
 	jobs_by_name = {job.name: job for job in jobs}
 	shot_names = {job.shot_specification for job in jobs if job.shot_specification}

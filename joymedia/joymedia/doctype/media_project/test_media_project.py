@@ -639,7 +639,8 @@ def _create_pending_review(media_specification, suffix):
 			"status": "Draft",
 			"priority": "Normal",
 			"workflow_version": workflow_version,
-			"compiled_prompt": f"CPR-TEST-{suffix}",
+			"prompt_text": "Test generation prompt.",
+			"prompt_hash": "test-prompt-hash",
 			"segment_index": 1,
 			"segment_frame_count": 1,
 		}
