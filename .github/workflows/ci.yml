@@ -96,6 +96,12 @@ jobs:
         env:
           CI: 'Yes'
 
+      - name: Build JoyMedia frontend
+        working-directory: ${{ github.workspace }}/joymedia/frontend
+        run: |
+          npm ci
+          npm run build
+
       - name: Run Tests
         working-directory: /home/runner/frappe-bench
         run: |

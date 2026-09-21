@@ -19,7 +19,7 @@ H3_WORKFLOW_CODE = "MINIMAX-H3"
 
 
 def get_latest_media_specification(media_project):
-	specifications = frappe.get_all(
+	specifications = frappe.get_list(
 		"Media Specification",
 		filters={"media_project": media_project},
 		fields=["name", "version_number", "status"],
@@ -34,7 +34,7 @@ def get_latest_media_specification(media_project):
 
 @frappe.whitelist()
 def get_campaign_cards():
-	campaigns = frappe.get_all(
+	campaigns = frappe.get_list(
 		"Media Project",
 		fields=["name", "project_name", "product_name", "status", "modified"],
 		order_by="modified desc",
@@ -65,6 +65,7 @@ def get_campaign_cards():
 
 @frappe.whitelist()
 def get_campaign_detail(name):
+	frappe.has_permission("Media Project", "read", name, throw=True)
 	project = frappe.get_doc("Media Project", name)
 	media_specification = get_latest_media_specification(project.name)
 	assets = frappe.get_list(
@@ -116,6 +117,7 @@ def get_businesses():
 
 @frappe.whitelist()
 def create_business(organization_name, industry=None):
+	frappe.has_permission("Client Organization", "create", throw=True)
 	organization_name = (organization_name or "").strip()
 	if not organization_name:
 		frappe.throw(_("Business name is required."))
@@ -139,6 +141,8 @@ def create_campaign(
 	target_audience,
 	video_idea=None,
 ):
+	frappe.has_permission("Media Project", "create", throw=True)
+	frappe.has_permission("Client Organization", "read", client_organization, throw=True)
 	project = frappe.get_doc(
 		{
 			"doctype": "Media Project",
@@ -155,6 +159,7 @@ def create_campaign(
 
 @frappe.whitelist()
 def create_campaign_asset(media_project, asset_name, asset_category, file_url):
+	frappe.has_permission("Media Project", "write", media_project, throw=True)
 	media_project = frappe.get_doc("Media Project", media_project)
 	file_doc = frappe.get_doc("File", {"file_url": file_url})
 	if file_doc.owner != frappe.session.user and frappe.session.user != "Administrator":

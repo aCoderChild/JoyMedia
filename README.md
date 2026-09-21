@@ -31,7 +31,26 @@ Pre-commit is configured to use the following tools for checking and formatting 
 
 This app can use GitHub Actions for CI. The following workflows are configured:
 
-- CI: Installs this app and runs unit tests on every push to `develop` branch.
+- CI: Builds the JoyMedia frontend and runs the Frappe test suite on pushes to `main` and pull requests.
+
+## Frontend
+
+The customer portal is a Vue application built with the official `frappe-ui` package.
+
+From `joymedia/frontend`:
+
+```bash
+npm ci
+npm run build
+```
+
+After building, link the app assets in a bench with:
+
+```bash
+bench build --app joymedia
+```
+
+The portal is available at `/joymedia/campaigns`.
 - Linters: Runs [Frappe Semgrep Rules](https://github.com/frappe/semgrep-rules) and [pip-audit](https://pypi.org/project/pip-audit/) on every pull request.
 
 

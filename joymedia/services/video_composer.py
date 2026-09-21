@@ -82,11 +82,6 @@ def compose_media_specification(media_specification_name: str):
 			"source": "Composed",
 			"duration_seconds": video_duration,
 			"fps": profile["fps"],
-			"notes": (
-				"Delivery video composed from normalized selected shot outputs with a global audio mix."
-				if audio_mixed
-				else "Silent master composed from normalized selected shot outputs."
-			),
 		}
 	)
 	asset_version.insert(ignore_permissions=True)

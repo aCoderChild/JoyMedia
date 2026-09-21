@@ -23,7 +23,8 @@ const router = createRouter({
 router.beforeEach((to) => {
   const { isLoggedIn } = useSession();
   if (!isLoggedIn.value) {
-    window.location.href = `/login?redirect-to=${encodeURIComponent(to.fullPath)}`;
+    const portalPath = `/joymedia${to.fullPath}`;
+    window.location.href = `/login?redirect-to=${encodeURIComponent(portalPath)}`;
     return false;
   }
 });
