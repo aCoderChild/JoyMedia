@@ -346,6 +346,8 @@ def refresh_active_runs():
 
 def sync_media_project_status_for_run(run_name: str):
 	"""Derive the customer-facing Campaign status from its generation state."""
+	from joymedia.joymedia.doctype.media_project.media_project import get_latest_media_specification
+
 	run = frappe.get_doc("Generation Run", run_name)
 	media_project = frappe.db.get_value(
 		"Media Specification", run.media_specification, "media_project"
@@ -353,19 +355,17 @@ def sync_media_project_status_for_run(run_name: str):
 	if not media_project:
 		return
 
-	specifications = frappe.get_all(
-		"Media Specification",
-		filters={"media_project": media_project},
-		pluck="name",
-	)
+	latest_specification = get_latest_media_specification(media_project)
+	if not latest_specification:
+		frappe.db.set_value("Media Project", media_project, "status", "Draft", update_modified=False)
+		return
+
 	runs = (
 		frappe.get_all(
 			"Generation Run",
-			filters={"media_specification": ["in", specifications]},
+			filters={"media_specification": latest_specification.name},
 			fields=["name", "status", "final_asset_version"],
 		)
-		if specifications
-		else []
 	)
 
 	if not runs:

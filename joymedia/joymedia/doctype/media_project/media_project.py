@@ -17,6 +17,20 @@ ALLOWED_STATUSES = {
 }
 
 
+def get_latest_media_specification(media_project):
+	specifications = frappe.get_all(
+		"Media Specification",
+		filters={"media_project": media_project},
+		fields=["name", "version_number", "status"],
+		order_by="version_number desc",
+		limit=1,
+	)
+	if not specifications:
+		return None
+
+	return frappe.get_doc("Media Specification", specifications[0].name)
+
+
 class MediaProject(Document):
 	def before_insert(self):
 		self.status = "Draft"
@@ -42,14 +56,14 @@ class MediaProject(Document):
 			frappe.throw(_("Invalid Media Project status."))
 
 	@frappe.whitelist()
-	def generate_video_plan(self, media_specification_name, scene_count):
+	def generate_video_plan(self, scene_count):
 		from joymedia.services.qwen_client import generate_video_plan
 
-		media_specification = frappe.get_doc("Media Specification", media_specification_name)
-		if media_specification.media_project != self.name:
-			frappe.throw(_("Media Specification must belong to this Media Project."))
+		media_specification = get_latest_media_specification(self.name)
+		if not media_specification:
+			frappe.throw(_("Create Video Settings before generating a storyboard."))
 		if media_specification.status != "Draft":
-			frappe.throw(_("Video plans can only be generated for Draft Media Specifications."))
+			frappe.throw(_("The current Campaign revision is not editable."))
 		if not media_specification.generation_workflow_version:
 			frappe.throw(_("Media Specification must have a Generation Workflow Version."))
 
@@ -82,50 +96,66 @@ class MediaProject(Document):
 		)
 
 	@frappe.whitelist()
-	def generate_video(self, media_specification_name):
+	def generate_video(self):
 		from joymedia.services.generation_orchestrator import start_run
 
-		media_specification = frappe.get_doc("Media Specification", media_specification_name)
-		if media_specification.media_project != self.name:
-			frappe.throw(_("Media Specification must belong to this Media Project."))
-		if media_specification.status != "Draft":
-			frappe.throw(_("Video generation can only start from a Draft Media Specification."))
-		if not frappe.db.exists("Shot Specification", {"media_specification": media_specification.name}):
-			frappe.throw(_("Apply a video plan before generating the video."))
+		with filelock(f"joymedia-generate-video-{self.name}"):
+			media_specification = get_latest_media_specification(self.name)
+			if not media_specification:
+				frappe.throw(_("This Campaign has no Video Settings."))
 
-		media_specification.status = "Ready"
-		media_specification.save(ignore_permissions=True)
+			media_specification.reload()
+			if media_specification.status != "Draft":
+				frappe.throw(_("This Campaign revision has already been submitted."))
+			if not frappe.db.exists(
+				"Shot Specification", {"media_specification": media_specification.name}
+			):
+				frappe.throw(_("Generate and apply a storyboard first."))
+			if frappe.db.exists("Generation Run", {"media_specification": media_specification.name}):
+				frappe.throw(_("Video generation has already been started."))
 
-		run = frappe.get_doc(
-			{
-				"doctype": "Generation Run",
-				"media_specification": media_specification.name,
-				"requested_by": frappe.session.user,
-				"requested_variants_per_shot": 1,
-				"max_retries": 0,
-				"auto_compose": 1,
-				"status": "Draft",
-			}
-		).insert(ignore_permissions=True)
+			media_specification.status = "Ready"
+			media_specification.save(ignore_permissions=True)
 
-		result = start_run(run.name)
-		frappe.db.commit()
-		return {"run": run.name, "status": result["status"]}
+			run = frappe.get_doc(
+				{
+					"doctype": "Generation Run",
+					"media_specification": media_specification.name,
+					"requested_by": frappe.session.user,
+					"requested_variants_per_shot": 1,
+					"max_retries": 0,
+					"auto_compose": 1,
+					"status": "Draft",
+				}
+			).insert(ignore_permissions=True)
+
+			result = start_run(run.name)
+			frappe.db.commit()
+			return {"run": run.name, "status": result["status"]}
+
+	@frappe.whitelist()
+	def apply_video_plan(self, plan_json):
+		from joymedia.services.video_plan_service import apply_video_plan_from_ui
+
+		media_specification = get_latest_media_specification(self.name)
+		if not media_specification:
+			frappe.throw(_("Create Video Settings before applying a storyboard."))
+
+		return apply_video_plan_from_ui(
+			media_specification_name=media_specification.name,
+			plan_json=plan_json,
+		)
 
 	@frappe.whitelist()
 	def create_storyboard_revision(self):
 		with filelock(f"joymedia-storyboard-revision-{self.name}"):
-			specifications = frappe.get_all(
-				"Media Specification",
-				filters={"media_project": self.name},
-				fields=["name", "version_number"],
-				order_by="version_number desc",
-				limit=1,
-			)
-			if not specifications:
+			latest = get_latest_media_specification(self.name)
+			if not latest:
 				frappe.throw(_("This Campaign has no Video Settings to revise."))
-
-			latest = frappe.get_doc("Media Specification", specifications[0].name)
+			if latest.status == "Draft":
+				frappe.throw(_("This Campaign already has a Draft revision."))
+			if self.status not in ("Review", "Needs Attention", "Completed"):
+				frappe.throw(_("Storyboard revision is not available in the current Campaign state."))
 			revision = frappe.get_doc(
 				{
 					"doctype": "Media Specification",
@@ -149,15 +179,13 @@ class MediaProject(Document):
 
 	@frappe.whitelist()
 	def get_pending_reviews(self):
-		specifications = frappe.get_all(
-			"Media Specification", filters={"media_project": self.name}, pluck="name"
-		)
-		if not specifications:
+		media_specification = get_latest_media_specification(self.name)
+		if not media_specification:
 			return []
 
 		shots = frappe.get_all(
 			"Shot Specification",
-			filters={"media_specification": ["in", specifications]},
+			filters={"media_specification": media_specification.name},
 			pluck="name",
 		)
 		if not shots:

@@ -25,6 +25,9 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		campaign, specification = _create_campaign("Revision Persistence")
 		specification.generation_instructions = "Keep the original product framing."
 		specification.save(ignore_permissions=True)
+		specification.status = "Ready"
+		specification.save(ignore_permissions=True)
+		campaign.status = "Completed"
 
 		result = campaign.create_storyboard_revision()
 
@@ -32,7 +35,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		revision = frappe.get_doc("Media Specification", result["media_specification"])
 
 		self.assertEqual(previous.version_number, 1)
-		self.assertEqual(previous.status, "Draft")
+		self.assertEqual(previous.status, "Ready")
 		self.assertEqual(revision.version_number, 2)
 		self.assertEqual(revision.status, "Draft")
 		self.assertEqual(revision.media_project, campaign.name)

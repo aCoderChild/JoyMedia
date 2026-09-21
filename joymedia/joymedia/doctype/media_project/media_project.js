@@ -17,7 +17,7 @@ frappe.ui.form.on("Media Project", {
 		});
 
 		if (frm.doc.status === "Draft") {
-			frm.add_custom_button(__("Generate Video Plan"), () => {
+			frm.add_custom_button(__("Generate Storyboard"), () => {
 				generate_video_plan(frm);
 			});
 
@@ -35,21 +35,7 @@ frappe.ui.form.on("Media Project", {
 });
 
 function generate_video_plan(frm) {
-	frappe.call({
-		method: "frappe.client.get_count",
-		args: {
-			doctype: "Media Asset",
-			filters: {
-				media_project: frm.doc.name,
-				media_type: "Image",
-				status: "Active",
-			},
-		},
-		callback(r) {
-			if (r.exc) return;
-			show_plan_request_dialog(frm);
-		},
-	});
+	show_plan_request_dialog(frm);
 }
 
 function open_latest_storyboard(frm) {
@@ -202,33 +188,14 @@ function regenerate_campaign_review(frm, dialog, review_name) {
 function create_storyboard_revision(frm) {
 	frm.call("create_storyboard_revision", {}, (r) => {
 		if (r.exc || !r.message) return;
-		frm.reload_doc();
-		frappe.show_alert({
-			message: __("Storyboard revision {0} is ready.", [r.message.version_number]),
-			indicator: "green",
-		});
+		frm.reload_doc().then(() => show_plan_request_dialog(frm));
 	});
 }
 
 function show_plan_request_dialog(frm) {
 	const dialog = new frappe.ui.Dialog({
-		title: __("Generate Video Plan"),
+		title: __("Generate Storyboard"),
 		fields: [
-			{
-				fieldname: "media_specification",
-				fieldtype: "Link",
-				label: __("Draft Media Specification"),
-				options: "Media Specification",
-				reqd: 1,
-				get_query() {
-					return {
-						filters: {
-							media_project: frm.doc.name,
-							status: "Draft",
-						},
-					};
-				},
-			},
 			{
 				fieldname: "scene_count",
 				fieldtype: "Int",
@@ -237,32 +204,31 @@ function show_plan_request_dialog(frm) {
 				reqd: 1,
 			},
 		],
-		primary_action_label: __("Generate Plan"),
+		primary_action_label: __("Generate Storyboard"),
 		primary_action(values) {
-			generate_video_plan_request(frm, dialog, values.media_specification, values.scene_count);
+			generate_video_plan_request(frm, dialog, values.scene_count);
 		},
 	});
 
 	dialog.show();
 }
 
-function generate_video_plan_request(frm, request_dialog, media_specification, scene_count) {
+function generate_video_plan_request(frm, request_dialog, scene_count) {
 	request_dialog.hide();
 	frm.call(
 		"generate_video_plan",
 		{
-			media_specification_name: media_specification,
 			scene_count,
 		},
 		(r) => {
 			if (r.exc || !r.message) return;
 
-			show_video_plan_dialog(frm, media_specification, scene_count, r.message);
+			show_video_plan_dialog(frm, scene_count, r.message);
 		}
 	);
 }
 
-function show_video_plan_dialog(frm, media_specification, scene_count, plan) {
+function show_video_plan_dialog(frm, scene_count, plan) {
 	const dialog = new frappe.ui.Dialog({
 		title: __("Generated Video Plan"),
 		fields: [
@@ -273,11 +239,11 @@ function show_video_plan_dialog(frm, media_specification, scene_count, plan) {
 		],
 		primary_action_label: __("Apply Plan"),
 		primary_action(values) {
-			apply_video_plan(frm, dialog, media_specification, plan);
+			apply_video_plan(frm, dialog, plan);
 		},
 		secondary_action_label: __("Regenerate Plan"),
 		secondary_action() {
-			regenerate_video_plan(frm, dialog, media_specification, scene_count);
+			regenerate_video_plan(frm, dialog, scene_count);
 		},
 	});
 
@@ -286,17 +252,16 @@ function show_video_plan_dialog(frm, media_specification, scene_count, plan) {
 	dialog.show();
 }
 
-function regenerate_video_plan(frm, dialog, media_specification, scene_count) {
+function regenerate_video_plan(frm, dialog, scene_count) {
 	dialog.hide();
 	frm.call(
 		"generate_video_plan",
 		{
-			media_specification_name: media_specification,
 			scene_count,
 		},
 		(r) => {
 			if (r.exc || !r.message) return;
-			show_video_plan_dialog(frm, media_specification, scene_count, r.message);
+			show_video_plan_dialog(frm, scene_count, r.message);
 		}
 	);
 }
@@ -335,11 +300,10 @@ function storyboard_field(label, value) {
 	`;
 }
 
-function apply_video_plan(frm, dialog, media_specification, plan) {
+function apply_video_plan(frm, dialog, plan) {
 	frappe.call({
-		method: "joymedia.services.video_plan_service.apply_video_plan_from_ui",
+		method: "joymedia.joymedia.doctype.media_project.media_project.apply_video_plan",
 		args: {
-			media_specification_name: media_specification,
 			plan_json: JSON.stringify(plan),
 		},
 		freeze: true,
@@ -364,29 +328,13 @@ function apply_video_plan(frm, dialog, media_specification, plan) {
 function show_generate_video_dialog(frm) {
 	const dialog = new frappe.ui.Dialog({
 		title: __("Generate Video"),
-		fields: [
-			{
-				fieldname: "media_specification",
-				fieldtype: "Link",
-				label: __("Video Settings"),
-				options: "Media Specification",
-				reqd: 1,
-				get_query() {
-					return {
-						filters: {
-							media_project: frm.doc.name,
-							status: "Draft",
-						},
-					};
-				},
-			},
-		],
+		fields: [{ fieldtype: "HTML", fieldname: "confirmation" }],
 		primary_action_label: __("Generate Video"),
 		primary_action(values) {
 			dialog.hide();
 			frm.call(
 				"generate_video",
-				{ media_specification_name: values.media_specification },
+				{},
 				(r) => {
 					if (r.exc || !r.message) return;
 					frm.reload_doc();
@@ -398,6 +346,9 @@ function show_generate_video_dialog(frm) {
 			);
 		},
 	});
+	dialog.fields_dict.confirmation.$wrapper.html(
+		`<p>${__("Generate this storyboard now?")}</p>`
+	);
 
 	dialog.show();
 }
