@@ -29,7 +29,7 @@
         <div class="card-body">
           <p class="card-product">{{ campaign.product_name }}</p>
           <div class="card-meta">
-            <span>{{ campaign.shots || 0 }} scenes</span>
+            <span>{{ campaign.shots || 0 }} shots</span>
             <span>{{ campaign.duration || "—" }} sec</span>
             <span>{{ campaign.delivery_preset || "Video" }}</span>
           </div>

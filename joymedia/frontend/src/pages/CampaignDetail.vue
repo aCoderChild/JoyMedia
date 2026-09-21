@@ -29,8 +29,7 @@
       </section>
 
       <section class="workspace-card">
-        <div class="section-heading storyboard-heading"><div><p class="eyebrow">Storyboard</p><h2>{{ storyboardTitle }}</h2></div><div class="storyboard-controls"><FormControl v-model="sceneCount" type="number" label="Scenes" :min="minimumSceneCount" @update:modelValue="sceneCountTouched = true" /><Button label="Generate storyboard" :loading="generatingPlan" :disabled="!settings || sceneCount < minimumSceneCount" @click="generatePlan" /></div></div>
-        <p v-if="settings && sceneCount < minimumSceneCount" class="warning-text">A {{ settings.duration }}-second video requires at least {{ minimumSceneCount }} scenes with the current MiniMax H3 workflow.</p>
+        <div class="section-heading storyboard-heading"><div><p class="eyebrow">Storyboard</p><h2>{{ storyboardTitle }}</h2><p v-if="settings" class="muted">{{ automaticShotCount }} shots will be planned automatically<span v-if="referenceAssetCount"> · {{ referenceAssetCount }} usable references available</span></p></div><div class="storyboard-controls"><Button label="Generate storyboard" :loading="generatingPlan" :disabled="!settings" @click="generatePlan" /></div></div>
         <div v-if="plan?.shots?.length" class="storyboard-grid"><article v-for="shot in plan.shots" :key="shot.shot_number" class="storyboard-card"><div class="storyboard-card-heading"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><span v-if="referenceAssetForShot(shot)" class="reference-label">Reference: {{ referenceAssetForShot(shot).asset_name }}</span></div><img v-if="referenceAssetForShot(shot)?.file" class="storyboard-reference-image" :src="referenceAssetForShot(shot).file" :alt="referenceAssetForShot(shot).asset_name" /><div v-else-if="shot.reference_image_index != null" class="storyboard-reference-placeholder">Reference image {{ shot.reference_image_index }}</div><FormControl v-if="shot.reference_image_index != null" v-model="shot.reference_image_index" type="number" label="Reference image" /><FormControl v-model="shot.camera" type="textarea" label="Camera & framing" /><FormControl v-model="shot.subject" type="textarea" label="What appears on screen" /><FormControl v-model="shot.motion" type="textarea" label="Movement" /><FormControl v-model="shot.lighting" type="textarea" label="Look & setting" /><FormControl v-model="shot.audio" type="textarea" label="Sound" /></article></div>
         <div v-else-if="workspace.storyboard?.length" class="storyboard-grid"><article v-for="shot in workspace.storyboard" :key="shot.name" class="storyboard-card"><div class="storyboard-card-heading"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><span v-if="shot.reference_asset_name" class="reference-label">Reference: {{ shot.reference_asset_name }}</span></div><img v-if="shot.reference_image" class="storyboard-reference-image" :src="shot.reference_image" :alt="shot.reference_asset_name || `Shot ${shot.shot_number} reference`" /><p><strong>Camera & framing</strong>{{ shot.camera_direction }}</p><p><strong>What appears on screen</strong>{{ shot.subject_identity }}</p><p><strong>Movement</strong>{{ shot.action_plot }}</p><p><strong>Look & setting</strong>{{ shot.environment }}</p><p><strong>Sound</strong>{{ shot.audio_direction }}</p></article></div>
         <div v-else class="empty-panel"><p>No storyboard has been generated yet.</p><Button label="Generate storyboard" :disabled="!settings" @click="generatePlan" /></div>
@@ -40,8 +39,8 @@
       </section>
 
       <section class="workspace-card">
-        <div class="section-heading"><div><p class="eyebrow">Production</p><h2>{{ production?.status || "Ready to generate" }}</h2></div><div class="button-row"><Button v-if="production && production.failed_jobs > 0 && ['Failed', 'Partially Completed'].includes(production.status)" label="Retry failed scenes" :loading="retryingFailedScenes" @click="retryFailedScenes" /><Button label="Generate video" :loading="generatingVideo" :disabled="!workspace.storyboard?.length || !settings || Boolean(production && production.status !== 'Draft')" @click="generateVideo" /></div></div>
-        <div v-if="production" class="progress-panel"><div class="progress-label"><span>{{ production.completed_jobs || 0 }} / {{ production.total_jobs || 0 }} scenes complete</span><span>{{ production.progress || 0 }}%</span></div><div class="progress-track"><div class="progress-value" :style="{ width: `${production.progress || 0}%` }" /></div><p v-if="production.error_summary" class="error-text">{{ production.error_summary }}</p><Button v-if="requiresStoryboardRevision" label="Revise storyboard" :loading="revisingStoryboard" @click="reviseForGeneration" /></div>
+        <div class="section-heading"><div><p class="eyebrow">Production</p><h2>{{ production?.status || "Ready to generate" }}</h2></div><div class="button-row"><Button v-if="production && production.failed_jobs > 0 && ['Failed', 'Partially Completed'].includes(production.status)" label="Retry failed shots" :loading="retryingFailedScenes" @click="retryFailedScenes" /><Button label="Generate video" :loading="generatingVideo" :disabled="!workspace.storyboard?.length || !settings || Boolean(production && production.status !== 'Draft')" @click="generateVideo" /></div></div>
+        <div v-if="production" class="progress-panel"><div class="progress-label"><span>{{ production.completed_jobs || 0 }} / {{ production.total_jobs || 0 }} shots complete</span><span>{{ production.progress || 0 }}%</span></div><div class="progress-track"><div class="progress-value" :style="{ width: `${production.progress || 0}%` }" /></div><p v-if="production.error_summary" class="error-text">{{ production.error_summary }}</p><Button v-if="requiresStoryboardRevision" label="Revise storyboard" :loading="revisingStoryboard" @click="reviseForGeneration" /></div>
       </section>
 
       <section class="workspace-card">
@@ -63,9 +62,6 @@ import { useRoute } from "vue-router";
 
 const route = useRoute();
 const campaign = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_workspace", params: { name: route.params.name }, auto: true });
-const sceneCount = ref(3);
-const sceneCountTouched = ref(false);
-const sceneCountInitialized = ref(false);
 const plan = ref(null);
 const showSettings = ref(false);
 const savingSettings = ref(false);
@@ -84,23 +80,20 @@ const settingsForm = reactive({ duration: 8, format: "Landscape" });
 const workspace = computed(() => campaign.data);
 const settings = computed(() => workspace.value?.video_settings);
 const production = computed(() => workspace.value?.production);
-const minimumSceneCount = computed(() => workspace.value?.video_settings?.minimum_scene_count || 1);
+const automaticShotCount = computed(() => workspace.value?.video_settings?.automatic_shot_count || 1);
+const referenceAssetCount = computed(() => workspace.value?.video_settings?.reference_asset_count || 0);
 const requiresStoryboardRevision = computed(() => {
   const status = production.value?.status;
   return ["Failed", "Needs Attention"].includes(status) && !(production.value?.total_jobs || 0);
 });
 const storyboardTitle = computed(() => {
   const count = plan.value?.shots?.length || workspace.value?.storyboard?.length || 0;
-  return count ? `${count} scene${count === 1 ? "" : "s"}` : "Plan your scenes";
+  return count ? `${count} shot${count === 1 ? "" : "s"}` : "Plan your shots";
 });
 watch(settings, (value) => {
   if (!value) return;
   settingsForm.duration = value.duration;
   settingsForm.format = value.delivery_preset;
-  if (!sceneCountInitialized.value) {
-    sceneCount.value = Math.max(3, minimumSceneCount.value);
-    sceneCountInitialized.value = true;
-  }
 }, { immediate: true });
 
 const ACTIVE_PRODUCTION_STATUSES = new Set(["Queued", "Running", "Finalizing", "Ready for Composition"]);
@@ -159,7 +152,7 @@ async function generatePlan() {
   generatingPlan.value = true;
   plan.value = null;
   try {
-    const generatedPlan = await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video_plan", { campaign_name: route.params.name, scene_count: sceneCount.value });
+    const generatedPlan = await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video_plan", { campaign_name: route.params.name });
     plan.value = normalizePlanForEditor(generatedPlan);
   }
   catch (error) { toast({ title: "Unable to generate storyboard", text: error.message || "Please try again.", type: "error" }); }
@@ -182,8 +175,6 @@ async function reviseForGeneration() {
   try {
     await call("joymedia.joymedia.doctype.media_project.media_project.revise_campaign_storyboard", { campaign_name: route.params.name });
     await campaign.reload();
-    sceneCount.value = minimumSceneCount.value;
-    sceneCountInitialized.value = true;
     await generatePlan();
   } catch (error) {
     toast({ title: "Unable to create storyboard revision", text: error.message || "Please try again.", type: "error" });
@@ -244,7 +235,7 @@ async function applyPlan() {
     applySuccess.value = true;
     await campaign.reload();
     plan.value = null;
-    toast({ title: "Storyboard applied", text: `${result.shots.length} scene${result.shots.length === 1 ? "" : "s"} created.`, type: "success" });
+    toast({ title: "Storyboard applied", text: `${result.shots.length} shot${result.shots.length === 1 ? "" : "s"} created.`, type: "success" });
   }
   catch (error) {
     applyError.value = error.message || "The storyboard could not be applied.";

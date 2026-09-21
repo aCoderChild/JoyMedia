@@ -18,6 +18,8 @@ ALLOWED_STATUSES = {
 	"Cancelled",
 }
 H3_WORKFLOW_CODE = "MINIMAX-H3"
+MIN_SHOT_DURATION_SECONDS = 2.5
+SHOT_REFERENCE_CATEGORIES = {"Product", "Character", "Background", "Reference"}
 
 
 def get_latest_media_specification(media_project):
@@ -84,7 +86,7 @@ def get_campaign_detail(name):
 			"name": media_specification.name,
 			"duration": media_specification.total_duration_seconds,
 			"delivery_preset": media_specification.delivery_preset,
-			"minimum_scene_count": _minimum_scene_count(media_specification),
+			"automatic_shot_count": _automatic_shot_count(media_specification, project.name),
 		}
 		if media_specification
 		else None,
@@ -193,7 +195,8 @@ def get_campaign_workspace(name):
 			"status": media_specification.status,
 			"duration": media_specification.total_duration_seconds,
 			"delivery_preset": media_specification.delivery_preset,
-			"minimum_scene_count": _minimum_scene_count(media_specification),
+			"automatic_shot_count": _automatic_shot_count(media_specification, project.name),
+			"reference_asset_count": _reference_asset_count(project.name),
 		}
 		if media_specification
 		else None,
@@ -224,7 +227,7 @@ def _get_campaign_assets(media_project):
 	return assets
 
 
-def _minimum_scene_count(media_specification):
+def _minimum_shot_count(media_specification):
 	if not media_specification or not media_specification.generation_workflow_version:
 		return 1
 
@@ -243,6 +246,31 @@ def _minimum_scene_count(media_specification):
 			* output_fps
 			/ frame_count
 		),
+	)
+
+
+def _reference_asset_count(media_project):
+	from joymedia.services.project_image_manifest import get_project_image_manifest
+
+	return sum(
+		item.get("asset_category") in SHOT_REFERENCE_CATEGORIES
+		for item in get_project_image_manifest(media_project)
+	)
+
+
+def _automatic_shot_count(media_specification, media_project):
+	technical_minimum = _minimum_shot_count(media_specification)
+	if not media_specification:
+		return technical_minimum
+
+	duration = float(media_specification.total_duration_seconds or 0)
+	max_creative_shots = max(
+		technical_minimum,
+		math.floor(duration / MIN_SHOT_DURATION_SECONDS),
+	)
+	return min(
+		max(technical_minimum, _reference_asset_count(media_project)),
+		max_creative_shots,
 	)
 
 
@@ -308,9 +336,9 @@ def save_campaign_video_settings(campaign_name, total_duration_seconds, delivery
 
 
 @frappe.whitelist()
-def generate_campaign_video_plan(campaign_name, scene_count):
+def generate_campaign_video_plan(campaign_name):
 	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.generate_video_plan(scene_count)
+	return campaign.generate_video_plan()
 
 
 @frappe.whitelist()
@@ -549,7 +577,7 @@ class MediaProject(Document):
 		}
 
 	@frappe.whitelist()
-	def generate_video_plan(self, scene_count):
+	def generate_video_plan(self):
 		self._require_read_access()
 		from joymedia.services.qwen_client import generate_video_plan
 
@@ -566,21 +594,7 @@ class MediaProject(Document):
 			media_specification.generation_workflow_version,
 		)
 
-		try:
-			scene_count = int(scene_count)
-		except (TypeError, ValueError):
-			frappe.throw(_("Number of Scenes must be a positive integer."))
-		if scene_count < 1:
-			frappe.throw(_("Number of Scenes must be at least 1."))
-
-		minimum_scene_count = _minimum_scene_count(media_specification)
-		if scene_count < minimum_scene_count:
-			frappe.throw(
-				_(
-					"This video requires at least {0} scenes for the selected "
-					"MiniMax H3 workflow."
-				).format(minimum_scene_count)
-			)
+		shot_count = _automatic_shot_count(media_specification, self.name)
 
 		template = None
 		if self.reference_template:
@@ -593,7 +607,7 @@ class MediaProject(Document):
 			video_idea=self.video_idea,
 			total_video_duration=media_specification.total_duration_seconds,
 			target_fps=workflow_version.output_fps,
-			scene_count=scene_count,
+			shot_count=shot_count,
 			reference_template=template,
 			reference_images=self._get_project_image_inputs(),
 		)

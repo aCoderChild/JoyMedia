@@ -25,7 +25,7 @@ def get_project_image_manifest(media_project: str, *, include_data_url: bool = F
 			"status": "Active",
 			"asset_category": ["in", REFERENCE_IMAGE_CATEGORIES],
 		},
-		fields=["name", "asset_name"],
+		fields=["name", "asset_name", "asset_category"],
 		order_by="asset_name asc, name asc",
 	)
 	if not media_assets:
@@ -51,6 +51,7 @@ def get_project_image_manifest(media_project: str, *, include_data_url: bool = F
 			"index": len(manifest) + 1,
 			"media_asset": asset.name,
 			"asset_name": asset.asset_name,
+			"asset_category": asset.asset_category,
 			"asset_version": version.name,
 		}
 

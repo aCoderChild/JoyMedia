@@ -42,10 +42,10 @@ function generate_video_plan(frm) {
 	frm.call("get_video_settings", {}, (r) => {
 		if (r.exc) return;
 		if (!r.message) {
-			show_video_settings_dialog(frm, () => show_plan_request_dialog(frm));
+			show_video_settings_dialog(frm, () => generate_video_plan_request(frm));
 			return;
 		}
-		show_plan_request_dialog(frm);
+		generate_video_plan_request(frm);
 	});
 }
 
@@ -242,47 +242,23 @@ function regenerate_campaign_review(frm, dialog, review_name) {
 function create_storyboard_revision(frm) {
 	frm.call("create_storyboard_revision", {}, (r) => {
 		if (r.exc || !r.message) return;
-		frm.reload_doc().then(() => show_plan_request_dialog(frm));
+		frm.reload_doc().then(() => generate_video_plan_request(frm));
 	});
 }
 
-function show_plan_request_dialog(frm) {
-	const dialog = new frappe.ui.Dialog({
-		title: __("Generate Storyboard"),
-		fields: [
-			{
-				fieldname: "scene_count",
-				fieldtype: "Int",
-				label: __("Number of Scenes"),
-				default: 3,
-				reqd: 1,
-			},
-		],
-		primary_action_label: __("Generate Storyboard"),
-		primary_action(values) {
-			generate_video_plan_request(frm, dialog, values.scene_count);
-		},
-	});
-
-	dialog.show();
-}
-
-function generate_video_plan_request(frm, request_dialog, scene_count) {
-	request_dialog.hide();
+function generate_video_plan_request(frm) {
 	frm.call(
 		"generate_video_plan",
-		{
-			scene_count,
-		},
+		{},
 		(r) => {
 			if (r.exc || !r.message) return;
 
-			show_video_plan_dialog(frm, scene_count, r.message);
+			show_video_plan_dialog(frm, r.message);
 		}
 	);
 }
 
-function show_video_plan_dialog(frm, scene_count, plan) {
+function show_video_plan_dialog(frm, plan) {
 	const dialog = new frappe.ui.Dialog({
 		title: __("Generated Video Plan"),
 		fields: [
@@ -297,7 +273,7 @@ function show_video_plan_dialog(frm, scene_count, plan) {
 		},
 		secondary_action_label: __("Regenerate Plan"),
 		secondary_action() {
-			regenerate_video_plan(frm, dialog, scene_count);
+			regenerate_video_plan(frm, dialog);
 		},
 	});
 
@@ -306,16 +282,14 @@ function show_video_plan_dialog(frm, scene_count, plan) {
 	dialog.show();
 }
 
-function regenerate_video_plan(frm, dialog, scene_count) {
+function regenerate_video_plan(frm, dialog) {
 	dialog.hide();
 	frm.call(
 		"generate_video_plan",
-		{
-			scene_count,
-		},
+		{},
 		(r) => {
 			if (r.exc || !r.message) return;
-			show_video_plan_dialog(frm, scene_count, r.message);
+			show_video_plan_dialog(frm, r.message);
 		}
 	);
 }
