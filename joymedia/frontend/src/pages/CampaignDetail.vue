@@ -180,7 +180,7 @@ async function reviseForGeneration() {
   revisingStoryboard.value = true;
   plan.value = null;
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.revise_campaign_storyboard", { campaign_name: route.params.name });
+    await call("joymedia.joymedia.doctype.media_project.media_project.revise_campaign_storyboard", { campaign_name: route.params.name, use_current_workflow_defaults: workflowSetupInvalid.value });
     await campaign.reload();
     await generatePlan();
   } catch (error) {

@@ -360,9 +360,9 @@ def retry_campaign_failed_jobs(campaign_name):
 
 
 @frappe.whitelist()
-def revise_campaign_storyboard(campaign_name):
+def revise_campaign_storyboard(campaign_name, use_current_workflow_defaults=False):
 	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.create_storyboard_revision()
+	return campaign.create_storyboard_revision(use_current_workflow_defaults)
 
 
 @frappe.whitelist()
@@ -677,8 +677,15 @@ class MediaProject(Document):
 		if not run_name:
 			frappe.throw(_("This Campaign has no failed video run to retry."))
 
-		run_error = frappe.db.get_value("Generation Run", run_name, "error_summary")
-		if run_error and run_error.startswith("Invalid Workflow Binding"):
+		workflow_version_name = frappe.db.get_value(
+			"Generation Run", run_name, "workflow_version"
+		)
+		workflow_version = frappe.get_doc("Workflow Version", workflow_version_name)
+		from joymedia.services.workflow_resolver import validate_workflow_bindings
+
+		try:
+			validate_workflow_bindings(workflow_version)
+		except frappe.ValidationError:
 			frappe.throw(
 				_(
 					"Retry is unavailable because the selected Workflow Version has an "
@@ -709,7 +716,7 @@ class MediaProject(Document):
 		}
 
 	@frappe.whitelist()
-	def create_storyboard_revision(self):
+	def create_storyboard_revision(self, use_current_workflow_defaults=False):
 		self._require_write_access()
 		with filelock(f"joymedia-storyboard-revision-{self.name}"):
 			latest = get_latest_media_specification(self.name)
@@ -732,6 +739,29 @@ class MediaProject(Document):
 				"Partially Completed",
 			):
 				frappe.throw(_("Storyboard revision is not available in the current Campaign state."))
+			generation_workflow_version = latest.generation_workflow_version
+			prompt_template_version = latest.prompt_template_version
+			if isinstance(use_current_workflow_defaults, str):
+				use_current_workflow_defaults = frappe.parse_json(use_current_workflow_defaults)
+			if use_current_workflow_defaults:
+				if not latest.workflow_profile:
+					frappe.throw(_("The latest Media Specification has no Workflow Profile."))
+				profile = frappe.get_doc("Workflow Profile", latest.workflow_profile)
+				if not profile.default_workflow_version:
+					frappe.throw(
+						_("Workflow Profile {0} has no Default Workflow Version.").format(
+							profile.name
+						)
+					)
+				if not profile.default_prompt_template_version:
+					frappe.throw(
+						_("Workflow Profile {0} has no Default Prompt Template Version.").format(
+							profile.name
+						)
+					)
+				generation_workflow_version = profile.default_workflow_version
+				prompt_template_version = profile.default_prompt_template_version
+
 			revision = frappe.get_doc(
 				{
 					"doctype": "Media Specification",
@@ -739,8 +769,8 @@ class MediaProject(Document):
 					"version_number": (latest.version_number or 0) + 1,
 					"status": "Draft",
 					"workflow_profile": latest.workflow_profile,
-					"generation_workflow_version": latest.generation_workflow_version,
-					"prompt_template_version": latest.prompt_template_version,
+					"generation_workflow_version": generation_workflow_version,
+					"prompt_template_version": prompt_template_version,
 					"total_duration_seconds": latest.total_duration_seconds,
 					"delivery_preset": latest.delivery_preset,
 					"delivery_width": latest.delivery_width,
