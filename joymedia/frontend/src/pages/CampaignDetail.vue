@@ -41,7 +41,7 @@
 
       <section class="workspace-card">
         <div class="section-heading"><div><p class="eyebrow">Production</p><h2>{{ production?.status || "Ready to generate" }}</h2></div><div class="button-row"><Button v-if="production && production.failed_jobs > 0 && ['Failed', 'Partially Completed'].includes(production.status)" label="Retry failed scenes" :loading="retryingFailedScenes" @click="retryFailedScenes" /><Button label="Generate video" :loading="generatingVideo" :disabled="!workspace.storyboard?.length || !settings || Boolean(production && production.status !== 'Draft')" @click="generateVideo" /></div></div>
-        <div v-if="production" class="progress-panel"><div class="progress-label"><span>{{ production.completed_jobs || 0 }} / {{ production.total_jobs || 0 }} scenes complete</span><span>{{ production.progress || 0 }}%</span></div><div class="progress-track"><div class="progress-value" :style="{ width: `${production.progress || 0}%` }" /></div><p v-if="production.error_summary" class="error-text">{{ production.error_summary }}</p><Button v-if="requiresStoryboardRevision" label="Create a valid storyboard revision" :loading="revisingStoryboard" @click="reviseForGeneration" /></div>
+        <div v-if="production" class="progress-panel"><div class="progress-label"><span>{{ production.completed_jobs || 0 }} / {{ production.total_jobs || 0 }} scenes complete</span><span>{{ production.progress || 0 }}%</span></div><div class="progress-track"><div class="progress-value" :style="{ width: `${production.progress || 0}%` }" /></div><p v-if="production.error_summary" class="error-text">{{ production.error_summary }}</p><Button v-if="requiresStoryboardRevision" label="Revise storyboard" :loading="revisingStoryboard" @click="reviseForGeneration" /></div>
       </section>
 
       <section class="workspace-card">
@@ -85,7 +85,10 @@ const workspace = computed(() => campaign.data);
 const settings = computed(() => workspace.value?.video_settings);
 const production = computed(() => workspace.value?.production);
 const minimumSceneCount = computed(() => workspace.value?.video_settings?.minimum_scene_count || 1);
-const requiresStoryboardRevision = computed(() => production.value?.error_summary?.includes("Multi-segment execution is not enabled yet."));
+const requiresStoryboardRevision = computed(() => {
+  const status = production.value?.status;
+  return ["Failed", "Needs Attention"].includes(status) && !(production.value?.total_jobs || 0);
+});
 const storyboardTitle = computed(() => {
   const count = plan.value?.shots?.length || workspace.value?.storyboard?.length || 0;
   return count ? `${count} scene${count === 1 ? "" : "s"}` : "Plan your scenes";
