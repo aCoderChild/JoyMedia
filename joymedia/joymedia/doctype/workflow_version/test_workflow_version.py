@@ -28,6 +28,51 @@ class TestWorkflowVersion(FrappeTestCase):
 		self.assertEqual(doc.frame_count, 90)
 		self.assertEqual(doc.output_fps, 30)
 
+	def test_draft_workflow_can_be_saved_while_bindings_are_being_repaired(self):
+		doc = frappe.new_doc("Workflow Version")
+		doc.workflow_profile = "WFP-00001"
+		doc.status = "Draft"
+		doc.workflow_json = '{"actual_loader":{"inputs":{"image_path":""}}}'
+		doc.append(
+			"bindings",
+			{
+				"binding_key": "first_frame",
+				"node_key": "missing_loader",
+				"input_name": "image",
+				"value_source": "Generation Input",
+				"required_input_role": "First Frame",
+				"value_type": "File Path",
+				"required": 1,
+			},
+		)
+
+		with patch(
+			"joymedia.joymedia.doctype.workflow_version.workflow_version.frappe.get_doc",
+			return_value=frappe._dict(workflow_code="H3-I2V-TURBO"),
+		):
+			WorkflowVersion.validate(doc)
+
+	def test_testing_workflow_rejects_stale_binding(self):
+		doc = frappe.new_doc("Workflow Version")
+		doc.workflow_profile = "WFP-00001"
+		doc.status = "Testing"
+		doc.workflow_json = '{"actual_loader":{"inputs":{"image_path":""}}}'
+		doc.append(
+			"bindings",
+			{
+				"binding_key": "first_frame",
+				"node_key": "missing_loader",
+				"input_name": "image",
+				"value_source": "Generation Input",
+				"required_input_role": "First Frame",
+				"value_type": "File Path",
+				"required": 1,
+			},
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			WorkflowVersion.validate(doc)
+
 	def test_production_workflow_content_cannot_change(self):
 		doc = frappe.new_doc("Workflow Version")
 		doc.name = "WFV-00001"
