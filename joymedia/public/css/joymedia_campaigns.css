@@ -1,32 +1,30 @@
 .joymedia-campaigns-page {
 	min-height: calc(100vh - 110px);
-	margin: 0;
-	background: transparent;
+	margin: -24px -15px;
+	background: var(--body-bg);
 }
 
 .joymedia-campaigns-content {
 	max-width: 1480px;
 	margin: 0 auto;
-	padding: 18px 24px 48px;
+	padding: 36px 42px 56px;
 }
 
 .joymedia-campaigns-heading {
 	display: flex;
-	align-items: center;
+	align-items: flex-end;
 	justify-content: space-between;
 	gap: 24px;
-	margin-bottom: 22px;
+	margin-bottom: 28px;
 }
 
 .joymedia-campaigns-heading h1 {
 	margin: 0 0 6px;
-	font-size: 20px;
-	font-weight: 600;
+	font-size: 30px;
 }
 
 .joymedia-campaigns-heading p {
 	margin: 0;
-	font-size: 13px;
 	color: var(--text-muted);
 }
 
@@ -42,18 +40,16 @@
 	display: flex;
 	gap: 4px;
 	padding: 4px;
-	border: 1px solid var(--border-color);
-	border-radius: var(--border-radius);
+	border-radius: 8px;
 	background: var(--control-bg);
 }
 
 .joymedia-status-tab {
-	padding: 6px 11px;
+	padding: 7px 12px;
 	border: 0;
 	border-radius: 6px;
 	background: transparent;
 	color: var(--text-muted);
-	font-size: 13px;
 }
 
 .joymedia-status-tab.active {
@@ -64,11 +60,10 @@
 
 .joymedia-campaign-search {
 	width: 210px;
-	padding: 7px 10px;
+	padding: 8px 12px;
 	border: 1px solid var(--border-color);
-	border-radius: var(--border-radius);
+	border-radius: 8px;
 	background: var(--card-bg);
-	color: var(--text-color);
 }
 
 .joymedia-campaign-grid {
@@ -80,7 +75,7 @@
 .joymedia-campaign-card {
 	overflow: hidden;
 	border: 1px solid var(--border-color);
-	border-radius: 10px;
+	border-radius: 12px;
 	background: var(--card-bg);
 	cursor: pointer;
 	transition: transform 150ms ease, box-shadow 150ms ease;
@@ -93,7 +88,7 @@
 
 .joymedia-campaign-cover {
 	display: flex;
-	min-height: 170px;
+	min-height: 190px;
 	padding: 20px;
 	align-items: center;
 	justify-content: center;
@@ -110,7 +105,7 @@
 .joymedia-campaign-cover h2 {
 	max-width: 90%;
 	margin: 0;
-	font-size: 18px;
+	font-size: 22px;
 	line-height: 1.25;
 }
 
@@ -124,15 +119,15 @@
 	font-size: 11px;
 }
 
-.joymedia-campaign-card-body { padding: 16px 18px 18px; }
+.joymedia-campaign-card-body { padding: 18px 20px 20px; }
 .joymedia-campaign-meta,
 .joymedia-campaign-stats { display: flex; justify-content: space-between; gap: 12px; color: var(--text-muted); font-size: 12px; }
 .joymedia-campaign-card-body p { min-height: 48px; margin: 14px 0 22px; color: var(--text-color); }
-.joymedia-empty-state { grid-column: 1 / -1; min-height: 360px; padding: 110px 24px 60px; border: 1px dashed var(--border-color); border-radius: 10px; text-align: center; color: var(--text-muted); }
+.joymedia-empty-state { grid-column: 1 / -1; padding: 80px 24px; text-align: center; color: var(--text-muted); }
 .joymedia-empty-state h2 { color: var(--text-color); }
 
 @media (max-width: 900px) {
-	.joymedia-campaigns-content { padding: 16px 12px 40px; }
+	.joymedia-campaigns-content { padding: 28px 22px 40px; }
 	.joymedia-campaigns-heading { align-items: flex-start; flex-direction: column; }
 	.joymedia-campaigns-toolbar { justify-content: flex-start; }
 }
