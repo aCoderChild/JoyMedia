@@ -677,6 +677,15 @@ class MediaProject(Document):
 		if not run_name:
 			frappe.throw(_("This Campaign has no failed video run to retry."))
 
+		run_error = frappe.db.get_value("Generation Run", run_name, "error_summary")
+		if run_error and run_error.startswith("Invalid Workflow Binding"):
+			frappe.throw(
+				_(
+					"Retry is unavailable because the selected Workflow Version has an "
+					"invalid binding. Fix the Workflow Version before retrying."
+				)
+			)
+
 		return retry_failed_jobs_internal(run_name)
 
 	@frappe.whitelist()
