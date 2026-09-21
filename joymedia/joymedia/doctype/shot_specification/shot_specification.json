@@ -114,18 +114,21 @@
    "description": "Assets assigned to workflow input roles for this shot, such as first_frame, last_frame, mask, or product_reference.",
    "fieldname": "generation_inputs",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Generation Inputs",
    "options": "Shot Input Mapping"
   },
   {
    "fieldname": "selected_output_section",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Selected Output"
   },
   {
    "description": "Project-scoped Video Shot Output selected for this shot's final composition. It may be generated, imported, or edited.",
    "fieldname": "selected_output_asset_version",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Selected Output Asset Version",
    "options": "Asset Version"
   }

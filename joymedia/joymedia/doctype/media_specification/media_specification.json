@@ -64,12 +64,14 @@
   {
    "fieldname": "generation_setup_section",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Generation Setup"
   },
   {
    "description": "Workflow family used to select the default generation setup.",
    "fieldname": "workflow_profile",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Generation Mode",
    "options": "Workflow Profile",
    "read_only_depends_on": "eval:doc.status!=\"Draft\";",
@@ -97,7 +99,7 @@
    "description": "FINAL video the customer expects",
    "fieldname": "deliverable_requirements_section",
    "fieldtype": "Section Break",
-   "label": "Deliverable Requirements"
+   "label": "Video Settings"
   },
   {
    "depends_on": "eval:doc.delivery_preset==\"Custom\";",
@@ -141,7 +143,7 @@
    "fieldname": "delivery_preset",
    "fieldtype": "Select",
    "in_standard_filter": 1,
-   "label": "Delivery Preset",
+   "label": "Format",
    "options": "Landscape\nPortrait\nSquare\nCustom",
    "reqd": 1
   },

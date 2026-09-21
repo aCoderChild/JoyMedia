@@ -11,9 +11,11 @@
   "template_name",
   "category",
   "preview_image",
+  "reference_video_asset_version",
   "duration_seconds",
   "aspect_ratio",
   "enabled",
+  "analysis_status",
   "reference_prompt_section",
   "template_json"
  ],
@@ -42,6 +44,12 @@
    "label": "Preview Image"
   },
   {
+   "fieldname": "reference_video_asset_version",
+   "fieldtype": "Link",
+   "label": "Reference Video",
+   "options": "Asset Version"
+  },
+  {
    "default": "5",
    "fieldname": "duration_seconds",
    "fieldtype": "Float",
@@ -60,6 +68,13 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "analysis_status",
+   "fieldtype": "Select",
+   "label": "Analysis Status",
+   "options": "Pending\nAnalyzing\nReady\nFailed"
   },
   {
    "fieldname": "reference_prompt_section",
@@ -93,6 +108,10 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "read": 1,
+   "role": "JoyMedia Specialist"
   }
  ],
  "row_format": "Dynamic",
