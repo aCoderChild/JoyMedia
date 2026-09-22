@@ -109,7 +109,9 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			)
 
 			apply_campaign_video_plan(campaign_a.name, json.dumps(_video_plan()))
-			with patch("joymedia.services.generation_orchestrator._enqueue"), patch(
+			with patch.dict(
+				frappe.conf, {"comfyui_base_url": "http://comfyui.test"}, clear=False
+			), patch("joymedia.services.generation_orchestrator._enqueue"), patch(
 				"joymedia.services.comfyui_client.get_system_stats", return_value={}
 			):
 				generation_result = generate_campaign_video(campaign_a.name)
@@ -437,8 +439,11 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			return {"name": run_name, "status": "Queued"}
 
 		start_run_internal.side_effect = queue_run
-		first_result = campaign.generate_video()
-		second_result = campaign.generate_video()
+		with patch.dict(
+			frappe.conf, {"comfyui_base_url": "http://comfyui.test"}, clear=False
+		):
+			first_result = campaign.generate_video()
+			second_result = campaign.generate_video()
 
 		self.assertEqual(second_result, first_result)
 		self.assertEqual(
