@@ -41,6 +41,7 @@
    "default": "MINIMAX-H3",
    "fieldname": "workflow_code",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Workflow Code",

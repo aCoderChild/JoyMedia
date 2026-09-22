@@ -168,6 +168,8 @@ class Workflow(Document):
 			self.workflow_key = DEFAULT_WORKFLOW_KEY
 		if not self.workflow_code:
 			self.workflow_code = DEFAULT_WORKFLOW_CODE
+		self.client_visible = 1
+		self.is_active = 1
 
 	def _set_version_number(self):
 		if not self.is_new() or not self.workflow_key:
