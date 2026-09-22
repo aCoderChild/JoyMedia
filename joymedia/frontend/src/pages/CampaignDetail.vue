@@ -18,9 +18,10 @@
       </section>
 
       <section class="workspace-card">
-        <div class="section-heading"><div><p class="eyebrow">Assets</p><h2>Product images</h2></div><div class="asset-upload"><input id="campaign-image-input" ref="fileInput" class="file-input-hidden" type="file" accept="image/*" multiple @change="uploadSelectedImages" /><label class="upload-button" :class="{ disabled: uploadingImages }" for="campaign-image-input">{{ uploadingImages ? `Uploading ${uploadProgress} / ${uploadTotal}` : "Add images" }}</label></div></div>
+        <div class="section-heading"><div><p class="eyebrow">Assets</p><h2>Product images</h2></div><div class="asset-upload"><label class="upload-button" :class="{ disabled: uploadingImages }"><span>{{ uploadingImages ? `Uploading ${uploadProgress} / ${uploadTotal}` : "Add images" }}</span><input ref="fileInput" class="file-input-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple :disabled="uploadingImages" @change="uploadSelectedImages" /></label></div></div>
         <div v-if="workspace.assets?.length" class="asset-grid"><div v-for="asset in workspace.assets" :key="asset.name" class="asset-tile"><img v-if="asset.file" :src="asset.file" :alt="asset.asset_name" /><div v-else class="asset-placeholder">Image</div><span>{{ asset.asset_name }}</span></div></div>
         <p v-else class="muted">No product images uploaded yet.</p>
+        <p v-if="uploadError" class="action-message error-text">{{ uploadError }}</p>
       </section>
 
       <section class="workspace-card">
@@ -80,6 +81,7 @@ const revisingStoryboard = ref(false);
 const uploadingImages = ref(false);
 const uploadProgress = ref(0);
 const uploadTotal = ref(0);
+const uploadError = ref("");
 const fileInput = ref(null);
 const settingsForm = reactive({ duration: 8, format: "Landscape", video_style: "" });
 const workspace = computed(() => campaign.data);
@@ -134,6 +136,7 @@ async function uploadSelectedImages(event) {
   if (!files.length) return;
 
   uploadingImages.value = true;
+  uploadError.value = "";
   uploadProgress.value = 0;
   uploadTotal.value = files.length;
   try {
@@ -150,7 +153,8 @@ async function uploadSelectedImages(event) {
     }
     await refresh();
   } catch (error) {
-    toast({ title: "Unable to save image", text: error.message || "Please try again.", type: "error" });
+    uploadError.value = error?.messages?.join(" ") || error?.message || "The image could not be uploaded.";
+    toast({ title: "Unable to save image", text: uploadError.value, type: "error" });
   } finally {
     uploadingImages.value = false;
   }
