@@ -12,6 +12,10 @@ from frappe.utils import now_datetime
 
 
 class IntegrationTestMediaProject(IntegrationTestCase):
+	def setUp(self):
+		super().setUp()
+		_ensure_active_h3_workflow_profile()
+
 	def test_real_customer_portal_permissions_and_tenant_isolation(self):
 		from joymedia.joymedia.doctype.media_project.media_project import (
 			apply_campaign_video_plan,
@@ -548,6 +552,63 @@ def _get_test_workflow_profile():
 	workflow_version.save(ignore_permissions=True)
 
 	profile.default_workflow_version = workflow_version.name
+	profile.save(ignore_permissions=True)
+	return profile.name
+
+
+def _ensure_active_h3_workflow_profile():
+	profile_name = frappe.db.get_value(
+		"Workflow Profile",
+		{"workflow_code": "MINIMAX-H3"},
+		"name",
+	)
+	if profile_name:
+		profile = frappe.get_doc("Workflow Profile", profile_name)
+		profile.status = "Active"
+	else:
+		profile = frappe.get_doc(
+			{
+				"doctype": "Workflow Profile",
+				"profile_name": "Integration MiniMax H3",
+				"workflow_code": "MINIMAX-H3",
+				"status": "Active",
+			}
+		).insert(ignore_permissions=True)
+
+	if not profile.default_workflow_version or not frappe.db.exists(
+		"Workflow Version", profile.default_workflow_version
+	):
+		workflow_version = frappe.get_doc(
+			{
+				"doctype": "Workflow Version",
+				"workflow_profile": profile.name,
+				"version_number": 1,
+				"version_label": "Integration MiniMax H3",
+				"status": "Draft",
+				"workflow_json": (
+					'{"load_img":{"inputs":{"image":""}},'
+					'"minimax_cond":{"inputs":{"length":124}},'
+					'"save_video":{"inputs":{"frame_rate":24}}}'
+				),
+			}
+		).insert(ignore_permissions=True)
+		workflow_version.append(
+			"bindings",
+			{
+				"binding_key": "first_frame",
+				"node_key": "load_img",
+				"input_name": "image",
+				"value_source": "Generation Input",
+				"required_input_role": "first_frame",
+				"value_type": "File Path",
+				"required": 1,
+			},
+		)
+		workflow_version.status = "Testing"
+		workflow_version.save(ignore_permissions=True)
+		profile.default_workflow_version = workflow_version.name
+
+	profile.status = "Active"
 	profile.save(ignore_permissions=True)
 	return profile.name
 
