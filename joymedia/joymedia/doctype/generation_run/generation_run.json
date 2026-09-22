@@ -46,13 +46,13 @@
    "reqd": 1
   },
   {
-   "description": "Exact Workflow Version inherited from the Media Specification.",
+   "description": "Exact Workflow inherited from the Media Specification.",
    "fieldname": "workflow_version",
    "fieldtype": "Link",
    "hidden": 1,
    "in_list_view": 1,
-   "label": "Workflow Version",
-   "options": "Workflow Version",
+   "label": "Workflow",
+   "options": "Workflow",
    "read_only": 1
   },
   {

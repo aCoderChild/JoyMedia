@@ -55,10 +55,10 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 
 		image_manifest = get_project_image_manifest(media_spec.media_project)
 		asset_version_by_index = {image["index"]: image["asset_version"] for image in image_manifest}
-		if not media_spec.generation_workflow_version:
-			frappe.throw(_("The Media Specification requires a Generation Workflow Version."))
+		if not media_spec.workflow:
+			frappe.throw(_("The Media Specification requires a Workflow."))
 
-		workflow_version = frappe.get_doc("Workflow Version", media_spec.generation_workflow_version)
+		workflow_version = frappe.get_doc("Workflow", media_spec.workflow)
 		required_input_roles = {
 			frappe.scrub(binding.required_input_role)
 			for binding in workflow_version.bindings

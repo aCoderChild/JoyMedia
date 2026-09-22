@@ -16,7 +16,7 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 	staged_inputs = staged_inputs or {}
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	workflow_version = frappe.get_doc("Workflow Version", job.workflow_version)
+	workflow_version = frappe.get_doc("Workflow", job.workflow_version)
 	try:
 		base_workflow = json.loads(workflow_version.workflow_json)
 	except json.JSONDecodeError as exc:
@@ -37,8 +37,7 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		and not staged_inputs.get("last_frame")
 		for binding in workflow_version.bindings
 	):
-		workflow_profile = frappe.get_doc("Workflow Profile", workflow_version.workflow_profile)
-		get_workflow_adapter(workflow_profile).finalize_workflow(
+		get_workflow_adapter(workflow_version).finalize_workflow(
 			workflow,
 			workflow_version,
 			staged_inputs,
@@ -69,7 +68,7 @@ def _validate_workflow_bindings(workflow_version, workflow):
 		if node is None or binding.input_name not in node.get("inputs", {}):
 			frappe.throw(
 				_(
-					"Invalid Workflow Binding {0} for Workflow Version {1}: "
+					"Invalid Workflow Binding {0} for Workflow {1}: "
 					"node '{2}' or input '{3}' is missing from the workflow JSON."
 				).format(
 					binding.binding_key,

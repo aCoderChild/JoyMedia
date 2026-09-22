@@ -18,6 +18,7 @@ def generate_video_plan(
 	shot_count: int,
 	reference_template: dict | None = None,
 	reference_images: list[dict] | None = None,
+	video_style: str | None = None,
 ) -> dict:
 	base_url = frappe.conf.get("qwen_base_url")
 	model = frappe.conf.get("qwen_model")
@@ -84,6 +85,13 @@ video idea and project reference images.
 		).strip()
 	else:
 		instruction = base_instruction
+	if video_style:
+		instruction += (
+			"\n\nVIDEO STYLE:\n"
+			f"{video_style}\n"
+			"Use this style to guide the shot pacing, framing, movement, lighting, "
+			"environment, and sound while keeping the product and story consistent."
+		)
 
 	response_shape = (
 		'{"shots":[{"shot_number":1,"reference_image_index":1,"camera":"...",'

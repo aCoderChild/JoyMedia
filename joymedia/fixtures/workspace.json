@@ -1,124 +1,37 @@
 [
- {
-  "app": null,
-  "charts": [],
-  "content": "[{\"id\":\"U16bYqqqhF\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>JoyMedia</b></span>\",\"col\":12}},{\"id\":\"S4aRcRHFCe\",\"type\":\"paragraph\",\"data\":{\"text\":\"Create AI-powered product videos for small businesses.\",\"col\":12}},{\"id\":\"9Us0pXG6b0\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Campaigns\",\"col\":3}},{\"id\":\"418RochFJE\",\"type\":\"quick_list\",\"data\":{\"quick_list_name\":\"Recent Campaigns\",\"col\":4}},{\"id\":\"BlmUMDvzQp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Assets\",\"col\":3}},{\"id\":\"8I7YJ76gta\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Production<b></b></span>\",\"col\":12}},{\"id\":\"W7hUVJE_NO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Generating Videos\",\"col\":3}},{\"id\":\"NjrdiotEUh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Review Videos\",\"col\":3}},{\"id\":\"joymedia-system-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">System configuration</span>\",\"col\":12}},{\"id\":\"joymedia-workflow-profiles\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Workflow Profiles\",\"col\":3}},{\"id\":\"joymedia-workflow-versions\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Workflow Versions\",\"col\":3}}]",
-  "custom_blocks": [],
-  "docstatus": 0,
-  "doctype": "Workspace",
-  "external_link": null,
-  "for_user": null,
-  "hide_custom": 0,
-  "icon": null,
-  "indicator_color": "green",
-  "is_hidden": 0,
-  "label": "JoyMedia",
-  "link_to": null,
-  "link_type": "DocType",
-  "links": [],
-  "modified": "2026-09-22 06:10:00.000000",
-  "module": null,
-  "name": "JoyMedia",
-  "number_cards": [],
-  "parent_page": null,
-  "public": 1,
-  "quick_lists": [
-   {
-    "document_type": "Media Project",
-    "label": "Recent Campaigns",
-    "quick_list_filter": "[]"
-   }
-  ],
-  "restrict_to_domain": null,
-  "roles": [],
-  "sequence_id": 0.0,
-  "shortcuts": [
-   {
-    "color": "Grey",
-    "doc_view": "List",
-    "format": null,
+  {
+    "app": null,
+    "charts": [],
+    "content": "[{\"id\":\"joymedia-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>JoyMedia</b></span>\",\"col\":12}},{\"id\":\"joymedia-description\",\"type\":\"paragraph\",\"data\":{\"text\":\"Create AI-powered product videos for small businesses.\",\"col\":12}},{\"id\":\"campaigns\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Campaigns\",\"col\":3}},{\"id\":\"assets\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Assets\",\"col\":3}},{\"id\":\"workflows-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">System configuration</span>\",\"col\":12}},{\"id\":\"workflows\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Workflows\",\"col\":3}}]",
+    "custom_blocks": [],
+    "docstatus": 0,
+    "doctype": "Workspace",
+    "external_link": null,
+    "for_user": null,
+    "hide_custom": 0,
     "icon": null,
-    "kanban_board": null,
-    "label": "Campaigns",
-    "link_to": "Media Project",
-    "report_ref_doctype": null,
-    "restrict_to_domain": null,
-    "stats_filter": "[]",
-    "type": "DocType",
-    "url": null
-   },
-   {
-    "color": "Grey",
-    "doc_view": "List",
-    "format": null,
-    "icon": null,
-    "kanban_board": null,
-    "label": "Assets",
-    "link_to": "Media Asset",
-    "report_ref_doctype": null,
-    "restrict_to_domain": null,
-    "stats_filter": "[]",
-    "type": "DocType",
-    "url": null
-   },
-   {
-    "color": "Grey",
-    "doc_view": "List",
-    "format": null,
-    "icon": null,
-    "kanban_board": null,
-    "label": "Generating Videos",
-    "link_to": "Media Project",
-    "report_ref_doctype": null,
-    "restrict_to_domain": null,
-    "stats_filter": "[[\"Media Project\",\"status\",\"=\",\"Generating\"]]",
-    "type": "DocType",
-    "url": null
-   },
-   {
-    "color": "Grey",
-    "doc_view": "List",
-    "format": null,
-    "icon": null,
-    "kanban_board": null,
-    "label": "Review Videos",
-    "link_to": "Quality Review",
-    "report_ref_doctype": null,
-    "restrict_to_domain": null,
-    "stats_filter": "[[\"Quality Review\",\"status\",\"=\",\"Pending\"]]",
-    "type": "DocType",
-    "url": null
-   },
-   {
-    "color": "Grey",
-    "doc_view": "List",
-    "format": null,
-    "icon": null,
-    "kanban_board": null,
-    "label": "Workflow Profiles",
-    "link_to": "Workflow Profile",
-    "report_ref_doctype": null,
-    "restrict_to_domain": null,
-    "stats_filter": "[]",
-    "type": "DocType",
-    "url": null
-   },
-   {
-    "color": "Grey",
-    "doc_view": "List",
-    "format": null,
-    "icon": null,
-    "kanban_board": null,
-    "label": "Workflow Versions",
-    "link_to": "Workflow Version",
-    "report_ref_doctype": null,
-    "restrict_to_domain": null,
-    "stats_filter": "[]",
-    "type": "DocType",
-    "url": null
-   }
-  ],
-  "title": "JoyMedia",
-  "type": "Workspace"
- }
+    "indicator_color": "green",
+    "is_hidden": 0,
+    "label": "JoyMedia",
+    "link_to": null,
+    "link_type": "DocType",
+    "links": [],
+    "module": null,
+    "name": "JoyMedia",
+    "number_cards": [],
+    "parent_page": null,
+    "public": 1,
+    "quick_lists": [
+      {"document_type": "Media Project", "label": "Recent Campaigns", "quick_list_filter": "[]"}
+    ],
+    "roles": [],
+    "sequence_id": 0.0,
+    "shortcuts": [
+      {"color": "Grey", "doc_view": "List", "label": "Campaigns", "link_to": "Media Project", "stats_filter": "[]", "type": "DocType"},
+      {"color": "Grey", "doc_view": "List", "label": "Assets", "link_to": "Media Asset", "stats_filter": "[]", "type": "DocType"},
+      {"color": "Grey", "doc_view": "List", "label": "Workflows", "link_to": "Workflow", "stats_filter": "[]", "type": "DocType"}
+    ],
+    "title": "JoyMedia",
+    "type": "Workspace"
+  }
 ]

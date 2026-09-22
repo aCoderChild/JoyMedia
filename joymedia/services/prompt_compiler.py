@@ -20,8 +20,8 @@ def compile_prompt(shot_specification: str):
 	if shot.generation_prompt:
 		return shot.generation_prompt.strip()
 
-	workflow_profile = frappe.get_doc("Workflow Profile", media_spec.workflow_profile)
-	adapter = get_workflow_adapter(workflow_profile)
+	workflow = frappe.get_doc("Workflow", media_spec.workflow)
+	adapter = get_workflow_adapter(workflow)
 	return adapter.compile_prompt(shot, media_spec)
 
 

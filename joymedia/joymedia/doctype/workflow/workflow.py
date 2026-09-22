@@ -13,7 +13,6 @@ from joymedia.workflow_adapters.base import canonical_workflow_json
 
 IMMUTABLE_STATUSES = ("Production", "Deprecated")
 IMMUTABLE_FIELDS = (
-	"workflow_profile",
 	"version_number",
 	"version_label",
 	"workflow_json",
@@ -27,10 +26,10 @@ IMMUTABLE_FIELDS = (
 
 
 @frappe.whitelist()
-def validate_workflow_version(version_name: str):
-	"""Validate an existing Workflow Version's dynamic bindings on demand."""
-	frappe.has_permission("Workflow Version", "read", version_name, throw=True)
-	workflow_version = frappe.get_doc("Workflow Version", version_name)
+def validate_workflow(version_name: str):
+	"""Validate an existing Workflow's dynamic bindings on demand."""
+	frappe.has_permission("Workflow", "read", version_name, throw=True)
+	workflow_version = frappe.get_doc("Workflow", version_name)
 	from joymedia.services.workflow_resolver import validate_workflow_bindings
 
 	validate_workflow_bindings(workflow_version)
@@ -40,8 +39,8 @@ def validate_workflow_version(version_name: str):
 @frappe.whitelist()
 def get_workflow_nodes(version_name: str):
 	"""Return the node keys and available inputs from a stored ComfyUI API workflow."""
-	frappe.has_permission("Workflow Version", "read", version_name, throw=True)
-	workflow_version = frappe.get_doc("Workflow Version", version_name)
+	frappe.has_permission("Workflow", "read", version_name, throw=True)
+	workflow_version = frappe.get_doc("Workflow", version_name)
 	workflow = frappe.parse_json(workflow_version.workflow_json)
 	if not isinstance(workflow, dict):
 		frappe.throw(_("Workflow JSON must define a JSON object."))
@@ -61,19 +60,18 @@ def get_workflow_nodes(version_name: str):
 			}
 		)
 
-	return {"workflow_version": workflow_version.name, "nodes": nodes}
+	return {"workflow": workflow_version.name, "nodes": nodes}
 
 
 @frappe.whitelist()
-def clone_workflow_version_as_draft(version_name: str):
-	"""Create an editable Draft copy of an existing version, including its bindings."""
-	frappe.has_permission("Workflow Version", "read", version_name, throw=True)
-	frappe.has_permission("Workflow Version", "create", throw=True)
-	workflow_version = frappe.get_doc("Workflow Version", version_name)
+def clone_workflow_as_draft(version_name: str):
+	"""Create an editable Draft copy of an existing Workflow, including its bindings."""
+	frappe.has_permission("Workflow", "read", version_name, throw=True)
+	frappe.has_permission("Workflow", "create", throw=True)
+	workflow_version = frappe.get_doc("Workflow", version_name)
 
 	latest = frappe.get_all(
-		"Workflow Version",
-		filters={"workflow_profile": workflow_version.workflow_profile},
+		"Workflow",
 		fields=["version_number"],
 		order_by="version_number desc",
 		limit_page_length=1,
@@ -81,12 +79,17 @@ def clone_workflow_version_as_draft(version_name: str):
 	next_version = int(latest[0].version_number or 0) + 1 if latest else 1
 	clone = frappe.get_doc(
 		{
-			"doctype": "Workflow Version",
-			"workflow_profile": workflow_version.workflow_profile,
+			"doctype": "Workflow",
+			"workflow_code": workflow_version.workflow_code,
+			"workflow_key": workflow_version.workflow_key,
 			"version_number": next_version,
 			"version_label": _("{0} - Draft {1}").format(
 				workflow_version.version_label, next_version
 			),
+			"client_name": workflow_version.client_name,
+			"client_description": workflow_version.client_description,
+			"client_visible": workflow_version.client_visible,
+			"is_active": workflow_version.is_active,
 			"status": "Draft",
 			"workflow_json": workflow_version.workflow_json,
 		}
@@ -111,29 +114,25 @@ def clone_workflow_version_as_draft(version_name: str):
 
 
 @frappe.whitelist()
-def set_default_workflow_version(version_name: str):
-	"""Validate and make a Testing/Production Workflow Version the profile default."""
-	frappe.has_permission("Workflow Version", "read", version_name, throw=True)
-	workflow_version = frappe.get_doc("Workflow Version", version_name)
-	frappe.has_permission(
-		"Workflow Profile", "write", workflow_version.workflow_profile, throw=True
-	)
+def set_default_workflow(version_name: str):
+	"""Validate and make a Testing/Production Workflow the system default."""
+	frappe.has_permission("Workflow", "read", version_name, throw=True)
+	workflow_version = frappe.get_doc("Workflow", version_name)
 	if workflow_version.status not in ("Testing", "Production"):
-		frappe.throw(_("Only Testing or Production Workflow Versions can be set as default."))
+		frappe.throw(_("Only Testing or Production Workflows can be set as default."))
 
 	from joymedia.services.workflow_resolver import validate_workflow_bindings
 
 	validate_workflow_bindings(workflow_version)
-	profile = frappe.get_doc("Workflow Profile", workflow_version.workflow_profile)
-	profile.default_workflow_version = workflow_version.name
-	profile.save()
+	frappe.db.set_value("Workflow", {"is_default": 1}, "is_default", 0)
+	workflow_version.is_default = 1
+	workflow_version.save()
 	return {
-		"workflow_profile": profile.name,
-		"default_workflow_version": workflow_version.name,
+		"workflow": workflow_version.name,
 	}
 
 
-class WorkflowVersion(Document):
+class Workflow(Document):
 	def validate(self):
 		self._validate_immutable_content()
 		workflow_data = frappe.parse_json(self.workflow_json)
@@ -152,8 +151,7 @@ class WorkflowVersion(Document):
 			canonical_workflow_json(workflow_data).encode("utf-8")
 		).hexdigest()
 
-		profile = frappe.get_doc("Workflow Profile", self.workflow_profile)
-		for fieldname, value in get_workflow_adapter(profile).extract_execution_metadata(
+		for fieldname, value in get_workflow_adapter(self).extract_execution_metadata(
 			workflow_data
 		).items():
 			setattr(self, fieldname, value)
@@ -177,7 +175,7 @@ class WorkflowVersion(Document):
 		):
 			return
 		frappe.throw(
-			_("Workflow Version {0} is immutable after it is {1}.").format(
+			_("Workflow {0} is immutable after it is {1}.").format(
 				self.name, previous.status
 			)
 		)

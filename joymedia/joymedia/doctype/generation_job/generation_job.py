@@ -19,10 +19,10 @@ class GenerationJob(Document):
 		if self.status not in ("Ready", "Queued"):
 			frappe.throw(_("Generation Job {0} must be Ready or Queued for execution.").format(self.name))
 
-		workflow_version = frappe.get_doc("Workflow Version", self.workflow_version)
+		workflow_version = frappe.get_doc("Workflow", self.workflow_version)
 		if workflow_version.status not in ("Testing", "Production"):
 			frappe.throw(
-				_("Workflow Version {0} must be Testing or Production.").format(workflow_version.name)
+				_("Workflow {0} must be Testing or Production.").format(workflow_version.name)
 			)
 
 	def _validate_requested_variants(self):
@@ -36,7 +36,7 @@ class GenerationJob(Document):
 			or self.segment_frame_count > workflow_version.frame_count
 		):
 			frappe.throw(
-				_("Segment Frame Count must be between 1 and {0} for Workflow Version {1}.").format(
+				_("Segment Frame Count must be between 1 and {0} for Workflow {1}.").format(
 					workflow_version.frame_count,
 					workflow_version.name,
 				)
@@ -45,8 +45,8 @@ class GenerationJob(Document):
 	def _validate_execution_references(self):
 		if not self.shot_specification or not frappe.db.exists("Shot Specification", self.shot_specification):
 			frappe.throw(_("Generation Job requires an existing Shot Specification."))
-		if not self.workflow_version or not frappe.db.exists("Workflow Version", self.workflow_version):
-			frappe.throw(_("Generation Job requires an existing Workflow Version."))
+		if not self.workflow_version or not frappe.db.exists("Workflow", self.workflow_version):
+			frappe.throw(_("Generation Job requires an existing Workflow."))
 		if not self.prompt_text:
 			frappe.throw(_("Generation Job requires a prompt text snapshot."))
 		if not self.prompt_hash:
@@ -55,10 +55,10 @@ class GenerationJob(Document):
 		shot = frappe.get_doc("Shot Specification", self.shot_specification)
 		media_specification = frappe.get_doc("Media Specification", shot.media_specification)
 		self._validate_generation_run(media_specification)
-		if self.workflow_version != media_specification.generation_workflow_version:
-			frappe.throw(_("Generation Job Workflow Version must match the Media Specification Workflow Version."))
+		if self.workflow_version != media_specification.workflow:
+			frappe.throw(_("Generation Job Workflow must match the Media Specification Workflow."))
 
-		return frappe.get_doc("Workflow Version", self.workflow_version)
+		return frappe.get_doc("Workflow", self.workflow_version)
 
 	def _validate_generation_run(self, media_specification):
 		if not self.generation_run:
@@ -70,7 +70,7 @@ class GenerationJob(Document):
 				_("Generation Run Media Specification must match the Generation Job Shot Specification.")
 			)
 		if run.workflow_version != self.workflow_version:
-			frappe.throw(_("Generation Run Workflow Version must match the Generation Job Workflow Version."))
+			frappe.throw(_("Generation Run Workflow must match the Generation Job Workflow."))
 
 	def get_shot_input_snapshot(self):
 		shot = frappe.get_doc("Shot Specification", self.shot_specification)

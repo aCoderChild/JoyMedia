@@ -14,7 +14,7 @@ from frappe.utils import now_datetime
 class IntegrationTestMediaProject(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
-		_ensure_active_h3_workflow_profile()
+		_ensure_default_h3_workflow()
 
 	def test_real_customer_portal_permissions_and_tenant_isolation(self):
 		from joymedia.joymedia.doctype.media_project.media_project import (
@@ -271,8 +271,24 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual(updated.delivery_width, 1024)
 		self.assertEqual(updated.delivery_height, 1024)
 		self.assertEqual(
-			frappe.db.get_value("Workflow Profile", updated.workflow_profile, "workflow_code"),
+			frappe.db.get_value("Workflow", updated.workflow, "workflow_code"),
 			"MINIMAX-H3",
+		)
+
+	def test_customer_video_style_selects_and_snapshots_workflow(self):
+		from joymedia.joymedia.doctype.media_project.media_project import get_video_styles
+
+		campaign, specification = _create_campaign("Video Style")
+		result = campaign.save_video_settings(8, "Landscape", "product_showcase")
+		updated = frappe.get_doc("Media Specification", result["media_specification"])
+
+		self.assertEqual(updated.video_style, "product_showcase")
+		self.assertEqual(
+			frappe.db.get_value("Workflow", updated.workflow, "workflow_key"),
+			"product_showcase",
+		)
+		self.assertTrue(
+			any(style.workflow_key == "product_showcase" for style in get_video_styles())
 		)
 
 	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.has_permission")
@@ -374,11 +390,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual(revision.version_number, 2)
 		self.assertEqual(revision.status, "Draft")
 		self.assertEqual(revision.media_project, campaign.name)
-		self.assertEqual(revision.workflow_profile, previous.workflow_profile)
-		self.assertEqual(
-			revision.generation_workflow_version,
-			previous.generation_workflow_version,
-		)
+		self.assertEqual(revision.workflow, previous.workflow)
 		self.assertEqual(revision.total_duration_seconds, previous.total_duration_seconds)
 		self.assertEqual(revision.delivery_preset, previous.delivery_preset)
 		self.assertEqual(revision.generation_instructions, previous.generation_instructions)
@@ -415,7 +427,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 
 def _create_campaign(label):
-	workflow_profile = _get_test_workflow_profile()
+	workflow = _get_test_workflow()
 	organization = frappe.get_doc(
 		{
 			"doctype": "Client Organization",
@@ -440,7 +452,7 @@ def _create_campaign(label):
 			"media_project": campaign.name,
 			"version_number": 1,
 			"status": "Draft",
-			"workflow_profile": workflow_profile,
+			"workflow": workflow,
 			"total_duration_seconds": 10,
 			"delivery_preset": "Landscape",
 		}
@@ -516,28 +528,20 @@ def _file_review_artifact(review_name):
 	frappe.db.set_value("Generation Artifact", artifact_name, "frappe_file", file_doc.file_url)
 
 
-def _get_test_workflow_profile():
-	profile = frappe.get_doc(
+def _get_test_workflow():
+	workflow = frappe.get_doc(
 		{
-			"doctype": "Workflow Profile",
-			"profile_name": "Campaign Integration H3 Test",
+			"doctype": "Workflow",
 			"workflow_code": f"TEST-MINIMAX-H3-{frappe.generate_hash(length=8)}",
-			"status": "Active",
-		}
-	).insert(ignore_permissions=True)
-
-	workflow_version = frappe.get_doc(
-		{
-			"doctype": "Workflow Version",
-			"workflow_profile": profile.name,
+			"workflow_key": f"test_showcase_{frappe.generate_hash(length=6)}",
 			"version_number": 1,
 			"version_label": "Integration Test H3",
 			"status": "Testing",
+			"is_default": 0,
 			"workflow_json": '{"load_img":{"inputs":{"image":""}},"minimax_cond":{"inputs":{"length":124}},"save_video":{"inputs":{"frame_rate":24}}}',
 		}
 	).insert(ignore_permissions=True)
-
-	workflow_version.append(
+	workflow.append(
 		"bindings",
 		{
 			"binding_key": "first_frame",
@@ -549,42 +553,24 @@ def _get_test_workflow_profile():
 			"required": 1,
 		},
 	)
-	workflow_version.save(ignore_permissions=True)
-
-	profile.default_workflow_version = workflow_version.name
-	profile.save(ignore_permissions=True)
-	return profile.name
+	workflow.save(ignore_permissions=True)
+	return workflow.name
 
 
-def _ensure_active_h3_workflow_profile():
-	profile_name = frappe.db.get_value(
-		"Workflow Profile",
-		{"workflow_code": "MINIMAX-H3"},
-		"name",
-	)
-	if profile_name:
-		profile = frappe.get_doc("Workflow Profile", profile_name)
-		profile.status = "Active"
+def _ensure_default_h3_workflow():
+	workflow_name = frappe.db.get_value("Workflow", {"workflow_code": "MINIMAX-H3"}, "name")
+	if workflow_name:
+		workflow = frappe.get_doc("Workflow", workflow_name)
 	else:
-		profile = frappe.get_doc(
+		workflow = frappe.get_doc(
 			{
-				"doctype": "Workflow Profile",
-				"profile_name": "Integration MiniMax H3",
+				"doctype": "Workflow",
 				"workflow_code": "MINIMAX-H3",
-				"status": "Active",
-			}
-		).insert(ignore_permissions=True)
-
-	if not profile.default_workflow_version or not frappe.db.exists(
-		"Workflow Version", profile.default_workflow_version
-	):
-		workflow_version = frappe.get_doc(
-			{
-				"doctype": "Workflow Version",
-				"workflow_profile": profile.name,
+				"workflow_key": "product_showcase",
 				"version_number": 1,
 				"version_label": "Integration MiniMax H3",
 				"status": "Draft",
+				"is_default": 0,
 				"workflow_json": (
 					'{"load_img":{"inputs":{"image":""}},'
 					'"minimax_cond":{"inputs":{"length":124}},'
@@ -592,7 +578,7 @@ def _ensure_active_h3_workflow_profile():
 				),
 			}
 		).insert(ignore_permissions=True)
-		workflow_version.append(
+		workflow.append(
 			"bindings",
 			{
 				"binding_key": "first_frame",
@@ -604,18 +590,24 @@ def _ensure_active_h3_workflow_profile():
 				"required": 1,
 			},
 		)
-		workflow_version.status = "Testing"
-		workflow_version.save(ignore_permissions=True)
-		profile.default_workflow_version = workflow_version.name
-
-	profile.status = "Active"
-	profile.save(ignore_permissions=True)
-	return profile.name
+		workflow.status = "Testing"
+		workflow.save(ignore_permissions=True)
+	workflow.workflow_key = "product_showcase"
+	workflow.client_name = "Product Showcase"
+	workflow.client_description = "Clean, polished product presentation for launches and ecommerce."
+	workflow.client_visible = 1
+	workflow.is_active = 1
+	workflow.save(ignore_permissions=True)
+	frappe.db.set_value("Workflow", {"is_default": 1}, "is_default", 0)
+	workflow.reload()
+	workflow.is_default = 1
+	workflow.save(ignore_permissions=True)
+	return workflow.name
 
 
 def _create_pending_review(media_specification, suffix):
-	workflow_version = frappe.db.get_value(
-		"Media Specification", media_specification, "generation_workflow_version"
+	workflow = frappe.db.get_value(
+		"Media Specification", media_specification, "workflow"
 	)
 	media_project = frappe.db.get_value(
 		"Media Specification", media_specification, "media_project"
@@ -623,8 +615,8 @@ def _create_pending_review(media_specification, suffix):
 	required_input_roles = frappe.get_all(
 		"Workflow Binding",
 		{
-			"parent": workflow_version,
-			"parenttype": "Workflow Version",
+			"parent": workflow,
+			"parenttype": "Workflow",
 			"parentfield": "bindings",
 			"value_source": "Generation Input",
 			"required": 1,
@@ -699,7 +691,7 @@ def _create_pending_review(media_specification, suffix):
 			"requested_variants": 1,
 			"status": "Draft",
 			"priority": "Normal",
-			"workflow_version": workflow_version,
+			"workflow_version": workflow,
 			"prompt_text": "Test generation prompt.",
 			"prompt_hash": "test-prompt-hash",
 			"segment_index": 1,

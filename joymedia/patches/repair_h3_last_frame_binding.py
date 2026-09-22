@@ -3,16 +3,13 @@ import frappe
 
 def execute():
 	workflow_versions = frappe.get_all(
-		"Workflow Version",
+		"Workflow",
 		filters={"status": ["in", ["Draft", "Testing"]]},
-		fields=["name", "workflow_profile", "workflow_json"],
+		fields=["name", "workflow_code", "workflow_json"],
 	)
 
 	for row in workflow_versions:
-		profile_code = frappe.db.get_value(
-			"Workflow Profile", row.workflow_profile, "workflow_code"
-		)
-		if "h3" not in (profile_code or "").lower():
+		if "h3" not in (row.workflow_code or "").lower():
 			continue
 
 		workflow = frappe.parse_json(row.workflow_json)

@@ -77,6 +77,13 @@ h2 { margin: 0; }
 .campaign-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
 .campaign-summary p:not(.eyebrow) { margin: 0; color: #c6c6c6; line-height: 1.6; }
 .inline-form { display: flex; align-items: end; gap: 16px; margin-top: 22px; }
+.settings-form { display: grid; gap: 24px; margin-top: 22px; }
+.style-picker { display: grid; gap: 14px; }
+.style-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.style-card { display: grid; gap: 8px; min-height: 116px; padding: 16px; border: 1px solid #3b3b3b; border-radius: 9px; background: #191919; color: #f5f5f5; text-align: left; cursor: pointer; }
+.style-card:hover, .style-card.selected { border-color: #8a82f3; background: #292650; }
+.style-card strong { font-size: 15px; }
+.style-card span { color: #a9a9a9; font-size: 13px; line-height: 1.45; }
 .inline-form .form-control { max-width: 240px; }
 .storyboard-grid, .review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .storyboard-card, .review-card { padding: 18px; border: 1px solid #363636; border-radius: 9px; background: #191919; }
@@ -104,4 +111,4 @@ h2 { margin: 0; }
 .review-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
 .review-actions span { margin-right: auto; color: #c6c6c6; font-size: 13px; }
 @media (max-width: 900px) { .sidebar { width: 190px; flex-basis: 190px; } .card-grid, .simple-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .detail-body { grid-template-columns: 1fr; } }
-@media (max-width: 640px) { .app-shell { display: block; } .sidebar { width: 100%; min-height: auto; padding: 14px; } .brand { padding-bottom: 14px; } .sidebar-nav { display: flex; overflow-x: auto; } .sidebar-footer { display: none; } .topbar { height: 58px; padding: 0 18px; } .page-content { padding: 28px 18px 50px; } .page-heading, .toolbar, .storyboard-heading { align-items: stretch; flex-direction: column; } .card-grid, .simple-grid, .storyboard-grid, .review-grid, .campaign-summary { grid-template-columns: 1fr; } .inline-form, .storyboard-controls { align-items: stretch; flex-direction: column; } .button-row { justify-content: flex-start; flex-wrap: wrap; } }
+@media (max-width: 640px) { .app-shell { display: block; } .sidebar { width: 100%; min-height: auto; padding: 14px; } .brand { padding-bottom: 14px; } .sidebar-nav { display: flex; overflow-x: auto; } .sidebar-footer { display: none; } .topbar { height: 58px; padding: 0 18px; } .page-content { padding: 28px 18px 50px; } .page-heading, .toolbar, .storyboard-heading { align-items: stretch; flex-direction: column; } .card-grid, .simple-grid, .storyboard-grid, .review-grid, .campaign-summary, .style-grid { grid-template-columns: 1fr; } .inline-form, .storyboard-controls { align-items: stretch; flex-direction: column; } .button-row { justify-content: flex-start; flex-wrap: wrap; } }

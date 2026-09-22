@@ -5,7 +5,7 @@ from joymedia.joymedia.report.analytics import get_attempt_analytics
 
 COLUMNS = [
 	{"fieldname": "source", "label": "Source", "fieldtype": "Data", "width": 120},
-	{"fieldname": "workflow_version", "label": "Workflow Version", "fieldtype": "Link", "options": "Workflow Version", "width": 150},
+	{"fieldname": "workflow_version", "label": "Workflow", "fieldtype": "Link", "options": "Workflow", "width": 150},
 	{"fieldname": "failure_class", "label": "Failure Class", "fieldtype": "Data", "width": 160},
 	{"fieldname": "retry_reason", "label": "Retry Reason", "fieldtype": "Data", "width": 170},
 	{"fieldname": "count", "label": "Count", "fieldtype": "Int", "width": 80},

@@ -22,6 +22,55 @@ MIN_SHOT_DURATION_SECONDS = 2.5
 SHOT_REFERENCE_CATEGORIES = {"Product", "Character", "Background", "Reference"}
 
 
+def _get_customer_workflow(video_style=None):
+	filters = {
+		"client_visible": 1,
+		"is_active": 1,
+		"status": ["in", ["Testing", "Production"]],
+	}
+	if video_style:
+		filters["workflow_key"] = video_style
+	else:
+		filters.update({"workflow_code": H3_WORKFLOW_CODE, "is_default": 1})
+
+	workflows = frappe.db.get_all(
+		"Workflow",
+		filters,
+		["name", "workflow_key", "client_name", "client_description"],
+		order_by="version_number desc, modified desc",
+		limit=1,
+	)
+	workflow = workflows[0] if workflows else None
+	if not workflow:
+		frappe.throw(
+			_("Select an active video style configured by JoyMedia.")
+			if video_style
+			else _("No default MiniMax H3 Workflow is configured.")
+		)
+	return workflow
+
+
+def _customer_style_details(media_specification):
+	if not media_specification:
+		return {}
+	workflow = (
+		frappe.db.get_value(
+			"Workflow",
+			media_specification.workflow,
+			["workflow_key", "client_name", "client_description"],
+			as_dict=True,
+		)
+		if media_specification.workflow
+		else None
+	)
+	return {
+		"video_style": media_specification.video_style
+			or (workflow.workflow_key if workflow else None),
+		"video_style_name": workflow.client_name if workflow else None,
+		"video_style_description": workflow.client_description if workflow else None,
+	}
+
+
 def get_latest_media_specification(media_project):
 	specifications = frappe.get_all(
 		"Media Specification",
@@ -52,9 +101,10 @@ def get_campaign_cards():
 				"duration": media_specification.total_duration_seconds
 				if media_specification
 				else None,
-				"delivery_preset": media_specification.delivery_preset
-				if media_specification
-				else None,
+			"delivery_preset": media_specification.delivery_preset
+			if media_specification
+			else None,
+			**_customer_style_details(media_specification),
 				"shots": frappe.db.count(
 					"Shot Specification",
 					{"media_specification": media_specification.name},
@@ -65,6 +115,24 @@ def get_campaign_cards():
 		)
 
 	return campaigns
+
+
+@frappe.whitelist()
+def get_video_styles():
+	workflows = frappe.db.get_all(
+		"Workflow",
+		filters={
+			"client_visible": 1,
+			"is_active": 1,
+			"status": ["in", ["Testing", "Production"]],
+		},
+		fields=["workflow_key", "client_name", "client_description"],
+		order_by="version_number desc, modified desc",
+	)
+	styles = {}
+	for workflow in workflows:
+		styles.setdefault(workflow.workflow_key, workflow)
+	return sorted(styles.values(), key=lambda style: style.client_name or style.workflow_key)
 
 
 @frappe.whitelist()
@@ -197,6 +265,7 @@ def get_campaign_workspace(name):
 			"delivery_preset": media_specification.delivery_preset,
 			"automatic_shot_count": _automatic_shot_count(media_specification, project.name),
 			"reference_asset_count": _reference_asset_count(project.name),
+			**_customer_style_details(media_specification),
 		}
 		if media_specification
 		else None,
@@ -228,11 +297,11 @@ def _get_campaign_assets(media_project):
 
 
 def _minimum_shot_count(media_specification):
-	if not media_specification or not media_specification.generation_workflow_version:
+	if not media_specification or not media_specification.workflow:
 		return 1
 
 	workflow_version = frappe.get_doc(
-		"Workflow Version", media_specification.generation_workflow_version
+		"Workflow", media_specification.workflow
 	)
 	frame_count = int(workflow_version.frame_count or 0)
 	output_fps = float(workflow_version.output_fps or 0)
@@ -330,9 +399,13 @@ def regenerate_campaign_review(
 
 
 @frappe.whitelist()
-def save_campaign_video_settings(campaign_name, total_duration_seconds, delivery_preset):
+def save_campaign_video_settings(
+	campaign_name, total_duration_seconds, delivery_preset, video_style=None
+):
 	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.save_video_settings(total_duration_seconds, delivery_preset)
+	return campaign.save_video_settings(
+		total_duration_seconds, delivery_preset, video_style
+	)
 
 
 @frappe.whitelist()
@@ -514,10 +587,13 @@ class MediaProject(Document):
 			"status": media_specification.status,
 			"total_duration_seconds": media_specification.total_duration_seconds,
 			"delivery_preset": media_specification.delivery_preset,
+			**_customer_style_details(media_specification),
 		}
 
 	@frappe.whitelist()
-	def save_video_settings(self, total_duration_seconds, delivery_preset):
+	def save_video_settings(
+		self, total_duration_seconds, delivery_preset, video_style=None
+	):
 		self._require_write_access()
 		try:
 			total_duration_seconds = float(total_duration_seconds)
@@ -539,19 +615,15 @@ class MediaProject(Document):
 					)
 				)
 
-			workflow_profile = frappe.db.get_value(
-				"Workflow Profile",
-				{"workflow_code": H3_WORKFLOW_CODE, "status": "Active"},
-				"name",
-			)
-			if not workflow_profile:
-				frappe.throw(
-					_("No active MiniMax H3 Workflow Profile is configured.")
-				)
+			if video_style is None and latest:
+				video_style = latest.video_style
+			workflow = _get_customer_workflow(video_style)
 
 			if latest:
 				latest.total_duration_seconds = total_duration_seconds
 				latest.delivery_preset = delivery_preset
+				latest.workflow = workflow.name
+				latest.video_style = workflow.workflow_key
 				latest.save(ignore_permissions=True)
 				media_specification = latest
 			else:
@@ -561,7 +633,8 @@ class MediaProject(Document):
 						"media_project": self.name,
 						"version_number": 1,
 						"status": "Draft",
-						"workflow_profile": workflow_profile,
+						"workflow": workflow.name,
+						"video_style": workflow.workflow_key,
 						"total_duration_seconds": total_duration_seconds,
 						"delivery_preset": delivery_preset,
 					}
@@ -574,6 +647,8 @@ class MediaProject(Document):
 			"version_number": media_specification.version_number,
 			"total_duration_seconds": media_specification.total_duration_seconds,
 			"delivery_preset": media_specification.delivery_preset,
+			"video_style": workflow.workflow_key,
+			"video_style_name": workflow.client_name,
 		}
 
 	@frappe.whitelist()
@@ -586,12 +661,12 @@ class MediaProject(Document):
 			frappe.throw(_("Create Video Settings before generating a storyboard."))
 		if media_specification.status != "Draft":
 			frappe.throw(_("The current Campaign revision is not editable."))
-		if not media_specification.generation_workflow_version:
-			frappe.throw(_("Media Specification must have a Generation Workflow Version."))
+		if not media_specification.workflow:
+			frappe.throw(_("Media Specification must have a Workflow."))
 
 		workflow_version = frappe.get_doc(
-			"Workflow Version",
-			media_specification.generation_workflow_version,
+			"Workflow",
+			media_specification.workflow,
 		)
 
 		shot_count = _automatic_shot_count(media_specification, self.name)
@@ -610,6 +685,11 @@ class MediaProject(Document):
 			shot_count=shot_count,
 			reference_template=template,
 			reference_images=self._get_project_image_inputs(),
+			video_style=(
+				f"{workflow_version.client_name}: {workflow_version.client_description}"
+				if workflow_version.client_name
+				else media_specification.video_style
+			),
 		)
 
 	@frappe.whitelist()
@@ -680,7 +760,7 @@ class MediaProject(Document):
 		workflow_version_name = frappe.db.get_value(
 			"Generation Run", run_name, "workflow_version"
 		)
-		workflow_version = frappe.get_doc("Workflow Version", workflow_version_name)
+		workflow_version = frappe.get_doc("Workflow", workflow_version_name)
 		from joymedia.services.workflow_resolver import validate_workflow_bindings
 
 		try:
@@ -688,8 +768,8 @@ class MediaProject(Document):
 		except frappe.ValidationError:
 			frappe.throw(
 				_(
-					"Retry is unavailable because the selected Workflow Version has an "
-					"invalid binding. Fix the Workflow Version before retrying."
+					"Retry is unavailable because the selected Workflow has an "
+					"invalid binding. Fix the Workflow before retrying."
 				)
 			)
 
@@ -739,20 +819,13 @@ class MediaProject(Document):
 				"Partially Completed",
 			):
 				frappe.throw(_("Storyboard revision is not available in the current Campaign state."))
-			generation_workflow_version = latest.generation_workflow_version
+			workflow = latest.workflow
 			if isinstance(use_current_workflow_defaults, str):
 				use_current_workflow_defaults = frappe.parse_json(use_current_workflow_defaults)
 			if use_current_workflow_defaults:
-				if not latest.workflow_profile:
-					frappe.throw(_("The latest Media Specification has no Workflow Profile."))
-				profile = frappe.get_doc("Workflow Profile", latest.workflow_profile)
-				if not profile.default_workflow_version:
-					frappe.throw(
-						_("Workflow Profile {0} has no Default Workflow Version.").format(
-							profile.name
-						)
-					)
-				generation_workflow_version = profile.default_workflow_version
+				workflow = frappe.db.get_value("Workflow", {"is_default": 1}, "name")
+				if not workflow:
+					frappe.throw(_("No default Workflow is configured."))
 
 			revision = frappe.get_doc(
 				{
@@ -760,8 +833,9 @@ class MediaProject(Document):
 					"media_project": self.name,
 					"version_number": (latest.version_number or 0) + 1,
 					"status": "Draft",
-					"workflow_profile": latest.workflow_profile,
-					"generation_workflow_version": generation_workflow_version,
+					"workflow": workflow,
+					"video_style": latest.video_style
+					or frappe.db.get_value("Workflow", workflow, "workflow_key"),
 					"total_duration_seconds": latest.total_duration_seconds,
 					"delivery_preset": latest.delivery_preset,
 					"delivery_width": latest.delivery_width,

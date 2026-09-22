@@ -1,7 +1,7 @@
 // Copyright (c) 2026, JoyMedia and contributors
 // For license information, please see license.txt
 
-frappe.ui.form.on("Workflow Version", {
+frappe.ui.form.on("Workflow", {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
@@ -33,7 +33,7 @@ frappe.ui.form.on("Workflow Version", {
 
 function validate_bindings(frm) {
 	frappe.call({
-		method: "joymedia.joymedia.doctype.workflow_version.workflow_version.validate_workflow_version",
+		method: "joymedia.joymedia.doctype.workflow.workflow.validate_workflow",
 		args: { version_name: frm.doc.name },
 		freeze: true,
 		freeze_message: __("Validating workflow bindings..."),
@@ -44,7 +44,7 @@ function validate_bindings(frm) {
 
 function inspect_nodes(frm) {
 	frappe.call({
-		method: "joymedia.joymedia.doctype.workflow_version.workflow_version.get_workflow_nodes",
+		method: "joymedia.joymedia.doctype.workflow.workflow.get_workflow_nodes",
 		args: { version_name: frm.doc.name },
 		freeze: true,
 		freeze_message: __("Reading workflow nodes..."),
@@ -77,15 +77,15 @@ function inspect_nodes(frm) {
 
 function clone_as_draft(frm) {
 	frappe.confirm(
-		__("Create an editable Draft copy of this Workflow Version?"),
+		__("Create an editable Draft copy of this Workflow?"),
 		() => {
 			frappe.call({
-				method: "joymedia.joymedia.doctype.workflow_version.workflow_version.clone_workflow_version_as_draft",
+				method: "joymedia.joymedia.doctype.workflow.workflow.clone_workflow_as_draft",
 				args: { version_name: frm.doc.name },
 				freeze: true,
 				freeze_message: __("Creating draft workflow..."),
 			}).then((response) => {
-				frappe.set_route("Form", "Workflow Version", response.message.name);
+				frappe.set_route("Form", "Workflow", response.message.name);
 			});
 		}
 	);
@@ -93,11 +93,11 @@ function clone_as_draft(frm) {
 
 function set_as_default(frm) {
 	frappe.call({
-		method: "joymedia.joymedia.doctype.workflow_version.workflow_version.set_default_workflow_version",
+		method: "joymedia.joymedia.doctype.workflow.workflow.set_default_workflow",
 		args: { version_name: frm.doc.name },
 		freeze: true,
-		freeze_message: __("Validating and updating workflow profile..."),
+		freeze_message: __("Validating and updating default workflow..."),
 	}).then(() => {
-		frappe.show_alert({ message: __("Default Workflow Version updated."), indicator: "green" });
+		frappe.show_alert({ message: __("Default Workflow updated."), indicator: "green" });
 	});
 }

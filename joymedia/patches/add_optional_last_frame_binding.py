@@ -2,24 +2,16 @@ import frappe
 
 
 def execute():
-	workflow_profile = frappe.db.get_value(
-		"Workflow Profile",
-		{"workflow_code": "MINIMAX-H3", "status": "Active"},
-		"name",
-	)
-	if not workflow_profile:
-		return
-
 	workflow_version_name = frappe.db.get_value(
-		"Workflow Version",
-		{"workflow_profile": workflow_profile, "status": ["in", ["Draft", "Testing", "Production"]]},
+		"Workflow",
+		{"workflow_code": "MINIMAX-H3", "is_default": 1, "status": ["in", ["Draft", "Testing", "Production"]]},
 		"name",
 		order_by="version_number desc",
 	)
 	if not workflow_version_name:
 		return
 
-	workflow_version = frappe.get_doc("Workflow Version", workflow_version_name)
+	workflow_version = frappe.get_doc("Workflow", workflow_version_name)
 	workflow = frappe.parse_json(workflow_version.workflow_json)
 	minimax_conditioning = workflow.get("minimax_cond")
 	if not isinstance(minimax_conditioning, dict):

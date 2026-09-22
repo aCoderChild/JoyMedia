@@ -10,7 +10,6 @@
   "template_identity_section",
   "template_name",
   "template_code",
-  "workflow_profile",
   "status",
   "documentation_section",
   "intended_use",
@@ -34,14 +33,6 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Template Code",
-   "reqd": 1
-  },
-  {
-   "fieldname": "workflow_profile",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Workflow Profile",
-   "options": "Workflow Profile",
    "reqd": 1
   },
   {

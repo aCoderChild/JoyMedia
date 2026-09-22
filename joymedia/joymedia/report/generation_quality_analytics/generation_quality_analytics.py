@@ -9,7 +9,7 @@ from joymedia.joymedia.report.analytics import (
 
 
 COLUMNS = [
-	{"fieldname": "workflow_version", "label": "Workflow Version", "fieldtype": "Link", "options": "Workflow Version", "width": 150},
+	{"fieldname": "workflow_version", "label": "Workflow", "fieldtype": "Link", "options": "Workflow", "width": 150},
 	{"fieldname": "attempts", "label": "Attempts", "fieldtype": "Int", "width": 90},
 	{"fieldname": "success_rate", "label": "Success Rate %", "fieldtype": "Percent", "width": 100},
 	{"fieldname": "retry_rate", "label": "Retry Rate %", "fieldtype": "Percent", "width": 100},

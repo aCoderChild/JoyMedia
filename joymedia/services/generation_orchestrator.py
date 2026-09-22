@@ -73,7 +73,7 @@ def prepare_run(run_name: str):
 
 	media_specification = frappe.get_doc("Media Specification", run.media_specification)
 	workflow_version = frappe.get_doc(
-		"Workflow Version",
+		"Workflow",
 		run.workflow_version,
 	)
 	shots = frappe.get_all(
@@ -87,7 +87,7 @@ def prepare_run(run_name: str):
 		return _run_summary(run)
 
 	try:
-		validate_workflow_bindings(workflow_version)
+		_validate_generation_preflight(media_specification, workflow_version, shots)
 		for shot in shots:
 			if frappe.db.exists(
 				"Generation Job", {"generation_run": run.name, "shot_specification": shot.name}
@@ -135,6 +135,57 @@ def prepare_run(run_name: str):
 	_refresh_run_counters(run)
 	_enqueue("submit_run", run.name)
 	return _run_summary(run)
+
+
+def _validate_generation_preflight(media_specification, workflow_version, shots):
+	if not frappe.conf.get("qwen_base_url"):
+		frappe.throw(_("qwen_base_url is not configured."))
+	if not frappe.conf.get("comfyui_base_url"):
+		frappe.throw(_("comfyui_base_url is not configured."))
+
+	validate_workflow_bindings(workflow_version)
+	required_roles = {
+		frappe.scrub(binding.required_input_role)
+		for binding in workflow_version.bindings
+		if binding.value_source == "Generation Input"
+		and binding.required
+		and binding.required_input_role
+	}
+
+	for shot_row in shots:
+		shot = frappe.get_doc("Shot Specification", shot_row.name)
+		if not (shot.generation_prompt or "").strip():
+			frappe.throw(
+				_("Shot {0} has no generation prompt. Regenerate or edit the storyboard first.").format(
+					shot.name
+				)
+			)
+
+		mappings = {
+			frappe.scrub(mapping.input_role): mapping.asset_version
+			for mapping in shot.generation_inputs
+			if mapping.input_role and mapping.asset_version
+		}
+		for role in required_roles:
+			asset_version = mappings.get(role)
+			if not asset_version or not frappe.db.get_value("Asset Version", asset_version, "file"):
+				frappe.throw(
+					_("Shot {0} requires a usable input with role '{1}'.").format(
+						shot.name, role
+					)
+				)
+
+		segments = plan_generation_segments(
+			shot_row.planned_frame_count,
+			max_segment_frames=workflow_version.frame_count,
+		)
+		if len(segments) != 1:
+			frappe.throw(
+				_(
+					"Shot {0} requires {1} generation segments. "
+					"Multi-segment execution is not enabled yet."
+				).format(shot.name, len(segments))
+			)
 
 
 def submit_run(run_name: str):

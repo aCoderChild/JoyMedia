@@ -24,8 +24,12 @@
       </section>
 
       <section class="workspace-card">
-        <div class="section-heading"><div><p class="eyebrow">Video settings</p><h2>{{ settings ? `${settings.duration} sec · ${settings.delivery_preset}` : "Set up your video" }}</h2></div><Button :label="settings ? 'Edit' : 'Set video settings'" @click="showSettings = true" /></div>
-        <div v-if="showSettings || !settings" class="inline-form"><FormControl v-model="settingsForm.duration" type="number" label="Duration (seconds)" /><FormControl v-model="settingsForm.format" type="select" label="Format" :options="['Landscape', 'Portrait', 'Square']" /><Button label="Save settings" :loading="savingSettings" @click="saveSettings" /></div>
+        <div class="section-heading"><div><p class="eyebrow">Video settings</p><h2>{{ settings ? `${settings.duration} sec · ${settings.delivery_preset}` : "Set up your video" }}</h2><p v-if="settings?.video_style_name" class="muted">{{ settings.video_style_name }}</p></div><Button :label="settings ? 'Edit' : 'Set video settings'" @click="showSettings = true" /></div>
+        <div v-if="showSettings || !settings" class="settings-form">
+          <div class="inline-form"><FormControl v-model="settingsForm.duration" type="number" label="Duration (seconds)" /><FormControl v-model="settingsForm.format" type="select" label="Format" :options="['Landscape', 'Portrait', 'Square']" /></div>
+          <div class="style-picker"><div><p class="eyebrow">Video style</p><p class="muted">Choose the creative direction. JoyMedia selects the matching generation workflow automatically.</p></div><div v-if="videoStyles.loading" class="muted">Loading styles...</div><div v-else-if="videoStyles.data?.length" class="style-grid"><button v-for="style in videoStyles.data" :key="style.workflow_key" type="button" class="style-card" :class="{ selected: settingsForm.video_style === style.workflow_key }" @click="settingsForm.video_style = style.workflow_key"><strong>{{ style.client_name }}</strong><span>{{ style.client_description }}</span></button></div><p v-else class="error-text">No video styles are currently available.</p></div>
+          <Button label="Save settings" :loading="savingSettings" :disabled="!settingsForm.video_style" @click="saveSettings" />
+        </div>
       </section>
 
       <section class="workspace-card">
@@ -62,6 +66,7 @@ import { useRoute } from "vue-router";
 
 const route = useRoute();
 const campaign = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_workspace", params: { name: route.params.name }, auto: true });
+const videoStyles = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_video_styles", auto: true });
 const plan = ref(null);
 const showSettings = ref(false);
 const savingSettings = ref(false);
@@ -76,7 +81,7 @@ const uploadingImages = ref(false);
 const uploadProgress = ref(0);
 const uploadTotal = ref(0);
 const fileInput = ref(null);
-const settingsForm = reactive({ duration: 8, format: "Landscape" });
+const settingsForm = reactive({ duration: 8, format: "Landscape", video_style: "" });
 const workspace = computed(() => campaign.data);
 const settings = computed(() => workspace.value?.video_settings);
 const production = computed(() => workspace.value?.production);
@@ -103,6 +108,7 @@ watch(settings, (value) => {
   if (!value) return;
   settingsForm.duration = value.duration;
   settingsForm.format = value.delivery_preset;
+  settingsForm.video_style = value.video_style || settingsForm.video_style;
 }, { immediate: true });
 
 const ACTIVE_PRODUCTION_STATUSES = new Set(["Queued", "Running", "Finalizing", "Ready for Composition"]);
@@ -153,7 +159,7 @@ async function uploadSelectedImages(event) {
 }
 async function saveSettings() {
   savingSettings.value = true;
-  try { await call("joymedia.joymedia.doctype.media_project.media_project.save_campaign_video_settings", { campaign_name: route.params.name, total_duration_seconds: settingsForm.duration, delivery_preset: settingsForm.format }); showSettings.value = false; await refresh(); }
+  try { await call("joymedia.joymedia.doctype.media_project.media_project.save_campaign_video_settings", { campaign_name: route.params.name, total_duration_seconds: settingsForm.duration, delivery_preset: settingsForm.format, video_style: settingsForm.video_style }); showSettings.value = false; await refresh(); }
   catch (error) { toast({ title: "Unable to save settings", text: error.message || "Please try again.", type: "error" }); }
   finally { savingSettings.value = false; }
 }

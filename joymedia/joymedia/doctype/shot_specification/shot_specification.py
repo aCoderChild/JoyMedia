@@ -62,7 +62,7 @@ class ShotSpecification(Document):
 			"Workflow Binding",
 			filters={
 				"parent": ["in", workflow_versions],
-				"parenttype": "Workflow Version",
+				"parenttype": "Workflow",
 				"parentfield": "bindings",
 				"value_source": "Generation Input",
 				"required": 1,
@@ -85,5 +85,5 @@ class ShotSpecification(Document):
 			mapping_count = mapping_counts.get(input_role, 0)
 			if mapping_count != 1:
 				frappe.throw(
-					f"Workflow Version {workflow_version} requires exactly one {input_role} mapping; found {mapping_count}."
+					f"Workflow {workflow_version} requires exactly one {input_role} mapping; found {mapping_count}."
 				)

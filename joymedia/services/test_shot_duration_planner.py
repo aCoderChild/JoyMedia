@@ -56,7 +56,7 @@ def _specification(**values):
 		(),
 		{
 			"name": "SPEC-00001",
-			"generation_workflow_version": "WFV-00001",
+			"workflow": "WF-00001",
 			"output_fps": 24,
 			**values,
 		},
