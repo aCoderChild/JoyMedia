@@ -32,7 +32,7 @@
   {
    "fieldname": "version_identity_section",
    "fieldtype": "Section Break",
-   "label": "Version Identity"
+   "label": "Workflow Identity"
   },
   {
    "description": "Stable customer-facing style key shared by technical revisions of the same style.",
@@ -58,7 +58,7 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Version Number",
-   "read_only_depends_on": "eval:!doc.__islocal;",
+   "read_only": 1,
    "reqd": 1
   },
   {

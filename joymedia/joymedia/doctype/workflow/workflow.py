@@ -136,6 +136,7 @@ def set_default_workflow(version_name: str):
 
 class Workflow(Document):
 	def validate(self):
+		self._set_version_number()
 		self._validate_immutable_content()
 		workflow_data = frappe.parse_json(self.workflow_json)
 		if not isinstance(workflow_data, dict):
@@ -157,6 +158,19 @@ class Workflow(Document):
 			workflow_data
 		).items():
 			setattr(self, fieldname, value)
+
+	def _set_version_number(self):
+		if not self.is_new() or not self.workflow_key:
+			return
+
+		latest = frappe.get_all(
+			"Workflow",
+			filters={"workflow_key": self.workflow_key},
+			fields=["version_number"],
+			order_by="version_number desc",
+			limit_page_length=1,
+		)
+		self.version_number = int(latest[0].version_number or 0) + 1 if latest else 1
 
 	def _validate_immutable_content(self):
 		previous = self.get_doc_before_save()
