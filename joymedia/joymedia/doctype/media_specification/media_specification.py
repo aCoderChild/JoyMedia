@@ -44,7 +44,16 @@ class MediaSpecification(Document):
 		if self.workflow:
 			return
 
-		workflow = frappe.db.get_value("Workflow", {"is_default": 1}, "name")
+		workflow = frappe.db.get_value(
+			"Workflow",
+			{
+				"client_visible": 1,
+				"is_active": 1,
+				"status": ["in", ["Testing", "Production"]],
+			},
+			"name",
+			order_by="version_number desc, modified desc",
+		)
 		if not workflow:
 			frappe.throw(_("No default Workflow is configured."))
 		self.workflow = workflow

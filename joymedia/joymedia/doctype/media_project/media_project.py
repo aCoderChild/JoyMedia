@@ -31,8 +31,6 @@ def _get_customer_workflow(video_style=None):
 	}
 	if video_style:
 		filters["workflow_key"] = video_style
-	else:
-		filters["is_default"] = 1
 
 	workflows = frappe.db.get_all(
 		"Workflow",
@@ -841,7 +839,16 @@ class MediaProject(Document):
 			if isinstance(use_current_workflow_defaults, str):
 				use_current_workflow_defaults = frappe.parse_json(use_current_workflow_defaults)
 			if use_current_workflow_defaults:
-				workflow = frappe.db.get_value("Workflow", {"is_default": 1}, "name")
+				workflow = frappe.db.get_value(
+					"Workflow",
+					{
+						"client_visible": 1,
+						"is_active": 1,
+						"status": ["in", ["Testing", "Production"]],
+					},
+					"name",
+					order_by="version_number desc, modified desc",
+				)
 				if not workflow:
 					frappe.throw(_("No default Workflow is configured."))
 
