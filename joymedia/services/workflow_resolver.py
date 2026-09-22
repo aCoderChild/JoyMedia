@@ -5,6 +5,7 @@ import json
 import frappe
 from frappe import _
 
+from joymedia.workflow_adapters import get_workflow_adapter
 from joymedia.workflow_adapters.base import canonical_workflow_json
 
 
@@ -29,6 +30,19 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		if value is _SKIP_BINDING:
 			continue
 		node["inputs"][binding.input_name] = value
+
+	if any(
+		binding.binding_key == "last_frame"
+		and binding.value_source == "Generation Input"
+		and not staged_inputs.get("last_frame")
+		for binding in workflow_version.bindings
+	):
+		workflow_profile = frappe.get_doc("Workflow Profile", workflow_version.workflow_profile)
+		get_workflow_adapter(workflow_profile).finalize_workflow(
+			workflow,
+			workflow_version,
+			staged_inputs,
+		)
 
 	canonical = canonical_workflow_json(workflow)
 	attempt.resolved_workflow_json = json.dumps(workflow, indent=2, ensure_ascii=False)

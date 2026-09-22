@@ -9,3 +9,4 @@ joymedia.patches.remove_joymedia_user_custom_permissions
 joymedia.patches.add_optional_last_frame_binding
 joymedia.patches.normalize_portal_permissions
 joymedia.patches.migrate_prompt_snapshots
+joymedia.patches.repair_h3_last_frame_binding

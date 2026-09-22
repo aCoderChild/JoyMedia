@@ -9,6 +9,7 @@ from joymedia.services.workflow_resolver import (
 	_resolve_runtime_value,
 	validate_workflow_bindings,
 )
+from joymedia.workflow_adapters.minimax_h3 import MiniMaxH3WorkflowAdapter
 
 
 class TestWorkflowResolver(FrappeTestCase):
@@ -34,6 +35,43 @@ class TestWorkflowResolver(FrappeTestCase):
 		)
 
 		self.assertIs(value, _SKIP_BINDING)
+
+	def test_h3_optional_last_frame_removes_stale_conditioning_branch(self):
+		workflow = {
+			"1": {"inputs": {"image": "ComfyUI/input/2.png"}},
+			"2": {"inputs": {"image": ["1", 0]}},
+			"minimax_cond": {"inputs": {"last_frame": ["2", 0]}},
+			"save_last_frame": {"inputs": {"images": ["last_frame", 0]}},
+		}
+		workflow_version = frappe._dict(
+			bindings=[frappe._dict(binding_key="last_frame", node_key="1")]
+		)
+
+		MiniMaxH3WorkflowAdapter().finalize_workflow(workflow, workflow_version, {})
+
+		self.assertNotIn("1", workflow)
+		self.assertNotIn("2", workflow)
+		self.assertIsNone(workflow["minimax_cond"]["inputs"]["last_frame"])
+		self.assertIn("save_last_frame", workflow)
+
+	def test_h3_last_frame_branch_is_preserved_when_staged(self):
+		workflow = {
+			"1": {"inputs": {"image": "ComfyUI/input/2.png"}},
+			"2": {"inputs": {"image": ["1", 0]}},
+			"minimax_cond": {"inputs": {"last_frame": ["2", 0]}},
+		}
+		workflow_version = frappe._dict(
+			bindings=[frappe._dict(binding_key="last_frame", node_key="1")]
+		)
+
+		MiniMaxH3WorkflowAdapter().finalize_workflow(
+			workflow,
+			workflow_version,
+			{"last_frame": "/tmp/last-frame.png"},
+		)
+
+		self.assertIn("1", workflow)
+		self.assertEqual(["2", 0], workflow["minimax_cond"]["inputs"]["last_frame"])
 
 	def test_invalid_binding_reports_workflow_node_and_input(self):
 		workflow_version = frappe._dict(

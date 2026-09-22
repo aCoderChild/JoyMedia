@@ -31,6 +31,9 @@ class GenericWorkflowAdapter:
 			if line.strip()
 		)
 
+	def finalize_workflow(self, workflow, workflow_version, staged_inputs):
+		return workflow
+
 	@staticmethod
 	def get_value(data, path):
 		if not path:
