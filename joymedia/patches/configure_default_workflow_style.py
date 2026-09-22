@@ -8,6 +8,16 @@ def execute():
 		"name",
 	)
 	if not workflow_name:
+		workflow_name = frappe.db.get_value(
+			"Workflow",
+			{
+				"workflow_code": "MINIMAX-H3",
+				"status": ["in", ["Testing", "Production"]],
+			},
+			"name",
+			order_by="version_number desc, modified desc",
+		)
+	if not workflow_name:
 		return
 
 	frappe.db.set_value(
@@ -22,3 +32,5 @@ def execute():
 		},
 		update_modified=False,
 	)
+	frappe.db.set_value("Workflow", {"is_default": 1}, "is_default", 0)
+	frappe.db.set_value("Workflow", workflow_name, "is_default", 1)

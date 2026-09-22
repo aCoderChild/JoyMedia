@@ -14,7 +14,24 @@ from frappe.utils import now_datetime
 class IntegrationTestMediaProject(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
-		_ensure_default_h3_workflow()
+		self._original_default_workflows = frappe.get_all(
+			"Workflow", filters={"is_default": 1}, pluck="name"
+		)
+		self._test_default_workflow = _ensure_default_h3_workflow()
+
+	def tearDown(self):
+		super().tearDown()
+		frappe.db.set_value("Workflow", {"is_default": 1}, "is_default", 0)
+		for workflow_name in self._original_default_workflows:
+			if frappe.db.exists("Workflow", workflow_name):
+				frappe.db.set_value("Workflow", workflow_name, "is_default", 1)
+		if frappe.db.exists("Workflow", self._test_default_workflow):
+			frappe.db.set_value(
+				"Workflow",
+				self._test_default_workflow,
+				{"is_default": 0, "is_active": 0, "client_visible": 0},
+			)
+		frappe.db.commit()
 
 	def test_real_customer_portal_permissions_and_tenant_isolation(self):
 		from joymedia.joymedia.doctype.media_project.media_project import (
@@ -80,7 +97,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			self.assertEqual([card.name for card in cards], [campaign_a.name])
 			self.assertEqual(get_campaign_workspace(campaign_a.name)["campaign"]["name"], campaign_a.name)
 
-			settings = save_campaign_video_settings(campaign_a.name, 8, "Landscape")
+			settings = save_campaign_video_settings(campaign_a.name, 5, "Landscape")
 			self.assertEqual(settings["delivery_preset"], "Landscape")
 
 			file_doc = _create_uploaded_file(user_a, "customer-a-product.png")
@@ -92,7 +109,9 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			)
 
 			apply_campaign_video_plan(campaign_a.name, json.dumps(_video_plan()))
-			with patch("joymedia.services.generation_orchestrator._enqueue"):
+			with patch("joymedia.services.generation_orchestrator._enqueue"), patch(
+				"joymedia.services.comfyui_client.get_system_stats", return_value={}
+			):
 				generation_result = generate_campaign_video(campaign_a.name)
 			self.assertEqual(generation_result["status"], "Queued")
 
@@ -405,8 +424,11 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		"joymedia.joymedia.doctype.media_project.media_project.filelock",
 		return_value=nullcontext(),
 	)
+	@patch("joymedia.services.comfyui_client.get_system_stats", return_value={})
 	@patch("joymedia.services.generation_orchestrator.start_run_internal")
-	def test_generate_video_returns_existing_run_on_repeat(self, start_run_internal, filelock):
+	def test_generate_video_returns_existing_run_on_repeat(
+		self, start_run_internal, get_system_stats, filelock
+	):
 		campaign, specification = _create_campaign("Generation Idempotency")
 		_create_pending_review(specification.name, frappe.generate_hash(length=8))
 
@@ -453,7 +475,7 @@ def _create_campaign(label):
 			"version_number": 1,
 			"status": "Draft",
 			"workflow": workflow,
-			"total_duration_seconds": 10,
+			"total_duration_seconds": 5,
 			"delivery_preset": "Landscape",
 		}
 	).insert(ignore_permissions=True)
@@ -498,6 +520,8 @@ def _video_plan():
 				"motion": "A slow forward camera movement.",
 				"lighting": "Soft commercial lighting with a clean background.",
 				"audio": "Subtle product movement and ambient sound.",
+				"reference_image_index": 1,
+				"generation_prompt": "A clean product commercial with a slow forward camera movement.",
 			}
 		]
 	}
@@ -558,48 +582,41 @@ def _get_test_workflow():
 
 
 def _ensure_default_h3_workflow():
-	workflow_name = frappe.db.get_value("Workflow", {"workflow_code": "MINIMAX-H3"}, "name")
-	if workflow_name:
-		workflow = frappe.get_doc("Workflow", workflow_name)
-	else:
-		workflow = frappe.get_doc(
-			{
-				"doctype": "Workflow",
-				"workflow_code": "MINIMAX-H3",
-				"workflow_key": "product_showcase",
-				"version_number": 1,
-				"version_label": "Integration MiniMax H3",
-				"status": "Draft",
-				"is_default": 0,
-				"workflow_json": (
-					'{"load_img":{"inputs":{"image":""}},'
-					'"minimax_cond":{"inputs":{"length":124}},'
-					'"save_video":{"inputs":{"frame_rate":24}}}'
-				),
-			}
-		).insert(ignore_permissions=True)
-		workflow.append(
-			"bindings",
-			{
-				"binding_key": "first_frame",
-				"node_key": "load_img",
-				"input_name": "image",
-				"value_source": "Generation Input",
-				"required_input_role": "first_frame",
-				"value_type": "File Path",
-				"required": 1,
-			},
-		)
-		workflow.status = "Testing"
-		workflow.save(ignore_permissions=True)
-	workflow.workflow_key = "product_showcase"
-	workflow.client_name = "Product Showcase"
-	workflow.client_description = "Clean, polished product presentation for launches and ecommerce."
-	workflow.client_visible = 1
-	workflow.is_active = 1
+	workflow = frappe.get_doc(
+		{
+			"doctype": "Workflow",
+			"workflow_code": "MINIMAX-H3",
+			"workflow_key": "product_showcase",
+			"version_number": 1,
+			"version_label": "Integration MiniMax H3",
+			"client_name": "Product Showcase",
+			"client_description": "Integration-only product showcase.",
+			"client_visible": 1,
+			"is_active": 1,
+			"status": "Draft",
+			"is_default": 0,
+			"workflow_json": (
+				'{"load_img":{"inputs":{"image":""}},'
+				'"minimax_cond":{"inputs":{"length":124}},'
+				'"save_video":{"inputs":{"frame_rate":24}}}'
+			),
+		}
+	).insert(ignore_permissions=True)
+	workflow.append(
+		"bindings",
+		{
+			"binding_key": "first_frame",
+			"node_key": "load_img",
+			"input_name": "image",
+			"value_source": "Generation Input",
+			"required_input_role": "first_frame",
+			"value_type": "File Path",
+			"required": 1,
+		},
+	)
+	workflow.status = "Testing"
 	workflow.save(ignore_permissions=True)
 	frappe.db.set_value("Workflow", {"is_default": 1}, "is_default", 0)
-	workflow.reload()
 	workflow.is_default = 1
 	workflow.save(ignore_permissions=True)
 	return workflow.name
@@ -675,9 +692,11 @@ def _create_pending_review(media_specification, suffix):
 			"name": f"SHOT-TEST-{suffix}",
 			"media_specification": media_specification,
 			"shot_number": shot_number,
-			"duration_seconds": 10,
+			"duration_seconds": 5,
+			"planned_frame_count": 120,
 			"subject_identity": "Test subject",
 			"action_plot": "Test motion",
+			"generation_prompt": "A concise test generation prompt.",
 			"generation_inputs": generation_inputs,
 		}
 	).insert(ignore_permissions=True)

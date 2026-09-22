@@ -24,6 +24,7 @@ SHOT_REFERENCE_CATEGORIES = {"Product", "Character", "Background", "Reference"}
 
 def _get_customer_workflow(video_style=None):
 	filters = {
+		"workflow_code": H3_WORKFLOW_CODE,
 		"client_visible": 1,
 		"is_active": 1,
 		"status": ["in", ["Testing", "Production"]],
@@ -31,7 +32,7 @@ def _get_customer_workflow(video_style=None):
 	if video_style:
 		filters["workflow_key"] = video_style
 	else:
-		filters.update({"workflow_code": H3_WORKFLOW_CODE, "is_default": 1})
+		filters["is_default"] = 1
 
 	workflows = frappe.db.get_all(
 		"Workflow",
@@ -122,6 +123,7 @@ def get_video_styles():
 	workflows = frappe.db.get_all(
 		"Workflow",
 		filters={
+			"workflow_code": H3_WORKFLOW_CODE,
 			"client_visible": 1,
 			"is_active": 1,
 			"status": ["in", ["Testing", "Production"]],
@@ -695,7 +697,10 @@ class MediaProject(Document):
 	@frappe.whitelist()
 	def generate_video(self):
 		self._require_write_access()
-		from joymedia.services.generation_orchestrator import start_run_internal
+		from joymedia.services.generation_orchestrator import (
+			start_run_internal,
+			validate_generation_preflight,
+		)
 
 		with filelock(f"joymedia-generate-video-{self.name}"):
 			media_specification = get_latest_media_specification(self.name)
@@ -717,6 +722,19 @@ class MediaProject(Document):
 				"Shot Specification", {"media_specification": media_specification.name}
 			):
 				frappe.throw(_("Generate and apply a storyboard first."))
+			workflow = frappe.get_doc("Workflow", media_specification.workflow)
+			shots = frappe.get_all(
+				"Shot Specification",
+				filters={"media_specification": media_specification.name},
+				fields=["name", "planned_frame_count"],
+				order_by="shot_number asc, name asc",
+			)
+			validate_generation_preflight(
+				media_specification,
+				workflow,
+				shots,
+				check_comfyui=True,
+			)
 			media_specification.status = "Ready"
 			media_specification.save(ignore_permissions=True)
 

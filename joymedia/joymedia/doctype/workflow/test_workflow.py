@@ -43,6 +43,20 @@ class TestWorkflow(FrappeTestCase):
 			with self.assertRaises(frappe.ValidationError):
 				Workflow._validate_immutable_content(doc)
 
+	def test_production_workflow_identity_cannot_change(self):
+		for fieldname in ("workflow_code", "workflow_key"):
+			doc = frappe.new_doc("Workflow")
+			doc.name = "WF-00001"
+			doc.status = "Production"
+			doc._doc_before_save = frappe._dict(status="Production")
+			with patch.object(
+				doc,
+				"has_value_changed",
+				side_effect=lambda changed_field, fieldname=fieldname: changed_field == fieldname,
+			):
+				with self.assertRaises(frappe.ValidationError):
+					Workflow._validate_immutable_content(doc)
+
 	def test_production_workflow_can_be_deprecated_without_content_change(self):
 		doc = frappe.new_doc("Workflow")
 		doc.name = "WF-00001"

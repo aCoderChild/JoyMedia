@@ -13,6 +13,8 @@ from joymedia.workflow_adapters.base import canonical_workflow_json
 
 IMMUTABLE_STATUSES = ("Production", "Deprecated")
 IMMUTABLE_FIELDS = (
+	"workflow_code",
+	"workflow_key",
 	"version_number",
 	"version_label",
 	"workflow_json",

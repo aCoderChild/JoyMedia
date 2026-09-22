@@ -8,6 +8,16 @@ from joymedia.services import generation_orchestrator
 
 
 class TestGenerationOrchestrator(FrappeTestCase):
+	def test_inactive_workflow_fails_generation_preflight(self):
+		from joymedia.services.generation_orchestrator import validate_generation_preflight
+
+		with self.assertRaises(frappe.ValidationError):
+			validate_generation_preflight(
+				frappe._dict(name="SPEC-00001"),
+				frappe._dict(name="WF-00001", is_active=0, status="Testing"),
+				[],
+			)
+
 	@patch("joymedia.services.generation_orchestrator.filelock", return_value=nullcontext())
 	@patch("joymedia.services.generation_orchestrator.frappe.db.commit")
 	@patch("joymedia.services.generation_orchestrator.refresh_generation_state_for_attempt")

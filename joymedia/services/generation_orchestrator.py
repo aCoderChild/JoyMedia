@@ -87,7 +87,7 @@ def prepare_run(run_name: str):
 		return _run_summary(run)
 
 	try:
-		_validate_generation_preflight(media_specification, workflow_version, shots)
+		validate_generation_preflight(media_specification, workflow_version, shots)
 		for shot in shots:
 			if frappe.db.exists(
 				"Generation Job", {"generation_run": run.name, "shot_specification": shot.name}
@@ -137,11 +137,19 @@ def prepare_run(run_name: str):
 	return _run_summary(run)
 
 
-def _validate_generation_preflight(media_specification, workflow_version, shots):
-	if not frappe.conf.get("qwen_base_url"):
-		frappe.throw(_("qwen_base_url is not configured."))
+def validate_generation_preflight(
+	media_specification, workflow_version, shots, *, check_comfyui=False
+):
 	if not frappe.conf.get("comfyui_base_url"):
 		frappe.throw(_("comfyui_base_url is not configured."))
+	if not workflow_version.is_active:
+		frappe.throw(_("Workflow {0} is inactive and cannot run.").format(workflow_version.name))
+	if workflow_version.status not in ("Testing", "Production"):
+		frappe.throw(_("Workflow {0} must be Testing or Production.").format(workflow_version.name))
+	if check_comfyui:
+		from .comfyui_client import get_system_stats
+
+		get_system_stats()
 
 	validate_workflow_bindings(workflow_version)
 	required_roles = {

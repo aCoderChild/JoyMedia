@@ -11,7 +11,8 @@ def execute():
 
 	old_workflow = frappe.db.sql(
 		"""
-		SELECT version.name, version.workflow_json, version.version_number
+		SELECT version.name, version.workflow_json, version.version_number,
+			version.status, profile.default_workflow_version
 		FROM `tabWorkflow Version` version
 		LEFT JOIN `tabWorkflow Profile` profile
 			ON profile.name = version.workflow_profile
@@ -32,8 +33,11 @@ def execute():
 			"workflow_code": "MINIMAX-H3",
 			"version_number": old_workflow.version_number or 1,
 			"version_label": "MiniMax H3 v{0}".format(old_workflow.version_number or 1),
-			"status": "Draft",
-			"is_default": 0,
+			"status": old_workflow.status if old_workflow.status in ("Draft", "Testing", "Production", "Deprecated") else "Draft",
+			"is_default": int(
+				old_workflow.default_workflow_version == old_workflow.name
+				and old_workflow.status in ("Testing", "Production")
+			),
 			"client_name": "Product Showcase",
 			"client_description": "Clean, polished product presentation for launches and ecommerce.",
 			"client_visible": 1,
