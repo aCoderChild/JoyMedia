@@ -11,9 +11,11 @@
   "workflow_code",
   "version_number",
   "version_label",
+  "customer_presentation_section",
   "client_name",
   "client_description",
   "client_visible",
+  "availability_section",
   "is_active",
   "status",
   "is_default",
@@ -70,6 +72,11 @@
    "reqd": 1
   },
   {
+   "fieldname": "customer_presentation_section",
+   "fieldtype": "Section Break",
+   "label": "Customer Presentation"
+  },
+  {
    "fieldname": "client_name",
    "fieldtype": "Data",
    "label": "Client Name"
@@ -84,6 +91,11 @@
    "fieldname": "client_visible",
    "fieldtype": "Check",
    "label": "Client Visible"
+  },
+  {
+   "fieldname": "availability_section",
+   "fieldtype": "Section Break",
+   "label": "Availability"
   },
   {
    "default": "1",
