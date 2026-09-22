@@ -8,7 +8,7 @@ from frappe.utils import now
 
 from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
 	QA_RETRY_REASONS,
-	create_retry_attempt,
+	create_retry_attempt_internal,
 )
 
 from .generation_runner import prepare_generation_job, submit_attempt
@@ -492,7 +492,7 @@ def _create_retry_attempt(run, jobs):
 		job.status = "Queued"
 		job.queued_at = now()
 		job.save(ignore_permissions=True)
-		create_retry_attempt(failed_attempts[-1].name, "Execution Failure")
+		create_retry_attempt_internal(failed_attempts[-1].name, "Execution Failure")
 		return True
 	return False
 
@@ -508,7 +508,7 @@ def _retry_and_submit_latest_failed_attempts(job, reason):
 	]
 	results = []
 	for attempt_name in failed_attempt_names:
-		retry_attempt = create_retry_attempt(attempt_name, reason)
+		retry_attempt = create_retry_attempt_internal(attempt_name, reason)
 		submission = _submit_attempt_or_record_failure(retry_attempt.name)
 		refresh_generation_state_for_attempt(retry_attempt.name)
 		attempt = frappe.get_doc("Generation Attempt", retry_attempt.name)

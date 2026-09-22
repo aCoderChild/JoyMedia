@@ -12,7 +12,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 	@patch("joymedia.services.generation_orchestrator.frappe.db.commit")
 	@patch("joymedia.services.generation_orchestrator.refresh_generation_state_for_attempt")
 	@patch("joymedia.services.generation_orchestrator._submit_attempt_or_record_failure")
-	@patch("joymedia.services.generation_orchestrator.create_retry_attempt")
+	@patch("joymedia.services.generation_orchestrator.create_retry_attempt_internal")
 	@patch("joymedia.services.generation_orchestrator._get_job_attempts")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_doc")
 	@patch("joymedia.services.generation_orchestrator.frappe.has_permission")

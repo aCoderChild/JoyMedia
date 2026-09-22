@@ -46,7 +46,10 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 	canonical = canonical_workflow_json(workflow)
 	attempt.resolved_workflow_json = json.dumps(workflow, indent=2, ensure_ascii=False)
 	attempt.resolved_workflow_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-	attempt.save()
+	# Generation Attempt is an internal technical record. Campaign-authorized
+	# orchestration must be able to snapshot the resolved workflow even though
+	# customer roles do not have direct technical DocType write permission.
+	attempt.save(ignore_permissions=True)
 	return workflow
 
 
