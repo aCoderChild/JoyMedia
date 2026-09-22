@@ -18,7 +18,7 @@
       </section>
 
       <section class="workspace-card">
-        <div class="section-heading"><div><p class="eyebrow">Assets</p><h2>Product images</h2></div><div class="asset-upload"><input ref="fileInput" class="file-input-hidden" type="file" accept="image/*" multiple @change="uploadSelectedImages" /><Button :label="uploadingImages ? `Uploading ${uploadProgress} / ${uploadTotal}` : 'Add images'" :loading="uploadingImages" :disabled="uploadingImages" @click="openImagePicker" /></div></div>
+        <div class="section-heading"><div><p class="eyebrow">Assets</p><h2>Product images</h2></div><div class="asset-upload"><input id="campaign-image-input" ref="fileInput" class="file-input-hidden" type="file" accept="image/*" multiple @change="uploadSelectedImages" /><label class="upload-button" :class="{ disabled: uploadingImages }" for="campaign-image-input">{{ uploadingImages ? `Uploading ${uploadProgress} / ${uploadTotal}` : "Add images" }}</label></div></div>
         <div v-if="workspace.assets?.length" class="asset-grid"><div v-for="asset in workspace.assets" :key="asset.name" class="asset-tile"><img v-if="asset.file" :src="asset.file" :alt="asset.asset_name" /><div v-else class="asset-placeholder">Image</div><span>{{ asset.asset_name }}</span></div></div>
         <p v-else class="muted">No product images uploaded yet.</p>
       </section>
@@ -125,9 +125,6 @@ onBeforeUnmount(() => {
 });
 
 async function refresh() { plan.value = null; await campaign.reload(); }
-function openImagePicker() {
-  fileInput.value?.click();
-}
 function assetNameFromFile(fileName) {
   return fileName.replace(/\.[^/.]+$/, "");
 }
@@ -142,6 +139,7 @@ async function uploadSelectedImages(event) {
   try {
     for (const file of files) {
       const uploadedFile = await uploadFile(file, { private: true });
+      if (!uploadedFile?.file_url) throw new Error(`Upload did not return a file URL for ${file.name}.`);
       await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign_asset", {
         media_project: route.params.name,
         asset_name: assetNameFromFile(file.name),
