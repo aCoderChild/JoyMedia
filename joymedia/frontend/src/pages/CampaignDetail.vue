@@ -45,7 +45,7 @@
 
       <section class="workspace-card">
         <div class="section-heading"><div><p class="eyebrow">Production</p><h2>{{ production?.status || "Ready to generate" }}</h2></div><div class="button-row"><Button v-if="canRetryProduction" label="Retry failed shots" :loading="retryingFailedScenes" @click="retryFailedScenes" /><Button label="Generate video" :loading="generatingVideo" :disabled="!workspace.storyboard?.length || !settings || Boolean(production && production.status !== 'Draft')" @click="generateVideo" /></div></div>
-        <div v-if="production" class="progress-panel"><div class="progress-label"><span>{{ production.completed_jobs || 0 }} / {{ production.total_jobs || 0 }} shots complete</span><span>{{ production.progress || 0 }}%</span></div><div class="progress-track"><div class="progress-value" :style="{ width: `${production.progress || 0}%` }" /></div><p v-if="production.error_summary" class="error-text">{{ production.error_summary }}</p><p v-if="workflowSetupInvalid" class="muted">Update the selected Workflow Version before trying again.</p><Button v-if="requiresStoryboardRevision" label="Revise storyboard" :loading="revisingStoryboard" @click="reviseForGeneration" /></div>
+        <div v-if="production" class="progress-panel"><div class="progress-label"><span>{{ production.completed_jobs || 0 }} / {{ production.total_jobs || 0 }} shots complete</span><span>{{ production.progress || 0 }}%</span></div><div class="progress-track"><div class="progress-value" :style="{ width: `${production.progress || 0}%` }" /></div><div v-if="isProductionActive" class="production-timing"><span>Time elapsed <strong>{{ formatElapsed(productionElapsedSeconds) }}</strong></span><span>Estimated to finish in <strong>{{ estimatedFinishLabel }}</strong></span></div><p v-if="production.error_summary" class="error-text">{{ production.error_summary }}</p><p v-if="workflowSetupInvalid" class="muted">Update the selected Workflow Version before trying again.</p><Button v-if="requiresStoryboardRevision" label="Revise storyboard" :loading="revisingStoryboard" @click="reviseForGeneration" /></div>
       </section>
 
       <section class="workspace-card">
@@ -67,6 +67,7 @@ import { useRoute } from "vue-router";
 
 const route = useRoute();
 const campaign = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_workspace", params: { name: route.params.name }, auto: true });
+const productionResource = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_production", params: { name: route.params.name }, auto: true });
 const videoStyles = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_video_styles", auto: true });
 const plan = ref(null);
 const showSettings = ref(false);
@@ -86,7 +87,7 @@ const fileInput = ref(null);
 const settingsForm = reactive({ duration: 8, format: "Landscape", video_style: "" });
 const workspace = computed(() => campaign.data);
 const settings = computed(() => workspace.value?.video_settings);
-const production = computed(() => workspace.value?.production);
+const production = computed(() => productionResource.data || workspace.value?.production);
 const automaticShotCount = computed(() => workspace.value?.video_settings?.automatic_shot_count || 1);
 const referenceAssetCount = computed(() => workspace.value?.video_settings?.reference_asset_count || 0);
 const requiresStoryboardRevision = computed(() => {
@@ -115,18 +116,54 @@ watch(settings, (value) => {
 
 const ACTIVE_PRODUCTION_STATUSES = new Set(["Queued", "Running", "Finalizing", "Ready for Composition"]);
 let pollTimer = null;
+let clockTimer = null;
+const nowTick = ref(Date.now());
+const isProductionActive = computed(() => ACTIVE_PRODUCTION_STATUSES.has(production.value?.status));
+const productionElapsedSeconds = computed(() => {
+  if (!production.value) return 0;
+  const startedAt = production.value.started_at || production.value.queued_at;
+  if (!startedAt) return 0;
+  const start = parseServerDate(startedAt);
+  const end = production.value.completed_at && !isProductionActive.value
+    ? parseServerDate(production.value.completed_at)
+    : nowTick.value;
+  return Math.max(0, Math.floor((end - start) / 1000));
+});
+const estimatedFinishLabel = computed(() => {
+  const completed = Number(production.value?.completed_jobs || 0);
+  const total = Number(production.value?.total_jobs || 0);
+  const remaining = total - completed;
+  if (!remaining) return "complete";
+  if (!completed || !productionElapsedSeconds.value) return "estimating";
+  return `~${formatElapsed(Math.ceil((productionElapsedSeconds.value / completed) * remaining))}`;
+});
 watch(() => production.value?.status, (status) => {
   if (pollTimer) clearInterval(pollTimer);
+  if (clockTimer) clearInterval(clockTimer);
   pollTimer = null;
+  clockTimer = null;
   if (ACTIVE_PRODUCTION_STATUSES.has(status)) {
-    pollTimer = setInterval(() => campaign.reload(), 4000);
+    pollTimer = setInterval(() => productionResource.reload(), 4000);
+    clockTimer = setInterval(() => { nowTick.value = Date.now(); }, 1000);
   }
 }, { immediate: true });
 onBeforeUnmount(() => {
   if (pollTimer) clearInterval(pollTimer);
+  if (clockTimer) clearInterval(clockTimer);
 });
 
-async function refresh() { plan.value = null; await campaign.reload(); }
+async function refresh() { plan.value = null; await campaign.reload(); await productionResource.reload(); }
+function parseServerDate(value) {
+  const text = String(value || "").replace(" ", "T");
+  const date = new Date(text.endsWith("Z") ? text : `${text}Z`);
+  return Number.isNaN(date.getTime()) ? nowTick.value : date.getTime();
+}
+function formatElapsed(seconds) {
+  const total = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(total / 60);
+  const remainder = total % 60;
+  return minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
+}
 function assetNameFromFile(fileName) {
   return fileName.replace(/\.[^/.]+$/, "");
 }
@@ -179,7 +216,7 @@ async function retryFailedScenes() {
   retryingFailedScenes.value = true;
   try {
     await call("joymedia.joymedia.doctype.media_project.media_project.retry_campaign_failed_jobs", { campaign_name: route.params.name });
-    await campaign.reload();
+    await refresh();
   } catch (error) {
     toast({ title: "Unable to retry video", text: error.message || "Please try again.", type: "error" });
   } finally {
@@ -191,7 +228,7 @@ async function reviseForGeneration() {
   plan.value = null;
   try {
     await call("joymedia.joymedia.doctype.media_project.media_project.revise_campaign_storyboard", { campaign_name: route.params.name, use_current_workflow_defaults: workflowSetupInvalid.value });
-    await campaign.reload();
+    await refresh();
     await generatePlan();
   } catch (error) {
     toast({ title: "Unable to create storyboard revision", text: error.message || "Please try again.", type: "error" });
@@ -250,7 +287,7 @@ async function applyPlan() {
     const result = await call("joymedia.joymedia.doctype.media_project.media_project.apply_campaign_video_plan", { campaign_name: route.params.name, plan_json: JSON.stringify(payload) });
     if (!result?.shots?.length) throw new Error("No shots were created.");
     applySuccess.value = true;
-    await campaign.reload();
+    await refresh();
     plan.value = null;
     toast({ title: "Storyboard applied", text: `${result.shots.length} shot${result.shots.length === 1 ? "" : "s"} created.`, type: "success" });
   }

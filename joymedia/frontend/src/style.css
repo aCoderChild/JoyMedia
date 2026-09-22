@@ -107,10 +107,12 @@ h2 { margin: 0; }
 .progress-label { display: flex; justify-content: space-between; color: #bdbdbd; font-size: 13px; }
 .progress-track { height: 8px; margin-top: 10px; overflow: hidden; border-radius: 999px; background: #373737; }
 .progress-value { height: 100%; border-radius: inherit; background: #635bdb; transition: width .2s ease; }
+.production-timing { display: flex; gap: 24px; margin-top: 14px; color: #929292; font-size: 13px; }
+.production-timing strong { color: #d4d4d4; font-weight: 500; }
 .error-text { color: #e68a8a; }
 .warning-text { margin: 0 0 18px; color: #e5c07b; }
 .review-card video, .final-video { display: block; width: 100%; max-height: 360px; border-radius: 8px; background: #111; }
 .review-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
 .review-actions span { margin-right: auto; color: #c6c6c6; font-size: 13px; }
 @media (max-width: 900px) { .sidebar { width: 190px; flex-basis: 190px; } .card-grid, .simple-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .detail-body { grid-template-columns: 1fr; } }
-@media (max-width: 640px) { .app-shell { display: block; } .sidebar { width: 100%; min-height: auto; padding: 14px; } .brand { padding-bottom: 14px; } .sidebar-nav { display: flex; overflow-x: auto; } .sidebar-footer { display: none; } .topbar { height: 58px; padding: 0 18px; } .page-content { padding: 28px 18px 50px; } .page-heading, .toolbar, .storyboard-heading { align-items: stretch; flex-direction: column; } .card-grid, .simple-grid, .storyboard-grid, .review-grid, .campaign-summary, .style-grid { grid-template-columns: 1fr; } .inline-form, .storyboard-controls { align-items: stretch; flex-direction: column; } .button-row { justify-content: flex-start; flex-wrap: wrap; } }
+@media (max-width: 640px) { .app-shell { display: block; } .sidebar { width: 100%; min-height: auto; padding: 14px; } .brand { padding-bottom: 14px; } .sidebar-nav { display: flex; overflow-x: auto; } .sidebar-footer { display: none; } .topbar { height: 58px; padding: 0 18px; } .page-content { padding: 28px 18px 50px; } .page-heading, .toolbar, .storyboard-heading { align-items: stretch; flex-direction: column; } .card-grid, .simple-grid, .storyboard-grid, .review-grid, .campaign-summary, .style-grid { grid-template-columns: 1fr; } .inline-form, .storyboard-controls { align-items: stretch; flex-direction: column; } .button-row { justify-content: flex-start; flex-wrap: wrap; } .production-timing { flex-direction: column; gap: 6px; } }

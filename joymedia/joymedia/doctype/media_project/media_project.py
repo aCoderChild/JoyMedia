@@ -201,6 +201,9 @@ def get_campaign_workspace(name):
 			fields=[
 				"name",
 				"status",
+				"queued_at",
+				"started_at",
+				"completed_at",
 				"progress",
 				"completed_jobs",
 				"total_jobs",
@@ -252,6 +255,37 @@ def get_campaign_workspace(name):
 		"final_video": final_video,
 	}
 
+
+@frappe.whitelist()
+def get_campaign_production(name):
+	"""Return only the current Campaign production state for lightweight polling."""
+	frappe.has_permission("Media Project", "read", name, throw=True)
+	project = frappe.get_doc("Media Project", name)
+	media_specification = get_latest_media_specification(project.name)
+	if not media_specification:
+		return None
+
+	run = frappe.get_all(
+		"Generation Run",
+		filters={"media_specification": media_specification.name},
+		fields=[
+			"name",
+			"status",
+			"queued_at",
+			"started_at",
+			"completed_at",
+			"progress",
+			"completed_jobs",
+			"total_jobs",
+			"failed_jobs",
+			"running_jobs",
+			"error_summary",
+			"final_asset_version",
+		],
+		order_by="creation desc",
+		limit_page_length=1,
+	)
+	return run[0] if run else None
 
 def _get_campaign_assets(media_project):
 	assets = frappe.get_list(
