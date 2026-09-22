@@ -7,6 +7,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from joymedia.joymedia.doctype.workflow.workflow import get_latest_valid_workflow
+
 
 class MediaSpecification(Document):
 	IDENTITY_FIELDS: ClassVar[tuple[str, ...]] = ("media_project", "version_number")
@@ -44,19 +46,10 @@ class MediaSpecification(Document):
 		if self.workflow:
 			return
 
-		workflow = frappe.db.get_value(
-			"Workflow",
-			{
-				"client_visible": 1,
-				"is_active": 1,
-				"status": ["in", ["Testing", "Production"]],
-			},
-			"name",
-			order_by="version_number desc, modified desc",
-		)
-		if not workflow:
+		workflow_doc = get_latest_valid_workflow()
+		if not workflow_doc:
 			frappe.throw(_("No default Workflow is configured."))
-		self.workflow = workflow
+		self.workflow = workflow_doc.name
 
 	def validate_generation_setup(self):
 		if self.status != "Ready":
@@ -69,13 +62,10 @@ class MediaSpecification(Document):
 			"Workflow",
 			self.workflow,
 		)
+		from joymedia.services.workflow_resolver import validate_workflow_bindings
 
-		if workflow_version.status not in ("Testing", "Production"):
-			frappe.throw(
-				_("Workflow {0} must be Testing or Production.").format(
-					workflow_version.name
-				)
-			)
+		validate_workflow_bindings(workflow_version)
+
 
 
 	def on_update(self):

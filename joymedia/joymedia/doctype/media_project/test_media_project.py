@@ -14,23 +14,10 @@ from frappe.utils import now_datetime
 class IntegrationTestMediaProject(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
-		self._original_default_workflows = frappe.get_all(
-			"Workflow", filters={"is_default": 1}, pluck="name"
-		)
 		self._test_default_workflow = _ensure_default_h3_workflow()
 
 	def tearDown(self):
 		super().tearDown()
-		frappe.db.set_value("Workflow", {"is_default": 1}, "is_default", 0)
-		for workflow_name in self._original_default_workflows:
-			if frappe.db.exists("Workflow", workflow_name):
-				frappe.db.set_value("Workflow", workflow_name, "is_default", 1)
-		if frappe.db.exists("Workflow", self._test_default_workflow):
-			frappe.db.set_value(
-				"Workflow",
-				self._test_default_workflow,
-				{"is_default": 0, "is_active": 0, "client_visible": 0},
-			)
 		frappe.db.commit()
 
 	def test_real_customer_portal_permissions_and_tenant_isolation(self):
@@ -292,8 +279,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual(updated.delivery_width, 1024)
 		self.assertEqual(updated.delivery_height, 1024)
 		self.assertEqual(
-			frappe.db.get_value("Workflow", updated.workflow, "workflow_code"),
-			"MINIMAX-H3",
+			frappe.db.get_value("Workflow", updated.workflow, "workflow_key"),
+			"product_showcase",
 		)
 
 	def test_customer_video_style_selects_and_snapshots_workflow(self):
@@ -561,28 +548,11 @@ def _get_test_workflow():
 	workflow = frappe.get_doc(
 		{
 			"doctype": "Workflow",
-			"workflow_code": f"TEST-MINIMAX-H3-{frappe.generate_hash(length=8)}",
 			"workflow_key": f"test_showcase_{frappe.generate_hash(length=6)}",
-			"version_number": 1,
-			"version_label": "Integration Test H3",
-			"status": "Testing",
-			"is_default": 0,
 			"workflow_json": '{"load_img":{"inputs":{"image":""}},"minimax_cond":{"inputs":{"length":124}},"save_video":{"inputs":{"frame_rate":24}}}',
+			"bindings": [{"binding_key": "first_frame", "node_key": "load_img", "input_name": "image", "value_source": "Generation Input", "required_input_role": "first_frame", "value_type": "File Path", "required": 1}],
 		}
 	).insert(ignore_permissions=True)
-	workflow.append(
-		"bindings",
-		{
-			"binding_key": "first_frame",
-			"node_key": "load_img",
-			"input_name": "image",
-			"value_source": "Generation Input",
-			"required_input_role": "first_frame",
-			"value_type": "File Path",
-			"required": 1,
-		},
-	)
-	workflow.save(ignore_permissions=True)
 	return workflow.name
 
 
@@ -590,40 +560,15 @@ def _ensure_default_h3_workflow():
 	workflow = frappe.get_doc(
 		{
 			"doctype": "Workflow",
-			"workflow_code": "MINIMAX-H3",
 			"workflow_key": "product_showcase",
-			"version_number": 1,
-			"version_label": "Integration MiniMax H3",
-			"client_name": "Product Showcase",
-			"client_description": "Integration-only product showcase.",
-			"client_visible": 1,
-			"is_active": 1,
-			"status": "Draft",
-			"is_default": 0,
 			"workflow_json": (
 				'{"load_img":{"inputs":{"image":""}},'
 				'"minimax_cond":{"inputs":{"length":124}},'
 				'"save_video":{"inputs":{"frame_rate":24}}}'
 			),
+			"bindings": [{"binding_key": "first_frame", "node_key": "load_img", "input_name": "image", "value_source": "Generation Input", "required_input_role": "first_frame", "value_type": "File Path", "required": 1}],
 		}
 	).insert(ignore_permissions=True)
-	workflow.append(
-		"bindings",
-		{
-			"binding_key": "first_frame",
-			"node_key": "load_img",
-			"input_name": "image",
-			"value_source": "Generation Input",
-			"required_input_role": "first_frame",
-			"value_type": "File Path",
-			"required": 1,
-		},
-	)
-	workflow.status = "Testing"
-	workflow.save(ignore_permissions=True)
-	frappe.db.set_value("Workflow", {"is_default": 1}, "is_default", 0)
-	workflow.is_default = 1
-	workflow.save(ignore_permissions=True)
 	return workflow.name
 
 

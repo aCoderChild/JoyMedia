@@ -20,12 +20,6 @@ class GenerationJob(Document):
 			frappe.throw(_("Generation Job {0} must be Ready or Queued for execution.").format(self.name))
 
 		workflow_version = frappe.get_doc("Workflow", self.workflow_version)
-		if not workflow_version.is_active:
-			frappe.throw(_("Workflow {0} is inactive and cannot run.").format(workflow_version.name))
-		if workflow_version.status not in ("Testing", "Production"):
-			frappe.throw(
-				_("Workflow {0} must be Testing or Production.").format(workflow_version.name)
-			)
 
 	def _validate_requested_variants(self):
 		if not self.requested_variants or self.requested_variants < 1:

@@ -3,10 +3,7 @@ import frappe
 
 def execute():
 	workflow_version_name = frappe.db.get_value(
-		"Workflow",
-		{"workflow_code": "MINIMAX-H3", "is_default": 1, "status": ["in", ["Draft", "Testing", "Production"]]},
-		"name",
-		order_by="version_number desc",
+		"Workflow", {"workflow_key": "product_showcase"}, "name", order_by="version_number desc"
 	)
 	if not workflow_version_name:
 		return

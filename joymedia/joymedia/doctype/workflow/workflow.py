@@ -11,14 +11,10 @@ from joymedia.workflow_adapters import get_workflow_adapter
 from joymedia.workflow_adapters.base import canonical_workflow_json
 
 
-IMMUTABLE_STATUSES = ("Production", "Deprecated")
 IMMUTABLE_FIELDS = (
-	"workflow_code",
 	"workflow_key",
 	"version_number",
-	"version_label",
 	"workflow_json",
-	"change_notes",
 	"bindings",
 	"frame_count",
 	"output_fps",
@@ -27,7 +23,27 @@ IMMUTABLE_FIELDS = (
 )
 
 DEFAULT_WORKFLOW_KEY = "product_showcase"
-DEFAULT_WORKFLOW_CODE = "MINIMAX-H3"
+
+
+def get_latest_valid_workflow(workflow_key=None):
+	"""Return the newest workflow whose stored graph and bindings are valid."""
+	from joymedia.services.workflow_resolver import validate_workflow_bindings
+
+	filters = {"workflow_key": workflow_key} if workflow_key else {}
+	rows = frappe.get_all(
+		"Workflow",
+		filters=filters,
+		fields=["name", "workflow_key", "version_number"],
+		order_by="version_number desc, modified desc",
+	)
+	for row in rows:
+		workflow = frappe.get_doc("Workflow", row.name)
+		try:
+			validate_workflow_bindings(workflow)
+		except Exception:
+			continue
+		return workflow
+	return None
 
 
 @frappe.whitelist()
@@ -70,32 +86,15 @@ def get_workflow_nodes(version_name: str):
 
 @frappe.whitelist()
 def clone_workflow_as_draft(version_name: str):
-	"""Create an editable Draft copy of an existing Workflow, including its bindings."""
+	"""Create a new immutable revision of an existing Workflow."""
 	frappe.has_permission("Workflow", "read", version_name, throw=True)
 	frappe.has_permission("Workflow", "create", throw=True)
 	workflow_version = frappe.get_doc("Workflow", version_name)
 
-	latest = frappe.get_all(
-		"Workflow",
-		fields=["version_number"],
-		order_by="version_number desc",
-		limit_page_length=1,
-	)
-	next_version = int(latest[0].version_number or 0) + 1 if latest else 1
 	clone = frappe.get_doc(
 		{
 			"doctype": "Workflow",
-			"workflow_code": workflow_version.workflow_code,
 			"workflow_key": workflow_version.workflow_key,
-			"version_number": next_version,
-			"version_label": _("{0} - Draft {1}").format(
-				workflow_version.version_label, next_version
-			),
-			"client_name": workflow_version.client_name,
-			"client_description": workflow_version.client_description,
-			"client_visible": workflow_version.client_visible,
-			"is_active": workflow_version.is_active,
-			"status": "Draft",
 			"workflow_json": workflow_version.workflow_json,
 		}
 	)
@@ -115,23 +114,17 @@ def clone_workflow_as_draft(version_name: str):
 			},
 		)
 	clone.insert()
-	return {"name": clone.name, "version_number": clone.version_number, "status": clone.status}
+	return {"name": clone.name, "version_number": clone.version_number}
 
 
 @frappe.whitelist()
 def set_default_workflow(version_name: str):
-	"""Validate and make a Testing/Production Workflow the system default."""
+	"""Validate a workflow for compatibility with older Desk actions."""
 	frappe.has_permission("Workflow", "read", version_name, throw=True)
 	workflow_version = frappe.get_doc("Workflow", version_name)
-	if workflow_version.status not in ("Testing", "Production"):
-		frappe.throw(_("Only Testing or Production Workflows can be set as default."))
-
 	from joymedia.services.workflow_resolver import validate_workflow_bindings
 
 	validate_workflow_bindings(workflow_version)
-	frappe.db.set_value("Workflow", {"is_default": 1}, "is_default", 0)
-	workflow_version.is_default = 1
-	workflow_version.save()
 	return {
 		"workflow": workflow_version.name,
 	}
@@ -146,13 +139,9 @@ class Workflow(Document):
 		if not isinstance(workflow_data, dict):
 			frappe.throw(_("Workflow JSON must define a JSON object."))
 
-		# Drafts may be incomplete while an operator repairs imported workflow JSON
-		# and bindings. A version must be internally consistent before it can be
-		# tested or promoted to production.
-		if self.status in ("Testing", "Production"):
-			from joymedia.services.workflow_resolver import validate_workflow_bindings
+		from joymedia.services.workflow_resolver import validate_workflow_bindings
 
-			validate_workflow_bindings(self)
+		validate_workflow_bindings(self)
 
 		self.workflow_hash = hashlib.sha256(
 			canonical_workflow_json(workflow_data).encode("utf-8")
@@ -166,10 +155,6 @@ class Workflow(Document):
 	def _set_backend_defaults(self):
 		if not self.workflow_key:
 			self.workflow_key = DEFAULT_WORKFLOW_KEY
-		if not self.workflow_code:
-			self.workflow_code = DEFAULT_WORKFLOW_CODE
-		self.client_visible = 1
-		self.is_active = 1
 
 	def _set_version_number(self):
 		if not self.is_new() or not self.workflow_key:
@@ -183,12 +168,10 @@ class Workflow(Document):
 			limit_page_length=1,
 		)
 		self.version_number = int(latest[0].version_number or 0) + 1 if latest else 1
-		if not self.version_label:
-			self.version_label = f"MiniMax H3 v{self.version_number}"
 
 	def _validate_immutable_content(self):
 		previous = self.get_doc_before_save()
-		if not previous or previous.status not in IMMUTABLE_STATUSES:
+		if not previous:
 			return
 
 		changed_fields = [
@@ -196,16 +179,8 @@ class Workflow(Document):
 			for fieldname in IMMUTABLE_FIELDS
 			if self.has_value_changed(fieldname)
 		]
-		if not changed_fields and self.status == previous.status:
-			return
-		if (
-			previous.status == "Production"
-			and self.status == "Deprecated"
-			and not changed_fields
-		):
+		if not changed_fields:
 			return
 		frappe.throw(
-			_("Workflow {0} is immutable after it is {1}.").format(
-				self.name, previous.status
-			)
+			_("Workflow {0} is immutable after creation.").format(self.name)
 		)

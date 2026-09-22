@@ -142,10 +142,6 @@ def validate_generation_preflight(
 ):
 	if not frappe.conf.get("comfyui_base_url"):
 		frappe.throw(_("comfyui_base_url is not configured."))
-	if not workflow_version.is_active:
-		frappe.throw(_("Workflow {0} is inactive and cannot run.").format(workflow_version.name))
-	if workflow_version.status not in ("Testing", "Production"):
-		frappe.throw(_("Workflow {0} must be Testing or Production.").format(workflow_version.name))
 	if check_comfyui:
 		from .comfyui_client import get_system_stats
 

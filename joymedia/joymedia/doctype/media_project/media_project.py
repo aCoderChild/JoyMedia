@@ -8,6 +8,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils.synchronization import filelock
 
+from joymedia.joymedia.doctype.workflow.workflow import get_latest_valid_workflow
+
 
 ALLOWED_STATUSES = {
 	"Draft",
@@ -17,29 +19,14 @@ ALLOWED_STATUSES = {
 	"Needs Attention",
 	"Cancelled",
 }
-H3_WORKFLOW_CODE = "MINIMAX-H3"
 MIN_SHOT_DURATION_SECONDS = 2.5
 SHOT_REFERENCE_CATEGORIES = {"Product", "Character", "Background", "Reference"}
 
 
 def _get_customer_workflow(video_style=None):
-	filters = {
-		"workflow_code": H3_WORKFLOW_CODE,
-		"client_visible": 1,
-		"is_active": 1,
-		"status": ["in", ["Testing", "Production"]],
-	}
-	if video_style:
-		filters["workflow_key"] = video_style
-
-	workflows = frappe.db.get_all(
-		"Workflow",
-		filters,
-		["name", "workflow_key", "client_name", "client_description"],
-		order_by="version_number desc, modified desc",
-		limit=1,
-	)
-	workflow = workflows[0] if workflows else None
+	workflow = get_latest_valid_workflow(video_style)
+	if not workflow and not video_style:
+		workflow = get_latest_valid_workflow()
 	if not workflow:
 		frappe.throw(
 			_("Select an active video style configured by JoyMedia.")
@@ -53,20 +40,18 @@ def _customer_style_details(media_specification):
 	if not media_specification:
 		return {}
 	workflow = (
-		frappe.db.get_value(
-			"Workflow",
-			media_specification.workflow,
-			["workflow_key", "client_name", "client_description"],
-			as_dict=True,
-		)
-		if media_specification.workflow
-		else None
+		frappe.db.get_value("Workflow", media_specification.workflow, ["workflow_key"], as_dict=True)
+		if media_specification.workflow else None
+	)
+	workflow_name = (
+		" ".join(part.capitalize() for part in workflow.workflow_key.split("_"))
+		if workflow else None
 	)
 	return {
 		"video_style": media_specification.video_style
 			or (workflow.workflow_key if workflow else None),
-		"video_style_name": workflow.client_name if workflow else None,
-		"video_style_description": workflow.client_description if workflow else None,
+		"video_style_name": workflow_name,
+		"video_style_description": "",
 	}
 
 
@@ -118,21 +103,13 @@ def get_campaign_cards():
 
 @frappe.whitelist()
 def get_video_styles():
-	workflows = frappe.db.get_all(
-		"Workflow",
-		filters={
-			"workflow_code": H3_WORKFLOW_CODE,
-			"client_visible": 1,
-			"is_active": 1,
-			"status": ["in", ["Testing", "Production"]],
-		},
-		fields=["workflow_key", "client_name", "client_description"],
-		order_by="version_number desc, modified desc",
-	)
-	styles = {}
-	for workflow in workflows:
-		styles.setdefault(workflow.workflow_key, workflow)
-	return sorted(styles.values(), key=lambda style: style.client_name or style.workflow_key)
+	styles = []
+	for row in frappe.get_all("Workflow", fields=["workflow_key"], distinct=True):
+		workflow = get_latest_valid_workflow(row.workflow_key)
+		if workflow:
+			label = " ".join(part.capitalize() for part in workflow.workflow_key.split("_"))
+			styles.append(frappe._dict(workflow_key=workflow.workflow_key, client_name=label, client_description=""))
+	return sorted(styles, key=lambda style: style.client_name)
 
 
 @frappe.whitelist()
@@ -648,7 +625,7 @@ class MediaProject(Document):
 			"total_duration_seconds": media_specification.total_duration_seconds,
 			"delivery_preset": media_specification.delivery_preset,
 			"video_style": workflow.workflow_key,
-			"video_style_name": workflow.client_name,
+			"video_style_name": " ".join(part.capitalize() for part in workflow.workflow_key.split("_")),
 		}
 
 	@frappe.whitelist()
@@ -685,11 +662,7 @@ class MediaProject(Document):
 			shot_count=shot_count,
 			reference_template=template,
 			reference_images=self._get_project_image_inputs(),
-			video_style=(
-				f"{workflow_version.client_name}: {workflow_version.client_description}"
-				if workflow_version.client_name
-				else media_specification.video_style
-			),
+			video_style=media_specification.video_style or workflow_version.workflow_key,
 		)
 
 	@frappe.whitelist()
@@ -839,18 +812,10 @@ class MediaProject(Document):
 			if isinstance(use_current_workflow_defaults, str):
 				use_current_workflow_defaults = frappe.parse_json(use_current_workflow_defaults)
 			if use_current_workflow_defaults:
-				workflow = frappe.db.get_value(
-					"Workflow",
-					{
-						"client_visible": 1,
-						"is_active": 1,
-						"status": ["in", ["Testing", "Production"]],
-					},
-					"name",
-					order_by="version_number desc, modified desc",
-				)
-				if not workflow:
+				current_workflow = get_latest_valid_workflow(latest.video_style)
+				if not current_workflow:
 					frappe.throw(_("No default Workflow is configured."))
+				workflow = current_workflow.name
 
 			revision = frappe.get_doc(
 				{

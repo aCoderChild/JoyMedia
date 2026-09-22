@@ -13,8 +13,8 @@ class TestMediaSpecification(FrappeTestCase):
 		specification.has_value_changed = lambda fieldname: True
 
 		with patch(
-			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.db.get_value",
-			return_value="WF-00001",
+			"joymedia.joymedia.doctype.media_specification.media_specification.get_latest_valid_workflow",
+			return_value=frappe._dict(name="WF-00001"),
 		):
 			MediaSpecification._resolve_generation_setup(specification)
 
@@ -28,7 +28,10 @@ class TestMediaSpecification(FrappeTestCase):
 		specification = _existing_specification(status="Ready", workflow="WF-00001")
 		with patch(
 			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.get_doc",
-			return_value=frappe._dict(name="WF-00001", status="Draft"),
+			return_value=frappe._dict(name="WF-00001"),
+		), patch(
+			"joymedia.services.workflow_resolver.validate_workflow_bindings",
+			side_effect=ValidationError("invalid workflow"),
 		):
 			with self.assertRaises(ValidationError):
 				MediaSpecification.validate_generation_setup(specification)
@@ -37,7 +40,9 @@ class TestMediaSpecification(FrappeTestCase):
 		specification = _existing_specification(status="Ready", workflow="WF-00001")
 		with patch(
 			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.get_doc",
-			return_value=frappe._dict(name="WF-00001", status="Production"),
+			return_value=frappe._dict(name="WF-00001"),
+		), patch(
+			"joymedia.services.workflow_resolver.validate_workflow_bindings",
 		):
 			MediaSpecification.validate_generation_setup(specification)
 

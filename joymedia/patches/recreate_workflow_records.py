@@ -2,7 +2,7 @@ import frappe
 
 
 def execute():
-	if frappe.db.exists("Workflow", {"workflow_code": "MINIMAX-H3"}):
+	if frappe.db.exists("Workflow", {"workflow_key": "product_showcase"}):
 		return
 
 	old_table = frappe.db.sql("SHOW TABLES LIKE 'tabWorkflow Version'")
@@ -30,18 +30,7 @@ def execute():
 		{
 			"doctype": "Workflow",
 			"workflow_key": "product_showcase",
-			"workflow_code": "MINIMAX-H3",
 			"version_number": old_workflow.version_number or 1,
-			"version_label": "MiniMax H3 v{0}".format(old_workflow.version_number or 1),
-			"status": old_workflow.status if old_workflow.status in ("Draft", "Testing", "Production", "Deprecated") else "Draft",
-			"is_default": int(
-				old_workflow.default_workflow_version == old_workflow.name
-				and old_workflow.status in ("Testing", "Production")
-			),
-			"client_name": "Product Showcase",
-			"client_description": "Clean, polished product presentation for launches and ecommerce.",
-			"client_visible": 1,
-			"is_active": 1,
 			"workflow_json": old_workflow.workflow_json,
 		}
 	)
