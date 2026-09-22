@@ -104,7 +104,7 @@
    "label": "Active"
   },
   {
-   "default": "Draft",
+   "default": "Testing",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
