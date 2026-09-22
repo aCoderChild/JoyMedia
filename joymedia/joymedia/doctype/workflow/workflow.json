@@ -10,15 +10,6 @@
   "workflow_key",
   "workflow_code",
   "version_number",
-  "version_label",
-  "customer_presentation_section",
-  "client_name",
-  "client_description",
-  "client_visible",
-  "availability_section",
-  "is_active",
-  "status",
-  "is_default",
   "workflow_definition_section",
   "workflow_json",
   "workflow_hash",
@@ -37,6 +28,7 @@
    "label": "Workflow Identity"
   },
   {
+   "default": "product_showcase",
    "description": "Stable customer-facing style key shared by technical revisions of the same style.",
    "fieldname": "workflow_key",
    "fieldtype": "Data",
@@ -46,6 +38,7 @@
    "reqd": 1
   },
   {
+   "default": "MINIMAX-H3",
    "fieldname": "workflow_code",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -66,6 +59,7 @@
   {
    "fieldname": "version_label",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Version Label",
    "read_only_depends_on": "eval:doc.status==\"Production\" || doc.status==\"Deprecated\";",
@@ -74,39 +68,46 @@
   {
    "fieldname": "customer_presentation_section",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Customer Presentation"
   },
   {
    "fieldname": "client_name",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Client Name"
   },
   {
    "fieldname": "client_description",
    "fieldtype": "Small Text",
+   "hidden": 1,
    "label": "Client Description"
   },
   {
    "default": "1",
    "fieldname": "client_visible",
    "fieldtype": "Check",
+   "hidden": 1,
    "label": "Client Visible"
   },
   {
    "fieldname": "availability_section",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Availability"
   },
   {
    "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
+   "hidden": 1,
    "label": "Active"
   },
   {
    "default": "Testing",
    "fieldname": "status",
    "fieldtype": "Select",
+   "hidden": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
@@ -117,6 +118,7 @@
    "default": "0",
    "fieldname": "is_default",
    "fieldtype": "Check",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Default Workflow"
   },

@@ -26,6 +26,9 @@ IMMUTABLE_FIELDS = (
 	"produces_audio",
 )
 
+DEFAULT_WORKFLOW_KEY = "product_showcase"
+DEFAULT_WORKFLOW_CODE = "MINIMAX-H3"
+
 
 @frappe.whitelist()
 def validate_workflow(version_name: str):
@@ -136,6 +139,7 @@ def set_default_workflow(version_name: str):
 
 class Workflow(Document):
 	def validate(self):
+		self._set_backend_defaults()
 		self._set_version_number()
 		self._validate_immutable_content()
 		workflow_data = frappe.parse_json(self.workflow_json)
@@ -159,6 +163,12 @@ class Workflow(Document):
 		).items():
 			setattr(self, fieldname, value)
 
+	def _set_backend_defaults(self):
+		if not self.workflow_key:
+			self.workflow_key = DEFAULT_WORKFLOW_KEY
+		if not self.workflow_code:
+			self.workflow_code = DEFAULT_WORKFLOW_CODE
+
 	def _set_version_number(self):
 		if not self.is_new() or not self.workflow_key:
 			return
@@ -171,6 +181,8 @@ class Workflow(Document):
 			limit_page_length=1,
 		)
 		self.version_number = int(latest[0].version_number or 0) + 1 if latest else 1
+		if not self.version_label:
+			self.version_label = f"MiniMax H3 v{self.version_number}"
 
 	def _validate_immutable_content(self):
 		previous = self.get_doc_before_save()
