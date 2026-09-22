@@ -80,7 +80,7 @@
    "label": "Client Description"
   },
   {
-   "default": "0",
+   "default": "1",
    "fieldname": "client_visible",
    "fieldtype": "Check",
    "label": "Client Visible"
