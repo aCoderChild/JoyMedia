@@ -1,7 +1,8 @@
 <template>
   <div class="app-shell">
+    <!-- Left Sidebar (Frappe UI AppShell) -->
     <aside class="sidebar" :class="{ 'is-collapsed': isCollapsed }">
-      <!-- Top Brand & Workspace Switcher (Frappe LMS Style) -->
+      <!-- Top Brand Header (JoyMedia Studio) -->
       <div class="sidebar-header">
         <Dropdown :options="headerDropdownOptions" :side="'bottom'" :align="'start'">
           <template v-slot="{ open }">
@@ -13,18 +14,15 @@
                 'justify-center p-1.5': isCollapsed,
                 'justify-between p-2': !isCollapsed,
               }"
-              :title="isCollapsed ? 'JoyMedia Studio (Click for menu)' : undefined"
+              :title="isCollapsed ? 'JoyMedia Studio' : undefined"
             >
               <div class="flex items-center gap-2.5 min-w-0">
                 <div class="brand-mark shrink-0">
-                  <svg class="size-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/>
-                    <rect x="2" y="6" width="14" height="12" rx="2"/>
-                  </svg>
+                  <span class="text-base font-bold text-white">✦</span>
                 </div>
                 <div v-if="!isCollapsed" class="flex flex-col text-left min-w-0">
-                  <span class="text-sm font-semibold text-ink-primary leading-tight truncate">JoyMedia</span>
-                  <span class="text-xs text-ink-secondary truncate">{{ user || "Production Studio" }}</span>
+                  <span class="text-xs font-bold uppercase tracking-wider text-indigo-400 leading-tight">JoyMedia</span>
+                  <span class="text-xs font-semibold text-ink-primary leading-tight truncate">Studio</span>
                 </div>
               </div>
               <svg
@@ -35,8 +33,6 @@
                 fill="none"
                 stroke="currentColor"
                 stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
               >
                 <polyline points="6 9 12 15 18 9" />
               </svg>
@@ -45,22 +41,17 @@
         </Dropdown>
       </div>
 
-      <!-- Navigation Links (Frappe LMS Core Structure) -->
+      <!-- Navigation Links -->
       <nav class="sidebar-nav" aria-label="Main navigation">
-        <!-- Campaigns (Courses equivalent in LMS) -->
-        <Tooltip text="Campaigns" side="right" :disabled="!isCollapsed">
+        <!-- 1. Tất cả nội dung nghệ... -->
+        <Tooltip :text="t('sidebar_all_art_full')" side="right" :disabled="!isCollapsed">
           <RouterLink
             to="/campaigns"
             class="nav-link"
             :class="{ 'justify-center p-2.5': isCollapsed }"
           >
-            <span class="nav-link-icon">
-              <svg class="size-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-              </svg>
-            </span>
-            <span v-if="!isCollapsed" class="truncate flex-1">Campaigns</span>
+            <span class="nav-link-icon text-base">▦</span>
+            <span v-if="!isCollapsed" class="truncate flex-1">{{ t('sidebar_all_art') }}</span>
             <span
               v-if="!isCollapsed && campaignsCount"
               class="sidebar-counter-chip"
@@ -70,49 +61,15 @@
           </RouterLink>
         </Tooltip>
 
-        <!-- Review Videos (Batches equivalent in LMS) -->
-        <Tooltip text="Review Videos" side="right" :disabled="!isCollapsed">
-          <RouterLink
-            to="/reviews"
-            class="nav-link"
-            :class="{ 'justify-center p-2.5': isCollapsed }"
-          >
-            <span class="nav-link-icon relative">
-              <svg class="size-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <polyline points="16 11 18 13 22 9"/>
-              </svg>
-              <!-- Notification Dot when collapsed -->
-              <span
-                v-if="isCollapsed && pendingReviewsCount > 0"
-                class="absolute -top-1 -right-1 size-2 rounded-full bg-amber-500 animate-pulse"
-              />
-            </span>
-            <span v-if="!isCollapsed" class="truncate flex-1">Review Videos</span>
-            <span
-              v-if="!isCollapsed && pendingReviewsCount > 0"
-              class="sidebar-counter-badge"
-            >
-              {{ pendingReviewsCount }}
-            </span>
-          </RouterLink>
-        </Tooltip>
-
-        <!-- Assets (Jobs/Library equivalent in LMS) -->
-        <Tooltip text="Assets" side="right" :disabled="!isCollapsed">
+        <!-- 2. Hình ảnh -->
+        <Tooltip :text="t('sidebar_images')" side="right" :disabled="!isCollapsed">
           <RouterLink
             to="/assets"
             class="nav-link"
             :class="{ 'justify-center p-2.5': isCollapsed }"
           >
-            <span class="nav-link-icon">
-              <svg class="size-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                <rect width="20" height="14" x="2" y="7" rx="2" ry="2"/>
-                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
-              </svg>
-            </span>
-            <span v-if="!isCollapsed" class="truncate flex-1">Assets</span>
+            <span class="nav-link-icon text-base">🖼️</span>
+            <span v-if="!isCollapsed" class="truncate flex-1">{{ t('sidebar_images') }}</span>
             <span
               v-if="!isCollapsed && assetsCount"
               class="sidebar-counter-chip"
@@ -122,123 +79,199 @@
           </RouterLink>
         </Tooltip>
 
-        <!-- Workspace & Statistics (Statistics equivalent in LMS) -->
-        <Tooltip text="Workspace Setup" side="right" :disabled="!isCollapsed">
+        <!-- 3. Nhân vật -->
+        <Tooltip :text="t('sidebar_characters')" side="right" :disabled="!isCollapsed">
+          <RouterLink
+            to="/assets?category=Character"
+            class="nav-link"
+            :class="{ 'justify-center p-2.5': isCollapsed }"
+          >
+            <span class="nav-link-icon text-base">👤</span>
+            <span v-if="!isCollapsed" class="truncate flex-1">{{ t('sidebar_characters') }}</span>
+          </RouterLink>
+        </Tooltip>
+
+        <!-- 4. Cảnh -->
+        <Tooltip :text="t('sidebar_scenes')" side="right" :disabled="!isCollapsed">
+          <RouterLink
+            to="/reviews"
+            class="nav-link"
+            :class="{ 'justify-center p-2.5': isCollapsed }"
+          >
+            <span class="nav-link-icon relative text-base">
+              🎬
+              <span
+                v-if="isCollapsed && pendingReviewsCount > 0"
+                class="absolute -top-1 -right-1 size-2 rounded-full bg-amber-500 animate-pulse"
+              />
+            </span>
+            <span v-if="!isCollapsed" class="truncate flex-1">{{ t('sidebar_scenes') }}</span>
+            <span
+              v-if="!isCollapsed && pendingReviewsCount > 0"
+              class="sidebar-counter-badge"
+            >
+              {{ pendingReviewsCount }}
+            </span>
+          </RouterLink>
+        </Tooltip>
+
+        <!-- 5. Công cụ -->
+        <Tooltip :text="t('sidebar_tools')" side="right" :disabled="!isCollapsed">
           <RouterLink
             to="/onboarding"
             class="nav-link"
             :class="{ 'justify-center p-2.5': isCollapsed }"
           >
-            <span class="nav-link-icon">
-              <svg class="size-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-                <polyline points="16 7 22 7 22 13"/>
-              </svg>
-            </span>
-            <span v-if="!isCollapsed" class="truncate flex-1">Workspace</span>
+            <span class="nav-link-icon text-base">✨</span>
+            <span v-if="!isCollapsed" class="truncate flex-1">{{ t('sidebar_tools') }}</span>
           </RouterLink>
         </Tooltip>
       </nav>
 
-      <!-- Sidebar Footer (Frappe LMS Bottom Bar: ⚡ Quick Action & [←|] Collapse Toggle) -->
+      <!-- Sidebar Footer: Thùng rác + Thu gọn -->
       <div class="sidebar-footer">
-        <!-- ⚡ Quick Actions Dropdown (Frappe LMS Lightning Bolt) -->
-        <Tooltip text="Quick Actions (⚡)" :side="isCollapsed ? 'right' : 'top'">
-          <Dropdown :options="quickActionOptions" :side="'top'" :align="'start'">
-            <template v-slot="{ open }">
-              <button
-                type="button"
-                class="sidebar-icon-btn group"
-                :class="{ 'is-active': open }"
-                aria-label="Quick Actions"
-              >
-                <svg class="size-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                </svg>
-              </button>
-            </template>
-          </Dropdown>
-        </Tooltip>
-
-        <!-- [←|] / [|→] Collapse / Expand Sidebar Toggle -->
-        <Tooltip :text="isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" :side="isCollapsed ? 'right' : 'top'">
+        <!-- Thùng rác -->
+        <Tooltip text="Thùng rác" side="right" :disabled="!isCollapsed">
           <button
             type="button"
-            class="sidebar-icon-btn"
-            :aria-label="isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+            class="nav-link w-full text-ink-muted hover:text-ink-primary"
+            :class="{ 'justify-center p-2.5': isCollapsed }"
+            @click="router.push('/assets')"
+          >
+            <span class="nav-link-icon text-sm">🗑️</span>
+            <span v-if="!isCollapsed" class="truncate flex-1 text-xs">{{ currentLang === 'vi' ? 'Thùng rác' : 'Trash' }}</span>
+          </button>
+        </Tooltip>
+
+        <!-- Thu gọn Toggle -->
+        <Tooltip :text="isCollapsed ? (currentLang === 'vi' ? 'Mở rộng' : 'Expand') : (currentLang === 'vi' ? 'Thu gọn' : 'Collapse')" side="right" :disabled="!isCollapsed">
+          <button
+            type="button"
+            class="nav-link w-full text-ink-muted hover:text-ink-primary"
+            :class="{ 'justify-center p-2.5': isCollapsed }"
+            :aria-label="isCollapsed ? 'Mở rộng thanh bên' : 'Thu gọn thanh bên'"
             @click="toggleSidebar"
           >
-            <!-- Expanded Icon: Collapse to left -->
-            <svg v-if="!isCollapsed" class="size-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-              <path d="M9 3v18"/>
-              <path d="m14 9-3 3 3 3"/>
-            </svg>
-            <!-- Collapsed Icon: Expand to right -->
-            <svg v-else class="size-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-              <path d="M9 3v18"/>
-              <path d="m13 15 3-3-3-3"/>
-            </svg>
+            <span class="nav-link-icon text-xs font-mono">
+              {{ isCollapsed ? '▶|' : '◀|' }}
+            </span>
+            <span v-if="!isCollapsed" class="truncate flex-1 text-xs">{{ currentLang === 'vi' ? 'Thu gọn' : 'Collapse' }}</span>
           </button>
         </Tooltip>
       </div>
     </aside>
 
+    <!-- Main Workspace Area -->
     <main class="main-content">
+      <!-- Topbar -->
       <header class="topbar">
-        <div class="breadcrumbs-container">
-          <RouterLink to="/campaigns" class="breadcrumb-item">JoyMedia</RouterLink>
-          <svg class="size-3.5 text-ink-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-          <span class="breadcrumb-item active">{{ currentPageTitle }}</span>
-        </div>
-
-        <div class="topbar-right">
-          <!-- Quick Theme Toggle in Topbar -->
+        <!-- Left: Home / Project Navigation -->
+        <div class="flex items-center gap-3">
           <button
             type="button"
-            class="p-1.5 rounded-lg text-ink-secondary hover:text-ink-primary hover:bg-surface-hover transition-colors"
-            :title="isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'"
+            class="p-1 rounded text-ink-muted hover:text-ink-primary transition-colors"
+            title="Trang chủ chiến dịch"
+            @click="router.push('/campaigns')"
+          >
+            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+          </button>
+
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-ink-primary tracking-tight">{{ currentPageTitle }}</span>
+            <span class="text-ink-muted hover:text-ink-primary cursor-pointer p-0.5" title="Tùy chọn">⋮</span>
+          </div>
+        </div>
+
+        <!-- Center: Search Pill -->
+        <div class="hidden md:flex items-center justify-center flex-1 max-w-sm mx-4">
+          <div class="flex items-center gap-2 w-full px-3.5 py-1.5 rounded-full bg-surface-card border border-outline-border text-xs text-ink-primary focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 shadow-xs transition-all">
+            <svg class="size-3.5 text-ink-muted shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input
+              type="text"
+              :placeholder="currentLang === 'vi' ? 'Tìm kiếm dự án, kịch bản, cảnh...' : 'Search projects, scripts, scenes...'"
+              class="bg-transparent border-none outline-none text-xs text-ink-primary placeholder:text-ink-muted w-full"
+            />
+          </div>
+        </div>
+
+        <!-- Right: Actions & User -->
+        <div class="topbar-right flex items-center gap-2.5">
+          <!-- Language Switcher (EN / VI) -->
+          <button
+            type="button"
+            class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold text-ink-primary bg-surface-card hover:bg-surface-hover border border-outline-border transition-all select-none shadow-xs"
+            :title="currentLang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'"
+            @click="toggleLang"
+          >
+            <span class="text-xs">🌐</span>
+            <span class="font-mono text-[11px] uppercase tracking-wider font-bold">{{ currentLang }}</span>
+            <span class="text-[10px] text-ink-muted font-normal">({{ currentLang === 'vi' ? 'VIE' : 'ENG' }})</span>
+          </button>
+
+          <!-- Quick New Project Button -->
+          <button
+            type="button"
+            class="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-sm shadow-indigo-600/20 cursor-pointer"
+            @click="router.push('/campaigns/new')"
+          >
+            <span class="text-sm font-bold leading-none">+</span>
+            <span>{{ currentLang === 'vi' ? 'Tạo dự án' : 'New Project' }}</span>
+          </button>
+
+          <!-- Theme Toggle -->
+          <button
+            type="button"
+            class="p-1.5 rounded-xl text-ink-muted hover:text-ink-primary hover:bg-surface-hover transition-colors border border-transparent hover:border-outline-border"
+            :title="isDark ? (currentLang === 'vi' ? 'Chuyển sang Giao diện Sáng' : 'Switch to Light Mode') : (currentLang === 'vi' ? 'Chuyển sang Giao diện Tối' : 'Switch to Dark Mode')"
             @click="toggleTheme"
           >
-            <!-- Sun Icon (when dark) -->
-            <svg v-if="isDark" class="size-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg v-if="isDark" class="size-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="4"/>
               <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
             </svg>
-            <!-- Moon Icon (when light) -->
-            <svg v-else class="size-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg v-else class="size-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
             </svg>
           </button>
 
-          <!-- User Badge with Initial -->
+          <!-- PRO Tag -->
+          <span class="text-[11px] font-bold px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            PRO
+          </span>
+
+          <!-- User Badge -->
           <div class="user-badge" :title="user">
             <span class="user-avatar">{{ userInitial }}</span>
-            <span class="user-name">{{ user || "Creator" }}</span>
+            <span class="user-name hidden lg:inline">{{ user || "Creator" }}</span>
           </div>
 
+          <!-- Log out -->
           <Button
             appearance="subtle"
+            class="!px-2"
             :loading="logout.loading"
             @click="logout.submit()"
-            title="Log out"
+            :title="currentLang === 'vi' ? 'Đăng xuất' : 'Sign out'"
           >
             <template #prefix>
-              <svg class="size-4 text-ink-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg class="size-4 text-ink-muted hover:text-ink-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
                 <polyline points="16 17 21 12 16 7"/>
                 <line x1="21" x2="9" y1="12" y2="12"/>
               </svg>
             </template>
-            Log out
           </Button>
         </div>
       </header>
 
-      <div class="page-content">
+      <!-- Slot Content -->
+      <div class="page-content flow-page-content">
         <slot />
       </div>
     </main>
@@ -250,12 +283,14 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Button, Dropdown, Tooltip, createResource } from "frappe-ui";
 import { useSession } from "../stores/session";
+import { useI18n } from "../stores/i18n";
 
 const { user, logout } = useSession();
+const { t, currentLang, toggleLang, setLang } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
-// Sidebar state (persist to localStorage like LMS)
+// Sidebar state
 const isCollapsed = ref(localStorage.getItem("joymedia_sidebar_collapsed") === "true");
 
 function toggleSidebar() {
@@ -263,8 +298,8 @@ function toggleSidebar() {
   localStorage.setItem("joymedia_sidebar_collapsed", String(isCollapsed.value));
 }
 
-// Theme management (Frappe LMS standard)
-const isDark = ref(localStorage.getItem("joymedia_theme") === "dark");
+// Theme management (Google Flow obsidian dark)
+const isDark = ref(true);
 
 function applyTheme(dark) {
   isDark.value = dark;
@@ -284,111 +319,58 @@ function toggleTheme() {
 
 onMounted(() => {
   const savedTheme = localStorage.getItem("joymedia_theme");
-  if (savedTheme) {
-    applyTheme(savedTheme === "dark");
-  } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+  if (savedTheme === "light") {
+    applyTheme(false);
+  } else {
     applyTheme(true);
   }
 });
 
-// Dynamic Resource Counts for Sidebar
+// Dynamic Resource Counts
 const campaignsResource = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_cards",
   auto: true,
 });
 
 const reviewsResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_pending_review_cards",
-  auto: true,
-});
-
-const assetsResource = createResource({
-  url: "frappe.client.get_list",
-  params: {
-    doctype: "Media Asset",
-    fields: ["name"],
-    limit_page_length: 500,
-  },
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_reviews_summary",
   auto: true,
 });
 
 const campaignsCount = computed(() => campaignsResource.data?.length || 0);
-const pendingReviewsCount = computed(() => reviewsResource.data?.length || 0);
-const assetsCount = computed(() => assetsResource.data?.length || 0);
-
-// Top Workspace Header Dropdown Options (Frappe LMS Inspired)
-const headerDropdownOptions = computed(() => [
-  {
-    label: "All Campaigns",
-    onClick: () => router.push("/campaigns"),
-  },
-  {
-    label: "+ Create Campaign",
-    onClick: () => router.push("/campaigns/new"),
-  },
-  {
-    label: isDark.value ? "Switch to Light Theme" : "Switch to Dark Theme",
-    onClick: toggleTheme,
-  },
-  {
-    label: "Frappe Desk Admin (/app)",
-    onClick: () => {
-      window.location.href = "/app";
-    },
-  },
-  {
-    label: "Workspace Setup",
-    onClick: () => router.push("/onboarding"),
-  },
-  {
-    label: "Log Out",
-    onClick: () => logout.submit(),
-  },
-]);
-
-// ⚡ Quick Action Dropdown Options (Frappe LMS Lightning Bolt)
-const quickActionOptions = computed(() => [
-  {
-    label: "+ New Campaign",
-    onClick: () => router.push("/campaigns/new"),
-  },
-  {
-    label: pendingReviewsCount.value > 0
-      ? `Review Videos (${pendingReviewsCount.value} pending)`
-      : "Review Videos",
-    onClick: () => router.push("/reviews"),
-  },
-  {
-    label: assetsCount.value > 0
-      ? `Media Assets (${assetsCount.value} assets)`
-      : "Media Assets",
-    onClick: () => router.push("/assets"),
-  },
-  {
-    label: isDark.value ? "Light Mode" : "Dark Mode",
-    onClick: toggleTheme,
-  },
-  {
-    label: "Frappe Desk (/app)",
-    onClick: () => {
-      window.location.href = "/app";
-    },
-  },
-]);
-
-const userInitial = computed(() => {
-  if (!user.value) return "U";
-  return user.value.trim().charAt(0).toUpperCase();
+const assetsCount = computed(() => {
+  const campaigns = campaignsResource.data || [];
+  return campaigns.reduce((total, c) => total + (c.asset_count || 0), 0);
 });
+const pendingReviewsCount = computed(() => reviewsResource.data?.pending_count || 0);
 
 const currentPageTitle = computed(() => {
   const path = route.path;
-  if (path.startsWith("/campaigns/new")) return "New Campaign";
-  if (path.startsWith("/campaigns/")) return "Campaign Detail";
-  if (path.startsWith("/campaigns")) return "Campaigns";
-  if (path.startsWith("/assets")) return "Assets";
-  if (path.startsWith("/reviews")) return "Review Videos";
-  if (path.startsWith("/onboarding")) return "Workspace Onboarding";
-  return "Workspace";
+  const isEn = currentLang.value === "en";
+  if (path === "/campaigns" || path === "/") return isEn ? "Marketing Campaigns" : "Chiến dịch Video";
+  if (path.startsWith("/campaigns/new")) return isEn ? "Create New Project" : "Tạo dự án mới";
+  if (path.startsWith("/campaigns/")) return isEn ? "Campaign Workspace" : "Chi tiết chiến dịch";
+  if (path.startsWith("/projects/")) return "JoyMedia Studio";
+  if (path.startsWith("/reviews")) return isEn ? "Review Videos" : "Đánh giá video";
+  if (path.startsWith("/assets")) return isEn ? "Asset Library" : "Thư viện Media";
+  if (path.startsWith("/onboarding")) return isEn ? "Studio Settings" : "Cài đặt Studio";
+  return "JoyMedia Studio";
 });
+
+const userInitial = computed(() => {
+  if (!user.value) return "J";
+  return user.value.charAt(0).toUpperCase();
+});
+
+const headerDropdownOptions = computed(() => [
+  { label: "JoyMedia Studio", onClick: () => router.push("/campaigns") },
+  { label: currentLang.value === "en" ? "Asset Library" : "Thư viện Media", onClick: () => router.push("/assets") },
+  { label: currentLang.value === "en" ? "Review Videos" : "Đánh giá Video", onClick: () => router.push("/reviews") },
+  {
+    label: currentLang.value === "en" ? "🇻🇳 Tiếng Việt" : "🇬🇧 English",
+    onClick: () => toggleLang(),
+  },
+  { label: currentLang.value === "en" ? "Studio Settings" : "Cài đặt Studio", onClick: () => router.push("/onboarding") },
+  { label: currentLang.value === "en" ? "Sign out" : "Đăng xuất", onClick: () => logout.submit() },
+]);
 </script>

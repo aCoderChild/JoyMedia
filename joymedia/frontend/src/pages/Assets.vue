@@ -2,16 +2,24 @@
   <section class="page-section">
     <div class="page-heading">
       <div>
-        <p class="eyebrow">Media Repository</p>
-        <h1>Asset Library</h1>
-        <p class="subtitle">Reference inputs and machine-generated video outputs across your workspace. Click any asset to preview.</p>
+        <p class="eyebrow">{{ t('assets_eyebrow') }}</p>
+        <h1>{{ t('assets_title') }}</h1>
+        <p class="subtitle">{{ t('assets_subtitle') }}</p>
       </div>
-      <Button appearance="subtle" @click="openCampaigns">
-        <template #prefix>
-          <span class="lucide-clapperboard size-4" />
-        </template>
-        View Campaigns
-      </Button>
+      <div class="flex items-center gap-2">
+        <Button variant="solid" @click="showUploadModal = true">
+          <template #prefix>
+            <span class="lucide-plus size-4" />
+          </template>
+          {{ t('btn_add_asset') }}
+        </Button>
+        <Button appearance="subtle" @click="openCampaigns">
+          <template #prefix>
+            <span class="lucide-clapperboard size-4" />
+          </template>
+          {{ t('btn_view_projects') }}
+        </Button>
+      </div>
     </div>
 
     <!-- Toolbar: Scope & Type Categorisation Filters -->
@@ -65,6 +73,22 @@
           </template>
         </FormControl>
       </div>
+    </div>
+
+    <!-- Category Filter Chips (Frappe INPUT_ASSET_CATEGORIES) -->
+    <div class="flex items-center gap-2 mb-6 overflow-x-auto pb-1">
+      <button
+        v-for="cat in categoryOptions"
+        :key="cat.value"
+        type="button"
+        class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0"
+        :class="activeCategory === cat.value
+          ? 'bg-indigo-600 text-white shadow-xs'
+          : 'bg-surface-card hover:bg-surface-hover text-ink-secondary hover:text-ink-primary border border-outline-border'"
+        @click="activeCategory = cat.value"
+      >
+        {{ cat.label }}
+      </button>
     </div>
 
     <div v-if="assetsResource.loading" class="empty-state">
@@ -270,23 +294,102 @@
         </div>
       </div>
     </div>
+
+    <!-- Reference Asset Upload Modal (Frappe Data Model) -->
+    <div
+      v-if="showUploadModal"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs"
+      @click.self="showUploadModal = false"
+    >
+      <div class="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl text-xs space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
+          <div>
+            <h3 class="text-sm font-bold text-white">{{ t('upload_modal_title') }}</h3>
+            <p class="text-zinc-400 text-[11px] mt-0.5">{{ t('upload_modal_sub') }}</p>
+          </div>
+          <button type="button" class="text-zinc-400 hover:text-white" @click="showUploadModal = false">✕</button>
+        </div>
+
+        <div>
+          <label class="block text-zinc-300 font-semibold mb-1">{{ t('upload_campaign_label') }}</label>
+          <FormControl
+            v-model="uploadTargetCampaign"
+            type="select"
+            :options="campaignOptions"
+            placeholder="Select campaign..."
+          />
+        </div>
+
+        <div>
+          <label class="block text-zinc-300 font-semibold mb-1">{{ t('upload_category_label') }}</label>
+          <FormControl
+            v-model="uploadCategory"
+            type="select"
+            :options="[
+              { label: t('cat_product'), value: 'Product' },
+              { label: t('cat_character'), value: 'Character' },
+              { label: t('cat_background'), value: 'Background' },
+              { label: t('cat_brand'), value: 'Brand' },
+              { label: t('cat_style'), value: 'Style' },
+              { label: t('cat_reference'), value: 'Reference' },
+            ]"
+          />
+        </div>
+
+        <div>
+          <label class="block text-zinc-300 font-semibold mb-1">{{ t('upload_file_label') }}</label>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            class="w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700 cursor-pointer"
+            @change="onFileChange"
+          />
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+          <Button appearance="subtle" @click="showUploadModal = false">{{ t('btn_cancel') }}</Button>
+          <Button variant="solid" :loading="isUploading" @click="handleUploadAsset">{{ t('btn_upload') }}</Button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
 <script setup>
 import { computed, ref, watch } from "vue";
-import { Button, FormControl, createResource } from "frappe-ui";
+import { useRoute } from "vue-router";
+import { Button, FormControl, call, createResource, toast, upload as uploadFile } from "frappe-ui";
+import { useI18n } from "../stores/i18n";
 
+const { t } = useI18n();
+const route = useRoute();
 const search = ref("");
 const activeScope = ref("All");
 const activeType = ref("All");
+const activeCategory = ref(route.query?.category || "All");
 const selectedAsset = ref(null);
 
-const typeOptions = [
-  { label: "All Types", value: "All" },
-  { label: "Reference Inputs", value: "Inputs" },
-  { label: "Project Outputs", value: "Outputs" },
-];
+const showUploadModal = ref(false);
+const isUploading = ref(false);
+const uploadTargetCampaign = ref("");
+const uploadCategory = ref("Product");
+const selectedFile = ref(null);
+
+const typeOptions = computed(() => [
+  { label: t('type_all'), value: "All" },
+  { label: t('type_inputs'), value: "Inputs" },
+  { label: t('type_outputs'), value: "Outputs" },
+]);
+
+const categoryOptions = computed(() => [
+  { label: t('all_categories'), value: "All" },
+  { label: t('cat_product'), value: "Product" },
+  { label: t('cat_character'), value: "Character" },
+  { label: t('cat_background'), value: "Background" },
+  { label: t('cat_brand'), value: "Brand" },
+  { label: t('cat_style'), value: "Style" },
+  { label: t('cat_reference'), value: "Reference" },
+]);
 
 const assetsResource = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_library_assets",
@@ -297,6 +400,25 @@ const assetsResource = createResource({
   auto: true,
 });
 
+const campaignsResource = createResource({
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_cards",
+  auto: true,
+});
+
+const campaignOptions = computed(() => {
+  const list = campaignsResource.data || [];
+  return list.map((c) => ({
+    label: `${c.campaign_name || c.product_name} (${c.campaign || c.name})`,
+    value: c.campaign || c.name,
+  }));
+});
+
+watch(campaignOptions, (opts) => {
+  if (opts.length && !uploadTargetCampaign.value) {
+    uploadTargetCampaign.value = opts[0].value;
+  }
+}, { immediate: true });
+
 watch([activeScope, activeType], () => {
   assetsResource.params = {
     scope: activeScope.value,
@@ -305,8 +427,17 @@ watch([activeScope, activeType], () => {
   assetsResource.reload();
 });
 
+watch(() => route.query?.category, (newCat) => {
+  if (newCat) {
+    activeCategory.value = newCat;
+  }
+});
+
 const filteredAssets = computed(() => {
-  const list = assetsResource.data || [];
+  let list = assetsResource.data || [];
+  if (activeCategory.value !== "All") {
+    list = list.filter((a) => a.asset_category === activeCategory.value);
+  }
   const q = search.value.trim().toLowerCase();
   if (!q) return list;
   return list.filter((a) => `${a.asset_name} ${a.asset_category}`.toLowerCase().includes(q));
@@ -335,6 +466,45 @@ function resetFilters() {
   search.value = "";
   activeScope.value = "All";
   activeType.value = "All";
+  activeCategory.value = "All";
+}
+
+function onFileChange(e) {
+  const file = e.target.files?.[0];
+  selectedFile.value = file || null;
+}
+
+async function handleUploadAsset() {
+  if (!selectedFile.value) {
+    toast({ title: "Chưa chọn file", text: "Vui lòng chọn một file ảnh.", type: "error" });
+    return;
+  }
+  if (!uploadTargetCampaign.value) {
+    toast({ title: "Chưa chọn chiến dịch", text: "Vui lòng chọn một chiến dịch để đính kèm tư liệu.", type: "error" });
+    return;
+  }
+
+  isUploading.value = true;
+  try {
+    const uploaded = await uploadFile(selectedFile.value, { private: true });
+    if (!uploaded?.file_url) throw new Error("Không thể tải lên file.");
+
+    await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign_shared_asset", {
+      campaign: uploadTargetCampaign.value,
+      asset_name: selectedFile.value.name.replace(/\.[^/.]+$/, ""),
+      asset_category: uploadCategory.value,
+      file_url: uploaded.file_url,
+    });
+
+    toast({ title: "Đã tải lên tư liệu", text: `Đã thêm vào chiến dịch ${uploadTargetCampaign.value}.`, type: "success" });
+    showUploadModal.value = false;
+    selectedFile.value = null;
+    await assetsResource.reload();
+  } catch (err) {
+    toast({ title: "Lỗi tải tư liệu", text: err.message || "Vui lòng thử lại.", type: "error" });
+  } finally {
+    isUploading.value = false;
+  }
 }
 
 function openProject(projectName) {

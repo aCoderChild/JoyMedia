@@ -105,17 +105,56 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { Button, FormControl, call, createResource, toast } from "frappe-ui";
 
-const form = reactive({ campaign_name: "", project_name: "", client_organization: "", product_name: "", target_audience: "", video_idea: "" });
+const route = useRoute();
+
+const form = reactive({
+  campaign_name: "",
+  project_name: "",
+  client_organization: "",
+  product_name: "",
+  target_audience: "",
+  video_idea: "",
+});
+
+onMounted(() => {
+  const q = route.query;
+  if (q.preset) {
+    if (q.preset === "Reel") {
+      form.campaign_name = "TikTok & Reels Launch";
+      form.project_name = "15s Vertical Commercial";
+      form.video_idea = "Dynamic fast-paced cuts highlighting product hook, viral music sync, and call to action.";
+    } else if (q.preset === "Hero") {
+      form.campaign_name = "Brand Hero Commercial";
+      form.project_name = "30s Cinematic Commercial";
+      form.video_idea = "Widescreen cinematic narrative highlighting craftsmanship, premium texture, and brand quality.";
+    } else if (q.preset === "Teaser") {
+      form.campaign_name = "Product Drop Teaser";
+      form.project_name = "10s Square Teaser";
+      form.video_idea = "High-energy product reveal with icy water splash and bold typography.";
+    }
+  }
+});
+
 const business = reactive({ name: "", industry: "" });
 const showBusinessForm = ref(false);
 const creatingBusiness = ref(false);
 const creatingCampaign = ref(false);
-const businesses = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_businesses", auto: true });
+const businesses = createResource({
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_businesses",
+  auto: true,
+});
 const businessOptions = computed(() => (businesses.data || []).map((item) => ({ label: item.organization_name, value: item.name })));
 const hasBusinesses = computed(() => businessOptions.value.length > 0);
+
+watch(businessOptions, (opts) => {
+  if (opts?.length && !form.client_organization) {
+    form.client_organization = opts[0].value;
+  }
+}, { immediate: true });
 
 async function createBusiness() {
   if (!business.name.trim()) {
