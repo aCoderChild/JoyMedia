@@ -53,6 +53,12 @@ class GenerationJob(Document):
 		self._validate_generation_run(media_specification)
 		if self.workflow_version != media_specification.workflow:
 			frappe.throw(_("Generation Job Workflow must match the Media Specification Workflow."))
+		if self.depends_on_job:
+			dependency = frappe.get_doc("Generation Job", self.depends_on_job)
+			if dependency.generation_run != self.generation_run:
+				frappe.throw(_("A chained Generation Job dependency must belong to the same Generation Run."))
+			if dependency.name == self.name:
+				frappe.throw(_("A Generation Job cannot depend on itself."))
 
 		return frappe.get_doc("Workflow", self.workflow_version)
 
@@ -98,6 +104,11 @@ class GenerationJob(Document):
 	def _validate_generation_input_snapshot(self, workflow_version):
 		expected_snapshot = self.get_shot_input_snapshot()
 		actual_snapshot = self._get_generation_input_snapshot()
+		# In Continuous mode, first_frame is a runtime lineage input produced by the
+		# dependency. The creative Shot Input Mapping remains unchanged for audit.
+		if self.depends_on_job:
+			expected_snapshot.pop("first_frame", None)
+			actual_snapshot.pop("first_frame", None)
 		if actual_snapshot != expected_snapshot:
 			frappe.throw(_("Generation Inputs must exactly match the Shot Input Mapping snapshot."))
 
@@ -107,6 +118,8 @@ class GenerationJob(Document):
 			if binding.value_source == "Generation Input" and binding.required and binding.required_input_role
 		}
 		for role in required_roles:
+			if self.depends_on_job and role == "first_frame":
+				continue
 			asset_version = actual_snapshot.get(role)
 			if not asset_version or not frappe.db.get_value("Asset Version", asset_version, "file"):
 				frappe.throw(

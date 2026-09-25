@@ -14,6 +14,7 @@
   "generation_setup_section",
   "video_style",
   "workflow",
+  "continuity_mode",
   "deliverable_requirements_section",
   "total_duration_seconds",
   "delivery_preset",
@@ -81,6 +82,16 @@
    "hidden": 1,
    "label": "Workflow",
    "options": "Workflow",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
+   "reqd": 1
+  },
+  {
+   "default": "Multi-shot",
+   "description": "Multi-shot uses planned keyframes. Continuous chains each shot from the previous generated last frame.",
+   "fieldname": "continuity_mode",
+   "fieldtype": "Select",
+   "label": "Generation Mode",
+   "options": "Continuous\nMulti-shot",
    "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
   },

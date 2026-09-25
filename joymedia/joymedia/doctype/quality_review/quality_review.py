@@ -79,8 +79,10 @@ class QualityReview(Document):
 
 		asset_version = promote_artifact(artifact.name)["asset_version"]
 		self.db_set("asset_version", asset_version, update_modified=False)
+		# Selecting an already-promoted output must not revalidate the entire shot.
+		# A legacy/incomplete workflow mapping should not block a review decision.
 		shot.selected_output_asset_version = asset_version
-		shot.save(ignore_permissions=True)
+		shot.db_set("selected_output_asset_version", asset_version, update_modified=False)
 
 		if job.generation_run:
 			from joymedia.services.generation_orchestrator import enqueue_finalization_if_ready
@@ -93,7 +95,7 @@ class QualityReview(Document):
 			and shot.selected_output_asset_version == artifact.promoted_asset_version
 		):
 			shot.selected_output_asset_version = None
-			shot.save(ignore_permissions=True)
+			shot.db_set("selected_output_asset_version", None, update_modified=False)
 
 
 @frappe.whitelist()
@@ -151,8 +153,10 @@ def regenerate_shot_internal(
 	from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
 		create_qa_retry_attempt_internal,
 	)
+	from joymedia.services.generation_orchestrator import prepare_chained_regeneration
 	from joymedia.services.generation_runner import submit_attempt
 
+	prepare_chained_regeneration(artifact.generation_attempt)
 	retry_attempt = create_qa_retry_attempt_internal(artifact.generation_attempt, reason)
 	submission = submit_attempt(retry_attempt.name)
 	frappe.db.commit()

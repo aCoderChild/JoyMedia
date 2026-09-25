@@ -40,14 +40,30 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 
 	if media_spec.status != "Draft":
 		frappe.throw(_("Video plans can only be applied to Draft Media Specifications."))
+	mode = {"Independent": "Multi-shot", "Chained": "Continuous", "Consistency": "Continuous"}.get(
+		media_spec.continuity_mode, media_spec.continuity_mode or "Multi-shot"
+	)
+	if mode not in ("Multi-shot", "Continuous"):
+		frappe.throw(_("Select Continuous or Multi-shot generation mode."))
+	uses_keyframe_fields = any(
+		fieldname in shot
+		for shot in plan["shots"]
+		for fieldname in ("first_frame_reference_image_index", "last_frame_reference_image_index")
+	)
 
 	shot_numbers = [shot["shot_number"] for shot in plan["shots"]]
 	if len(shot_numbers) != len(set(shot_numbers)):
 		frappe.throw(_("Video plan contains duplicate shot numbers."))
 
-	reference_image_indexes = {
-		shot["reference_image_index"] for shot in plan["shots"] if "reference_image_index" in shot
-	}
+	reference_image_indexes = set()
+	for shot in plan["shots"]:
+		for fieldname in (
+			"reference_image_index",
+			"first_frame_reference_image_index",
+			"last_frame_reference_image_index",
+		):
+			if shot.get(fieldname) is not None:
+				reference_image_indexes.add(shot[fieldname])
 	asset_version_by_index = {}
 	required_input_role = None
 	if reference_image_indexes:
@@ -90,6 +106,8 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 			frappe.delete_doc("Shot Specification", shot_name, ignore_permissions=True)
 
 	created_shots = []
+	resolved_shot_inputs = []
+	shot_docs = []
 
 	for shot in plan["shots"]:
 		doc = frappe.get_doc(
@@ -105,25 +123,70 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 				"generation_prompt": shot.get("generation_prompt") or _fallback_generation_prompt(shot),
 			}
 		)
-		reference_image_index = shot.get("reference_image_index")
-		resolved_asset_version = None
-		if reference_image_index is not None:
-			resolved_asset_version = asset_version_by_index.get(reference_image_index)
-			if not resolved_asset_version:
-				frappe.throw(
-					_("Reference image index {0} could not be resolved.").format(reference_image_index)
+		first_reference_index = shot.get("first_frame_reference_image_index")
+		if first_reference_index is None:
+			first_reference_index = shot.get("reference_image_index")
+		last_reference_index = shot.get("last_frame_reference_image_index")
+		first_asset_version = asset_version_by_index.get(first_reference_index)
+		last_asset_version = asset_version_by_index.get(last_reference_index)
+		if first_reference_index is not None and not first_asset_version:
+			frappe.throw(
+				_("First-frame reference image index {0} could not be resolved.").format(
+					first_reference_index
 				)
+			)
+		if last_reference_index is not None and not last_asset_version:
+			frappe.throw(
+				_("Last-frame reference image index {0} could not be resolved.").format(
+					last_reference_index
+				)
+			)
 
-		if resolved_asset_version:
+		if mode == "Multi-shot" and uses_keyframe_fields and reference_image_indexes and (
+			first_asset_version is None or last_asset_version is None
+		):
+			frappe.throw(
+				_("Multi-shot requires first-frame and last-frame references for every shot.")
+			)
+
+		if first_asset_version and (mode == "Multi-shot" or shot["shot_number"] == 1):
 			if not required_input_role:
 				frappe.throw(_("The Media Specification workflow has no required Generation Input role."))
 			doc.append(
 				"generation_inputs",
 				{
 					"input_role": required_input_role,
-					"asset_version": resolved_asset_version,
+					"asset_version": first_asset_version,
 				},
 			)
+		if mode == "Multi-shot" and last_asset_version:
+			doc.append(
+				"generation_inputs",
+				{
+					"input_role": "last_frame",
+					"asset_version": last_asset_version,
+				},
+			)
+		resolved_shot_inputs.append(
+			{
+				"shot_number": shot["shot_number"],
+				"first_frame": first_asset_version,
+				"last_frame": last_asset_version,
+			}
+		)
+		shot_docs.append(doc)
+
+	if mode == "Multi-shot" and uses_keyframe_fields:
+		resolved_shot_inputs.sort(key=lambda item: item["shot_number"])
+		for current, following in zip(resolved_shot_inputs, resolved_shot_inputs[1:]):
+			if current["last_frame"] != following["first_frame"]:
+				frappe.throw(
+					_("Multi-shot boundary is invalid between shots {0} and {1}.").format(
+						current["shot_number"], following["shot_number"]
+					)
+				)
+
+	for doc in shot_docs:
 		doc.insert(ignore_permissions=True)
 		created_shots.append(doc.name)
 

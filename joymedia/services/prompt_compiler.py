@@ -17,12 +17,26 @@ def compile_prompt_from_ui(shot_specification: str):
 def compile_prompt(shot_specification: str):
 	shot = frappe.get_doc("Shot Specification", shot_specification)
 	media_spec = frappe.get_doc("Media Specification", shot.media_specification)
-	if shot.generation_prompt:
-		return shot.generation_prompt.strip()
+	return compile_prompt_for_documents(shot, media_spec)
 
-	workflow = frappe.get_doc("Workflow", media_spec.workflow)
-	adapter = get_workflow_adapter(workflow)
-	return adapter.compile_prompt(shot, media_spec)
+
+def compile_prompt_for_documents(shot, media_spec):
+	if shot.generation_prompt:
+		prompt = shot.generation_prompt.strip()
+	else:
+		workflow = frappe.get_doc("Workflow", media_spec.workflow)
+		adapter = get_workflow_adapter(workflow)
+		prompt = adapter.compile_prompt(shot, media_spec)
+
+	if media_spec.continuity_mode in ("Continuous", "Consistency") and int(shot.shot_number or 0) > 1:
+		prompt = (
+			f"{prompt}\n\n"
+			"Continuity: Continue naturally from the previous shot's generated last frame. "
+			"Preserve the product geometry, color, orientation, and scene state. "
+			"Describe the next movement from the existing pose rather than reintroducing "
+			"the product from scratch."
+		)
+	return prompt.strip()
 
 
 def _build_source_snapshot(shot, media_spec):

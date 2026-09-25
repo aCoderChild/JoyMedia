@@ -19,6 +19,7 @@ class MediaSpecification(Document):
 		"delivery_preset",
 		"delivery_width",
 		"delivery_height",
+		"continuity_mode",
 		"generation_instructions",
 	)
 	PRESET_DIMENSIONS: ClassVar[dict[str, tuple[int, int]]] = {
@@ -28,6 +29,13 @@ class MediaSpecification(Document):
 	}
 
 	def validate(self):
+		self.continuity_mode = {
+			"Independent": "Multi-shot",
+			"Chained": "Continuous",
+			"Consistency": "Continuous",
+		}.get(self.continuity_mode, self.continuity_mode)
+		if self.continuity_mode not in ("Multi-shot", "Continuous"):
+			self.continuity_mode = "Multi-shot"
 		self._resolve_generation_setup()
 		self._validate_version_immutability()
 		self._validate_timeline()

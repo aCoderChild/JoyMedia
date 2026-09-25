@@ -1,38 +1,104 @@
 <template>
   <section class="page-section narrow-page">
-    <Button appearance="minimal" label="← Campaigns" @click="goBack" />
+    <div class="mb-4">
+      <Button appearance="subtle" @click="goBack">
+        <template #prefix>
+          <span class="lucide-arrow-left size-4" />
+        </template>
+        Back to Campaigns
+      </Button>
+    </div>
+
     <div class="form-card">
-      <p class="eyebrow">New campaign</p>
+      <p class="eyebrow">New Campaign</p>
       <h1>Create Campaign</h1>
-      <p class="subtitle">Start a product video campaign.</p>
+      <p class="subtitle">Set up the shared commercial context and your first video project.</p>
 
       <div class="form-stack">
-        <FormControl v-model="form.project_name" label="Campaign Name" required placeholder="Summer launch" />
+        <FormControl
+          v-model="form.campaign_name"
+          label="Campaign Name"
+          required
+          placeholder="e.g. Summer Refresh Launch"
+        />
+
+        <FormControl
+          v-model="form.project_name"
+          label="First Video Project"
+          required
+          placeholder="e.g. 30s Hero Commercial"
+        />
+
         <div class="field-row">
-          <FormControl v-if="hasBusinesses" v-model="form.client_organization" type="select" label="Business" required :options="businessOptions" />
+          <FormControl
+            v-if="hasBusinesses"
+            v-model="form.client_organization"
+            type="select"
+            label="Business Organization"
+            required
+            :options="businessOptions"
+          />
           <div v-else class="empty-field">
-            <label>Business <span>*</span></label>
+            <label>Business Organization <span>*</span></label>
             <p>No business has been created yet.</p>
           </div>
-          <Button appearance="minimal" :label="hasBusinesses ? 'New business' : 'Create business'" @click="showBusinessForm = true" />
+          <Button
+            appearance="subtle"
+            @click="showBusinessForm = !showBusinessForm"
+          >
+            <template #prefix>
+              <span class="lucide-plus size-3.5" />
+            </template>
+            {{ hasBusinesses ? 'New business' : 'Create business' }}
+          </Button>
         </div>
-        <FormControl v-model="form.product_name" label="Product" required placeholder="Cold brew bottle" />
-        <FormControl v-model="form.target_audience" type="textarea" label="Target Audience" required placeholder="Young professionals aged 20–35" />
-        <FormControl v-model="form.video_idea" type="textarea" label="Video Idea" placeholder="Describe the video you want to create" />
-      </div>
 
-      <div v-if="showBusinessForm" class="nested-form">
-        <FormControl v-model="business.name" label="Business name" required />
-        <FormControl v-model="business.industry" label="Industry" />
-        <div class="button-row">
-          <Button appearance="minimal" label="Cancel" @click="showBusinessForm = false" />
-          <Button label="Create business" :loading="creatingBusiness" @click="createBusiness" />
+        <div v-if="showBusinessForm" class="nested-form">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-sm font-semibold text-ink-primary">Add New Business</span>
+            <button type="button" class="text-ink-muted hover:text-ink-primary" @click="showBusinessForm = false">
+              <span class="lucide-x size-4" />
+            </button>
+          </div>
+          <FormControl v-model="business.name" label="Business name" required placeholder="e.g. Acme Coffee Co." />
+          <FormControl v-model="business.industry" label="Industry" placeholder="e.g. Food & Beverage, Retail, Tech" />
+          <div class="button-row">
+            <Button appearance="subtle" label="Cancel" @click="showBusinessForm = false" />
+            <Button variant="solid" label="Save Business" :loading="creatingBusiness" @click="createBusiness" />
+          </div>
         </div>
+
+        <FormControl
+          v-model="form.product_name"
+          label="Product Name"
+          required
+          placeholder="e.g. Cold Brew Bottle 500ml"
+        />
+
+        <FormControl
+          v-model="form.target_audience"
+          type="textarea"
+          label="Target Audience"
+          required
+          placeholder="e.g. Young professionals and students aged 20–35 seeking premium artisanal refreshment."
+        />
+
+        <FormControl
+          v-model="form.video_idea"
+          type="textarea"
+          label="Video Idea & Creative Direction"
+          placeholder="e.g. Fast-paced, dynamic cuts highlighting morning energy, icy splashes, and sleek packaging design."
+        />
       </div>
 
       <div class="button-row form-actions">
-        <Button appearance="minimal" label="Cancel" @click="goBack" />
-        <Button label="Create Campaign" :loading="creatingCampaign" @click="createCampaign" />
+        <Button appearance="subtle" label="Cancel" @click="goBack" />
+        <Button variant="solid" :loading="creatingCampaign" @click="createCampaign">
+          <template #prefix>
+            <span class="lucide-sparkles size-4" />
+          </template>
+          Create Campaign
+        </Button>
       </div>
     </div>
   </section>
@@ -42,7 +108,7 @@
 import { computed, reactive, ref } from "vue";
 import { Button, FormControl, call, createResource, toast } from "frappe-ui";
 
-const form = reactive({ project_name: "", client_organization: "", product_name: "", target_audience: "", video_idea: "" });
+const form = reactive({ campaign_name: "", project_name: "", client_organization: "", product_name: "", target_audience: "", video_idea: "" });
 const business = reactive({ name: "", industry: "" });
 const showBusinessForm = ref(false);
 const creatingBusiness = ref(false);
@@ -71,15 +137,15 @@ async function createBusiness() {
 }
 
 async function createCampaign() {
-  if (!form.project_name.trim() || !form.client_organization || !form.product_name.trim() || !form.target_audience.trim()) {
-    toast({ title: "Complete the required fields", text: "Campaign name, Business, Product, and Target Audience are required.", type: "error" });
+  if (!form.campaign_name.trim() || !form.project_name.trim() || !form.client_organization || !form.product_name.trim() || !form.target_audience.trim()) {
+    toast({ title: "Complete the required fields", text: "Campaign name, project name, Business, Product, and Target Audience are required.", type: "error" });
     if (!hasBusinesses.value) showBusinessForm.value = true;
     return;
   }
 
   creatingCampaign.value = true;
   try {
-    const campaign = await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign", form);
+    const campaign = await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign", { ...form, project_name: form.project_name, campaign_name: form.campaign_name });
     window.location.href = `/joymedia/campaigns/${encodeURIComponent(campaign.name)}`;
   } catch (error) {
     toast({ title: "Unable to create campaign", text: error.message || "Please check the form.", type: "error" });

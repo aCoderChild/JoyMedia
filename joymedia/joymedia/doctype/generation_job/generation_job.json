@@ -8,6 +8,7 @@
   "job_overview_section",
   "generation_run",
   "shot_specification",
+  "depends_on_job",
   "workflow_version",
   "prompt_text",
   "prompt_hash",
@@ -161,6 +162,14 @@
    "fieldtype": "Long Text",
    "label": "Error Summary",
    "read_only": 1
+  },
+  {
+   "description": "Previous job required by a Continuous Media Specification.",
+   "fieldname": "depends_on_job",
+   "fieldtype": "Link",
+   "label": "Depends On Job",
+   "options": "Generation Job",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
   },
   {
    "description": "Exact Workflow used for execution. Inherited from the Media Specification.",

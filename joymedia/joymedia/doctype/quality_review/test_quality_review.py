@@ -37,7 +37,9 @@ class TestQualityReview(FrappeTestCase):
 			QualityReview._apply_review_outcome(review)
 
 		self.assertEqual(shot.selected_output_asset_version, "ASTV-00001")
-		shot.save.assert_called_once_with(ignore_permissions=True)
+		shot.db_set.assert_called_once_with(
+			"selected_output_asset_version", "ASTV-00001", update_modified=False
+		)
 		promote_artifact.assert_called_once_with("GART-00001")
 		review.db_set.assert_called_once_with("asset_version", "ASTV-00001", update_modified=False)
 
@@ -60,7 +62,7 @@ class TestQualityReview(FrappeTestCase):
 
 		self.assertEqual(artifact.lifecycle_status, "Temporary")
 		artifact.save.assert_not_called()
-		shot.save.assert_not_called()
+		shot.db_set.assert_not_called()
 
 	def test_rejected_review_creates_and_submits_a_qa_retry(self):
 		review = frappe._dict(name="QREV-00001", status="Rejected", generation_artifact="GART-00001")

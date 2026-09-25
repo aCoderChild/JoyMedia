@@ -14,6 +14,7 @@
   "status",
   "ownership_section",
   "client_organization",
+  "campaign",
   "media_project"
  ],
  "fields": [
@@ -30,6 +31,15 @@
    "in_standard_filter": 1,
    "label": "Asset Name",
    "reqd": 1
+  },
+  {
+   "fieldname": "campaign",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Campaign",
+   "mandatory_depends_on": "eval:doc.asset_scope==\"Campaign\";",
+   "options": "Campaign"
   },
   {
    "fieldname": "media_project",
@@ -74,7 +84,7 @@
    "fieldname": "asset_scope",
    "fieldtype": "Select",
    "label": "Asset Scope",
-   "options": "Organization\nProject",
+   "options": "Organization\nCampaign\nProject",
    "reqd": 1
   },
   {

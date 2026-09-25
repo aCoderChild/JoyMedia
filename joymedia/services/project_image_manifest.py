@@ -20,9 +20,10 @@ def get_project_image_manifest(media_project: str, *, include_data_url: bool = F
 	media_assets = frappe.get_all(
 		"Media Asset",
 		filters={
-			"media_project": media_project,
 			"media_type": "Image",
 			"status": "Active",
+			"media_project": media_project,
+			"asset_scope": "Project",
 			"asset_category": ["in", REFERENCE_IMAGE_CATEGORIES],
 		},
 		fields=["name", "asset_name", "asset_category"],

@@ -1,176 +1,483 @@
 <template>
   <section class="page-section">
-    <div class="page-heading">
-      <div>
-        <Button appearance="minimal" label="← Campaigns" @click="goBack" />
-        <p class="eyebrow">Campaign</p>
-        <h1>{{ workspace?.campaign?.project_name || "Campaign" }}</h1>
-        <p class="subtitle">{{ workspace?.campaign?.product_name }}</p>
-      </div>
-      <span v-if="workspace?.campaign" class="status-label">{{ workspace.campaign.status }}</span>
+    <div class="mb-4">
+      <Button appearance="subtle" @click="goBack">
+        <template #prefix>
+          <span class="lucide-arrow-left size-4" />
+        </template>
+        Back to Campaigns
+      </Button>
     </div>
 
-    <div v-if="campaign.loading" class="empty-state">Loading campaign...</div>
-    <div v-else-if="workspace" class="workspace-stack">
-      <section class="workspace-card campaign-summary">
-        <div><p class="eyebrow">Target audience</p><p>{{ workspace.campaign.target_audience || "Not provided" }}</p></div>
-        <div><p class="eyebrow">Video idea</p><p>{{ workspace.campaign.video_idea || "Not provided" }}</p></div>
-      </section>
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Marketing Campaign</p>
+        <h1>{{ campaignData?.campaign?.campaign_name || "Campaign Workspace" }}</h1>
+        <p class="subtitle">{{ campaignData?.campaign?.product_name || "Commercial Video Campaign" }}</p>
+      </div>
 
-      <section class="workspace-card">
-        <div class="section-heading"><div><p class="eyebrow">Assets</p><h2>Product images</h2></div><div class="asset-upload"><label class="upload-button" :class="{ disabled: uploadingImages }"><span>{{ uploadingImages ? `Uploading ${uploadProgress} / ${uploadTotal}` : "Add images" }}</span><input ref="fileInput" class="file-input-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple :disabled="uploadingImages" @change="uploadSelectedImages" /></label></div></div>
-        <div v-if="workspace.assets?.length" class="asset-grid"><div v-for="asset in workspace.assets" :key="asset.name" class="asset-tile"><img v-if="asset.file" :src="asset.file" :alt="asset.asset_name" /><div v-else class="asset-placeholder">Image</div><span>{{ asset.asset_name }}</span></div></div>
-        <p v-else class="muted">No product images uploaded yet.</p>
-        <p v-if="uploadError" class="action-message error-text">{{ uploadError }}</p>
-      </section>
+      <div class="flex items-center gap-3">
+        <Button appearance="subtle" :loading="campaignResource.loading" @click="refresh" title="Refresh campaign data">
+          <template #prefix>
+            <span class="lucide-refresh-cw size-4" :class="{ 'animate-spin': campaignResource.loading }" />
+          </template>
+          Refresh
+        </Button>
+        <Button variant="solid" @click="showNewProjectModal = true">
+          <template #prefix>
+            <span class="lucide-plus size-4" />
+          </template>
+          New Video Project
+        </Button>
+      </div>
+    </div>
 
+    <div v-if="campaignResource.loading && !campaignData" class="empty-state">
+      <div class="empty-state-icon">
+        <span class="lucide-refresh-cw size-6 animate-spin" />
+      </div>
+      <h2>Loading campaign workspace...</h2>
+      <p>Retrieving campaign deliverables, shared assets, and creative brief.</p>
+    </div>
+
+    <div v-else-if="campaignData" class="workspace-stack">
+      <!-- 1. Creative Brief & Intent -->
       <section class="workspace-card">
-        <div class="section-heading"><div><p class="eyebrow">Video settings</p><h2>{{ settings ? `${settings.duration} sec · ${settings.delivery_preset}` : "Set up your video" }}</h2><p v-if="settings?.video_style_name" class="muted">{{ settings.video_style_name }}</p></div><Button :label="settings ? 'Edit' : 'Set video settings'" @click="showSettings = true" /></div>
-        <div v-if="showSettings || !settings" class="settings-form">
-          <div class="inline-form"><FormControl v-model="settingsForm.duration" type="number" label="Duration (seconds)" /><FormControl v-model="settingsForm.format" type="select" label="Format" :options="['Landscape', 'Portrait', 'Square']" /></div>
-          <div class="style-picker"><div><p class="eyebrow">Video style</p><p class="muted">Choose the creative direction. JoyMedia selects the matching generation workflow automatically.</p></div><div v-if="videoStyles.loading" class="muted">Loading styles...</div><div v-else-if="videoStyles.data?.length" class="style-grid"><button v-for="style in videoStyles.data" :key="style.workflow_key" type="button" class="style-card" :class="{ selected: settingsForm.video_style === style.workflow_key }" @click="settingsForm.video_style = style.workflow_key"><strong>{{ style.client_name }}</strong><span>{{ style.client_description }}</span></button></div><p v-else class="error-text">No video styles are currently available.</p></div>
-          <Button label="Save settings" :loading="savingSettings" :disabled="!settingsForm.video_style" @click="saveSettings" />
+        <div class="section-heading mb-4">
+          <div>
+            <p class="eyebrow">Marketing Strategy</p>
+            <h2>Creative Brief</h2>
+            <p class="text-xs text-ink-secondary mt-1">Core intent and product positioning inherited by all video projects.</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <!-- Product Name -->
+          <div class="p-4 rounded-xl bg-surface-hover border border-outline-border flex flex-col justify-between">
+            <div>
+              <div class="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m7.5 4.27 9 5.15"/>
+                  <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                  <path d="m3.3 7 8.7 5 8.7-5"/>
+                  <path d="M12 22V12"/>
+                </svg>
+                <span>Featured Product</span>
+              </div>
+              <p class="text-sm text-ink-primary font-semibold leading-relaxed">
+                {{ campaignData.campaign.product_name || "Featured Offering" }}
+              </p>
+            </div>
+            <span class="text-[11px] text-ink-muted mt-2">Core subject offering</span>
+          </div>
+
+          <!-- Target Audience -->
+          <div class="p-4 rounded-xl bg-surface-hover border border-outline-border flex flex-col justify-between">
+            <div>
+              <div class="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <span>Target Audience</span>
+              </div>
+              <p class="text-sm text-ink-primary font-medium leading-relaxed">
+                {{ campaignData.campaign.target_audience || "No specific target audience defined." }}
+              </p>
+            </div>
+            <span class="text-[11px] text-ink-muted mt-2">Ideal viewer & customer persona</span>
+          </div>
+
+          <!-- Campaign Brief -->
+          <div class="p-4 rounded-xl bg-surface-hover border border-outline-border flex flex-col justify-between">
+            <div>
+              <div class="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="16" y1="13" x2="8" y2="13"/>
+                  <line x1="16" y1="17" x2="8" y2="17"/>
+                  <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <span>Campaign Brief</span>
+              </div>
+              <p class="text-sm text-ink-primary font-medium leading-relaxed line-clamp-3">
+                {{ campaignData.campaign.campaign_brief || "No detailed campaign brief provided." }}
+              </p>
+            </div>
+            <span class="text-[11px] text-ink-muted mt-2">Overarching narrative & goals</span>
+          </div>
         </div>
       </section>
 
+      <!-- 2. Video Deliverables (Projects) -->
       <section class="workspace-card">
-        <div class="section-heading storyboard-heading"><div><p class="eyebrow">Storyboard</p><h2>{{ storyboardTitle }}</h2><p v-if="settings" class="muted">{{ automaticShotCount }} shots will be planned automatically<span v-if="referenceAssetCount"> · {{ referenceAssetCount }} usable references available</span></p></div><div class="storyboard-controls"><Button label="Generate storyboard" :loading="generatingPlan" :disabled="!settings" @click="generatePlan" /></div></div>
-        <div v-if="plan?.shots?.length" class="storyboard-grid"><article v-for="shot in plan.shots" :key="shot.shot_number" class="storyboard-card"><div class="storyboard-card-heading"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><span v-if="referenceAssetForShot(shot)" class="reference-label">Reference: {{ referenceAssetForShot(shot).asset_name }}</span></div><img v-if="referenceAssetForShot(shot)?.file" class="storyboard-reference-image" :src="referenceAssetForShot(shot).file" :alt="referenceAssetForShot(shot).asset_name" /><div v-else-if="shot.reference_image_index != null" class="storyboard-reference-placeholder">Reference image {{ shot.reference_image_index }}</div><FormControl v-if="shot.reference_image_index != null" v-model="shot.reference_image_index" type="number" label="Reference image" /><FormControl v-model="shot.camera" type="textarea" label="Camera & framing" /><FormControl v-model="shot.subject" type="textarea" label="What appears on screen" /><FormControl v-model="shot.motion" type="textarea" label="Movement" /><FormControl v-model="shot.lighting" type="textarea" label="Look & setting" /><FormControl v-model="shot.audio" type="textarea" label="Sound" /><FormControl v-model="shot.generation_prompt" type="textarea" label="MiniMax H3 generation prompt" /></article></div>
-        <div v-else-if="workspace.storyboard?.length" class="storyboard-grid"><article v-for="shot in workspace.storyboard" :key="shot.name" class="storyboard-card"><div class="storyboard-card-heading"><div class="storyboard-number">Shot {{ shot.shot_number }}</div><span v-if="shot.reference_asset_name" class="reference-label">Reference: {{ shot.reference_asset_name }}</span></div><img v-if="shot.reference_image" class="storyboard-reference-image" :src="shot.reference_image" :alt="shot.reference_asset_name || `Shot ${shot.shot_number} reference`" /><p><strong>Camera & framing</strong>{{ shot.camera_direction }}</p><p><strong>What appears on screen</strong>{{ shot.subject_identity }}</p><p><strong>Movement</strong>{{ shot.action_plot }}</p><p><strong>Look & setting</strong>{{ shot.environment }}</p><p><strong>Sound</strong>{{ shot.audio_direction }}</p></article></div>
-        <div v-else class="empty-panel"><p>No storyboard has been generated yet.</p><Button label="Generate storyboard" :disabled="!settings" @click="generatePlan" /></div>
-        <div v-if="plan?.shots?.length" class="button-row storyboard-actions"><Button appearance="minimal" label="Discard plan" :disabled="applyingPlan" @click="plan = null" /><Button appearance="minimal" label="Regenerate storyboard" :loading="generatingPlan" :disabled="applyingPlan || generatingPlan || !settings" @click="generatePlan" /><Button label="Apply storyboard" :loading="applyingPlan" @click.stop="applyPlan" /></div>
-        <p v-if="applyError" class="action-message error-text">{{ applyError }}</p>
-        <p v-if="applySuccess" class="action-message success-text">Storyboard applied successfully.</p>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Video Deliverables</p>
+            <h2>Campaign Projects</h2>
+            <p class="text-xs text-ink-secondary mt-1">
+              {{ campaignData.projects?.length || 0 }} video deliverables produced for this campaign
+            </p>
+          </div>
+
+          <Button variant="solid" @click="showNewProjectModal = true">
+            <template #prefix>
+              <span class="lucide-plus size-4" />
+            </template>
+            New Video Project
+          </Button>
+        </div>
+
+        <div v-if="campaignData.projects?.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <article
+            v-for="project in campaignData.projects"
+            :key="project.name"
+            class="group p-5 rounded-2xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-indigo-400/50 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+            @click="openProject(project.name)"
+          >
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="status-badge" :class="projectStatusClass(project.status)">
+                  <span class="status-dot" />
+                  <span>{{ project.status }}</span>
+                </span>
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-md bg-surface-hover border border-outline-border text-ink-secondary">
+                  {{ project.delivery_preset || "Landscape" }}
+                </span>
+              </div>
+
+              <h3 class="text-base font-bold text-ink-primary group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mb-1.5">
+                {{ project.project_name }}
+              </h3>
+
+              <p class="text-xs text-ink-secondary line-clamp-2 mb-4 leading-relaxed">
+                {{ project.video_idea || "No concept summary provided." }}
+              </p>
+            </div>
+
+            <div>
+              <div class="flex flex-wrap items-center gap-2 pt-3 border-t border-outline-subtle text-xs text-ink-muted">
+                <span class="flex items-center gap-1 font-medium text-ink-secondary">
+                  <span class="lucide-clapperboard size-3.5 text-indigo-500" />
+                  <span>{{ project.shot_count || 0 }} shots</span>
+                </span>
+                <span>·</span>
+                <span class="font-medium text-ink-secondary">{{ project.duration }}s</span>
+                <span>·</span>
+                <span class="truncate max-w-[120px]">{{ project.video_style_name }}</span>
+
+                <span class="ml-auto font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                  <span>Open Studio</span>
+                  <span class="lucide-chevron-right size-3.5" />
+                </span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="empty-panel">
+          <span class="lucide-clapperboard size-8 text-ink-muted opacity-60" />
+          <p>No video projects created yet for this campaign.</p>
+          <span class="text-xs text-ink-muted">Add deliverables like a 30s Hero Commercial, 15s Instagram Reel, or 6s Bumper Ad.</span>
+          <Button variant="solid" class="mt-2" @click="showNewProjectModal = true">
+            <template #prefix>
+              <span class="lucide-plus size-4" />
+            </template>
+            Create Video Project
+          </Button>
+        </div>
       </section>
 
+      <!-- 3. Shared Visual Assets (Reference Inputs Only) -->
       <section class="workspace-card">
-        <div class="section-heading"><div><p class="eyebrow">Production</p><h2>{{ production?.status || "Ready to generate" }}</h2></div><div class="button-row"><Button v-if="canRetryProduction" label="Retry failed shots" :loading="retryingFailedScenes" @click="retryFailedScenes" /><Button label="Generate video" :loading="generatingVideo" :disabled="!workspace.storyboard?.length || !settings || Boolean(production && production.status !== 'Draft')" @click="generateVideo" /></div></div>
-        <div v-if="production" class="progress-panel"><div class="progress-label"><span>{{ production.completed_jobs || 0 }} / {{ production.total_jobs || 0 }} shots complete</span><span>{{ production.progress || 0 }}%</span></div><div class="progress-track"><div class="progress-value" :style="{ width: `${production.progress || 0}%` }" /></div><div v-if="isProductionActive" class="production-timing"><span>Time elapsed <strong>{{ formatElapsed(productionElapsedSeconds) }}</strong></span><span>Estimated to finish in <strong>{{ estimatedFinishLabel }}</strong></span></div><p v-if="production.error_summary" class="error-text">{{ production.error_summary }}</p><p v-if="workflowSetupInvalid" class="muted">Update the selected Workflow Version before trying again.</p><Button v-if="requiresStoryboardRevision" label="Revise storyboard" :loading="revisingStoryboard" @click="reviseForGeneration" /></div>
-      </section>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Visual References</p>
+            <h2>Shared Campaign Assets</h2>
+            <p class="text-xs text-ink-secondary mt-1">
+              {{ campaignData.shared_assets?.length || 0 }} reference inputs shared across all deliverables in this campaign
+            </p>
+          </div>
 
-      <section class="workspace-card">
-        <div class="section-heading"><div><p class="eyebrow">Review</p><h2>Generated clips</h2></div></div>
-        <div v-if="workspace.reviews?.length" class="review-grid"><article v-for="review in workspace.reviews" :key="review.name" class="review-card"><video v-if="review.preview_url" :src="review.preview_url" controls preload="metadata" /><div class="review-actions"><span>{{ review.name }} · {{ review.status }}</span><Button v-if="review.status === 'Pending'" label="Approve" @click="reviewAction('approve', review)" /><Button v-if="review.status === 'Pending'" appearance="minimal" label="Reject" @click="reviewAction('reject', review)" /><Button v-if="review.status === 'Rejected'" label="Regenerate" @click="reviewAction('regenerate', review)" /></div></article></div>
-        <div v-else class="empty-panel">No clips are waiting for review.</div>
-      </section>
+          <div class="flex flex-wrap items-center gap-2.5">
+            <div class="flex items-center gap-1.5 text-xs text-ink-secondary">
+              <span class="hidden sm:inline">Category:</span>
+              <FormControl
+                v-model="selectedUploadCategory"
+                type="select"
+                :options="categoryUploadOptions"
+                class="w-32"
+              />
+            </div>
 
-      <section v-if="workspace.final_video?.file" class="workspace-card"><p class="eyebrow">Final video</p><h2>Approved campaign video</h2><video class="final-video" :src="workspace.final_video.file" controls /></section>
+            <div class="asset-upload">
+              <label class="upload-button" :class="{ disabled: uploadingImages }">
+                <span class="lucide-upload-cloud size-4" />
+                <span>{{ uploadingImages ? `Uploading ${uploadProgress}/${uploadTotal}...` : "Add Shared Asset" }}</span>
+                <input
+                  ref="fileInput"
+                  class="file-input-hidden"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  multiple
+                  :disabled="uploadingImages"
+                  @change="uploadSelectedImages"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Category Filter Tabs -->
+        <div v-if="campaignData.shared_assets?.length" class="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+          <button
+            v-for="tab in assetCategoryTabs"
+            :key="tab.value"
+            type="button"
+            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0"
+            :class="activeAssetCategory === tab.value
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'bg-surface-hover text-ink-secondary hover:bg-surface-active hover:text-ink-primary border border-outline-border'"
+            @click="activeAssetCategory = tab.value"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <!-- Asset Grid -->
+        <div v-if="filteredAssets?.length" class="asset-grid">
+          <div v-for="asset in filteredAssets" :key="asset.name" class="asset-tile group">
+            <span class="asset-category-pill" :class="categoryBadgeClass(asset.asset_category)">
+              {{ asset.asset_category || 'Reference' }}
+            </span>
+            <img v-if="asset.file" :src="asset.file" :alt="asset.asset_name" />
+            <div v-else class="asset-placeholder">
+              <span class="lucide-image size-6 mb-1 opacity-70" />
+              <span>Reference</span>
+            </div>
+            <span class="asset-name-label" :title="asset.asset_name">{{ asset.asset_name }}</span>
+          </div>
+        </div>
+        <div v-else-if="campaignData.shared_assets?.length" class="empty-panel">
+          <span class="lucide-image size-8 text-ink-muted opacity-60" />
+          <p>No reference assets found in "{{ activeAssetCategory }}" category.</p>
+          <button type="button" class="text-xs text-indigo-600 font-semibold" @click="activeAssetCategory = 'All'">
+            View all reference assets
+          </button>
+        </div>
+        <div v-else class="empty-panel">
+          <span class="lucide-image size-8 text-ink-muted opacity-60" />
+          <p>No shared reference assets uploaded yet.</p>
+          <span class="text-xs text-ink-muted">Upload product photos, backgrounds, character references, or brand style guides.</span>
+        </div>
+        <p v-if="uploadError" class="action-message error-text">{{ uploadError }}</p>
+      </section>
     </div>
-    <div v-else class="empty-state">Campaign not found.</div>
+
+    <!-- + New Project Modal -->
+    <div
+      v-if="showNewProjectModal"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
+      @click.self="showNewProjectModal = false"
+    >
+      <div class="w-full max-w-lg bg-surface-card rounded-2xl border border-outline-border shadow-2xl p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-ink-primary">New Video Project</h2>
+            <p class="text-xs text-ink-secondary mt-0.5">Create a video deliverable under this campaign.</p>
+          </div>
+          <button
+            type="button"
+            class="p-1 rounded-lg text-ink-muted hover:text-ink-primary hover:bg-surface-hover"
+            @click="showNewProjectModal = false"
+          >
+            <span class="lucide-x size-5" />
+          </button>
+        </div>
+
+        <div class="space-y-4">
+          <FormControl
+            v-model="newProjectForm.project_name"
+            type="text"
+            label="Project Name"
+            placeholder="e.g. 30s Hero Commercial, 15s Instagram Story..."
+            required
+          />
+
+          <FormControl
+            v-model="newProjectForm.video_idea"
+            type="textarea"
+            label="Video Concept / Idea"
+            placeholder="Describe what happens in this deliverable, key moments, hook, call to action..."
+            rows="3"
+          />
+
+          <div class="grid grid-cols-2 gap-3">
+            <FormControl
+              v-model="newProjectForm.duration"
+              type="select"
+              label="Duration"
+              :options="[
+                { label: '5 seconds (Teaser)', value: 5 },
+                { label: '10 seconds (Bumper)', value: 10 },
+                { label: '15 seconds (Short Form)', value: 15 },
+                { label: '30 seconds (Commercial)', value: 30 },
+              ]"
+            />
+
+            <FormControl
+              v-model="newProjectForm.format"
+              type="select"
+              label="Delivery Format"
+              :options="['Landscape', 'Portrait', 'Square']"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">Video Style</label>
+            <div class="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
+              <button
+                v-for="style in videoStyles.data"
+                :key="style.workflow_key"
+                type="button"
+                class="p-2.5 rounded-xl border text-left text-xs transition-all"
+                :class="newProjectForm.video_style === style.workflow_key
+                  ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-950 dark:text-indigo-200 font-semibold shadow-xs'
+                  : 'border-outline-border bg-surface-hover hover:border-outline-active text-ink-primary'"
+                @click="newProjectForm.video_style = style.workflow_key"
+              >
+                <div class="font-medium truncate">{{ style.client_name }}</div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-outline-border">
+          <Button appearance="subtle" @click="showNewProjectModal = false">Cancel</Button>
+          <Button
+            variant="solid"
+            :loading="creatingProject"
+            :disabled="!newProjectForm.project_name.trim()"
+            @click="submitNewProject"
+          >
+            Create Project
+          </Button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
 <script setup>
 import { Button, FormControl, call, createResource, toast, upload as uploadFile } from "frappe-ui";
-import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
 
 const route = useRoute();
-const campaign = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_workspace", params: { name: route.params.name }, auto: true });
-const productionResource = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_production", params: { name: route.params.name }, auto: true });
-const videoStyles = createResource({ url: "joymedia.joymedia.doctype.media_project.media_project.get_video_styles", auto: true });
-const plan = ref(null);
-const showSettings = ref(false);
-const savingSettings = ref(false);
-const generatingPlan = ref(false);
-const applyingPlan = ref(false);
-const applyError = ref("");
-const applySuccess = ref(false);
-const generatingVideo = ref(false);
-const retryingFailedScenes = ref(false);
-const revisingStoryboard = ref(false);
+const campaignName = computed(() => route.params.name);
+
+const campaignResource = createResource({
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_detail",
+  params: { name: campaignName.value },
+  auto: true,
+});
+
+const videoStyles = createResource({
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_video_styles",
+  auto: true,
+  onSuccess(data) {
+    if (data?.length && !newProjectForm.video_style) {
+      newProjectForm.video_style = data[0].workflow_key;
+    }
+  },
+});
+
+const campaignData = computed(() => campaignResource.data);
+
+// Shared asset upload & filter state
+const activeAssetCategory = ref("All");
+const selectedUploadCategory = ref("Product");
+const categoryUploadOptions = [
+  "Product",
+  "Character",
+  "Background",
+  "Brand",
+  "Style",
+  "Reference",
+];
+
 const uploadingImages = ref(false);
 const uploadProgress = ref(0);
 const uploadTotal = ref(0);
 const uploadError = ref("");
 const fileInput = ref(null);
-const settingsForm = reactive({ duration: 8, format: "Landscape", video_style: "" });
-const workspace = computed(() => campaign.data);
-const settings = computed(() => workspace.value?.video_settings);
-const production = computed(() => productionResource.data || workspace.value?.production);
-const automaticShotCount = computed(() => workspace.value?.video_settings?.automatic_shot_count || 1);
-const referenceAssetCount = computed(() => workspace.value?.video_settings?.reference_asset_count || 0);
-const requiresStoryboardRevision = computed(() => {
-  const status = production.value?.status;
-  return ["Failed", "Needs Attention"].includes(status) && (
-    workflowSetupInvalid.value || !(production.value?.total_jobs || 0)
-  );
-});
-const workflowSetupInvalid = computed(() => production.value?.error_summary?.startsWith("Invalid Workflow Binding"));
-const canRetryProduction = computed(() => (
-  production.value &&
-  production.value.failed_jobs > 0 &&
-  ["Failed", "Partially Completed"].includes(production.value.status) &&
-  !workflowSetupInvalid.value
-));
-const storyboardTitle = computed(() => {
-  const count = plan.value?.shots?.length || workspace.value?.storyboard?.length || 0;
-  return count ? `${count} shot${count === 1 ? "" : "s"}` : "Plan your shots";
-});
-watch(settings, (value) => {
-  if (!value) return;
-  settingsForm.duration = value.duration;
-  settingsForm.format = value.delivery_preset;
-  settingsForm.video_style = value.video_style || settingsForm.video_style;
-}, { immediate: true });
 
-const ACTIVE_PRODUCTION_STATUSES = new Set(["Queued", "Running", "Finalizing", "Ready for Composition"]);
-let pollTimer = null;
-let clockTimer = null;
-const nowTick = ref(Date.now());
-const isProductionActive = computed(() => ACTIVE_PRODUCTION_STATUSES.has(production.value?.status));
-const productionElapsedSeconds = computed(() => {
-  if (!production.value) return 0;
-  const startedAt = production.value.started_at || production.value.queued_at;
-  if (!startedAt) return 0;
-  const start = parseServerDate(startedAt);
-  const end = production.value.completed_at && !isProductionActive.value
-    ? parseServerDate(production.value.completed_at)
-    : nowTick.value;
-  return Math.max(0, Math.floor((end - start) / 1000));
+// New project modal state
+const showNewProjectModal = ref(false);
+const creatingProject = ref(false);
+const newProjectForm = reactive({
+  project_name: "",
+  video_idea: "",
+  duration: 30,
+  format: "Landscape",
+  video_style: "",
 });
-const estimatedFinishLabel = computed(() => {
-  const completed = Number(production.value?.completed_jobs || 0);
-  const total = Number(production.value?.total_jobs || 0);
-  const remaining = total - completed;
-  if (!remaining) return "complete";
-  if (!completed || !productionElapsedSeconds.value) return "estimating";
-  return `~${formatElapsed(Math.ceil((productionElapsedSeconds.value / completed) * remaining))}`;
-});
-watch(() => production.value?.status, (status) => {
-  if (pollTimer) clearInterval(pollTimer);
-  if (clockTimer) clearInterval(clockTimer);
-  pollTimer = null;
-  clockTimer = null;
-  if (ACTIVE_PRODUCTION_STATUSES.has(status)) {
-    pollTimer = setInterval(() => productionResource.reload(), 4000);
-    clockTimer = setInterval(() => { nowTick.value = Date.now(); }, 1000);
+
+const assetCategoryTabs = computed(() => {
+  const assets = campaignData.value?.shared_assets || [];
+  const tabs = [{ label: `All (${assets.length})`, value: "All" }];
+  const counts = {};
+  for (const a of assets) {
+    const cat = a.asset_category || "Reference";
+    counts[cat] = (counts[cat] || 0) + 1;
   }
-}, { immediate: true });
-onBeforeUnmount(() => {
-  if (pollTimer) clearInterval(pollTimer);
-  if (clockTimer) clearInterval(clockTimer);
+  for (const cat of Object.keys(counts).sort()) {
+    tabs.push({ label: `${cat} (${counts[cat]})`, value: cat });
+  }
+  return tabs;
 });
 
-async function refresh() { plan.value = null; await campaign.reload(); await productionResource.reload(); }
-function parseServerDate(value) {
-  const text = String(value || "").replace(" ", "T");
-  const date = new Date(text.endsWith("Z") ? text : `${text}Z`);
-  return Number.isNaN(date.getTime()) ? nowTick.value : date.getTime();
+const filteredAssets = computed(() => {
+  const assets = campaignData.value?.shared_assets || [];
+  if (activeAssetCategory.value === "All") return assets;
+  return assets.filter((a) => (a.asset_category || "Reference") === activeAssetCategory.value);
+});
+
+function categoryBadgeClass(category) {
+  const cat = String(category || "reference").toLowerCase().replace(/\s+/g, "-");
+  return `category-${cat}`;
 }
-function formatElapsed(seconds) {
-  const total = Math.max(0, Math.round(seconds));
-  const minutes = Math.floor(total / 60);
-  const remainder = total % 60;
-  return minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
+
+function projectStatusClass(status) {
+  return `cover-${String(status || "draft").toLowerCase().replaceAll(" ", "-")}`;
 }
+
+function openProject(projectName) {
+  window.location.href = `/joymedia/projects/${encodeURIComponent(projectName)}`;
+}
+
+function goBack() {
+  window.location.href = "/joymedia/campaigns";
+}
+
+async function refresh() {
+  await campaignResource.reload();
+}
+
 function assetNameFromFile(fileName) {
   return fileName.replace(/\.[^/.]+$/, "");
 }
+
 async function uploadSelectedImages(event) {
   const files = Array.from(event.target.files || []);
   event.target.value = "";
   if (!files.length) return;
+
+  const realCampaignName = campaignData.value?.campaign?.name;
+  if (!realCampaignName) return;
 
   uploadingImages.value = true;
   uploadError.value = "";
@@ -180,133 +487,48 @@ async function uploadSelectedImages(event) {
     for (const file of files) {
       const uploadedFile = await uploadFile(file, { private: true });
       if (!uploadedFile?.file_url) throw new Error(`Upload did not return a file URL for ${file.name}.`);
-      await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign_asset", {
-        media_project: route.params.name,
+      await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign_shared_asset", {
+        campaign: realCampaignName,
         asset_name: assetNameFromFile(file.name),
-        asset_category: "Product",
+        asset_category: selectedUploadCategory.value || "Product",
         file_url: uploadedFile.file_url,
       });
       uploadProgress.value += 1;
     }
     await refresh();
+    toast({ title: "Assets attached", text: `${files.length} shared reference asset(s) saved.`, type: "success" });
   } catch (error) {
-    uploadError.value = error?.messages?.join(" ") || error?.message || "The image could not be uploaded.";
-    toast({ title: "Unable to save image", text: uploadError.value, type: "error" });
+    uploadError.value = error?.messages?.join(" ") || error?.message || "The asset could not be uploaded.";
+    toast({ title: "Unable to save asset", text: uploadError.value, type: "error" });
   } finally {
     uploadingImages.value = false;
   }
 }
-async function saveSettings() {
-  savingSettings.value = true;
-  try { await call("joymedia.joymedia.doctype.media_project.media_project.save_campaign_video_settings", { campaign_name: route.params.name, total_duration_seconds: settingsForm.duration, delivery_preset: settingsForm.format, video_style: settingsForm.video_style }); showSettings.value = false; await refresh(); }
-  catch (error) { toast({ title: "Unable to save settings", text: error.message || "Please try again.", type: "error" }); }
-  finally { savingSettings.value = false; }
-}
-async function generatePlan() {
-  generatingPlan.value = true;
-  plan.value = null;
+
+async function submitNewProject() {
+  if (!newProjectForm.project_name.trim()) return;
+  const realCampaignName = campaignData.value?.campaign?.name;
+  if (!realCampaignName) return;
+
+  creatingProject.value = true;
   try {
-    const generatedPlan = await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video_plan", { campaign_name: route.params.name });
-    plan.value = normalizePlanForEditor(generatedPlan);
-  }
-  catch (error) { toast({ title: "Unable to generate storyboard", text: error.message || "Please try again.", type: "error" }); }
-  finally { generatingPlan.value = false; }
-}
-async function retryFailedScenes() {
-  retryingFailedScenes.value = true;
-  try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.retry_campaign_failed_jobs", { campaign_name: route.params.name });
-    await refresh();
+    const res = await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign_project", {
+      campaign: realCampaignName,
+      project_name: newProjectForm.project_name.trim(),
+      video_idea: newProjectForm.video_idea.trim(),
+      duration: newProjectForm.duration,
+      format: newProjectForm.format,
+      video_style: newProjectForm.video_style,
+    });
+
+    toast({ title: "Project created", text: `Created ${newProjectForm.project_name}.`, type: "success" });
+    showNewProjectModal.value = false;
+    // Navigate directly to the newly created project cockpit
+    window.location.href = `/joymedia/projects/${encodeURIComponent(res.project)}`;
   } catch (error) {
-    toast({ title: "Unable to retry video", text: error.message || "Please try again.", type: "error" });
+    toast({ title: "Unable to create project", text: error.message || "Please check inputs and try again.", type: "error" });
   } finally {
-    retryingFailedScenes.value = false;
+    creatingProject.value = false;
   }
 }
-async function reviseForGeneration() {
-  revisingStoryboard.value = true;
-  plan.value = null;
-  try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.revise_campaign_storyboard", { campaign_name: route.params.name, use_current_workflow_defaults: workflowSetupInvalid.value });
-    await refresh();
-    await generatePlan();
-  } catch (error) {
-    toast({ title: "Unable to create storyboard revision", text: error.message || "Please try again.", type: "error" });
-  } finally {
-    revisingStoryboard.value = false;
-  }
-}
-function referenceAssetForShot(shot) {
-  const index = Number(shot.reference_image_index);
-  return index > 0 ? workspace.value?.assets?.[index - 1] : null;
-}
-function readablePlanValue(value) {
-  if (value == null) return "";
-  if (typeof value !== "string") {
-    return Object.entries(value).map(([key, item]) => `${humanizeKey(key)}: ${item}`).join(". ");
-  }
-  const text = value.trim();
-  if (!text.startsWith("{") || !text.endsWith("}")) return value;
-  try {
-    return readablePlanValue(JSON.parse(text));
-  } catch {
-    return text.slice(1, -1).replace(/[\'"]([^\'"]+)[\'"]\s*:\s*[\'"]([^\'"]*)[\'"]/g, (_, key, item) => `${humanizeKey(key)}: ${item}`).replace(/,\s*/g, ". ");
-  }
-}
-function humanizeKey(key) {
-  return key.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-function normalizePlanForEditor(value) {
-  return {
-    ...value,
-    shots: (value?.shots || []).map((shot) => ({
-      ...shot,
-      camera: readablePlanValue(shot.camera),
-      subject: readablePlanValue(shot.subject),
-      motion: readablePlanValue(shot.motion),
-      lighting: readablePlanValue(shot.lighting),
-      audio: readablePlanValue(shot.audio),
-    })),
-  };
-}
-async function applyPlan() {
-  if (!plan.value?.shots?.length) return;
-  applyingPlan.value = true;
-  applyError.value = "";
-  applySuccess.value = false;
-  try {
-    const payload = {
-      ...plan.value,
-      shots: plan.value.shots.map((shot) => ({
-        ...shot,
-        ...(shot.reference_image_index != null
-          ? { reference_image_index: Number(shot.reference_image_index) }
-          : {}),
-      })),
-    };
-    const result = await call("joymedia.joymedia.doctype.media_project.media_project.apply_campaign_video_plan", { campaign_name: route.params.name, plan_json: JSON.stringify(payload) });
-    if (!result?.shots?.length) throw new Error("No shots were created.");
-    applySuccess.value = true;
-    await refresh();
-    plan.value = null;
-    toast({ title: "Storyboard applied", text: `${result.shots.length} shot${result.shots.length === 1 ? "" : "s"} created.`, type: "success" });
-  }
-  catch (error) {
-    applyError.value = error.message || "The storyboard could not be applied.";
-    toast({ title: "Unable to apply storyboard", text: applyError.value, type: "error" });
-  }
-  finally { applyingPlan.value = false; }
-}
-async function generateVideo() {
-  generatingVideo.value = true;
-  try { await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video", { campaign_name: route.params.name }); await refresh(); }
-  catch (error) { toast({ title: "Unable to generate video", text: error.message || "Please try again.", type: "error" }); }
-  finally { generatingVideo.value = false; }
-}
-async function reviewAction(action, review) {
-  const method = action === "approve" ? "approve_campaign_review" : action === "regenerate" ? "regenerate_campaign_review" : "reject_campaign_review";
-  try { await call(`joymedia.joymedia.doctype.media_project.media_project.${method}`, { campaign_name: route.params.name, review_name: review.name }); await refresh(); }
-  catch (error) { toast({ title: "Unable to update review", text: error.message || "Please try again.", type: "error" }); }
-}
-function goBack() { window.location.href = "/joymedia/campaigns"; }
 </script>

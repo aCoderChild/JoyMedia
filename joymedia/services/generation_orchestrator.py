@@ -11,7 +11,7 @@ from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
 	create_retry_attempt_internal,
 )
 
-from .generation_runner import prepare_generation_job, submit_attempt
+from .generation_runner import attach_chained_first_frame, prepare_generation_job, submit_attempt
 from .generation_segment_planner import plan_generation_segments
 from .prompt_compiler import compile_prompt
 from .result_ingestor import sync_attempt_result
@@ -79,7 +79,7 @@ def prepare_run(run_name: str):
 	shots = frappe.get_all(
 		"Shot Specification",
 		filters={"media_specification": media_specification.name},
-		fields=["name", "planned_frame_count"],
+		fields=["name", "shot_number", "planned_frame_count"],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
@@ -88,10 +88,14 @@ def prepare_run(run_name: str):
 
 	try:
 		validate_generation_preflight(media_specification, workflow_version, shots)
+		jobs_to_prepare = []
+		previous_job_name = None
 		for shot in shots:
-			if frappe.db.exists(
-				"Generation Job", {"generation_run": run.name, "shot_specification": shot.name}
-			):
+			existing_job = frappe.db.get_value(
+				"Generation Job", {"generation_run": run.name, "shot_specification": shot.name}, "name"
+			)
+			if existing_job:
+				previous_job_name = existing_job
 				continue
 
 			segments = plan_generation_segments(
@@ -125,8 +129,15 @@ def prepare_run(run_name: str):
 					"status": "Draft",
 					"segment_index": segment["segment_index"],
 					"segment_frame_count": segment["segment_frame_count"],
+					"depends_on_job": previous_job_name
+					if media_specification.continuity_mode in ("Continuous", "Consistency")
+					else None,
 				}
 			).insert(ignore_permissions=True)
+			jobs_to_prepare.append(job)
+			previous_job_name = job.name
+
+		for job in jobs_to_prepare:
 			prepare_generation_job(job.name)
 	except Exception as exc:
 		_raise_run_error(run, _exception_message(exc))
@@ -172,6 +183,12 @@ def validate_generation_preflight(
 		}
 		for role in required_roles:
 			asset_version = mappings.get(role)
+			if (
+				media_specification.continuity_mode in ("Continuous", "Consistency")
+				and shot_row.shot_number > 1
+				and role == "first_frame"
+			):
+				continue
 			if not asset_version or not frappe.db.get_value("Asset Version", asset_version, "file"):
 				frappe.throw(
 					_("Shot {0} requires a usable input with role '{1}'.").format(
@@ -211,13 +228,16 @@ def submit_run(run_name: str):
 			if job.status in ("Completed", "Partially Completed", "Failed", "Cancelled", "Running"):
 				continue
 
+			if job.status not in ("Ready", "Queued"):
+				continue
+
+			if not attach_chained_first_frame(job):
+				continue
+
 			if job.status == "Ready":
 				job.status = "Queued"
 				job.queued_at = now()
 				job.save(ignore_permissions=True)
-
-			if job.status != "Queued":
-				continue
 
 			attempt_names = _create_initial_attempts(job) + _get_pending_attempt_names(job.name)
 			for attempt_name in dict.fromkeys(attempt_names):
@@ -343,6 +363,112 @@ def retry_generation_job_from_ui(job_name: str, reason: str = "Execution Failure
 
 		frappe.db.commit()
 		return {"generation_job": job.name, "attempts": results}
+
+
+def prepare_chained_regeneration(attempt_name: str):
+	"""Invalidate downstream chained outputs before replacing one completed shot."""
+	generation_job_name = frappe.db.get_value(
+		"Generation Attempt", attempt_name, "generation_job"
+	)
+	shot_specification_name = frappe.db.get_value(
+		"Generation Job", generation_job_name, "shot_specification"
+	)
+	media_specification_name = frappe.db.get_value(
+		"Shot Specification", shot_specification_name, "media_specification"
+	)
+	if frappe.db.get_value("Media Specification", media_specification_name, "continuity_mode") not in (
+		"Continuous",
+		"Consistency",
+	):
+		return []
+
+	attempt = frappe.get_doc("Generation Attempt", attempt_name)
+	job = frappe.get_doc("Generation Job", attempt.generation_job)
+	shot = frappe.get_doc("Shot Specification", job.shot_specification)
+	media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+	if media_specification.continuity_mode not in ("Continuous", "Consistency") or not job.generation_run:
+		return []
+
+	jobs = frappe.get_all(
+		"Generation Job",
+		filters={"generation_run": job.generation_run},
+		fields=["name", "depends_on_job", "status", "shot_specification"],
+		order_by="creation asc",
+	)
+	children_by_parent = {}
+	for row in jobs:
+		if row.depends_on_job:
+			children_by_parent.setdefault(row.depends_on_job, []).append(row)
+
+	downstream = []
+	frontier = [job.name]
+	while frontier:
+		parent = frontier.pop(0)
+		for child in children_by_parent.get(parent, []):
+			downstream.append(child)
+			frontier.append(child.name)
+
+	if not downstream:
+		return []
+
+	from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
+		create_qa_retry_attempt_internal,
+	)
+
+	regeneration_plan = []
+	for downstream_job in downstream:
+		active_attempts = frappe.get_all(
+			"Generation Attempt",
+			filters={
+				"generation_job": downstream_job.name,
+				"status": ["in", ["Pending", "Queued", "Running"]],
+			},
+			pluck="name",
+		)
+		if active_attempts:
+			frappe.throw(
+				_(
+					"Shot {0} is already running. Stop the current sequence before regenerating an earlier shot."
+				).format(downstream_job.shot_specification)
+			)
+
+		completed_attempts = frappe.get_all(
+			"Generation Attempt",
+			filters={"generation_job": downstream_job.name, "status": "Completed"},
+			fields=["name"],
+			order_by="attempt_number desc, creation desc",
+			limit_page_length=1,
+		)
+		if not completed_attempts:
+			frappe.throw(
+				_("Shot {0} has no completed output to invalidate.").format(
+					downstream_job.shot_specification
+				)
+			)
+
+		completed_attempt = completed_attempts[0].name
+		if frappe.db.exists("Generation Attempt", {"retry_of": completed_attempt}):
+			frappe.throw(
+				_(
+					"Shot {0} already has a regeneration successor. Resolve that regeneration before starting another sequence."
+				).format(downstream_job.shot_specification)
+			)
+
+		regeneration_plan.append((downstream_job.shot_specification, completed_attempt))
+
+	prepared = []
+	for shot_specification, completed_attempt in regeneration_plan:
+		frappe.db.set_value(
+			"Shot Specification",
+			shot_specification,
+			"selected_output_asset_version",
+			None,
+			update_modified=False,
+		)
+		retry_attempt = create_qa_retry_attempt_internal(completed_attempt, "QA Failure")
+		prepared.append(retry_attempt.name)
+
+	return prepared
 
 
 def finalize_run(run_name: str):

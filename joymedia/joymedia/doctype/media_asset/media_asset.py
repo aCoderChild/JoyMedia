@@ -12,6 +12,20 @@ class MediaAsset(Document):
 				frappe.throw("Client Organization is required for Organization-scoped assets")
 			if self.media_project:
 				frappe.throw("Organization-scoped assets cannot belong to a Media Project")
+		elif self.asset_scope == "Campaign":
+			if not self.campaign:
+				frappe.throw("Campaign is required for Campaign-scoped assets")
+			campaign = frappe.db.get_value(
+				"Campaign",
+				self.campaign,
+				["client_organization"],
+				as_dict=True,
+			)
+			if not campaign:
+				frappe.throw("Campaign-scoped assets require a valid Campaign")
+			self.client_organization = campaign.client_organization
+			if self.media_project:
+				frappe.throw("Campaign-scoped assets cannot belong to a Media Project")
 		elif self.asset_scope == "Project":
 			if not self.media_project:
 				frappe.throw("Media Project is required for Project-scoped assets")
@@ -25,7 +39,7 @@ class MediaAsset(Document):
 				frappe.throw("Project-scoped assets require a Media Project with a Business")
 			self.client_organization = project_organization
 		else:
-			frappe.throw("Asset Scope must be Organization or Project")
+			frappe.throw("Asset Scope must be Organization, Campaign, or Project")
 
 		if self.asset_category == "Shot Output" and self.media_type != "Video":
 			frappe.throw("Shot Output assets must have media type Video")

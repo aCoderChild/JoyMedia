@@ -43,7 +43,12 @@ def prepare_generation_job(job_name: str):
 
 	job.validate()
 	frappe.db.delete("Generation Input", {"generation_job": job.name})
-	for input_role, asset_version in job.get_shot_input_snapshot().items():
+	snapshot = job.get_shot_input_snapshot()
+	if job.depends_on_job:
+		# Continuous first frames are attached immediately before submission from the
+		# previous job's generated last-frame Asset Version.
+		snapshot.pop("first_frame", None)
+	for input_role, asset_version in snapshot.items():
 		frappe.get_doc(
 			{
 				"doctype": "Generation Input",
@@ -53,8 +58,11 @@ def prepare_generation_job(job_name: str):
 			}
 		).insert(ignore_permissions=True)
 
-	job.status = "Ready"
-	job.save(ignore_permissions=True)
+	if job.depends_on_job:
+		job.db_set("status", "Ready", update_modified=False)
+	else:
+		job.status = "Ready"
+		job.save(ignore_permissions=True)
 	return {
 		"name": job.name,
 		"status": job.status,
@@ -65,6 +73,37 @@ def prepare_generation_job(job_name: str):
 			order_by="creation asc",
 		),
 	}
+
+
+def attach_chained_first_frame(job):
+	"""Attach the previous chained job's generated last frame to this job."""
+	if not job.depends_on_job:
+		return True
+
+	previous_attempt = frappe.get_all(
+		"Generation Attempt",
+		filters={
+			"generation_job": job.depends_on_job,
+			"status": "Completed",
+			"last_frame_asset_version": ["is", "set"],
+		},
+		fields=["name", "last_frame_asset_version"],
+		order_by="creation desc",
+		limit_page_length=1,
+	)
+	if not previous_attempt:
+		return False
+
+	frappe.db.delete("Generation Input", {"generation_job": job.name, "input_role": "first_frame"})
+	frappe.get_doc(
+		{
+			"doctype": "Generation Input",
+			"generation_job": job.name,
+			"asset_version": previous_attempt[0].last_frame_asset_version,
+			"input_role": "first_frame",
+		}
+	).insert(ignore_permissions=True)
+	return True
 
 
 def submit_attempt(attempt_name: str):

@@ -2,44 +2,113 @@
   <section class="page-section">
     <div class="page-heading">
       <div>
-        <p class="eyebrow">JoyMedia</p>
+        <p class="eyebrow">Production Studio</p>
         <h1>Your Campaigns</h1>
-        <p class="subtitle">Create, generate, and review your product videos.</p>
+        <p class="subtitle">Create, generate, and review your product commercial videos.</p>
       </div>
-      <Button label="Create Campaign" @click="createCampaign" />
+      <Button variant="solid" @click="createCampaign">
+        <template #prefix>
+          <span class="lucide-plus size-4" />
+        </template>
+        Create Campaign
+      </Button>
     </div>
 
     <div class="toolbar">
       <TabButtons v-model="activeStatus" :options="statusOptions" />
-      <FormControl v-model="search" type="text" placeholder="Search campaigns" />
+      <div class="flex items-center gap-3">
+        <span class="text-xs font-medium text-ink-muted hidden sm:inline">
+          {{ filteredCampaigns.length }} {{ filteredCampaigns.length === 1 ? 'campaign' : 'campaigns' }}
+        </span>
+        <FormControl
+          v-model="search"
+          type="text"
+          placeholder="Search campaigns or products..."
+          class="toolbar-search"
+        >
+          <template #prefix>
+            <span class="lucide-search size-4 text-ink-muted" />
+          </template>
+        </FormControl>
+      </div>
     </div>
 
-    <div v-if="campaigns.loading" class="empty-state">Loading campaigns...</div>
+    <div v-if="campaigns.loading" class="empty-state">
+      <div class="empty-state-icon">
+        <span class="lucide-refresh-cw size-6 animate-spin" />
+      </div>
+      <h2>Loading campaigns...</h2>
+      <p>Fetching your video projects from the server.</p>
+    </div>
+
     <div v-else-if="filteredCampaigns.length" class="card-grid">
       <article
         v-for="campaign in filteredCampaigns"
         :key="campaign.name"
-        class="campaign-card"
+        class="campaign-card group"
         @click="openCampaign(campaign.name)"
       >
-        <div class="card-cover" :class="coverClass(campaign.status)">
-          <span class="status-label">{{ campaign.status }}</span>
-          <h2>{{ campaign.project_name }}</h2>
+        <div
+          class="card-cover"
+          :class="coverClass(campaign.status)"
+          :style="campaign.cover_image ? {
+            backgroundImage: `linear-gradient(to bottom, rgba(15, 23, 42, 0.4), rgba(15, 23, 42, 0.85)), url('${encodeURI(campaign.cover_image)}')`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center'
+          } : undefined"
+        >
+          <div class="flex items-center justify-between w-full">
+            <span class="status-badge">
+              <span class="status-dot" />
+              <span>{{ campaign.status || 'Active' }}</span>
+            </span>
+            <div class="flex items-center gap-1.5">
+              <span v-if="campaign.asset_categories?.length" class="text-xs px-2 py-0.5 rounded-md bg-black/40 backdrop-blur-xs font-medium text-white/90">
+                {{ campaign.asset_categories.slice(0, 2).join(' · ') }}
+              </span>
+            </div>
+          </div>
+          <h2 class="card-cover-title">{{ campaign.campaign_name || campaign.project_name }}</h2>
         </div>
+
         <div class="card-body">
-          <p class="card-product">{{ campaign.product_name }}</p>
+          <div class="card-product">
+            <span class="lucide-sparkles size-4 text-indigo-500 shrink-0" />
+            <span class="truncate font-semibold">{{ campaign.product_name }}</span>
+          </div>
+
           <div class="card-meta">
-            <span>{{ campaign.shots || 0 }} shots</span>
-            <span>{{ campaign.duration || "—" }} sec</span>
-            <span>{{ campaign.delivery_preset || "Video" }}</span>
+            <span class="meta-chip" title="Video projects">
+              <span class="lucide-clapperboard size-3.5 text-indigo-500" />
+              <span>{{ campaign.project_count || 0 }} {{ campaign.project_count === 1 ? 'project' : 'projects' }}</span>
+            </span>
+
+            <span class="meta-chip" title="Shared reference assets">
+              <span class="lucide-image size-3.5 text-indigo-500" />
+              <span>{{ campaign.asset_count || 0 }} shared {{ campaign.asset_count === 1 ? 'asset' : 'assets' }}</span>
+            </span>
+
+            <span class="meta-chip ml-auto text-indigo-600 dark:text-indigo-400 font-semibold group-hover:translate-x-0.5 transition-transform">
+              <span>Open Campaign</span>
+              <span class="lucide-chevron-right size-3.5" />
+            </span>
           </div>
         </div>
       </article>
     </div>
+
     <div v-else class="empty-state">
+      <div class="empty-state-icon">
+        <span class="lucide-clapperboard size-7" />
+      </div>
       <h2>No campaigns yet</h2>
-      <p>Create a campaign to start your next product video.</p>
-      <Button label="Create Campaign" @click="createCampaign" />
+      <p>Create your first campaign to plan storyboards and generate product videos with AI.</p>
+      <Button variant="solid" @click="createCampaign">
+        <template #prefix>
+          <span class="lucide-plus size-4" />
+        </template>
+        Create Campaign
+      </Button>
     </div>
   </section>
 </template>
@@ -61,7 +130,7 @@ const filteredCampaigns = computed(() => {
   const query = search.value.trim().toLowerCase();
   return records.filter((campaign) => {
     const statusMatches = activeStatus.value === "All" || campaign.status === activeStatus.value;
-    const searchMatches = !query || `${campaign.project_name} ${campaign.product_name}`.toLowerCase().includes(query);
+    const searchMatches = !query || `${campaign.campaign_name || campaign.project_name} ${campaign.product_name}`.toLowerCase().includes(query);
     return statusMatches && searchMatches;
   });
 });

@@ -19,7 +19,14 @@ def generate_video_plan(
 	reference_template: dict | None = None,
 	reference_images: list[dict] | None = None,
 	video_style: str | None = None,
+	generation_mode: str = "Multi-shot",
 ) -> dict:
+	generation_mode = {"Independent": "Multi-shot", "Chained": "Continuous", "Consistency": "Continuous"}.get(
+		generation_mode, generation_mode
+	)
+	if generation_mode not in ("Multi-shot", "Continuous"):
+		frappe.throw(_("Select Continuous or Multi-shot generation mode."))
+
 	base_url = frappe.conf.get("qwen_base_url")
 	model = frappe.conf.get("qwen_model")
 	if not base_url:
@@ -92,16 +99,42 @@ video idea and project reference images.
 			"Use this style to guide the shot pacing, framing, movement, lighting, "
 			"environment, and sound while keeping the product and story consistent."
 		)
+	if generation_mode in ("Continuous", "Consistency"):
+		instruction += (
+			"\n\nGENERATION MODE: CONSISTENCY\n"
+			"Only the first shot starts from a supplied reference image. Each later shot "
+			"must continue from the previous shot's generated last frame. Describe the next "
+			"movement from the existing pose and preserve product geometry, color, orientation, "
+			"and scene state."
+		)
+	else:
+		instruction += (
+			"\n\nGENERATION MODE: MULTI-SHOT\n"
+			"Every shot must have a planned first-frame and last-frame reference image. "
+			"The last-frame reference of each shot must be the first-frame reference of the next "
+			"shot, creating a consistent keyframe sequence."
+		)
 
-	response_shape = (
-		'{"shots":[{"shot_number":1,"reference_image_index":1,"camera":"...",'
-		'"subject":"...","motion":"...","lighting":"...","audio":"...",'
-		'"generation_prompt":"..."}]}'
-		if reference_images
-		else '{"shots":[{"shot_number":1,"camera":"...","subject":"...",'
-		'"motion":"...","lighting":"...","audio":"...",'
-		'"generation_prompt":"..."}]}'
-	)
+	if reference_images and generation_mode == "Multi-shot":
+		last_example_index = 2 if len(reference_images) > 1 else 1
+		response_shape = (
+			'{"shots":[{"shot_number":1,"first_frame_reference_image_index":1,'
+			f'"last_frame_reference_image_index":{last_example_index},"camera":"...",'
+			'"subject":"...","motion":"...","lighting":"...","audio":"...",'
+			'"generation_prompt":"..."}]}'
+		)
+	elif reference_images:
+		response_shape = (
+			'{"shots":[{"shot_number":1,"reference_image_index":1,"camera":"...",'
+			'"subject":"...","motion":"...","lighting":"...","audio":"...",'
+			'"generation_prompt":"..."}]}'
+		)
+	else:
+		response_shape = (
+			'{"shots":[{"shot_number":1,"camera":"...","subject":"...",'
+			'"motion":"...","lighting":"...","audio":"...",'
+			'"generation_prompt":"..."}]}'
+		)
 
 	user_prompt = (
 		f"{instruction}\n\n"
@@ -120,10 +153,16 @@ video idea and project reference images.
 	if reference_images:
 		user_prompt += (
 			"\n\nPROJECT IMAGES\n"
-			f"You are given {len(reference_images)} numbered project images.\n"
-			"For every shot, choose the ONE project image that visually grounds that shot and "
-			"return its number as reference_image_index.\n"
-			"reference_image_index must be an integer between 1 and "
+			+ f"You are given {len(reference_images)} numbered project images.\n"
+			+ (
+				"For Multi-shot, choose first_frame_reference_image_index and "
+				"last_frame_reference_image_index for every shot. The last-frame index "
+				"of one shot must equal the next shot's first-frame index.\n"
+				if generation_mode == "Multi-shot"
+				else "For every shot, choose the ONE project image that visually grounds that shot and "
+				"return its number as reference_image_index.\n"
+			)
+			+ "Each reference index must be an integer between 1 and "
 			f"{len(reference_images)}.\n"
 			"Do not invent rooms, objects, architecture, or product details that are not visible "
 			"in the selected reference image."
@@ -179,11 +218,14 @@ video idea and project reference images.
 		result,
 		reference_image_count=len(reference_images or []),
 		shot_count=shot_count,
+		generation_mode=generation_mode,
 	)
 	return result
 
 
-def _validate_video_plan(result, reference_image_count=0, shot_count=None):
+def _validate_video_plan(
+	result, reference_image_count=0, shot_count=None, generation_mode="Multi-shot"
+):
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		frappe.throw(_("Qwen video plan must contain a shots list."))
 
@@ -203,7 +245,12 @@ def _validate_video_plan(result, reference_image_count=0, shot_count=None):
 		"generation_prompt",
 	}
 	if reference_image_count:
-		required_fields.add("reference_image_index")
+		if generation_mode == "Multi-shot":
+			required_fields.update(
+				{"first_frame_reference_image_index", "last_frame_reference_image_index"}
+			)
+		else:
+			required_fields.add("reference_image_index")
 
 	normalized_shots = []
 
@@ -225,11 +272,33 @@ def _validate_video_plan(result, reference_image_count=0, shot_count=None):
 		}
 
 		if reference_image_count:
-			index = shot["reference_image_index"]
-			if type(index) is not int or index < 1 or index > reference_image_count:
-				frappe.throw(_("Invalid reference image index."))
-			normalized["reference_image_index"] = index
+			if generation_mode == "Multi-shot":
+				first_index = shot["first_frame_reference_image_index"]
+				last_index = shot["last_frame_reference_image_index"]
+				if any(
+					type(index) is not int or index < 1 or index > reference_image_count
+					for index in (first_index, last_index)
+				):
+					frappe.throw(_("Invalid first or last frame reference image index."))
+				normalized["first_frame_reference_image_index"] = first_index
+				normalized["last_frame_reference_image_index"] = last_index
+			else:
+				index = shot["reference_image_index"]
+				if type(index) is not int or index < 1 or index > reference_image_count:
+					frappe.throw(_("Invalid reference image index."))
+				normalized["reference_image_index"] = index
 
 		normalized_shots.append(normalized)
+
+	if generation_mode == "Multi-shot" and reference_image_count:
+		for current, following in zip(normalized_shots, normalized_shots[1:]):
+			if current["last_frame_reference_image_index"] != following[
+				"first_frame_reference_image_index"
+			]:
+				frappe.throw(
+					_("Multi-shot boundary is invalid between shots {0} and {1}.").format(
+						current["shot_number"], following["shot_number"]
+					)
+				)
 
 	result["shots"] = normalized_shots
