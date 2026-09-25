@@ -87,15 +87,17 @@ def get_campaign_cards():
 	)
 
 	for cam in campaigns:
+		campaign_name = cam.name
 		projects = frappe.get_all(
 			"Media Project",
-			filters={"campaign": cam.name},
+			filters={"campaign": campaign_name},
 			fields=["name", "status"],
+			order_by="creation asc, name asc",
 		)
 		assets = frappe.get_all(
 			"Media Asset",
 			filters={
-				"campaign": cam.name,
+				"campaign": campaign_name,
 				"asset_scope": "Campaign",
 				"status": "Active",
 				"asset_category": ["in", list(INPUT_ASSET_CATEGORIES)],
@@ -111,6 +113,10 @@ def get_campaign_cards():
 
 		cam.update(
 			{
+				# Campaign workspace routes currently resolve a Media Project. Keep
+				# the parent campaign identity separately for data aggregation.
+				"campaign": campaign_name,
+				"name": projects[0].name if projects else campaign_name,
 				"project_count": len(projects),
 				"asset_count": len(assets),
 				"cover_image": cover_image,
