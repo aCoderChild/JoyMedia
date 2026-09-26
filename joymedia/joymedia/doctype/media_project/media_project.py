@@ -695,11 +695,16 @@ def get_pending_review_cards():
 	full_videos = []
 	for campaign in frappe.get_list(
 		"Media Project",
-		fields=["name", "project_name", "product_name", "status"],
+		fields=["name", "campaign", "project_name", "product_name", "status"],
 		order_by="modified desc",
 		limit_page_length=100,
 	):
 		project = frappe.get_doc("Media Project", campaign.name)
+		campaign_title = (
+			frappe.db.get_value("Campaign", project.campaign, "campaign_name")
+			if project.campaign
+			else None
+		) or project.project_name
 		media_spec = get_latest_media_specification(project.name)
 		if not media_spec:
 			continue
@@ -713,11 +718,26 @@ def get_pending_review_cards():
 		if shot_count == 0:
 			continue
 
+		final_runs = frappe.get_all(
+			"Generation Run",
+			filters={"media_specification": media_spec.name},
+			fields=["name", "final_asset_version", "delivery_status", "reviewed_at"],
+			order_by="creation desc",
+			limit_page_length=20,
+		)
+		final_run = next((run for run in final_runs if run.final_asset_version), None)
+		final_asset_version = (
+			final_run.final_asset_version
+			if final_run
+			else media_spec.final_asset_version
+		)
+		delivery_status = (final_run.delivery_status if final_run else None) or "Pending Review"
+
 		# Case 1: Multi-shot campaign -> Only show the composed / merged full video
 		if shot_count > 1:
 			final_asset = None
-			if media_spec.final_asset_version:
-				asset_ver = frappe.get_doc("Asset Version", media_spec.final_asset_version)
+			if final_asset_version:
+				asset_ver = frappe.get_doc("Asset Version", final_asset_version)
 				if asset_ver.file:
 					final_asset = {
 						"file": asset_ver.file,
@@ -749,11 +769,13 @@ def get_pending_review_cards():
 					{
 						"name": f"{project.name}-FULL",
 						"campaign": project.name,
-						"campaign_name": project.project_name,
+					"campaign_name": campaign_title,
 						"product_name": project.product_name,
 						"video_type": "Merged Full Video",
 						"shot_count": shot_count,
-						"status": "Ready for Review" if project.status in ("Review", "Completed") else project.status,
+					"status": delivery_status,
+					"delivery_status": delivery_status,
+					"review_key": final_run.name if final_run else None,
 						"preview_url": final_asset["file"],
 						"duration": final_asset.get("duration"),
 						"asset_version": final_asset.get("version"),
@@ -763,91 +785,26 @@ def get_pending_review_cards():
 
 		# Case 2: Single-shot campaign -> The single shot video IS the full video!
 		elif shot_count == 1:
-			reviews = project.get_pending_reviews()
-			if reviews:
-				review = reviews[0]
-				full_videos.append(
-					{
-						"name": review["name"],
-						"campaign": project.name,
-						"campaign_name": project.project_name,
-						"product_name": project.product_name,
-						"video_type": "Single-Shot Full Video",
-						"shot_count": 1,
-						"status": review["status"],
-						"preview_url": review["preview_url"],
-						"asset_version": review.get("asset_version"),
-						"is_single_shot": True,
-					}
-				)
-			elif media_spec.final_asset_version:
-				asset_ver = frappe.get_doc("Asset Version", media_spec.final_asset_version)
+			if final_asset_version:
+				asset_ver = frappe.get_doc("Asset Version", final_asset_version)
 				if asset_ver.file:
 					full_videos.append(
 						{
 							"name": f"{project.name}-FULL",
 							"campaign": project.name,
-							"campaign_name": project.project_name,
+						"campaign_name": campaign_title,
 							"product_name": project.product_name,
 							"video_type": "Single-Shot Full Video",
 							"shot_count": 1,
-							"status": "Ready for Review" if project.status in ("Review", "Completed") else project.status,
+						"status": delivery_status,
+						"delivery_status": delivery_status,
+						"review_key": final_run.name if final_run else None,
 							"preview_url": asset_ver.file,
 							"duration": asset_ver.duration_seconds or media_spec.total_duration_seconds,
 							"asset_version": asset_ver.name,
 							"is_single_shot": True,
 						}
 					)
-
-	# Also include any Quality Review records in the system
-	qr_records = frappe.get_all(
-		"Quality Review",
-		fields=["name", "status", "asset_version", "generation_artifact", "notes", "modified"],
-		order_by="modified desc",
-		limit_page_length=50,
-	)
-	seen_ids = {v["name"] for v in full_videos}
-	for qr in qr_records:
-		if qr.name in seen_ids:
-			continue
-		preview_url = None
-		if qr.asset_version:
-			preview_url = frappe.db.get_value("Asset Version", qr.asset_version, "file")
-		if not preview_url and qr.generation_artifact:
-			preview_url = frappe.db.get_value("Generation Artifact", qr.generation_artifact, "frappe_file")
-		if not preview_url:
-			preview_url = f"/api/method/joymedia.services.artifact_service.stream_review_artifact?quality_review_name={qr.name}"
-
-		proj_name = None
-		prod_name = None
-		if qr.generation_artifact:
-			att = frappe.db.get_value("Generation Artifact", qr.generation_artifact, "generation_attempt")
-			if att:
-				job = frappe.db.get_value("Generation Attempt", att, "generation_job")
-				if job:
-					shot = frappe.db.get_value("Generation Job", job, "shot_specification")
-					if shot:
-						spec = frappe.db.get_value("Shot Specification", shot, "media_specification")
-						if spec:
-							proj_name = frappe.db.get_value("Media Specification", spec, "media_project")
-							if proj_name:
-								prod_name = frappe.db.get_value("Media Project", proj_name, "product_name")
-
-		full_videos.append({
-			"name": qr.name,
-			"review_name": qr.name,
-			"campaign": proj_name or "Project",
-			"campaign_name": proj_name or qr.name,
-			"product_name": prod_name or "Generated Video Clip",
-			"video_type": "Generated Video Clip",
-			"shot_count": 1,
-			"status": qr.status or "Pending",
-			"preview_url": preview_url,
-			"asset_version": qr.asset_version,
-			"generation_artifact": qr.generation_artifact,
-			"notes": qr.notes,
-			"is_single_shot": True,
-		})
 
 	return full_videos
 
@@ -870,6 +827,51 @@ def reject_campaign_review(
 ):
 	campaign = frappe.get_doc("Media Project", campaign_name)
 	return campaign.reject_campaign_review(review_name, notes)
+
+
+@frappe.whitelist()
+def review_final_video(project_name: str, decision: str, notes: str | None = None):
+	"""Persist the client decision for the latest composed final video."""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	media_specification = get_latest_media_specification(project.name)
+	if not media_specification:
+		frappe.throw(_("This project has no video specification."))
+
+	runs = frappe.get_all(
+		"Generation Run",
+		filters={"media_specification": media_specification.name},
+		fields=["name", "final_asset_version", "status"],
+		order_by="creation desc",
+		limit_page_length=20,
+	)
+	run = next((item for item in runs if item.final_asset_version), None)
+	if not run:
+		frappe.throw(_("This project has no completed final video to review."))
+	if decision not in ("Approved", "Changes Requested"):
+		frappe.throw(_("Invalid final video review decision."))
+
+	now_value = now()
+	frappe.db.set_value(
+		"Generation Run",
+		run.name,
+		{
+			"delivery_status": decision,
+			"reviewed_by": frappe.session.user,
+			"reviewed_at": now_value,
+			"review_notes": (notes or "").strip() or None,
+		},
+		update_modified=True,
+	)
+	frappe.db.set_value(
+		"Media Project",
+		project.name,
+		"status",
+		"Completed" if decision == "Approved" else "Draft",
+		update_modified=False,
+	)
+	frappe.db.commit()
+	return {"project": project.name, "run": run.name, "status": decision}
 
 
 @frappe.whitelist()

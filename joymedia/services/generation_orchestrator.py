@@ -493,6 +493,10 @@ def finalize_run(run_name: str):
 
 	run.final_asset_version = result["final_asset_version"]
 	run.status = "Completed"
+	run.delivery_status = "Pending Review"
+	run.reviewed_by = None
+	run.reviewed_at = None
+	run.review_notes = None
 	run.completed_at = now()
 	run.save(ignore_permissions=True)
 	if run.media_specification:

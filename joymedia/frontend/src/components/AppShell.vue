@@ -295,7 +295,7 @@ const currentPageTitle = computed(() => {
   if (path === "/campaigns" || path === "/") return isEn ? "Campaigns" : "Chiến dịch";
   if (path.startsWith("/campaigns/")) return isEn ? "Campaign Workspace" : "Chi tiết chiến dịch";
   if (path.startsWith("/projects/")) return "JoyMedia Studio";
-  if (path.startsWith("/reviews")) return isEn ? "Review Videos" : "Đánh giá video";
+  if (path.startsWith("/reviews")) return isEn ? "Final Videos" : "Video cuối";
   if (path.startsWith("/assets")) return isEn ? "Media Library" : "Thư viện Media";
   return "JoyMedia Studio";
 });
@@ -308,7 +308,7 @@ const userInitial = computed(() => {
 const headerDropdownOptions = computed(() => [
   { label: "JoyMedia Studio", onClick: () => router.push("/campaigns") },
   { label: currentLang.value === "en" ? "Media Library" : "Thư viện Media", onClick: () => router.push("/assets") },
-  { label: currentLang.value === "en" ? "Review Videos" : "Đánh giá Video", onClick: () => router.push("/reviews") },
+  { label: currentLang.value === "en" ? "Final Videos" : "Video cuối", onClick: () => router.push("/reviews") },
   {
     label: currentLang.value === "en" ? "🇻🇳 Tiếng Việt" : "🇬🇧 English",
     onClick: () => toggleLang(),

@@ -25,6 +25,10 @@
   "started_at",
   "completed_at",
   "final_asset_version",
+  "delivery_status",
+  "reviewed_by",
+  "reviewed_at",
+  "review_notes",
   "failure_class",
   "error_summary"
  ],
@@ -178,6 +182,34 @@
    "fieldtype": "Link",
    "label": "Final Asset Version",
    "options": "Asset Version",
+   "read_only": 1
+  },
+  {
+   "default": "Pending Review",
+   "fieldname": "delivery_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Delivery Status",
+   "options": "Pending Review\nApproved\nChanges Requested",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_at",
+   "fieldtype": "Datetime",
+   "label": "Reviewed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_notes",
+   "fieldtype": "Small Text",
+   "label": "Review Notes",
    "read_only": 1
   },
   {
