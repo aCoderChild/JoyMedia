@@ -1193,9 +1193,6 @@ def create_campaign_project(
 	campaign,
 	project_name,
 	video_idea=None,
-	duration=30,
-	format="Landscape",
-	video_style=None,
 ):
 	frappe.has_permission("Campaign", "write", campaign, throw=True)
 	campaign_doc = frappe.get_doc("Campaign", campaign)
@@ -1210,20 +1207,6 @@ def create_campaign_project(
 			"target_audience": campaign_doc.target_audience,
 			"video_idea": (video_idea or "").strip(),
 			"status": "Draft",
-		}
-	).insert(ignore_permissions=True)
-
-	workflow = _get_customer_workflow(video_style)
-	frappe.get_doc(
-		{
-			"doctype": "Media Specification",
-			"media_project": project.name,
-			"version_number": 1,
-			"status": "Draft",
-			"workflow": workflow.name,
-			"video_style": workflow.workflow_key,
-			"total_duration_seconds": float(duration or 30),
-			"delivery_preset": format or "Landscape",
 		}
 	).insert(ignore_permissions=True)
 
@@ -1721,6 +1704,7 @@ class MediaProject(Document):
 					"requested_by": frappe.session.user,
 					"requested_variants_per_shot": 1,
 					"max_retries": 0,
+					"auto_select_outputs": 1,
 					"auto_compose": 1,
 					"status": "Draft",
 				}

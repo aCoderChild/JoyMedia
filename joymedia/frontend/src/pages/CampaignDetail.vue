@@ -315,44 +315,6 @@
             rows="3"
           />
 
-          <div class="grid grid-cols-2 gap-3">
-            <FormControl
-              v-model="newProjectForm.duration"
-              type="select"
-              label="Duration"
-              :options="[
-                { label: '5 seconds (Teaser)', value: 5 },
-                { label: '10 seconds (Bumper)', value: 10 },
-                { label: '15 seconds (Short Form)', value: 15 },
-                { label: '30 seconds (Commercial)', value: 30 },
-              ]"
-            />
-
-            <FormControl
-              v-model="newProjectForm.format"
-              type="select"
-              label="Delivery Format"
-              :options="['Landscape', 'Portrait', 'Square']"
-            />
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">Video Style</label>
-            <div class="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
-              <button
-                v-for="style in videoStyles.data"
-                :key="style.workflow_key"
-                type="button"
-                class="p-2.5 rounded-xl border text-left text-xs transition-all"
-                :class="newProjectForm.video_style === style.workflow_key
-                  ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-950 dark:text-indigo-200 font-semibold shadow-xs'
-                  : 'border-outline-border bg-surface-hover hover:border-outline-active text-ink-primary'"
-                @click="newProjectForm.video_style = style.workflow_key"
-              >
-                <div class="font-medium truncate">{{ style.client_name }}</div>
-              </button>
-            </div>
-          </div>
         </div>
 
         <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-outline-border">
@@ -385,16 +347,6 @@ const campaignResource = createResource({
   auto: true,
 });
 
-const videoStyles = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_video_styles",
-  auto: true,
-  onSuccess(data) {
-    if (data?.length && !newProjectForm.video_style) {
-      newProjectForm.video_style = data[0].workflow_key;
-    }
-  },
-});
-
 const campaignData = computed(() => campaignResource.data);
 
 // Shared asset upload & filter state
@@ -421,9 +373,6 @@ const creatingProject = ref(false);
 const newProjectForm = reactive({
   project_name: "",
   video_idea: "",
-  duration: 30,
-  format: "Landscape",
-  video_style: "",
 });
 
 const assetCategoryTabs = computed(() => {
@@ -516,9 +465,6 @@ async function submitNewProject() {
       campaign: realCampaignName,
       project_name: newProjectForm.project_name.trim(),
       video_idea: newProjectForm.video_idea.trim(),
-      duration: newProjectForm.duration,
-      format: newProjectForm.format,
-      video_style: newProjectForm.video_style,
     });
 
     toast({ title: "Project created", text: `Created ${newProjectForm.project_name}.`, type: "success" });

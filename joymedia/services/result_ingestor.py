@@ -121,7 +121,7 @@ def _should_auto_select_output(attempt):
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
 	if not job.generation_run:
 		return False
-	return bool(frappe.db.get_value("Generation Run", job.generation_run, "auto_compose"))
+	return bool(frappe.db.get_value("Generation Run", job.generation_run, "auto_select_outputs"))
 
 
 def _auto_select_output(attempt, artifact):

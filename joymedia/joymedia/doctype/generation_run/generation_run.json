@@ -13,6 +13,7 @@
   "run_options_section",
   "requested_variants_per_shot",
   "max_retries",
+  "auto_select_outputs",
   "auto_compose",
   "execution_summary_section",
   "total_jobs",
@@ -112,6 +113,15 @@
    "fieldtype": "Check",
    "hidden": 1,
    "label": "Auto Compose",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
+  },
+  {
+   "default": "0",
+   "description": "Automatically promote and select completed shot outputs without scene review.",
+   "fieldname": "auto_select_outputs",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Auto Select Outputs",
    "read_only_depends_on": "eval:doc.status!=\"Draft\";"
   },
   {
