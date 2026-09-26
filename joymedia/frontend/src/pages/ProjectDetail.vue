@@ -1816,37 +1816,12 @@ async function handleMagicGenerateClick() {
     return;
   }
   isAutoGenerating.value = true;
-  autoGenerateStep.value = "Đang lưu cài đặt...";
+  autoGenerateStep.value = currentLang.value === "vi" ? "Đang chuẩn bị video..." : "Preparing your video...";
   try {
-    if (!settings.value) {
-      await call("joymedia.joymedia.doctype.media_project.media_project.save_campaign_video_settings", {
-        campaign_name: projectName.value,
-        total_duration_seconds: settingsForm.duration,
-        delivery_preset: settingsForm.format,
-        video_style: settingsForm.video_style || (videoStyles.data?.[0]?.workflow_key || ""),
-        continuity_mode: settingsForm.continuity_mode,
-      });
-      await refresh();
-    }
-
-    if (!hasStoryboard.value) {
-      autoGenerateStep.value = "AI đang soạn kịch bản các cảnh...";
-      const generatedPlan = await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video_plan", {
-        campaign_name: projectName.value,
-      });
-
-      autoGenerateStep.value = "Đang đưa cảnh vào dòng thời gian...";
-      await call("joymedia.joymedia.doctype.media_project.media_project.apply_campaign_video_plan", {
-        campaign_name: projectName.value,
-        plan_json: JSON.stringify(generatedPlan),
-      });
-      await refresh();
-    }
-
-    autoGenerateStep.value = "Khởi chạy AI Video Studio...";
-    await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video", {
-      campaign_name: projectName.value,
+    await call("joymedia.joymedia.doctype.media_project.media_project.generate_project_video", {
+      project_name: projectName.value,
     });
+    autoGenerateStep.value = currentLang.value === "vi" ? "Đang tạo video..." : "Generating video...";
     await refresh();
     promptInput.value = "";
     toast({
@@ -1855,7 +1830,8 @@ async function handleMagicGenerateClick() {
       type: "success"
     });
   } catch (error) {
-    toast({ title: "Không thể tạo video", text: error.message || "Vui lòng kiểm tra lại thông tin.", type: "error" });
+    const message = error?.messages?.join(" ") || error?.message || (currentLang.value === "vi" ? "Không thể tạo video." : "Video generation failed.");
+    toast({ title: currentLang.value === "vi" ? "Không thể tạo video" : "Video generation failed", text: message, type: "error" });
   } finally {
     isAutoGenerating.value = false;
     autoGenerateStep.value = "";

@@ -105,13 +105,32 @@ def sync_attempt_result(attempt_name):
 			0, (get_datetime(attempt.completed_at) - get_datetime(attempt.started_at)).total_seconds()
 		)
 	attempt.save(ignore_permissions=True)
-	_create_pending_quality_review(attempt, artifact)
+	if _should_auto_select_output(attempt):
+		_auto_select_output(attempt, artifact)
+	else:
+		_create_pending_quality_review(attempt, artifact)
 	_refresh_parent_execution_state(attempt.name)
 	return {
 		"status": attempt.status,
 		"output_artifact": artifact.name,
 		"last_frame_asset_version": attempt.last_frame_asset_version,
 	}
+
+
+def _should_auto_select_output(attempt):
+	job = frappe.get_doc("Generation Job", attempt.generation_job)
+	if not job.generation_run:
+		return False
+	return bool(frappe.db.get_value("Generation Run", job.generation_run, "auto_compose"))
+
+
+def _auto_select_output(attempt, artifact):
+	from joymedia.services.artifact_service import promote_artifact
+
+	job = frappe.get_doc("Generation Job", attempt.generation_job)
+	shot = frappe.get_doc("Shot Specification", job.shot_specification)
+	result = promote_artifact(artifact.name, require_approved_review=False)
+	shot.db_set("selected_output_asset_version", result["asset_version"], update_modified=False)
 
 
 def _find_last_frame_image(history):

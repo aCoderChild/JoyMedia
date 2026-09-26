@@ -72,6 +72,11 @@ def _get_customer_workflow(video_style=None):
 	return workflow
 
 
+def _meaningful_project_value(value, fallback):
+	value = (value or "").strip()
+	return value if value and value.lower() != "untitled" else fallback
+
+
 def _customer_style_details(media_specification):
 	if not media_specification:
 		return {}
@@ -939,6 +944,12 @@ def generate_campaign_video(campaign_name):
 
 
 @frappe.whitelist()
+def generate_project_video(project_name: str):
+	project = frappe.get_doc("Media Project", project_name)
+	return project.generate_end_to_end()
+
+
+@frappe.whitelist()
 def retry_campaign_failed_jobs(campaign_name):
 	campaign = frappe.get_doc("Media Project", campaign_name)
 	return campaign.retry_failed_jobs()
@@ -1594,9 +1605,16 @@ class MediaProject(Document):
 			template = frappe.parse_json(ref.template_json)
 
 		return generate_video_plan(
-			product_name=self.product_name,
-			target_audience=self.target_audience,
-			video_idea=self.video_idea,
+			product_name=_meaningful_project_value(
+				self.product_name, "The product shown in the supplied reference image"
+			),
+			target_audience=_meaningful_project_value(
+				self.target_audience, "General consumer audience"
+			),
+			video_idea=_meaningful_project_value(
+				self.video_idea,
+				"Create a premium cinematic product showcase focused on the supplied product.",
+			),
 			total_video_duration=media_specification.total_duration_seconds,
 			target_fps=workflow_version.output_fps,
 			shot_count=shot_count,
@@ -1605,6 +1623,47 @@ class MediaProject(Document):
 			video_style=media_specification.video_style or workflow_version.workflow_key,
 			generation_mode=media_specification.continuity_mode,
 		)
+
+	def _ensure_default_video_specification(self):
+		existing = get_latest_media_specification(self.name)
+		if existing:
+			return existing
+
+		workflow = _get_customer_workflow("product_showcase")
+		return frappe.get_doc(
+			{
+				"doctype": "Media Specification",
+				"media_project": self.name,
+				"version_number": 1,
+				"status": "Draft",
+				"workflow": workflow.name,
+				"video_style": workflow.workflow_key,
+				"continuity_mode": "Continuous",
+				"total_duration_seconds": 5,
+				"delivery_preset": "Landscape",
+			}
+		).insert(ignore_permissions=True)
+
+	@frappe.whitelist()
+	def generate_end_to_end(self):
+		self._require_write_access()
+		if not self._get_project_image_inputs():
+			frappe.throw(_("Add at least one image before generating a video."))
+
+		media_specification = self._ensure_default_video_specification()
+		media_specification.reload()
+		shots = frappe.get_all(
+			"Shot Specification",
+			filters={"media_specification": media_specification.name},
+			pluck="name",
+		)
+		if not shots:
+			plan = self.generate_video_plan()
+			from joymedia.services.video_plan_service import apply_video_plan
+
+			apply_video_plan(media_specification.name, plan)
+
+		return self.generate_video()
 
 	@frappe.whitelist()
 	def generate_video(self):

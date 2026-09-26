@@ -46,8 +46,8 @@ def promote_artifact_from_ui(artifact_name: str):
 	return result
 
 
-def promote_artifact(artifact_name: str):
-	"""Promote an approved generated video to a project Asset Version."""
+def promote_artifact(artifact_name: str, *, require_approved_review: bool = True):
+	"""Promote a generated video to a project Asset Version."""
 	artifact = frappe.get_doc("Generation Artifact", artifact_name)
 
 	if artifact.lifecycle_status == "Promoted":
@@ -58,7 +58,7 @@ def promote_artifact(artifact_name: str):
 		frappe.throw(_("Only video artifacts can currently be promoted."))
 	if not artifact.frappe_file:
 		frappe.throw(_("Generation Artifact {0} has no Frappe video file.").format(artifact.name))
-	if not frappe.db.exists(
+	if require_approved_review and not frappe.db.exists(
 		"Quality Review", {"generation_artifact": artifact.name, "status": "Approved"}
 	):
 		frappe.throw(_("Generation Artifact {0} requires an approved Quality Review before promotion.").format(artifact.name))
