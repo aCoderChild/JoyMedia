@@ -13,7 +13,7 @@
           type="button"
           class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border transition-all shadow-xs cursor-pointer"
           :disabled="campaigns.loading"
-          @click="campaigns.reload()"
+          @click="reloadCampaigns"
         >
           <span class="lucide-refresh-cw size-3.5" :class="{ 'animate-spin': campaigns.loading }" />
           <span>{{ currentLang === 'vi' ? 'Làm mới' : 'Refresh' }}</span>
@@ -22,7 +22,8 @@
         <button
           type="button"
           class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
-          @click="showCreateModal = true"
+          :disabled="creatingProject"
+          @click="createDraftCampaign"
         >
           <span class="lucide-plus size-4" />
           <span>{{ t('new_campaign_btn') }}</span>
@@ -193,25 +194,27 @@
 
             <!-- Top Right Project Count Pill -->
             <span class="absolute top-3 right-3 z-10 text-[11px] font-mono font-medium px-2 py-0.5 rounded-md backdrop-blur-md shadow-xs bg-black/60 text-white/90 border border-white/15">
-              {{ t('card_projects_label', { n: campaign.project_count || 1 }) }}
+              {{ projectLabel(campaign.project_count || 1) }}
             </span>
           </div>
 
           <!-- Card Body -->
           <div class="p-5 space-y-2.5">
             <div class="flex items-center gap-2 text-xs font-medium text-ink-muted">
-              <span class="text-indigo-400 font-semibold truncate">{{ campaign.client_organization || 'JoyMedia' }}</span>
-              <span>•</span>
-              <span class="truncate">{{ t('campaign_audience_label') }}: {{ campaign.target_audience || 'Khách hàng mục tiêu' }}</span>
+              <span class="text-indigo-400 font-semibold truncate">{{ campaign.client_name || campaign.client_organization || 'JoyMedia' }}</span>
+              <template v-if="meaningful(campaign.target_audience)">
+                <span>•</span>
+                <span class="truncate">{{ t('campaign_audience_label') }}: {{ campaign.target_audience }}</span>
+              </template>
             </div>
 
             <h3 class="text-base font-bold text-ink-primary group-hover:text-indigo-400 transition-colors line-clamp-1">
-              {{ campaign.campaign_name || campaign.project_name }}
+              {{ campaignTitle(campaign) }}
             </h3>
 
-            <div class="flex items-center gap-1.5 text-xs text-ink-secondary font-medium">
+            <div v-if="meaningful(campaign.product_name)" class="flex items-center gap-1.5 text-xs text-ink-secondary font-medium">
               <span class="text-indigo-400">🏷️</span>
-              <span class="truncate">{{ campaign.product_name || "Sản phẩm thương mại" }}</span>
+              <span class="truncate">{{ campaign.product_name }}</span>
             </div>
 
             <p v-if="campaign.campaign_brief" class="text-xs text-ink-muted line-clamp-2 leading-relaxed pt-1">
@@ -227,7 +230,7 @@
         <div class="px-5 py-3.5 bg-surface-muted/50 border-t border-outline-border flex items-center justify-between text-xs">
           <span class="text-ink-muted font-mono text-[11px] flex items-center gap-1.5">
             <span>📁</span>
-            <span>{{ t('card_assets_label', { n: campaign.asset_count || 0 }) }}</span>
+            <span>{{ assetLabel(campaign.asset_count || 0) }}</span>
           </span>
 
           <button
@@ -252,129 +255,38 @@
       <button
         type="button"
         class="mt-4 flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
-        @click="showCreateModal = true"
+        :disabled="creatingProject"
+        @click="createDraftCampaign"
       >
         <span class="lucide-plus size-4" />
         <span>{{ t('create_first_campaign') }}</span>
       </button>
     </div>
 
-    <!-- 7. Quick Creation Modal -->
-    <div
-      v-if="showCreateModal"
-      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs"
-      @click.self="showCreateModal = false"
-    >
-      <div class="w-full max-w-md bg-surface-card border border-outline-border rounded-2xl p-6 shadow-2xl text-xs space-y-4 animate-in fade-in zoom-in-95 duration-150">
-        <div class="flex items-center justify-between pb-3 border-b border-outline-border">
-          <div>
-            <h3 class="text-sm font-bold text-ink-primary">{{ t('create_modal_title') }}</h3>
-            <p class="text-ink-secondary text-[11px] mt-0.5">{{ t('create_modal_subtitle') }}</p>
-          </div>
-          <button type="button" class="text-ink-muted hover:text-ink-primary cursor-pointer p-1" @click="showCreateModal = false">✕</button>
-        </div>
-
-        <div>
-          <label class="block text-ink-primary font-semibold mb-1">{{ t('field_product_name') }}</label>
-          <FormControl v-model="quickProductName" type="text" :placeholder="t('product_name_placeholder')" required />
-        </div>
-
-        <div>
-          <label class="block text-ink-primary font-semibold mb-1">{{ t('field_campaign_name') }}</label>
-          <FormControl v-model="quickCampaignName" type="text" :placeholder="t('campaign_name_placeholder')" />
-        </div>
-
-        <div>
-          <label class="block text-ink-primary font-semibold mb-1">{{ t('field_target_audience') }}</label>
-          <FormControl v-model="quickAudience" type="text" :placeholder="t('audience_placeholder')" />
-        </div>
-
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-ink-primary font-semibold mb-1">{{ t('field_duration') }}</label>
-            <FormControl
-              v-model="quickDuration"
-              type="select"
-              :options="[
-                { label: '15s (Reels/TikTok)', value: 15 },
-                { label: '30s (Commercial)', value: 30 },
-                { label: '10s (Teaser)', value: 10 }
-              ]"
-            />
-          </div>
-          <div>
-            <label class="block text-ink-primary font-semibold mb-1">{{ t('field_format') }}</label>
-            <FormControl
-              v-model="quickFormat"
-              type="select"
-              :options="['Portrait', 'Landscape', 'Square']"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-ink-primary font-semibold mb-1">{{ t('field_continuity') }}</label>
-          <FormControl
-            v-model="quickContinuityMode"
-            type="select"
-            :options="[
-              { label: t('opt_multishot'), value: 'Multi-shot' },
-              { label: t('opt_continuous'), value: 'Continuous' },
-            ]"
-          />
-        </div>
-
-        <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-outline-border">
-          <button
-            type="button"
-            class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-surface-muted hover:bg-surface-hover text-ink-primary border border-outline-border transition-all cursor-pointer"
-            @click="showCreateModal = false"
-          >
-            {{ t('btn_cancel') }}
-          </button>
-          <button
-            type="button"
-            class="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all cursor-pointer flex items-center gap-1.5"
-            :disabled="creatingProject"
-            @click="submitQuickCreate"
-          >
-            <span v-if="creatingProject" class="lucide-refresh-cw size-3 animate-spin" />
-            <span>{{ t('btn_start_studio') }}</span>
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { Button, FormControl, call, createResource, toast } from "frappe-ui";
+import { call, createResource, toast } from "frappe-ui";
 import { useI18n } from "../stores/i18n";
 
 const router = useRouter();
 const { t, currentLang } = useI18n();
 
-const showCreateModal = ref(false);
 const creatingProject = ref(false);
 const searchQuery = ref("");
 const statusFilter = ref("all"); // 'all' | 'active' | 'draft'
-
-const quickProductName = ref("");
-const quickCampaignName = ref("");
-const quickAudience = ref("Khách hàng trẻ tuổi và người tiêu dùng trực tuyến");
-const quickDuration = ref(15);
-const quickFormat = ref("Portrait");
-const quickContinuityMode = ref("Multi-shot");
 
 const campaigns = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_cards",
   auto: true,
 });
 
-const businesses = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_businesses",
+const libraryAssets = createResource({
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_library_assets",
+  params: { asset_type: "All" },
   auto: true,
 });
 
@@ -392,9 +304,34 @@ const totalProjectsCount = computed(() => {
   return allCampaigns.value.reduce((acc, c) => acc + (c.project_count || 1), 0);
 });
 
-const totalAssetsCount = computed(() => {
-  return allCampaigns.value.reduce((acc, c) => acc + (c.asset_count || 0), 0);
-});
+const totalAssetsCount = computed(() => libraryAssets.data?.length || 0);
+
+function meaningful(value) {
+  const text = String(value || "").trim();
+  return Boolean(text) && text.toLowerCase() !== "untitled";
+}
+
+function campaignTitle(campaign) {
+  if (meaningful(campaign.campaign_name)) return campaign.campaign_name;
+  if (meaningful(campaign.product_name)) return `${campaign.product_name} Campaign`;
+  return currentLang.value === "vi" ? "Chiến dịch mới" : "New Campaign";
+}
+
+function projectLabel(count) {
+  return currentLang.value === "vi"
+    ? `${count} dự án`
+    : `${count} ${count === 1 ? "project" : "projects"}`;
+}
+
+function assetLabel(count) {
+  return currentLang.value === "vi"
+    ? `${count} tư liệu`
+    : `${count} ${count === 1 ? "asset" : "assets"}`;
+}
+
+async function reloadCampaigns() {
+  await Promise.all([campaigns.reload(), libraryAssets.reload()]);
+}
 
 const filteredCampaigns = computed(() => {
   let list = allCampaigns.value;
@@ -412,7 +349,7 @@ const filteredCampaigns = computed(() => {
     list = list.filter((c) => {
       const name = (c.campaign_name || c.project_name || "").toLowerCase();
       const prod = (c.product_name || "").toLowerCase();
-      const org = (c.client_organization || "").toLowerCase();
+      const org = (c.client_name || c.client_organization || "").toLowerCase();
       const aud = (c.target_audience || "").toLowerCase();
       const brief = (c.campaign_brief || "").toLowerCase();
       return name.includes(q) || prod.includes(q) || org.includes(q) || aud.includes(q) || brief.includes(q);
@@ -427,58 +364,19 @@ function openStudio(projectName) {
   router.push(`/projects/${encodeURIComponent(projectName)}`);
 }
 
-async function submitQuickCreate() {
-  const prod = quickProductName.value.trim();
-  if (!prod) {
-    toast({
-      title: currentLang.value === "vi" ? "Thiếu tên sản phẩm" : "Missing Product Name",
-      text: currentLang.value === "vi" ? "Vui lòng nhập tên sản phẩm để bắt đầu." : "Please enter a product name to continue.",
-      type: "error"
-    });
-    return;
-  }
-
+async function createDraftCampaign() {
   creatingProject.value = true;
   try {
-    let org = businesses.data?.[0]?.name;
-    if (!org) {
-      const createdOrg = await call("joymedia.joymedia.doctype.media_project.media_project.create_business", {
-        organization_name: "Cửa hàng của tôi",
-        industry: "Bán lẻ",
-      });
-      org = createdOrg.name;
-    }
-
-    // 1. Create Campaign and Media Project in Frappe DB
-    const campTitle = quickCampaignName.value.trim() || `Quảng cáo ${prod}`;
-    const projectDoc = await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign", {
-      campaign_name: campTitle,
-      project_name: `${prod} (${quickDuration.value}s)`,
-      client_organization: org,
-      product_name: prod,
-      target_audience: quickAudience.value,
-      video_idea: `Video quảng cáo hiện đại, làm nổi bật chi tiết sản phẩm ${prod}, màu sắc tươi sáng và bắt mắt.`,
-    });
-
-    // 2. Immediately initialize Media Specification in Frappe DB
-    await call("joymedia.joymedia.doctype.media_project.media_project.save_campaign_video_settings", {
-      campaign_name: projectDoc.name,
-      total_duration_seconds: quickDuration.value,
-      delivery_preset: quickFormat.value,
-      video_style: null,
-      continuity_mode: quickContinuityMode.value || "Multi-shot",
-    });
-
+    const project = await call("joymedia.joymedia.doctype.media_project.media_project.create_draft_campaign");
     toast({
-      title: currentLang.value === "vi" ? "Đã tạo chiến dịch!" : "Campaign Created!",
+      title: currentLang.value === "vi" ? "Đã tạo bản nháp" : "Draft created",
       text: currentLang.value === "vi" ? "Đang mở JoyMedia Studio..." : "Opening JoyMedia Studio...",
       type: "success"
     });
-    showCreateModal.value = false;
-    router.push(`/projects/${encodeURIComponent(projectDoc.name)}`);
+    router.push(`/projects/${encodeURIComponent(project.project)}`);
   } catch (error) {
     toast({
-      title: currentLang.value === "vi" ? "Lỗi tạo chiến dịch" : "Creation Error",
+      title: currentLang.value === "vi" ? "Lỗi tạo bản nháp" : "Unable to create draft",
       text: error.message || "Vui lòng thử lại.",
       type: "error"
     });

@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import subprocess
+import tempfile
 
 import frappe
 from frappe import _
@@ -79,9 +81,20 @@ def sync_attempt_result(attempt_name):
 	artifact = _create_primary_artifact(attempt)
 	_store_artifact_file_in_frappe(artifact, attempt, output)
 	last_frame = _find_last_frame_image(history)
-	if not last_frame:
-		frappe.throw(_("ComfyUI completed without a last-frame image output."))
-	_store_last_frame(attempt, last_frame)
+	if last_frame:
+		_store_last_frame(attempt, last_frame)
+	else:
+		video_bytes = download_output(
+			output["filename"],
+			output.get("subfolder", ""),
+			output.get("type", "output"),
+			base_url=attempt.comfyui_endpoint_url,
+		)
+		_store_last_frame_bytes(
+			attempt,
+			_extract_last_frame(video_bytes, output["filename"]),
+			f"{Path(output['filename']).stem}_last_frame.png",
+		)
 	attempt.output_artifact = artifact.name
 	attempt.status = "Completed"
 	if not attempt.started_at:
@@ -114,21 +127,28 @@ def _store_last_frame(attempt, output):
 	if attempt.last_frame_asset_version:
 		return frappe.get_doc("Asset Version", attempt.last_frame_asset_version)
 
-	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	shot = frappe.get_doc("Shot Specification", job.shot_specification)
-	media_specification = frappe.get_doc("Media Specification", shot.media_specification)
-	media_asset = _get_or_create_continuation_asset(shot.name, media_specification.media_project)
-
 	image_bytes = download_output(
 		output["filename"],
 		output.get("subfolder", ""),
 		output.get("type", "output"),
 		base_url=attempt.comfyui_endpoint_url,
 	)
+	return _store_last_frame_bytes(attempt, image_bytes, Path(output["filename"]).name)
+
+
+def _store_last_frame_bytes(attempt, image_bytes, file_name):
+	if attempt.last_frame_asset_version:
+		return frappe.get_doc("Asset Version", attempt.last_frame_asset_version)
+
+	job = frappe.get_doc("Generation Job", attempt.generation_job)
+	shot = frappe.get_doc("Shot Specification", job.shot_specification)
+	media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+	media_asset = _get_or_create_continuation_asset(shot.name, media_specification.media_project)
+
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",
-			"file_name": Path(output["filename"]).name,
+			"file_name": file_name,
 			"content": image_bytes,
 			"is_private": 1,
 			"attached_to_doctype": "Media Asset",
@@ -150,6 +170,35 @@ def _store_last_frame(attempt, output):
 	return asset_version
 
 
+def _extract_last_frame(video_bytes, source_name):
+	"""Extract a continuation frame when the workflow only returns a video."""
+	try:
+		with tempfile.TemporaryDirectory(prefix="joymedia-last-frame-") as temp_dir:
+			video_path = Path(temp_dir) / Path(source_name).name
+			frame_path = Path(temp_dir) / "last_frame.png"
+			video_path.write_bytes(video_bytes)
+			subprocess.run(
+				[
+					"ffmpeg",
+					"-v",
+					"error",
+					"-y",
+					"-sseof",
+					"-0.1",
+					"-i",
+					str(video_path),
+					"-frames:v",
+					"1",
+					str(frame_path),
+				],
+				check=True,
+				capture_output=True,
+			)
+			return frame_path.read_bytes()
+	except (OSError, subprocess.CalledProcessError) as exc:
+		frappe.throw(_("Unable to extract the last frame from ComfyUI output: {0}").format(exc))
+
+
 def _get_or_create_continuation_asset(shot_name, media_project):
 	asset_name = f"{shot_name} Continuation Frames"
 	media_asset_name = frappe.db.get_value("Media Asset", {"asset_name": asset_name}, "name")
@@ -160,10 +209,11 @@ def _get_or_create_continuation_asset(shot_name, media_project):
 		{
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
-			"asset_scope": "Project",
 			"media_type": "Image",
 			"asset_category": "Other",
+			"library_visibility": "Internal",
 			"media_project": media_project,
+			"client_organization": frappe.db.get_value("Media Project", media_project, "client_organization"),
 		}
 	)
 	media_asset.insert(ignore_permissions=True)

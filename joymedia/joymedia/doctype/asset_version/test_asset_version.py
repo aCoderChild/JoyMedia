@@ -25,7 +25,6 @@ class IntegrationTestAssetVersion(IntegrationTestCase):
 			{
 				"doctype": "Media Asset",
 				"asset_name": "Asset Version Numbering Test",
-				"asset_scope": "Organization",
 				"client_organization": organization.name,
 				"media_type": "Document",
 				"asset_category": "Other",

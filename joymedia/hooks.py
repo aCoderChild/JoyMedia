@@ -14,6 +14,9 @@ website_route_rules = [
 	{"from_route": "/joymedia", "to_route": "_joymedia"},
 ]
 
+signup_form_template = ["joymedia.registration.get_signup_template"]
+web_include_js = ["/assets/joymedia/js/joymedia_signup.js"]
+
 # Apps
 # ------------------
 

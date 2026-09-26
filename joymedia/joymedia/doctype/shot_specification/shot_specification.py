@@ -37,11 +37,10 @@ class ShotSpecification(Document):
 		if (
 			media_asset.media_type != "Video"
 			or media_asset.asset_category != "Shot Output"
-			or media_asset.asset_scope != "Project"
 			or media_asset.media_project != media_specification.media_project
 		):
 			frappe.throw(
-				"Selected Output Asset Version must belong to a project-scoped Video Shot Output "
+				"Selected Output Asset Version must belong to a Video Shot Output "
 				"for this Media Specification's Media Project."
 			)
 

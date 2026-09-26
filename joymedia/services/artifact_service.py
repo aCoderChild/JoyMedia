@@ -108,10 +108,11 @@ def _get_or_create_shot_output_asset(shot_name, media_project):
 		{
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
-			"asset_scope": "Project",
 			"media_type": "Video",
 			"asset_category": "Shot Output",
+			"library_visibility": "Internal",
 			"media_project": media_project,
+			"client_organization": frappe.db.get_value("Media Project", media_project, "client_organization"),
 		}
 	)
 	media_asset.insert(ignore_permissions=True)

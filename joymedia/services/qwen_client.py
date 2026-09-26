@@ -1,4 +1,5 @@
 import json
+import time
 
 import frappe
 import requests
@@ -180,29 +181,40 @@ video idea and project reference images.
 			{"type": "image_url", "image_url": {"url": image["data_url"]}}
 		)
 
-	try:
-		response = requests.post(
-			f"{base_url.rstrip('/')}/chat/completions",
-			json={
-				"model": model,
-				"messages": [
-					{
-						"role": "system",
-						"content": "You produce structured JSON video plans. Do not include markdown fences or commentary.",
-					},
-					{"role": "user", "content": user_content},
-				],
-				"response_format": {"type": "json_object"},
+	request_payload = {
+		"model": model,
+		"messages": [
+			{
+				"role": "system",
+				"content": "You produce structured JSON video plans. Do not include markdown fences or commentary.",
 			},
-			timeout=timeout,
-		)
-	except requests.ConnectionError as exc:
-		frappe.throw(_("Unable to connect to Qwen: {0}").format(str(exc)))
-	except requests.Timeout:
-		frappe.throw(
-			_("Qwen did not return a video plan within {0} seconds.").format(int(timeout))
-		)
+			{"role": "user", "content": user_content},
+		],
+		"response_format": {"type": "json_object"},
+	}
+	response = None
+	for attempt in range(3):
+		try:
+			response = requests.post(
+				f"{base_url.rstrip('/')}/chat/completions",
+				json=request_payload,
+				timeout=(10, timeout),
+			)
+			break
+		except requests.ConnectionError as exc:
+			if attempt < 2:
+				time.sleep(1)
+		except requests.Timeout:
+			frappe.throw(
+				_("Qwen did not return a video plan within {0} seconds.").format(int(timeout))
+			)
 
+	if response is None:
+		frappe.throw(
+			_("Qwen is unavailable at {0}. Check the Qwen service or SSH tunnel, then try again.").format(
+				base_url
+			)
+		)
 	if not response.ok:
 		frappe.throw(
 			_("Qwen request failed ({0}): {1}").format(response.status_code, response.text)

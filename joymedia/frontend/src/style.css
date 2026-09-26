@@ -230,6 +230,29 @@ body {
   flex-direction: column;
 }
 
+/* The project cockpit is a fixed workspace. Its assistant body owns vertical scrolling. */
+.app-shell.is-project-studio {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell.is-project-studio .main-content {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell.is-project-studio .studio-page-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 .topbar {
   display: flex;
   height: 52px;
@@ -1001,32 +1024,6 @@ h2 {
 .muted {
   color: var(--ink-muted);
   font-size: 13.5px;
-}
-
-.narrow-page {
-  max-width: 680px;
-  margin: 0 auto;
-}
-
-.form-card {
-  margin: 24px auto 0;
-  padding: 32px;
-  border: 1px solid var(--outline-border);
-  border-radius: 14px;
-  background-color: var(--surface-card);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.onboarding-card {
-  max-width: 520px;
-  margin-top: 8vh;
-}
-
-.form-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  margin: 24px 0;
 }
 
 .field-row {
@@ -1983,39 +1980,49 @@ h2 {
   background-color: var(--surface-base);
   display: flex;
   flex-direction: column;
-  padding: 20px;
+  padding: 12px 20px 12px 20px;
   overflow-y: auto;
   min-width: 0;
+}
+
+.project-studio-page .gflow-center-canvas {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.project-studio-page .gflow-center-canvas > .flex-1 {
+  min-height: 0 !important;
+  overflow: hidden;
 }
 
 .gflow-canvas-viewport {
   position: relative;
   background: var(--surface-muted);
   border: 1px solid var(--outline-border);
-  border-radius: 20px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 420px;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25);
+  min-height: 460px;
+  box-shadow: 0 6px 24px -2px rgba(0, 0, 0, 0.3);
   overflow: hidden;
 }
 
 .gflow-canvas-viewport.ratio-landscape {
   aspect-ratio: 16 / 9;
-  max-width: 760px;
+  max-width: 880px;
   margin: 0 auto;
 }
 
 .gflow-canvas-viewport.ratio-portrait {
   aspect-ratio: 9 / 16;
-  max-width: 340px;
+  max-width: 380px;
   margin: 0 auto;
 }
 
 .gflow-canvas-viewport.ratio-square {
   aspect-ratio: 1 / 1;
-  max-width: 460px;
+  max-width: 500px;
   margin: 0 auto;
 }
 
@@ -2028,6 +2035,12 @@ h2 {
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
+  min-height: 0;
+}
+
+.project-studio-page .gflow-right-panel {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .gflow-director-header {
@@ -2038,6 +2051,30 @@ h2 {
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
+}
+
+.gflow-project-name-input {
+  min-width: 120px;
+  max-width: 240px;
+  padding: 3px 7px;
+  border: 1px solid var(--primary-accent);
+  border-radius: 7px;
+  background: var(--surface-card);
+  color: var(--ink-primary);
+  font-size: 12px;
+  font-weight: 700;
+  outline: none;
+}
+
+.gflow-upload-category {
+  max-width: 92px;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 11px;
+  outline: none;
+  cursor: pointer;
 }
 
 .gflow-director-content {
@@ -2154,3 +2191,321 @@ h2 {
     display: none;
   }
 }
+
+/* CapCut-style Cinema & Timeline Architecture */
+.viewport-hud-chip {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(11, 12, 16, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  font-size: 11.5px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  user-select: none;
+}
+
+[data-theme="light"] .viewport-hud-chip {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #0f172a;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.compact-asset-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background-color: var(--surface-card);
+  border: 1px solid var(--outline-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+/* Timeline Container */
+.capcut-timeline-container {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background-color: var(--surface-card);
+  border: 1px solid var(--outline-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* Timeline Ruler with Ticks & Playhead */
+.capcut-ruler {
+  position: relative;
+  height: 24px;
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--outline-border);
+  user-select: none;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.capcut-ruler-ticks {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
+  font-size: 9.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--ink-muted);
+}
+
+.capcut-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background-color: #6366f1;
+  pointer-events: none;
+  z-index: 10;
+  transition: left 0.15s ease-out;
+}
+
+.capcut-playhead::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  background-color: #6366f1;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+/* Clip Filmstrip Track */
+.capcut-track {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 2px 0 6px 0;
+  scroll-behavior: smooth;
+}
+
+.capcut-clip {
+  position: relative;
+  flex: 1 1 0%;
+  min-width: 140px;
+  border-radius: 10px;
+  background-color: var(--surface-muted);
+  border: 2px solid var(--outline-border);
+  padding: 6px;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.capcut-clip:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  background-color: var(--surface-hover);
+}
+
+.capcut-clip.is-selected {
+  border-color: #6366f1 !important;
+  background-color: var(--surface-card) !important;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25), 0 4px 12px rgba(99, 102, 241, 0.15);
+}
+
+.inspector-accordion {
+  border: 1px solid var(--outline-border);
+  border-radius: 10px;
+  background-color: var(--surface-card);
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.inspector-accordion:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.inspector-accordion-header {
+  width: 100%;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  background-color: var(--surface-muted);
+  cursor: pointer;
+  border: none;
+  text-align: left;
+}
+
+.inspector-accordion-header:hover {
+  color: var(--ink-primary);
+}
+
+.inspector-accordion-body {
+  padding: 8px 10px;
+  border-top: 1px solid var(--outline-border);
+}
+
+.capcut-trim-handle {
+  width: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  cursor: ew-resize;
+}
+
+.capcut-trim-handle:hover {
+  background-color: var(--surface-active);
+  color: var(--ink-primary);
+}
+
+/* CapCut Keyframe Marker Diamond */
+.capcut-keyframe-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--surface-card);
+  border: 1px solid var(--outline-border);
+  color: var(--ink-secondary);
+  transition: all 0.15s ease;
+}
+
+.capcut-keyframe-badge:hover,
+.capcut-keyframe-badge.is-active {
+  border-color: #6366f1;
+  color: #6366f1;
+  background-color: rgba(99, 102, 241, 0.08);
+}
+
+.capcut-diamond {
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  background-color: #6366f1;
+  flex-shrink: 0;
+}
+
+.capcut-diamond-emerald {
+  background-color: #10b981;
+}
+
+/* Transition Connector Node */
+.capcut-transition-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0 4px;
+}
+
+.capcut-transition-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  background-color: var(--surface-card);
+  border: 1px dashed var(--outline-border);
+  color: var(--ink-muted);
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.capcut-transition-pill:hover {
+  border-color: #6366f1;
+  color: var(--primary-accent);
+  border-style: solid;
+  background-color: var(--surface-hover);
+}
+
+/* CapCut / Adobe Premiere / Google Flow Keyframe Timeline Track */
+.capcut-keyframe-track-lane {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 2px 6px;
+  min-height: 28px;
+  user-select: none;
+}
+
+.capcut-kf-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 10;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.capcut-kf-diamond {
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  border-radius: 1px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.capcut-kf-in {
+  background-color: #6366f1;
+}
+
+.capcut-kf-out-set {
+  background-color: #10b981;
+}
+
+.capcut-kf-out-empty {
+  background-color: var(--surface-card);
+  border: 1.5px solid #818cf8;
+}
+
+.capcut-kf-node:hover .capcut-kf-diamond {
+  transform: rotate(45deg) scale(1.3);
+}
+
+.capcut-kf-node.is-active .capcut-kf-diamond {
+  transform: rotate(45deg) scale(1.45);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.4), 0 0 10px rgba(99, 102, 241, 0.6);
+  background-color: #a5b4fc !important;
+}
+
+.capcut-kf-time-badge {
+  font-size: 8.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+  color: var(--ink-muted);
+  line-height: 1;
+}
+
+.capcut-kf-node.is-active .capcut-kf-time-badge {
+  color: #6366f1;
+  font-weight: 700;
+}
+

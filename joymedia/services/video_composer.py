@@ -410,10 +410,11 @@ def _get_or_create_final_asset(media_specification):
 		{
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
-			"asset_scope": "Project",
 			"media_type": "Video",
 			"asset_category": "Final Deliverable",
+			"library_visibility": "Visible",
 			"media_project": media_specification.media_project,
+			"client_organization": frappe.db.get_value("Media Project", media_specification.media_project, "client_organization"),
 		}
 	)
 	output_asset.insert(ignore_permissions=True)

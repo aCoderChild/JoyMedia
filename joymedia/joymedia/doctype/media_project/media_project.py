@@ -1,7 +1,9 @@
 # Copyright (c) 2026, JoyMedia and contributors
 # For license information, please see license.txt
 
+import hashlib
 import math
+from pathlib import Path
 
 import frappe
 from frappe import _
@@ -23,6 +25,32 @@ MIN_SHOT_DURATION_SECONDS = 2.5
 INPUT_ASSET_CATEGORIES = {"Product", "Character", "Background", "Brand", "Style", "Reference"}
 OUTPUT_ASSET_CATEGORIES = {"Shot Output", "Final Deliverable", "Storyboard", "Other"}
 SHOT_REFERENCE_CATEGORIES = INPUT_ASSET_CATEGORIES
+
+
+def _ensure_unique_uploaded_file(file_doc, organization):
+	file_path = Path(file_doc.get_full_path())
+	if not file_path.is_file():
+		frappe.throw(_("Uploaded file could not be read."))
+
+	digest = hashlib.sha256()
+	with file_path.open("rb") as file_handle:
+		for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+			digest.update(chunk)
+	content_hash = digest.hexdigest()
+	existing = frappe.db.get_value(
+		"Media Asset",
+		{"client_organization": organization, "content_hash": content_hash},
+		["name", "asset_name"],
+		as_dict=True,
+	)
+	if existing:
+		file_doc.delete(ignore_permissions=True)
+		frappe.throw(
+			_("This file is already in your organization library as {0}.").format(
+				existing.asset_name or existing.name
+			)
+		)
+	return content_hash
 
 
 def _normalize_generation_mode(value):
@@ -98,14 +126,16 @@ def get_campaign_cards():
 			"Media Asset",
 			filters={
 				"campaign": campaign_name,
-				"asset_scope": "Campaign",
 				"status": "Active",
 				"asset_category": ["in", list(INPUT_ASSET_CATEGORIES)],
 			},
 			fields=["name", "asset_category"],
+			order_by="modified desc",
 		)
 		cover_image = None
-		for a in assets:
+		product_asset = next((a for a in assets if a.asset_category == "Product"), None)
+		cover_candidates = ([product_asset] if product_asset else []) + [a for a in assets if a != product_asset]
+		for a in cover_candidates:
 			v = frappe.db.get_value("Asset Version", {"media_asset": a.name}, "file", order_by="version_number desc")
 			if v:
 				cover_image = v
@@ -116,6 +146,9 @@ def get_campaign_cards():
 				# Campaign workspace routes currently resolve a Media Project. Keep
 				# the parent campaign identity separately for data aggregation.
 				"campaign": campaign_name,
+				"client_name": frappe.db.get_value(
+					"Client Organization", cam.client_organization, "organization_name"
+				) or cam.client_organization,
 				"name": projects[0].name if projects else campaign_name,
 				"project_count": len(projects),
 				"asset_count": len(assets),
@@ -159,7 +192,6 @@ def get_campaign_detail(name):
 		filters={
 			"status": "Active",
 			"campaign": campaign.name,
-			"asset_scope": "Campaign",
 			"asset_category": ["in", list(INPUT_ASSET_CATEGORIES)],
 		},
 		fields=["name", "asset_name", "media_type", "asset_category", "creation", "modified"],
@@ -423,6 +455,26 @@ def get_campaign_production(name):
 	if not run:
 		return None
 	production = run[0]
+	jobs = frappe.get_all(
+		"Generation Job",
+		filters={"generation_run": production.name},
+		fields=[
+			"name",
+			"shot_specification",
+			"status",
+			"progress",
+			"successful_variants",
+			"failed_variants",
+			"failure_class",
+			"error_summary",
+		],
+		order_by="creation asc",
+	)
+	for job in jobs:
+		job["shot_number"] = frappe.db.get_value(
+			"Shot Specification", job.shot_specification, "shot_number"
+		)
+	production["jobs"] = jobs
 	if production.final_asset_version:
 		production["final_video"] = {
 			"asset_version": production.final_asset_version,
@@ -439,16 +491,18 @@ def get_campaign_reviews(name):
 	return project._get_review_cards(["Pending", "Rejected", "Approved"])
 
 def _get_campaign_assets(media_project):
-	"""Return only visual references explicitly selected for this project."""
+	"""Return active reference inputs owned by the project's organization."""
+	organization = frappe.db.get_value("Media Project", media_project, "client_organization")
 	assets = frappe.get_list(
 		"Media Asset",
 		filters={
 			"status": "Active",
+			"client_organization": organization,
 			"media_project": media_project,
-			"asset_scope": "Project",
+			"media_type": "Image",
 			"asset_category": ["in", list(INPUT_ASSET_CATEGORIES)],
 		},
-		fields=["name", "asset_name", "media_type", "asset_category", "asset_scope"],
+		fields=["name", "asset_name", "media_type", "asset_category"],
 		order_by="modified desc",
 		limit_page_length=100,
 	)
@@ -468,15 +522,12 @@ def _get_campaign_assets(media_project):
 def get_project_reference_candidates(media_project):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_read_access()
-	if not project.campaign:
-		return []
-
-	campaign_assets = frappe.get_list(
+	organization_assets = frappe.get_list(
 		"Media Asset",
 		filters={
-			"campaign": project.campaign,
-			"asset_scope": "Campaign",
+			"client_organization": project.client_organization,
 			"status": "Active",
+			"library_visibility": "Visible",
 			"media_type": "Image",
 			"asset_category": ["in", list(INPUT_ASSET_CATEGORIES)],
 		},
@@ -487,7 +538,7 @@ def get_project_reference_candidates(media_project):
 	selected_files = set()
 	for selected in frappe.get_all(
 		"Media Asset",
-		filters={"media_project": project.name, "asset_scope": "Project", "status": "Active"},
+		filters={"media_project": project.name, "status": "Active"},
 		pluck="name",
 	):
 		file_url = frappe.db.get_value(
@@ -496,25 +547,22 @@ def get_project_reference_candidates(media_project):
 		if file_url:
 			selected_files.add(file_url)
 
-	for asset in campaign_assets:
+	for asset in organization_assets:
 		asset["file"] = frappe.db.get_value(
 			"Asset Version", {"media_asset": asset.name}, "file", order_by="version_number desc"
 		)
 		asset["selected"] = bool(asset.file and asset.file in selected_files)
-	return campaign_assets
+	return organization_assets
 
 
 @frappe.whitelist()
 def select_project_reference(media_project, asset_name):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_write_access()
-	if not project.campaign:
-		frappe.throw(_("This project is not attached to a Campaign."))
 
 	source = frappe.get_doc("Media Asset", asset_name)
 	if (
-		source.asset_scope != "Campaign"
-		or source.campaign != project.campaign
+		source.client_organization != project.client_organization
 		or source.status != "Active"
 		or source.media_type != "Image"
 		or source.asset_category not in INPUT_ASSET_CATEGORIES
@@ -529,7 +577,7 @@ def select_project_reference(media_project, asset_name):
 
 	for selected in frappe.get_all(
 		"Media Asset",
-		filters={"media_project": project.name, "asset_scope": "Project", "status": "Active"},
+		filters={"media_project": project.name, "status": "Active"},
 		pluck="name",
 	):
 		if frappe.db.get_value(
@@ -541,7 +589,6 @@ def select_project_reference(media_project, asset_name):
 		{
 			"doctype": "Media Asset",
 			"asset_name": source.asset_name,
-			"asset_scope": "Project",
 			"media_project": project.name,
 			"media_type": "Image",
 			"asset_category": source.asset_category,
@@ -574,7 +621,7 @@ def _get_project_outputs(media_project):
 			"media_project": media_project,
 			"asset_category": ["in", list(OUTPUT_ASSET_CATEGORIES)],
 		},
-		fields=["name", "asset_name", "media_type", "asset_category", "asset_scope", "modified"],
+		fields=["name", "asset_name", "media_type", "asset_category", "modified"],
 		order_by="creation desc",
 		limit_page_length=100,
 	)
@@ -1000,7 +1047,6 @@ def get_businesses():
 	)
 
 
-@frappe.whitelist()
 def create_business(organization_name, industry=None):
 	if frappe.session.user == "Guest":
 		frappe.throw(_("You must be signed in to create a business."))
@@ -1049,6 +1095,45 @@ def create_business(organization_name, industry=None):
 		).insert(ignore_permissions=True)
 	frappe.db.commit()
 	return organization
+
+
+@frappe.whitelist()
+def create_draft_campaign():
+	"""Create the minimum editable campaign/project pair and open Studio."""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("You must be signed in to create a Campaign."))
+	if not set(frappe.get_roles()).intersection(
+		{"JoyMedia User", "JoyMedia Specialist", "System Manager"}
+	):
+		frappe.throw(_("You do not have permission to create a Campaign."))
+
+	organizations = get_businesses()
+	if not organizations:
+		frappe.throw(_("Your account is not linked to a Business / Organization."))
+	organization_name = organizations[0].name
+
+	campaign = frappe.get_doc(
+		{
+			"doctype": "Campaign",
+			"campaign_name": "Untitled",
+			"client_organization": organization_name,
+			"product_name": "Untitled",
+			"target_audience": "Untitled",
+		}
+	).insert(ignore_permissions=True)
+	project = frappe.get_doc(
+		{
+			"doctype": "Media Project",
+			"campaign": campaign.name,
+			"project_name": "Untitled",
+			"client_organization": organization_name,
+			"product_name": "Untitled",
+			"target_audience": "Untitled",
+			"status": "Draft",
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.commit()
+	return {"campaign": campaign.name, "project": project.name}
 
 
 @frappe.whitelist()
@@ -1143,16 +1228,17 @@ def create_campaign_shared_asset(campaign, asset_name, asset_category, file_url)
 
 	if asset_category not in INPUT_ASSET_CATEGORIES:
 		frappe.throw(_("Shared Campaign assets must be reference inputs (Product, Character, Background, Brand, Style, Reference)."))
+	content_hash = _ensure_unique_uploaded_file(file_doc, campaign_doc.client_organization)
 
 	asset = frappe.get_doc(
 		{
 			"doctype": "Media Asset",
 			"asset_name": (asset_name or "").strip(),
-			"asset_scope": "Campaign",
 			"campaign": campaign_doc.name,
 			"media_type": "Image",
 			"asset_category": asset_category,
 			"client_organization": campaign_doc.client_organization,
+			"content_hash": content_hash,
 			"status": "Active",
 		}
 	).insert(ignore_permissions=True)
@@ -1171,19 +1257,61 @@ def create_campaign_shared_asset(campaign, asset_name, asset_category, file_url)
 
 
 @frappe.whitelist()
+def create_organization_asset(asset_name, asset_category, file_url, media_type="Image"):
+	"""Add an input asset directly to the current user's organization library."""
+	organizations = get_businesses()
+	if not organizations:
+		frappe.throw(_("Your account is not linked to a Business / Organization."))
+	file_doc = frappe.get_doc("File", {"file_url": file_url})
+	if file_doc.owner != frappe.session.user and frappe.session.user != "Administrator":
+		frappe.throw(_("You can only attach files uploaded by your account."))
+	if asset_category not in INPUT_ASSET_CATEGORIES:
+		frappe.throw(_("Uploaded assets must be reference inputs (Product, Character, Background, Brand, Style, Reference)."))
+	if media_type not in {"Image", "Video"}:
+		frappe.throw(_("Only image and video assets can be uploaded to the Media Library."))
+	content_hash = _ensure_unique_uploaded_file(file_doc, organizations[0].name)
+	asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": (asset_name or "").strip(),
+			"media_type": media_type,
+			"asset_category": asset_category,
+			"client_organization": organizations[0].name,
+			"content_hash": content_hash,
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
+	version = frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": asset.name,
+			"file": file_url,
+			"source": "Uploaded",
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.commit()
+	return {"asset": asset.name, "version": version.name}
+
+
+@frappe.whitelist()
 def get_library_assets(scope=None, asset_type=None):
-	filters = {"status": "Active"}
-	if scope and scope != "All":
-		filters["asset_scope"] = scope
-	if asset_type == "Inputs":
-		filters["asset_category"] = ["in", list(INPUT_ASSET_CATEGORIES)]
-	elif asset_type == "Outputs":
-		filters["asset_category"] = ["in", list(OUTPUT_ASSET_CATEGORIES)]
+	organizations = get_businesses()
+	if not organizations:
+		return []
+	filters = {
+		"status": "Active",
+		"library_visibility": "Visible",
+		"client_organization": organizations[0].name,
+	}
+	if asset_type == "Images":
+		filters["media_type"] = "Image"
+	elif asset_type == "Videos":
+		filters["media_type"] = "Video"
 
 	assets = frappe.get_list(
 		"Media Asset",
 		filters=filters,
-		fields=["name", "asset_name", "media_type", "asset_category", "asset_scope", "campaign", "media_project", "status", "modified"],
+		fields=["name", "asset_name", "media_type", "asset_category", "campaign", "media_project", "status", "modified"],
 		order_by="modified desc",
 		limit_page_length=100,
 	)
@@ -1228,20 +1356,36 @@ def create_project(campaign, project_name, video_idea=None, reference_template=N
 
 
 @frappe.whitelist()
+def update_project_name(media_project, project_name):
+	project = frappe.get_doc("Media Project", media_project)
+	project._require_write_access()
+	project_name = (project_name or "").strip()
+	if not project_name:
+		frappe.throw(_("Project name cannot be empty."))
+	project.project_name = project_name
+	project.save(ignore_permissions=True)
+	if project.campaign:
+		frappe.db.set_value("Campaign", project.campaign, "campaign_name", project_name)
+	frappe.db.commit()
+	return {"project_name": project.project_name}
+
+
+@frappe.whitelist()
 def create_campaign_asset(media_project, asset_name, asset_category, file_url):
 	frappe.has_permission("Media Project", "write", media_project, throw=True)
 	media_project = frappe.get_doc("Media Project", media_project)
 	file_doc = frappe.get_doc("File", {"file_url": file_url})
 	if file_doc.owner != frappe.session.user and frappe.session.user != "Administrator":
 		frappe.throw(_("You can only attach files uploaded by your account."))
+	content_hash = _ensure_unique_uploaded_file(file_doc, media_project.client_organization)
 
 	asset_fields = {
 		"doctype": "Media Asset",
 		"asset_name": asset_name,
-		"asset_scope": "Campaign" if media_project.campaign else "Project",
 		"media_type": "Image",
 		"asset_category": asset_category,
 		"client_organization": media_project.client_organization,
+		"content_hash": content_hash,
 	}
 	if media_project.campaign:
 		asset_fields["campaign"] = media_project.campaign
@@ -1341,12 +1485,42 @@ class MediaProject(Document):
 		with filelock(f"joymedia-video-settings-{self.name}"):
 			latest = get_latest_media_specification(self.name)
 			if latest and latest.status != "Draft":
-				frappe.throw(
-					_(
-						"Video Settings cannot be changed after generation starts. "
-						"Use Revise Storyboard first."
-					)
+				latest_run_status = frappe.db.get_value(
+					"Generation Run",
+					{"media_specification": latest.name},
+					"status",
+					order_by="creation desc",
 				)
+				if latest_run_status in ("Queued", "Running", "Finalizing"):
+					frappe.throw(
+						_(
+							"Video Settings cannot be changed while generation is active. "
+							"Wait for the run to finish before changing the format."
+						)
+					)
+				if self.status not in ("Review", "Needs Attention", "Completed") and latest_run_status not in (
+					"Failed",
+					"Partially Completed",
+				):
+					frappe.throw(_("Create a storyboard revision before changing Video Settings."))
+
+				revision = frappe.get_doc(
+					{
+						"doctype": "Media Specification",
+						"media_project": self.name,
+						"version_number": (latest.version_number or 0) + 1,
+						"status": "Draft",
+						"workflow": latest.workflow,
+						"video_style": latest.video_style,
+						"continuity_mode": latest.continuity_mode,
+						"generation_instructions": latest.generation_instructions,
+						"total_duration_seconds": latest.total_duration_seconds,
+						"delivery_preset": latest.delivery_preset,
+						"delivery_width": latest.delivery_width,
+						"delivery_height": latest.delivery_height,
+					}
+				).insert(ignore_permissions=True)
+				latest = revision
 
 			if video_style is None and latest:
 				video_style = latest.video_style
@@ -1402,6 +1576,8 @@ class MediaProject(Document):
 			frappe.throw(_("The current Campaign revision is not editable."))
 		if not media_specification.workflow:
 			frappe.throw(_("Media Specification must have a Workflow."))
+		if not self._get_project_image_inputs():
+			frappe.throw(_("Add at least one project image before creating a storyboard."))
 
 		workflow_version = frappe.get_doc(
 			"Workflow",
@@ -1455,6 +1631,8 @@ class MediaProject(Document):
 				return {"run": existing_run.name, "status": existing_run.status}
 			if media_specification.status != "Draft":
 				frappe.throw(_("This Campaign revision has already been submitted."))
+			if not self._get_project_image_inputs():
+				frappe.throw(_("Add at least one project image before generating a video."))
 			if not frappe.db.exists(
 				"Shot Specification", {"media_specification": media_specification.name}
 			):

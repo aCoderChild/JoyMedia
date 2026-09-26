@@ -1,5 +1,5 @@
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'is-project-studio': isProjectStudio }">
     <!-- Left Sidebar (Frappe UI AppShell) -->
     <aside class="sidebar" :class="{ 'is-collapsed': isCollapsed }">
       <!-- Top Brand Header (JoyMedia Studio) -->
@@ -43,7 +43,7 @@
 
       <!-- Navigation Links -->
       <nav class="sidebar-nav" aria-label="Main navigation">
-        <!-- 1. Tất cả nội dung nghệ... -->
+        <!-- Campaigns -->
         <Tooltip :text="t('sidebar_all_art_full')" side="right" :disabled="!isCollapsed">
           <RouterLink
             to="/campaigns"
@@ -61,7 +61,7 @@
           </RouterLink>
         </Tooltip>
 
-        <!-- 2. Hình ảnh -->
+        <!-- Media Library -->
         <Tooltip :text="t('sidebar_images')" side="right" :disabled="!isCollapsed">
           <RouterLink
             to="/assets"
@@ -79,19 +79,7 @@
           </RouterLink>
         </Tooltip>
 
-        <!-- 3. Nhân vật -->
-        <Tooltip :text="t('sidebar_characters')" side="right" :disabled="!isCollapsed">
-          <RouterLink
-            to="/assets?category=Character"
-            class="nav-link"
-            :class="{ 'justify-center p-2.5': isCollapsed }"
-          >
-            <span class="nav-link-icon text-base">👤</span>
-            <span v-if="!isCollapsed" class="truncate flex-1">{{ t('sidebar_characters') }}</span>
-          </RouterLink>
-        </Tooltip>
-
-        <!-- 4. Cảnh -->
+        <!-- Reviews -->
         <Tooltip :text="t('sidebar_scenes')" side="right" :disabled="!isCollapsed">
           <RouterLink
             to="/reviews"
@@ -99,7 +87,7 @@
             :class="{ 'justify-center p-2.5': isCollapsed }"
           >
             <span class="nav-link-icon relative text-base">
-              🎬
+              ✓
               <span
                 v-if="isCollapsed && pendingReviewsCount > 0"
                 class="absolute -top-1 -right-1 size-2 rounded-full bg-amber-500 animate-pulse"
@@ -115,34 +103,10 @@
           </RouterLink>
         </Tooltip>
 
-        <!-- 5. Công cụ -->
-        <Tooltip :text="t('sidebar_tools')" side="right" :disabled="!isCollapsed">
-          <RouterLink
-            to="/onboarding"
-            class="nav-link"
-            :class="{ 'justify-center p-2.5': isCollapsed }"
-          >
-            <span class="nav-link-icon text-base">✨</span>
-            <span v-if="!isCollapsed" class="truncate flex-1">{{ t('sidebar_tools') }}</span>
-          </RouterLink>
-        </Tooltip>
       </nav>
 
-      <!-- Sidebar Footer: Thùng rác + Thu gọn -->
+      <!-- Sidebar Footer: Thu gọn -->
       <div class="sidebar-footer">
-        <!-- Thùng rác -->
-        <Tooltip text="Thùng rác" side="right" :disabled="!isCollapsed">
-          <button
-            type="button"
-            class="nav-link w-full text-ink-muted hover:text-ink-primary"
-            :class="{ 'justify-center p-2.5': isCollapsed }"
-            @click="router.push('/assets')"
-          >
-            <span class="nav-link-icon text-sm">🗑️</span>
-            <span v-if="!isCollapsed" class="truncate flex-1 text-xs">{{ currentLang === 'vi' ? 'Thùng rác' : 'Trash' }}</span>
-          </button>
-        </Tooltip>
-
         <!-- Thu gọn Toggle -->
         <Tooltip :text="isCollapsed ? (currentLang === 'vi' ? 'Mở rộng' : 'Expand') : (currentLang === 'vi' ? 'Thu gọn' : 'Collapse')" side="right" :disabled="!isCollapsed">
           <button
@@ -185,20 +149,7 @@
           </div>
         </div>
 
-        <!-- Center: Search Pill -->
-        <div class="hidden md:flex items-center justify-center flex-1 max-w-sm mx-4">
-          <div class="flex items-center gap-2 w-full px-3.5 py-1.5 rounded-full bg-surface-card border border-outline-border text-xs text-ink-primary focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 shadow-xs transition-all">
-            <svg class="size-3.5 text-ink-muted shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"/>
-              <path d="m21 21-4.3-4.3"/>
-            </svg>
-            <input
-              type="text"
-              :placeholder="currentLang === 'vi' ? 'Tìm kiếm dự án, kịch bản, cảnh...' : 'Search projects, scripts, scenes...'"
-              class="bg-transparent border-none outline-none text-xs text-ink-primary placeholder:text-ink-muted w-full"
-            />
-          </div>
-        </div>
+        <div class="flex-1" />
 
         <!-- Right: Actions & User -->
         <div class="topbar-right flex items-center gap-2.5">
@@ -212,16 +163,6 @@
             <span class="text-xs">🌐</span>
             <span class="font-mono text-[11px] uppercase tracking-wider font-bold">{{ currentLang }}</span>
             <span class="text-[10px] text-ink-muted font-normal">({{ currentLang === 'vi' ? 'VIE' : 'ENG' }})</span>
-          </button>
-
-          <!-- Quick New Project Button -->
-          <button
-            type="button"
-            class="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-sm shadow-indigo-600/20 cursor-pointer"
-            @click="router.push('/campaigns/new')"
-          >
-            <span class="text-sm font-bold leading-none">+</span>
-            <span>{{ currentLang === 'vi' ? 'Tạo dự án' : 'New Project' }}</span>
           </button>
 
           <!-- Theme Toggle -->
@@ -271,7 +212,7 @@
       </header>
 
       <!-- Slot Content -->
-      <div class="page-content flow-page-content">
+      <div class="page-content flow-page-content" :class="{ 'studio-page-content': isProjectStudio }">
         <slot />
       </div>
     </main>
@@ -289,6 +230,7 @@ const { user, logout } = useSession();
 const { t, currentLang, toggleLang, setLang } = useI18n();
 const route = useRoute();
 const router = useRouter();
+const isProjectStudio = computed(() => route.path.includes("/projects/"));
 
 // Sidebar state
 const isCollapsed = ref(localStorage.getItem("joymedia_sidebar_collapsed") === "true");
@@ -332,28 +274,29 @@ const campaignsResource = createResource({
   auto: true,
 });
 
+const libraryAssetsResource = createResource({
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_library_assets",
+  params: { asset_type: "All" },
+  auto: true,
+});
+
 const reviewsResource = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_reviews_summary",
   auto: true,
 });
 
 const campaignsCount = computed(() => campaignsResource.data?.length || 0);
-const assetsCount = computed(() => {
-  const campaigns = campaignsResource.data || [];
-  return campaigns.reduce((total, c) => total + (c.asset_count || 0), 0);
-});
+const assetsCount = computed(() => libraryAssetsResource.data?.length || 0);
 const pendingReviewsCount = computed(() => reviewsResource.data?.pending_count || 0);
 
 const currentPageTitle = computed(() => {
   const path = route.path;
   const isEn = currentLang.value === "en";
-  if (path === "/campaigns" || path === "/") return isEn ? "Marketing Campaigns" : "Chiến dịch Video";
-  if (path.startsWith("/campaigns/new")) return isEn ? "Create New Project" : "Tạo dự án mới";
+  if (path === "/campaigns" || path === "/") return isEn ? "Campaigns" : "Chiến dịch";
   if (path.startsWith("/campaigns/")) return isEn ? "Campaign Workspace" : "Chi tiết chiến dịch";
   if (path.startsWith("/projects/")) return "JoyMedia Studio";
   if (path.startsWith("/reviews")) return isEn ? "Review Videos" : "Đánh giá video";
-  if (path.startsWith("/assets")) return isEn ? "Asset Library" : "Thư viện Media";
-  if (path.startsWith("/onboarding")) return isEn ? "Studio Settings" : "Cài đặt Studio";
+  if (path.startsWith("/assets")) return isEn ? "Media Library" : "Thư viện Media";
   return "JoyMedia Studio";
 });
 
@@ -364,13 +307,12 @@ const userInitial = computed(() => {
 
 const headerDropdownOptions = computed(() => [
   { label: "JoyMedia Studio", onClick: () => router.push("/campaigns") },
-  { label: currentLang.value === "en" ? "Asset Library" : "Thư viện Media", onClick: () => router.push("/assets") },
+  { label: currentLang.value === "en" ? "Media Library" : "Thư viện Media", onClick: () => router.push("/assets") },
   { label: currentLang.value === "en" ? "Review Videos" : "Đánh giá Video", onClick: () => router.push("/reviews") },
   {
     label: currentLang.value === "en" ? "🇻🇳 Tiếng Việt" : "🇬🇧 English",
     onClick: () => toggleLang(),
   },
-  { label: currentLang.value === "en" ? "Studio Settings" : "Cài đặt Studio", onClick: () => router.push("/onboarding") },
   { label: currentLang.value === "en" ? "Sign out" : "Đăng xuất", onClick: () => logout.submit() },
 ]);
 </script>

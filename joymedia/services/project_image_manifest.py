@@ -17,21 +17,21 @@ REFERENCE_IMAGE_CATEGORIES = [
 
 
 def get_project_image_manifest(media_project: str, *, include_data_url: bool = False):
+	organization = frappe.db.get_value("Media Project", media_project, "client_organization")
+	if not organization:
+		return []
 	campaign = frappe.db.get_value("Media Project", media_project, "campaign")
-	or_filters = [
-		{"media_project": media_project, "asset_scope": "Project"},
-	]
-	if campaign:
-		or_filters.append({"campaign": campaign, "asset_scope": "Campaign"})
 
 	media_assets = frappe.get_all(
 		"Media Asset",
 		filters={
+			"client_organization": organization,
+			"library_visibility": "Visible",
 			"media_type": "Image",
 			"status": "Active",
 			"asset_category": ["in", REFERENCE_IMAGE_CATEGORIES],
 		},
-		or_filters=or_filters,
+		or_filters=[{"media_project": media_project}, {"campaign": campaign}] if campaign else [{"media_project": media_project}],
 		fields=["name", "asset_name", "asset_category"],
 		order_by="asset_name asc, name asc",
 	)

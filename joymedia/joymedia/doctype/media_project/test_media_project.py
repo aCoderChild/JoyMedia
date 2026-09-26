@@ -210,7 +210,6 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			{
 				"doctype": "Media Asset",
 				"asset_name": "Workspace Product Image",
-				"asset_scope": "Project",
 				"media_type": "Image",
 				"asset_category": "Product",
 				"media_project": campaign.name,
@@ -579,6 +578,9 @@ def _create_pending_review(media_specification, suffix):
 	media_project = frappe.db.get_value(
 		"Media Specification", media_specification, "media_project"
 	)
+	client_organization = frappe.db.get_value(
+		"Media Project", media_project, "client_organization"
+	)
 	required_input_roles = frappe.get_all(
 		"Workflow Binding",
 		{
@@ -596,10 +598,10 @@ def _create_pending_review(media_specification, suffix):
 			{
 				"doctype": "Media Asset",
 				"asset_name": f"Review Input {suffix} {required_input_role}",
-				"asset_scope": "Project",
 				"media_type": "Image",
 				"asset_category": "Product",
 				"media_project": media_project,
+				"client_organization": client_organization,
 			}
 		).insert(ignore_permissions=True)
 		file_doc = frappe.get_doc(

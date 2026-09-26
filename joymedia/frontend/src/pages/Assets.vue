@@ -7,25 +7,25 @@
         <p class="subtitle">{{ t('assets_subtitle') }}</p>
       </div>
       <div class="flex items-center gap-2">
-        <Button variant="solid" @click="showUploadModal = true">
+        <Button variant="solid" class="!bg-indigo-600 hover:!bg-indigo-500 !text-white" @click="showUploadModal = true">
           <template #prefix>
             <span class="lucide-plus size-4" />
           </template>
-          {{ t('btn_add_asset') }}
+          {{ t('btn_add_media') }}
         </Button>
         <Button appearance="subtle" @click="openCampaigns">
           <template #prefix>
             <span class="lucide-clapperboard size-4" />
           </template>
-          {{ t('btn_view_projects') }}
+          {{ t('btn_view_campaigns') }}
         </Button>
       </div>
     </div>
 
-    <!-- Toolbar: Scope & Type Categorisation Filters -->
+    <!-- Toolbar: Type Categorisation Filters -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-surface-card border border-outline-border shadow-xs mb-6">
       <div class="flex flex-wrap items-center gap-3">
-        <!-- Type Filter (Inputs vs Outputs) -->
+        <!-- Media Type Filter -->
         <div class="flex items-center gap-1.5 p-1 rounded-xl bg-surface-hover border border-outline-border">
           <button
             v-for="opt in typeOptions"
@@ -41,31 +41,16 @@
           </button>
         </div>
 
-        <!-- Scope Filter (All, Campaign, Project) -->
-        <div class="flex items-center gap-1.5 p-1 rounded-xl bg-surface-hover border border-outline-border">
-          <button
-            v-for="scope in ['All', 'Campaign', 'Project']"
-            :key="scope"
-            type="button"
-            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-            :class="activeScope === scope
-              ? 'bg-surface-card text-ink-primary shadow-xs border border-outline-border'
-              : 'text-ink-secondary hover:text-ink-primary'"
-            @click="activeScope = scope"
-          >
-            {{ scope === 'All' ? 'All Scopes' : `${scope} Scope` }}
-          </button>
-        </div>
       </div>
 
       <div class="flex items-center gap-3">
         <span class="text-xs font-medium text-ink-muted">
-          {{ filteredAssets.length }} {{ filteredAssets.length === 1 ? 'asset' : 'assets' }}
+          {{ filteredAssets.length }} {{ filteredAssets.length === 1 ? t('asset_singular') : t('asset_plural') }}
         </span>
         <FormControl
           v-model="search"
           type="text"
-          placeholder="Search by name..."
+          :placeholder="t('asset_search_placeholder')"
           class="w-full sm:w-56"
         >
           <template #prefix>
@@ -95,8 +80,8 @@
       <div class="empty-state-icon">
         <span class="lucide-refresh-cw size-6 animate-spin" />
       </div>
-      <h2>Loading assets...</h2>
-      <p>Fetching media items from your workspace.</p>
+      <h2>{{ t('assets_loading_title') }}</h2>
+      <p>{{ t('assets_loading_desc') }}</p>
     </div>
 
     <!-- Asset Cards Grid -->
@@ -116,12 +101,6 @@
             {{ asset.asset_category || (asset.is_output ? 'Output' : 'Reference') }}
           </span>
 
-          <!-- Scope Pill -->
-          <span
-            class="absolute top-2 right-2 z-10 text-[10px] px-2 py-0.5 rounded font-medium backdrop-blur-md shadow-xs bg-black/50 text-white/95"
-          >
-            {{ asset.asset_scope }}
-          </span>
 
           <!-- Play overlay icon for videos -->
           <div
@@ -162,7 +141,7 @@
           <div class="flex items-center justify-between pt-1 border-t border-outline-subtle text-[11px] text-ink-muted">
             <span class="capitalize">{{ asset.is_output ? 'Project Output' : 'Reference Input' }}</span>
             <span class="font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-              <span>View</span>
+              <span>{{ t('asset_view') }}</span>
               <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="9 18 15 12 9 6"/>
               </svg>
@@ -176,10 +155,10 @@
       <div class="empty-state-icon">
         <span class="lucide-image size-7" />
       </div>
-      <h2>No assets match your filters</h2>
-      <p>Try clearing your search query or switching between Reference Inputs and Project Outputs.</p>
-      <Button variant="solid" @click="resetFilters">
-        Reset Filters
+      <h2>{{ t('assets_empty_title') }}</h2>
+      <p>{{ t('assets_empty_desc') }}</p>
+      <Button variant="solid" class="!bg-indigo-600 hover:!bg-indigo-500 !text-white" @click="resetFilters">
+        {{ t('asset_reset_filters') }}
       </Button>
     </div>
 
@@ -200,9 +179,6 @@
                 :class="selectedAsset.is_output ? 'bg-purple-600 text-white' : 'bg-indigo-600 text-white'"
               >
                 {{ selectedAsset.asset_category || (selectedAsset.is_output ? 'Output' : 'Reference') }}
-              </span>
-              <span class="text-[10px] px-2 py-0.5 rounded font-medium bg-surface-hover border border-outline-border text-ink-secondary">
-                {{ selectedAsset.asset_scope }} Scope
               </span>
             </div>
             <h2 class="text-base font-bold text-ink-primary truncate" :title="selectedAsset.asset_name">
@@ -242,17 +218,17 @@
           <!-- Fallback Placeholder -->
           <div v-else class="text-center p-8 text-ink-muted">
             <span class="lucide-file-question size-10 mx-auto mb-2 opacity-50" />
-            <p class="text-sm font-medium">Media file preview is not available.</p>
-            <p class="text-xs mt-1 text-ink-muted">ID: {{ selectedAsset.name }}</p>
+            <p class="text-sm font-medium">{{ t('asset_preview_unavailable') }}</p>
+            <p class="text-xs mt-1 text-ink-muted">{{ t('asset_id_label') }}: {{ selectedAsset.name }}</p>
           </div>
         </div>
 
         <!-- Modal Footer & Metadata Details -->
         <div class="p-4 bg-surface-card border-t border-outline-border flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-3 text-xs text-ink-secondary">
-            <span>Type: <strong>{{ selectedAsset.media_type || (selectedAsset.is_output ? 'Video' : 'Image') }}</strong></span>
+            <span>{{ t('asset_type_label') }}: <strong>{{ selectedAsset.media_type || (selectedAsset.is_output ? t('type_videos') : t('type_images')) }}</strong></span>
             <span>·</span>
-            <span>Modified: <strong>{{ formatDate(selectedAsset.modified) }}</strong></span>
+            <span>{{ t('asset_modified_label') }}: <strong>{{ formatDate(selectedAsset.modified) }}</strong></span>
           </div>
 
           <div class="flex items-center gap-2">
@@ -263,7 +239,7 @@
               class="text-xs"
               @click="openProject(selectedAsset.media_project)"
             >
-              Open Project Cockpit
+              {{ t('asset_open_project') }}
             </Button>
             <Button
               v-else-if="selectedAsset.campaign"
@@ -271,7 +247,7 @@
               class="text-xs"
               @click="openCampaign(selectedAsset.campaign)"
             >
-              Open Campaign
+              {{ t('asset_open_campaign') }}
             </Button>
 
             <!-- Download Button -->
@@ -286,10 +262,10 @@
                 <polyline points="7 10 12 15 17 10"/>
                 <line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
-              <span>Download</span>
+              <span>{{ t('asset_download') }}</span>
             </a>
 
-            <Button appearance="subtle" @click="selectedAsset = null">Close</Button>
+            <Button appearance="subtle" @click="selectedAsset = null">{{ t('asset_close') }}</Button>
           </div>
         </div>
       </div>
@@ -301,27 +277,17 @@
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs"
       @click.self="showUploadModal = false"
     >
-      <div class="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl text-xs space-y-4">
-        <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
+      <div class="w-full max-w-md bg-surface-card border border-outline-border rounded-2xl p-6 shadow-2xl text-xs space-y-4 text-ink-primary">
+        <div class="flex items-center justify-between pb-3 border-b border-outline-border">
           <div>
-            <h3 class="text-sm font-bold text-white">{{ t('upload_modal_title') }}</h3>
-            <p class="text-zinc-400 text-[11px] mt-0.5">{{ t('upload_modal_sub') }}</p>
+            <h3 class="text-sm font-bold text-ink-primary">{{ t('upload_modal_title') }}</h3>
+            <p class="text-ink-secondary text-[11px] mt-0.5">{{ t('upload_modal_sub') }}</p>
           </div>
-          <button type="button" class="text-zinc-400 hover:text-white" @click="showUploadModal = false">✕</button>
+          <button type="button" class="text-ink-secondary hover:text-ink-primary" @click="showUploadModal = false">✕</button>
         </div>
 
         <div>
-          <label class="block text-zinc-300 font-semibold mb-1">{{ t('upload_campaign_label') }}</label>
-          <FormControl
-            v-model="uploadTargetCampaign"
-            type="select"
-            :options="campaignOptions"
-            placeholder="Select campaign..."
-          />
-        </div>
-
-        <div>
-          <label class="block text-zinc-300 font-semibold mb-1">{{ t('upload_category_label') }}</label>
+          <label class="block text-ink-secondary font-semibold mb-1">{{ t('upload_category_label') }}</label>
           <FormControl
             v-model="uploadCategory"
             type="select"
@@ -337,16 +303,16 @@
         </div>
 
         <div>
-          <label class="block text-zinc-300 font-semibold mb-1">{{ t('upload_file_label') }}</label>
+          <label class="block text-ink-secondary font-semibold mb-1">{{ t('upload_file_label') }}</label>
           <input
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            class="w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700 cursor-pointer"
+            accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
+            class="w-full text-xs text-ink-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-surface-muted file:text-ink-primary hover:file:bg-surface-hover cursor-pointer"
             @change="onFileChange"
           />
         </div>
 
-        <div class="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-outline-border">
           <Button appearance="subtle" @click="showUploadModal = false">{{ t('btn_cancel') }}</Button>
           <Button variant="solid" :loading="isUploading" @click="handleUploadAsset">{{ t('btn_upload') }}</Button>
         </div>
@@ -364,21 +330,19 @@ import { useI18n } from "../stores/i18n";
 const { t } = useI18n();
 const route = useRoute();
 const search = ref("");
-const activeScope = ref("All");
 const activeType = ref("All");
 const activeCategory = ref(route.query?.category || "All");
 const selectedAsset = ref(null);
 
 const showUploadModal = ref(false);
 const isUploading = ref(false);
-const uploadTargetCampaign = ref("");
 const uploadCategory = ref("Product");
 const selectedFile = ref(null);
 
 const typeOptions = computed(() => [
-  { label: t('type_all'), value: "All" },
-  { label: t('type_inputs'), value: "Inputs" },
-  { label: t('type_outputs'), value: "Outputs" },
+  { label: t('type_all_assets'), value: "All" },
+  { label: t('type_images'), value: "Images" },
+  { label: t('type_videos'), value: "Videos" },
 ]);
 
 const categoryOptions = computed(() => [
@@ -394,34 +358,13 @@ const categoryOptions = computed(() => [
 const assetsResource = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_library_assets",
   params: {
-    scope: activeScope.value,
     asset_type: activeType.value,
   },
   auto: true,
 });
 
-const campaignsResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_cards",
-  auto: true,
-});
-
-const campaignOptions = computed(() => {
-  const list = campaignsResource.data || [];
-  return list.map((c) => ({
-    label: `${c.campaign_name || c.product_name} (${c.campaign || c.name})`,
-    value: c.campaign || c.name,
-  }));
-});
-
-watch(campaignOptions, (opts) => {
-  if (opts.length && !uploadTargetCampaign.value) {
-    uploadTargetCampaign.value = opts[0].value;
-  }
-}, { immediate: true });
-
-watch([activeScope, activeType], () => {
+watch(activeType, () => {
   assetsResource.params = {
-    scope: activeScope.value,
     asset_type: activeType.value,
   };
   assetsResource.reload();
@@ -464,7 +407,6 @@ function formatDate(dateStr) {
 
 function resetFilters() {
   search.value = "";
-  activeScope.value = "All";
   activeType.value = "All";
   activeCategory.value = "All";
 }
@@ -479,24 +421,19 @@ async function handleUploadAsset() {
     toast({ title: "Chưa chọn file", text: "Vui lòng chọn một file ảnh.", type: "error" });
     return;
   }
-  if (!uploadTargetCampaign.value) {
-    toast({ title: "Chưa chọn chiến dịch", text: "Vui lòng chọn một chiến dịch để đính kèm tư liệu.", type: "error" });
-    return;
-  }
-
   isUploading.value = true;
   try {
     const uploaded = await uploadFile(selectedFile.value, { private: true });
     if (!uploaded?.file_url) throw new Error("Không thể tải lên file.");
 
-    await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign_shared_asset", {
-      campaign: uploadTargetCampaign.value,
+    await call("joymedia.joymedia.doctype.media_project.media_project.create_organization_asset", {
       asset_name: selectedFile.value.name.replace(/\.[^/.]+$/, ""),
       asset_category: uploadCategory.value,
       file_url: uploaded.file_url,
+      media_type: selectedFile.value.type.startsWith("video/") ? "Video" : "Image",
     });
 
-    toast({ title: "Đã tải lên tư liệu", text: `Đã thêm vào chiến dịch ${uploadTargetCampaign.value}.`, type: "success" });
+    toast({ title: "Đã tải lên tư liệu", text: "Đã thêm vào thư viện của tổ chức.", type: "success" });
     showUploadModal.value = false;
     selectedFile.value = null;
     await assetsResource.reload();

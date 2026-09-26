@@ -13,3 +13,5 @@ joymedia.patches.repair_h3_last_frame_binding
 joymedia.patches.recreate_workflow_records
 joymedia.patches.configure_default_workflow_style
 joymedia.patches.ensure_file_home_folder
+joymedia.patches.set_internal_library_visibility
+joymedia.patches.backfill_media_asset_content_hashes
