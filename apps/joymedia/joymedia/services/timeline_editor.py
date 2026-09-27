@@ -17,6 +17,16 @@ TRANSITIONS = {"Cut", "Dissolve", "Fade"}
 def get_project_timeline(project_name: str, create_if_possible=True):
 	project = frappe.get_doc("Media Project", project_name)
 	project.check_permission("read")
+	if not frappe.db.exists("DocType", "Timeline Clip"):
+		return {
+			"ready": False,
+			"project": project.name,
+			"clips": [],
+			"fps": 0,
+			"total_frames": 0,
+			"total_seconds": 0,
+			"message": _("The timeline editor is not installed yet. Run the site migration to enable it."),
+		}
 	create_if_possible = _as_bool(create_if_possible)
 
 	clips = _timeline_clip_rows(project.name)
