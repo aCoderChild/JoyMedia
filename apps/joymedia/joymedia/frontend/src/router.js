@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import Campaigns from "./pages/Campaigns.vue";
 import CampaignDetail from "./pages/CampaignDetail.vue";
-import ProjectDetail from "./pages/ProjectDetail.vue";
+import ProjectStudio from "./pages/ProjectStudio.vue";
 import Assets from "./pages/Assets.vue";
 import Reviews from "./pages/Reviews.vue";
 import { useSession } from "./stores/session";
@@ -12,8 +12,8 @@ const router = createRouter({
     { path: "/", redirect: "/campaigns" },
     { path: "/campaigns", component: Campaigns },
     { path: "/campaigns/:name", component: CampaignDetail },
-    { path: "/projects/:name", component: ProjectDetail },
-    { path: "/campaigns/:campaign/projects/:name", component: ProjectDetail },
+    { path: "/projects/:name", component: ProjectStudio },
+    { path: "/campaigns/:campaign/projects/:name", component: ProjectStudio },
     { path: "/assets", component: Assets },
     { path: "/reviews", component: Reviews },
   ],
