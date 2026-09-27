@@ -82,11 +82,6 @@ def compose_media_specification(media_specification_name: str):
 			"source": "Composed",
 			"duration_seconds": video_duration,
 			"fps": profile["fps"],
-			"notes": (
-				"Delivery video composed from normalized selected shot outputs with a global audio mix."
-				if audio_mixed
-				else "Silent master composed from normalized selected shot outputs."
-			),
 		}
 	)
 	asset_version.insert(ignore_permissions=True)
@@ -97,16 +92,22 @@ def compose_media_specification(media_specification_name: str):
 
 
 def _get_delivery_profile(media_specification):
-	if not (
-		media_specification.delivery_width
-		and media_specification.delivery_height
-		and media_specification.target_fps
-	):
-		frappe.throw(_("Media Specification must have delivery width, height, and target FPS before composition."))
+	if not media_specification.delivery_width or not media_specification.delivery_height:
+		frappe.throw(_("Media Specification must have delivery width and height before composition."))
+	if not media_specification.workflow:
+		frappe.throw(_("Media Specification must have a Workflow before composition."))
+
+	workflow_version = frappe.get_doc(
+		"Workflow",
+		media_specification.workflow,
+	)
+	if not workflow_version.output_fps:
+		frappe.throw(_("Workflow must have output FPS before composition."))
+
 	return {
 		"width": int(media_specification.delivery_width),
 		"height": int(media_specification.delivery_height),
-		"fps": float(media_specification.target_fps),
+		"fps": float(workflow_version.output_fps),
 	}
 
 
@@ -409,10 +410,11 @@ def _get_or_create_final_asset(media_specification):
 		{
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
-			"asset_scope": "Project",
 			"media_type": "Video",
 			"asset_category": "Final Deliverable",
+			"library_visibility": "Visible",
 			"media_project": media_specification.media_project,
+			"client_organization": frappe.db.get_value("Media Project", media_specification.media_project, "client_organization"),
 		}
 	)
 	output_asset.insert(ignore_permissions=True)

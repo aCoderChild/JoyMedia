@@ -1,6 +1,3 @@
-# Copyright (c) 2026, JoyMedia and Contributors
-# See license.txt
-
 from unittest.mock import patch
 
 import frappe
@@ -10,41 +7,64 @@ from frappe.tests.utils import FrappeTestCase
 from .media_specification import MediaSpecification
 
 
-# On IntegrationTestCase, the doctype test records and all
-# link-field test record dependencies are recursively loaded
-# Use these module variables to add/remove to/from that list
-EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-
-
-
 class TestMediaSpecification(FrappeTestCase):
+	def test_generation_setup_resolves_default_workflow(self):
+		specification = _existing_specification(status="Draft", workflow=None)
+		specification.has_value_changed = lambda fieldname: True
+
+		with patch(
+			"joymedia.joymedia.doctype.media_specification.media_specification.get_latest_valid_workflow",
+			return_value=frappe._dict(name="WF-00001"),
+		):
+			MediaSpecification._resolve_generation_setup(specification)
+
+		self.assertEqual("WF-00001", specification.workflow)
+
+	def test_ready_specification_requires_workflow(self):
+		with self.assertRaises(ValidationError):
+			MediaSpecification.validate_generation_setup(_existing_specification(status="Ready"))
+
+	def test_ready_specification_rejects_non_executable_workflow(self):
+		specification = _existing_specification(status="Ready", workflow="WF-00001")
+		with patch(
+			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.get_doc",
+			return_value=frappe._dict(name="WF-00001"),
+		), patch(
+			"joymedia.services.workflow_resolver.validate_workflow_bindings",
+			side_effect=ValidationError("invalid workflow"),
+		):
+			with self.assertRaises(ValidationError):
+				MediaSpecification.validate_generation_setup(specification)
+
+	def test_ready_specification_accepts_executable_workflow(self):
+		specification = _existing_specification(status="Ready", workflow="WF-00001")
+		with patch(
+			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.get_doc",
+			return_value=frappe._dict(name="WF-00001"),
+		), patch(
+			"joymedia.services.workflow_resolver.validate_workflow_bindings",
+		):
+			MediaSpecification.validate_generation_setup(specification)
+
 	def test_ready_specification_cannot_return_to_draft(self):
 		specification = _existing_specification(status="Draft")
 		specification._doc_before_save = frappe._dict(status="Ready")
-
 		with self.assertRaises(ValidationError):
 			MediaSpecification._validate_version_immutability(specification)
 
 	def test_execution_contract_cannot_change_after_a_run_exists(self):
-		specification = _existing_specification(generation_workflow_version="WFV-00002")
+		specification = _existing_specification(workflow="WF-00002")
 		specification._doc_before_save = frappe._dict(
 			status="Ready",
 			media_project="PROJ-00001",
 			version_number=1,
-			generation_workflow_version="WFV-00001",
-			prompt_template_version=None,
+			workflow="WF-00001",
 			total_duration_seconds=None,
 			delivery_preset=None,
 			delivery_width=None,
 			delivery_height=None,
-			target_fps=None,
-			required_elements=None,
-			consistency_requirements=None,
-			forbidden_elements=None,
-			acceptance_criteria=None,
+			generation_instructions=None,
 		)
-
 		with patch(
 			"joymedia.joymedia.doctype.media_specification.media_specification.frappe.db.exists",
 			return_value=True,
@@ -57,7 +77,6 @@ class TestMediaSpecification(FrappeTestCase):
 		specification._doc_before_save = frappe._dict(
 			status="Draft", media_project="PROJ-00001", version_number=1
 		)
-
 		with self.assertRaises(ValidationError):
 			MediaSpecification._validate_version_immutability(specification)
 
@@ -68,17 +87,12 @@ def _existing_specification(**values):
 		"status": "Ready",
 		"media_project": "PROJ-00001",
 		"version_number": 1,
-		"generation_workflow_version": None,
-		"prompt_template_version": None,
+		"workflow": None,
 		"total_duration_seconds": None,
 		"delivery_preset": None,
 		"delivery_width": None,
 		"delivery_height": None,
-		"target_fps": None,
-		"required_elements": None,
-		"consistency_requirements": None,
-		"forbidden_elements": None,
-		"acceptance_criteria": None,
+		"generation_instructions": None,
 	}
 	defaults.update(values)
 	specification = frappe._dict(defaults)

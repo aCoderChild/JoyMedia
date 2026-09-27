@@ -7,33 +7,39 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from joymedia.joymedia.doctype.workflow.workflow import get_latest_valid_workflow
+
 
 class MediaSpecification(Document):
 	IDENTITY_FIELDS: ClassVar[tuple[str, ...]] = ("media_project", "version_number")
 	EXECUTION_CONTRACT_FIELDS: ClassVar[tuple[str, ...]] = (
-		"generation_workflow_version",
-		"prompt_template_version",
+		"workflow",
+		"video_style",
 		"total_duration_seconds",
 		"delivery_preset",
 		"delivery_width",
 		"delivery_height",
-		"target_fps",
-		"required_elements",
-		"consistency_requirements",
-		"forbidden_elements",
-		"acceptance_criteria",
+		"continuity_mode",
+		"generation_instructions",
 	)
 	PRESET_DIMENSIONS: ClassVar[dict[str, tuple[int, int]]] = {
-		"Landscape 720p": (1280, 720),
-		"Landscape 1080p": (1920, 1080),
-		"Portrait 720p": (720, 1280),
-		"Portrait 1080p": (1080, 1920),
-		"Square 1080p": (1080, 1080),
+		"Landscape": (1344, 768),
+		"Portrait": (768, 1344),
+		"Square": (1024, 1024),
 	}
 
 	def validate(self):
+		self.continuity_mode = {
+			"Independent": "Multi-shot",
+			"Chained": "Continuous",
+			"Consistency": "Continuous",
+		}.get(self.continuity_mode, self.continuity_mode)
+		if self.continuity_mode not in ("Multi-shot", "Continuous"):
+			self.continuity_mode = "Multi-shot"
+		self._resolve_generation_setup()
 		self._validate_version_immutability()
 		self._validate_timeline()
+		self.validate_generation_setup()
 		if self.delivery_preset in self.PRESET_DIMENSIONS:
 			self.delivery_width, self.delivery_height = self.PRESET_DIMENSIONS[self.delivery_preset]
 		elif self.delivery_preset == "Custom" and (
@@ -44,8 +50,34 @@ class MediaSpecification(Document):
 		):
 			frappe.throw("Custom delivery presets require a positive width and height")
 
+	def _resolve_generation_setup(self):
+		if self.workflow:
+			return
+
+		workflow_doc = get_latest_valid_workflow()
+		if not workflow_doc:
+			frappe.throw(_("No default Workflow is configured."))
+		self.workflow = workflow_doc.name
+
+	def validate_generation_setup(self):
+		if self.status != "Ready":
+			return
+
+		if not self.workflow:
+			frappe.throw(_("Ready Media Specifications require a Workflow."))
+
+		workflow_version = frappe.get_doc(
+			"Workflow",
+			self.workflow,
+		)
+		from joymedia.services.workflow_resolver import validate_workflow_bindings
+
+		validate_workflow_bindings(workflow_version)
+
+
+
 	def on_update(self):
-		if self.has_value_changed("total_duration_seconds") or self.has_value_changed("target_fps"):
+		if self.has_value_changed("total_duration_seconds"):
 			from joymedia.services.shot_duration_planner import recalculate_shot_durations
 
 			recalculate_shot_durations(self.name)
@@ -53,8 +85,10 @@ class MediaSpecification(Document):
 	def _validate_timeline(self):
 		if (self.total_duration_seconds or 0) <= 0:
 			frappe.throw(_("Total Duration must be greater than zero."))
-		if (self.target_fps or 0) <= 0:
-			frappe.throw(_("Target FPS must be greater than zero."))
+		if self.workflow:
+			workflow_version = frappe.get_doc("Workflow", self.workflow)
+			if (workflow_version.output_fps or 0) <= 0:
+				frappe.throw(_("Workflow output FPS must be greater than zero."))
 
 	def _validate_version_immutability(self):
 		if self.is_new():

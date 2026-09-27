@@ -1,0 +1,18 @@
+[Unit]
+Description=JoyMedia Qwen OpenAI-Compatible Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+Environment=VLLM_USE_FLASHINFER_SAMPLER=0
+ExecStart=/home/ubuntu/qwen_env/bin/vllm serve /home/ubuntu/models/Qwen2.5-VL-72B-AWQ --served-model-name joymedia-qwen --host 127.0.0.1 --port 8001 --dtype auto --kv-cache-memory-bytes 6442450944 --max-model-len 16384 --enforce-eager
+StandardOutput=append:/home/ubuntu/qwen-systemd.log
+StandardError=append:/home/ubuntu/qwen-systemd.log
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

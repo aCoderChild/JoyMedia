@@ -23,16 +23,16 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 		file_doc.insert = MagicMock()
 		get_doc.return_value = file_doc
 
-		result_ingestor._store_artifact_file_in_frappe(artifact, attempt)
+		result_ingestor._store_artifact_file_in_frappe(
+			artifact,
+			attempt,
+			{"filename": "JOB-00001_ATT-00001.mp4", "subfolder": "", "type": "output"},
+		)
 
 		download_output.assert_called_once_with(
 			"JOB-00001_ATT-00001.mp4", "", "output", base_url="http://worker:8188"
 		)
-		self.assertEqual(artifact.storage_backend, "Frappe File")
 		self.assertEqual(artifact.frappe_file, "/private/files/JOB-00001_ATT-00001.mp4")
-		self.assertEqual(artifact.storage_uri, artifact.frappe_file)
-		self.assertEqual(artifact.mime_type, "video/mp4")
-		self.assertEqual(artifact.size_bytes, len(b"video-bytes"))
 		file_doc.insert.assert_called_once_with(ignore_permissions=True)
 		artifact.save.assert_called_once_with(ignore_permissions=True)
 

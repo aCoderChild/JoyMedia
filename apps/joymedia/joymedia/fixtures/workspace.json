@@ -1,0 +1,37 @@
+[
+  {
+    "app": null,
+    "charts": [],
+    "content": "[{\"id\":\"joymedia-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>JoyMedia</b></span>\",\"col\":12}},{\"id\":\"joymedia-description\",\"type\":\"paragraph\",\"data\":{\"text\":\"Create AI-powered product videos for small businesses.\",\"col\":12}},{\"id\":\"campaigns\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Campaigns\",\"col\":3}},{\"id\":\"assets\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Assets\",\"col\":3}},{\"id\":\"workflows-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">System configuration</span>\",\"col\":12}},{\"id\":\"workflows\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Workflows\",\"col\":3}}]",
+    "custom_blocks": [],
+    "docstatus": 0,
+    "doctype": "Workspace",
+    "external_link": null,
+    "for_user": null,
+    "hide_custom": 0,
+    "icon": null,
+    "indicator_color": "green",
+    "is_hidden": 0,
+    "label": "JoyMedia",
+    "link_to": null,
+    "link_type": "DocType",
+    "links": [],
+    "module": null,
+    "name": "JoyMedia",
+    "number_cards": [],
+    "parent_page": null,
+    "public": 1,
+    "quick_lists": [
+      {"document_type": "Media Project", "label": "Recent Campaigns", "quick_list_filter": "[]"}
+    ],
+    "roles": [],
+    "sequence_id": 0.0,
+    "shortcuts": [
+      {"color": "Grey", "doc_view": "List", "label": "Campaigns", "link_to": "Media Project", "stats_filter": "[]", "type": "DocType"},
+      {"color": "Grey", "doc_view": "List", "label": "Assets", "link_to": "Media Asset", "stats_filter": "[]", "type": "DocType"},
+      {"color": "Grey", "doc_view": "List", "label": "Workflows", "link_to": "Workflow", "stats_filter": "[]", "type": "DocType"}
+    ],
+    "title": "JoyMedia",
+    "type": "Workspace"
+  }
+]

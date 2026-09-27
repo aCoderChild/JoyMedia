@@ -35,44 +35,14 @@ class TestGenerationArtifact(FrappeTestCase):
 			lifecycle_status="Temporary",
 			artifact_key="ATT-00001:primary_video",
 			generation_attempt="ATT-00002",
-			remote_filename="video.mp4",
-			remote_subfolder="",
-			remote_file_type="output",
+			media_type="Video",
 		)
 		artifact.is_new = lambda: False
 		get_value.return_value = frappe._dict(
 			lifecycle_status="Temporary",
 			artifact_key="ATT-00001:primary_video",
 			generation_attempt="ATT-00001",
-			remote_filename="video.mp4",
-			remote_subfolder="",
-			remote_file_type="output",
-		)
-
-		with self.assertRaises(ValidationError):
-			GenerationArtifact.validate(artifact)
-
-	@patch(
-		"joymedia.joymedia.doctype.generation_artifact.generation_artifact.frappe.db.get_value"
-	)
-	def test_deleted_artifact_cannot_leave_deleted_state(self, get_value):
-		artifact = frappe._dict(
-			name="GART-00001",
-			lifecycle_status="Temporary",
-			artifact_key="ATT-00001:primary_video",
-			generation_attempt="ATT-00001",
-			remote_filename="video.mp4",
-			remote_subfolder="",
-			remote_file_type="output",
-		)
-		artifact.is_new = lambda: False
-		get_value.return_value = frappe._dict(
-			lifecycle_status="Deleted",
-			artifact_key="ATT-00001:primary_video",
-			generation_attempt="ATT-00001",
-			remote_filename="video.mp4",
-			remote_subfolder="",
-			remote_file_type="output",
+			media_type="Video",
 		)
 
 		with self.assertRaises(ValidationError):

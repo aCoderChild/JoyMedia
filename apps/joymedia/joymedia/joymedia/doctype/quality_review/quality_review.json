@@ -36,7 +36,8 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Pending\nApproved\nRetry",
+   "options": "Pending\nApproved\nRejected",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -45,12 +46,11 @@
    "label": "Reviewer"
   },
   {
-   "depends_on": "eval:doc.review_type==\"Human\";",
    "fieldname": "reviewer",
    "fieldtype": "Link",
    "label": "Reviewer",
-   "mandatory_depends_on": "eval:doc.review_type==\"Human\";",
-   "options": "User"
+   "options": "User",
+   "read_only": 1
   },
   {
    "fieldname": "reviewed_at",
@@ -70,11 +70,12 @@
    "label": "Generation Artifact",
    "options": "Generation Artifact",
    "read_only_depends_on": "eval:!doc.__islocal;",
-   "reqd": 1
+   "reqd": 1,
+   "unique": 1
   }
  ],
  "links": [],
- "modified": "2026-09-16 19:22:58.508085",
+ "modified": "2026-09-18 07:53:09.817809",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Quality Review",

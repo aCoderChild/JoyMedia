@@ -12,7 +12,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 	@patch("joymedia.services.generation_orchestrator.frappe.db.commit")
 	@patch("joymedia.services.generation_orchestrator.refresh_generation_state_for_attempt")
 	@patch("joymedia.services.generation_orchestrator._submit_attempt_or_record_failure")
-	@patch("joymedia.services.generation_orchestrator.create_retry_attempt")
+	@patch("joymedia.services.generation_orchestrator.create_retry_attempt_internal")
 	@patch("joymedia.services.generation_orchestrator._get_job_attempts")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_doc")
 	@patch("joymedia.services.generation_orchestrator.frappe.has_permission")
@@ -93,44 +93,42 @@ class TestGenerationOrchestrator(FrappeTestCase):
 			deduplicate=True,
 		)
 
-	@patch("joymedia.services.generation_orchestrator.select_worker", return_value=None)
-	@patch("joymedia.services.generation_orchestrator.has_configured_workers", return_value=True)
-	def test_full_managed_worker_pool_does_not_schedule_an_immediate_retry(
-		self, has_configured_workers, select_worker
-	):
-		run = frappe._dict(name="RUN-00001", workflow_version="WFV-00001")
-
-		self.assertFalse(generation_orchestrator._has_submission_capacity(run))
-		select_worker.assert_called_once_with("WFV-00001")
-
-	@patch("joymedia.services.generation_orchestrator.select_worker")
-	@patch("joymedia.services.generation_orchestrator.has_configured_workers", return_value=False)
-	def test_legacy_endpoint_has_submission_capacity_without_workers(
-		self, has_configured_workers, select_worker
-	):
-		run = frappe._dict(name="RUN-00001", workflow_version="WFV-00001")
-
-		self.assertTrue(generation_orchestrator._has_submission_capacity(run))
-		select_worker.assert_not_called()
-
 	@patch("joymedia.services.generation_orchestrator._enqueue")
+	@patch("joymedia.services.generation_orchestrator.validate_generation_preflight")
 	@patch("joymedia.services.generation_orchestrator.frappe.has_permission")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_doc")
+	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
 	@patch("joymedia.services.shot_duration_planner.recalculate_shot_durations")
 	def test_start_run_only_queues_background_preparation(
-		self, recalculate_shot_durations, get_doc, has_permission, enqueue
+		self,
+		recalculate_shot_durations,
+		get_all,
+		get_doc,
+		has_permission,
+		validate_generation_preflight,
+		enqueue,
 	):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.status = "Draft"
 		run.media_specification = "SPEC-00001"
+		run.workflow_version = "WF-00001"
 		media_specification = frappe._dict(name="SPEC-00001", status="Ready")
-		get_doc.side_effect = [run, media_specification]
+		media_specification.validate_generation_setup = MagicMock()
+		workflow = frappe._dict(name="WF-00001")
+		get_doc.side_effect = [run, media_specification, workflow]
+		get_all.return_value = []
 
 		result = generation_orchestrator.start_run(run.name)
 
 		has_permission.assert_called_once_with("Generation Run", "write", run.name, throw=True)
 		recalculate_shot_durations.assert_called_once_with(media_specification.name)
+		validate_generation_preflight.assert_called_once_with(
+			media_specification,
+			workflow,
+			[],
+			check_comfyui=True,
+		)
 		self.assertEqual(run.status, "Queued")
 		run.save.assert_called_once_with(ignore_permissions=True)
 		enqueue.assert_called_once_with("prepare_run", run.name)

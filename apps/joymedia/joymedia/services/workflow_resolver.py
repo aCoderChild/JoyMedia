@@ -5,41 +5,134 @@ import json
 import frappe
 from frappe import _
 
+from joymedia.workflow_adapters import get_workflow_adapter
 from joymedia.workflow_adapters.base import canonical_workflow_json
+
+
+_SKIP_BINDING = object()
 
 
 def resolve_attempt(attempt_name: str, staged_inputs=None):
 	staged_inputs = staged_inputs or {}
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	workflow_version = frappe.get_doc("Workflow Version", job.workflow_version)
-	compiled_prompt = frappe.get_doc("Compiled Prompt", job.compiled_prompt)
-
+	workflow_version = frappe.get_doc("Workflow", job.workflow_version)
 	try:
 		base_workflow = json.loads(workflow_version.workflow_json)
 	except json.JSONDecodeError as exc:
 		frappe.throw(_("Invalid Workflow JSON: {0}").format(str(exc)))
 
+	validate_workflow_for_execution(workflow_version, base_workflow)
 	workflow = copy.deepcopy(base_workflow)
+	_validate_workflow_bindings(workflow_version, workflow)
 	for binding in workflow_version.bindings:
-		value = _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs)
-		node = workflow.get(binding.node_key)
-		if node is None or binding.input_name not in node.get("inputs", {}):
-			frappe.throw(_("Invalid Workflow Binding: {0}").format(binding.binding_key))
+		value = _resolve_binding(binding, job, attempt, staged_inputs)
+		node = workflow[binding.node_key]
+		if value is _SKIP_BINDING:
+			continue
 		node["inputs"][binding.input_name] = value
+
+	if any(
+		binding.binding_key == "last_frame"
+		and binding.value_source == "Generation Input"
+		and not staged_inputs.get("last_frame")
+		for binding in workflow_version.bindings
+	):
+		get_workflow_adapter(workflow_version).finalize_workflow(
+			workflow,
+			workflow_version,
+			staged_inputs,
+		)
 
 	canonical = canonical_workflow_json(workflow)
 	attempt.resolved_workflow_json = json.dumps(workflow, indent=2, ensure_ascii=False)
 	attempt.resolved_workflow_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-	attempt.save()
+	# Generation Attempt is an internal technical record. Campaign-authorized
+	# orchestration must be able to snapshot the resolved workflow even though
+	# customer roles do not have direct technical DocType write permission.
+	attempt.save(ignore_permissions=True)
 	return workflow
 
 
-def _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs):
+def validate_workflow_bindings(workflow_version):
+	try:
+		workflow = json.loads(workflow_version.workflow_json)
+	except json.JSONDecodeError as exc:
+		frappe.throw(_("Invalid Workflow JSON: {0}").format(str(exc)))
+
+	if not isinstance(workflow, dict):
+		frappe.throw(_("Workflow JSON must define a JSON object."))
+
+	_validate_workflow_bindings(workflow_version, workflow)
+
+
+def validate_workflow_for_execution(workflow_version, workflow=None):
+	"""Validate the ComfyUI API prompt shape before a run can be submitted."""
+	if workflow is None:
+		try:
+			workflow = json.loads(workflow_version.workflow_json)
+		except json.JSONDecodeError as exc:
+			frappe.throw(
+				_("Invalid Workflow JSON for {0}: {1}").format(
+					workflow_version.name, str(exc)
+				)
+			)
+
+	if not isinstance(workflow, dict) or not workflow:
+		frappe.throw(
+			_("Workflow {0} must contain a non-empty ComfyUI API prompt object.").format(
+				workflow_version.name
+			)
+		)
+
+	invalid_nodes = []
+	for node_key, node in workflow.items():
+		if not isinstance(node, dict):
+			invalid_nodes.append(f"{node_key} (not an object)")
+			continue
+		class_type = node.get("class_type")
+		if not isinstance(class_type, str) or not class_type.strip():
+			invalid_nodes.append(str(node_key))
+
+	if invalid_nodes:
+		frappe.throw(
+			_(
+				"Workflow {0} cannot be submitted to ComfyUI. "
+				"Node(s) {1} are missing class_type. "
+				"Import a ComfyUI API-format workflow JSON before generating."
+			).format(workflow_version.name, ", ".join(invalid_nodes))
+		)
+
+	return workflow
+
+
+def _validate_workflow_bindings(workflow_version, workflow):
+	for binding in workflow_version.bindings:
+		node = workflow.get(binding.node_key)
+		if node is None or binding.input_name not in node.get("inputs", {}):
+			frappe.throw(
+				_(
+					"Invalid Workflow Binding {0} for Workflow {1}: "
+					"node '{2}' or input '{3}' is missing from the workflow JSON."
+				).format(
+					binding.binding_key,
+					workflow_version.name,
+					binding.node_key,
+					binding.input_name,
+				)
+			)
+
+
+def _resolve_binding(binding, job, attempt, staged_inputs):
 	if binding.value_source == "Generation Input":
-		return _resolve_generation_input(job, binding.required_input_role, staged_inputs)
-	if binding.value_source == "Compiled Prompt":
-		return compiled_prompt.prompt_text
+		return _resolve_generation_input(
+			job,
+			binding.required_input_role,
+			staged_inputs,
+			required=bool(binding.required),
+		)
+	if binding.value_source in {"Generation Prompt", "Compiled Prompt"}:
+		return job.prompt_text
 	if binding.value_source == "Attempt Seed":
 		return int(attempt.seed)
 	if binding.value_source == "Runtime Value":
@@ -49,13 +142,15 @@ def _resolve_binding(binding, job, attempt, compiled_prompt, staged_inputs):
 	frappe.throw(_("Unsupported Workflow Binding Value Source: {0}").format(binding.value_source))
 
 
-def _resolve_generation_input(job, required_role, staged_inputs):
+def _resolve_generation_input(job, required_role, staged_inputs, required=True):
 	if not required_role:
 		frappe.throw(_("Generation Input binding requires Required Input Role."))
 	normalized_role = frappe.scrub(required_role)
 	staged_value = staged_inputs.get(normalized_role)
 	if staged_value:
 		return staged_value
+	if not required:
+		return _SKIP_BINDING
 	frappe.throw(
 		_("No staged ComfyUI input found for role '{0}' on Generation Job {1}.").format(
 			normalized_role, job.name
@@ -66,6 +161,16 @@ def _resolve_generation_input(job, required_role, staged_inputs):
 def _resolve_runtime_value(binding_key, job, attempt):
 	if binding_key == "output_filename_prefix":
 		return f"{job.name}_{attempt.name}"
+	if binding_key in {"delivery_width", "delivery_height"}:
+		shot = frappe.get_doc("Shot Specification", job.shot_specification)
+		media_spec = frappe.get_doc("Media Specification", shot.media_specification)
+		if binding_key == "delivery_width":
+			return int(media_spec.delivery_width)
+		return int(media_spec.delivery_height)
+	if binding_key == "segment_last_frame_index":
+		return int(job.segment_frame_count) - 1
+	if binding_key == "last_frame_filename_prefix":
+		return f"{job.name}_{attempt.name}_last_frame"
 	frappe.throw(_("Unsupported Runtime Value binding: {0}").format(binding_key))
 
 

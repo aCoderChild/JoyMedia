@@ -1,0 +1,141 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "autoname": "WF-.#####",
+ "creation": "2026-09-07 09:55:08.375895",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "version_identity_section",
+  "workflow_key",
+  "version_number",
+  "workflow_definition_section",
+  "workflow_json",
+  "workflow_hash",
+  "execution_characteristics_section",
+  "frame_count",
+  "output_fps",
+  "produces_video",
+  "produces_audio",
+  "dynamic_bindings_section",
+  "bindings"
+ ],
+ "fields": [
+  {
+   "fieldname": "version_identity_section",
+   "fieldtype": "Section Break",
+   "label": "Workflow Identity"
+  },
+  {
+   "default": "product_showcase",
+   "description": "Stable customer-facing style key shared by technical revisions of the same style.",
+   "fieldname": "workflow_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Workflow Key",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "version_number",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Version Number",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "Paste the entire JSON workflow you uploaded into this field",
+   "fieldname": "workflow_definition_section",
+   "fieldtype": "Section Break",
+   "label": "Workflow Definition"
+  },
+  {
+   "fieldname": "workflow_json",
+   "fieldtype": "Code",
+   "label": "Workflow JSON",
+   "options": "JSON",
+   "reqd": 1
+  },
+  {
+   "fieldname": "execution_characteristics_section",
+   "fieldtype": "Section Break",
+   "label": "Execution Characteristics"
+  },
+  {
+   "fieldname": "frame_count",
+   "fieldtype": "Int",
+   "label": "Frame Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "output_fps",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Output FPS",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "produces_video",
+   "fieldtype": "Check",
+   "label": "Produces Video",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "produces_audio",
+   "fieldtype": "Check",
+   "label": "Produces Audio",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_hash",
+   "fieldtype": "Data",
+   "label": "Workflow Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dynamic_bindings_section",
+   "fieldtype": "Section Break",
+   "label": "Dynamic Bindings"
+  },
+  {
+   "fieldname": "bindings",
+   "fieldtype": "Table",
+   "label": "Bindings",
+   "options": "Workflow Binding"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-20 18:10:35.933520",
+ "modified_by": "Administrator",
+ "module": "JoyMedia",
+ "name": "Workflow",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "workflow_key",
+ "track_changes": 1
+}

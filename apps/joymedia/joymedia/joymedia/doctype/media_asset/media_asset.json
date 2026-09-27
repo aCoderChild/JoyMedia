@@ -1,0 +1,163 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "autoname": "AST-.#####",
+ "creation": "2026-09-06 00:58:06.875483",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+  "field_order": [
+  "asset_overview_section",
+  "asset_name",
+  "content_hash",
+  "media_type",
+  "asset_category",
+  "status",
+  "library_visibility",
+  "ownership_section",
+  "client_organization",
+  "campaign",
+  "media_project"
+ ],
+ "fields": [
+  {
+   "fieldname": "asset_overview_section",
+   "fieldtype": "Section Break",
+   "label": "Asset Overview"
+  },
+  {
+   "fieldname": "asset_name",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Asset Name",
+   "reqd": 1
+  },
+  {
+   "description": "SHA-256 hash of the uploaded file. Used to prevent duplicate files within an organization.",
+   "fieldname": "content_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "in_standard_filter": 1,
+   "label": "Content Hash",
+   "length": 64
+  },
+  {
+   "fieldname": "campaign",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Campaign",
+   "options": "Campaign"
+  },
+  {
+   "fieldname": "media_project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Media Project",
+   "options": "Media Project"
+  },
+  {
+   "description": "what kind of file is it?",
+   "fieldname": "media_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Media Type",
+   "options": "Image\nVideo\nAudio\nDocument\n3D\nOther",
+   "reqd": 1
+  },
+  {
+   "description": "what does it represent?",
+   "fieldname": "asset_category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Asset Category",
+   "options": "Product\nCharacter\nBackground\nBrand\nStyle\nReference\nStoryboard\nShot Output\nFinal Deliverable\nOther",
+   "reqd": 1
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Active\nArchived",
+   "reqd": 1
+  },
+  {
+   "default": "Visible",
+   "fieldname": "library_visibility",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Library Visibility",
+   "options": "Visible\nInternal",
+   "reqd": 1
+  },
+  {
+   "fieldname": "ownership_section",
+   "fieldtype": "Section Break",
+   "label": "Ownership"
+  },
+  {
+   "fieldname": "client_organization",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Client Organization",
+   "options": "Client Organization",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-16 16:42:24.862761",
+ "modified_by": "Administrator",
+ "module": "JoyMedia",
+ "name": "Media Asset",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "JoyMedia Specialist",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "JoyMedia User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "asset_name",
+ "track_changes": 1
+}

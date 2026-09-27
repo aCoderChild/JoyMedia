@@ -1,7 +1,6 @@
 from collections import defaultdict
 
 from joymedia.joymedia.report.analytics import (
-	estimated_cost,
 	get_attempt_analytics,
 	percent,
 	percentile_95,
@@ -10,8 +9,7 @@ from joymedia.joymedia.report.analytics import (
 
 
 COLUMNS = [
-	{"fieldname": "workflow_version", "label": "Workflow Version", "fieldtype": "Link", "options": "Workflow Version", "width": 150},
-	{"fieldname": "prompt_template_version", "label": "Prompt Template Version", "fieldtype": "Link", "options": "Prompt Template Version", "width": 170},
+	{"fieldname": "workflow_version", "label": "Workflow", "fieldtype": "Link", "options": "Workflow", "width": 150},
 	{"fieldname": "attempts", "label": "Attempts", "fieldtype": "Int", "width": 90},
 	{"fieldname": "success_rate", "label": "Success Rate %", "fieldtype": "Percent", "width": 100},
 	{"fieldname": "retry_rate", "label": "Retry Rate %", "fieldtype": "Percent", "width": 100},
@@ -21,14 +19,13 @@ COLUMNS = [
 	{"fieldname": "p95_runtime_seconds", "label": "p95 Runtime (s)", "fieldtype": "Float", "width": 110},
 	{"fieldname": "avg_queue_wait_seconds", "label": "Avg Queue Wait (s)", "fieldtype": "Float", "width": 125},
 	{"fieldname": "gpu_seconds_per_approved_shot", "label": "GPU Seconds / Approved Shot", "fieldtype": "Float", "width": 180},
-	{"fieldname": "estimated_cost_per_approved_shot", "label": "Estimated Cost / Approved Shot", "fieldtype": "Float", "width": 190},
 ]
 
 
 def execute(filters=None):
 	buckets = defaultdict(_new_bucket)
 	for attempt in get_attempt_analytics(filters)[0]:
-		key = (attempt.workflow_version or "Unassigned", attempt.prompt_template_version or "Unassigned")
+		key = attempt.workflow_version or "Unassigned"
 		bucket = buckets[key]
 		bucket["attempts"] += 1
 		bucket["completed"] += attempt.status == "Completed"
@@ -46,19 +43,15 @@ def execute(filters=None):
 		if attempt.selected_output:
 			if attempt.runtime_seconds is not None:
 				bucket["approved_runtime_seconds"].append(float(attempt.runtime_seconds))
-			if cost := estimated_cost(attempt):
-				bucket["approved_costs"].append(cost)
 
 	data = []
-	for (workflow_version, prompt_template_version), bucket in sorted(buckets.items()):
+	for workflow_version, bucket in sorted(buckets.items()):
 		runtime_values = bucket["runtime_seconds"]
 		queue_wait_values = bucket["queue_wait_seconds"]
 		approved_runtime_values = bucket["approved_runtime_seconds"]
-		approved_costs = bucket["approved_costs"]
 		data.append(
 			{
 				"workflow_version": workflow_version,
-				"prompt_template_version": prompt_template_version,
 				"attempts": bucket["attempts"],
 				"success_rate": percent(bucket["completed"], bucket["attempts"]),
 				"retry_rate": percent(bucket["retries"], bucket["attempts"]),
@@ -70,7 +63,6 @@ def execute(filters=None):
 				"p95_runtime_seconds": percentile_95(runtime_values),
 				"avg_queue_wait_seconds": _average(queue_wait_values),
 				"gpu_seconds_per_approved_shot": _average(approved_runtime_values),
-				"estimated_cost_per_approved_shot": _average(approved_costs),
 			}
 		)
 	return COLUMNS, data
@@ -88,7 +80,6 @@ def _new_bucket():
 		"runtime_seconds": [],
 		"queue_wait_seconds": [],
 		"approved_runtime_seconds": [],
-		"approved_costs": [],
 	}
 
 

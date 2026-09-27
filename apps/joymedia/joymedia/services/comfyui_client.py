@@ -29,10 +29,11 @@ def upload_frappe_file(file_url: str, *, base_url: str | None = None, input_dir:
 		frappe.throw(_("Local file does not exist: {0}").format(local_path))
 
 	try:
+		comfyui_filename = f"joymedia_{uuid.uuid4().hex}{Path(local_path).suffix.lower()}"
 		with open(local_path, "rb") as file_handle:
 			response = requests.post(
 				f"{get_base_url(base_url)}/upload/image",
-				files={"image": (Path(local_path).name, file_handle)},
+				files={"image": (comfyui_filename, file_handle)},
 				data={"type": "input", "overwrite": "true"},
 				timeout=DEFAULT_TIMEOUT,
 			)

@@ -6,20 +6,22 @@ from pathlib import Path
 import frappe
 from frappe import _
 
-from .comfyui_client import download_output
-
-
 @frappe.whitelist()
 def stream_review_artifact(quality_review_name: str):
-	"""Return an inline preview of a temporary ComfyUI video for its Quality Review."""
+	"""Return an inline preview of a temporary generated video."""
 	frappe.has_permission("Quality Review", "read", quality_review_name, throw=True)
+	return stream_review_artifact_internal(quality_review_name)
+
+
+def stream_review_artifact_internal(quality_review_name: str):
+	"""Return an inline preview after the caller has authorized the review."""
 	review = frappe.get_doc("Quality Review", quality_review_name)
 	if not review.generation_artifact:
 		frappe.throw(_("Quality Review {0} has no Generation Artifact.").format(review.name))
 
 	artifact = frappe.get_doc("Generation Artifact", review.generation_artifact)
-	if artifact.lifecycle_status not in ("Temporary", "Retained"):
-		frappe.throw(_("Only Temporary or Retained Generation Artifacts can be previewed."))
+	if artifact.lifecycle_status != "Temporary":
+		frappe.throw(_("Only Temporary Generation Artifacts can be previewed."))
 	if artifact.media_type != "Video":
 		frappe.throw(_("Only video artifacts can currently be previewed."))
 
@@ -27,25 +29,13 @@ def stream_review_artifact(quality_review_name: str):
 		file_doc = frappe.get_doc("File", {"file_url": artifact.frappe_file})
 		frappe.local.response.filename = Path(file_doc.file_name).name
 		frappe.local.response.filecontent = file_doc.get_content()
-		frappe.local.response.content_type = artifact.mime_type or "video/mp4"
+		frappe.local.response.content_type = "video/mp4"
 		frappe.local.response.display_content_as = "inline"
 		frappe.local.response.type = "download"
 		return
 
-	if artifact.storage_backend != "ComfyUI" or not artifact.remote_filename:
+	if not artifact.frappe_file:
 		frappe.throw(_("Generation Artifact {0} has no available video file.").format(artifact.name))
-
-	attempt = frappe.get_doc("Generation Attempt", artifact.generation_attempt)
-	frappe.local.response.filename = Path(artifact.remote_filename).name
-	frappe.local.response.filecontent = download_output(
-		artifact.remote_filename,
-		artifact.remote_subfolder or "",
-		artifact.remote_file_type or "output",
-		base_url=attempt.comfyui_endpoint_url,
-	)
-	frappe.local.response.content_type = artifact.mime_type or "video/mp4"
-	frappe.local.response.display_content_as = "inline"
-	frappe.local.response.type = "download"
 
 
 @frappe.whitelist()
@@ -56,21 +46,19 @@ def promote_artifact_from_ui(artifact_name: str):
 	return result
 
 
-def promote_artifact(artifact_name: str):
-	"""Persist an approved ComfyUI artifact as a project-scoped shot-output asset."""
+def promote_artifact(artifact_name: str, *, require_approved_review: bool = True):
+	"""Promote a generated video to a project Asset Version."""
 	artifact = frappe.get_doc("Generation Artifact", artifact_name)
 
 	if artifact.lifecycle_status == "Promoted":
 		if not artifact.promoted_asset_version:
 			frappe.throw(_("Promoted artifact {0} has no Asset Version.").format(artifact.name))
 		return {"asset_version": artifact.promoted_asset_version}
-	if artifact.lifecycle_status in ("Expired", "Deleted"):
-		frappe.throw(_("Expired artifacts cannot be promoted."))
-	if artifact.storage_backend not in ("ComfyUI", "Frappe File"):
-		frappe.throw(_("Only ComfyUI or Frappe File artifacts can currently be promoted."))
-	if artifact.artifact_role != "Primary Video" or artifact.media_type != "Video":
-		frappe.throw(_("Only primary video artifacts can currently be promoted."))
-	if not frappe.db.exists(
+	if artifact.media_type != "Video":
+		frappe.throw(_("Only video artifacts can currently be promoted."))
+	if not artifact.frappe_file:
+		frappe.throw(_("Generation Artifact {0} has no Frappe video file.").format(artifact.name))
+	if require_approved_review and not frappe.db.exists(
 		"Quality Review", {"generation_artifact": artifact.name, "status": "Approved"}
 	):
 		frappe.throw(_("Generation Artifact {0} requires an approved Quality Review before promotion.").format(artifact.name))
@@ -90,25 +78,7 @@ def promote_artifact(artifact_name: str):
 		file_doc.attached_to_name = media_asset.name
 		file_doc.save(ignore_permissions=True)
 	else:
-		if not artifact.remote_filename:
-			frappe.throw(_("Generation Artifact {0} has no remote filename.").format(artifact.name))
-		video_bytes = download_output(
-			artifact.remote_filename,
-			artifact.remote_subfolder or "",
-			artifact.remote_file_type or "output",
-			base_url=attempt.comfyui_endpoint_url,
-		)
-		file_doc = frappe.get_doc(
-			{
-				"doctype": "File",
-				"file_name": Path(artifact.remote_filename).name,
-				"content": video_bytes,
-				"is_private": 1,
-				"attached_to_doctype": "Media Asset",
-				"attached_to_name": media_asset.name,
-			}
-		)
-		file_doc.insert(ignore_permissions=True)
+		frappe.throw(_("Generation Artifact {0} has no Frappe video file.").format(artifact.name))
 
 	asset_version = frappe.get_doc(
 		{
@@ -138,33 +108,12 @@ def _get_or_create_shot_output_asset(shot_name, media_project):
 		{
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
-			"asset_scope": "Project",
 			"media_type": "Video",
 			"asset_category": "Shot Output",
+			"library_visibility": "Internal",
 			"media_project": media_project,
+			"client_organization": frappe.db.get_value("Media Project", media_project, "client_organization"),
 		}
 	)
 	media_asset.insert(ignore_permissions=True)
 	return media_asset
-
-
-def expire_generation_artifacts():
-	"""Logically expire temporary artifacts; remote content is not deleted in Phase 1."""
-	artifacts = frappe.get_all(
-		"Generation Artifact",
-		filters={
-			"lifecycle_status": "Temporary",
-			"expires_at": ["<", frappe.utils.now()],
-		},
-		pluck="name",
-	)
-	for name in artifacts:
-		artifact = frappe.get_doc("Generation Artifact", name)
-		if artifact.frappe_file:
-			file_name = frappe.db.get_value("File", {"file_url": artifact.frappe_file}, "name")
-			if file_name:
-				frappe.delete_doc("File", file_name, ignore_permissions=True, force=True)
-		# Remote cleanup still requires a worker deletion API or object-storage lifecycle policy.
-		artifact.lifecycle_status = "Expired"
-		artifact.save(ignore_permissions=True)
-	frappe.db.commit()

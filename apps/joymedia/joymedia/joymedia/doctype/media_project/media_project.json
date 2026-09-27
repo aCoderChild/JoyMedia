@@ -1,0 +1,140 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "PRJ-.#####",
+ "creation": "2026-09-18 09:26:46.325414",
+ "description": "A video deliverable under a Campaign. Media specifications, generation jobs and outputs belong to this project.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project_overview_section",
+  "campaign",
+  "project_name",
+  "client_organization",
+  "product_name",
+  "target_audience",
+  "video_idea",
+  "reference_template",
+  "selected_media",
+  "status"
+ ],
+ "fields": [
+  {
+   "fieldname": "project_overview_section",
+   "fieldtype": "Section Break",
+   "label": "Project"
+  },
+  {
+   "fieldname": "campaign",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Campaign",
+   "options": "Campaign"
+  },
+  {
+   "fieldname": "project_name",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "client_organization",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Business",
+   "options": "Client Organization",
+   "reqd": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nGenerating\nReview\nCompleted\nNeeds Attention\nCancelled",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "product_name",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "label": "Product",
+   "reqd": 1
+  },
+  {
+   "fieldname": "target_audience",
+   "fieldtype": "Small Text",
+   "label": "Target Audience",
+   "reqd": 1
+  },
+  {
+   "fieldname": "video_idea",
+   "fieldtype": "Small Text",
+   "label": "Video Idea"
+  },
+  {
+   "fieldname": "reference_template",
+   "fieldtype": "Link",
+   "label": "Reference Template",
+   "options": "Video Reference Template"
+  }
+  ,{
+   "fieldname": "selected_media",
+   "fieldtype": "Table",
+   "label": "Selected Media",
+   "options": "Project Media Selection"
+  }
+],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-18 11:07:50.307034",
+ "modified_by": "Administrator",
+ "module": "JoyMedia",
+ "name": "Media Project",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "JoyMedia Specialist",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "write": 1,
+   "role": "JoyMedia User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "project_name",
+ "track_changes": 1
+}

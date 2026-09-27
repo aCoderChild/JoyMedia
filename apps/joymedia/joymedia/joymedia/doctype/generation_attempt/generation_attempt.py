@@ -59,6 +59,11 @@ class GenerationAttempt(Document):
 def create_retry_attempt(failed_attempt_name: str, reason: str):
 	"""Create a new Pending attempt linked to one failed attempt."""
 	frappe.has_permission("Generation Attempt", "create", throw=True)
+	return create_retry_attempt_internal(failed_attempt_name, reason)
+
+
+def create_retry_attempt_internal(failed_attempt_name: str, reason: str):
+	"""Create a retry after the caller has authorized the owning workflow."""
 	reason = (reason or "").strip()
 	_validate_retry_reason(reason)
 	failed_attempt = frappe.get_doc("Generation Attempt", failed_attempt_name)
@@ -71,6 +76,13 @@ def create_retry_attempt(failed_attempt_name: str, reason: str):
 def create_qa_retry_attempt(completed_attempt_name: str, reason: str = "Human Review Rejection"):
 	"""Create a Pending QA successor for a completed Attempt rejected in review."""
 	frappe.has_permission("Generation Attempt", "create", throw=True)
+	return create_qa_retry_attempt_internal(completed_attempt_name, reason)
+
+
+def create_qa_retry_attempt_internal(
+	completed_attempt_name: str, reason: str = "Human Review Rejection"
+):
+	"""Create a QA retry after the caller has authorized the owning Campaign."""
 	reason = (reason or "").strip()
 	if reason not in QA_RETRY_REASONS:
 		frappe.throw(_("QA retries must use QA Failure or Human Review Rejection."))

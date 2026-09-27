@@ -1,0 +1,208 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "SPEC-.#####",
+ "creation": "2026-09-03 10:14:38.975155",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "specification_overview_section",
+  "media_project",
+  "version_number",
+  "status",
+  "generation_setup_section",
+  "video_style",
+  "workflow",
+  "continuity_mode",
+  "deliverable_requirements_section",
+  "total_duration_seconds",
+  "delivery_preset",
+  "delivery_width",
+  "delivery_height",
+  "audio_mix_section",
+  "audio_cues",
+  "global_content_requirements_section",
+  "generation_instructions",
+  "final_deliverable_section",
+  "final_asset_version"
+ ],
+ "fields": [
+  {
+   "fieldname": "specification_overview_section",
+   "fieldtype": "Section Break",
+   "label": "Specification Overview"
+  },
+  {
+   "fieldname": "media_project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Media Project",
+   "options": "Media Project",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
+  },
+  {
+   "fieldname": "version_number",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Version Number",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nReady\nSuperseded\nArchived",
+   "reqd": 1
+  },
+  {
+   "fieldname": "generation_setup_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Generation Setup"
+  },
+  {
+   "description": "Customer-facing video style captured for this specification.",
+   "fieldname": "video_style",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Video Style",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
+  },
+  {
+   "description": "Exact immutable workflow used for this specification.",
+   "fieldname": "workflow",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Workflow",
+   "options": "Workflow",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
+   "reqd": 1
+  },
+  {
+   "default": "Multi-shot",
+   "description": "Multi-shot uses planned keyframes. Continuous chains each shot from the previous generated last frame.",
+   "fieldname": "continuity_mode",
+   "fieldtype": "Select",
+   "label": "Generation Mode",
+   "options": "Continuous\nMulti-shot",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
+   "reqd": 1
+  },
+  {
+   "description": "FINAL video the customer expects",
+   "fieldname": "deliverable_requirements_section",
+   "fieldtype": "Section Break",
+   "label": "Video Settings"
+  },
+  {
+   "depends_on": "eval:doc.delivery_preset==\"Custom\";",
+   "fieldname": "delivery_width",
+   "fieldtype": "Int",
+   "label": "Delivery Width",
+   "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\";"
+  },
+  {
+   "depends_on": "eval:doc.delivery_preset==\"Custom\";",
+   "fieldname": "delivery_height",
+   "fieldtype": "Int",
+   "label": "Delivery Height",
+   "mandatory_depends_on": "eval:doc.delivery_preset==\"Custom\";"
+  },
+  {
+   "fieldname": "audio_mix_section",
+   "fieldtype": "Section Break",
+   "label": "Audio Mix"
+  },
+  {
+   "description": "Timeline-level BGM, voiceover, and sound-effect cues used during final composition.",
+   "fieldname": "audio_cues",
+   "fieldtype": "Table",
+   "label": "Audio Cues",
+   "options": "Audio Cue"
+  },
+  {
+   "fieldname": "global_content_requirements_section",
+   "fieldtype": "Section Break",
+   "label": "Generation"
+  },
+  {
+   "description": "Canonical intended duration for the final media. Shot durations are derived from this value in frames.",
+   "fieldname": "total_duration_seconds",
+   "fieldtype": "Float",
+   "label": "Total Duration (Seconds)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "delivery_preset",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Format",
+   "options": "Landscape\nPortrait\nSquare\nCustom",
+   "reqd": 1
+  },
+  {
+   "fieldname": "final_deliverable_section",
+   "fieldtype": "Section Break",
+   "label": "Final Deliverable"
+  },
+  {
+   "fieldname": "final_asset_version",
+   "fieldtype": "Link",
+   "label": "Final Asset Version",
+   "options": "Asset Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "generation_instructions",
+   "fieldtype": "Long Text",
+   "label": "Generation Instructions"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-19 02:25:12.619639",
+ "modified_by": "Administrator",
+ "module": "JoyMedia",
+ "name": "Media Specification",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "JoyMedia Specialist",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

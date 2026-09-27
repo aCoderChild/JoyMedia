@@ -37,11 +37,10 @@ class ShotSpecification(Document):
 		if (
 			media_asset.media_type != "Video"
 			or media_asset.asset_category != "Shot Output"
-			or media_asset.asset_scope != "Project"
 			or media_asset.media_project != media_specification.media_project
 		):
 			frappe.throw(
-				"Selected Output Asset Version must belong to a project-scoped Video Shot Output "
+				"Selected Output Asset Version must belong to a Video Shot Output "
 				"for this Media Specification's Media Project."
 			)
 
@@ -62,7 +61,7 @@ class ShotSpecification(Document):
 			"Workflow Binding",
 			filters={
 				"parent": ["in", workflow_versions],
-				"parenttype": "Workflow Version",
+				"parenttype": "Workflow",
 				"parentfield": "bindings",
 				"value_source": "Generation Input",
 				"required": 1,
@@ -85,5 +84,5 @@ class ShotSpecification(Document):
 			mapping_count = mapping_counts.get(input_role, 0)
 			if mapping_count != 1:
 				frappe.throw(
-					f"Workflow Version {workflow_version} requires exactly one {input_role} mapping; found {mapping_count}."
+					f"Workflow {workflow_version} requires exactly one {input_role} mapping; found {mapping_count}."
 				)

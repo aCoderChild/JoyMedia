@@ -9,6 +9,17 @@ fixtures = [
 	{"dt": "Workspace", "filters": [["name", "=", "JoyMedia"]]},
 ]
 
+website_route_rules = [
+	{"from_route": "/joymedia/<path:app_path>", "to_route": "_joymedia"},
+	{"from_route": "/joymedia", "to_route": "_joymedia"},
+]
+
+home_page = "/joymedia/campaigns"
+
+signup_form_template = ["joymedia.registration.get_signup_template"]
+web_include_js = ["/assets/joymedia/js/joymedia_signup.js?v=4"]
+app_include_js = ["/assets/joymedia/js/joymedia_login_redirect.js?v=1"]
+
 # Apps
 # ------------------
 
@@ -160,18 +171,12 @@ fixtures = [
 # ---------------
 
 scheduler_events = {
-	"all": [
-		"joymedia.services.worker_monitor.refresh_workers",
-	],
 	"cron": {
 		"* * * * *": [
 			"joymedia.services.result_ingestor.sync_active_attempts",
 			"joymedia.services.generation_orchestrator.refresh_active_runs",
 		],
 	},
-	"hourly": [
-		"joymedia.services.artifact_service.expire_generation_artifacts",
-	],
 }
 
 # Testing
