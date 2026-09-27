@@ -96,7 +96,7 @@ jobs:
           bench get-app --skip-assets joymedia $GITHUB_WORKSPACE/apps/joymedia
           bench setup requirements --dev
           bench new-site --db-root-password root --admin-password admin test_site
-          sed -i -e '$a\' sites/apps.txt
+          printf '\n' >> sites/apps.txt
           grep -qxF joymedia sites/apps.txt || echo joymedia >> sites/apps.txt
           bench --site test_site install-app joymedia
           bench build
