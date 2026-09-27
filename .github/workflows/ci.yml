@@ -88,6 +88,11 @@ jobs:
       - name: Install
         working-directory: /home/runner/frappe-bench
         run: |
+          git -C "$GITHUB_WORKSPACE/apps/joymedia" init
+          git -C "$GITHUB_WORKSPACE/apps/joymedia" config user.name "GitHub Actions"
+          git -C "$GITHUB_WORKSPACE/apps/joymedia" config user.email "actions@github.com"
+          git -C "$GITHUB_WORKSPACE/apps/joymedia" add -A
+          git -C "$GITHUB_WORKSPACE/apps/joymedia" commit -m "Prepare local JoyMedia app source"
           bench get-app joymedia $GITHUB_WORKSPACE/apps/joymedia
           bench setup requirements --dev
           bench new-site --db-root-password root --admin-password admin test_site
