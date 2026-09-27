@@ -11,12 +11,20 @@ from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
 	create_retry_attempt_internal,
 )
 
-from .generation_runner import attach_chained_first_frame, prepare_generation_job, submit_attempt
+from .generation_runner import (
+	attach_chained_first_frame,
+	ensure_generation_inputs,
+	prepare_generation_job,
+	submit_attempt,
+)
 from .generation_segment_planner import plan_generation_segments
 from .prompt_compiler import compile_prompt
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_media_specification
-from .workflow_resolver import validate_workflow_bindings
+from .workflow_resolver import (
+	validate_workflow_bindings,
+	validate_workflow_for_execution,
+)
 
 
 ACTIVE_RUN_STATUSES = ("Queued", "Running", "Finalizing")
@@ -46,6 +54,19 @@ def start_run_internal(run_name: str):
 	from .shot_duration_planner import recalculate_shot_durations
 
 	recalculate_shot_durations(media_specification.name)
+	workflow_version = frappe.get_doc("Workflow", run.workflow_version)
+	shots = frappe.get_all(
+		"Shot Specification",
+		filters={"media_specification": media_specification.name},
+		fields=["name", "shot_number", "planned_frame_count"],
+		order_by="shot_number asc, name asc",
+	)
+	validate_generation_preflight(
+		media_specification,
+		workflow_version,
+		shots,
+		check_comfyui=True,
+	)
 
 	run.status = "Queued"
 	run.queued_at = now()
@@ -158,6 +179,7 @@ def validate_generation_preflight(
 
 		get_system_stats()
 
+	validate_workflow_for_execution(workflow_version)
 	validate_workflow_bindings(workflow_version)
 	required_roles = {
 		frappe.scrub(binding.required_input_role)
@@ -251,6 +273,26 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 	run = frappe.get_doc("Generation Run", run_name)
 	if run.status == "Cancelled":
 		return _run_summary(run)
+	if run.status in ACTIVE_RUN_STATUSES:
+		try:
+			workflow_version = frappe.get_doc("Workflow", run.workflow_version)
+			validate_workflow_for_execution(workflow_version)
+		except Exception as exc:
+			message = _exception_message(exc)
+			for job_name in _get_run_job_names(run.name):
+				frappe.db.set_value(
+					"Generation Job",
+					job_name,
+					{
+						"status": "Failed",
+						"error_summary": message,
+						"failure_class": "Configuration",
+						"completed_at": now(),
+					},
+					update_modified=False,
+				)
+			_raise_run_error(run, message)
+			return _run_summary(run)
 
 	for attempt_name in _get_active_attempt_names(run.name):
 		try:
@@ -630,6 +672,30 @@ def _create_retry_attempt(run, jobs):
 def _retry_and_submit_latest_failed_attempts(job, reason):
 	"""Create and submit exactly one successor for each terminal failed attempt chain."""
 	attempts = _get_job_attempts(job.name)
+	if not frappe.db.exists("Generation Input", {"generation_job": job.name}) and callable(
+		getattr(job, "get_shot_input_snapshot", None)
+	):
+		ensure_generation_inputs(job)
+	if not attempts and job.status in ("Failed", "Partially Completed"):
+		# Preparation/configuration failures can leave a failed Job without an
+		# Attempt. Create the initial attempt so Retry can submit the repaired
+		# workflow instead of incorrectly reporting that nothing is retryable.
+		job.db_set("status", "Queued", update_modified=False)
+		job.reload()
+		attempts = _create_initial_attempts(job)
+		results = []
+		for attempt_name in attempts:
+			submission = _submit_attempt_or_record_failure(attempt_name)
+			refresh_generation_state_for_attempt(attempt_name)
+			attempt = frappe.get_doc("Generation Attempt", attempt_name)
+			results.append(
+				{
+					"name": attempt.name,
+					"status": attempt.status,
+					"deferred": bool(submission and submission.get("deferred")),
+				}
+			)
+		return results
 	retried_attempts = {attempt.retry_of for attempt in attempts if attempt.retry_of}
 	failed_attempt_names = [
 		attempt.name

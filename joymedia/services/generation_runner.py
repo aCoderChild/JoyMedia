@@ -1,10 +1,14 @@
+import hashlib
+
 import frappe
 from frappe import _
+from frappe.model.document import Document
 from frappe.utils import now
 from frappe.utils.synchronization import filelock
 
 from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file
 from .result_ingestor import sync_attempt_result
+from .prompt_compiler import compile_prompt
 from .workflow_resolver import resolve_attempt
 
 
@@ -106,6 +110,70 @@ def attach_chained_first_frame(job):
 	return True
 
 
+def ensure_generation_inputs(job):
+	"""Materialize the immutable input snapshot required before execution.
+
+	Jobs created by older flows may reach submission without a Generation Input
+	snapshot. Rebuild it from the Shot Specification exactly once; never replace
+	an existing snapshot during a retry.
+	"""
+	if not isinstance(job, Document):
+		return False
+
+	rows = frappe.get_all(
+		"Generation Input",
+		filters={"generation_job": job.name},
+		fields=["input_role", "asset_version"],
+	)
+	if not rows:
+		snapshot = job.get_shot_input_snapshot()
+		if job.depends_on_job:
+			# The chained first frame is runtime lineage, not a Shot Input Mapping.
+			snapshot.pop("first_frame", None)
+		for input_role, asset_version in snapshot.items():
+			frappe.get_doc(
+				{
+					"doctype": "Generation Input",
+					"generation_job": job.name,
+					"asset_version": asset_version,
+					"input_role": input_role,
+				}
+			).insert(ignore_permissions=True)
+
+	if job.depends_on_job:
+		current_roles = {
+			frappe.scrub(row.input_role or "") for row in frappe.get_all(
+				"Generation Input",
+				filters={"generation_job": job.name},
+				fields=["input_role"],
+			)
+		}
+		if "first_frame" not in current_roles and not attach_chained_first_frame(job):
+			frappe.throw(
+				_(
+					"Generation Job {0} cannot run until its previous chained shot has a last frame."
+				).format(job.name)
+			)
+	return True
+
+
+def _autosave_prompt_snapshot(job):
+	"""Fill missing prompt snapshot fields from the Shot Specification.
+
+	An existing prompt is authoritative and is never recompiled on retry.
+	"""
+	if not isinstance(job, Document):
+		return
+	if not job.prompt_text:
+		prompt_text = compile_prompt(job.shot_specification)
+		job.db_set("prompt_text", prompt_text, update_modified=False)
+		job.prompt_text = prompt_text
+	if not job.prompt_hash:
+		prompt_hash = hashlib.sha256(job.prompt_text.encode("utf-8")).hexdigest()
+		job.db_set("prompt_hash", prompt_hash, update_modified=False)
+		job.prompt_hash = prompt_hash
+
+
 def submit_attempt(attempt_name: str):
 	with filelock(f"joymedia-submit-attempt-{attempt_name}"):
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
@@ -117,6 +185,9 @@ def submit_attempt(attempt_name: str):
 			)
 
 		job = frappe.get_doc("Generation Job", attempt.generation_job)
+		_autosave_prompt_snapshot(job)
+		ensure_generation_inputs(job)
+		job.reload()
 		job.validate_for_execution()
 		staged_inputs = _stage_generation_inputs(job)
 		workflow = resolve_attempt(attempt.name, staged_inputs=staged_inputs)

@@ -22,6 +22,7 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 	except json.JSONDecodeError as exc:
 		frappe.throw(_("Invalid Workflow JSON: {0}").format(str(exc)))
 
+	validate_workflow_for_execution(workflow_version, base_workflow)
 	workflow = copy.deepcopy(base_workflow)
 	_validate_workflow_bindings(workflow_version, workflow)
 	for binding in workflow_version.bindings:
@@ -63,6 +64,46 @@ def validate_workflow_bindings(workflow_version):
 		frappe.throw(_("Workflow JSON must define a JSON object."))
 
 	_validate_workflow_bindings(workflow_version, workflow)
+
+
+def validate_workflow_for_execution(workflow_version, workflow=None):
+	"""Validate the ComfyUI API prompt shape before a run can be submitted."""
+	if workflow is None:
+		try:
+			workflow = json.loads(workflow_version.workflow_json)
+		except json.JSONDecodeError as exc:
+			frappe.throw(
+				_("Invalid Workflow JSON for {0}: {1}").format(
+					workflow_version.name, str(exc)
+				)
+			)
+
+	if not isinstance(workflow, dict) or not workflow:
+		frappe.throw(
+			_("Workflow {0} must contain a non-empty ComfyUI API prompt object.").format(
+				workflow_version.name
+			)
+		)
+
+	invalid_nodes = []
+	for node_key, node in workflow.items():
+		if not isinstance(node, dict):
+			invalid_nodes.append(f"{node_key} (not an object)")
+			continue
+		class_type = node.get("class_type")
+		if not isinstance(class_type, str) or not class_type.strip():
+			invalid_nodes.append(str(node_key))
+
+	if invalid_nodes:
+		frappe.throw(
+			_(
+				"Workflow {0} cannot be submitted to ComfyUI. "
+				"Node(s) {1} are missing class_type. "
+				"Import a ComfyUI API-format workflow JSON before generating."
+			).format(workflow_version.name, ", ".join(invalid_nodes))
+		)
+
+	return workflow
 
 
 def _validate_workflow_bindings(workflow_version, workflow):

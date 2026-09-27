@@ -16,6 +16,7 @@
   "target_audience",
   "video_idea",
   "reference_template",
+  "selected_media",
   "status"
  ],
  "fields": [
@@ -83,7 +84,13 @@
    "label": "Reference Template",
    "options": "Video Reference Template"
   }
- ],
+  ,{
+   "fieldname": "selected_media",
+   "fieldtype": "Table",
+   "label": "Selected Media",
+   "options": "Project Media Selection"
+  }
+],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],

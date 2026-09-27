@@ -17,56 +17,31 @@ REFERENCE_IMAGE_CATEGORIES = [
 
 
 def get_project_image_manifest(media_project: str, *, include_data_url: bool = False):
-	organization = frappe.db.get_value("Media Project", media_project, "client_organization")
-	if not organization:
-		return []
-	campaign = frappe.db.get_value("Media Project", media_project, "campaign")
+	from joymedia.joymedia.doctype.media_project.media_project import _get_project_selected_assets
 
-	media_assets = frappe.get_all(
-		"Media Asset",
-		filters={
-			"client_organization": organization,
-			"library_visibility": "Visible",
-			"media_type": "Image",
-			"status": "Active",
-			"asset_category": ["in", REFERENCE_IMAGE_CATEGORIES],
-		},
-		or_filters=[{"media_project": media_project}, {"campaign": campaign}] if campaign else [{"media_project": media_project}],
-		fields=["name", "asset_name", "asset_category"],
-		order_by="asset_name asc, name asc",
-	)
-	if not media_assets:
+	project = frappe.get_doc("Media Project", media_project)
+	selected_assets = [
+		asset for asset in _get_project_selected_assets(project)
+		if asset.get("asset_category") in REFERENCE_IMAGE_CATEGORIES
+	]
+	if not selected_assets:
 		return []
-
-	asset_versions = frappe.get_all(
-		"Asset Version",
-		filters={"media_asset": ["in", [asset.name for asset in media_assets]]},
-		fields=["name", "media_asset", "version_number", "file"],
-		order_by="media_asset asc, version_number desc",
-	)
-	latest_versions = {}
-	for version in asset_versions:
-		latest_versions.setdefault(version.media_asset, version)
 
 	manifest = []
-	for asset in media_assets:
-		version = latest_versions.get(asset.name)
-		if not version:
-			continue
-
+	for asset in selected_assets:
 		image = {
 			"index": len(manifest) + 1,
-			"media_asset": asset.name,
-			"asset_name": asset.asset_name,
-			"asset_category": asset.asset_category,
-			"asset_version": version.name,
+			"media_asset": asset["media_asset"],
+			"asset_name": asset["asset_name"],
+			"asset_category": asset["asset_category"],
+			"asset_version": asset["asset_version"],
 		}
 
 		if include_data_url:
-			if not version.file:
-				frappe.throw(_("Asset Version {0} has no image file.").format(version.name))
+			if not asset["file"]:
+				frappe.throw(_("Asset Version {0} has no image file.").format(asset["asset_version"]))
 
-			file_doc = frappe.get_doc("File", {"file_url": version.file})
+			file_doc = frappe.get_doc("File", {"file_url": asset["file"]})
 			file_path = Path(file_doc.get_full_path())
 			if not file_path.exists():
 				frappe.throw(_("Asset Version file does not exist: {0}").format(version.file))

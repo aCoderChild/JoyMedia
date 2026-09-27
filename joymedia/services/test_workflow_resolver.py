@@ -8,6 +8,7 @@ from joymedia.services.workflow_resolver import (
 	_resolve_generation_input,
 	_resolve_runtime_value,
 	validate_workflow_bindings,
+	validate_workflow_for_execution,
 )
 from joymedia.workflow_adapters.minimax_h3 import MiniMaxH3WorkflowAdapter
 
@@ -92,6 +93,18 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertIn("WFV-00004", str(context.exception))
 		self.assertIn("load_img", str(context.exception))
 		self.assertIn("image", str(context.exception))
+
+	def test_execution_validation_rejects_workflow_without_class_type(self):
+		workflow_version = frappe._dict(
+			name="WFV-00005",
+			workflow_json='{"load_img":{"inputs":{"image":""}}}',
+		)
+
+		with self.assertRaises(frappe.ValidationError) as context:
+			validate_workflow_for_execution(workflow_version)
+
+		self.assertIn("missing class_type", str(context.exception))
+		self.assertIn("load_img", str(context.exception))
 
 	@patch("joymedia.services.workflow_resolver.frappe.get_doc")
 	def test_runtime_delivery_dimensions_come_from_media_specification(self, get_doc):

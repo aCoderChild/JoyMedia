@@ -27,7 +27,7 @@ OUTPUT_ASSET_CATEGORIES = {"Shot Output", "Final Deliverable", "Storyboard", "Ot
 SHOT_REFERENCE_CATEGORIES = INPUT_ASSET_CATEGORIES
 
 
-def _ensure_unique_uploaded_file(file_doc, organization):
+def _ensure_unique_uploaded_file(file_doc, organization, reuse_existing=False):
 	file_path = Path(file_doc.get_full_path())
 	if not file_path.is_file():
 		frappe.throw(_("Uploaded file could not be read."))
@@ -44,6 +44,11 @@ def _ensure_unique_uploaded_file(file_doc, organization):
 		as_dict=True,
 	)
 	if existing:
+		if reuse_existing:
+			# The upload is a duplicate of an existing library file. Remove only
+			# the new File row; keep the physical file used by the existing asset.
+			frappe.db.delete("File", file_doc.name)
+			return {"content_hash": content_hash, "existing": existing}
 		file_doc.delete(ignore_permissions=True)
 		frappe.throw(
 			_("This file is already in your organization library as {0}.").format(
@@ -108,6 +113,51 @@ def get_latest_media_specification(media_project):
 		return None
 
 	return frappe.get_doc("Media Specification", specifications[0].name)
+
+
+def _get_project_specification_names(media_project):
+	return frappe.get_all(
+		"Media Specification",
+		filters={"media_project": media_project},
+		pluck="name",
+		order_by="version_number desc, creation desc",
+	)
+
+
+def _get_latest_project_storyboard_specification(media_project, specification_names=None):
+	specification_names = specification_names or _get_project_specification_names(media_project)
+	for specification_name in specification_names:
+		if frappe.db.exists("Shot Specification", {"media_specification": specification_name}):
+			return frappe.get_doc("Media Specification", specification_name)
+	return get_latest_media_specification(media_project)
+
+
+def _get_latest_project_generation_run(media_project, specification_names=None):
+	specification_names = specification_names or _get_project_specification_names(media_project)
+	if not specification_names:
+		return None
+	runs = frappe.get_all(
+		"Generation Run",
+		filters={"media_specification": ["in", specification_names]},
+		fields=[
+			"name",
+			"media_specification",
+			"status",
+			"queued_at",
+			"started_at",
+			"completed_at",
+			"progress",
+			"completed_jobs",
+			"total_jobs",
+			"failed_jobs",
+			"running_jobs",
+			"error_summary",
+			"final_asset_version",
+		],
+		order_by="creation desc",
+		limit_page_length=1,
+	)
+	return runs[0] if runs else None
 
 
 @frappe.whitelist()
@@ -271,6 +321,10 @@ def get_campaign_workspace(name):
 	frappe.has_permission("Media Project", "read", name, throw=True)
 	project = frappe.get_doc("Media Project", name)
 	media_specification = get_latest_media_specification(project.name)
+	specification_names = _get_project_specification_names(project.name)
+	storyboard_specification = _get_latest_project_storyboard_specification(
+		project.name, specification_names
+	)
 	assets = _get_campaign_assets(project.name)
 	outputs = _get_project_outputs(project.name)
 	storyboard = []
@@ -278,10 +332,10 @@ def get_campaign_workspace(name):
 	reviews = []
 	final_video = None
 
-	if media_specification:
+	if storyboard_specification:
 		storyboard = frappe.get_all(
 			"Shot Specification",
-			filters={"media_specification": media_specification.name},
+			filters={"media_specification": storyboard_specification.name},
 			fields=[
 				"name",
 				"shot_number",
@@ -297,6 +351,14 @@ def get_campaign_workspace(name):
 			order_by="shot_number asc, name asc",
 		)
 		for shot in storyboard:
+			if shot.get("selected_output_asset_version"):
+				selected_output = frappe.db.get_value(
+					"Asset Version",
+					shot["selected_output_asset_version"],
+					"file",
+				)
+				if selected_output:
+					shot["output_video"] = selected_output
 			input_rows = frappe.get_all(
 				"Shot Input Mapping",
 				filters={"parent": shot["name"]},
@@ -345,27 +407,8 @@ def get_campaign_workspace(name):
 						"Media Asset", asset_version.media_asset, "asset_name"
 					)
 
-		run = frappe.get_all(
-			"Generation Run",
-			filters={"media_specification": media_specification.name},
-			fields=[
-				"name",
-				"status",
-				"queued_at",
-				"started_at",
-				"completed_at",
-				"progress",
-				"completed_jobs",
-				"total_jobs",
-				"failed_jobs",
-				"error_summary",
-		"final_asset_version",
-			],
-			order_by="creation desc",
-			limit_page_length=1,
-		)
-		if run:
-			production = run[0]
+		production = _get_latest_project_generation_run(project.name, specification_names)
+		if production:
 			reviews = project._get_review_cards(["Pending", "Rejected", "Approved"])
 			if production.final_asset_version:
 				final_file = frappe.db.get_value(
@@ -433,33 +476,13 @@ def get_campaign_production(name):
 	"""Return only the current Campaign production state for lightweight polling."""
 	frappe.has_permission("Media Project", "read", name, throw=True)
 	project = frappe.get_doc("Media Project", name)
-	media_specification = get_latest_media_specification(project.name)
-	if not media_specification:
+	specification_names = _get_project_specification_names(project.name)
+	if not specification_names:
 		return None
 
-	run = frappe.get_all(
-		"Generation Run",
-		filters={"media_specification": media_specification.name},
-		fields=[
-			"name",
-			"status",
-			"queued_at",
-			"started_at",
-			"completed_at",
-			"progress",
-			"completed_jobs",
-			"total_jobs",
-			"failed_jobs",
-			"running_jobs",
-			"error_summary",
-			"final_asset_version",
-		],
-		order_by="creation desc",
-		limit_page_length=1,
-	)
-	if not run:
+	production = _get_latest_project_generation_run(project.name, specification_names)
+	if not production:
 		return None
-	production = run[0]
 	jobs = frappe.get_all(
 		"Generation Job",
 		filters={"generation_run": production.name},
@@ -496,14 +519,51 @@ def get_campaign_reviews(name):
 	return project._get_review_cards(["Pending", "Rejected", "Approved"])
 
 def _get_campaign_assets(media_project):
-	"""Return active reference inputs owned by the project's organization."""
-	organization = frappe.db.get_value("Media Project", media_project, "client_organization")
-	assets = frappe.get_list(
+	"""Return the reference inputs explicitly selected for a project."""
+	return _get_project_selected_assets(frappe.get_doc("Media Project", media_project))
+
+
+def _get_project_selected_assets(project):
+	assets = []
+	selected_versions = set()
+	selected_files = set()
+	for selection in project.selected_media or []:
+		version = frappe.db.get_value(
+			"Asset Version",
+			selection.asset_version,
+			["name", "media_asset", "file"],
+			as_dict=True,
+		)
+		if not version or not version.file:
+			continue
+		asset = frappe.db.get_value(
+			"Media Asset",
+			version.media_asset,
+			["name", "asset_name", "media_type", "asset_category"],
+			as_dict=True,
+		)
+		if not asset or asset.media_type != "Image":
+			continue
+		selected_versions.add(version.name)
+		selected_files.add(version.file)
+		assets.append(
+			{
+				"name": asset.name,
+				"media_asset": asset.name,
+				"asset_version": version.name,
+				"asset_name": asset.asset_name,
+				"media_type": asset.media_type,
+				"asset_category": asset.asset_category,
+				"file": version.file,
+			}
+		)
+
+	# Keep existing projects readable while they are migrated from the old clone model.
+	legacy_assets = frappe.get_list(
 		"Media Asset",
 		filters={
 			"status": "Active",
-			"client_organization": organization,
-			"media_project": media_project,
+			"media_project": project.name,
 			"media_type": "Image",
 			"asset_category": ["in", list(INPUT_ASSET_CATEGORIES)],
 		},
@@ -511,16 +571,53 @@ def _get_campaign_assets(media_project):
 		order_by="modified desc",
 		limit_page_length=100,
 	)
-	for asset in assets:
-		versions = frappe.get_all(
+	for asset in legacy_assets:
+		version = frappe.db.get_value(
 			"Asset Version",
-			filters={"media_asset": asset.name},
-			fields=["file", "version_number"],
+			{"media_asset": asset.name},
+			["name", "file"],
 			order_by="version_number desc",
-			limit_page_length=1,
+			as_dict=True,
 		)
-		asset["file"] = versions[0].file if versions else None
+		if not version or not version.file or version.name in selected_versions or version.file in selected_files:
+			continue
+		assets.append(
+			{
+				"name": asset.name,
+				"media_asset": asset.name,
+				"asset_version": version.name,
+				"asset_name": asset.asset_name,
+				"media_type": asset.media_type,
+				"asset_category": asset.asset_category,
+				"file": version.file,
+			}
+		)
 	return assets
+
+
+def _initialize_project_media_selection(project):
+	if not project.campaign:
+		return
+
+	for asset in frappe.get_all(
+		"Media Asset",
+		filters={
+			"campaign": project.campaign,
+			"client_organization": project.client_organization,
+			"status": "Active",
+			"media_type": "Image",
+			"asset_category": ["in", list(INPUT_ASSET_CATEGORIES)],
+		},
+		pluck="name",
+	):
+		asset_version = frappe.db.get_value(
+			"Asset Version", {"media_asset": asset}, "name", order_by="version_number desc"
+		)
+		if asset_version and not any(row.asset_version == asset_version for row in project.selected_media or []):
+			project.append("selected_media", {"asset_version": asset_version})
+
+	if project.selected_media:
+		project.save(ignore_permissions=True)
 
 
 @frappe.whitelist()
@@ -533,6 +630,7 @@ def get_project_reference_candidates(media_project):
 			"client_organization": project.client_organization,
 			"status": "Active",
 			"library_visibility": "Visible",
+			"media_project": ["is", "not set"],
 			"media_type": "Image",
 			"asset_category": ["in", list(INPUT_ASSET_CATEGORIES)],
 		},
@@ -540,23 +638,15 @@ def get_project_reference_candidates(media_project):
 		order_by="modified desc",
 		limit_page_length=100,
 	)
-	selected_files = set()
-	for selected in frappe.get_all(
-		"Media Asset",
-		filters={"media_project": project.name, "status": "Active"},
-		pluck="name",
-	):
-		file_url = frappe.db.get_value(
-			"Asset Version", {"media_asset": selected}, "file", order_by="version_number desc"
-		)
-		if file_url:
-			selected_files.add(file_url)
+	selected_versions = {asset["asset_version"] for asset in _get_project_selected_assets(project)}
 
 	for asset in organization_assets:
-		asset["file"] = frappe.db.get_value(
-			"Asset Version", {"media_asset": asset.name}, "file", order_by="version_number desc"
+		version = frappe.db.get_value(
+			"Asset Version", {"media_asset": asset.name}, ["name", "file"], order_by="version_number desc", as_dict=True
 		)
-		asset["selected"] = bool(asset.file and asset.file in selected_files)
+		asset["asset_version"] = version.name if version else None
+		asset["file"] = version.file if version else None
+		asset["selected"] = bool(asset.asset_version and asset.asset_version in selected_versions)
 	return organization_assets
 
 
@@ -574,47 +664,53 @@ def select_project_reference(media_project, asset_name):
 	):
 		frappe.throw(_("That asset is not available as a reference for this project."))
 
-	file_url = frappe.db.get_value(
-		"Asset Version", {"media_asset": source.name}, "file", order_by="version_number desc"
+	asset_version = frappe.db.get_value(
+		"Asset Version", {"media_asset": source.name}, ["name", "file"], order_by="version_number desc", as_dict=True
 	)
-	if not file_url:
+	if not asset_version:
 		frappe.throw(_("The selected asset has no file version."))
 
-	for selected in frappe.get_all(
+	if any(
+		row.asset_version == asset_version.name
+		or frappe.db.get_value("Asset Version", row.asset_version, "file") == asset_version.file
+		for row in project.selected_media or []
+	):
+		return {"asset_version": asset_version.name, "selected": True}
+	if any(asset["file"] == asset_version.file for asset in _get_project_selected_assets(project)):
+		return {"asset_version": asset_version.name, "selected": True}
+
+	project.append("selected_media", {"asset_version": asset_version.name})
+	project.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {"asset_version": asset_version, "selected": True}
+
+
+@frappe.whitelist()
+def remove_project_reference(media_project, asset_version):
+	project = frappe.get_doc("Media Project", media_project)
+	project._require_write_access()
+	asset_version = frappe.get_doc("Asset Version", asset_version)
+	if asset_version.media_asset not in {
+		asset["media_asset"] for asset in _get_project_selected_assets(project)
+	}:
+		frappe.throw(_("That asset is not selected for this project."))
+
+	project.selected_media = [
+		row for row in project.selected_media or [] if row.asset_version != asset_version.name
+	]
+	project.save(ignore_permissions=True)
+	for legacy_asset in frappe.get_all(
 		"Media Asset",
 		filters={"media_project": project.name, "status": "Active"},
 		pluck="name",
 	):
-		if frappe.db.get_value(
-			"Asset Version", {"media_asset": selected}, "file", order_by="version_number desc"
-		) == file_url:
-			return {"name": selected, "selected": True}
-
-	selected = frappe.get_doc(
-		{
-			"doctype": "Media Asset",
-			"asset_name": source.asset_name,
-			"media_project": project.name,
-			"media_type": "Image",
-			"asset_category": source.asset_category,
-			"status": "Active",
-			"client_organization": project.client_organization,
-		}
-	).insert(ignore_permissions=True)
-	frappe.get_doc(
-		{
-			"doctype": "Asset Version",
-			"media_asset": selected.name,
-			"version_number": 1,
-			"file": file_url,
-			"source": "Imported",
-			"derived_from": frappe.db.get_value(
-				"Asset Version", {"media_asset": source.name}, "name", order_by="version_number desc"
-			),
-		}
-	).insert(ignore_permissions=True)
+		legacy_file = frappe.db.get_value(
+			"Asset Version", {"media_asset": legacy_asset}, "file", order_by="version_number desc"
+		)
+		if legacy_file and legacy_file == asset_version.file:
+			frappe.db.set_value("Media Asset", legacy_asset, "status", "Archived")
 	frappe.db.commit()
-	return {"name": selected.name, "selected": True}
+	return {"removed": True}
 
 
 def _get_project_outputs(media_project):
@@ -710,7 +806,7 @@ def get_pending_review_cards():
 			if project.campaign
 			else None
 		) or project.project_name
-		media_spec = get_latest_media_specification(project.name)
+		media_spec = _get_latest_project_storyboard_specification(project.name)
 		if not media_spec:
 			continue
 
@@ -812,6 +908,18 @@ def get_pending_review_cards():
 					)
 
 	return full_videos
+
+
+@frappe.whitelist()
+def get_reviews_summary():
+	"""Return the review counts used by the JoyMedia navigation shell."""
+	cards = get_pending_review_cards()
+	return {
+		"pending_count": sum(
+			1 for card in cards if card.get("status") in (None, "Pending Review", "Pending")
+		),
+		"total_count": len(cards),
+	}
 
 
 @frappe.whitelist()
@@ -1209,6 +1317,7 @@ def create_campaign_project(
 			"status": "Draft",
 		}
 	).insert(ignore_permissions=True)
+	_initialize_project_media_selection(project)
 
 	frappe.db.commit()
 	return {"project": project.name, "campaign": campaign_doc.name}
@@ -1298,6 +1407,7 @@ def get_library_assets(scope=None, asset_type=None):
 		"status": "Active",
 		"library_visibility": "Visible",
 		"client_organization": organizations[0].name,
+		"media_project": ["is", "not set"],
 	}
 	if asset_type == "Images":
 		filters["media_type"] = "Image"
@@ -1347,6 +1457,7 @@ def create_project(campaign, project_name, video_idea=None, reference_template=N
 			"reference_template": reference_template,
 		}
 	).insert(ignore_permissions=True)
+	_initialize_project_media_selection(project)
 	frappe.db.commit()
 	return project
 
@@ -1373,7 +1484,26 @@ def create_campaign_asset(media_project, asset_name, asset_category, file_url):
 	file_doc = frappe.get_doc("File", {"file_url": file_url})
 	if file_doc.owner != frappe.session.user and frappe.session.user != "Administrator":
 		frappe.throw(_("You can only attach files uploaded by your account."))
-	content_hash = _ensure_unique_uploaded_file(file_doc, media_project.client_organization)
+	if asset_category not in INPUT_ASSET_CATEGORIES:
+		frappe.throw(_("Uploaded assets must be reference inputs (Product, Character, Background, Brand, Style, Reference)."))
+	content_hash_result = _ensure_unique_uploaded_file(
+		file_doc, media_project.client_organization, reuse_existing=True
+	)
+	if isinstance(content_hash_result, dict):
+		existing_asset = frappe.get_doc("Media Asset", content_hash_result["existing"].name)
+		if existing_asset.asset_category not in INPUT_ASSET_CATEGORIES:
+			frappe.throw(_("This file already exists as a non-reference asset and cannot be added here."))
+		existing_version = frappe.db.get_value(
+			"Asset Version",
+			{"media_asset": existing_asset.name},
+			"name",
+			order_by="version_number desc",
+		)
+		if not existing_version:
+			frappe.throw(_("The existing library asset has no file version."))
+		frappe.db.commit()
+		return {"asset": existing_asset.name, "version": existing_version, "reused": True}
+	content_hash = content_hash_result
 
 	asset_fields = {
 		"doctype": "Media Asset",
@@ -1385,8 +1515,6 @@ def create_campaign_asset(media_project, asset_name, asset_category, file_url):
 	}
 	if media_project.campaign:
 		asset_fields["campaign"] = media_project.campaign
-	else:
-		asset_fields["media_project"] = media_project.name
 	asset = frappe.get_doc(
 		asset_fields
 	).insert(ignore_permissions=True)
@@ -1398,6 +1526,8 @@ def create_campaign_asset(media_project, asset_name, asset_category, file_url):
 			"source": "Uploaded",
 		}
 	).insert(ignore_permissions=True)
+	media_project.append("selected_media", {"asset_version": version.name})
+	media_project.save(ignore_permissions=True)
 	frappe.db.commit()
 	return {"asset": asset, "version": version}
 
@@ -1635,6 +1765,19 @@ class MediaProject(Document):
 
 		media_specification = self._ensure_default_video_specification()
 		media_specification.reload()
+		if media_specification.status != "Draft":
+			latest_run = frappe.db.get_value(
+				"Generation Run",
+				{"media_specification": media_specification.name},
+				["name", "status"],
+				as_dict=True,
+				order_by="creation desc",
+			)
+			if latest_run and latest_run.status in ("Failed", "Partially Completed"):
+				# A failed revision is still the user's current generation target.
+				# Retry it instead of calling generate_video(), which correctly
+				# rejects already-submitted revisions.
+				return self.retry_failed_jobs()
 		shots = frappe.get_all(
 			"Shot Specification",
 			filters={"media_specification": media_specification.name},
@@ -1735,21 +1878,43 @@ class MediaProject(Document):
 		if not run_name:
 			frappe.throw(_("This Campaign has no failed video run to retry."))
 
-		workflow_version_name = frappe.db.get_value(
-			"Generation Run", run_name, "workflow_version"
-		)
+		# Retries use the workflow attached to the current specification. This
+		# lets a repaired workflow revision recover a run created with an
+		# obsolete workflow while preserving all old attempts.
+		workflow_version_name = media_specification.workflow
 		workflow_version = frappe.get_doc("Workflow", workflow_version_name)
-		from joymedia.services.workflow_resolver import validate_workflow_bindings
+		from joymedia.services.workflow_resolver import (
+			validate_workflow_bindings,
+			validate_workflow_for_execution,
+		)
 
 		try:
 			validate_workflow_bindings(workflow_version)
+			validate_workflow_for_execution(workflow_version)
 		except frappe.ValidationError:
 			frappe.throw(
 				_(
-					"Retry is unavailable because the selected Workflow has an "
-					"invalid binding. Fix the Workflow before retrying."
+					"Retry is unavailable because the selected Workflow is not a valid "
+					"ComfyUI API workflow. Fix the Workflow before retrying."
 				)
+				)
+
+		current_run_workflow = frappe.db.get_value("Generation Run", run_name, "workflow_version")
+		if current_run_workflow != workflow_version_name:
+			frappe.db.set_value(
+				"Generation Run", run_name, "workflow_version", workflow_version_name, update_modified=False
 			)
+			for job_name in frappe.get_all(
+				"Generation Job",
+				filters={
+					"generation_run": run_name,
+					"status": ["in", ["Failed", "Partially Completed"]],
+				},
+				pluck="name",
+			):
+				frappe.db.set_value(
+					"Generation Job", job_name, "workflow_version", workflow_version_name, update_modified=False
+				)
 
 		return retry_failed_jobs_internal(run_name)
 

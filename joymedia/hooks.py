@@ -14,8 +14,11 @@ website_route_rules = [
 	{"from_route": "/joymedia", "to_route": "_joymedia"},
 ]
 
+home_page = "/joymedia/campaigns"
+
 signup_form_template = ["joymedia.registration.get_signup_template"]
-web_include_js = ["/assets/joymedia/js/joymedia_signup.js"]
+web_include_js = ["/assets/joymedia/js/joymedia_signup.js?v=4"]
+app_include_js = ["/assets/joymedia/js/joymedia_login_redirect.js?v=1"]
 
 # Apps
 # ------------------

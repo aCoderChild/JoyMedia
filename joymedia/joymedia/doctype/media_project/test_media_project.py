@@ -100,6 +100,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 				frappe.conf, {"comfyui_base_url": "http://comfyui.test"}, clear=False
 			), patch("joymedia.services.generation_orchestrator._enqueue"), patch(
 				"joymedia.services.comfyui_client.get_system_stats", return_value={}
+			), patch(
+				"joymedia.services.generation_orchestrator.validate_workflow_for_execution"
 			):
 				generation_result = generate_campaign_video(campaign_a.name)
 			self.assertEqual(generation_result["status"], "Queued")
@@ -413,9 +415,10 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		return_value=nullcontext(),
 	)
 	@patch("joymedia.services.comfyui_client.get_system_stats", return_value={})
+	@patch("joymedia.services.generation_orchestrator.validate_workflow_for_execution")
 	@patch("joymedia.services.generation_orchestrator.start_run_internal")
 	def test_generate_video_returns_existing_run_on_repeat(
-		self, start_run_internal, get_system_stats, filelock
+		self, start_run_internal, validate_workflow_for_execution, get_system_stats, filelock
 	):
 		campaign, specification = _create_campaign("Generation Idempotency")
 		_create_pending_review(specification.name, frappe.generate_hash(length=8))

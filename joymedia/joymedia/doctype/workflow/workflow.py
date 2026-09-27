@@ -27,7 +27,10 @@ DEFAULT_WORKFLOW_KEY = "product_showcase"
 
 def get_latest_valid_workflow(workflow_key=None):
 	"""Return the newest workflow whose stored graph and bindings are valid."""
-	from joymedia.services.workflow_resolver import validate_workflow_bindings
+	from joymedia.services.workflow_resolver import (
+		validate_workflow_bindings,
+		validate_workflow_for_execution,
+	)
 
 	filters = {"workflow_key": workflow_key} if workflow_key else {}
 	rows = frappe.get_all(
@@ -40,6 +43,14 @@ def get_latest_valid_workflow(workflow_key=None):
 		workflow = frappe.get_doc("Workflow", row.name)
 		try:
 			validate_workflow_bindings(workflow)
+			validate_workflow_for_execution(workflow)
+			if workflow.workflow_key == DEFAULT_WORKFLOW_KEY and not any(
+				binding.value_source == "Generation Input"
+				and binding.required
+				and binding.required_input_role
+				for binding in workflow.bindings
+			):
+				continue
 		except Exception:
 			continue
 		return workflow
@@ -51,9 +62,13 @@ def validate_workflow(version_name: str):
 	"""Validate an existing Workflow's dynamic bindings on demand."""
 	frappe.has_permission("Workflow", "read", version_name, throw=True)
 	workflow_version = frappe.get_doc("Workflow", version_name)
-	from joymedia.services.workflow_resolver import validate_workflow_bindings
+	from joymedia.services.workflow_resolver import (
+		validate_workflow_bindings,
+		validate_workflow_for_execution,
+	)
 
 	validate_workflow_bindings(workflow_version)
+	validate_workflow_for_execution(workflow_version)
 	return {"valid": True, "workflow_version": workflow_version.name}
 
 
@@ -122,9 +137,13 @@ def set_default_workflow(version_name: str):
 	"""Validate a workflow for compatibility with older Desk actions."""
 	frappe.has_permission("Workflow", "read", version_name, throw=True)
 	workflow_version = frappe.get_doc("Workflow", version_name)
-	from joymedia.services.workflow_resolver import validate_workflow_bindings
+	from joymedia.services.workflow_resolver import (
+		validate_workflow_bindings,
+		validate_workflow_for_execution,
+	)
 
 	validate_workflow_bindings(workflow_version)
+	validate_workflow_for_execution(workflow_version)
 	return {
 		"workflow": workflow_version.name,
 	}
@@ -142,7 +161,6 @@ class Workflow(Document):
 		from joymedia.services.workflow_resolver import validate_workflow_bindings
 
 		validate_workflow_bindings(self)
-
 		self.workflow_hash = hashlib.sha256(
 			canonical_workflow_json(workflow_data).encode("utf-8")
 		).hexdigest()

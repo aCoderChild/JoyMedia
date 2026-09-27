@@ -59,7 +59,7 @@
             type="button"
             class="jm-btn-primary shadow-md shadow-indigo-600/20 !py-1.5 !px-3 text-xs"
             :class="{ 'animate-pulse': isAutoGenerating || isProductionActive }"
-            :disabled="!hasInputAsset || isAutoGenerating || (production?.status === 'Running' && !isProductionActive)"
+            :disabled="!hasInputAsset || isAutoGenerating || isProductionActive"
             @click="handleMagicGenerateClick"
           >
             <span v-if="isAutoGenerating" class="lucide-refresh-cw size-3 animate-spin" />
@@ -102,9 +102,9 @@
         <div v-if="assetsExpanded" class="mt-1.5 flex items-center gap-2 overflow-x-auto p-2 rounded-xl bg-surface-muted border border-outline-border">
           <div
             v-for="asset in projectAssets"
-            :key="asset.name"
-            class="flex items-center gap-2 shrink-0 px-2.5 py-1.5 rounded-lg bg-surface-card border transition-all cursor-pointer"
-            :class="selectedTarget === 'asset' && selectedAsset?.name === asset.name ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-outline-border hover:border-indigo-500/40'"
+            :key="asset.asset_version"
+            class="group relative flex items-center gap-2 shrink-0 px-2.5 py-1.5 pr-7 rounded-lg bg-surface-card border transition-all cursor-pointer"
+            :class="selectedTarget === 'asset' && selectedAsset?.asset_version === asset.asset_version ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-outline-border hover:border-indigo-500/40'"
             @click="selectAssetTarget(asset)"
           >
             <img v-if="asset.file" :src="asset.file" :alt="asset.asset_name" class="size-7 rounded object-cover" />
@@ -112,6 +112,14 @@
               <span class="block max-w-[120px] truncate text-[11px] text-ink-primary font-medium">{{ asset.asset_name }}</span>
               <span class="block text-[9px] text-ink-muted">{{ asset.asset_category }}</span>
             </div>
+            <button
+              type="button"
+              class="absolute right-1 top-1/2 -translate-y-1/2 size-5 rounded-full text-ink-muted hover:text-rose-500 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              :title="currentLang === 'vi' ? 'Xóa khỏi dự án' : 'Remove from project'"
+              @click.stop="removeProjectAsset(asset)"
+            >
+              ×
+            </button>
           </div>
         </div>
       </div>
@@ -125,7 +133,7 @@
             </p>
             <p class="mt-1 text-xs text-rose-200 break-words whitespace-pre-wrap">{{ productionError }}</p>
             <p v-if="production?.status" class="mt-1 text-[11px] text-ink-muted">
-              {{ currentLang === 'vi' ? 'Trạng thái' : 'Status' }}: {{ production.status }}
+              {{ currentLang === 'vi' ? 'Trạng thái' : 'Status' }}: {{ productionStatus }}
             </p>
           </div>
           <div class="flex items-center gap-2 shrink-0">
@@ -188,7 +196,7 @@
             <span class="size-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center text-xl mb-1 border border-rose-500/30">✕</span>
             <h3 class="text-sm font-bold text-ink-primary">{{ currentLang === 'vi' ? 'Không thể tạo video' : 'Video generation failed' }}</h3>
             <p class="text-xs text-rose-300 max-w-lg break-words whitespace-pre-wrap">{{ productionError }}</p>
-            <p v-if="production?.status" class="text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Trạng thái' : 'Status' }}: {{ production.status }}</p>
+            <p v-if="productionStatus" class="text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Trạng thái' : 'Status' }}: {{ productionStatus }}</p>
             <div class="flex items-center gap-2 pt-2">
               <button type="button" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs cursor-pointer" :disabled="retryingFailedScenes" @click="retryFailedScenes">
                 {{ retryingFailedScenes ? 'Đang thử lại...' : (currentLang === 'vi' ? 'Thử lại' : 'Retry') }}
@@ -256,23 +264,25 @@
 
           <!-- Blank Canvas Placeholder Matching Screenshot -->
           <div v-else class="flex flex-col items-center justify-center text-center p-8 text-ink-muted">
-            <span class="size-14 rounded-2xl bg-surface-card border border-outline-border flex items-center justify-center mb-3 text-ink-secondary text-xl shadow-md">
-              🖼️
-            </span>
-            <p class="text-sm text-ink-primary font-semibold">{{ currentLang === 'vi' ? 'Thêm tư liệu sản phẩm để bắt đầu' : 'Add product media to get started' }}</p>
-            <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Tải ảnh mới hoặc chọn từ Thư viện Media.' : 'Upload a new image or choose one from your Media Library.' }}</p>
-            <div class="flex items-center gap-2 mt-4">
-              <select v-model="uploadCategory" class="px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary cursor-pointer" title="Media category">
-                <option v-for="category in inputAssetCategories" :key="category" :value="category">{{ category }}</option>
-              </select>
-              <label class="jm-btn-primary cursor-pointer text-xs">
-                {{ currentLang === 'vi' ? 'Tải ảnh lên' : 'Upload Image' }}
-                <input class="file-input-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple :disabled="uploadingImages" @change="uploadSelectedImages" />
-              </label>
-              <button type="button" class="jm-btn-secondary text-xs cursor-pointer" @click="openMediaPicker">
-                {{ currentLang === 'vi' ? 'Thư viện Media' : 'Media Library' }}
-              </button>
-            </div>
+            <template v-if="projectAssets.length === 0">
+              <span class="size-14 rounded-2xl bg-surface-card border border-outline-border flex items-center justify-center mb-3 text-ink-secondary text-xl shadow-md">🖼️</span>
+              <p class="text-sm text-ink-primary font-semibold">{{ currentLang === 'vi' ? 'Thêm tư liệu sản phẩm để bắt đầu' : 'Add product media to get started' }}</p>
+              <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Tải ảnh mới hoặc chọn từ Thư viện Media.' : 'Upload a new image or choose one from your Media Library.' }}</p>
+              <div class="flex items-center gap-2 mt-4">
+                <select v-model="uploadCategory" class="px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary cursor-pointer" title="Media category">
+                  <option v-for="category in inputAssetCategories" :key="category" :value="category">{{ category }}</option>
+                </select>
+                <label class="jm-btn-primary cursor-pointer text-xs">
+                  {{ currentLang === 'vi' ? 'Tải ảnh lên' : 'Upload Image' }}
+                  <input class="file-input-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple :disabled="uploadingImages" @change="uploadSelectedImages" />
+                </label>
+                <button type="button" class="jm-btn-secondary text-xs cursor-pointer" @click="openMediaPicker">{{ currentLang === 'vi' ? 'Thư viện Media' : 'Media Library' }}</button>
+              </div>
+            </template>
+            <template v-else>
+              <p class="text-sm text-ink-primary font-semibold">{{ currentLang === 'vi' ? 'Sẵn sàng tạo video' : 'Ready to create your video' }}</p>
+              <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Nhấn Tạo Video để tạo storyboard.' : 'Click Generate Video to create the storyboard.' }}</p>
+            </template>
           </div>
         </div>
 
@@ -422,8 +432,8 @@
 
               <!-- Clip Visual Thumbnail Body (Clean, CapCut/Premiere style without awkward trim handles) -->
               <div class="relative w-full aspect-video rounded-lg overflow-hidden bg-black flex items-center justify-center group shadow-xs">
-                <template v-if="getShotReview(shot)?.preview_url">
-                  <video :src="getShotReview(shot).preview_url" class="w-full h-full object-cover pointer-events-none" preload="metadata" />
+                <template v-if="getShotReview(shot)?.preview_url || getShotVideoFile(shot)">
+                  <video :src="getShotReview(shot)?.preview_url || getShotVideoFile(shot)" class="w-full h-full object-cover pointer-events-none" preload="metadata" />
                   <div class="absolute inset-0 bg-black/25 flex items-center justify-center pointer-events-none">
                     <span class="size-6 rounded-full bg-white/95 text-indigo-600 flex items-center justify-center text-xs shadow font-bold">▶</span>
                   </div>
@@ -874,7 +884,7 @@
               <button type="button" class="hover:text-ink-primary cursor-pointer" title="Báo cáo">⚑</button>
             </div>
             <span class="text-xs font-mono bg-surface-card px-2 py-0.5 rounded-md border border-outline-border text-ink-secondary">
-              {{ allShotsList.length || 3 }} {{ currentLang === 'vi' ? 'cảnh' : 'shots' }}
+              {{ expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh' : 'shots' }}
             </span>
           </div>
         </div>
@@ -898,7 +908,7 @@
             type="button"
             class="gflow-action-btn"
             :class="{ 'is-active': isAutoGenerating || isProductionActive }"
-            :disabled="!hasInputAsset || isAutoGenerating || (production?.status === 'Running' && !isProductionActive)"
+            :disabled="!hasInputAsset || isAutoGenerating || isProductionActive"
             :title="hasInputAsset ? (currentLang === 'vi' ? 'Tạo video tự động bằng AI' : 'Generate video with AI') : (currentLang === 'vi' ? 'Thêm ít nhất một ảnh sản phẩm' : 'Add at least one product image')"
             @click="handleMagicGenerateClick"
           >
@@ -1182,7 +1192,17 @@ const availableDurations = computed(() => {
 const inputAssetCategories = ["Product", "Character", "Background", "Brand", "Style", "Reference"];
 const workspace = computed(() => campaign.data);
 const settings = computed(() => workspace.value?.video_settings);
-const production = computed(() => productionResource.data || workspace.value?.production);
+// Keep a separate, explicit snapshot for production state.  The workspace
+// response is useful as an initial fallback, but it must not remain the
+// source of truth after a new generation run starts.
+const productionSnapshot = ref(null);
+const productionSnapshotLoaded = ref(false);
+const production = computed(() => {
+  if (productionSnapshotLoaded.value && productionSnapshot.value) {
+    return productionSnapshot.value;
+  }
+  return productionResource.data || workspace.value?.production || null;
+});
 const reviews = computed(() => reviewResource.data || workspace.value?.reviews || []);
 const finalVideo = computed(() => production.value?.final_video || workspace.value?.final_video);
 const projectAssets = computed(() => workspace.value?.assets || []);
@@ -1355,7 +1375,20 @@ const productionError = computed(() => {
   }
   return "";
 });
-const expectedShotCount = computed(() => Number(production.value?.total_jobs || workspace.value?.storyboard?.length || 3));
+const productionStatus = computed(() => {
+  if (productionError.value) return "Failed";
+  return production.value?.status || "";
+});
+const expectedShotCount = computed(() => {
+  const productionTotal = Number(production.value?.total_jobs || 0);
+  if (productionTotal > 0) return productionTotal;
+
+  const storyboardCount = Number(workspace.value?.storyboard?.length || 0);
+  if (storyboardCount > 0) return storyboardCount;
+
+  const automaticCount = Number(workspace.value?.video_settings?.automatic_shot_count || 0);
+  return automaticCount > 0 ? automaticCount : 1;
+});
 
 const hasStoryboard = computed(() => Boolean(workspace.value?.storyboard?.length));
 
@@ -1384,6 +1417,10 @@ const activeCanvasMedia = computed(() => {
     const rev = getShotReview(activeSelectedShot.value);
     if (rev?.preview_url) {
       return { title: `Cảnh ${activeSelectedShot.value.shot_number}`, url: rev.preview_url, isVideo: true };
+    }
+    const outputVideo = getShotVideoFile(activeSelectedShot.value);
+    if (outputVideo) {
+      return { title: `Cảnh ${activeSelectedShot.value.shot_number}`, url: outputVideo, isVideo: true };
     }
     const frame = selectedShotFrame.value;
     if (frame?.file) {
@@ -1619,6 +1656,8 @@ async function regenerateCurrentShot() {
 
 async function retryFailedScenes() {
   retryingFailedScenes.value = true;
+  productionSnapshot.value = null;
+  productionSnapshotLoaded.value = true;
   try {
     await call("joymedia.joymedia.doctype.media_project.media_project.retry_campaign_failed_jobs", {
       campaign_name: projectName.value,
@@ -1666,6 +1705,10 @@ function getShotFirstFrame(shot, isPlan = false) {
   return { file: shot.reference_image || null, name: shot.reference_asset_name || null };
 }
 
+function getShotVideoFile(shot) {
+  return shot?.output_video || null;
+}
+
 // Watch settings updates
 watch(settings, (value) => {
   if (!value) return;
@@ -1706,7 +1749,7 @@ watch(() => production.value?.status, (status) => {
   pollTimer = null;
   if (ACTIVE_STATUSES.has(status)) {
     pollTimer = setInterval(() => {
-      productionResource.reload();
+      reloadProduction().catch(() => {});
       reviewResource.reload();
       nowTick.value = Date.now();
     }, 4000);
@@ -1720,9 +1763,34 @@ onBeforeUnmount(() => {
 async function refresh() {
   plan.value = null;
   await campaign.reload();
-  await productionResource.reload();
+  await reloadProduction();
   await reviewResource.reload();
 }
+
+async function reloadProduction() {
+  const latest = await call("joymedia.joymedia.doctype.media_project.media_project.get_campaign_production", {
+    name: projectName.value,
+  });
+  // A null response must not erase a completed production already returned
+  // by the workspace payload during reload.
+  if (latest) {
+    productionSnapshot.value = latest;
+    productionSnapshotLoaded.value = true;
+  }
+  return latest;
+}
+
+// Use the resource only as the first-render fallback. Once a fresh snapshot
+// has been loaded, an older resource response can no longer overwrite it.
+watch(() => productionResource.data, (value) => {
+  if (!productionSnapshotLoaded.value && value) {
+    productionSnapshot.value = value;
+    productionSnapshotLoaded.value = true;
+  }
+}, { immediate: true });
+
+// Avoid showing a stale failed run when the page is opened.
+reloadProduction().catch(() => {});
 
 async function openMediaPicker() {
   showMediaPicker.value = true;
@@ -1767,7 +1835,8 @@ async function uploadSelectedImages(event) {
     for (const file of files) {
       const uploadedFile = await uploadFile(file, { private: true });
       if (!uploadedFile?.file_url) throw new Error("Không thể tải lên file.");
-      const created = await call("joymedia.joymedia.doctype.media_project.media_project.create_organization_asset", {
+      const created = await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign_asset", {
+        media_project: projectName.value,
         asset_name: file.name.replace(/\.[^/.]+$/, ""),
         asset_category: uploadCategory.value,
         file_url: uploadedFile.file_url,
@@ -1783,6 +1852,32 @@ async function uploadSelectedImages(event) {
     toast({ title: "Lỗi tải ảnh", text: error.message || "Vui lòng thử lại.", type: "error" });
   } finally {
     uploadingImages.value = false;
+  }
+}
+
+async function removeProjectAsset(asset) {
+  if (!asset?.asset_version) return;
+  try {
+    await call("joymedia.joymedia.doctype.media_project.media_project.remove_project_reference", {
+      media_project: projectName.value,
+      asset_version: asset.asset_version,
+    });
+    if (selectedAsset.value?.asset_version === asset.asset_version) {
+      selectedAsset.value = null;
+      selectedTarget.value = "scene";
+    }
+    await refresh();
+    toast({
+      title: currentLang.value === "vi" ? "Đã bỏ tư liệu" : "Media removed",
+      text: currentLang.value === "vi" ? "Tư liệu vẫn được giữ trong Thư viện Media." : "The asset remains in the Media Library.",
+      type: "success",
+    });
+  } catch (error) {
+    toast({
+      title: currentLang.value === "vi" ? "Lỗi bỏ tư liệu" : "Unable to remove media",
+      text: error.message || "Please try again.",
+      type: "error",
+    });
   }
 }
 
@@ -1816,6 +1911,10 @@ async function handleMagicGenerateClick() {
     return;
   }
   isAutoGenerating.value = true;
+  // Remove the previous run from the UI immediately. The next snapshot will
+  // contain the newly created run and its real status.
+  productionSnapshot.value = null;
+  productionSnapshotLoaded.value = true;
   autoGenerateStep.value = currentLang.value === "vi" ? "Đang chuẩn bị video..." : "Preparing your video...";
   try {
     await call("joymedia.joymedia.doctype.media_project.media_project.generate_project_video", {

@@ -94,24 +94,41 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		)
 
 	@patch("joymedia.services.generation_orchestrator._enqueue")
+	@patch("joymedia.services.generation_orchestrator.validate_generation_preflight")
 	@patch("joymedia.services.generation_orchestrator.frappe.has_permission")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_doc")
+	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
 	@patch("joymedia.services.shot_duration_planner.recalculate_shot_durations")
 	def test_start_run_only_queues_background_preparation(
-		self, recalculate_shot_durations, get_doc, has_permission, enqueue
+		self,
+		recalculate_shot_durations,
+		get_all,
+		get_doc,
+		has_permission,
+		validate_generation_preflight,
+		enqueue,
 	):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.status = "Draft"
 		run.media_specification = "SPEC-00001"
+		run.workflow_version = "WF-00001"
 		media_specification = frappe._dict(name="SPEC-00001", status="Ready")
 		media_specification.validate_generation_setup = MagicMock()
-		get_doc.side_effect = [run, media_specification]
+		workflow = frappe._dict(name="WF-00001")
+		get_doc.side_effect = [run, media_specification, workflow]
+		get_all.return_value = []
 
 		result = generation_orchestrator.start_run(run.name)
 
 		has_permission.assert_called_once_with("Generation Run", "write", run.name, throw=True)
 		recalculate_shot_durations.assert_called_once_with(media_specification.name)
+		validate_generation_preflight.assert_called_once_with(
+			media_specification,
+			workflow,
+			[],
+			check_comfyui=True,
+		)
 		self.assertEqual(run.status, "Queued")
 		run.save.assert_called_once_with(ignore_permissions=True)
 		enqueue.assert_called_once_with("prepare_run", run.name)
