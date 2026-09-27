@@ -89,22 +89,27 @@
             <span class="timeline-meta">{{ clips.length }} {{ currentLang === 'vi' ? 'clip' : 'clips' }} · {{ durationLabel }}</span>
           </div>
           <div class="flex items-center gap-1.5">
+            <button type="button" class="tool-btn" :disabled="!canUndo || busy" @click="undo">↶ {{ currentLang === 'vi' ? 'Hoàn tác' : 'Undo' }}</button>
+            <button type="button" class="tool-btn" :disabled="!canRedo || busy" @click="redo">↷ {{ currentLang === 'vi' ? 'Làm lại' : 'Redo' }}</button>
             <button type="button" class="tool-btn" :disabled="!canSplit || busy" @click="splitAtPlayhead">✂ {{ currentLang === 'vi' ? 'Tách' : 'Split' }}</button>
             <button type="button" class="tool-btn" :disabled="!selectedClip || busy" @click="duplicateSelected">⧉ {{ currentLang === 'vi' ? 'Nhân đôi' : 'Duplicate' }}</button>
             <button type="button" class="tool-btn danger" :disabled="!selectedClip || busy" @click="deleteSelected">⌫ {{ currentLang === 'vi' ? 'Xóa' : 'Delete' }}</button>
+            <button type="button" class="tool-btn" :class="{ active: snapping }" @click="snapping = !snapping">⌁ {{ currentLang === 'vi' ? 'Hút' : 'Snap' }}</button>
+            <label class="zoom-control">＋ <input v-model.number="zoom" type="range" min="0.6" max="3" step="0.1" /> ＋</label>
           </div>
         </div>
 
-        <div ref="ruler" class="timeline-ruler" @click="seekTimeline">
+        <div ref="ruler" class="timeline-ruler" :style="{ width: `${timelineCanvasWidth}px` }" @click="seekTimeline">
           <div class="ruler-labels">
-            <span v-for="tick in rulerTicks" :key="tick.frame" :style="{ left: `${tick.percent}%` }">{{ tick.label }}</span>
+            <span v-for="tick in rulerTicks" :key="tick.frame" :style="{ left: `${tick.frame * pixelsPerFrame}px` }">{{ tick.label }}</span>
           </div>
-          <div class="playhead" :style="{ left: `${playheadPercent}%` }">
+          <div class="playhead" :style="{ left: `${playheadFrame * pixelsPerFrame}px` }">
             <span class="playhead-head" />
           </div>
         </div>
 
         <div v-if="clips.length" class="clip-track">
+          <div class="timeline-canvas" :style="{ width: `${timelineCanvasWidth}px` }">
           <template v-for="(clip, index) in clips" :key="clip.name">
             <article
               class="timeline-clip"
@@ -116,6 +121,8 @@
               @drop.prevent="dropClip(index)"
               @click="selectClip(clip)"
             >
+              <button type="button" class="trim-handle trim-handle-left" aria-label="Trim start" @pointerdown.stop="startTrim(clip, 'left', $event)" />
+              <button type="button" class="trim-handle trim-handle-right" aria-label="Trim end" @pointerdown.stop="startTrim(clip, 'right', $event)" />
               <div class="clip-title-row">
                 <span class="truncate">{{ clipLabel(clip) }}</span>
                 <span class="font-mono text-[9px] text-ink-muted">{{ seconds(clip.duration_frames).toFixed(2) }}s</span>
@@ -139,12 +146,14 @@
               type="button"
               class="transition-node"
               :class="{ active: clip.transition_to_next !== 'Cut' }"
+              :style="{ left: `${clip.timeline_end_frame * pixelsPerFrame}px` }"
               :title="transitionTitle(clip)"
               @click.stop="selectTransitionSource(clip)"
             >
               {{ clip.transition_to_next === 'Cut' ? '│' : '◇' }}
             </button>
           </template>
+          </div>
         </div>
         <div v-else class="empty-timeline">
           {{ currentLang === 'vi' ? 'Không còn clip trên timeline.' : 'There are no clips on the timeline.' }}
@@ -174,27 +183,6 @@
           </div>
         </div>
 
-        <div class="inspector-card space-y-3">
-          <div class="section-title">{{ currentLang === 'vi' ? 'Cắt theo frame' : 'Frame trim' }}</div>
-          <label class="field-label">
-            <span>IN</span>
-            <input class="frame-input" type="number" min="0" :value="selectedClip.source_in_frame" @change="changeInFrame($event)" />
-          </label>
-          <label class="field-label">
-            <span>OUT</span>
-            <input class="frame-input" type="number" :min="selectedClip.source_in_frame + 1" :value="selectedClip.source_out_frame" @change="changeOutFrame($event)" />
-          </label>
-          <div class="grid grid-cols-4 gap-1">
-            <button class="nudge-btn" type="button" @click="nudgeTrim('in', -1)">IN −1</button>
-            <button class="nudge-btn" type="button" @click="nudgeTrim('in', 1)">IN +1</button>
-            <button class="nudge-btn" type="button" @click="nudgeTrim('out', -1)">OUT −1</button>
-            <button class="nudge-btn" type="button" @click="nudgeTrim('out', 1)">OUT +1</button>
-          </div>
-          <p class="helper-text">
-            {{ currentLang === 'vi' ? 'IN là frame đầu tiên được giữ; OUT là frame kết thúc (không bao gồm).' : 'IN is inclusive; OUT is the exclusive end frame.' }}
-          </p>
-        </div>
-
         <div class="inspector-card space-y-2">
           <div class="section-title">{{ currentLang === 'vi' ? 'Chuyển cảnh tiếp theo' : 'Transition to next' }}</div>
           <select class="field-control" :value="selectedClip.transition_to_next" :disabled="isLastSelected" @change="changeTransitionType($event)">
@@ -218,12 +206,6 @@
           </label>
         </div>
 
-        <div class="inspector-card space-y-2">
-          <div class="section-title">{{ currentLang === 'vi' ? 'Thao tác' : 'Edit actions' }}</div>
-          <button type="button" class="action-wide" :disabled="!canSplit || busy" @click="splitAtPlayhead">✂ {{ currentLang === 'vi' ? 'Tách tại playhead' : 'Split at playhead' }}</button>
-          <button type="button" class="action-wide" :disabled="busy" @click="duplicateSelected">⧉ {{ currentLang === 'vi' ? 'Nhân đôi clip' : 'Duplicate clip' }}</button>
-          <button type="button" class="action-wide danger" :disabled="busy" @click="deleteSelected">⌫ {{ currentLang === 'vi' ? 'Xóa khỏi timeline' : 'Delete from timeline' }}</button>
-        </div>
       </div>
 
       <div v-else class="inspector-empty">
@@ -257,6 +239,11 @@ const playing = ref(false);
 const busy = ref(false);
 const exporting = ref(false);
 const previewMode = ref("clip");
+const zoom = ref(1);
+const snapping = ref(true);
+const history = ref([]);
+const future = ref([]);
+const trimDrag = ref(null);
 let seekAfterLoadFrame = null;
 
 const clips = computed(() => timeline.value?.clips || []);
@@ -266,21 +253,17 @@ const selectedIndex = computed(() => clips.value.findIndex((clip) => clip.name =
 const isLastSelected = computed(() => selectedIndex.value < 0 || selectedIndex.value === clips.value.length - 1);
 const fpsLabel = computed(() => fps.value ? `${fps.value} fps` : "-- fps");
 const durationLabel = computed(() => `${Number(timeline.value?.total_seconds || 0).toFixed(2)}s`);
-const playheadPercent = computed(() => {
-  const total = Number(timeline.value?.total_frames || 0);
-  return total > 0 ? Math.min(100, Math.max(0, (Number(playheadFrame.value || 0) / total) * 100)) : 0;
-});
-const canSplit = computed(() => {
-  const clip = selectedClip.value;
-  if (!clip) return false;
-  const sourceFrame = sourceFrameAtPlayhead(clip);
-  return sourceFrame > clip.source_in_frame && sourceFrame < clip.source_out_frame;
-});
+const pixelsPerFrame = computed(() => Math.max(2, (36 * zoom.value) / Math.max(1, fps.value)));
+const timelineCanvasWidth = computed(() => Math.max(700, Number(timeline.value?.total_frames || 0) * pixelsPerFrame.value));
+const canUndo = computed(() => history.value.length > 0);
+const canRedo = computed(() => future.value.length > 0);
+const activeClip = computed(() => clips.value.find((clip) => playheadFrame.value > clip.timeline_start_frame && playheadFrame.value < clip.timeline_end_frame) || null);
+const canSplit = computed(() => Boolean(activeClip.value));
 const projectTitle = computed(() => workspace.value?.campaign?.project_name || workspace.value?.campaign?.campaign_name || projectName.value);
 
 const rulerTicks = computed(() => {
   const total = Number(timeline.value?.total_frames || 0);
-  if (!total || !fps.value) return [{ frame: 0, percent: 0, label: "00:00" }];
+  if (!total || !fps.value) return [{ frame: 0, label: "00:00" }];
   const totalSeconds = total / fps.value;
   const targetTicks = 6;
   const rawStep = totalSeconds / targetTicks;
@@ -289,10 +272,10 @@ const rulerTicks = computed(() => {
   const values = [];
   for (let secondsValue = 0; secondsValue <= totalSeconds + 0.0001; secondsValue += step) {
     const frame = Math.min(total, Math.round(secondsValue * fps.value));
-    values.push({ frame, percent: (frame / total) * 100, label: secondsTime(secondsValue) });
+    values.push({ frame, label: secondsTime(secondsValue) });
   }
   if (values[values.length - 1]?.frame !== total) {
-    values.push({ frame: total, percent: 100, label: secondsTime(totalSeconds) });
+    values.push({ frame: total, label: secondsTime(totalSeconds) });
   }
   return values;
 });
@@ -326,9 +309,10 @@ function clipLabel(clip) {
 }
 
 function clipStyle(clip) {
-  const total = Number(timeline.value?.total_frames || 1);
-  const percentage = Math.max(12, (clip.duration_frames / total) * 100);
-  return { flex: `${clip.duration_frames} 1 0%`, minWidth: `${Math.min(260, Math.max(130, percentage * 5))}px` };
+  return {
+    left: `${clip.timeline_start_frame * pixelsPerFrame.value}px`,
+    width: `${Math.max(48, clip.duration_frames * pixelsPerFrame.value)}px`,
+  };
 }
 
 function transitionTitle(clip) {
@@ -340,6 +324,40 @@ function sourceFrameAtPlayhead(clip) {
   if (!clip) return 0;
   const local = Math.max(0, Math.min(clip.duration_frames, playheadFrame.value - clip.timeline_start_frame));
   return Math.round(clip.source_in_frame + local);
+}
+
+function cloneTimeline(value) {
+  return JSON.parse(JSON.stringify(value || { clips: [] }));
+}
+
+function recordHistory(entry) {
+  history.value.push(entry);
+  future.value = [];
+}
+
+function rippleTimeline(value) {
+  const next = cloneTimeline(value);
+  let cursor = 0;
+  next.clips = (next.clips || []).map((clip) => {
+    const duration = Math.max(1, Number(clip.source_out_frame) - Number(clip.source_in_frame));
+    const updated = { ...clip, duration_frames: duration, timeline_start_frame: cursor, timeline_end_frame: cursor + duration };
+    cursor += duration;
+    return updated;
+  });
+  next.total_frames = cursor;
+  next.total_seconds = fps.value ? cursor / fps.value : 0;
+  return next;
+}
+
+function snapFrame(frame, clipName) {
+  if (!snapping.value) return Math.round(frame);
+  const rounded = Math.round(frame);
+  const candidates = [0, Number(playheadFrame.value || 0)];
+  clips.value.forEach((clip) => {
+    if (clip.name !== clipName) candidates.push(Number(clip.timeline_start_frame), Number(clip.timeline_end_frame));
+  });
+  const nearest = candidates.find((candidate) => Math.abs(candidate - rounded) <= 3);
+  return nearest == null ? rounded : nearest;
 }
 
 async function loadWorkspace() {
@@ -451,6 +469,57 @@ function seekTimeline(event) {
   selectClip(clip, clip.source_in_frame + local);
 }
 
+function startTrim(clip, edge, event) {
+  if (busy.value || !clip) return;
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  trimDrag.value = {
+    clipName: clip.name,
+    edge,
+    startX: event.clientX,
+    originalIn: Number(clip.source_in_frame),
+    originalOut: Number(clip.source_out_frame),
+    originalTimelineStart: Number(clip.timeline_start_frame),
+    originalTimelineEnd: Number(clip.timeline_end_frame),
+    before: cloneTimeline(timeline.value),
+  };
+  window.addEventListener("pointermove", handleTrimMove);
+  window.addEventListener("pointerup", finishTrim);
+}
+
+function handleTrimMove(event) {
+  const drag = trimDrag.value;
+  const clip = clips.value.find((item) => item.name === drag?.clipName);
+  if (!drag || !clip) return;
+  const delta = Math.round((event.clientX - drag.startX) / pixelsPerFrame.value);
+  const edgeFrame = drag.edge === "left" ? drag.originalTimelineStart : drag.originalTimelineEnd;
+  const timelineDelta = snapFrame(edgeFrame + delta, clip.name) - edgeFrame;
+  const nextIn = drag.edge === "left" ? Math.max(0, Math.min(drag.originalOut - 1, drag.originalIn + timelineDelta)) : drag.originalIn;
+  const nextOut = drag.edge === "right" ? Math.max(drag.originalIn + 1, drag.originalOut + timelineDelta) : drag.originalOut;
+  const next = cloneTimeline(timeline.value);
+  const target = next.clips.find((item) => item.name === clip.name);
+  if (!target) return;
+  target.source_in_frame = nextIn;
+  target.source_out_frame = nextOut;
+  timeline.value = rippleTimeline(next);
+  const refreshed = timeline.value.clips.find((item) => item.name === clip.name);
+  playheadFrame.value = Math.min(playheadFrame.value, Math.max(0, Number(timeline.value.total_frames) - 1));
+  if (refreshed) selectedClipName.value = refreshed.name;
+}
+
+async function finishTrim() {
+  const drag = trimDrag.value;
+  trimDrag.value = null;
+  window.removeEventListener("pointermove", handleTrimMove);
+  window.removeEventListener("pointerup", finishTrim);
+  const clip = clips.value.find((item) => item.name === drag?.clipName);
+  if (!drag || !clip) return;
+  if (clip.source_in_frame === drag.originalIn && clip.source_out_frame === drag.originalOut) {
+    timeline.value = drag.before;
+    return;
+  }
+  await trimSelected(clip.source_in_frame, clip.source_out_frame, drag.before);
+}
+
 async function runEdit(method, payload, preferredClip = null) {
   if (busy.value) return;
   busy.value = true;
@@ -495,7 +564,7 @@ async function nudgeTrim(edge, delta) {
   await trimSelected(start, end);
 }
 
-async function trimSelected(start, end) {
+async function trimSelected(start, end, before = cloneTimeline(timeline.value), record = true) {
   const clip = selectedClip.value;
   if (!clip) return;
   const result = await runEdit("trim_timeline_clip", {
@@ -504,13 +573,14 @@ async function trimSelected(start, end) {
     source_out_frame: Math.round(end),
   }, clip.name);
   if (result) {
+    if (record) recordHistory({ type: "trim", clipName: clip.name, before, after: cloneTimeline(result) });
     const refreshed = result.clips.find((item) => item.name === clip.name);
     if (refreshed) selectClip(refreshed, Math.max(refreshed.source_in_frame, Math.min(sourceFrameAtPlayhead(refreshed), refreshed.source_out_frame - 1)));
   }
 }
 
 async function splitAtPlayhead() {
-  const clip = selectedClip.value;
+  const clip = activeClip.value;
   if (!clip || !canSplit.value) return;
   const splitFrame = sourceFrameAtPlayhead(clip);
   const result = await runEdit("split_timeline_clip", {
@@ -520,6 +590,37 @@ async function splitAtPlayhead() {
   if (result?.selected_clip) {
     const created = result.clips.find((item) => item.name === result.selected_clip);
     if (created) selectClip(created, created.source_in_frame);
+  }
+}
+
+async function restoreHistory(entry, snapshotKey) {
+  if (!entry || entry.type !== "trim") return;
+  const snapshot = entry[snapshotKey];
+  const clip = snapshot.clips.find((item) => item.name === entry.clipName);
+  if (!clip) return;
+  const result = await runEdit("trim_timeline_clip", {
+    clip_name: entry.clipName,
+    source_in_frame: clip.source_in_frame,
+    source_out_frame: clip.source_out_frame,
+  }, entry.clipName);
+  return Boolean(result);
+}
+
+async function undo() {
+  if (busy.value || !history.value.length) return;
+  const entry = history.value[history.value.length - 1];
+  if (await restoreHistory(entry, "before")) {
+    history.value.pop();
+    future.value.push(entry);
+  }
+}
+
+async function redo() {
+  if (busy.value || !future.value.length) return;
+  const entry = future.value[future.value.length - 1];
+  if (await restoreHistory(entry, "after")) {
+    future.value.pop();
+    history.value.push(entry);
   }
 }
 
@@ -631,7 +732,17 @@ function goBack() {
 
 function handleKeydown(event) {
   if (event.target?.matches?.("input, textarea, select")) return;
-  if (event.code === "Space") {
+  const modifier = event.metaKey || event.ctrlKey;
+  if (modifier && event.key.toLowerCase() === "z") {
+    event.preventDefault();
+    if (event.shiftKey) redo(); else undo();
+  } else if (modifier && event.key.toLowerCase() === "y") {
+    event.preventDefault();
+    redo();
+  } else if (modifier && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    splitAtPlayhead();
+  } else if (event.code === "Space") {
     event.preventDefault();
     togglePlayback();
   } else if (event.key === "ArrowLeft") {
@@ -650,6 +761,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeydown);
+  window.removeEventListener("pointermove", handleTrimMove);
+  window.removeEventListener("pointerup", finishTrim);
 });
 </script>
 
@@ -685,11 +798,11 @@ onBeforeUnmount(() => {
 .transport-btn { width: 26px; height: 26px; border-radius: 7px; background: var(--surface-muted, #f2f4f7); color: var(--ink-primary, #172033); font-size: 11px; font-weight: 800; }
 .transport-btn:disabled { opacity: .4; }
 .timecode { font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-primary, #172033); }
-.timeline-shell { margin-top: 10px; padding: 10px; overflow-x: hidden; }
+.timeline-shell { margin-top: 10px; padding: 10px; overflow-x: auto; }
 .timeline-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; }
 .timeline-meta { font: 700 10px ui-monospace, SFMono-Regular, Menlo, monospace; color: #6366f1; background: var(--surface-muted, #f2f4f7); border: 1px solid var(--outline-border, #e4e7ec); border-radius: 999px; padding: 2px 7px; }
 .tool-btn { padding: 5px 8px; border: 1px solid var(--outline-border, #e4e7ec); border-radius: 7px; background: var(--surface-muted, #f2f4f7); font-size: 10px; font-weight: 700; color: var(--ink-secondary, #4b5565); }
-.tool-btn:hover:not(:disabled) { border-color: #818cf8; color: #4f46e5; }
+.tool-btn:hover:not(:disabled), .tool-btn.active { border-color: #818cf8; color: #4f46e5; }
 .tool-btn.danger:hover:not(:disabled) { border-color: #fb7185; color: #e11d48; }
 .tool-btn:disabled { opacity: .4; }
 .timeline-ruler { position: relative; height: 32px; margin: 6px 0 4px; cursor: crosshair; border-bottom: 1px solid var(--outline-border, #e4e7ec); }
@@ -698,8 +811,9 @@ onBeforeUnmount(() => {
 .ruler-labels span::after { content: ""; display: block; width: 1px; height: 8px; background: var(--outline-border, #d7dce5); margin: 2px auto 0; }
 .playhead { position: absolute; top: 0; bottom: -122px; width: 1px; background: #6366f1; z-index: 10; pointer-events: none; }
 .playhead-head { position: absolute; top: -1px; left: -4px; width: 9px; height: 9px; border-radius: 2px 2px 5px 5px; background: #6366f1; }
-.clip-track { display: flex; align-items: stretch; gap: 0; min-height: 112px; overflow-x: auto; padding: 4px 0 8px; }
-.timeline-clip { position: relative; border: 1px solid var(--outline-border, #dfe3ea); border-radius: 9px; padding: 6px; background: var(--surface-muted, #f5f6f9); cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+.clip-track { min-height: 112px; overflow: visible; padding: 4px 0 8px; }
+.timeline-canvas { position: relative; min-height: 112px; }
+.timeline-clip { position: absolute; top: 4px; bottom: 8px; border: 1px solid var(--outline-border, #dfe3ea); border-radius: 9px; padding: 6px; background: var(--surface-muted, #f5f6f9); cursor: pointer; transition: border-color .12s, box-shadow .12s; }
 .timeline-clip:hover { border-color: #a5b4fc; }
 .timeline-clip.selected { border-color: #6366f1; box-shadow: 0 0 0 2px rgb(99 102 241 / 15%); background: rgb(99 102 241 / 4%); }
 .clip-title-row { display: flex; align-items: center; justify-content: space-between; gap: 5px; height: 18px; font-size: 10px; font-weight: 800; }
@@ -708,7 +822,13 @@ onBeforeUnmount(() => {
 .clip-thumb-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #7d8493; }
 .clip-frame-overlay { position: absolute; inset: auto 4px 3px; display: flex; justify-content: space-between; color: white; font: 8px ui-monospace, SFMono-Regular, Menlo, monospace; text-shadow: 0 1px 4px black; }
 .clip-range { display: flex; justify-content: space-between; margin-top: 4px; color: var(--ink-muted, #8790a3); font: 8px ui-monospace, SFMono-Regular, Menlo, monospace; }
-.transition-node { align-self: center; flex: 0 0 26px; width: 26px; height: 26px; margin: 0 -2px; z-index: 3; border-radius: 999px; border: 1px solid var(--outline-border, #dfe3ea); background: var(--surface-card, #fff); color: var(--ink-muted, #8790a3); font-size: 12px; }
+.transition-node { position: absolute; top: 42px; transform: translateX(-50%); width: 26px; height: 26px; z-index: 3; border-radius: 999px; border: 1px solid var(--outline-border, #dfe3ea); background: var(--surface-card, #fff); color: var(--ink-muted, #8790a3); font-size: 12px; }
+.trim-handle { position: absolute; top: 20px; bottom: 20px; width: 7px; z-index: 4; border: 0; border-radius: 4px; background: rgb(99 102 241 / 75%); opacity: 0; cursor: ew-resize; }
+.timeline-clip:hover .trim-handle, .timeline-clip.selected .trim-handle { opacity: 1; }
+.trim-handle-left { left: 1px; }
+.trim-handle-right { right: 1px; }
+.zoom-control { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border: 1px solid var(--outline-border, #e4e7ec); border-radius: 7px; color: var(--ink-muted, #8790a3); font-size: 11px; }
+.zoom-control input { width: 58px; accent-color: #6366f1; }
 .transition-node.active { border-color: #818cf8; color: #6366f1; background: #eef2ff; }
 .empty-timeline { padding: 28px; text-align: center; color: var(--ink-muted, #8790a3); font-size: 11px; }
 .editor-inspector { min-width: 0; border-left: 1px solid var(--outline-border, #e4e7ec); background: var(--surface-card, #fff); overflow-y: auto; }
