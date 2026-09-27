@@ -222,13 +222,18 @@
           <!-- Selected Shot Video Preview -->
           <video
             v-else-if="activeCanvasMedia?.isVideo && activeCanvasMedia?.url"
+            ref="previewVideo"
             :key="activeCanvasMedia.url"
             :src="activeCanvasMedia.url"
             class="w-full h-full object-contain"
             controls
-            autoplay
-            loop
             preload="metadata"
+            playsinline
+            @loadedmetadata="syncPreviewToPlayhead"
+            @timeupdate="handlePreviewTimeUpdate"
+            @play="isPlaying = true"
+            @pause="isPlaying = false"
+            @ended="handleShotEnded"
           />
 
           <!-- Selected Shot Frame or Image -->
@@ -278,6 +283,10 @@
                 </label>
                 <button type="button" class="jm-btn-secondary text-xs cursor-pointer" @click="openMediaPicker">{{ currentLang === 'vi' ? 'Thư viện Media' : 'Media Library' }}</button>
               </div>
+            </template>
+            <template v-else-if="activeSelectedShot">
+              <p class="text-sm text-ink-primary font-semibold">{{ t('shot_n', { n: activeSelectedShot.shot_number }) }}</p>
+              <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Chưa có video kết xuất cho cảnh này.' : 'No generated video is available for this shot yet.' }}</p>
             </template>
             <template v-else>
               <p class="text-sm text-ink-primary font-semibold">{{ currentLang === 'vi' ? 'Sẵn sàng tạo video' : 'Ready to create your video' }}</p>
@@ -1092,7 +1101,7 @@
 
 <script setup>
 import { Button, FormControl, call, createResource, toast, upload as uploadFile } from "frappe-ui";
-import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useI18n } from "../stores/i18n";
 
@@ -1149,6 +1158,8 @@ const selectedTarget = ref("scene"); // 'scene' | 'asset' | 'keyframe-start' | '
 const selectedAsset = ref(null);
 const assetsExpanded = ref(false);
 const isPlaying = ref(false);
+const previewVideo = ref(null);
+const playheadSeconds = ref(0);
 const openAccordion = reactive({
   subject: false,
   motion: false,
@@ -1175,15 +1186,18 @@ function getShotTimestampRange(shot) {
   return `${formatSecondsLabel(startSec)}–${formatSecondsLabel(endSec)}`;
 }
 
-function togglePlayPause() {
-  isPlaying.value = !isPlaying.value;
-  const videoEl = document.querySelector(".gflow-canvas-viewport video");
-  if (videoEl) {
-    if (isPlaying.value) {
-      videoEl.play().catch(() => {});
-    } else {
-      videoEl.pause();
-    }
+async function togglePlayPause() {
+  const video = previewVideo.value;
+  if (!video) {
+    isPlaying.value = false;
+    return;
+  }
+  if (video.paused) {
+    await video.play().catch(() => {
+      isPlaying.value = false;
+    });
+  } else {
+    video.pause();
   }
 }
 
@@ -1206,6 +1220,7 @@ function selectShotTarget(shot, index) {
 function selectKeyframeTarget(shot, index, type) {
   selectedTarget.value = type === "start" ? "keyframe-start" : "keyframe-end";
   selectedShotIndex.value = index;
+  playheadSeconds.value = shotStartSeconds(index) + (type === "end" ? Number(estimateShotDuration(shot)) : 0);
   previewKeyframe(shot, type);
 }
 
@@ -1304,32 +1319,11 @@ const timelineTicks = computed(() => {
 
 const playheadPercent = computed(() => {
   const total = totalDurationSeconds.value;
-  const list = allShotsList.value;
-  const count = list.length || 1;
-  const activeIdx = Math.max(0, Math.min(count - 1, selectedShotIndex.value));
-  const start = list.slice(0, activeIdx).reduce((sum, shot) => sum + Number(estimateShotDuration(shot)), 0);
-  let currentSeconds = start + Number(estimateShotDuration(list[activeIdx])) / 2;
-  if (selectedTarget.value === "keyframe-start") {
-    currentSeconds = start;
-  } else if (selectedTarget.value === "keyframe-end") {
-    currentSeconds = start + Number(estimateShotDuration(list[activeIdx]));
-  }
-  return Math.min(100, Math.max(0, (currentSeconds / total) * 100));
+  return total ? Math.min(100, Math.max(0, (playheadSeconds.value / total) * 100)) : 0;
 });
 
 const currentTimelinePositionLabel = computed(() => {
-  const total = totalDurationSeconds.value;
-  const list = allShotsList.value;
-  const count = list.length || 1;
-  const activeIdx = Math.max(0, Math.min(count - 1, selectedShotIndex.value));
-  const start = list.slice(0, activeIdx).reduce((sum, shot) => sum + Number(estimateShotDuration(shot)), 0);
-  let s = Math.round(start + Number(estimateShotDuration(list[activeIdx])) / 2);
-  if (selectedTarget.value === "keyframe-start") {
-    s = Math.round(start);
-  } else if (selectedTarget.value === "keyframe-end") {
-    s = Math.round(start + Number(estimateShotDuration(list[activeIdx])));
-  }
-  return formatSecondsLabel(s);
+  return formatSecondsLabel(Math.round(playheadSeconds.value));
 });
 
 const isPlayheadAtKeyframe = computed(() => {
@@ -1391,18 +1385,70 @@ function seekTimelineToPercent(event) {
   const pct = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
 
   const seconds = (pct / 100) * totalDurationSeconds.value;
+  seekTimeline(seconds);
+}
+
+function shotStartSeconds(index) {
+  return allShotsList.value
+    .slice(0, index)
+    .reduce((sum, shot) => sum + Number(estimateShotDuration(shot)), 0);
+}
+
+function seekTimeline(seconds) {
+  const list = allShotsList.value;
+  if (!list.length) return;
+  const clamped = Math.max(0, Math.min(Number(seconds) || 0, totalDurationSeconds.value));
   let elapsed = 0;
-  let clickedShotIndex = 0;
-  for (const [index, shot] of allShotsList.value.entries()) {
-    elapsed += Number(estimateShotDuration(shot));
-    if (seconds <= elapsed) {
-      clickedShotIndex = index;
+  let index = list.length - 1;
+  for (let i = 0; i < list.length; i += 1) {
+    const duration = Number(estimateShotDuration(list[i]));
+    if (clamped <= elapsed + duration || i === list.length - 1) {
+      index = i;
       break;
     }
+    elapsed += duration;
   }
-  const clickedShot = allShotsList.value[clickedShotIndex];
-  if (clickedShot) {
-    selectShotTarget(clickedShot, clickedShotIndex);
+  selectedShotIndex.value = index;
+  selectedTarget.value = "scene";
+  activeCanvasPreview.value = null;
+  previewSelection.value = "shot";
+  playheadSeconds.value = clamped;
+  nextTick(syncPreviewToPlayhead);
+}
+
+function syncPreviewToPlayhead() {
+  const video = previewVideo.value;
+  const shot = activeSelectedShot.value;
+  if (!video || !shot) return;
+  const localTime = Math.max(0, playheadSeconds.value - shotStartSeconds(selectedShotIndex.value));
+  if (Math.abs(video.currentTime - localTime) > 0.05) video.currentTime = localTime;
+}
+
+function handlePreviewTimeUpdate() {
+  if (previewSelection.value !== "shot" || !previewVideo.value) return;
+  playheadSeconds.value = Math.min(
+    totalDurationSeconds.value,
+    shotStartSeconds(selectedShotIndex.value) + previewVideo.value.currentTime,
+  );
+}
+
+async function handleShotEnded() {
+  const nextIndex = selectedShotIndex.value + 1;
+  if (nextIndex >= allShotsList.value.length) {
+    isPlaying.value = false;
+    playheadSeconds.value = totalDurationSeconds.value;
+    return;
+  }
+  selectedShotIndex.value = nextIndex;
+  selectedTarget.value = "scene";
+  activeCanvasPreview.value = null;
+  previewSelection.value = "shot";
+  playheadSeconds.value = shotStartSeconds(nextIndex);
+  await nextTick();
+  const video = previewVideo.value;
+  if (video) {
+    video.currentTime = 0;
+    await video.play().catch(() => { isPlaying.value = false; });
   }
 }
 
@@ -1528,6 +1574,8 @@ function selectShot(shot, index) {
   activeCanvasPreview.value = null;
   previewSelection.value = "shot";
   activeRightTab.value = "shot";
+  playheadSeconds.value = shotStartSeconds(index);
+  nextTick(syncPreviewToPlayhead);
 }
 
 function selectFullVideo() {
@@ -1782,7 +1830,7 @@ function getShotFirstFrame(shot, isPlan = false) {
 }
 
 function getShotVideoFile(shot) {
-  return shot?.output_video || null;
+  return shot?.selected_output_file || shot?.output_video || null;
 }
 
 // Watch settings updates

@@ -400,6 +400,7 @@ def get_campaign_workspace(name):
 					"file",
 				)
 				if selected_output:
+					shot["selected_output_file"] = selected_output
 					shot["output_video"] = selected_output
 			input_rows = frappe.get_all(
 				"Shot Input Mapping",
