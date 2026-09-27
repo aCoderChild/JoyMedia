@@ -11,7 +11,7 @@
         </div>
         <div class="flex items-center gap-2">
           <button type="button" class="jm-btn-secondary text-xs" :disabled="busy" @click="resetTimeline">
-            {{ currentLang === 'vi' ? 'Đặt lại từ cảnh gốc' : 'Reset from shots' }}
+            {{ currentLang === 'vi' ? 'Đặt lại timeline' : 'Reset timeline' }}
           </button>
           <button type="button" class="jm-btn-primary text-xs" :disabled="busy || !clips.length" @click="exportTimeline">
             <span v-if="exporting" class="lucide-refresh-cw size-3 animate-spin" />
@@ -173,6 +173,7 @@
         <button type="button" class="inspector-tab" :class="{ active: rightPanel === 'ai' }" @click="rightPanel = 'ai'">
           ✨ AI Edit
         </button>
+        <button v-if="rightPanel === 'inspector' && selectedClip" type="button" class="reset-icon-btn" :disabled="busy" :title="currentLang === 'vi' ? 'Đặt lại clip' : 'Reset clip'" @click="resetSelectedClip">↺</button>
       </div>
 
       <div v-if="rightPanel === 'inspector' && selectedClip" class="inspector-body">
@@ -192,7 +193,10 @@
         </div>
 
         <div class="inspector-card space-y-2">
-          <div class="section-title">{{ currentLang === 'vi' ? 'Chuyển cảnh tiếp theo' : 'Transition to next' }}</div>
+          <div class="section-title flex items-center justify-between">
+            <span>{{ currentLang === 'vi' ? 'Chuyển cảnh tiếp theo' : 'Transition to next' }}</span>
+            <button v-if="selectedClip.transition_to_next !== 'Cut'" type="button" class="reset-link" :disabled="busy" @click="resetTransition">↺ {{ currentLang === 'vi' ? 'Xóa' : 'Remove' }}</button>
+          </div>
           <select class="field-control" :value="selectedClip.transition_to_next" :disabled="isLastSelected" @change="changeTransitionType($event)">
             <option value="Cut">Cut</option>
             <option value="Dissolve">Dissolve</option>
@@ -261,7 +265,10 @@
             <option value="whole_video">{{ currentLang === 'vi' ? 'Toàn bộ video' : 'Whole video' }}</option>
           </select>
           <textarea ref="aiInput" v-model="aiInstruction" class="ai-input" rows="5" :placeholder="currentLang === 'vi' ? 'Ví dụ: làm cảnh này ngắn hơn và chuyển cảnh mượt hơn' : 'Example: make this shot shorter and use a smoother transition'" />
-          <button type="button" class="action-wide ai-submit" disabled title="Timeline proposal service is not configured">{{ currentLang === 'vi' ? 'Đề xuất AI chưa được cấu hình' : 'AI proposal service unavailable' }}</button>
+          <div class="flex items-center gap-2 mt-2">
+            <button type="button" class="action-wide" :disabled="!aiInstruction" @click="aiInstruction = ''">{{ currentLang === 'vi' ? 'Xóa' : 'Clear' }}</button>
+            <button type="button" class="action-wide ai-submit" disabled title="Timeline proposal service is not configured">{{ currentLang === 'vi' ? 'Hỏi AI' : 'Ask AI' }}</button>
+          </div>
           <p class="helper-text">{{ currentLang === 'vi' ? 'Chưa có API đề xuất chỉnh sửa timeline trong hệ thống hiện tại. Không có thay đổi nào được gửi hoặc áp dụng.' : 'This installation has no timeline proposal API yet. No change is sent or applied.' }}</p>
         </div>
         <div class="inspector-card">
@@ -778,8 +785,36 @@ async function changeTransitionFrames(event) {
   }, clip.name);
 }
 
+async function resetSelectedClip() {
+  const clip = selectedClip.value;
+  if (!clip || busy.value) return;
+  const confirmed = window.confirm(
+    currentLang.value === "vi"
+      ? `Đặt lại ${clipLabel(clip)} về phạm vi nguồn ban đầu?`
+      : `Reset ${clipLabel(clip)} to its original source range?`
+  );
+  if (!confirmed) return;
+  await runEdit("reset_timeline_clip", { clip_name: clip.name }, clip.name);
+}
+
+async function resetTransition() {
+  const clip = selectedClip.value;
+  if (!clip || busy.value || clip.transition_to_next === "Cut") return;
+  await runEdit("set_timeline_transition", {
+    clip_name: clip.name,
+    transition: "Cut",
+    transition_frames: 0,
+  }, clip.name);
+}
+
 async function resetTimeline() {
   if (busy.value) return;
+  const confirmed = window.confirm(
+    currentLang.value === "vi"
+      ? "Đặt lại timeline theo các cảnh đã tạo? Các thao tác cắt, tách, nhân đôi, chuyển cảnh và sắp xếp sẽ bị xóa."
+      : "Reset the timeline to the generated shots? Trims, splits, duplicates, transitions, and ordering will be removed."
+  );
+  if (!confirmed) return;
   busy.value = true;
   try {
     const result = await call("joymedia.services.timeline_editor.reset_project_timeline", { project_name: projectName.value });
@@ -939,9 +974,13 @@ onBeforeUnmount(() => {
 .inspector-tabs { padding: 0 8px; gap: 2px; justify-content: flex-start; }
 .inspector-tab { height: 100%; padding: 0 7px; border-bottom: 2px solid transparent; color: var(--ink-muted, #8790a3); font-size: 10px; font-weight: 800; white-space: nowrap; }
 .inspector-tab.active { color: #4f46e5; border-bottom-color: #6366f1; }
+.reset-icon-btn { margin-left: auto; width: 25px; height: 25px; border-radius: 6px; color: var(--ink-muted, #8790a3); font-size: 16px; }
+.reset-icon-btn:hover:not(:disabled), .reset-link:hover:not(:disabled) { color: #4f46e5; background: #eef2ff; }
+.reset-icon-btn:disabled, .reset-link:disabled { opacity: .4; }
 .inspector-body { padding: 10px; display: flex; flex-direction: column; gap: 9px; }
 .inspector-card { border: 1px solid var(--outline-border, #e4e7ec); border-radius: 11px; background: var(--surface-muted, #f7f8fa); padding: 10px; }
 .section-title { font-size: 10px; font-weight: 800; color: var(--ink-primary, #172033); text-transform: uppercase; letter-spacing: .04em; }
+.reset-link { padding: 2px 4px; border-radius: 5px; color: var(--ink-muted, #8790a3); font-size: 9px; font-weight: 700; text-transform: none; letter-spacing: 0; }
 .stat-box { display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 7px; background: var(--surface-card, #fff); border: 1px solid var(--outline-border, #e4e7ec); }
 .stat-box span { font-size: 8px; color: var(--ink-muted, #8790a3); }
 .stat-box strong { font: 700 9px ui-monospace, SFMono-Regular, Menlo, monospace; }

@@ -14,6 +14,8 @@
   "source_asset_version",
   "source_in_frame",
   "source_out_frame",
+  "initial_source_in_frame",
+  "initial_source_out_frame",
   "transition_section",
   "transition_to_next",
   "transition_frames"
@@ -88,6 +90,19 @@
    "fieldtype": "Int",
    "label": "Source Out Frame",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Baseline source in frame used by Reset Clip.",
+   "fieldname": "initial_source_in_frame",
+   "fieldtype": "Int",
+   "label": "Initial Source In Frame"
+  },
+  {
+   "description": "Baseline source out frame used by Reset Clip.",
+   "fieldname": "initial_source_out_frame",
+   "fieldtype": "Int",
+   "label": "Initial Source Out Frame"
   },
   {
    "fieldname": "transition_section",

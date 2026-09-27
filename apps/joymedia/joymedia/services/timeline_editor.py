@@ -52,6 +52,22 @@ def reset_project_timeline(project_name: str):
 
 
 @frappe.whitelist()
+def reset_timeline_clip(project_name: str, clip_name: str):
+	"""Restore one clip to the source range captured when it was created."""
+	project, clip = _project_clip(project_name, clip_name)
+	initial_in = int(clip.initial_source_in_frame or 0)
+	initial_out = int(clip.initial_source_out_frame or 0)
+	if initial_out <= initial_in:
+		frappe.throw(_("This clip has no stored baseline range. Reset the timeline to shots to recreate it."))
+	clip.source_in_frame = initial_in
+	clip.source_out_frame = initial_out
+	clip.save(ignore_permissions=True)
+	_normalize_transitions(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
+@frappe.whitelist()
 def trim_timeline_clip(project_name: str, clip_name: str, source_in_frame, source_out_frame):
 	project, clip = _project_clip(project_name, clip_name)
 	start = _int_value(source_in_frame, _("Source in frame must be an integer."))
@@ -122,6 +138,8 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 			"source_asset_version": clip.source_asset_version,
 			"source_in_frame": split_frame,
 			"source_out_frame": old_out,
+			"initial_source_in_frame": split_frame,
+			"initial_source_out_frame": old_out,
 			"transition_to_next": old_transition,
 			"transition_frames": old_transition_frames,
 		}
@@ -152,6 +170,8 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 			"source_asset_version": clip.source_asset_version,
 			"source_in_frame": clip.source_in_frame,
 			"source_out_frame": clip.source_out_frame,
+			"initial_source_in_frame": clip.initial_source_in_frame,
+			"initial_source_out_frame": clip.initial_source_out_frame,
 			"transition_to_next": clip.transition_to_next,
 			"transition_frames": clip.transition_frames,
 		}
@@ -263,6 +283,8 @@ def _initialize_timeline(project):
 				"source_asset_version": shot.selected_output_asset_version,
 				"source_in_frame": 0,
 				"source_out_frame": source_out,
+				"initial_source_in_frame": 0,
+				"initial_source_out_frame": source_out,
 				"transition_to_next": "Cut",
 				"transition_frames": 0,
 			}
@@ -308,6 +330,8 @@ def _timeline_clip_rows(project_name):
 			"source_asset_version",
 			"source_in_frame",
 			"source_out_frame",
+			"initial_source_in_frame",
+			"initial_source_out_frame",
 			"transition_to_next",
 			"transition_frames",
 		],
@@ -375,6 +399,8 @@ def _serialize_timeline(project, clips):
 				"source_asset_category": media_asset.asset_category if media_asset else None,
 				"source_in_frame": int(clip.source_in_frame),
 				"source_out_frame": int(clip.source_out_frame),
+				"initial_source_in_frame": int(clip.initial_source_in_frame or clip.source_in_frame),
+				"initial_source_out_frame": int(clip.initial_source_out_frame or clip.source_out_frame),
 				"source_total_frames": source_total_frames,
 				"source_duration_seconds": float(asset.duration_seconds or 0) if asset else 0,
 				"source_fps": float(asset.fps or 0) if asset else 0,
