@@ -16,7 +16,13 @@ def compose_media_specification_from_ui(media_specification_name: str):
 
 
 def compose_media_specification(media_specification_name: str):
-	"""Create a silent, normalized final video from selected shot outputs."""
+	"""Create the final video from the persisted editor timeline.
+
+	Shot order and frame counts are the source of truth. Each generated shot is
+	normalized and trimmed/padded to its planned timeline frame count before the
+	clips are concatenated. This keeps the exported master in sync with the
+	storyboard editor instead of concatenating the full raw generation outputs.
+	"""
 	media_specification = frappe.get_doc("Media Specification", media_specification_name)
 	profile = _get_delivery_profile(media_specification)
 	shots = frappe.get_all(
@@ -25,6 +31,7 @@ def compose_media_specification(media_specification_name: str):
 		fields=[
 			"name",
 			"shot_number",
+			"planned_frame_count",
 			"duration_seconds",
 			"selected_output_asset_version",
 		],
@@ -32,6 +39,7 @@ def compose_media_specification(media_specification_name: str):
 	)
 	_validate_shots(shots, media_specification.name)
 	audio_mixed = False
+	expected_total_frames = sum(_shot_frame_count(shot, profile) for shot in shots)
 
 	try:
 		with tempfile.TemporaryDirectory(prefix="joymedia-compose-") as temp_dir:
@@ -40,14 +48,23 @@ def compose_media_specification(media_specification_name: str):
 			for shot in shots:
 				source_path = _get_shot_output_path(shot)
 				_inspect_video(source_path)
+				planned_frames = _shot_frame_count(shot, profile)
 				normalized_path = temporary_path / f"{shot.shot_number:04d}-{shot.name}.mp4"
-				_normalize_shot(source_path, normalized_path, profile)
-				_validate_normalized_video(normalized_path, profile)
+				_normalize_shot(source_path, normalized_path, profile, planned_frames)
+				_validate_normalized_video(
+					normalized_path,
+					profile,
+					expected_frames=planned_frames,
+				)
 				normalized_paths.append(normalized_path)
 
 			silent_master_path = temporary_path / f"{media_specification.name}-silent.mp4"
 			_concatenate_normalized_shots(normalized_paths, silent_master_path, profile)
-			_validate_normalized_video(silent_master_path, profile)
+			_validate_normalized_video(
+				silent_master_path,
+				profile,
+				expected_frames=expected_total_frames,
+			)
 
 			audio_sources = _get_audio_sources(media_specification, _get_video_duration(silent_master_path))
 			delivery_path = silent_master_path
@@ -55,7 +72,11 @@ def compose_media_specification(media_specification_name: str):
 				delivery_path = temporary_path / f"{media_specification.name}.mp4"
 				_mix_audio(silent_master_path, audio_sources, delivery_path)
 				audio_mixed = True
-			_validate_normalized_video(delivery_path, profile)
+			_validate_normalized_video(
+				delivery_path,
+				profile,
+				expected_frames=expected_total_frames,
+			)
 			video_duration = _get_video_duration(delivery_path)
 			video_bytes = delivery_path.read_bytes()
 	except (OSError, subprocess.CalledProcessError, ValueError) as exc:
@@ -88,7 +109,12 @@ def compose_media_specification(media_specification_name: str):
 
 	media_specification.final_asset_version = asset_version.name
 	media_specification.save(ignore_permissions=True)
-	return {"final_asset_version": asset_version.name}
+	return {
+		"final_asset_version": asset_version.name,
+		"duration_seconds": video_duration,
+		"timeline_frames": expected_total_frames,
+		"audio_mixed": audio_mixed,
+	}
 
 
 def _get_delivery_profile(media_specification):
@@ -111,6 +137,19 @@ def _get_delivery_profile(media_specification):
 	}
 
 
+def _shot_frame_count(shot, profile):
+	"""Return the persisted frame-exact duration used by the editor/exporter."""
+	planned_frames = int(shot.get("planned_frame_count") or 0)
+	if planned_frames > 0:
+		return planned_frames
+
+	duration_seconds = float(shot.get("duration_seconds") or 0)
+	frames = round(duration_seconds * profile["fps"])
+	if frames <= 0:
+		raise ValueError(f"Shot {shot.name} has no positive timeline duration")
+	return frames
+
+
 def _validate_shots(shots, media_specification_name):
 	if not shots:
 		frappe.throw(_("Media Specification {0} has no Shot Specifications.").format(media_specification_name))
@@ -124,6 +163,8 @@ def _validate_shots(shots, media_specification_name):
 		seen_numbers.add(shot.shot_number)
 		if not shot.selected_output_asset_version:
 			frappe.throw(_("Shot {0} has no selected output asset version.").format(shot.name))
+		if float(shot.duration_seconds or 0) <= 0 and int(shot.planned_frame_count or 0) <= 0:
+			frappe.throw(_("Shot {0} has no positive timeline duration.").format(shot.name))
 
 
 def _get_shot_output_path(shot):
@@ -187,10 +228,24 @@ def _get_audio_asset_path(asset_version_name):
 	return path
 
 
-def _normalize_shot(source_path, normalized_path, profile):
+def _normalize_shot(source_path, normalized_path, profile, planned_frames):
+	"""Normalize one clip and force it to the exact editor frame count.
+
+	The generated source may be longer or shorter than the edited timeline clip.
+	Long clips are trimmed. Short clips are padded by holding the final frame,
+	which makes the existing UI's Extend action deterministic instead of silently
+	being ignored by the final composition step.
+	"""
+	if planned_frames <= 0:
+		raise ValueError("Shot planned frame count must be greater than zero")
+
+	planned_duration = planned_frames / profile["fps"]
 	video_filter = (
+		f"fps={profile['fps']:g},"
+		f"tpad=stop_mode=clone:stop_duration={planned_duration:.6f},"
+		f"trim=end_frame={planned_frames},setpts=PTS-STARTPTS,"
 		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=decrease,"
-		f"pad={profile['width']}:{profile['height']}:(ow-iw)/2:(oh-ih)/2,fps={profile['fps']:g}"
+		f"pad={profile['width']}:{profile['height']}:(ow-iw)/2:(oh-ih)/2"
 	)
 	_run_ffmpeg(
 		[
@@ -379,7 +434,7 @@ def _has_audio_stream(path):
 	return bool(json.loads(result.stdout).get("streams"))
 
 
-def _validate_normalized_video(path, profile):
+def _validate_normalized_video(path, profile, expected_frames=None):
 	stream = _inspect_video(path)
 	if (
 		stream.get("codec_name") != "h264"
@@ -390,6 +445,16 @@ def _validate_normalized_video(path, profile):
 		or abs(_frame_rate(stream.get("r_frame_rate")) - profile["fps"]) > 0.001
 	):
 		raise ValueError(f"{path} does not match the normalized delivery profile")
+
+	if expected_frames is not None:
+		expected_duration = expected_frames / profile["fps"]
+		actual_duration = _get_video_duration(path)
+		frame_tolerance = (1 / profile["fps"]) + 0.01
+		if abs(actual_duration - expected_duration) > frame_tolerance:
+			raise ValueError(
+				f"{path} duration {actual_duration:.6f}s does not match timeline "
+				f"duration {expected_duration:.6f}s"
+			)
 
 
 def _frame_rate(value):
