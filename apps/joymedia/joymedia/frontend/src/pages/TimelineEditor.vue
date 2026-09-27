@@ -264,7 +264,7 @@ const fps = computed(() => Number(timeline.value?.fps || 0));
 const selectedClip = computed(() => clips.value.find((clip) => clip.name === selectedClipName.value) || clips.value[0] || null);
 const selectedIndex = computed(() => clips.value.findIndex((clip) => clip.name === selectedClip.value?.name));
 const isLastSelected = computed(() => selectedIndex.value < 0 || selectedIndex.value === clips.value.length - 1);
-const fpsLabel = computed(() => fps.value ? `${fps.value:g}`.replace(":g", "") + " fps" : "-- fps");
+const fpsLabel = computed(() => fps.value ? `${fps.value} fps` : "-- fps");
 const durationLabel = computed(() => `${Number(timeline.value?.total_seconds || 0).toFixed(2)}s`);
 const playheadPercent = computed(() => {
   const total = Number(timeline.value?.total_frames || 0);
@@ -555,11 +555,16 @@ async function changeTransitionType(event) {
   const clip = selectedClip.value;
   if (!clip) return;
   const transition = event.target.value;
-  const defaultFrames = transition === "Cut" ? 0 : Math.max(1, Math.round(fps.value * 0.35));
+  let transitionFrames = 0;
+  if (transition !== "Cut") {
+    const nextClip = clips.value[selectedIndex.value + 1];
+    const maxFrames = Math.max(1, Math.min(clip.duration_frames, nextClip?.duration_frames || clip.duration_frames) - 1);
+    transitionFrames = Math.min(maxFrames, Math.max(1, Math.round(fps.value * 0.35)));
+  }
   await runEdit("set_timeline_transition", {
     clip_name: clip.name,
     transition,
-    transition_frames: defaultFrames,
+    transition_frames: transitionFrames,
   }, clip.name);
 }
 
