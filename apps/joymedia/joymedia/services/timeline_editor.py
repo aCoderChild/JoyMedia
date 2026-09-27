@@ -30,7 +30,7 @@ def get_project_timeline(project_name: str, create_if_possible=True):
 
 @frappe.whitelist()
 def reset_project_timeline(project_name: str):
-	"""Rebuild the edit timeline from the newest generated shot outputs."""
+	"""Rebuild the edit timeline from the newest fully generated shot set."""
 	project = frappe.get_doc("Media Project", project_name)
 	project.check_permission("write")
 	for clip_name in frappe.get_all("Timeline Clip", filters={"media_project": project.name}, pluck="name"):
@@ -81,7 +81,7 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 	"""Split one clip at an absolute source frame and keep source lineage intact."""
 	project, clip = _project_clip(project_name, clip_name)
 	split_frame = _int_value(source_split_frame, _("Split frame must be an integer."))
-	if split_frame <= clip.source_in_frame or split_frame >= clip.source_out_frame:
+	if split_frame <= int(clip.source_in_frame) or split_frame >= int(clip.source_out_frame):
 		frappe.throw(_("Split frame must be inside the clip source range."))
 
 	clips = _timeline_clip_rows(project.name)
@@ -142,7 +142,8 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 			"transition_frames": clip.transition_frames,
 		}
 	).insert(ignore_permissions=True)
-	# A duplicate should not consume the original clip's outgoing transition.
+	# A duplicate is an independent edit instance. The original becomes a cut
+	# into the duplicate; the duplicate inherits the former outgoing transition.
 	clip.transition_to_next = "Cut"
 	clip.transition_frames = 0
 	clip.save(ignore_permissions=True)
@@ -175,7 +176,7 @@ def set_timeline_transition(project_name: str, clip_name: str, transition: str, 
 	if transition == "Cut":
 		frames = 0
 
-	clips = _timeline_clip_rows(project.name)
+	clips = _enabled_clips(_timeline_clip_rows(project.name))
 	index = next((index for index, row in enumerate(clips) if row.name == clip.name), None)
 	if index is None:
 		frappe.throw(_("Timeline clip was not found."))
@@ -213,7 +214,7 @@ def _initialize_timeline(project):
 	if frappe.db.exists("Timeline Clip", {"media_project": project.name}):
 		return
 
-	media_specification = _latest_specification_with_outputs(project.name)
+	media_specification = _latest_fully_generated_specification(project.name)
 	if not media_specification:
 		return
 	fps = _project_fps(media_specification.name)
@@ -229,7 +230,7 @@ def _initialize_timeline(project):
 		],
 		order_by="shot_number asc, name asc",
 	)
-	for order, shot in enumerate((row for row in shots if row.selected_output_asset_version), start=1):
+	for order, shot in enumerate(shots, start=1):
 		planned_frames = int(shot.planned_frame_count or round(float(shot.duration_seconds or 0) * fps))
 		if planned_frames <= 0:
 			continue
@@ -255,7 +256,13 @@ def _initialize_timeline(project):
 	frappe.db.commit()
 
 
-def _latest_specification_with_outputs(project_name):
+def _latest_fully_generated_specification(project_name):
+	"""Pick the newest spec only when every storyboard shot has a selected video.
+
+	Generation results arrive shot-by-shot. Creating the edit timeline after the
+	first completed shot would permanently omit later shots, so initialization is
+	deferred until the entire shot set is ready.
+	"""
 	specifications = frappe.get_all(
 		"Media Specification",
 		filters={"media_project": project_name},
@@ -263,13 +270,12 @@ def _latest_specification_with_outputs(project_name):
 		order_by="version_number desc, creation desc",
 	)
 	for specification in specifications:
-		if frappe.db.exists(
+		shots = frappe.get_all(
 			"Shot Specification",
-			{
-				"media_specification": specification.name,
-				"selected_output_asset_version": ["is", "set"],
-			},
-		):
+			filters={"media_specification": specification.name},
+			fields=["name", "selected_output_asset_version"],
+		)
+		if shots and all(row.selected_output_asset_version for row in shots):
 			return frappe.get_doc("Media Specification", specification.name)
 	return None
 
@@ -295,8 +301,13 @@ def _timeline_clip_rows(project_name):
 	)
 
 
+def _enabled_clips(clips):
+	return [clip for clip in clips if clip.enabled]
+
+
 def _serialize_timeline(project, clips):
-	if not clips:
+	enabled_clips = _enabled_clips(clips)
+	if not enabled_clips:
 		return {
 			"ready": False,
 			"project": project.name,
@@ -304,16 +315,14 @@ def _serialize_timeline(project, clips):
 			"fps": 0,
 			"total_frames": 0,
 			"total_seconds": 0,
-			"message": _("Generate at least one shot before opening the edit timeline."),
+			"message": _("Generate every shot before opening the edit timeline."),
 		}
 
-	specification_name = clips[0].media_specification
+	specification_name = enabled_clips[0].media_specification
 	fps = _project_fps(specification_name)
 	cursor = 0
 	serialized = []
-	for index, clip in enumerate(clips):
-		if not clip.enabled:
-			continue
+	for index, clip in enumerate(enabled_clips):
 		length = _clip_length(clip)
 		asset = frappe.db.get_value(
 			"Asset Version",
@@ -335,7 +344,7 @@ def _serialize_timeline(project, clips):
 		end = start + length
 		transition = clip.transition_to_next or "Cut"
 		transition_frames = int(clip.transition_frames or 0) if transition != "Cut" else 0
-		if index == len(clips) - 1:
+		if index == len(enabled_clips) - 1:
 			transition = "Cut"
 			transition_frames = 0
 		serialized.append(
@@ -377,13 +386,12 @@ def _final_video(specification_name):
 	asset_version_name = frappe.db.get_value("Media Specification", specification_name, "final_asset_version")
 	if not asset_version_name:
 		return None
-	asset = frappe.db.get_value(
+	return frappe.db.get_value(
 		"Asset Version",
 		asset_version_name,
 		["name", "file", "duration_seconds", "fps"],
 		as_dict=True,
 	)
-	return asset
 
 
 def _project_clip(project_name, clip_name):
@@ -427,7 +435,7 @@ def _set_clip_order(clips):
 
 
 def _normalize_transitions(project_name):
-	clips = _timeline_clip_rows(project_name)
+	clips = _enabled_clips(_timeline_clip_rows(project_name))
 	for index, clip in enumerate(clips):
 		transition = clip.transition_to_next or "Cut"
 		frames = int(clip.transition_frames or 0)
