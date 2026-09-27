@@ -1,0 +1,147 @@
+{
+ "actions": [],
+ "autoname": "TLCLIP-.#####",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "timeline_section",
+  "media_project",
+  "media_specification",
+  "shot_specification",
+  "clip_order",
+  "enabled",
+  "source_section",
+  "source_asset_version",
+  "source_in_frame",
+  "source_out_frame",
+  "transition_section",
+  "transition_to_next",
+  "transition_frames"
+ ],
+ "fields": [
+  {
+   "fieldname": "timeline_section",
+   "fieldtype": "Section Break",
+   "label": "Timeline"
+  },
+  {
+   "fieldname": "media_project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Media Project",
+   "options": "Media Project",
+   "reqd": 1
+  },
+  {
+   "fieldname": "media_specification",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Media Specification",
+   "options": "Media Specification",
+   "reqd": 1
+  },
+  {
+   "description": "Generation shot that produced the clip. The timeline can contain multiple clip instances derived from one shot.",
+   "fieldname": "shot_specification",
+   "fieldtype": "Link",
+   "label": "Source Shot",
+   "options": "Shot Specification"
+  },
+  {
+   "fieldname": "clip_order",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Clip Order",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "source_section",
+   "fieldtype": "Section Break",
+   "label": "Source Range"
+  },
+  {
+   "description": "Immutable media version used by this editable timeline clip.",
+   "fieldname": "source_asset_version",
+   "fieldtype": "Link",
+   "label": "Source Asset Version",
+   "options": "Asset Version",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Inclusive source frame at the project delivery FPS.",
+   "fieldname": "source_in_frame",
+   "fieldtype": "Int",
+   "label": "Source In Frame",
+   "reqd": 1
+  },
+  {
+   "description": "Exclusive source frame at the project delivery FPS.",
+   "fieldname": "source_out_frame",
+   "fieldtype": "Int",
+   "label": "Source Out Frame",
+   "reqd": 1
+  },
+  {
+   "fieldname": "transition_section",
+   "fieldtype": "Section Break",
+   "label": "Transition"
+  },
+  {
+   "default": "Cut",
+   "description": "Transition from this clip into the next enabled clip.",
+   "fieldname": "transition_to_next",
+   "fieldtype": "Select",
+   "label": "Transition to Next",
+   "options": "Cut\nDissolve\nFade",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Transition overlap measured in project timeline frames. Ignored for Cut.",
+   "fieldname": "transition_frames",
+   "fieldtype": "Int",
+   "label": "Transition Frames"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "module": "JoyMedia",
+ "name": "Timeline Clip",
+ "naming_rule": "Expression",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "JoyMedia Specialist",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "JoyMedia User",
+   "write": 1
+  }
+ ],
+ "sort_field": "clip_order",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 1
+}
