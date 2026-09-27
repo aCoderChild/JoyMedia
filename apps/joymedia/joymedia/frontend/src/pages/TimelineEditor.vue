@@ -338,10 +338,18 @@ function recordHistory(entry) {
 function rippleTimeline(value) {
   const next = cloneTimeline(value);
   let cursor = 0;
-  next.clips = (next.clips || []).map((clip) => {
+  next.clips = (next.clips || []).map((clip, index, list) => {
     const duration = Math.max(1, Number(clip.source_out_frame) - Number(clip.source_in_frame));
-    const updated = { ...clip, duration_frames: duration, timeline_start_frame: cursor, timeline_end_frame: cursor + duration };
-    cursor += duration;
+    const transitionFrames = index < list.length - 1 && clip.transition_to_next !== "Cut"
+      ? Math.max(0, Number(clip.transition_frames || 0))
+      : 0;
+    const updated = {
+      ...clip,
+      duration_frames: duration,
+      timeline_start_frame: cursor,
+      timeline_end_frame: cursor + duration,
+    };
+    cursor += duration - transitionFrames;
     return updated;
   });
   next.total_frames = cursor;
@@ -356,8 +364,11 @@ function snapFrame(frame, clipName) {
   clips.value.forEach((clip) => {
     if (clip.name !== clipName) candidates.push(Number(clip.timeline_start_frame), Number(clip.timeline_end_frame));
   });
-  const nearest = candidates.find((candidate) => Math.abs(candidate - rounded) <= 3);
-  return nearest == null ? rounded : nearest;
+  const nearest = candidates
+    .map((candidate) => ({ candidate, distance: Math.abs(candidate - rounded) }))
+    .filter((item) => item.distance <= 3)
+    .sort((left, right) => left.distance - right.distance)[0];
+  return nearest == null ? rounded : nearest.candidate;
 }
 
 async function loadWorkspace() {
@@ -493,8 +504,14 @@ function handleTrimMove(event) {
   const delta = Math.round((event.clientX - drag.startX) / pixelsPerFrame.value);
   const edgeFrame = drag.edge === "left" ? drag.originalTimelineStart : drag.originalTimelineEnd;
   const timelineDelta = snapFrame(edgeFrame + delta, clip.name) - edgeFrame;
-  const nextIn = drag.edge === "left" ? Math.max(0, Math.min(drag.originalOut - 1, drag.originalIn + timelineDelta)) : drag.originalIn;
-  const nextOut = drag.edge === "right" ? Math.max(drag.originalIn + 1, drag.originalOut + timelineDelta) : drag.originalOut;
+  const minDuration = Math.max(1, Number(clip.min_duration_frames || Math.round(fps.value * 0.25)));
+  const sourceMax = Number(clip.source_total_frames || drag.originalOut);
+  const nextIn = drag.edge === "left"
+    ? Math.max(0, Math.min(drag.originalOut - minDuration, drag.originalIn + timelineDelta))
+    : drag.originalIn;
+  const nextOut = drag.edge === "right"
+    ? Math.min(sourceMax, Math.max(drag.originalIn + minDuration, drag.originalOut + timelineDelta))
+    : drag.originalOut;
   const next = cloneTimeline(timeline.value);
   const target = next.clips.find((item) => item.name === clip.name);
   if (!target) return;

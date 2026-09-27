@@ -11,6 +11,7 @@ from frappe import _
 
 
 TRANSITIONS = {"Cut", "Dissolve", "Fade"}
+MIN_CLIP_SECONDS = 0.25
 
 
 @frappe.whitelist()
@@ -61,6 +62,9 @@ def trim_timeline_clip(project_name: str, clip_name: str, source_in_frame, sourc
 	max_frames = _source_max_frames(clip.source_asset_version, _project_fps(clip.media_specification))
 	if max_frames and end > max_frames:
 		frappe.throw(_("The requested trim exceeds the source clip duration ({0} frames).").format(max_frames))
+	min_frames = _minimum_clip_frames(_project_fps(clip.media_specification))
+	if end - start < min_frames:
+		frappe.throw(_("A timeline clip must be at least {0} frames long.").format(min_frames))
 
 	clip.source_in_frame = start
 	clip.source_out_frame = end
@@ -340,6 +344,8 @@ def _serialize_timeline(project, clips):
 			["name", "media_asset", "file", "duration_seconds", "fps"],
 			as_dict=True,
 		)
+		source_total_frames = _source_max_frames(clip.source_asset_version, fps)
+		min_duration_frames = _minimum_clip_frames(fps)
 		media_asset = (
 			frappe.db.get_value("Media Asset", asset.media_asset, ["asset_name", "asset_category"], as_dict=True)
 			if asset
@@ -369,6 +375,12 @@ def _serialize_timeline(project, clips):
 				"source_asset_category": media_asset.asset_category if media_asset else None,
 				"source_in_frame": int(clip.source_in_frame),
 				"source_out_frame": int(clip.source_out_frame),
+				"source_total_frames": source_total_frames,
+				"source_duration_seconds": float(asset.duration_seconds or 0) if asset else 0,
+				"source_fps": float(asset.fps or 0) if asset else 0,
+				"available_head_frames": max(0, int(clip.source_in_frame)),
+				"available_tail_frames": max(0, int(source_total_frames or clip.source_out_frame) - int(clip.source_out_frame)),
+				"min_duration_frames": min_duration_frames,
 				"duration_frames": length,
 				"duration_seconds": length / fps,
 				"timeline_start_frame": start,
@@ -433,6 +445,10 @@ def _source_max_frames(asset_version_name, project_fps):
 	if not asset or not asset.duration_seconds:
 		return None
 	return max(1, round(float(asset.duration_seconds) * project_fps))
+
+
+def _minimum_clip_frames(project_fps):
+	return max(1, round(MIN_CLIP_SECONDS * project_fps))
 
 
 def _clip_length(clip):
