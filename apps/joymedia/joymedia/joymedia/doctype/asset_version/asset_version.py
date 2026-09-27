@@ -1,6 +1,7 @@
 # Copyright (c) 2026, JoyMedia and contributors
 # For license information, please see license.txt
 
+import hashlib
 import json
 import subprocess
 
@@ -11,17 +12,55 @@ from frappe.model.document import Document
 
 
 class AssetVersion(Document):
+	IMMUTABLE_FIELDS = (
+		"media_asset",
+		"file",
+		"source",
+		"version_number",
+		"derived_from",
+		"content_hash",
+		"width",
+		"height",
+		"duration_seconds",
+		"fps",
+	)
+
 	def validate(self):
-		self.set_file_metadata()
+		if self.is_new():
+			self.set_file_metadata()
+			self.set_content_hash()
+		else:
+			self.validate_immutable_fields()
 
 	def before_insert(self):
+		# Lock the parent asset row while allocating the next number. This
+		# serializes concurrent inserts for the same logical Media Asset.
+		frappe.db.sql("SELECT name FROM `tabMedia Asset` WHERE name=%s FOR UPDATE", self.media_asset)
 		latest_version = frappe.db.get_value(
-			"Asset Version",
-			{"media_asset": self.media_asset},
-			[{"MAX": "version_number"}],
-			order_by=None,
+			"Asset Version", {"media_asset": self.media_asset}, [{"MAX": "version_number"}], order_by=None
 		)
 		self.version_number = (latest_version or 0) + 1
+
+	def validate_immutable_fields(self):
+		previous = frappe.db.get_value(
+			"Asset Version", self.name, list(self.IMMUTABLE_FIELDS), as_dict=True
+		)
+		if not previous:
+			return
+		for fieldname in self.IMMUTABLE_FIELDS:
+			if self.get(fieldname) != previous.get(fieldname):
+				frappe.throw(f"Asset Version {self.name} is immutable; create a new version instead of changing {fieldname}.")
+
+	def set_content_hash(self):
+		if not self.file:
+			self.content_hash = None
+			return
+		file_doc = frappe.get_doc("File", {"file_url": self.file})
+		digest = hashlib.sha256()
+		with open(file_doc.get_full_path(), "rb") as file_handle:
+			for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+				digest.update(chunk)
+		self.content_hash = digest.hexdigest()
 
 	def set_file_metadata(self):
 		self.width = None

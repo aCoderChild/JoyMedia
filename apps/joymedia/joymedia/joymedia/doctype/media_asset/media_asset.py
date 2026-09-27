@@ -8,7 +8,7 @@ from frappe.model.document import Document
 class MediaAsset(Document):
 	def validate(self):
 		if not self.library_visibility:
-			self.library_visibility = "Internal" if self.asset_category in {"Shot Output", "Storyboard"} else "Visible"
+			self.library_visibility = "Internal" if self.asset_category in {"Shot Output", "Storyboard", "Continuation Frame"} else "Visible"
 
 		if not self.client_organization:
 			frappe.throw("Client Organization is required for every Media Asset")

@@ -306,7 +306,7 @@
           <label class="block text-ink-secondary font-semibold mb-1">{{ t('upload_file_label') }}</label>
           <input
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
+            accept="image/png,image/jpeg,image/webp,image/gif"
             class="w-full text-xs text-ink-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-surface-muted file:text-ink-primary hover:file:bg-surface-hover cursor-pointer"
             @change="onFileChange"
           />
@@ -342,7 +342,6 @@ const selectedFile = ref(null);
 const typeOptions = computed(() => [
   { label: t('type_all_assets'), value: "All" },
   { label: t('type_images'), value: "Images" },
-  { label: t('type_videos'), value: "Videos" },
 ]);
 
 const categoryOptions = computed(() => [

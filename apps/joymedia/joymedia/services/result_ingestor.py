@@ -229,7 +229,7 @@ def _get_or_create_continuation_asset(shot_name, media_project):
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
 			"media_type": "Image",
-			"asset_category": "Other",
+			"asset_category": "Continuation Frame",
 			"library_visibility": "Internal",
 			"media_project": media_project,
 			"client_organization": frappe.db.get_value("Media Project", media_project, "client_organization"),

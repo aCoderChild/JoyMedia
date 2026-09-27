@@ -10,6 +10,7 @@
   "media_asset",
   "version_number",
   "file",
+  "content_hash",
   "source",
   "technical_metadata_section",
   "width",
@@ -47,6 +48,15 @@
    "fieldtype": "Attach",
    "label": "File",
    "reqd": 1
+  },
+ {
+   "description": "SHA-256 hash of the immutable file represented by this version.",
+   "fieldname": "content_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Content Hash",
+   "length": 64,
+   "read_only": 1
   },
   {
    "default": "Uploaded",

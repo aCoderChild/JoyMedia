@@ -23,7 +23,7 @@ ALLOWED_STATUSES = {
 }
 MIN_SHOT_DURATION_SECONDS = 2.5
 INPUT_ASSET_CATEGORIES = {"Product", "Character", "Background", "Brand", "Style", "Reference"}
-OUTPUT_ASSET_CATEGORIES = {"Shot Output", "Final Deliverable", "Storyboard", "Other"}
+OUTPUT_ASSET_CATEGORIES = {"Shot Output", "Final Deliverable", "Storyboard"}
 SHOT_REFERENCE_CATEGORIES = INPUT_ASSET_CATEGORIES
 
 
@@ -37,7 +37,19 @@ def _ensure_unique_uploaded_file(file_doc, organization, reuse_existing=False):
 		for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
 			digest.update(chunk)
 	content_hash = digest.hexdigest()
-	existing = frappe.db.get_value(
+	existing = frappe.db.sql(
+		"""
+		SELECT asset.name, asset.asset_name
+		FROM `tabMedia Asset` asset
+		INNER JOIN `tabAsset Version` version ON version.media_asset = asset.name
+		WHERE asset.client_organization = %s AND version.content_hash = %s
+		ORDER BY version.creation ASC
+		LIMIT 1
+		""",
+		(organization, content_hash),
+		as_dict=True,
+	)
+	existing = existing[0] if existing else frappe.db.get_value(
 		"Media Asset",
 		{"client_organization": organization, "content_hash": content_hash},
 		["name", "asset_name"],
@@ -187,7 +199,6 @@ def _copy_storyboard_shots(source_specification, target_specification):
 				"environment": source.environment,
 				"generation_prompt": source.generation_prompt,
 				"audio_direction": source.audio_direction,
-				"selected_output_asset_version": source.selected_output_asset_version,
 			}
 		)
 		for input_row in source.generation_inputs or []:
@@ -725,7 +736,7 @@ def select_project_reference(media_project, asset_name):
 	project.append("selected_media", {"asset_version": asset_version.name})
 	project.save(ignore_permissions=True)
 	frappe.db.commit()
-	return {"asset_version": asset_version, "selected": True}
+	return {"asset_version": asset_version.name, "selected": True}
 
 
 @frappe.whitelist()
@@ -1152,6 +1163,9 @@ def update_campaign_shot(campaign_name, shot_name, values):
 	for f in updatable_fields:
 		if f in values:
 			setattr(shot, f, values[f])
+	# Editing the prompt invalidates the current rendered take. The old take
+	# remains available as history, but is no longer the current output.
+	shot.selected_output_asset_version = None
 
 	# The generation prompt is derived from the editable storyboard fields. Do
 	# not trust a prompt snapshot sent by the browser: it may be stale after a
@@ -1222,6 +1236,7 @@ def set_campaign_shot_keyframe(campaign_name, shot_name, frame_role, asset_versi
 		],
 	)
 	shot.append("generation_inputs", {"input_role": frame_role, "asset_version": asset.name})
+	shot.selected_output_asset_version = None
 	shot.save(ignore_permissions=True)
 	frappe.db.commit()
 	return {"shot_name": shot.name, "shot_number": shot.shot_number, "frame_role": frame_role}
@@ -1258,6 +1273,8 @@ def update_campaign_shot_timing(campaign_name, shot_name, duration_seconds):
 		frappe.throw(_("Shot does not belong to the current Campaign revision."))
 	if media_specification.status != "Draft":
 		frappe.throw(_("Create a storyboard revision before changing shot timing."))
+	shot.selected_output_asset_version = None
+	shot.save(ignore_permissions=True)
 
 	shots = frappe.get_all(
 		"Shot Specification",
@@ -1593,8 +1610,8 @@ def create_organization_asset(asset_name, asset_category, file_url, media_type="
 		frappe.throw(_("You can only attach files uploaded by your account."))
 	if asset_category not in INPUT_ASSET_CATEGORIES:
 		frappe.throw(_("Uploaded assets must be reference inputs (Product, Character, Background, Brand, Style, Reference)."))
-	if media_type not in {"Image", "Video"}:
-		frappe.throw(_("Only image and video assets can be uploaded to the Media Library."))
+	if media_type != "Image":
+		frappe.throw(_("The current project reference pipeline accepts image assets only."))
 	content_hash = _ensure_unique_uploaded_file(file_doc, organizations[0].name)
 	asset = frappe.get_doc(
 		{
@@ -1629,11 +1646,10 @@ def get_library_assets(scope=None, asset_type=None):
 		"library_visibility": "Visible",
 		"client_organization": organizations[0].name,
 		"media_project": ["is", "not set"],
+		"media_type": "Image",
 	}
 	if asset_type == "Images":
 		filters["media_type"] = "Image"
-	elif asset_type == "Videos":
-		filters["media_type"] = "Video"
 
 	assets = frappe.get_list(
 		"Media Asset",
@@ -1722,6 +1738,9 @@ def create_campaign_asset(media_project, asset_name, asset_category, file_url):
 		)
 		if not existing_version:
 			frappe.throw(_("The existing library asset has no file version."))
+		if not any(row.asset_version == existing_version for row in media_project.selected_media or []):
+			media_project.append("selected_media", {"asset_version": existing_version})
+			media_project.save(ignore_permissions=True)
 		frappe.db.commit()
 		return {"asset": existing_asset.name, "version": existing_version, "reused": True}
 	content_hash = content_hash_result
