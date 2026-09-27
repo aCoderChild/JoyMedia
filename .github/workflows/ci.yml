@@ -94,9 +94,9 @@ jobs:
           git -C "$GITHUB_WORKSPACE/apps/joymedia" add -A
           git -C "$GITHUB_WORKSPACE/apps/joymedia" commit -m "Prepare local JoyMedia app source"
           bench get-app --skip-assets joymedia $GITHUB_WORKSPACE/apps/joymedia
-          grep -qxF joymedia sites/apps.txt || echo joymedia >> sites/apps.txt
           bench setup requirements --dev
           bench new-site --db-root-password root --admin-password admin test_site
+          grep -qxF joymedia sites/apps.txt || echo joymedia >> sites/apps.txt
           bench --site test_site install-app joymedia
           bench build
         env:
