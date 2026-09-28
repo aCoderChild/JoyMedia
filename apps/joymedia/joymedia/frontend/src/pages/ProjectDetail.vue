@@ -138,6 +138,7 @@
           </div>
           <div class="flex items-center gap-2 shrink-0">
             <button
+              v-if="!magicGenerateError"
               type="button"
               class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"
               :disabled="retryingFailedScenes"
@@ -398,7 +399,7 @@
               class="jm-btn-primary text-xs !py-1 !px-2.5 shadow-xs"
               @click="handleMagicGenerateClick"
             >
-              {{ t('btn_ai_script') }}
+              {{ currentLang === 'vi' ? 'Tạo video' : 'Generate video' }}
             </button>
             <button
               v-else
@@ -929,7 +930,8 @@
               <button type="button" class="hover:text-ink-primary cursor-pointer" title="Báo cáo">⚑</button>
             </div>
             <span class="text-xs font-mono bg-surface-card px-2 py-0.5 rounded-md border border-outline-border text-ink-secondary">
-              {{ expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh' : 'shots' }}
+              {{ hasStoryboard ? expectedShotCount : (currentLang === 'vi' ? `Dự kiến: ${expectedShotCount}` : `Planned: ${expectedShotCount}`) }}
+              {{ hasStoryboard ? (currentLang === 'vi' ? 'cảnh đã tạo' : 'shots created') : (currentLang === 'vi' ? 'cảnh' : 'shots') }}
             </span>
           </div>
         </div>
@@ -1227,6 +1229,7 @@ function selectKeyframeTarget(shot, index, type) {
 // 1-Click Auto Generation State
 const isAutoGenerating = ref(false);
 const autoGenerateStep = ref("");
+const magicGenerateError = ref("");
 
 const settingsForm = reactive({ duration: 15, format: "Landscape", video_style: "", continuity_mode: "Multi-shot" });
 const totalDurationSeconds = computed(() => Number(settingsForm.duration) || 15);
@@ -1296,7 +1299,7 @@ const generateButtonText = computed(() => {
   if (hasStoryboard.value) {
     return currentLang.value === "vi" ? "Tạo video" : "Generate video";
   }
-  return currentLang.value === "vi" ? "Tạo tự động 1 chạm" : "1-Click Magic Generate";
+  return currentLang.value === "vi" ? "Tạo video" : "Generate video";
 });
 
 const timelineTicks = computed(() => {
@@ -1453,6 +1456,7 @@ async function handleShotEnded() {
 }
 
 const productionError = computed(() => {
+  if (magicGenerateError.value) return magicGenerateError.value;
   if (!production.value) return "";
   if (production.value.error_summary) return production.value.error_summary;
   const failedJob = (production.value.jobs || []).find(
@@ -2037,7 +2041,23 @@ async function saveSettings() {
   }
 }
 
-// 1-Click Magic Generate Pipeline for Sellers
+function extractFrappeError(error) {
+  if (error?.messages?.length) return error.messages.join(" ");
+  if (error?._server_messages) {
+    try {
+      const messages = JSON.parse(error._server_messages);
+      const message = messages
+        .map((item) => typeof item === "string" ? item : item.message)
+        .filter(Boolean)
+        .join(" ");
+      if (message) return message;
+    } catch (parseError) {
+      // Fall through to the regular error message.
+    }
+  }
+  return error?.message || (currentLang.value === "vi" ? "Không thể tạo video." : "Video generation failed.");
+}
+
 async function handleMagicGenerateClick() {
   if (!hasInputAsset.value) {
     toast({
@@ -2048,16 +2068,30 @@ async function handleMagicGenerateClick() {
     return;
   }
   isAutoGenerating.value = true;
+  magicGenerateError.value = "";
   // Remove the previous run from the UI immediately. The next snapshot will
   // contain the newly created run and its real status.
   productionSnapshot.value = null;
   productionSnapshotLoaded.value = true;
-  autoGenerateStep.value = currentLang.value === "vi" ? "Đang chuẩn bị video..." : "Preparing your video...";
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.generate_project_video", {
-      project_name: projectName.value,
+    if (!allShotsList.value.length) {
+      autoGenerateStep.value = currentLang.value === "vi" ? "Đang phân tích sản phẩm..." : "Analyzing your product...";
+      const planResult = await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video_plan", {
+        campaign_name: projectName.value,
+      });
+      autoGenerateStep.value = currentLang.value === "vi" ? "Đang lưu kịch bản phân cảnh..." : "Saving storyboard...";
+      await call("joymedia.joymedia.doctype.media_project.media_project.apply_campaign_video_plan", {
+        campaign_name: projectName.value,
+        plan_json: JSON.stringify(planResult),
+      });
+      await refresh();
+    }
+
+    autoGenerateStep.value = currentLang.value === "vi" ? "Đang kiểm tra trình kết xuất..." : "Checking video renderer...";
+    await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video", {
+      campaign_name: projectName.value,
     });
-    autoGenerateStep.value = currentLang.value === "vi" ? "Đang tạo video..." : "Generating video...";
+    autoGenerateStep.value = currentLang.value === "vi" ? "Đang kết xuất video..." : "Rendering your video...";
     await refresh();
     promptInput.value = "";
     toast({
@@ -2066,7 +2100,8 @@ async function handleMagicGenerateClick() {
       type: "success"
     });
   } catch (error) {
-    const message = error?.messages?.join(" ") || error?.message || (currentLang.value === "vi" ? "Không thể tạo video." : "Video generation failed.");
+    const message = extractFrappeError(error);
+    magicGenerateError.value = message;
     toast({ title: currentLang.value === "vi" ? "Không thể tạo video" : "Video generation failed", text: message, type: "error" });
   } finally {
     isAutoGenerating.value = false;

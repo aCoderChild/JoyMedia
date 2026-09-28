@@ -46,35 +46,18 @@ def generate_video_plan(
 	base_instruction = """
 You are a professional cinematic commercial director for MiniMax H3.
 
-For every shot provide detailed:
+For every shot, produce one detailed generation_prompt suitable for MiniMax H3.
+The prompt should describe the product, subject action, camera movement,
+composition, lighting, environment, continuity, and synchronized audio when
+those details are relevant. Do not contradict camera movement and subject
+motion. Distinguish optical zoom from physical camera movement. Do not describe
+camera equipment or dolly sounds as audio unless they are intentional story
+elements.
 
-[Camera]
-Shot size, lens, camera angle, composition, movement,
-direction and speed.
-
-[Subject]
-Exact subject identity, appearance, materials,
-position and visible details.
-
-[Motion]
-Subject motion, camera-relative motion,
-environmental motion, direction, speed and progression.
-
-[Lighting & Environment]
-Light source, direction, intensity, temperature,
-reflections, shadows, atmosphere and depth.
-
-[Audio SFX]
-Synchronized sound effects, ambience and music.
-
-Also provide one coherent generation_prompt that combines the five sections
-into a single prompt suitable for MiniMax H3. Do not contradict Camera and
-Motion. Distinguish optical zoom from physical camera movement. Do not
-describe camera equipment or dolly sounds as the audio unless they are an
-intentional audible story element.
-
-Avoid vague descriptions such as:
-"wide", "pan left", "static", "natural daylight".
+Every shot must contain non-empty camera, subject, motion, lighting, and
+generation_prompt fields. Audio is optional metadata. Never return null or
+empty strings for the required fields. JoyMedia assigns reference images
+separately; do not choose or emit reference image indexes.
 """.strip()
 
 	if reference_template:
@@ -103,7 +86,7 @@ video idea and project reference images.
 	if generation_mode in ("Continuous", "Consistency"):
 		instruction += (
 			"\n\nGENERATION MODE: CONSISTENCY\n"
-			"Only the first shot starts from a supplied reference image. Each later shot "
+			"JoyMedia will attach the first shot to the supplied reference image. Each later shot "
 			"must continue from the previous shot's generated last frame. Describe the next "
 			"movement from the existing pose and preserve product geometry, color, orientation, "
 			"and scene state."
@@ -111,31 +94,15 @@ video idea and project reference images.
 	else:
 		instruction += (
 			"\n\nGENERATION MODE: MULTI-SHOT\n"
-			"Every shot must have a planned first-frame and last-frame reference image. "
-			"The last-frame reference of each shot must be the first-frame reference of the next "
-			"shot, creating a consistent keyframe sequence."
+			"JoyMedia will attach first-frame and last-frame references after planning. "
+			"Keep the shots coherent as a connected keyframe sequence."
 		)
 
-	if reference_images and generation_mode == "Multi-shot":
-		last_example_index = 2 if len(reference_images) > 1 else 1
-		response_shape = (
-			'{"shots":[{"shot_number":1,"first_frame_reference_image_index":1,'
-			f'"last_frame_reference_image_index":{last_example_index},"camera":"...",'
-			'"subject":"...","motion":"...","lighting":"...","audio":"...",'
-			'"generation_prompt":"..."}]}'
-		)
-	elif reference_images:
-		response_shape = (
-			'{"shots":[{"shot_number":1,"reference_image_index":1,"camera":"...",'
-			'"subject":"...","motion":"...","lighting":"...","audio":"...",'
-			'"generation_prompt":"..."}]}'
-		)
-	else:
-		response_shape = (
-			'{"shots":[{"shot_number":1,"camera":"...","subject":"...",'
-			'"motion":"...","lighting":"...","audio":"...",'
-			'"generation_prompt":"..."}]}'
-		)
+	response_shape = (
+		'{"shots":[{"shot_number":1,"camera":"...","subject":"...",'
+		'"motion":"...","lighting":"...","audio":"",'
+		'"generation_prompt":"..."}]}'
+	)
 
 	user_prompt = (
 		f"{instruction}\n\n"
@@ -146,6 +113,10 @@ video idea and project reference images.
 		f"TARGET FPS: {target_fps}\n"
 		f"NUMBER OF SHOTS: {shot_count}\n\n"
 		f"Return exactly {shot_count} shots. Organize the shots into a coherent narrative progression.\n\n"
+		"IMPORTANT OUTPUT RULES:\n"
+		"- Every shot MUST contain all required fields.\n"
+		"- camera, subject, motion, lighting, and generation_prompt MUST be non-empty.\n"
+		"- Never return null or empty strings for required fields.\n\n"
 		"Return only valid JSON with this shape:\n"
 		f"{response_shape}"
 	)
@@ -153,33 +124,16 @@ video idea and project reference images.
 		user_prompt += "\n\nREFERENCE TEMPLATE\n" + json.dumps(reference_template, ensure_ascii=False)
 	if reference_images:
 		user_prompt += (
-			"\n\nPROJECT IMAGES\n"
-			+ f"You are given {len(reference_images)} numbered project images.\n"
-			+ (
-				"For Multi-shot, choose first_frame_reference_image_index and "
-				"last_frame_reference_image_index for every shot. The last-frame index "
-				"of one shot must equal the next shot's first-frame index.\n"
-				if generation_mode == "Multi-shot"
-				else "For every shot, choose the ONE project image that visually grounds that shot and "
-				"return its number as reference_image_index.\n"
+			"\n\nAVAILABLE REFERENCE ASSETS\n"
+			+ f"JoyMedia will assign from these {len(reference_images)} assets after planning.\n"
+			"Do not output reference image indexes or claim to see the asset contents."
+		)
+		for image in reference_images:
+			user_prompt += (
+				f"\nREFERENCE IMAGE {image['index']}: "
+				f"{image['asset_name']}"
 			)
-			+ "Each reference index must be an integer between 1 and "
-			f"{len(reference_images)}.\n"
-			"Do not invent rooms, objects, architecture, or product details that are not visible "
-			"in the selected reference image."
-		)
-
-	user_content = [{"type": "text", "text": user_prompt}]
-	for image in reference_images or []:
-		user_content.append(
-			{
-				"type": "text",
-				"text": f"REFERENCE IMAGE {image['index']}: {image['asset_name']}",
-			}
-		)
-		user_content.append(
-			{"type": "image_url", "image_url": {"url": image["data_url"]}}
-		)
+	user_content = user_prompt
 
 	request_payload = {
 		"model": model,
@@ -191,6 +145,8 @@ video idea and project reference images.
 			{"role": "user", "content": user_content},
 		],
 		"response_format": {"type": "json_object"},
+		"temperature": 0.2,
+		"max_tokens": 3000,
 	}
 	response = None
 	for attempt in range(3):
@@ -226,6 +182,13 @@ video idea and project reference images.
 	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
 		frappe.throw(_("Qwen returned invalid video plan JSON: {0}").format(str(exc)))
 
+	result = _normalize_qwen_plan(
+		result,
+		product_name=product_name,
+		video_idea=video_idea,
+		reference_image_count=len(reference_images or []),
+		generation_mode=generation_mode,
+	)
 	_validate_video_plan(
 		result,
 		reference_image_count=len(reference_images or []),
@@ -233,6 +196,71 @@ video idea and project reference images.
 		generation_mode=generation_mode,
 	)
 	return result
+
+
+def _normalize_qwen_plan(
+	result,
+	product_name="",
+	video_idea="",
+	reference_image_count=0,
+	generation_mode="Multi-shot",
+):
+	"""Adapt the fine-tuned text model output to JoyMedia's canonical plan."""
+	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
+		return result
+
+	normalized_shots = []
+	for index, shot in enumerate(result["shots"], start=1):
+		if not isinstance(shot, dict):
+			normalized_shots.append(shot)
+			continue
+
+		generation_prompt = _first_non_empty(
+			shot.get("generation_prompt"),
+			shot.get("prompt"),
+			shot.get("video_prompt"),
+			shot.get("description"),
+		)
+		subject = _first_non_empty(shot.get("subject"), product_name, "Product")
+		motion = _first_non_empty(
+			shot.get("motion"),
+			video_idea,
+			"The product remains the visual focus while the composition develops through cinematic camera and environmental motion.",
+		)
+		normalized = {
+			"shot_number": shot.get("shot_number") or index,
+			"camera": _first_non_empty(
+				shot.get("camera"), "Cinematic product-focused composition"
+			),
+			"subject": subject,
+			"motion": motion,
+			"lighting": _first_non_empty(
+				shot.get("lighting"), "Controlled cinematic commercial lighting"
+			),
+			"audio": _first_non_empty(shot.get("audio")),
+			"generation_prompt": generation_prompt,
+		}
+
+		# The text model cannot inspect the uploaded images. Reference selection
+		# is therefore deterministic backend state, not model output.
+		if reference_image_count:
+			if generation_mode == "Multi-shot":
+				normalized["first_frame_reference_image_index"] = ((index - 1) % reference_image_count) + 1
+				normalized["last_frame_reference_image_index"] = (index % reference_image_count) + 1
+			elif index == 1:
+				normalized["reference_image_index"] = 1
+
+		normalized_shots.append(normalized)
+
+	return {"shots": normalized_shots}
+
+
+def _first_non_empty(*values):
+	for value in values:
+		text = str(value or "").strip()
+		if text:
+			return text
+	return ""
 
 
 def _validate_video_plan(
@@ -247,39 +275,35 @@ def _validate_video_plan(
 	if shot_count is not None and len(result["shots"]) != shot_count:
 		frappe.throw(_("Qwen returned {0} shots; expected {1}.").format(len(result["shots"]), shot_count))
 
-	required_fields = {
-		"shot_number",
-		"camera",
-		"subject",
-		"motion",
-		"lighting",
-		"audio",
-		"generation_prompt",
-	}
-	if reference_image_count:
-		if generation_mode == "Multi-shot":
-			required_fields.update(
-				{"first_frame_reference_image_index", "last_frame_reference_image_index"}
-			)
-		else:
-			required_fields.add("reference_image_index")
+	required_fields = {"shot_number", "generation_prompt"}
+	if reference_image_count and generation_mode == "Multi-shot":
+		required_fields.update(
+			{"first_frame_reference_image_index", "last_frame_reference_image_index"}
+		)
 
 	normalized_shots = []
 
 	for shot in result["shots"]:
 		if not isinstance(shot, dict) or not required_fields.issubset(shot):
 			frappe.throw(_("Each Qwen shot must contain the required video plan fields."))
+		for field in ("camera", "subject", "motion", "lighting", "generation_prompt"):
+			if not str(shot.get(field) or "").strip():
+				frappe.throw(
+					_("Qwen returned an empty required field '{0}' for shot {1}.").format(
+						field, shot.get("shot_number", "?")
+					)
+				)
 
 		if type(shot["shot_number"]) is not int or shot["shot_number"] < 1:
 			frappe.throw(_("Shot number must be a positive integer."))
 
 		normalized = {
 			"shot_number": shot["shot_number"],
-			"camera": str(shot["camera"]).strip(),
-			"subject": str(shot["subject"]).strip(),
-			"motion": str(shot["motion"]).strip(),
-			"lighting": str(shot["lighting"]).strip(),
-			"audio": str(shot["audio"]).strip(),
+			"camera": str(shot.get("camera", "")).strip(),
+			"subject": str(shot.get("subject", "")).strip(),
+			"motion": str(shot.get("motion", "")).strip(),
+			"lighting": str(shot.get("lighting", "")).strip(),
+			"audio": str(shot.get("audio", "")).strip(),
 			"generation_prompt": str(shot["generation_prompt"]).strip(),
 		}
 
@@ -294,7 +318,7 @@ def _validate_video_plan(
 					frappe.throw(_("Invalid first or last frame reference image index."))
 				normalized["first_frame_reference_image_index"] = first_index
 				normalized["last_frame_reference_image_index"] = last_index
-			else:
+			elif "reference_image_index" in shot:
 				index = shot["reference_image_index"]
 				if type(index) is not int or index < 1 or index > reference_image_count:
 					frappe.throw(_("Invalid reference image index."))

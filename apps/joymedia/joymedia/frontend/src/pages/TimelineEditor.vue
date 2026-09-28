@@ -94,7 +94,7 @@
             <button type="button" class="tool-btn" :disabled="!canSplit || busy" @click="splitAtPlayhead">✂ {{ currentLang === 'vi' ? 'Tách' : 'Split' }}</button>
             <button type="button" class="tool-btn" :disabled="!selectedClip || busy" @click="duplicateSelected">⧉ {{ currentLang === 'vi' ? 'Nhân đôi' : 'Duplicate' }}</button>
             <button type="button" class="tool-btn danger" :disabled="!selectedClip || busy" @click="deleteSelected">⌫ {{ currentLang === 'vi' ? 'Xóa' : 'Delete' }}</button>
-            <button type="button" class="tool-btn ai-tool-btn" :disabled="!selectedClip" @click="openAiPanel">✨ {{ currentLang === 'vi' ? 'Hỏi AI' : 'Ask AI' }}</button>
+            <button type="button" class="tool-btn ai-tool-btn" :disabled="!selectedClip" :title="currentLang === 'vi' ? 'Mở trợ lý AI' : 'Focus AI Assistant'" @click="openAiPanel">✨</button>
             <button type="button" class="tool-btn" :class="{ active: snapping }" @click="snapping = !snapping">⌁ {{ currentLang === 'vi' ? 'Hút' : 'Snap' }}</button>
             <label class="zoom-control">＋ <input v-model.number="zoom" type="range" min="0.6" max="3" step="0.1" /> ＋</label>
           </div>
@@ -164,19 +164,19 @@
 
     <aside class="editor-inspector">
       <div class="inspector-header inspector-tabs">
-        <button type="button" class="inspector-tab" :class="{ active: rightPanel === 'inspector' }" @click="rightPanel = 'inspector'">
-          {{ currentLang === 'vi' ? 'Thanh tra' : 'Inspector' }}
+        <button type="button" class="inspector-tab" :class="{ active: rightPanel === 'assistant' }" @click="selectRightPanel('assistant')">
+          ✨ {{ currentLang === 'vi' ? 'Trợ lý' : 'Assistant' }}
         </button>
-        <button type="button" class="inspector-tab" :class="{ active: rightPanel === 'prompt' }" @click="rightPanel = 'prompt'">
+        <button type="button" class="inspector-tab" :class="{ active: rightPanel === 'edit' }" @click="selectRightPanel('edit')">
+          {{ currentLang === 'vi' ? 'Chỉnh sửa' : 'Edit' }}
+        </button>
+        <button type="button" class="inspector-tab" :class="{ active: rightPanel === 'prompt' }" @click="selectRightPanel('prompt')">
           Prompt
         </button>
-        <button type="button" class="inspector-tab" :class="{ active: rightPanel === 'ai' }" @click="rightPanel = 'ai'">
-          ✨ AI Edit
-        </button>
-        <button v-if="rightPanel === 'inspector' && selectedClip" type="button" class="reset-icon-btn" :disabled="busy" :title="currentLang === 'vi' ? 'Đặt lại clip' : 'Reset clip'" @click="resetSelectedClip">↺</button>
+        <button v-if="rightPanel === 'edit' && selectedClip" type="button" class="reset-icon-btn" :disabled="busy" :title="currentLang === 'vi' ? 'Đặt lại clip' : 'Reset clip'" @click="resetSelectedClip">↺</button>
       </div>
 
-      <div v-if="rightPanel === 'inspector' && selectedClip" class="inspector-body">
+      <div v-if="rightPanel === 'edit' && selectedClip" class="inspector-body">
         <div class="inspector-card">
           <div class="text-[11px] font-bold text-ink-primary">{{ clipLabel(selectedClip) }}</div>
           <div class="text-[10px] text-ink-muted mt-1 break-all">{{ selectedClip.source_asset_name || selectedClip.source_asset_version }}</div>
@@ -228,10 +228,14 @@
             <span>{{ currentLang === 'vi' ? 'Prompt tạo video' : 'Generation prompt' }}</span>
             <p>{{ selectedShot?.generation_prompt || '—' }}</p>
           </div>
-          <div class="prompt-field"><span>{{ currentLang === 'vi' ? 'Chủ thể' : 'Subject' }}</span><p>{{ selectedShot?.subject_identity || '—' }}</p></div>
-          <div class="prompt-field"><span>{{ currentLang === 'vi' ? 'Hành động' : 'Action' }}</span><p>{{ selectedShot?.action_plot || '—' }}</p></div>
-          <div class="prompt-field"><span>{{ currentLang === 'vi' ? 'Máy quay' : 'Camera' }}</span><p>{{ selectedShot?.camera_direction || '—' }}</p></div>
-          <div class="prompt-field"><span>{{ currentLang === 'vi' ? 'Bối cảnh' : 'Environment' }}</span><p>{{ selectedShot?.environment || '—' }}</p></div>
+          <details class="prompt-details">
+            <summary>{{ currentLang === 'vi' ? 'Chi tiết sáng tạo' : 'Creative details' }}</summary>
+            <div class="prompt-field"><span>{{ currentLang === 'vi' ? 'Chủ thể' : 'Subject' }}</span><p>{{ selectedShot?.subject_identity || '—' }}</p></div>
+            <div class="prompt-field"><span>{{ currentLang === 'vi' ? 'Hành động' : 'Action' }}</span><p>{{ selectedShot?.action_plot || '—' }}</p></div>
+            <div class="prompt-field"><span>{{ currentLang === 'vi' ? 'Máy quay' : 'Camera' }}</span><p>{{ selectedShot?.camera_direction || '—' }}</p></div>
+            <div class="prompt-field"><span>{{ currentLang === 'vi' ? 'Bối cảnh' : 'Environment' }}</span><p>{{ selectedShot?.environment || '—' }}</p></div>
+            <div class="prompt-field"><span>{{ currentLang === 'vi' ? 'Âm thanh' : 'Audio' }}</span><p>{{ selectedShot?.audio_direction || '—' }}</p></div>
+          </details>
         </div>
 
         <div class="inspector-card">
@@ -249,35 +253,45 @@
           <div class="metadata-row"><span>Workflow</span><strong>{{ workspace?.video_settings?.video_style_name || workspace?.video_settings?.style || '—' }}</strong></div>
           <div class="metadata-row"><span>FPS</span><strong>{{ fpsLabel }}</strong></div>
           <div class="metadata-row"><span>Output</span><strong>{{ selectedShot?.selected_output_asset_version ? 'Generated video' : '—' }}</strong></div>
-          <p class="helper-text mt-2">{{ currentLang === 'vi' ? 'Các trường prompt là dữ liệu Shot Specification hiện có và chỉ đọc trong trình chỉnh sửa timeline.' : 'These fields come from the existing Shot Specification and are read-only in the timeline editor.' }}</p>
+          <p class="helper-text mt-2">{{ currentLang === 'vi' ? 'Đây là thông tin tạo cảnh hiện có. Thay đổi prompt sẽ cần tạo lại cảnh trong Studio.' : 'This is existing shot-generation information. Prompt changes require regenerating the shot in Studio.' }}</p>
         </div>
       </div>
 
-      <div v-else-if="rightPanel === 'ai' && selectedClip" class="inspector-body">
+      <div v-else-if="rightPanel === 'assistant' && selectedClip" class="inspector-body ai-assistant-body">
         <div class="inspector-card ai-card">
-          <div class="section-title">✨ {{ currentLang === 'vi' ? 'Chỉnh sửa bằng AI' : 'AI Edit' }}</div>
-          <p class="helper-text mt-2">{{ currentLang === 'vi' ? 'AI Edit đề xuất thay đổi timeline để bạn xem trước. Nó không tự tạo lại video và không tự sửa dữ liệu.' : 'AI Edit is for proposed timeline changes. It does not regenerate video or change data automatically.' }}</p>
-          <label class="field-label ai-label"><span>{{ currentLang === 'vi' ? 'Phạm vi' : 'Scope' }}</span></label>
-          <select v-model="aiScope" class="field-control">
-            <option value="selected_clip">{{ currentLang === 'vi' ? 'Clip đang chọn' : 'Selected clip' }}</option>
-            <option value="selected_clips">{{ currentLang === 'vi' ? 'Các clip đang chọn' : 'Selected clips' }}</option>
-            <option value="timeline_range">{{ currentLang === 'vi' ? 'Khoảng timeline hiện tại' : 'Current timeline range' }}</option>
-            <option value="whole_video">{{ currentLang === 'vi' ? 'Toàn bộ video' : 'Whole video' }}</option>
+          <div class="section-title">✨ {{ currentLang === 'vi' ? 'Trợ lý AI' : 'AI Assistant' }}</div>
+          <div class="assistant-context-line">{{ currentLang === 'vi' ? 'Đang chỉnh sửa' : 'Editing' }} · <strong>{{ clipLabel(selectedClip) }} · {{ seconds(selectedClip.duration_frames).toFixed(2) }}s</strong><span v-if="nextClip"> → {{ clipLabel(nextClip) }}</span></div>
+          <div class="assistant-mode-note"><strong>{{ currentLang === 'vi' ? 'Chỉnh sửa video hiện có' : 'Edit existing video' }}</strong><span>{{ currentLang === 'vi' ? 'Cắt, sắp xếp và chuyển cảnh — không tạo lại.' : 'Trim, reorder, and transition — no regeneration.' }}</span><strong>{{ currentLang === 'vi' ? 'Thay đổi cảnh' : 'Change shot' }}</strong><span>{{ currentLang === 'vi' ? 'Thay prompt hoặc nội dung sẽ cần tạo lại cảnh.' : 'Prompt or content changes require regenerating the shot.' }}</span></div>
+          <label class="field-label ai-label"><span>{{ currentLang === 'vi' ? 'Tối ưu cho' : 'Editing for' }}</span></label>
+          <select v-model="aiGoal" class="field-control">
+            <option value="general">{{ currentLang === 'vi' ? 'Chung' : 'General' }}</option>
+            <option value="instagram">Instagram / Reels</option>
+            <option value="tiktok">TikTok</option>
+            <option value="youtube_shorts">YouTube Shorts</option>
+            <option value="facebook">Facebook</option>
+            <option value="product_ad">{{ currentLang === 'vi' ? 'Quảng cáo sản phẩm' : 'Product ad' }}</option>
+            <option value="brand_awareness">{{ currentLang === 'vi' ? 'Nhận diện thương hiệu' : 'Brand awareness' }}</option>
           </select>
-          <textarea ref="aiInput" v-model="aiInstruction" class="ai-input" rows="5" :placeholder="currentLang === 'vi' ? 'Ví dụ: làm cảnh này ngắn hơn và chuyển cảnh mượt hơn' : 'Example: make this shot shorter and use a smoother transition'" />
+          <div class="section-title suggested-title">{{ currentLang === 'vi' ? 'Gợi ý' : 'Suggested' }}</div>
+          <div class="suggestion-list">
+            <button v-for="suggestion in aiSuggestions" :key="suggestion.key" type="button" class="suggestion-btn" @click="useSuggestion(suggestion.text)">{{ suggestion.icon }} {{ suggestion.label }}</button>
+          </div>
+          <label class="field-label ai-label"><span>{{ currentLang === 'vi' ? 'Bạn muốn cải thiện điều gì?' : 'What would you like to improve?' }}</span></label>
+          <textarea ref="aiInput" v-model="aiInstruction" class="ai-input" rows="5" :placeholder="currentLang === 'vi' ? 'Ví dụ: làm phần mở đầu nhanh hơn' : 'Try: make the opening faster'" />
           <div class="flex items-center gap-2 mt-2">
             <button type="button" class="action-wide" :disabled="!aiInstruction" @click="aiInstruction = ''">{{ currentLang === 'vi' ? 'Xóa' : 'Clear' }}</button>
-            <button type="button" class="action-wide ai-submit" disabled title="Timeline proposal service is not configured">{{ currentLang === 'vi' ? 'Hỏi AI' : 'Ask AI' }}</button>
+            <button type="button" class="action-wide ai-submit" disabled title="AI Assistant is temporarily unavailable">✨ {{ currentLang === 'vi' ? 'Hỏi JoyMedia' : 'Ask JoyMedia' }}</button>
           </div>
-          <p class="helper-text">{{ currentLang === 'vi' ? 'Chưa có API đề xuất chỉnh sửa timeline trong hệ thống hiện tại. Không có thay đổi nào được gửi hoặc áp dụng.' : 'This installation has no timeline proposal API yet. No change is sent or applied.' }}</p>
+          <p class="helper-text">{{ currentLang === 'vi' ? 'Trợ lý AI hiện tạm thời không khả dụng. Bạn vẫn có thể chỉnh sửa thủ công.' : 'AI Assistant is temporarily unavailable. You can continue editing manually.' }}</p>
         </div>
-        <div class="inspector-card">
-          <div class="section-title">{{ currentLang === 'vi' ? 'Ngữ cảnh gửi cho AI' : 'AI context' }}</div>
-          <div class="metadata-row"><span>Clip</span><strong>{{ clipLabel(selectedClip) }}</strong></div>
-          <div class="metadata-row"><span>Timeline</span><strong>{{ frameTime(selectedClip.timeline_start_frame) }}–{{ frameTime(selectedClip.timeline_end_frame) }}</strong></div>
-          <div class="metadata-row"><span>Source</span><strong>{{ selectedClip.source_asset_name || selectedClip.source_asset_version || '—' }}</strong></div>
-          <div class="metadata-row"><span>Neighbors</span><strong>{{ selectedIndex > 0 ? clipLabel(clips[selectedIndex - 1]) : '—' }} → {{ selectedIndex < clips.length - 1 ? clipLabel(clips[selectedIndex + 1]) : '—' }}</strong></div>
-        </div>
+        <details class="inspector-card context-details">
+          <summary>{{ currentLang === 'vi' ? 'Ngữ cảnh AI sử dụng' : 'Context used by AI' }}</summary>
+          <div class="metadata-row"><span>Source video</span><strong>{{ selectedClip.source_asset_name || '—' }}</strong></div>
+          <div class="metadata-row"><span>Shot prompt</span><strong>{{ selectedShot?.generation_prompt ? 'Available' : '—' }}</strong></div>
+          <div class="metadata-row"><span>Campaign</span><strong>{{ workspace?.campaign?.campaign_name || workspace?.campaign?.project_name || '—' }}</strong></div>
+          <div class="metadata-row"><span>Product</span><strong>{{ workspace?.campaign?.product_name || '—' }}</strong></div>
+          <div class="metadata-row"><span>Audience</span><strong>{{ workspace?.campaign?.target_audience || '—' }}</strong></div>
+        </details>
       </div>
 
       <div v-else class="inspector-empty">
@@ -311,8 +325,14 @@ const playing = ref(false);
 const busy = ref(false);
 const exporting = ref(false);
 const previewMode = ref("clip");
-const rightPanel = ref("inspector");
-const aiScope = ref("selected_clip");
+const storedRightPanel = window.localStorage.getItem("joymedia.editor.rightPanel");
+const initialRightPanel = storedRightPanel === "prompt"
+  ? "prompt"
+  : storedRightPanel === "edit" || storedRightPanel === "inspector"
+    ? "edit"
+    : "assistant";
+const rightPanel = ref(initialRightPanel);
+const aiGoal = ref("general");
 const aiInstruction = ref("");
 const aiInput = ref(null);
 const zoom = ref(1);
@@ -342,6 +362,18 @@ const selectedShot = computed(() => {
   return storyboard.find((shot) => shot.name === selectedClip.value.shot_specification)
     || storyboard.find((shot) => Number(shot.shot_number) === Number(selectedClip.value.shot_number))
     || null;
+});
+const nextClip = computed(() => selectedIndex.value >= 0 ? clips.value[selectedIndex.value + 1] || null : null);
+const aiSuggestions = computed(() => {
+  const suggestions = [
+    { key: "shorten", icon: "✂", label: currentLang.value === "vi" ? "Làm cảnh này ngắn hơn" : "Shorten this shot", text: "Make this shot shorter" },
+    { key: "pace", icon: "⚡", label: currentLang.value === "vi" ? "Tăng nhịp video" : "Make the video faster-paced", text: "Make the video faster-paced" },
+    { key: "cinematic", icon: "🎬", label: currentLang.value === "vi" ? "Làm cảm giác điện ảnh hơn" : "Make this feel more cinematic", text: "Make this feel more cinematic" },
+  ];
+  if (nextClip && selectedClip.value?.transition_to_next === "Cut") {
+    suggestions.splice(1, 0, { key: "transition", icon: "✨", label: currentLang.value === "vi" ? `Chuyển cảnh mượt sang ${clipLabel(nextClip.value)}` : `Smooth transition to ${clipLabel(nextClip.value)}`, text: "Use a smoother transition to the next shot" });
+  }
+  return suggestions;
 });
 
 const rulerTicks = computed(() => {
@@ -498,7 +530,17 @@ function selectClip(clip, sourceFrame = null) {
 
 function openAiPanel() {
   if (!selectedClip.value) return;
-  rightPanel.value = "ai";
+  selectRightPanel("assistant");
+  nextTick(() => aiInput.value?.focus());
+}
+
+function selectRightPanel(panel) {
+  rightPanel.value = panel;
+  window.localStorage.setItem("joymedia.editor.rightPanel", panel);
+}
+
+function useSuggestion(text) {
+  aiInstruction.value = text;
   nextTick(() => aiInput.value?.focus());
 }
 
@@ -998,6 +1040,16 @@ onBeforeUnmount(() => {
 .metadata-row { display: flex; justify-content: space-between; gap: 8px; margin-top: 7px; font-size: 9px; color: var(--ink-muted, #8790a3); }
 .metadata-row strong { max-width: 62%; color: var(--ink-secondary, #596174); font-weight: 700; text-align: right; overflow-wrap: anywhere; }
 .ai-card { background: linear-gradient(180deg, #faf9ff, var(--surface-muted, #f7f8fa)); }
+.assistant-context-line { margin-top: 7px; color: var(--ink-secondary, #596174); font-size: 10px; line-height: 1.4; }
+.assistant-mode-note { display: grid; gap: 2px; margin-top: 10px; padding: 7px; border-radius: 7px; background: rgb(99 102 241 / 6%); color: var(--ink-muted, #8790a3); font-size: 9px; line-height: 1.35; }
+.assistant-mode-note strong { color: var(--ink-secondary, #596174); font-size: 9px; }
+.suggested-title { margin-top: 14px; }
+.suggestion-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.suggestion-btn { padding: 6px 7px; border: 1px solid #ddd6fe; border-radius: 7px; background: #fff; color: #5b21b6; font-size: 9px; font-weight: 700; text-align: left; }
+.suggestion-btn:hover { border-color: #818cf8; background: #eef2ff; }
+.context-details summary, .prompt-details summary { cursor: pointer; color: var(--ink-primary, #172033); font-size: 10px; font-weight: 800; }
+.context-details[open] summary, .prompt-details[open] summary { margin-bottom: 8px; }
+.prompt-details { margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--outline-border, #e4e7ec); }
 .ai-label { margin-top: 12px; }
 .ai-input { width: 100%; margin-top: 9px; resize: vertical; border: 1px solid var(--outline-border, #dfe3ea); border-radius: 8px; padding: 8px; background: var(--surface-card, #fff); color: var(--ink-primary, #172033); font-size: 10px; line-height: 1.45; }
 .ai-input:focus { outline: 2px solid rgb(99 102 241 / 20%); border-color: #818cf8; }

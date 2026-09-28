@@ -1,24 +1,32 @@
 <template>
-  <div class="page-section">
+  <div class="page-section max-w-7xl mx-auto w-full">
     <!-- 1. Page Header -->
     <div class="page-heading">
-      <div>
-        <p class="eyebrow">{{ t('campaigns_count', { n: filteredCampaigns.length }) }} · JoyMedia</p>
-        <h1>{{ t('campaigns_page_title') }}</h1>
-        <p class="subtitle">{{ t('campaigns_page_subtitle') }}</p>
+      <!-- 0 Campaigns: Onboarding Header with Business/Org Continuity -->
+      <div v-if="!allCampaigns.length && !campaigns.loading">
+        <p class="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-1">
+          {{ t('welcome_onboarding_title') }}
+        </p>
+        <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-ink-primary">
+          {{ t('campaigns_page_title') }}
+        </h1>
+        <p class="subtitle text-sm text-ink-secondary mt-1">
+          {{ currentOrganizationName ? t('welcome_onboarding_subtitle', { org: currentOrganizationName }) : t('campaigns_page_subtitle') }}
+        </p>
       </div>
 
-      <div class="flex items-center gap-3">
-        <button
-          type="button"
-          class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border transition-all shadow-xs cursor-pointer"
-          :disabled="campaigns.loading"
-          @click="reloadCampaigns"
-        >
-          <span class="lucide-refresh-cw size-3.5" :class="{ 'animate-spin': campaigns.loading }" />
-          <span>{{ currentLang === 'vi' ? 'Làm mới' : 'Refresh' }}</span>
-        </button>
+      <!-- Populated Campaigns Header -->
+      <div v-else>
+        <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-ink-primary">
+          {{ t('campaigns_page_title') }}
+        </h1>
+        <p class="subtitle text-sm text-ink-secondary mt-1">
+          {{ t('campaigns_page_subtitle') }}
+        </p>
+      </div>
 
+      <!-- Top Right Actions: Only show New Campaign button when campaigns exist -->
+      <div v-if="allCampaigns.length > 0" class="flex items-center gap-3">
         <button
           type="button"
           class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
@@ -31,8 +39,8 @@
       </div>
     </div>
 
-    <!-- 2. Statistics Summary Strip -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <!-- 2. Statistics Summary Strip (Only visible when campaigns exist) -->
+    <div v-if="allCampaigns.length > 0" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
       <div class="p-4 rounded-2xl bg-surface-card border border-outline-border shadow-xs flex items-center justify-between transition-all hover:border-indigo-500/30">
         <div>
           <span class="text-xs font-semibold text-ink-muted uppercase tracking-wider block">
@@ -76,8 +84,8 @@
       </div>
     </div>
 
-    <!-- 3. Toolbar: Status Filter Tabs & Search -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 rounded-2xl bg-surface-card border border-outline-border shadow-xs mb-6">
+    <!-- 3. Toolbar: Status Filter Tabs & Search (Only visible when campaigns exist) -->
+    <div v-if="allCampaigns.length > 0" class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 rounded-2xl bg-surface-card border border-outline-border shadow-xs mb-6">
       <!-- Status Tabs -->
       <div class="flex items-center gap-1.5 p-1 rounded-xl bg-surface-muted border border-outline-border">
         <button
@@ -100,24 +108,6 @@
         <button
           type="button"
           class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
-          :class="statusFilter === 'active'
-            ? 'bg-indigo-600 text-white shadow-xs'
-            : 'text-ink-secondary hover:text-ink-primary'"
-          @click="statusFilter = 'active'"
-        >
-          <span class="size-1.5 rounded-full bg-emerald-400 inline-block" />
-          <span>{{ t('filter_active') }}</span>
-          <span
-            class="text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold"
-            :class="statusFilter === 'active' ? 'bg-indigo-700/80 text-white' : 'bg-surface-hover text-ink-muted'"
-          >
-            {{ activeCampaignsCount }}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
           :class="statusFilter === 'draft'
             ? 'bg-indigo-600 text-white shadow-xs'
             : 'text-ink-secondary hover:text-ink-primary'"
@@ -130,6 +120,24 @@
             :class="statusFilter === 'draft' ? 'bg-indigo-700/80 text-white' : 'bg-surface-hover text-ink-muted'"
           >
             {{ draftCampaignsCount }}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+          :class="statusFilter === 'active'
+            ? 'bg-indigo-600 text-white shadow-xs'
+            : 'text-ink-secondary hover:text-ink-primary'"
+          @click="statusFilter = 'active'"
+        >
+          <span class="size-1.5 rounded-full bg-emerald-400 inline-block" />
+          <span>{{ t('filter_active') }}</span>
+          <span
+            class="text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold"
+            :class="statusFilter === 'active' ? 'bg-indigo-700/80 text-white' : 'bg-surface-hover text-ink-muted'"
+          >
+            {{ activeCampaignsCount }}
           </span>
         </button>
       </div>
@@ -155,7 +163,7 @@
       </div>
     </div>
 
-    <!-- 5. Campaign Cards Grid -->
+    <!-- 5. Populated State: Visual Campaign Cards Grid -->
     <div v-else-if="filteredCampaigns.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       <article
         v-for="campaign in filteredCampaigns"
@@ -245,24 +253,102 @@
       </article>
     </div>
 
-    <!-- 6. Empty State -->
-    <div v-else class="empty-state">
+    <!-- 6. Search Filter Empty State (When campaigns exist but search query has no match) -->
+    <div v-else-if="allCampaigns.length > 0" class="empty-state">
       <div class="empty-state-icon">
-        <span class="lucide-clapperboard size-8 text-indigo-500" />
+        <span class="lucide-search size-6 text-indigo-400" />
       </div>
       <h2>{{ t('no_campaigns_found') }}</h2>
       <p>{{ t('no_campaigns_desc') }}</p>
       <button
         type="button"
-        class="mt-4 flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
-        :disabled="creatingProject"
-        @click="createDraftCampaign"
+        class="mt-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border transition-all cursor-pointer"
+        @click="searchQuery = ''; statusFilter = 'all'"
       >
-        <span class="lucide-plus size-4" />
-        <span>{{ t('create_first_campaign') }}</span>
+        {{ currentLang === 'vi' ? 'Xoá bộ lọc' : 'Clear filters' }}
       </button>
     </div>
 
+    <!-- 7. Zero-Data Onboarding Hero (Empty State for New User) -->
+    <div v-else class="py-10 px-4 flex flex-col items-center text-center max-w-2xl mx-auto">
+      <!-- Central Animated Icon -->
+      <div class="size-16 rounded-3xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-3xl mb-6 shadow-sm">
+        🎬
+      </div>
+
+      <!-- Hero Heading -->
+      <h2 class="text-2xl sm:text-3xl font-extrabold text-ink-primary tracking-tight mb-3">
+        {{ t('create_first_ai_campaign') }}
+      </h2>
+
+      <!-- Hero Subtitle -->
+      <p class="text-ink-secondary text-sm sm:text-base leading-relaxed max-w-lg mb-8">
+        {{ t('create_first_ai_desc') }}
+      </p>
+
+      <!-- Primary Action Button -->
+      <button
+        type="button"
+        class="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/35 transition-all transform hover:-translate-y-0.5 cursor-pointer mb-10"
+        :disabled="creatingProject"
+        @click="createDraftCampaign"
+      >
+        <span class="lucide-plus size-4.5" />
+        <span>{{ t('create_first_campaign') }}</span>
+      </button>
+
+      <!-- Workflow Guide Card -->
+      <div class="w-full p-6 rounded-2xl bg-surface-card/60 border border-outline-border/80 backdrop-blur-sm shadow-xs">
+        <div class="flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-400 mb-4">
+          <span>✨</span>
+          <span>{{ currentLang === 'vi' ? 'Quy trình sản xuất video JoyMedia AI' : 'How JoyMedia AI Video Production Works' }}</span>
+        </div>
+
+        <!-- 4-step workflow horizontal flow -->
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 text-left">
+          <div class="p-3.5 rounded-xl bg-surface-muted/50 border border-outline-border/60 flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-base">📦</span>
+              <span class="text-[10px] font-mono font-bold text-ink-muted px-1.5 py-0.5 rounded bg-surface-hover">01</span>
+            </div>
+            <div class="text-xs font-bold text-ink-primary">{{ t('workflow_step_1') }}</div>
+            <div class="text-[11px] text-ink-muted mt-0.5 leading-tight">{{ t('workflow_step_1_sub') }}</div>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-surface-muted/50 border border-outline-border/60 flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-base">🧠</span>
+              <span class="text-[10px] font-mono font-bold text-ink-muted px-1.5 py-0.5 rounded bg-surface-hover">02</span>
+            </div>
+            <div class="text-xs font-bold text-ink-primary">{{ t('workflow_step_2') }}</div>
+            <div class="text-[11px] text-ink-muted mt-0.5 leading-tight">{{ t('workflow_step_2_sub') }}</div>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-surface-muted/50 border border-outline-border/60 flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-base">⚡</span>
+              <span class="text-[10px] font-mono font-bold text-ink-muted px-1.5 py-0.5 rounded bg-surface-hover">03</span>
+            </div>
+            <div class="text-xs font-bold text-ink-primary">{{ t('workflow_step_3') }}</div>
+            <div class="text-[11px] text-ink-muted mt-0.5 leading-tight">{{ t('workflow_step_3_sub') }}</div>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-surface-muted/50 border border-outline-border/60 flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-base">🚀</span>
+              <span class="text-[10px] font-mono font-bold text-ink-muted px-1.5 py-0.5 rounded bg-surface-hover">04</span>
+            </div>
+            <div class="text-xs font-bold text-ink-primary">{{ t('workflow_step_4') }}</div>
+            <div class="text-[11px] text-ink-muted mt-0.5 leading-tight">{{ t('workflow_step_4_sub') }}</div>
+          </div>
+        </div>
+
+        <!-- Campaign Mental Model Note -->
+        <p class="text-xs text-ink-muted mt-4 pt-3 border-t border-outline-border/40 text-center leading-relaxed">
+          {{ t('campaign_meaning_tip') }}
+        </p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -277,7 +363,7 @@ const { t, currentLang } = useI18n();
 
 const creatingProject = ref(false);
 const searchQuery = ref("");
-const statusFilter = ref("all"); // 'all' | 'active' | 'draft'
+const statusFilter = ref("all"); // 'all' | 'draft' | 'active'
 
 const campaigns = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_cards",
@@ -288,6 +374,18 @@ const libraryAssets = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_library_assets",
   params: { asset_type: "All" },
   auto: true,
+});
+
+const businesses = createResource({
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_businesses",
+  auto: true,
+});
+
+const currentOrganizationName = computed(() => {
+  if (businesses.data && businesses.data.length > 0) {
+    return businesses.data[0].organization_name || businesses.data[0].name;
+  }
+  return "";
 });
 
 const allCampaigns = computed(() => campaigns.data || []);
@@ -327,10 +425,6 @@ function assetLabel(count) {
   return currentLang.value === "vi"
     ? `${count} tư liệu`
     : `${count} ${count === 1 ? "asset" : "assets"}`;
-}
-
-async function reloadCampaigns() {
-  await Promise.all([campaigns.reload(), libraryAssets.reload()]);
 }
 
 const filteredCampaigns = computed(() => {

@@ -2013,11 +2013,18 @@ class MediaProject(Document):
 				as_dict=True,
 				order_by="creation desc",
 			)
+			if latest_run and latest_run.status in ("Queued", "Running", "Finalizing"):
+				return {"run": latest_run.name, "status": latest_run.status}
 			if latest_run and latest_run.status in ("Failed", "Partially Completed"):
 				# A failed revision is still the user's current generation target.
 				# Retry it instead of calling generate_video(), which correctly
 				# rejects already-submitted revisions.
 				return self.retry_failed_jobs()
+			if latest_run and latest_run.status == "Completed":
+				return {"run": latest_run.name, "status": latest_run.status}
+			frappe.throw(
+				_('This storyboard revision has already been submitted. Create a new storyboard revision before generating again.')
+			)
 		shots = frappe.get_all(
 			"Shot Specification",
 			filters={"media_specification": media_specification.name},
@@ -2028,6 +2035,8 @@ class MediaProject(Document):
 			from joymedia.services.video_plan_service import apply_video_plan
 
 			apply_video_plan(media_specification.name, plan)
+			# Keep a successful storyboard even if renderer preflight fails below.
+			frappe.db.commit()
 
 		return self.generate_video()
 

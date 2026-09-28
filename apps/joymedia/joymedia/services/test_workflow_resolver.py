@@ -106,6 +106,23 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertIn("missing class_type", str(context.exception))
 		self.assertIn("load_img", str(context.exception))
 
+	def test_execution_validation_rejects_incomplete_video_combine(self):
+		workflow_version = frappe._dict(
+			name="WFV-00006",
+			workflow_json=(
+				'{"save_video":{"class_type":"VHS_VideoCombine",'
+				'"inputs":{"frame_rate":24}}}'
+			),
+		)
+
+		with self.assertRaises(frappe.ValidationError) as context:
+			validate_workflow_for_execution(workflow_version)
+
+		message = str(context.exception)
+		self.assertIn("VHS_VideoCombine", message)
+		self.assertIn("filename_prefix", message)
+		self.assertIn("images", message)
+
 	@patch("joymedia.services.workflow_resolver.frappe.get_doc")
 	def test_runtime_delivery_dimensions_come_from_media_specification(self, get_doc):
 		get_doc.side_effect = [

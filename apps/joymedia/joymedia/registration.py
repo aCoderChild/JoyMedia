@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 
 def get_signup_template():
@@ -7,6 +8,7 @@ def get_signup_template():
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=10, seconds=60 * 60, methods="POST")
 def register_with_organization(email, full_name, organization_name, password=None, redirect_to=None):
 	organization_name = (organization_name or "").strip()
 	if not organization_name:
@@ -35,19 +37,16 @@ def register_with_organization(email, full_name, organization_name, password=Non
 	update_password(user_name, password)
 	user.db_set("reset_password_key", None, update_modified=False)
 
-	organization_name_id = frappe.db.get_value(
-		"Client Organization", {"organization_name": organization_name}, "name"
-	)
-	organization = (
-		frappe.get_doc("Client Organization", organization_name_id)
-		if organization_name_id
-		else frappe.get_doc(
-			{
-				"doctype": "Client Organization",
-				"organization_name": organization_name,
-			}
-		).insert(ignore_permissions=True)
-	)
+	# A matching display name is not proof that a signup belongs to an
+	# existing organization. Public signup must never grant access to another
+	# customer's organization; joining an existing organization needs an
+	# invitation flow instead.
+	organization = frappe.get_doc(
+		{
+			"doctype": "Client Organization",
+			"organization_name": organization_name,
+		}
+	).insert(ignore_permissions=True)
 
 	if not any(role.role == "JoyMedia User" for role in user.roles):
 		user.append("roles", {"role": "JoyMedia User"})

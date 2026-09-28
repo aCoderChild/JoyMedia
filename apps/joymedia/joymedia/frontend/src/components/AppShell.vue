@@ -79,7 +79,7 @@
           </RouterLink>
         </Tooltip>
 
-        <!-- Reviews -->
+        <!-- Exports -->
         <Tooltip :text="t('sidebar_scenes')" side="right" :disabled="!isCollapsed">
           <RouterLink
             to="/reviews"
@@ -87,7 +87,11 @@
             :class="{ 'justify-center p-2.5': isCollapsed }"
           >
             <span class="nav-link-icon relative text-base">
-              ✓
+              <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
               <span
                 v-if="isCollapsed && pendingReviewsCount > 0"
                 class="absolute -top-1 -right-1 size-2 rounded-full bg-amber-500 animate-pulse"
@@ -153,7 +157,7 @@
 
         <!-- Right: Actions & User -->
         <div class="topbar-right flex items-center gap-2.5">
-          <!-- Language Switcher (EN / VI) -->
+          <!-- Language Switcher (Compact Globe Menu) -->
           <button
             type="button"
             class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold text-ink-primary bg-surface-card hover:bg-surface-hover border border-outline-border transition-all select-none shadow-xs"
@@ -162,7 +166,6 @@
           >
             <span class="text-xs">🌐</span>
             <span class="font-mono text-[11px] uppercase tracking-wider font-bold">{{ currentLang }}</span>
-            <span class="text-[10px] text-ink-muted font-normal">({{ currentLang === 'vi' ? 'VIE' : 'ENG' }})</span>
           </button>
 
           <!-- Theme Toggle -->
@@ -180,11 +183,6 @@
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
             </svg>
           </button>
-
-          <!-- PRO Tag -->
-          <span class="text-[11px] font-bold px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-            PRO
-          </span>
 
           <!-- User Badge -->
           <div class="user-badge" :title="user">
@@ -295,7 +293,7 @@ const currentPageTitle = computed(() => {
   if (path === "/campaigns" || path === "/") return isEn ? "Campaigns" : "Chiến dịch";
   if (path.startsWith("/campaigns/")) return isEn ? "Campaign Workspace" : "Chi tiết chiến dịch";
   if (path.startsWith("/projects/")) return "JoyMedia Studio";
-  if (path.startsWith("/reviews")) return isEn ? "Final Videos" : "Video cuối";
+  if (path.startsWith("/reviews")) return isEn ? "Exports" : "Xuất bản";
   if (path.startsWith("/assets")) return isEn ? "Media Library" : "Thư viện Media";
   return "JoyMedia Studio";
 });
@@ -308,7 +306,7 @@ const userInitial = computed(() => {
 const headerDropdownOptions = computed(() => [
   { label: "JoyMedia Studio", onClick: () => router.push("/campaigns") },
   { label: currentLang.value === "en" ? "Media Library" : "Thư viện Media", onClick: () => router.push("/assets") },
-  { label: currentLang.value === "en" ? "Final Videos" : "Video cuối", onClick: () => router.push("/reviews") },
+  { label: currentLang.value === "en" ? "Exports" : "Xuất bản", onClick: () => router.push("/reviews") },
   {
     label: currentLang.value === "en" ? "🇻🇳 Tiếng Việt" : "🇬🇧 English",
     onClick: () => toggleLang(),

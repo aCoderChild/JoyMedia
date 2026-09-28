@@ -103,6 +103,35 @@ def validate_workflow_for_execution(workflow_version, workflow=None):
 			).format(workflow_version.name, ", ".join(invalid_nodes))
 		)
 
+	video_combine_errors = []
+	video_combine_required_inputs = {
+		"images",
+		"frame_rate",
+		"loop_count",
+		"filename_prefix",
+		"format",
+		"save_output",
+		"pingpong",
+	}
+	for node_key, node in workflow.items():
+		if not isinstance(node, dict) or node.get("class_type") != "VHS_VideoCombine":
+			continue
+		inputs = node.get("inputs")
+		missing_inputs = sorted(video_combine_required_inputs - set(inputs or {}))
+		if missing_inputs:
+			video_combine_errors.append(
+				f"{node_key} (VHS_VideoCombine missing inputs: {', '.join(missing_inputs)})"
+			)
+
+	if video_combine_errors:
+		frappe.throw(
+			_(
+				"Workflow {0} cannot be submitted to ComfyUI. "
+				"The VHS_VideoCombine node definition is incomplete: {1}. "
+				"Export the workflow from ComfyUI in API format and store the complete node inputs."
+			).format(workflow_version.name, "; ".join(video_combine_errors))
+		)
+
 	return workflow
 
 
