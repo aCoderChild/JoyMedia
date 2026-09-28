@@ -2114,6 +2114,7 @@ async function createAnotherVersion() {
   try {
     await call("joymedia.joymedia.doctype.media_project.media_project.revise_campaign_storyboard", {
       campaign_name: projectName.value,
+      use_current_workflow_defaults: true,
     });
     await refresh();
     toast({ title: "Bản sửa đổi mới", text: "Bạn có thể chỉnh sửa các cảnh và tạo lại video.", type: "success" });
