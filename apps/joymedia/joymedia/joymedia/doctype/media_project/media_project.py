@@ -757,7 +757,7 @@ def get_pending_review_cards():
 		final_runs = frappe.get_all(
 			"Generation Run",
 			filters={"media_specification": media_spec.name},
-			fields=["name", "final_asset_version", "status", "review_notes"],
+			fields=["name", "final_asset_version", "status"],
 			order_by="creation desc",
 			limit_page_length=20,
 		)
@@ -874,10 +874,8 @@ def review_final_video(project_name: str, decision: str, notes: str | None = Non
 	frappe.db.set_value(
 		"Generation Run",
 		run.name,
-		{
-			"status": "Completed",
-			"review_notes": (notes or "").strip() or None,
-		},
+		"status",
+		"Completed",
 		update_modified=True,
 	)
 	frappe.db.set_value(
@@ -907,7 +905,6 @@ def reject_review(review_name: str, campaign_name: str | None = None, notes: str
 		return reject_campaign_review(campaign_name, review_name, notes)
 	run = frappe.get_doc("Generation Run", review_name)
 	run.status = "Completed"
-	run.review_notes = notes
 	run.save(ignore_permissions=True)
 	return run.as_dict()
 

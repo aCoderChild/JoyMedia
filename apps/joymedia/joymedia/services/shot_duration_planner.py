@@ -14,7 +14,7 @@ def recalculate_shot_durations(media_specification_name: str):
 	shots = frappe.get_all(
 		"Shot Specification",
 		filters={"media_specification": media_specification.name},
-		fields=["name", "shot_number"],
+		fields=["name", "shot_number", "duration_seconds"],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
@@ -39,7 +39,7 @@ def recalculate_shot_durations(media_specification_name: str):
 	# Preserve an editor-authored timing split when every shot already has a
 	# positive duration. Newly-created storyboards start at zero and therefore
 	# still receive the deterministic equal split below.
-	existing_durations = [float(frappe.db.get_value("Shot Specification", shot.name, "duration_seconds") or 0) for shot in shots]
+	existing_durations = [float(shot.duration_seconds or 0) for shot in shots]
 	if all(duration > 0 for duration in existing_durations):
 		duration_total = sum(existing_durations)
 		if duration_total > 0:
