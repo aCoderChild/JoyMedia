@@ -1576,7 +1576,7 @@ function handleTransitionChange(transition) {
 
 function handleTransitionFramesChange(frames) {
   if (!selectedClip.value) return;
-  setTransition(selectedClip.value, selectedClip.value.transition_to_next || "Crossfade", frames);
+  setTransition(selectedClip.value, selectedClip.value.transition_to_next || "Dissolve", frames);
 }
 
 async function regenerateSourceForSelectedClip() {

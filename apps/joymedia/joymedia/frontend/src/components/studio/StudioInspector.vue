@@ -97,12 +97,8 @@
                 @change="$emit('changeTransition', $event.target.value)"
               >
                 <option value="Cut">Cut (Cắt thẳng)</option>
-                <option value="Crossfade">Crossfade (Chồng mờ)</option>
                 <option value="Dissolve">Dissolve (Hòa tan)</option>
-                <option value="Wipe Left">Wipe Left (Gạt trái)</option>
-                <option value="Wipe Right">Wipe Right (Gạt phải)</option>
-                <option value="Fade Black">Fade Black (Mờ đen)</option>
-                <option value="Fade White">Fade White (Mờ trắng)</option>
+                <option value="Fade">Fade (Mờ dần)</option>
               </select>
               <input
                 v-if="selectedClip.transition_to_next && selectedClip.transition_to_next !== 'Cut'"

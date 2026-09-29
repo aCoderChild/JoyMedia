@@ -10,6 +10,7 @@ from joymedia.services.timeline_editor import (
 	delete_timeline_clip,
 	duplicate_timeline_clip,
 	reorder_timeline_clip,
+	set_timeline_transition,
 	split_timeline_clip,
 	sync_timeline_source_for_shot,
 	trim_timeline_clip,
@@ -155,6 +156,34 @@ class TestTimelineEditor(FrappeTestCase):
 			"Media Project", self.project.name, "current_output_asset_version"
 		)
 		self.assertIsNone(current_out)
+
+	def test_supported_transitions_are_accepted_and_invalid_transition_is_rejected(self):
+		frappe.get_doc(
+			{
+				"doctype": "Timeline Clip",
+				"media_project": self.project.name,
+				"media_specification": self.spec.name,
+				"shot_specification": self.shot.name,
+				"clip_order": 2,
+				"enabled": 1,
+				"source_asset_version": self.version_1.name,
+				"source_in_frame": 0,
+				"source_out_frame": 96,
+				"initial_source_in_frame": 0,
+				"initial_source_out_frame": 96,
+				"transition_to_next": "Cut",
+				"transition_frames": 0,
+			}
+		).insert(ignore_permissions=True)
+
+		for transition in ("Cut", "Dissolve", "Fade"):
+			set_timeline_transition(self.project.name, self.clip_1.name, transition, 12)
+			self.clip_1.reload()
+			self.assertEqual(transition, self.clip_1.transition_to_next)
+			self.assertEqual(0 if transition == "Cut" else 12, self.clip_1.transition_frames)
+
+		with self.assertRaises(frappe.ValidationError):
+			set_timeline_transition(self.project.name, self.clip_1.name, "Wipe Left", 12)
 
 	def test_split_timeline_clip_preserves_source_asset_and_invalidates(self):
 		frappe.db.set_value(
