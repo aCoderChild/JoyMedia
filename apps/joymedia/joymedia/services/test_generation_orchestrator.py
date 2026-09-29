@@ -211,9 +211,8 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		job = frappe._dict(name="JOB-00001", completed_at=None)
 		job.db_set = MagicMock()
 		get_all.return_value = [
-			frappe._dict(name="ATT-00001", status="Completed", retry_of=None),
-			frappe._dict(name="ATT-00002", status="Failed", retry_of=None),
-			frappe._dict(name="ATT-00003", status="Completed", retry_of="ATT-00002"),
+			frappe._dict(name="ATT-00001", status="Failed", retry_of=None),
+			frappe._dict(name="ATT-00002", status="Completed", retry_of="ATT-00001"),
 		]
 
 		generation_orchestrator._update_job_summary(job)

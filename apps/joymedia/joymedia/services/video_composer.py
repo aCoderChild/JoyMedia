@@ -86,12 +86,6 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 				"status": "Active",
 			}
 		).insert(ignore_permissions=True)
-		existing_version = frappe.db.get_value(
-			"Asset Version", {"media_asset": media_asset.name, "source": "Composed"}, "name"
-		)
-		if existing_version:
-			shot.db_set("selected_output_asset_version", existing_version, update_modified=False)
-			return existing_version
 		file_doc = frappe.get_doc(
 			{
 				"doctype": "File",
@@ -114,14 +108,6 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 		).insert(ignore_permissions=True)
 		shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
 		return asset_version.name
-
-
-@frappe.whitelist()
-def compose_media_specification_from_ui(media_specification_name: str):
-	frappe.has_permission("Media Specification", "write", media_specification_name, throw=True)
-	result = compose_media_specification(media_specification_name)
-	frappe.db.commit()
-	return result
 
 
 def compose_media_specification(media_specification_name: str):
@@ -216,8 +202,6 @@ def compose_media_specification(media_specification_name: str):
 	)
 	asset_version.insert(ignore_permissions=True)
 
-	media_specification.final_asset_version = asset_version.name
-	media_specification.save(ignore_permissions=True)
 	return {
 		"final_asset_version": asset_version.name,
 		"duration_seconds": video_duration,

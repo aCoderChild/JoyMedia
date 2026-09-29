@@ -23,6 +23,10 @@ class TestGenerationAttempt(FrappeTestCase):
 				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.db.get_value",
 				return_value=3,
 			) as get_value,
+			patch(
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.db.exists",
+				return_value=None,
+			),
 		):
 			GenerationAttempt.before_insert(attempt)
 

@@ -9,6 +9,7 @@ from frappe.utils.synchronization import filelock
 from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file
 from .result_ingestor import sync_attempt_result
 from .artifact_service import get_attempt_artifact
+from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
 from .prompt_compiler import compile_prompt
 from .workflow_resolver import resolve_attempt
 
@@ -85,19 +86,10 @@ def attach_chained_first_frame(job):
 	if not job.depends_on_job:
 		return True
 
-	previous_attempt = frappe.get_all(
-		"Generation Attempt",
-		filters={
-			"generation_job": job.depends_on_job,
-			"status": "Completed",
-		},
-		fields=["name"],
-		order_by="creation desc",
-		limit_page_length=1,
-	)
-	if not previous_attempt:
+	previous_attempt = get_effective_attempt(job.depends_on_job)
+	if not previous_attempt or previous_attempt.status != "Completed":
 		return False
-	last_frame_artifact = get_attempt_artifact(previous_attempt[0].name, "Last Frame")
+	last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
 	if not last_frame_artifact:
 		return False
 

@@ -119,12 +119,8 @@ def compose_project_timeline_internal(project_name: str):
 			"source": "Edited",
 			"duration_seconds": video_duration,
 			"fps": profile["fps"],
-			"derived_from": media_specification.final_asset_version or None,
 		}
 	).insert(ignore_permissions=True)
-
-	media_specification.final_asset_version = asset_version.name
-	media_specification.save(ignore_permissions=True)
 
 	latest_run = frappe.db.get_value(
 		"Generation Run",

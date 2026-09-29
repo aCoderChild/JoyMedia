@@ -3,7 +3,7 @@
 
 frappe.ui.form.on("Generation Job", {
 	refresh(frm) {
-		if (frm.is_new() || !["Failed", "Partially Completed"].includes(frm.doc.status)) {
+		if (frm.is_new() || frm.doc.status !== "Failed") {
 			return;
 		}
 
@@ -15,7 +15,7 @@ frappe.ui.form.on("Generation Job", {
 						fieldtype: "Select",
 						label: "Retry Reason",
 						options:
-							"Execution Failure\nQA Failure\nHuman Review Rejection\nPrompt Revision\nWorkflow Revision\nInput Revision\nOther",
+							"Execution Failure\nWorkflow Revision\nInput Revision\nManual Retry\nOther",
 						default: "Execution Failure",
 						reqd: 1
 					}

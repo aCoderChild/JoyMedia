@@ -1286,13 +1286,10 @@ const generateButtonText = computed(() => {
     }
     return `${pct || 0}% ${currentLang.value === "vi" ? "Đang xử lý..." : "Rendering..."}`;
   }
-  if (status === "Finalizing" || status === "Ready for Composition") {
-    return currentLang.value === "vi" ? "Đang hoàn thiện..." : "Finalizing...";
-  }
   if (status === "Completed") {
     return currentLang.value === "vi" ? "✓ Hoàn tất" : "✓ Completed";
   }
-  if (status === "Failed" || status === "Partially Completed") {
+  if (status === "Failed") {
     return currentLang.value === "vi" ? "Thử lại" : "Retry";
   }
   if (hasStoryboard.value) {
@@ -1459,10 +1456,10 @@ const productionError = computed(() => {
   if (!production.value) return "";
   if (production.value.error_summary) return production.value.error_summary;
   const failedJob = (production.value.jobs || []).find(
-    (job) => (job.status === "Failed" || job.status === "Partially Completed") && job.error_summary
+    (job) => job.status === "Failed" && job.error_summary
   );
   if (failedJob?.error_summary) return failedJob.error_summary;
-  if (production.value.status === "Failed" || production.value.status === "Partially Completed" || production.value.failed_jobs > 0) {
+  if (production.value.status === "Failed" || production.value.failed_jobs > 0) {
     return currentLang.value === "vi"
       ? "Một hoặc nhiều cảnh không thể tạo. Vui lòng thử lại."
       : "One or more shots could not be generated. Please retry.";
@@ -1846,14 +1843,14 @@ watch(settings, (value) => {
 }, { immediate: true });
 
 // Production Polling Logic
-const ACTIVE_STATUSES = new Set(["Queued", "Running", "Awaiting Review", "Finalizing", "Ready for Composition"]);
+const ACTIVE_STATUSES = new Set(["Queued", "Running"]);
 let pollTimer = null;
 const isProductionActive = computed(() => ACTIVE_STATUSES.has(production.value?.status));
 const nowTick = ref(Date.now());
 
 const productionElapsedSeconds = computed(() => {
   if (!production.value) return 0;
-  const startedAt = production.value.started_at || production.value.queued_at;
+  const startedAt = production.value.started_at;
   if (!startedAt) return 0;
   const text = String(startedAt).replace(" ", "T");
   const date = new Date(text.endsWith("Z") ? text : `${text}Z`);

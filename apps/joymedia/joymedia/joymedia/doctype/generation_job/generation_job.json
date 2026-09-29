@@ -13,8 +13,6 @@
   "prompt_text",
   "prompt_hash",
   "status",
-  "generation_request_section",
-  "requested_variants",
   "queue_and_execution_section",
   "queued_at",
   "started_at",
@@ -24,8 +22,6 @@
   "segment_index",
   "segment_frame_count",
   "result_summary_section",
-  "successful_variants",
-  "failed_variants",
   "failure_class",
   "error_summary"
  ],
@@ -61,22 +57,8 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Draft\nReady\nQueued\nRunning\nCompleted\nPartially Completed\nFailed\nCancelled",
+   "options": "Draft\nReady\nQueued\nRunning\nCompleted\nFailed\nCancelled",
    "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "generation_request_section",
-   "fieldtype": "Section Break",
-   "label": "Generation Request"
-  },
-  {
-   "default": "1",
-   "description": "Number of output variants requested. Each executable variant should produce its own Generation Attempt.",
-   "fieldname": "requested_variants",
-   "fieldtype": "Int",
-   "label": "Requested Variants",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
   },
   {
@@ -113,20 +95,6 @@
    "fieldname": "result_summary_section",
    "fieldtype": "Section Break",
    "label": "Result Summary"
-  },
-  {
-   "default": "0",
-   "fieldname": "successful_variants",
-   "fieldtype": "Int",
-   "label": "Successful Variants",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "failed_variants",
-   "fieldtype": "Int",
-   "label": "Failed Variants",
-   "read_only": 1
   },
   {
    "fieldname": "failure_class",
@@ -201,7 +169,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-29 10:37:53.392126",
+ "modified": "2026-09-29 20:24:14.205588",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Job",

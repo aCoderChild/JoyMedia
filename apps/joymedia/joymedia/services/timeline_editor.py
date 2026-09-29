@@ -431,7 +431,12 @@ def _serialize_timeline(project, clips):
 
 
 def _final_video(specification_name):
-	asset_version_name = frappe.db.get_value("Media Specification", specification_name, "final_asset_version")
+	asset_version_name = frappe.db.get_value(
+		"Generation Run",
+		{"media_specification": specification_name},
+		"final_asset_version",
+		order_by="creation desc",
+	)
 	if not asset_version_name:
 		return None
 	return frappe.db.get_value(

@@ -116,7 +116,6 @@ def _get_latest_project_generation_run(media_project, specification_names=None):
 			"name",
 			"media_specification",
 			"status",
-			"queued_at",
 			"started_at",
 			"completed_at",
 			"progress",
@@ -763,11 +762,7 @@ def get_pending_review_cards():
 			limit_page_length=20,
 		)
 		final_run = next((run for run in final_runs if run.final_asset_version), None)
-		final_asset_version = (
-			final_run.final_asset_version
-			if final_run
-			else media_spec.final_asset_version
-		)
+		final_asset_version = final_run.final_asset_version if final_run else None
 		review_status = final_run.status if final_run else None
 
 		# Case 1: Multi-shot campaign -> Only show the composed / merged full video
@@ -1212,32 +1207,46 @@ def regenerate_campaign_shot(campaign_name, shot_name):
 	campaign = frappe.get_doc("Media Project", campaign_name)
 	campaign._require_write_access()
 	shot = frappe.get_doc("Shot Specification", shot_name)
-
-	job_name = frappe.db.get_value(
+	jobs = frappe.get_all(
 		"Generation Job",
-		{"shot_specification": shot.name},
-		"name",
-		order_by="creation desc",
+		filters={"shot_specification": shot.name},
+		fields=["name", "segment_index", "status"],
+		order_by="segment_index asc, creation asc",
 	)
-	if job_name:
-		job = frappe.get_doc("Generation Job", job_name)
-		if job.status == "Completed":
-			attempt_name = frappe.db.get_value(
-				"Generation Attempt",
-				{"generation_job": job.name, "status": "Completed"},
-				"name",
-				order_by="creation desc",
+	if jobs:
+		from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
+			create_qa_retry_attempt_internal,
+			get_effective_attempt,
+		)
+		from joymedia.services.generation_orchestrator import (
+			_retry_and_submit_latest_failed_attempts,
+			prepare_chained_regeneration,
+		)
+		from joymedia.services.generation_runner import submit_attempt
+
+		if any(job.status in ("Queued", "Running") for job in jobs):
+			frappe.throw(_("This shot is already running. Stop the current sequence before regenerating it."))
+		shot.db_set("selected_output_asset_version", None, update_modified=False)
+		first_attempt = get_effective_attempt(jobs[0].name)
+		attempt_names = []
+		if first_attempt and first_attempt.status == "Completed":
+			attempt_names.extend(prepare_chained_regeneration(first_attempt.name))
+			first_retry = create_qa_retry_attempt_internal(first_attempt.name, "Manual Retry")
+			attempt_names.insert(0, first_retry.name)
+		elif first_attempt and first_attempt.status == "Failed":
+			results = _retry_and_submit_latest_failed_attempts(
+				frappe.get_doc("Generation Job", jobs[0].name), "Manual Retry"
 			)
-			if attempt_name:
-				from joymedia.joymedia.doctype.generation_attempt.generation_attempt import create_qa_retry_attempt_internal
-				from joymedia.services.generation_runner import submit_attempt
-				attempt = create_qa_retry_attempt_internal(attempt_name, "Manual Retry")
-				return submit_attempt(attempt.name)
-		if job.status == "Failed":
-			from joymedia.services.generation_orchestrator import _retry_and_submit_latest_failed_attempts
-			results = _retry_and_submit_latest_failed_attempts(job, "Manual Retry")
-			frappe.db.commit()
-			return {"generation_job": job.name, "attempts": results}
+			return {"shot_name": shot.name, "attempts": results}
+		else:
+			frappe.throw(_("Cannot regenerate shot before generating the video."))
+
+		results = []
+		for attempt_name in attempt_names:
+			submission = submit_attempt(attempt_name)
+			results.append({"name": attempt_name, **submission})
+		frappe.db.commit()
+		return {"shot_name": shot.name, "attempts": results}
 
 	frappe.throw(_("Cannot regenerate shot before generating the video."))
 

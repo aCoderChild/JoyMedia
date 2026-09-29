@@ -6,7 +6,10 @@ from frappe import _
 from frappe.utils.synchronization import filelock
 from frappe.utils import now
 
-from joymedia.joymedia.doctype.generation_attempt.generation_attempt import create_retry_attempt_internal
+from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
+	create_retry_attempt_internal,
+	get_effective_attempt_from_history,
+)
 
 from .generation_runner import (
 	attach_chained_first_frame,
@@ -67,7 +70,6 @@ def start_run_internal(run_name: str):
 	)
 
 	run.status = "Queued"
-	run.queued_at = now()
 	run.error_summary = None
 	run.save(ignore_permissions=True)
 	if media_specification.media_project:
@@ -282,7 +284,7 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 					{
 						"status": "Failed",
 						"error_summary": message,
-						"failure_class": "Configuration",
+						"failure_class": "Workflow",
 						"completed_at": now(),
 					},
 					update_modified=False,
@@ -416,17 +418,11 @@ def prepare_chained_regeneration(attempt_name: str):
 	media_specification_name = frappe.db.get_value(
 		"Shot Specification", shot_specification_name, "media_specification"
 	)
-	if frappe.db.get_value("Media Specification", media_specification_name, "continuity_mode") not in (
-		"Continuous",
-		"Consistency",
-	):
-		return []
-
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
 	shot = frappe.get_doc("Shot Specification", job.shot_specification)
 	media_specification = frappe.get_doc("Media Specification", shot.media_specification)
-	if media_specification.continuity_mode not in ("Continuous", "Consistency") or not job.generation_run:
+	if not job.generation_run:
 		return []
 
 	jobs = frappe.get_all(
@@ -445,6 +441,11 @@ def prepare_chained_regeneration(attempt_name: str):
 	while frontier:
 		parent = frontier.pop(0)
 		for child in children_by_parent.get(parent, []):
+			if (
+				child.shot_specification != shot.shot_specification
+				and media_specification.continuity_mode not in ("Continuous", "Consistency")
+			):
+				continue
 			downstream.append(child)
 			frontier.append(child.name)
 
@@ -453,6 +454,7 @@ def prepare_chained_regeneration(attempt_name: str):
 
 	from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
 		create_qa_retry_attempt_internal,
+		get_effective_attempt,
 	)
 
 	regeneration_plan = []
@@ -472,29 +474,22 @@ def prepare_chained_regeneration(attempt_name: str):
 				).format(downstream_job.shot_specification)
 			)
 
-		completed_attempts = frappe.get_all(
-			"Generation Attempt",
-			filters={"generation_job": downstream_job.name, "status": "Completed"},
-			fields=["name"],
-			order_by="attempt_number desc, creation desc",
-			limit_page_length=1,
-		)
-		if not completed_attempts:
+		completed_attempt = get_effective_attempt(downstream_job.name)
+		if not completed_attempt or completed_attempt.status != "Completed":
 			frappe.throw(
 				_("Shot {0} has no completed output to invalidate.").format(
 					downstream_job.shot_specification
 				)
 			)
 
-		completed_attempt = completed_attempts[0].name
-		if frappe.db.exists("Generation Attempt", {"retry_of": completed_attempt}):
+		if frappe.db.exists("Generation Attempt", {"retry_of": completed_attempt.name}):
 			frappe.throw(
 				_(
 					"Shot {0} already has a regeneration successor. Resolve that regeneration before starting another sequence."
 				).format(downstream_job.shot_specification)
 			)
 
-		regeneration_plan.append((downstream_job.shot_specification, completed_attempt))
+		regeneration_plan.append((downstream_job.shot_specification, completed_attempt.name))
 
 	prepared = []
 	for shot_specification, completed_attempt in regeneration_plan:
@@ -529,7 +524,6 @@ def finalize_run(run_name: str):
 
 	run.final_asset_version = result["final_asset_version"]
 	run.status = "Completed"
-	run.review_notes = None
 	run.completed_at = now()
 	run.save(ignore_permissions=True)
 	if run.media_specification:
@@ -634,13 +628,13 @@ def _create_retry_attempt(run, jobs):
 
 	for job in jobs:
 		attempts = _get_job_attempts(job.name)
+		effective_attempt = get_effective_attempt_from_history(attempts)
 		active_attempts = [attempt for attempt in attempts if attempt.status in ACTIVE_ATTEMPT_STATUSES]
 		retry_attempts = [attempt for attempt in attempts if attempt.retry_of]
-		failed_attempts = [attempt for attempt in attempts if attempt.status == "Failed"]
 		if (
-			any(attempt.status == "Completed" for attempt in attempts)
+			not effective_attempt
+			or effective_attempt.status != "Failed"
 			or active_attempts
-			or not failed_attempts
 			or len(retry_attempts) >= MAX_AUTOMATIC_RETRIES
 		):
 			continue
@@ -648,7 +642,7 @@ def _create_retry_attempt(run, jobs):
 		job.status = "Queued"
 		job.queued_at = now()
 		job.save(ignore_permissions=True)
-		create_retry_attempt_internal(failed_attempts[-1].name, "Execution Failure")
+		create_retry_attempt_internal(effective_attempt.name, "Execution Failure")
 		return True
 	return False
 
@@ -680,12 +674,8 @@ def _retry_and_submit_latest_failed_attempts(job, reason):
 				}
 			)
 		return results
-	retried_attempts = {attempt.retry_of for attempt in attempts if attempt.retry_of}
-	failed_attempt_names = [
-		attempt.name
-		for attempt in attempts
-		if attempt.status == "Failed" and attempt.name not in retried_attempts
-	]
+	effective_attempt = get_effective_attempt_from_history(attempts)
+	failed_attempt_names = [effective_attempt.name] if effective_attempt and effective_attempt.status == "Failed" else []
 	results = []
 	for attempt_name in failed_attempt_names:
 		retry_attempt = create_retry_attempt_internal(attempt_name, reason)
@@ -718,33 +708,30 @@ def _submit_attempt_or_record_failure(attempt_name):
 
 def _update_job_summary(job):
 	attempts = _get_job_attempts(job.name)
-	failed_attempts = [attempt for attempt in attempts if attempt.status == "Failed"]
-	statuses = {attempt.status for attempt in attempts}
+	effective_attempt = get_effective_attempt_from_history(attempts)
+	if not effective_attempt:
+		return
 
-	if "Running" in statuses:
+	if effective_attempt.status == "Running":
 		job.status = "Running"
 		job.started_at = job.started_at or now()
-	elif statuses & {"Pending", "Queued"}:
+	elif effective_attempt.status in {"Pending", "Queued"}:
 		job.status = "Queued"
-	elif "Completed" in statuses:
+	elif effective_attempt.status == "Completed":
 		job.status = "Completed"
 		job.progress = 100
 		job.completed_at = job.completed_at or now()
 		job.failure_class = None
 		job.error_summary = None
-	elif attempts and statuses <= set(TERMINAL_ATTEMPT_STATUSES):
-		job.status = "Cancelled" if statuses == {"Cancelled"} else "Failed"
+	elif effective_attempt.status in {"Failed", "Cancelled"}:
+		job.status = "Cancelled" if effective_attempt.status == "Cancelled" else "Failed"
 		job.progress = 0
 		job.completed_at = job.completed_at or now()
-		latest_failure = failed_attempts[-1] if failed_attempts else None
-		job.failure_class = latest_failure.get("failure_class") if latest_failure else None
+		job.failure_class = effective_attempt.get("failure_class") if effective_attempt.status == "Failed" else None
 		job.error_summary = (
-			(
-				latest_failure.get("error_details")
-				or latest_failure.get("error_summary")
-			)
-			if latest_failure
-			and (latest_failure.get("error_details") or latest_failure.get("error_summary"))
+			(effective_attempt.get("error_details") or effective_attempt.get("error_summary"))
+			if effective_attempt.status == "Failed"
+			and (effective_attempt.get("error_details") or effective_attempt.get("error_summary"))
 			else _("All execution attempts failed.")
 		)
 	# Job counters are derived from immutable Attempt history. A retry creates an

@@ -19,6 +19,10 @@ class GenerationAttempt(Document):
 					self.generation_job
 				)
 			)
+		if not self.retry_of and frappe.db.exists(
+			"Generation Attempt", {"generation_job": self.generation_job}
+		):
+			frappe.throw(_("A Generation Job can have only one initial Generation Attempt."))
 		job.validate_for_execution()
 		self._validate_retry_reference()
 		latest_attempt_number = frappe.db.get_value(
@@ -42,6 +46,11 @@ class GenerationAttempt(Document):
 		)
 		if not previous_attempt or previous_attempt.generation_job != self.generation_job:
 			frappe.throw(_("Retry Of must belong to the same Generation Job."))
+		if frappe.db.exists(
+			"Generation Attempt",
+			{"retry_of": self.retry_of, "name": ["!=", self.name]},
+		):
+			frappe.throw(_("A Generation Attempt can have only one retry successor."))
 		if not self.retry_reason:
 			frappe.throw(_("Retry Reason is required when Retry Of is set."))
 
@@ -53,6 +62,33 @@ class GenerationAttempt(Document):
 		frappe.throw(
 			_("Retry Of must be a failed Generation Attempt, unless this is a QA retry of a completed Attempt.")
 		)
+
+
+def get_effective_attempt_from_history(attempts):
+	"""Return the leaf Attempt in a Job's linear retry chain."""
+	if not attempts:
+		return None
+	successors = {}
+	for attempt in attempts:
+		if attempt.retry_of:
+			successors.setdefault(attempt.retry_of, []).append(attempt)
+	for previous_name, children in successors.items():
+		if len(children) > 1:
+			frappe.throw(_("Generation Attempt {0} has more than one retry successor.").format(previous_name))
+	leaf_attempts = [attempt for attempt in attempts if attempt.name not in successors]
+	if len(leaf_attempts) != 1:
+		frappe.throw(_("Generation Job has an invalid Generation Attempt lineage."))
+	return leaf_attempts[0]
+
+
+def get_effective_attempt(job_name):
+	attempts = frappe.get_all(
+		"Generation Attempt",
+		filters={"generation_job": job_name},
+		fields=["name", "status", "retry_of", "failure_class", "error_summary", "error_details"],
+		order_by="attempt_number asc, creation asc",
+	)
+	return get_effective_attempt_from_history(attempts)
 
 
 @frappe.whitelist()
