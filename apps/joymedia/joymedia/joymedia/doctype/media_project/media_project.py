@@ -831,7 +831,7 @@ def get_reviews_summary():
 	"""Return the review counts used by the JoyMedia navigation shell."""
 	cards = get_pending_review_cards()
 	return {
-		"pending_count": sum(1 for card in cards if card.get("status") == "Awaiting Review"),
+		"pending_count": 0,
 		"total_count": len(cards),
 	}
 
@@ -882,7 +882,7 @@ def review_final_video(project_name: str, decision: str, notes: str | None = Non
 		"Generation Run",
 		run.name,
 		{
-			"status": "Completed" if decision == "Approved" else "Awaiting Review",
+			"status": "Completed",
 			"review_notes": (notes or "").strip() or None,
 		},
 		update_modified=True,
@@ -913,7 +913,7 @@ def reject_review(review_name: str, campaign_name: str | None = None, notes: str
 	if campaign_name and frappe.db.exists("Media Project", campaign_name):
 		return reject_campaign_review(campaign_name, review_name, notes)
 	run = frappe.get_doc("Generation Run", review_name)
-	run.status = "Awaiting Review"
+	run.status = "Completed"
 	run.review_notes = notes
 	run.save(ignore_permissions=True)
 	return run.as_dict()
@@ -1539,7 +1539,7 @@ class MediaProject(Document):
 					"status",
 					order_by="creation desc",
 				)
-				if latest_run_status in ("Queued", "Running", "Finalizing"):
+				if latest_run_status in ("Queued", "Running"):
 					frappe.throw(
 						_(
 							"Video Settings cannot be changed while generation is active. "
@@ -1548,7 +1548,6 @@ class MediaProject(Document):
 					)
 				if self.status not in ("Review", "Needs Attention", "Completed") and latest_run_status not in (
 					"Failed",
-					"Partially Completed",
 				):
 					frappe.throw(_("Create a storyboard revision before changing Video Settings."))
 
@@ -1698,9 +1697,9 @@ class MediaProject(Document):
 				as_dict=True,
 				order_by="creation desc",
 			)
-			if latest_run and latest_run.status in ("Queued", "Running", "Finalizing"):
+			if latest_run and latest_run.status in ("Queued", "Running"):
 				return {"run": latest_run.name, "status": latest_run.status}
-			if latest_run and latest_run.status in ("Failed", "Partially Completed"):
+			if latest_run and latest_run.status == "Failed":
 				# A failed revision is still the user's current generation target.
 				# Retry it instead of calling generate_video(), which correctly
 				# rejects already-submitted revisions.
@@ -1743,7 +1742,7 @@ class MediaProject(Document):
 				"Generation Run",
 				{
 					"media_specification": media_specification.name,
-					"status": ["not in", ["Completed", "Failed", "Partially Completed", "Cancelled"]],
+				"status": ["not in", ["Completed", "Failed", "Cancelled"]],
 				},
 				["name", "status"],
 				as_dict=True,
@@ -1800,7 +1799,7 @@ class MediaProject(Document):
 			"Generation Run",
 			{
 				"media_specification": media_specification.name,
-				"status": ["in", ["Failed", "Partially Completed"]],
+				"status": "Failed",
 			},
 			"name",
 			order_by="creation desc",
@@ -1838,7 +1837,7 @@ class MediaProject(Document):
 				"Generation Job",
 				filters={
 					"generation_run": run_name,
-					"status": ["in", ["Failed", "Partially Completed"]],
+					"status": "Failed",
 				},
 				pluck="name",
 			):
@@ -1892,7 +1891,6 @@ class MediaProject(Document):
 			)
 			if self.status not in ("Review", "Needs Attention", "Completed") and latest_run_status not in (
 				"Failed",
-				"Partially Completed",
 			):
 				frappe.throw(_("Storyboard revision is not available in the current Campaign state."))
 			workflow = latest.workflow

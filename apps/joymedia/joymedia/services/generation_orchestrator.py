@@ -27,7 +27,7 @@ from .workflow_resolver import (
 )
 
 
-ACTIVE_RUN_STATUSES = ("Queued", "Running", "Finalizing")
+ACTIVE_RUN_STATUSES = ("Queued", "Running")
 ACTIVE_ATTEMPT_STATUSES = ("Pending", "Queued", "Running")
 TERMINAL_ATTEMPT_STATUSES = ("Completed", "Failed", "Cancelled")
 TERMINAL_JOB_STATUSES = ("Completed", "Partially Completed", "Failed", "Cancelled")
@@ -364,14 +364,14 @@ def retry_failed_jobs_internal(run_name: str):
 	"""Retry failed Jobs after the owning Campaign has authorized the operation."""
 	with filelock(f"joymedia-retry-run-{run_name}"):
 		run = frappe.get_doc("Generation Run", run_name)
-		if run.status not in ("Failed", "Partially Completed"):
-			frappe.throw(_("Only Failed or Partially Completed runs can be retried."))
+		if run.status != "Failed":
+			frappe.throw(_("Only Failed runs can be retried."))
 
 		job_names = frappe.get_all(
 			"Generation Job",
 			filters={
 				"generation_run": run.name,
-				"status": ["in", ["Failed", "Partially Completed"]],
+				"status": "Failed",
 			},
 			pluck="name",
 		)
@@ -515,16 +515,12 @@ def prepare_chained_regeneration(attempt_name: str):
 
 
 def finalize_run(run_name: str):
-	"""Compose a finalizing run's approved selected outputs into its final Asset Version."""
+	"""Compose a running execution into its final Asset Version."""
 	run = frappe.get_doc("Generation Run", run_name)
 	refresh_run(run.name, enqueue_finalization=False)
 	run.reload()
-	if run.status not in ("Finalizing", "Ready for Composition"):
-		frappe.throw(
-			_("Generation Run {0} must be Finalizing or Ready for Composition before composition.").format(
-				run.name
-			)
-		)
+	if run.status != "Running":
+		frappe.throw(_("Generation Run {0} must be Running before composition.").format(run.name))
 	if run.final_asset_version:
 		return _run_summary(run)
 
@@ -535,7 +531,7 @@ def finalize_run(run_name: str):
 		return _run_summary(run)
 
 	run.final_asset_version = result["final_asset_version"]
-	run.status = "Awaiting Review"
+	run.status = "Completed"
 	run.review_notes = None
 	run.completed_at = now()
 	run.save(ignore_permissions=True)
@@ -553,7 +549,7 @@ def finalize_run(run_name: str):
 def cancel_run(run_name: str):
 	"""Stop orchestration and cancel only attempts that have not reached ComfyUI."""
 	run = frappe.get_doc("Generation Run", run_name)
-	if run.status in ("Completed", "Partially Completed", "Failed", "Cancelled"):
+	if run.status in ("Completed", "Failed", "Cancelled"):
 		return _run_summary(run)
 
 	for attempt_name in _get_pending_attempt_names_for_run(run.name):
@@ -614,9 +610,7 @@ def sync_media_project_status_for_run(run_name: str):
 		status = "Generating"
 	elif any(item.final_asset_version for item in runs):
 		status = "Completed"
-	elif any(item.status == "Awaiting Review" for item in runs):
-		status = "Review"
-	elif any(item.status in ("Failed", "Partially Completed") for item in runs):
+	elif any(item.status == "Failed" for item in runs):
 		status = "Needs Attention"
 	else:
 		status = "Draft"
@@ -796,24 +790,19 @@ def _refresh_run_counters(run):
 	)
 	run.total_jobs = len(jobs)
 	run.completed_jobs = sum(job.status == "Completed" for job in jobs)
-	run.failed_jobs = sum(job.status == "Failed" for job in jobs)
+	run.failed_jobs = sum(job.status in ("Failed", "Partially Completed") for job in jobs)
 	run.running_jobs = sum(job.status == "Running" for job in jobs)
 	run.progress = round(run.completed_jobs / run.total_jobs * 100, 2) if run.total_jobs else 0
 
-	terminal_jobs = sum(job.status in TERMINAL_JOB_STATUSES for job in jobs)
-	partially_completed_jobs = sum(job.status == "Partially Completed" for job in jobs)
 	if run.total_jobs and run.completed_jobs == run.total_jobs:
 		if run.final_asset_version:
 			run.status = "Completed"
 			run.completed_at = run.completed_at or now()
-		elif _run_outputs_are_selected(run.name):
-			run.status = "Finalizing"
-			run.completed_at = None
 		else:
-			run.status = "Awaiting Review"
+			run.status = "Running"
 			run.completed_at = None
-	elif run.total_jobs and terminal_jobs == run.total_jobs:
-		run.status = "Partially Completed" if run.completed_jobs or partially_completed_jobs else "Failed"
+	elif run.total_jobs and run.failed_jobs > 0:
+		run.status = "Failed"
 		run.completed_at = run.completed_at or now()
 		latest_failed_job = next(
 			(
@@ -854,8 +843,10 @@ def _refresh_run_counters(run):
 
 def _enqueue_finalization_if_ready(run):
 	if (
-		run.status != "Finalizing"
+		run.status != "Running"
 		or run.final_asset_version
+		or not run.total_jobs
+		or run.completed_jobs != run.total_jobs
 		or not _run_outputs_are_selected(run.name)
 	):
 		return

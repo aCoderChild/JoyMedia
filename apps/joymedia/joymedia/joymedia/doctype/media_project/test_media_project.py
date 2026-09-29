@@ -173,7 +173,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			review_for_regeneration = _create_pending_review(
 				specification_a.name, frappe.generate_hash(length=8)
 			)
-			frappe.db.set_value("Generation Run", review_for_regeneration, "status", "Awaiting Review")
+			frappe.db.set_value("Generation Run", review_for_regeneration, "status", "Completed")
 			reject_campaign_review(campaign_a.name, review_for_regeneration, "Needs another take")
 			with patch(
 				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.create_qa_retry_attempt_internal",
@@ -736,7 +736,7 @@ def _create_pending_review(media_specification, suffix, create_run=True):
 			"media_specification": media_specification,
 			"workflow_version": workflow,
 			"requested_by": "Administrator",
-			"status": "Awaiting Review",
+			"status": "Completed",
 		}
 	)
 	run.db_insert()
