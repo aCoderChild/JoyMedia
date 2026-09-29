@@ -690,7 +690,6 @@ def _create_pending_review(media_specification, suffix, create_run=True):
 			"doctype": "Generation Job",
 			"name": f"JOB-TEST-{suffix}",
 			"shot_specification": shot.name,
-			"requested_variants": 1,
 			"status": "Draft",
 			"workflow_version": workflow,
 			"prompt_text": "Test generation prompt.",

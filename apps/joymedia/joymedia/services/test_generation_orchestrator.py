@@ -207,26 +207,25 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertIsNone(run.completed_at)
 
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_job_is_partially_completed_when_terminal_attempts_include_successes_and_failures(self, get_all):
-		job = frappe._dict(name="JOB-00001", requested_variants=2, completed_at=None)
+	def test_failed_attempt_followed_by_completed_attempt_completes_job(self, get_all):
+		job = frappe._dict(name="JOB-00001", completed_at=None)
 		job.db_set = MagicMock()
 		get_all.return_value = [
 			frappe._dict(name="ATT-00001", status="Completed", retry_of=None),
 			frappe._dict(name="ATT-00002", status="Failed", retry_of=None),
+			frappe._dict(name="ATT-00003", status="Completed", retry_of="ATT-00002"),
 		]
 
 		generation_orchestrator._update_job_summary(job)
 
-		self.assertEqual(job.successful_variants, 1)
-		self.assertEqual(job.failed_variants, 1)
-		self.assertEqual(job.progress, 50)
-		self.assertEqual(job.status, "Partially Completed")
-		self.assertEqual(job.error_summary, "Only 1 of 2 requested variants completed.")
+		self.assertEqual(job.progress, 100)
+		self.assertEqual(job.status, "Completed")
+		self.assertIsNone(job.error_summary)
 		job.db_set.assert_called_once()
 
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
 	def test_qa_retry_replaces_the_rejected_completed_variant(self, get_all):
-		job = frappe._dict(name="JOB-00001", requested_variants=1, completed_at=None)
+		job = frappe._dict(name="JOB-00001", completed_at=None)
 		job.db_set = MagicMock()
 		get_all.return_value = [
 			frappe._dict(
@@ -242,12 +241,11 @@ class TestGenerationOrchestrator(FrappeTestCase):
 
 		generation_orchestrator._update_job_summary(job)
 
-		self.assertEqual(job.successful_variants, 0)
 		self.assertEqual(job.status, "Queued")
 
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
 	def test_job_summary_uses_the_latest_failed_attempt_details(self, get_all):
-		job = frappe._dict(name="JOB-00001", requested_variants=1, completed_at=None)
+		job = frappe._dict(name="JOB-00001", completed_at=None)
 		job.db_set = MagicMock()
 		get_all.return_value = [
 			frappe._dict(

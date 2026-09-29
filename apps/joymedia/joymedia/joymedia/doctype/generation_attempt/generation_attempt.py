@@ -97,7 +97,7 @@ def create_qa_retry_attempt_internal(
 
 def _create_successor_attempt(previous_attempt, reason):
 	job = frappe.get_doc("Generation Job", previous_attempt.generation_job)
-	if job.status not in ("Ready", "Queued", "Completed", "Partially Completed", "Failed"):
+	if job.status not in ("Ready", "Queued", "Completed", "Failed"):
 		frappe.throw(
 			_("Generation Job {0} cannot be retried from status {1}.").format(job.name, job.status)
 		)

@@ -5,6 +5,115 @@ from pathlib import Path
 
 import frappe
 from frappe import _
+from frappe.utils.synchronization import filelock
+
+
+def compose_shot_segments(generation_run_name, shot_specification_name):
+	"""Assemble completed generated segments into one selected Shot output."""
+	with filelock(f"joymedia-compose-shot-{generation_run_name}-{shot_specification_name}"):
+		shot = frappe.get_doc("Shot Specification", shot_specification_name)
+		jobs = frappe.get_all(
+			"Generation Job",
+			filters={
+				"generation_run": generation_run_name,
+				"shot_specification": shot.name,
+			},
+			fields=["name", "segment_index", "segment_frame_count", "status"],
+			order_by="segment_index asc",
+		)
+		if not jobs or any(job.status != "Completed" for job in jobs):
+			return None
+
+		segment_versions = []
+		for job in jobs:
+			attempt = frappe.db.get_value(
+				"Generation Attempt",
+				{"generation_job": job.name, "status": "Completed"},
+				"name",
+				order_by="creation desc",
+			)
+			if not attempt:
+				return None
+			artifact = frappe.get_doc("Generation Artifact", {"generation_attempt": attempt, "artifact_role": "Primary Video"})
+			if not artifact.promoted_asset_version:
+				return None
+			segment_versions.append((job, artifact.promoted_asset_version))
+
+		if len(segment_versions) == 1:
+			shot.db_set("selected_output_asset_version", segment_versions[0][1], update_modified=False)
+			return segment_versions[0][1]
+
+		media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+		profile = _get_delivery_profile(media_specification)
+		try:
+			with tempfile.TemporaryDirectory(prefix=f"joymedia-shot-{shot.name}-") as temp_dir:
+				temporary_path = Path(temp_dir)
+				normalized_paths = []
+				expected_frames = 0
+				for index, (job, asset_version_name) in enumerate(segment_versions):
+					generated_frames = int(job.segment_frame_count or 0)
+					effective_frames = generated_frames if index == 0 else generated_frames - 1
+					if effective_frames <= 0:
+						raise ValueError(f"Generation Job {job.name} has no effective segment frames")
+					normalized_path = temporary_path / f"{index + 1:04d}-{job.name}.mp4"
+					_normalize_segment(
+						_get_asset_version_path(asset_version_name),
+						normalized_path,
+						profile,
+						generated_frames,
+						drop_first=index > 0,
+					)
+					_validate_normalized_video(normalized_path, profile, expected_frames=effective_frames)
+					normalized_paths.append(normalized_path)
+					expected_frames += effective_frames
+
+				assembled_path = temporary_path / f"{shot.name}.mp4"
+				_concatenate_normalized_shots(normalized_paths, assembled_path, profile)
+				_validate_normalized_video(assembled_path, profile, expected_frames=expected_frames)
+				video_bytes = assembled_path.read_bytes()
+				video_duration = _get_video_duration(assembled_path)
+		except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+			frappe.throw(_("Unable to assemble Shot segments: {0}").format(_command_error(exc)))
+
+		asset_name = f"{shot.name} Assembled Video"
+		media_asset_name = frappe.db.get_value("Media Asset", {"asset_name": asset_name}, "name")
+		media_asset = frappe.get_doc("Media Asset", media_asset_name) if media_asset_name else frappe.get_doc(
+			{
+				"doctype": "Media Asset",
+				"asset_name": asset_name,
+				"media_type": "Video",
+				"asset_category": "Other",
+				"status": "Active",
+			}
+		).insert(ignore_permissions=True)
+		existing_version = frappe.db.get_value(
+			"Asset Version", {"media_asset": media_asset.name, "source": "Composed"}, "name"
+		)
+		if existing_version:
+			shot.db_set("selected_output_asset_version", existing_version, update_modified=False)
+			return existing_version
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"{shot.name}.mp4",
+				"content": video_bytes,
+				"is_private": 1,
+				"attached_to_doctype": "Media Asset",
+				"attached_to_name": media_asset.name,
+			}
+		).insert(ignore_permissions=True)
+		asset_version = frappe.get_doc(
+			{
+				"doctype": "Asset Version",
+				"media_asset": media_asset.name,
+				"file": file_doc.file_url,
+				"source": "Composed",
+				"duration_seconds": video_duration,
+				"fps": profile["fps"],
+			}
+		).insert(ignore_permissions=True)
+		shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
+		return asset_version.name
 
 
 @frappe.whitelist()
@@ -269,6 +378,53 @@ def _normalize_shot(source_path, normalized_path, profile, planned_frames):
 			str(normalized_path),
 		]
 	)
+
+
+def _normalize_segment(source_path, normalized_path, profile, generated_frames, *, drop_first):
+	"""Normalize a generated segment and remove its continuation overlap frame."""
+	effective_frames = generated_frames - 1 if drop_first else generated_frames
+	video_filter = f"fps={profile['fps']:g},"
+	if drop_first:
+		video_filter += "select='not(eq(n,0))',"
+	video_filter += (
+		f"tpad=stop_mode=clone:stop_duration={effective_frames / profile['fps']:.6f},"
+		f"trim=end_frame={effective_frames},setpts=PTS-STARTPTS,"
+		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=decrease,"
+		f"pad={profile['width']}:{profile['height']}:(ow-iw)/2:(oh-ih)/2"
+	)
+	_run_ffmpeg(
+		[
+			"ffmpeg",
+			"-y",
+			"-i",
+			str(source_path),
+			"-map",
+			"0:v:0",
+			"-vf",
+			video_filter,
+			"-an",
+			"-c:v",
+			"libx264",
+			"-profile:v",
+			"high",
+			"-pix_fmt",
+			"yuv420p",
+			"-movflags",
+			"+faststart",
+			str(normalized_path),
+		]
+	)
+
+
+def _get_asset_version_path(asset_version_name):
+	asset_version = frappe.get_doc("Asset Version", asset_version_name)
+	if not asset_version.file:
+		raise ValueError(f"Asset Version {asset_version.name} has no file")
+	file_doc = frappe.get_doc("File", {"file_url": asset_version.file})
+	path = Path(file_doc.get_full_path())
+	if not path.exists():
+		raise ValueError(f"Asset Version file does not exist: {path}")
+	return path
 
 
 def _concatenate_normalized_shots(paths, output_path, profile):

@@ -6,10 +6,7 @@ from frappe import _
 from frappe.utils.synchronization import filelock
 from frappe.utils import now
 
-from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
-	QA_RETRY_REASONS,
-	create_retry_attempt_internal,
-)
+from joymedia.joymedia.doctype.generation_attempt.generation_attempt import create_retry_attempt_internal
 
 from .generation_runner import (
 	attach_chained_first_frame,
@@ -18,9 +15,9 @@ from .generation_runner import (
 	submit_attempt,
 )
 from .generation_segment_planner import plan_generation_segments
-from .prompt_compiler import compile_prompt
+from .prompt_compiler import compile_segment_prompt
 from .result_ingestor import sync_attempt_result
-from .video_composer import compose_media_specification
+from .video_composer import compose_media_specification, compose_shot_segments
 from .workflow_resolver import (
 	validate_workflow_bindings,
 	validate_workflow_for_execution,
@@ -30,8 +27,7 @@ from .workflow_resolver import (
 ACTIVE_RUN_STATUSES = ("Queued", "Running")
 ACTIVE_ATTEMPT_STATUSES = ("Pending", "Queued", "Running")
 TERMINAL_ATTEMPT_STATUSES = ("Completed", "Failed", "Cancelled")
-TERMINAL_JOB_STATUSES = ("Completed", "Partially Completed", "Failed", "Cancelled")
-REQUESTED_VARIANTS_PER_SHOT = 1
+TERMINAL_JOB_STATUSES = ("Completed", "Failed", "Cancelled")
 MAX_AUTOMATIC_RETRIES = 1
 
 
@@ -112,52 +108,52 @@ def prepare_run(run_name: str):
 	try:
 		validate_generation_preflight(media_specification, workflow_version, shots)
 		jobs_to_prepare = []
-		previous_job_name = None
+		previous_shot_tail_job = None
 		for shot in shots:
-			existing_job = frappe.db.get_value(
-				"Generation Job", {"generation_run": run.name, "shot_specification": shot.name}, "name"
-			)
-			if existing_job:
-				previous_job_name = existing_job
-				continue
-
 			segments = plan_generation_segments(
 				shot.planned_frame_count,
 				max_segment_frames=workflow_version.frame_count,
 			)
-
-			if len(segments) != 1:
-				frappe.throw(
-					_(
-						"Shot {0} requires {1} generation segments. "
-						"Multi-segment execution is not enabled yet."
-					).format(
-						shot.name,
-						len(segments),
-					)
+			previous_segment_job = None
+			for segment in segments:
+				existing_job = frappe.db.get_value(
+					"Generation Job",
+					{
+						"generation_run": run.name,
+						"shot_specification": shot.name,
+						"segment_index": segment["segment_index"],
+					},
+					"name",
 				)
+				if existing_job:
+					previous_segment_job = existing_job
+					continue
 
-			segment = segments[0]
-			prompt_text = compile_prompt(shot.name)
-			job = frappe.get_doc(
-				{
-					"doctype": "Generation Job",
-					"generation_run": run.name,
-					"shot_specification": shot.name,
-					"workflow_version": run.workflow_version,
-					"prompt_text": prompt_text,
-					"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
-					"requested_variants": REQUESTED_VARIANTS_PER_SHOT,
-					"status": "Draft",
-					"segment_index": segment["segment_index"],
-					"segment_frame_count": segment["segment_frame_count"],
-					"depends_on_job": previous_job_name
-					if media_specification.continuity_mode in ("Continuous", "Consistency")
-					else None,
-				}
-			).insert(ignore_permissions=True)
-			jobs_to_prepare.append(job)
-			previous_job_name = job.name
+				dependency = previous_segment_job
+				if not dependency and media_specification.continuity_mode in ("Continuous", "Consistency"):
+					dependency = previous_shot_tail_job
+				prompt_text = compile_segment_prompt(
+					shot.name,
+					segment["segment_index"],
+					len(segments),
+				)
+				job = frappe.get_doc(
+					{
+						"doctype": "Generation Job",
+						"generation_run": run.name,
+						"shot_specification": shot.name,
+						"workflow_version": run.workflow_version,
+						"prompt_text": prompt_text,
+						"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
+						"status": "Draft",
+						"segment_index": segment["segment_index"],
+						"segment_frame_count": segment["segment_frame_count"],
+						"depends_on_job": dependency,
+					}
+				).insert(ignore_permissions=True)
+				jobs_to_prepare.append(job)
+				previous_segment_job = job.name
+			previous_shot_tail_job = previous_segment_job
 
 		for job in jobs_to_prepare:
 			prepare_generation_job(job.name)
@@ -223,12 +219,11 @@ def validate_generation_preflight(
 			shot_row.planned_frame_count,
 			max_segment_frames=workflow_version.frame_count,
 		)
-		if len(segments) != 1:
+		if not segments:
+			frappe.throw(_("Shot {0} has no generation segments.").format(shot.name))
+		if any(segment["segment_frame_count"] > workflow_version.frame_count for segment in segments):
 			frappe.throw(
-				_(
-					"Shot {0} requires {1} generation segments. "
-					"Multi-segment execution is not enabled yet."
-				).format(shot.name, len(segments))
+				_("Shot {0} contains a segment larger than Workflow frame capacity.").format(shot.name)
 			)
 
 
@@ -248,7 +243,7 @@ def submit_run(run_name: str):
 
 		for job_name in _get_run_job_names(run.name):
 			job = frappe.get_doc("Generation Job", job_name)
-			if job.status in ("Completed", "Partially Completed", "Failed", "Cancelled", "Running"):
+			if job.status in ("Completed", "Failed", "Cancelled", "Running"):
 				continue
 
 			if job.status not in ("Ready", "Queued"):
@@ -306,6 +301,7 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 	jobs = [frappe.get_doc("Generation Job", job_name) for job_name in _get_run_job_names(run.name)]
 	for job in jobs:
 		_update_job_summary(job)
+	_finalize_completed_shots(run)
 
 	if _create_retry_attempt(run, jobs):
 		_enqueue("submit_run", run.name)
@@ -331,6 +327,7 @@ def refresh_generation_state_for_attempt(attempt_name: str):
 	if run.status == "Cancelled":
 		return _run_summary(run)
 	_refresh_run_counters(run)
+	_finalize_completed_shots(run)
 	_enqueue_finalization_if_ready(run)
 	sync_media_project_status_for_run(run.name)
 	return _run_summary(run)
@@ -397,8 +394,8 @@ def retry_generation_job_from_ui(job_name: str, reason: str = "Execution Failure
 	frappe.has_permission("Generation Job", "write", job_name, throw=True)
 	with filelock(f"joymedia-retry-job-{job_name}"):
 		job = frappe.get_doc("Generation Job", job_name)
-		if job.status not in ("Failed", "Partially Completed"):
-			frappe.throw(_("Only Failed or Partially Completed Generation Jobs can be retried."))
+		if job.status != "Failed":
+			frappe.throw(_("Only Failed Generation Jobs can be retried."))
 
 		results = _retry_and_submit_latest_failed_attempts(job, reason)
 		if not results:
@@ -620,31 +617,28 @@ def sync_media_project_status_for_run(run_name: str):
 
 def _create_initial_attempts(job):
 	attempts = _get_job_attempts(job.name)
-	initial_attempts = [attempt for attempt in attempts if not attempt.retry_of]
-	created = []
-	for _ in range(max(0, job.requested_variants - len(initial_attempts))):
-		attempt = frappe.get_doc(
-			{
-				"doctype": "Generation Attempt",
-				"generation_job": job.name,
-				"seed": _new_seed(),
-				"status": "Pending",
-			}
-		).insert(ignore_permissions=True)
-		created.append(attempt.name)
-	return created
+	if attempts:
+		return []
+	attempt = frappe.get_doc(
+		{
+			"doctype": "Generation Attempt",
+			"generation_job": job.name,
+			"seed": _new_seed(),
+			"status": "Pending",
+		}
+	).insert(ignore_permissions=True)
+	return [attempt.name]
 
 
 def _create_retry_attempt(run, jobs):
 
 	for job in jobs:
 		attempts = _get_job_attempts(job.name)
-		successful_attempts = [attempt for attempt in attempts if attempt.status == "Completed"]
 		active_attempts = [attempt for attempt in attempts if attempt.status in ACTIVE_ATTEMPT_STATUSES]
 		retry_attempts = [attempt for attempt in attempts if attempt.retry_of]
 		failed_attempts = [attempt for attempt in attempts if attempt.status == "Failed"]
 		if (
-			len(successful_attempts) >= job.requested_variants
+			any(attempt.status == "Completed" for attempt in attempts)
 			or active_attempts
 			or not failed_attempts
 			or len(retry_attempts) >= MAX_AUTOMATIC_RETRIES
@@ -666,7 +660,7 @@ def _retry_and_submit_latest_failed_attempts(job, reason):
 		getattr(job, "get_shot_input_snapshot", None)
 	):
 		ensure_generation_inputs(job)
-	if not attempts and job.status in ("Failed", "Partially Completed"):
+	if not attempts and job.status == "Failed":
 		# Preparation/configuration failures can leave a failed Job without an
 		# Attempt. Create the initial attempt so Retry can submit the repaired
 		# workflow instead of incorrectly reporting that nothing is retryable.
@@ -724,32 +718,23 @@ def _submit_attempt_or_record_failure(attempt_name):
 
 def _update_job_summary(job):
 	attempts = _get_job_attempts(job.name)
-	qa_retried_attempts = {
-		attempt.retry_of for attempt in attempts if attempt.retry_reason in QA_RETRY_REASONS
-	}
-	successful_variants = sum(
-		attempt.status == "Completed" and attempt.name not in qa_retried_attempts
-		for attempt in attempts
-	)
-	failed_variants = sum(attempt.status == "Failed" for attempt in attempts)
 	failed_attempts = [attempt for attempt in attempts if attempt.status == "Failed"]
 	statuses = {attempt.status for attempt in attempts}
 
-	job.successful_variants = successful_variants
-	job.failed_variants = failed_variants
-	job.progress = min(100, round(successful_variants / job.requested_variants * 100, 2))
-	if successful_variants >= job.requested_variants:
-		job.status = "Completed"
-		job.completed_at = job.completed_at or now()
-		job.failure_class = None
-		job.error_summary = None
-	elif "Running" in statuses:
+	if "Running" in statuses:
 		job.status = "Running"
 		job.started_at = job.started_at or now()
 	elif statuses & {"Pending", "Queued"}:
 		job.status = "Queued"
+	elif "Completed" in statuses:
+		job.status = "Completed"
+		job.progress = 100
+		job.completed_at = job.completed_at or now()
+		job.failure_class = None
+		job.error_summary = None
 	elif attempts and statuses <= set(TERMINAL_ATTEMPT_STATUSES):
-		job.status = "Partially Completed" if successful_variants else "Failed"
+		job.status = "Cancelled" if statuses == {"Cancelled"} else "Failed"
+		job.progress = 0
 		job.completed_at = job.completed_at or now()
 		latest_failure = failed_attempts[-1] if failed_attempts else None
 		job.failure_class = latest_failure.get("failure_class") if latest_failure else None
@@ -760,18 +745,14 @@ def _update_job_summary(job):
 			)
 			if latest_failure
 			and (latest_failure.get("error_details") or latest_failure.get("error_summary"))
-			else _("Only {0} of {1} requested variants completed.").format(
-				successful_variants, job.requested_variants
-			)
+			else _("All execution attempts failed.")
 		)
 	# Job counters are derived from immutable Attempt history. A retry creates an
 	# Attempt immediately after moving its Job to Queued, so a normal ORM save can
 	# race with that state transition and roll the retry transaction back.
 	job.db_set(
 		{
-			"successful_variants": job.successful_variants,
-			"failed_variants": job.failed_variants,
-			"progress": job.progress,
+			"progress": getattr(job, "progress", 0),
 			"status": job.status,
 			"started_at": job.started_at,
 			"completed_at": job.completed_at,
@@ -790,7 +771,7 @@ def _refresh_run_counters(run):
 	)
 	run.total_jobs = len(jobs)
 	run.completed_jobs = sum(job.status == "Completed" for job in jobs)
-	run.failed_jobs = sum(job.status in ("Failed", "Partially Completed") for job in jobs)
+	run.failed_jobs = sum(job.status == "Failed" for job in jobs)
 	run.running_jobs = sum(job.status == "Running" for job in jobs)
 	run.progress = round(run.completed_jobs / run.total_jobs * 100, 2) if run.total_jobs else 0
 
@@ -808,7 +789,7 @@ def _refresh_run_counters(run):
 			(
 				job
 				for job in reversed(jobs)
-				if job.status in ("Failed", "Partially Completed") and job.error_summary
+				if job.status == "Failed" and job.error_summary
 			),
 			None,
 		)
@@ -862,6 +843,24 @@ def _run_outputs_are_selected(run_name):
 		if not frappe.db.get_value("Shot Specification", job.shot_specification, "selected_output_asset_version"):
 			return False
 	return True
+
+
+def _finalize_completed_shots(run):
+	shot_names = frappe.get_all(
+		"Generation Job",
+		filters={"generation_run": run.name},
+		pluck="shot_specification",
+	)
+	for shot_name in dict.fromkeys(shot_names):
+		if frappe.db.get_value("Shot Specification", shot_name, "selected_output_asset_version"):
+			continue
+		jobs = frappe.get_all(
+			"Generation Job",
+			filters={"generation_run": run.name, "shot_specification": shot_name},
+			fields=["status"],
+		)
+		if jobs and all(job.status == "Completed" for job in jobs):
+			compose_shot_segments(run.name, shot_name)
 
 
 def _get_run_job_names(run_name):

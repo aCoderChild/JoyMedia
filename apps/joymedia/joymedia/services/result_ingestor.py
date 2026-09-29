@@ -104,7 +104,7 @@ def sync_attempt_result(attempt_name):
 			0, (get_datetime(attempt.completed_at) - get_datetime(attempt.started_at)).total_seconds()
 		)
 	attempt.save(ignore_permissions=True)
-	_select_primary_output(attempt, artifact)
+	_promote_generation_output(artifact)
 	_refresh_parent_execution_state(attempt.name)
 	return {
 		"status": attempt.status,
@@ -113,13 +113,10 @@ def sync_attempt_result(attempt_name):
 	}
 
 
-def _select_primary_output(attempt, artifact):
+def _promote_generation_output(artifact):
 	from joymedia.services.artifact_service import promote_artifact
 
-	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	shot = frappe.get_doc("Shot Specification", job.shot_specification)
-	result = promote_artifact(artifact.name)
-	shot.db_set("selected_output_asset_version", result["asset_version"], update_modified=False)
+	return promote_artifact(artifact.name)
 
 
 def _find_last_frame_image(history):

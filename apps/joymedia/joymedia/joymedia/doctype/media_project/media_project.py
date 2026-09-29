@@ -502,8 +502,6 @@ def get_campaign_production(name):
 			"shot_specification",
 			"status",
 			"progress",
-			"successful_variants",
-			"failed_variants",
 			"failure_class",
 			"error_summary",
 		],
@@ -1235,7 +1233,7 @@ def regenerate_campaign_shot(campaign_name, shot_name):
 				from joymedia.services.generation_runner import submit_attempt
 				attempt = create_qa_retry_attempt_internal(attempt_name, "Manual Retry")
 				return submit_attempt(attempt.name)
-		if job.status in ("Failed", "Partially Completed"):
+		if job.status == "Failed":
 			from joymedia.services.generation_orchestrator import _retry_and_submit_latest_failed_attempts
 			results = _retry_and_submit_latest_failed_attempts(job, "Manual Retry")
 			frappe.db.commit()

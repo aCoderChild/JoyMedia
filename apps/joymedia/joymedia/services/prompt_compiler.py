@@ -20,6 +20,22 @@ def compile_prompt(shot_specification: str):
 	return compile_prompt_for_documents(shot, media_spec)
 
 
+def compile_segment_prompt(shot_specification: str, segment_index: int, segment_count: int):
+	base = compile_prompt(shot_specification)
+	if segment_count == 1:
+		return base
+	if segment_index == 1:
+		return (
+			f"{base}\n\nThis is segment 1 of {segment_count}. "
+			"Begin the planned action naturally."
+		).strip()
+	return (
+		f"{base}\n\nThis is continuation segment {segment_index} of {segment_count}. "
+		"Continue directly from the supplied first frame. "
+		"Do not restart or reintroduce the action."
+	).strip()
+
+
 def compile_prompt_for_documents(shot, media_spec):
 	if shot.generation_prompt:
 		prompt = shot.generation_prompt.strip()

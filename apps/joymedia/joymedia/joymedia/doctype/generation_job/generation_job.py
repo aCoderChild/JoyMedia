@@ -8,7 +8,6 @@ from frappe.model.document import Document
 
 class GenerationJob(Document):
 	def validate(self):
-		self._validate_requested_variants()
 		workflow_version = self._validate_execution_references()
 		self._validate_segment_frame_count(workflow_version)
 		if self.status != "Draft":
@@ -20,10 +19,6 @@ class GenerationJob(Document):
 			frappe.throw(_("Generation Job {0} must be Ready or Queued for execution.").format(self.name))
 
 		workflow_version = frappe.get_doc("Workflow", self.workflow_version)
-
-	def _validate_requested_variants(self):
-		if not self.requested_variants or self.requested_variants < 1:
-			frappe.throw(_("Requested Variants must be greater than zero."))
 
 	def _validate_segment_frame_count(self, workflow_version):
 		if (
@@ -59,6 +54,17 @@ class GenerationJob(Document):
 				frappe.throw(_("A chained Generation Job dependency must belong to the same Generation Run."))
 			if dependency.name == self.name:
 				frappe.throw(_("A Generation Job cannot depend on itself."))
+		duplicate = frappe.db.exists(
+			"Generation Job",
+			{
+				"generation_run": self.generation_run,
+				"shot_specification": self.shot_specification,
+				"segment_index": self.segment_index,
+				"name": ["!=", self.name],
+			},
+		)
+		if duplicate:
+			frappe.throw(_("Only one Generation Job may exist for each shot segment in a run."))
 
 		return frappe.get_doc("Workflow", self.workflow_version)
 
