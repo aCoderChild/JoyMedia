@@ -566,7 +566,9 @@ def _ensure_default_h3_workflow():
 			"workflow_json": (
 				'{"load_img":{"inputs":{"image":""},"class_type":"VHS_LoadImagePath"},'
 				'"minimax_cond":{"inputs":{"length":124},"class_type":"MiniMaxH3ImageToVideo"},'
-				'"save_video":{"inputs":{"frame_rate":24},"class_type":"VHS_VideoCombine"}}'
+				'"save_video":{"inputs":{"images":["dec_video",0],"frame_rate":24,'
+				'"filename_prefix":"JoyMedia","loop_count":0,"format":"video/h264-mp4",'
+				'"pingpong":false,"save_output":true},"class_type":"VHS_VideoCombine"}}'
 			),
 			"bindings": [{"binding_key": "first_frame", "node_key": "load_img", "input_name": "image", "value_source": "Generation Input", "required_input_role": "first_frame", "value_type": "File Path", "required": 1}],
 		}
