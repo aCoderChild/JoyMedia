@@ -461,7 +461,11 @@ def get_campaign_workspace(name):
 						"Media Asset", asset_version.media_asset, "asset_name"
 					)
 
-		production = _get_latest_project_generation_run(project.name, specification_names)
+		production = (
+			_get_latest_project_generation_run(project.name, [media_specification.name])
+			if media_specification
+			else None
+		)
 		if production:
 			reviews = project._get_review_cards(["Pending", "Rejected", "Approved"])
 			if production.final_asset_version:
