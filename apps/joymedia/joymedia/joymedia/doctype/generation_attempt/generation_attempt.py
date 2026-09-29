@@ -7,7 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import now
 
 
-QA_RETRY_REASONS = {"QA Failure", "Human Review Rejection"}
+QA_RETRY_REASONS = {"Manual Retry"}
 
 
 class GenerationAttempt(Document):
@@ -73,19 +73,19 @@ def create_retry_attempt_internal(failed_attempt_name: str, reason: str):
 	return _create_successor_attempt(failed_attempt, reason)
 
 
-def create_qa_retry_attempt(completed_attempt_name: str, reason: str = "Human Review Rejection"):
+def create_qa_retry_attempt(completed_attempt_name: str, reason: str = "Manual Retry"):
 	"""Create a Pending QA successor for a completed Attempt rejected in review."""
 	frappe.has_permission("Generation Attempt", "create", throw=True)
 	return create_qa_retry_attempt_internal(completed_attempt_name, reason)
 
 
 def create_qa_retry_attempt_internal(
-	completed_attempt_name: str, reason: str = "Human Review Rejection"
+	completed_attempt_name: str, reason: str = "Manual Retry"
 ):
 	"""Create a QA retry after the caller has authorized the owning Campaign."""
 	reason = (reason or "").strip()
 	if reason not in QA_RETRY_REASONS:
-		frappe.throw(_("QA retries must use QA Failure or Human Review Rejection."))
+		frappe.throw(_("QA retries must use Manual Retry."))
 	_validate_retry_reason(reason)
 	completed_attempt = frappe.get_doc("Generation Attempt", completed_attempt_name)
 	if completed_attempt.status != "Completed":

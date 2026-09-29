@@ -1,7 +1,6 @@
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.exceptions import ValidationError
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.artifact_service import promote_artifact_from_ui
@@ -10,10 +9,9 @@ from joymedia.services.artifact_service import promote_artifact_from_ui
 class TestArtifactPromotion(FrappeTestCase):
 	@patch("joymedia.services.artifact_service.frappe.has_permission")
 	@patch("joymedia.services.artifact_service.frappe.get_doc")
-	def test_quality_review_can_stream_a_temporary_video_artifact(
+	def test_generation_artifact_can_stream_a_temporary_video_artifact(
 		self, get_doc, has_permission
 	):
-		review = frappe._dict(name="QREV-00001", generation_artifact="GART-00001")
 		artifact = frappe._dict(
 			name="GART-00001",
 			lifecycle_status="Temporary",
@@ -21,34 +19,18 @@ class TestArtifactPromotion(FrappeTestCase):
 			frappe_file="/private/files/video.mp4",
 		)
 		file_doc = frappe._dict(file_name="video.mp4", get_content=lambda: b"video-bytes")
-		get_doc.side_effect = [review, artifact, file_doc]
+		get_doc.side_effect = [artifact, file_doc]
 
-		from joymedia.services.artifact_service import stream_review_artifact
+		from joymedia.services.artifact_service import stream_artifact
 
-		stream_review_artifact(review.name)
+		stream_artifact(artifact.name)
 
-		has_permission.assert_called_once_with("Quality Review", "read", review.name, throw=True)
+		has_permission.assert_called_once_with("Generation Artifact", "read", artifact.name, throw=True)
 		self.assertEqual(frappe.local.response.filename, "video.mp4")
 		self.assertEqual(frappe.local.response.filecontent, b"video-bytes")
 		self.assertEqual(frappe.local.response.content_type, "video/mp4")
 		self.assertEqual(frappe.local.response.display_content_as, "inline")
 		self.assertEqual(frappe.local.response.type, "download")
-
-	@patch("joymedia.services.artifact_service.frappe.has_permission")
-	@patch("joymedia.services.artifact_service.frappe.db.exists", return_value=False)
-	@patch("joymedia.services.artifact_service.frappe.get_doc")
-	def test_unapproved_artifact_cannot_be_promoted(self, get_doc, exists, has_permission):
-		artifact = frappe._dict(
-			name="GART-00001",
-			lifecycle_status="Temporary",
-			media_type="Video",
-			frappe_file="/private/files/video.mp4",
-		)
-		get_doc.return_value = artifact
-
-		with self.assertRaises(ValidationError):
-			promote_artifact_from_ui(artifact.name)
-
 
 	@patch("joymedia.services.artifact_service.frappe.has_permission")
 	@patch("joymedia.services.artifact_service.frappe.get_doc")
@@ -125,8 +107,6 @@ class TestArtifactPromotion(FrappeTestCase):
 		self.assertEqual(result, {"asset_version": "ASTV-00001"})
 		self.assertEqual(artifact.lifecycle_status, "Promoted")
 		self.assertEqual(artifact.promoted_asset_version, "ASTV-00001")
-		self.assertEqual(attempt.output_asset_version, "ASTV-00001")
 		artifact.save.assert_called_once_with(ignore_permissions=True)
-		attempt.save.assert_called_once_with(ignore_permissions=True)
 		shot.save.assert_not_called()
 		commit.assert_called_once()

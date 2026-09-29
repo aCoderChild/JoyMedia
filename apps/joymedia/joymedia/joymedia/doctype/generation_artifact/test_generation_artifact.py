@@ -34,6 +34,7 @@ class TestGenerationArtifact(FrappeTestCase):
 			name="GART-00001",
 			lifecycle_status="Temporary",
 			artifact_key="ATT-00001:primary_video",
+			artifact_role="Primary Video",
 			generation_attempt="ATT-00002",
 			media_type="Video",
 		)
@@ -41,6 +42,7 @@ class TestGenerationArtifact(FrappeTestCase):
 		get_value.return_value = frappe._dict(
 			lifecycle_status="Temporary",
 			artifact_key="ATT-00001:primary_video",
+			artifact_role="Primary Video",
 			generation_attempt="ATT-00001",
 			media_type="Video",
 		)

@@ -10,11 +10,6 @@
   "workflow_version",
   "status",
   "requested_by",
-  "run_options_section",
-  "requested_variants_per_shot",
-  "max_retries",
-  "auto_select_outputs",
-  "auto_compose",
   "execution_summary_section",
   "total_jobs",
   "completed_jobs",
@@ -22,14 +17,9 @@
   "running_jobs",
   "progress",
   "execution_section",
-  "queued_at",
   "started_at",
   "completed_at",
   "final_asset_version",
-  "delivery_status",
-  "reviewed_by",
-  "reviewed_at",
-  "review_notes",
   "failure_class",
   "error_summary"
  ],
@@ -61,14 +51,14 @@
    "read_only": 1
   },
   {
-   "default": "Draft",
+   "default": "Pending",
    "description": "Completed requires the final Asset Version. Awaiting Review means approved shot outputs are still missing; Ready for Composition means they are ready for manual delivery.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Draft\nQueued\nRunning\nAwaiting Review\nReady for Composition\nFinalizing\nCompleted\nPartially Completed\nFailed\nCancelled",
+   "options": "Draft\nQueued\nRunning\nFinalizing\nAwaiting Review\nReady for Composition\nCompleted\nPartially Completed\nFailed\nCancelled",
    "read_only": 1,
    "reqd": 1
   },
@@ -80,49 +70,6 @@
    "options": "User",
    "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
-  },
-  {
-   "fieldname": "run_options_section",
-   "fieldtype": "Section Break",
-   "label": "Run Options"
-  },
-  {
-   "default": "1",
-   "description": "Number of output variants requested for every shot Job created by this run.",
-   "fieldname": "requested_variants_per_shot",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Requested Variants Per Shot",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
-   "reqd": 1
-  },
-  {
-   "default": "0",
-   "description": "Maximum additional attempts per Job after an execution failure. Zero disables automatic retries.",
-   "fieldname": "max_retries",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Max Retries",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
-   "reqd": 1
-  },
-  {
-   "default": "0",
-   "description": "Compose the final video in a background job only after every Job completes successfully.",
-   "fieldname": "auto_compose",
-   "fieldtype": "Check",
-   "hidden": 1,
-   "label": "Auto Compose",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
-  },
-  {
-   "default": "0",
-   "description": "Automatically promote and select completed shot outputs without scene review.",
-   "fieldname": "auto_select_outputs",
-   "fieldtype": "Check",
-   "hidden": 1,
-   "label": "Auto Select Outputs",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
   },
   {
    "fieldname": "execution_summary_section",
@@ -170,12 +117,6 @@
    "label": "Execution"
   },
   {
-   "fieldname": "queued_at",
-   "fieldtype": "Datetime",
-   "label": "Queued At",
-   "read_only": 1
-  },
-  {
    "fieldname": "started_at",
    "fieldtype": "Datetime",
    "label": "Started At",
@@ -195,34 +136,6 @@
    "read_only": 1
   },
   {
-   "default": "Pending Review",
-   "fieldname": "delivery_status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Delivery Status",
-   "options": "Pending Review\nApproved\nChanges Requested",
-   "read_only": 1
-  },
-  {
-   "fieldname": "reviewed_by",
-   "fieldtype": "Link",
-   "label": "Reviewed By",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "fieldname": "reviewed_at",
-   "fieldtype": "Datetime",
-   "label": "Reviewed At",
-   "read_only": 1
-  },
-  {
-   "fieldname": "review_notes",
-   "fieldtype": "Small Text",
-   "label": "Review Notes",
-   "read_only": 1
-  },
-  {
    "fieldname": "failure_class",
    "fieldtype": "Data",
    "label": "Failure Class",
@@ -236,7 +149,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-20 18:12:21.500056",
+ "modified": "2026-09-29 17:00:41.342412",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Run",

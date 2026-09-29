@@ -25,7 +25,6 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			apply_campaign_video_plan,
 			create_business,
 			create_campaign,
-			create_campaign_asset,
 			generate_campaign_video,
 			get_campaign_cards,
 			get_campaign_workspace,
@@ -43,9 +42,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			frappe.set_user(user_a)
 			campaign_a = create_campaign(
 				project_name="Customer A Campaign",
-				client_organization=organization_a.name,
 				product_name="Customer A Product",
-				target_audience="Customer A Audience",
+				campaign_brief="Customer A Audience",
 			)
 			self.assertIn("JoyMedia User", frappe.get_roles(user_a))
 			self.assertTrue(
@@ -65,9 +63,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			frappe.set_user(user_b)
 			campaign_b = create_campaign(
 				project_name="Customer B Campaign",
-				client_organization=organization_b.name,
 				product_name="Customer B Product",
-				target_audience="Customer B Audience",
+				campaign_brief="Customer B Audience",
 			)
 
 			frappe.set_user(user_a)
@@ -75,7 +72,6 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 				"Media Specification",
 				"Generation Run",
 				"Generation Attempt",
-				"Quality Review",
 				"Asset Version",
 			):
 				self.assertFalse(frappe.has_permission(doctype, "read"), doctype)
@@ -88,12 +84,14 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			self.assertEqual(settings["delivery_preset"], "Landscape")
 
 			file_doc = _create_uploaded_file(user_a, "customer-a-product.png")
-			create_campaign_asset(
-				campaign_a.name,
+			from joymedia.services.media_asset_service import create_media_asset
+			asset_result = create_media_asset(
 				"Customer A Product Image",
 				"Product",
 				file_doc.file_url,
 			)
+			from joymedia.joymedia.doctype.media_project.media_project import select_project_reference
+			select_project_reference(campaign_a.name, asset_result["media_asset"])
 
 			apply_campaign_video_plan(campaign_a.name, json.dumps(_video_plan()))
 			with patch.dict(
@@ -111,12 +109,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			with self.assertRaises(frappe.PermissionError):
 				save_campaign_video_settings(campaign_b.name, 8, "Landscape")
 			with self.assertRaises(frappe.PermissionError):
-				create_campaign_asset(
-					campaign_b.name,
-					"Customer B Product Image",
-					"Product",
-					file_doc.file_url,
-				)
+				select_project_reference(campaign_b.name, asset_result["media_asset"])
 			with self.assertRaises(frappe.PermissionError):
 				apply_campaign_video_plan(campaign_b.name, json.dumps(_video_plan()))
 			with self.assertRaises(frappe.PermissionError):
@@ -145,9 +138,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			frappe.set_user(user_a)
 			campaign_a = create_campaign(
 				project_name="Review Customer A Campaign",
-				client_organization=organization_a.name,
 				product_name="Customer A Product",
-				target_audience="Customer A Audience",
+				campaign_brief="Customer A Audience",
 			)
 			frappe.set_user(user_b)
 			organization_b = create_business("Review Customer B Business")
@@ -155,9 +147,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			frappe.set_user(user_b)
 			campaign_b = create_campaign(
 				project_name="Review Customer B Campaign",
-				client_organization=organization_b.name,
 				product_name="Customer B Product",
-				target_audience="Customer B Audience",
+				campaign_brief="Customer B Audience",
 			)
 
 			# Give each campaign a current specification before creating review fixtures.
@@ -182,7 +173,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			review_for_regeneration = _create_pending_review(
 				specification_a.name, frappe.generate_hash(length=8)
 			)
-			frappe.db.set_value("Quality Review", review_for_regeneration, "status", "Pending")
+			frappe.db.set_value("Generation Run", review_for_regeneration, "status", "Awaiting Review")
 			reject_campaign_review(campaign_a.name, review_for_regeneration, "Needs another take")
 			with patch(
 				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.create_qa_retry_attempt_internal",
@@ -214,8 +205,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 				"asset_name": "Workspace Product Image",
 				"media_type": "Image",
 				"asset_category": "Product",
-				"media_project": campaign.name,
-				"client_organization": campaign.client_organization,
+				"status": "Active",
 			}
 		).insert(ignore_permissions=True)
 		file_doc = frappe.get_doc(
@@ -238,6 +228,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 				"source": "Uploaded",
 			}
 		).insert(ignore_permissions=True)
+		campaign.append("selected_media", {"asset_version": frappe.db.get_value("Asset Version", {"media_asset": asset.name}, "name")})
+		campaign.save(ignore_permissions=True)
 
 		from joymedia.services.video_plan_service import apply_video_plan
 
@@ -300,28 +292,17 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			any(style.workflow_key == "product_showcase" for style in get_video_styles())
 		)
 
-	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.has_permission")
-	def test_create_campaign_uses_controlled_business_access(self, has_permission):
-		organization = frappe.get_doc(
-			{
-				"doctype": "Client Organization",
-				"organization_name": "Controlled Campaign Business",
-			}
-		).insert(ignore_permissions=True)
-
+	def test_create_campaign_uses_campaign_brief(self):
 		from joymedia.joymedia.doctype.media_project.media_project import create_campaign
 
 		campaign = create_campaign(
 			project_name="Controlled Campaign",
-			client_organization=organization.name,
 			product_name="Test Product",
-			target_audience="Test Audience",
+			campaign_brief="Test Campaign Brief",
 		)
 
 		self.assertTrue(frappe.db.exists("Media Project", campaign.name))
-		has_permission.assert_called_once_with(
-		"Client Organization", "read", organization.name, throw=True
-		)
+		self.assertEqual("Test Campaign Brief", frappe.db.get_value("Campaign", campaign.campaign, "campaign_brief"))
 
 	def test_draft_storyboard_can_be_replaced_before_generation(self):
 		from joymedia.services.video_plan_service import apply_video_plan
@@ -373,12 +354,14 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		suffix_b = frappe.generate_hash(length=8)
 
 		review_a = _create_pending_review(specification_a.name, suffix_a)
-		_create_pending_review(specification_b.name, suffix_b)
+		review_b = _create_pending_review(specification_b.name, suffix_b)
+		_file_review_artifact(review_a)
+		_file_review_artifact(review_b)
 
 		reviews = campaign_a.get_pending_reviews()
 
-		self.assertEqual([review["name"] for review in reviews], [review_a])
-		self.assertNotIn(f"QREV-TEST-{suffix_b}", [review["name"] for review in reviews])
+		self.assertEqual(len(reviews), 1)
+		self.assertEqual(reviews[0]["campaign"], campaign_a.name)
 
 	def test_storyboard_revision_is_persisted_without_mutating_previous_spec(self):
 		campaign, specification = _create_campaign("Revision Persistence")
@@ -421,8 +404,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self, start_run_internal, validate_workflow_for_execution, get_system_stats, filelock
 	):
 		campaign, specification = _create_campaign("Generation Idempotency")
-		_create_pending_review(specification.name, frappe.generate_hash(length=8))
-
+		_create_pending_review(specification.name, frappe.generate_hash(length=8), create_run=False)
 		def queue_run(run_name):
 			frappe.db.set_value("Generation Run", run_name, "status", "Queued")
 			return {"name": run_name, "status": "Queued"}
@@ -444,28 +426,54 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 def _create_campaign(label):
 	workflow = _get_test_workflow()
-	organization = frappe.get_doc(
+	frappe.get_doc(
 		{
 			"doctype": "Client Organization",
 			"organization_name": f"{label} Business",
 		}
 	).insert(ignore_permissions=True)
-
 	campaign = frappe.get_doc(
 		{
-			"doctype": "Media Project",
-			"project_name": label,
-			"client_organization": organization.name,
+			"doctype": "Campaign",
+			"campaign_name": label,
 			"product_name": "Test Product",
-			"target_audience": "Test Audience",
+			"campaign_brief": "Test Campaign Brief",
+		}
+	).insert(ignore_permissions=True)
+
+	project = frappe.get_doc(
+		{
+			"doctype": "Media Project",
+			"campaign": campaign.name,
+			"project_name": label,
 			"status": "Draft",
 		}
 	).insert(ignore_permissions=True)
+	file_doc = _create_uploaded_file(frappe.session.user, f"{label.lower().replace(' ', '-')}.png")
+	asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": f"{label} Product Image",
+			"media_type": "Image",
+			"asset_category": "Product",
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
+	version = frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": asset.name,
+			"file": file_doc.file_url,
+			"source": "Uploaded",
+		}
+	).insert(ignore_permissions=True)
+	project.append("selected_media", {"asset_version": version.name})
+	project.save(ignore_permissions=True)
 
 	specification = frappe.get_doc(
 		{
 			"doctype": "Media Specification",
-			"media_project": campaign.name,
+			"media_project": project.name,
 			"version_number": 1,
 			"status": "Draft",
 			"workflow": workflow,
@@ -474,7 +482,7 @@ def _create_campaign(label):
 		}
 	).insert(ignore_permissions=True)
 
-	return campaign, specification
+	return project, specification
 
 
 def _create_portal_user(first_name):
@@ -534,16 +542,37 @@ def get_latest_media_specification_for_test(media_project):
 
 
 def _file_review_artifact(review_name):
-	artifact_name = frappe.db.get_value("Quality Review", review_name, "generation_artifact")
+	run = frappe.get_doc("Generation Run", review_name)
+	media_asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": f"{review_name} Final Video",
+			"media_type": "Video",
+			"asset_category": "Other",
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",
 			"file_name": f"{review_name}.mp4",
 			"content": b"video",
 			"is_private": 1,
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": media_asset.name,
 		}
 	).insert(ignore_permissions=True)
-	frappe.db.set_value("Generation Artifact", artifact_name, "frappe_file", file_doc.file_url)
+	asset_version = frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": media_asset.name,
+			"file": file_doc.file_url,
+			"source": "Generated",
+		}
+	)
+	asset_version.db_insert()
+	run.final_asset_version = asset_version.name
+	run.save(ignore_permissions=True)
 
 
 def _get_test_workflow():
@@ -576,16 +605,14 @@ def _ensure_default_h3_workflow():
 	return workflow.name
 
 
-def _create_pending_review(media_specification, suffix):
+def _create_pending_review(media_specification, suffix, create_run=True):
 	workflow = frappe.db.get_value(
 		"Media Specification", media_specification, "workflow"
 	)
 	media_project = frappe.db.get_value(
 		"Media Specification", media_specification, "media_project"
 	)
-	client_organization = frappe.db.get_value(
-		"Media Project", media_project, "client_organization"
-	)
+	client_organization = frappe.get_all("Client Organization", pluck="name", limit_page_length=1)[0]
 	required_input_roles = frappe.get_all(
 		"Workflow Binding",
 		{
@@ -663,10 +690,8 @@ def _create_pending_review(media_specification, suffix):
 			"doctype": "Generation Job",
 			"name": f"JOB-TEST-{suffix}",
 			"shot_specification": shot.name,
-			"requested_by": "Administrator",
 			"requested_variants": 1,
 			"status": "Draft",
-			"priority": "Normal",
 			"workflow_version": workflow,
 			"prompt_text": "Test generation prompt.",
 			"prompt_hash": "test-prompt-hash",
@@ -694,21 +719,25 @@ def _create_pending_review(media_specification, suffix):
 			"doctype": "Generation Artifact",
 			"name": f"GART-TEST-{suffix}",
 			"artifact_key": f"test-artifact-{suffix}",
+			"artifact_role": "Primary Video",
 			"generation_attempt": attempt.name,
 			"media_type": "Video",
 			"lifecycle_status": "Temporary",
 		}
 	)
 	artifact.db_insert()
-	frappe.db.set_value("Generation Attempt", attempt.name, "output_artifact", artifact.name)
+	if not create_run:
+		return shot.name
 
-	review = frappe.get_doc(
+	run = frappe.get_doc(
 		{
-			"doctype": "Quality Review",
-			"name": f"QREV-TEST-{suffix}",
-			"generation_artifact": artifact.name,
-			"status": "Pending",
+			"doctype": "Generation Run",
+			"name": f"RUN-TEST-{suffix}",
+			"media_specification": media_specification,
+			"workflow_version": workflow,
+			"requested_by": "Administrator",
+			"status": "Awaiting Review",
 		}
 	)
-	review.db_insert()
-	return review.name
+	run.db_insert()
+	return run.name

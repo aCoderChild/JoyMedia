@@ -6,20 +6,28 @@ from pathlib import Path
 import frappe
 from frappe import _
 
+
+def get_attempt_artifact(attempt_name, artifact_role):
+	name = frappe.db.get_value(
+		"Generation Artifact",
+		{
+			"generation_attempt": attempt_name,
+			"artifact_role": artifact_role,
+		},
+		"name",
+	)
+	return frappe.get_doc("Generation Artifact", name) if name else None
+
+
 @frappe.whitelist()
-def stream_review_artifact(quality_review_name: str):
-	"""Return an inline preview of a temporary generated video."""
-	frappe.has_permission("Quality Review", "read", quality_review_name, throw=True)
-	return stream_review_artifact_internal(quality_review_name)
+def stream_artifact(artifact_name: str):
+	"""Return an inline preview of a temporary generated video artifact."""
+	frappe.has_permission("Generation Artifact", "read", artifact_name, throw=True)
+	return stream_artifact_internal(artifact_name)
 
 
-def stream_review_artifact_internal(quality_review_name: str):
-	"""Return an inline preview after the caller has authorized the review."""
-	review = frappe.get_doc("Quality Review", quality_review_name)
-	if not review.generation_artifact:
-		frappe.throw(_("Quality Review {0} has no Generation Artifact.").format(review.name))
-
-	artifact = frappe.get_doc("Generation Artifact", review.generation_artifact)
+def stream_artifact_internal(artifact_name: str):
+	artifact = frappe.get_doc("Generation Artifact", artifact_name)
 	if artifact.lifecycle_status != "Temporary":
 		frappe.throw(_("Only Temporary Generation Artifacts can be previewed."))
 	if artifact.media_type != "Video":
@@ -46,7 +54,7 @@ def promote_artifact_from_ui(artifact_name: str):
 	return result
 
 
-def promote_artifact(artifact_name: str, *, require_approved_review: bool = True):
+def promote_artifact(artifact_name: str, *, require_approved_review: bool = False):
 	"""Promote a generated video to a project Asset Version."""
 	artifact = frappe.get_doc("Generation Artifact", artifact_name)
 
@@ -58,11 +66,6 @@ def promote_artifact(artifact_name: str, *, require_approved_review: bool = True
 		frappe.throw(_("Only video artifacts can currently be promoted."))
 	if not artifact.frappe_file:
 		frappe.throw(_("Generation Artifact {0} has no Frappe video file.").format(artifact.name))
-	if require_approved_review and not frappe.db.exists(
-		"Quality Review", {"generation_artifact": artifact.name, "status": "Approved"}
-	):
-		frappe.throw(_("Generation Artifact {0} requires an approved Quality Review before promotion.").format(artifact.name))
-
 	attempt = frappe.get_doc("Generation Attempt", artifact.generation_attempt)
 	if attempt.status != "Completed":
 		frappe.throw(_("Only artifacts from completed Generation Attempts can be promoted."))
@@ -93,8 +96,6 @@ def promote_artifact(artifact_name: str, *, require_approved_review: bool = True
 	artifact.lifecycle_status = "Promoted"
 	artifact.promoted_asset_version = asset_version.name
 	artifact.save(ignore_permissions=True)
-	attempt.output_asset_version = asset_version.name
-	attempt.save(ignore_permissions=True)
 	return {"asset_version": asset_version.name}
 
 
@@ -109,10 +110,8 @@ def _get_or_create_shot_output_asset(shot_name, media_project):
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
 			"media_type": "Video",
-			"asset_category": "Shot Output",
-			"library_visibility": "Internal",
-			"media_project": media_project,
-			"client_organization": frappe.db.get_value("Media Project", media_project, "client_organization"),
+			"asset_category": "Other",
+			"status": "Active",
 		}
 	)
 	media_asset.insert(ignore_permissions=True)

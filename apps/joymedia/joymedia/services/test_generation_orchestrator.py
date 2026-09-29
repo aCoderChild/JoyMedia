@@ -187,7 +187,6 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		run.name = "RUN-00001"
 		run.completed_at = None
 		run.final_asset_version = None
-		run.auto_compose = 1
 		get_all.return_value = [frappe._dict(status="Completed"), frappe._dict(status="Completed")]
 
 		generation_orchestrator._refresh_run_counters(run)
@@ -203,27 +202,11 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		run.name = "RUN-00001"
 		run.completed_at = None
 		run.final_asset_version = None
-		run.auto_compose = 1
 		get_all.return_value = [frappe._dict(status="Completed")]
 
 		generation_orchestrator._refresh_run_counters(run)
 
 		self.assertEqual(run.status, "Finalizing")
-		self.assertIsNone(run.completed_at)
-
-	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=True)
-	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_approved_outputs_are_ready_for_manual_composition(self, get_all, outputs_are_selected):
-		run = MagicMock()
-		run.name = "RUN-00001"
-		run.completed_at = None
-		run.final_asset_version = None
-		run.auto_compose = 0
-		get_all.return_value = [frappe._dict(status="Completed")]
-
-		generation_orchestrator._refresh_run_counters(run)
-
-		self.assertEqual(run.status, "Ready for Composition")
 		self.assertIsNone(run.completed_at)
 
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
@@ -256,7 +239,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 				name="ATT-00002",
 				status="Pending",
 				retry_of="ATT-00001",
-				retry_reason="Human Review Rejection",
+				retry_reason="Manual Retry",
 			),
 		]
 
@@ -290,7 +273,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=True)
 	def test_finalizing_run_with_selected_outputs_queues_finalization(self, outputs_are_selected, enqueue):
 		run = frappe._dict(
-			name="RUN-00001", status="Finalizing", auto_compose=1, final_asset_version=None
+			name="RUN-00001", status="Finalizing", final_asset_version=None
 		)
 
 		generation_orchestrator._enqueue_finalization_if_ready(run)
@@ -316,7 +299,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 
 		refresh_run.assert_called_once_with(run.name, enqueue_finalization=False)
 		compose_media_specification.assert_called_once_with("SPEC-00001")
-		self.assertEqual(run.status, "Completed")
+		self.assertEqual(run.status, "Awaiting Review")
 		self.assertEqual(run.final_asset_version, "ASTV-00001")
 		self.assertIsNotNone(run.completed_at)
 		run.save.assert_called_once_with(ignore_permissions=True)
@@ -337,5 +320,5 @@ class TestGenerationOrchestrator(FrappeTestCase):
 
 		generation_orchestrator.finalize_run(run.name)
 
-		self.assertEqual(run.status, "Completed")
+		self.assertEqual(run.status, "Awaiting Review")
 		self.assertEqual(run.final_asset_version, "ASTV-00001")

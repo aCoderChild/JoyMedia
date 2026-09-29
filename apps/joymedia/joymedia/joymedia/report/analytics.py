@@ -1,11 +1,7 @@
-from collections import defaultdict
 from math import ceil
 
 import frappe
 from frappe.utils import add_days, get_datetime, getdate
-
-
-TERMINAL_REVIEW_STATUSES = {"Approved", "Rejected"}
 
 
 def get_attempt_analytics(filters=None):
@@ -28,7 +24,6 @@ def get_attempt_analytics(filters=None):
 			"name",
 			"generation_job",
 			"status",
-			"output_asset_version",
 			"retry_of",
 			"retry_reason",
 			"failure_class",
@@ -55,52 +50,32 @@ def get_attempt_analytics(filters=None):
 	}
 
 	attempt_names = [attempt.name for attempt in attempts]
-	artifact_names = {
-		artifact.name
-		for artifact in frappe.get_all(
+	artifacts = frappe.get_all(
 			"Generation Artifact",
 			filters={"generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
-			fields=["name"],
+			fields=["name", "generation_attempt", "artifact_role", "promoted_asset_version"],
 		)
+	primary_outputs_by_attempt = {
+		artifact.generation_attempt: artifact.promoted_asset_version
+		for artifact in artifacts
+		if artifact.artifact_role == "Primary Video" and artifact.promoted_asset_version
 	}
-	reviews = frappe.get_all(
-		"Quality Review",
-		filters={"generation_artifact": ["in", list(artifact_names)]}
-		if artifact_names
-		else {"name": ["in", [""]]},
-		fields=["generation_artifact", "status"],
-	)
-	artifact_attempts = frappe.get_all(
-		"Generation Artifact",
-		filters={"name": ["in", list(artifact_names)]} if artifact_names else {"name": ["in", [""]]},
-		fields=["name", "generation_attempt"],
-	)
-	attempt_by_artifact = {artifact.name: artifact.generation_attempt for artifact in artifact_attempts}
-	review_outcomes = defaultdict(lambda: {"approved": False, "reviewed": False})
-	for review in reviews:
-		attempt_name = attempt_by_artifact.get(review.generation_artifact)
-		if not attempt_name:
-			continue
-		outcome = review_outcomes[attempt_name]
-		outcome["approved"] = outcome["approved"] or review.status == "Approved"
-		outcome["reviewed"] = outcome["reviewed"] or review.status in TERMINAL_REVIEW_STATUSES
-
 	enriched_attempts = []
 	for attempt in attempts:
 		job = jobs_by_name.get(attempt.generation_job)
 		attempt.workflow_version = job.workflow_version if job else None
-		attempt.review_outcome = review_outcomes[attempt.name]
+		selected = primary_outputs_by_attempt.get(attempt.name)
+		attempt.review_outcome = {"approved": bool(selected), "reviewed": bool(selected)}
 		attempt.selected_output = bool(
 			job
-			and attempt.output_asset_version
-			and attempt.review_outcome["approved"]
-			and selected_outputs_by_shot.get(job.shot_specification) == attempt.output_asset_version
+			and selected
+			and selected_outputs_by_shot.get(job.shot_specification) == selected
 		)
 		if filters.workflow_version and attempt.workflow_version != filters.workflow_version:
 			continue
 		enriched_attempts.append(attempt)
 
-	return enriched_attempts, reviews
+	return enriched_attempts, []
 
 
 def percentile_95(values):

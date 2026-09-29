@@ -124,12 +124,12 @@ class TestGenerationAttempt(FrappeTestCase):
 				side_effect=[completed_attempt, job, retry_attempt],
 			) as get_doc,
 		):
-			result = create_qa_retry_attempt(completed_attempt.name, "Human Review Rejection")
+			result = create_qa_retry_attempt(completed_attempt.name, "Manual Retry")
 
 		self.assertIs(result, retry_attempt)
 		self.assertEqual(job.status, "Queued")
 		self.assertEqual(
-			get_doc.call_args_list[2].args[0]["retry_reason"], "Human Review Rejection"
+			get_doc.call_args_list[2].args[0]["retry_reason"], "Manual Retry"
 		)
 		self.assertEqual(get_doc.call_args_list[2].args[0]["retry_of"], completed_attempt.name)
 

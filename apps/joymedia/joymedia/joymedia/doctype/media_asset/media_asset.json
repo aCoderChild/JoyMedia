@@ -5,18 +5,12 @@
  "creation": "2026-09-06 00:58:06.875483",
  "doctype": "DocType",
  "engine": "InnoDB",
-  "field_order": [
+ "field_order": [
   "asset_overview_section",
   "asset_name",
-  "content_hash",
   "media_type",
   "asset_category",
-  "status",
-  "library_visibility",
-  "ownership_section",
-  "client_organization",
-  "campaign",
-  "media_project"
+  "status"
  ],
  "fields": [
   {
@@ -32,31 +26,6 @@
    "in_standard_filter": 1,
    "label": "Asset Name",
    "reqd": 1
-  },
-  {
-   "description": "SHA-256 hash of the uploaded file. Used to prevent duplicate files within an organization.",
-   "fieldname": "content_hash",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "in_standard_filter": 1,
-   "label": "Content Hash",
-   "length": 64
-  },
-  {
-   "fieldname": "campaign",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Campaign",
-   "options": "Campaign"
-  },
-  {
-   "fieldname": "media_project",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Media Project",
-   "options": "Media Project"
   },
   {
    "description": "what kind of file is it?",
@@ -75,7 +44,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Asset Category",
-   "options": "Product\nCharacter\nBackground\nBrand\nStyle\nReference\nStoryboard\nShot Output\nFinal Deliverable\nContinuation Frame\nOther",
+   "options": "Product\nCharacter\nBackground\nBrand\nReference\nAudio\nOther",
    "reqd": 1
   },
   {
@@ -87,36 +56,12 @@
    "label": "Status",
    "options": "Active\nArchived",
    "reqd": 1
-  },
-  {
-   "default": "Visible",
-   "fieldname": "library_visibility",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Library Visibility",
-   "options": "Visible\nInternal",
-   "reqd": 1
-  },
-  {
-   "fieldname": "ownership_section",
-   "fieldtype": "Section Break",
-   "label": "Ownership"
-  },
-  {
-   "fieldname": "client_organization",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Client Organization",
-   "options": "Client Organization",
-   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-16 16:42:24.862761",
+ "modified": "2026-09-29 09:40:43.008164",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Asset",
@@ -149,8 +94,8 @@
   {
    "create": 1,
    "read": 1,
-   "write": 1,
-   "role": "JoyMedia User"
+   "role": "JoyMedia User",
+   "write": 1
   }
  ],
  "row_format": "Dynamic",

@@ -23,9 +23,7 @@
   "audio_mix_section",
   "audio_cues",
   "global_content_requirements_section",
-  "generation_instructions",
-  "final_deliverable_section",
-  "final_asset_version"
+  "generation_instructions"
  ],
  "fields": [
   {
@@ -79,7 +77,6 @@
    "description": "Exact immutable workflow used for this specification.",
    "fieldname": "workflow",
    "fieldtype": "Link",
-   "hidden": 1,
    "label": "Workflow",
    "options": "Workflow",
    "read_only_depends_on": "eval:doc.status!=\"Draft\";",
@@ -148,18 +145,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "final_deliverable_section",
-   "fieldtype": "Section Break",
-   "label": "Final Deliverable"
-  },
-  {
-   "fieldname": "final_asset_version",
-   "fieldtype": "Link",
-   "label": "Final Asset Version",
-   "options": "Asset Version",
-   "read_only": 1
-  },
-  {
    "fieldname": "generation_instructions",
    "fieldtype": "Long Text",
    "label": "Generation Instructions"
@@ -168,7 +153,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-19 02:25:12.619639",
+ "modified": "2026-09-29 16:35:49.120893",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Specification",

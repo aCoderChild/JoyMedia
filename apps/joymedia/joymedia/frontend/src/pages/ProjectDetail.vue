@@ -769,7 +769,6 @@
             <div class="flex justify-between text-[9px] text-ink-muted font-mono"><span>01s</span><span>60s</span></div>
           </div>
 
-          <!-- Quality Review Decision Actions if review exists -->
           <div v-if="activeShotReview" class="p-2.5 rounded-xl bg-surface-muted border border-outline-border space-y-1.5 text-xs">
             <div class="flex items-center justify-between">
               <span class="font-bold text-ink-primary">{{ t('shot_n', { n: activeSelectedShot.shot_number }) }}</span>
@@ -1976,15 +1975,14 @@ async function uploadSelectedImages(event) {
     for (const file of files) {
       const uploadedFile = await uploadFile(file, { private: true });
       if (!uploadedFile?.file_url) throw new Error("Không thể tải lên file.");
-      const created = await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign_asset", {
-        media_project: projectName.value,
+      const created = await call("joymedia.services.media_asset_service.create_media_asset", {
         asset_name: file.name.replace(/\.[^/.]+$/, ""),
         asset_category: uploadCategory.value,
         file_url: uploadedFile.file_url,
       });
       await call("joymedia.joymedia.doctype.media_project.media_project.select_project_reference", {
         media_project: projectName.value,
-        asset_name: created.asset?.name || created.asset,
+        asset_name: created.media_asset,
       });
     }
     await refresh();

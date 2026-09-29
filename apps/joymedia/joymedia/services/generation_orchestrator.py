@@ -31,6 +31,8 @@ ACTIVE_RUN_STATUSES = ("Queued", "Running", "Finalizing")
 ACTIVE_ATTEMPT_STATUSES = ("Pending", "Queued", "Running")
 TERMINAL_ATTEMPT_STATUSES = ("Completed", "Failed", "Cancelled")
 TERMINAL_JOB_STATUSES = ("Completed", "Partially Completed", "Failed", "Cancelled")
+REQUESTED_VARIANTS_PER_SHOT = 1
+MAX_AUTOMATIC_RETRIES = 1
 
 
 @frappe.whitelist()
@@ -145,8 +147,7 @@ def prepare_run(run_name: str):
 					"workflow_version": run.workflow_version,
 					"prompt_text": prompt_text,
 					"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
-					"requested_by": run.requested_by,
-					"requested_variants": run.requested_variants_per_shot,
+					"requested_variants": REQUESTED_VARIANTS_PER_SHOT,
 					"status": "Draft",
 					"segment_index": segment["segment_index"],
 					"segment_frame_count": segment["segment_frame_count"],
@@ -507,7 +508,7 @@ def prepare_chained_regeneration(attempt_name: str):
 			None,
 			update_modified=False,
 		)
-		retry_attempt = create_qa_retry_attempt_internal(completed_attempt, "QA Failure")
+		retry_attempt = create_qa_retry_attempt_internal(completed_attempt, "Manual Retry")
 		prepared.append(retry_attempt.name)
 
 	return prepared
@@ -534,10 +535,7 @@ def finalize_run(run_name: str):
 		return _run_summary(run)
 
 	run.final_asset_version = result["final_asset_version"]
-	run.status = "Completed"
-	run.delivery_status = "Pending Review"
-	run.reviewed_by = None
-	run.reviewed_at = None
+	run.status = "Awaiting Review"
 	run.review_notes = None
 	run.completed_at = now()
 	run.save(ignore_permissions=True)
@@ -644,8 +642,6 @@ def _create_initial_attempts(job):
 
 
 def _create_retry_attempt(run, jobs):
-	if not run.max_retries:
-		return False
 
 	for job in jobs:
 		attempts = _get_job_attempts(job.name)
@@ -657,7 +653,7 @@ def _create_retry_attempt(run, jobs):
 			len(successful_attempts) >= job.requested_variants
 			or active_attempts
 			or not failed_attempts
-			or len(retry_attempts) >= run.max_retries
+			or len(retry_attempts) >= MAX_AUTOMATIC_RETRIES
 		):
 			continue
 
@@ -811,7 +807,7 @@ def _refresh_run_counters(run):
 			run.status = "Completed"
 			run.completed_at = run.completed_at or now()
 		elif _run_outputs_are_selected(run.name):
-			run.status = "Finalizing" if run.auto_compose else "Ready for Composition"
+			run.status = "Finalizing"
 			run.completed_at = None
 		else:
 			run.status = "Awaiting Review"
@@ -859,7 +855,6 @@ def _refresh_run_counters(run):
 def _enqueue_finalization_if_ready(run):
 	if (
 		run.status != "Finalizing"
-		or not run.auto_compose
 		or run.final_asset_version
 		or not _run_outputs_are_selected(run.name)
 	):

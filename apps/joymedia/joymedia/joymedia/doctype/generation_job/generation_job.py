@@ -64,7 +64,7 @@ class GenerationJob(Document):
 
 	def _validate_generation_run(self, media_specification):
 		if not self.generation_run:
-			return
+			frappe.throw(_("Generation Job requires a Generation Run."))
 
 		run = frappe.get_doc("Generation Run", self.generation_run)
 		if run.media_specification != media_specification.name:

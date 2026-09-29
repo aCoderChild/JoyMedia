@@ -425,11 +425,10 @@ async function handleUploadAsset() {
     const uploaded = await uploadFile(selectedFile.value, { private: true });
     if (!uploaded?.file_url) throw new Error("Không thể tải lên file.");
 
-    await call("joymedia.joymedia.doctype.media_project.media_project.create_organization_asset", {
+    await call("joymedia.services.media_asset_service.create_media_asset", {
       asset_name: selectedFile.value.name.replace(/\.[^/.]+$/, ""),
       asset_category: uploadCategory.value,
       file_url: uploaded.file_url,
-      media_type: selectedFile.value.type.startsWith("video/") ? "Video" : "Image",
     });
 
     toast({ title: "Đã tải lên tư liệu", text: "Đã thêm vào thư viện của tổ chức.", type: "success" });

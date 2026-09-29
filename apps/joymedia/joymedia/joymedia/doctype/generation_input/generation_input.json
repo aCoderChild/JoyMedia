@@ -9,6 +9,7 @@
   "generation_input_section",
   "generation_job",
   "asset_version",
+  "generation_artifact",
   "input_role",
   "notes"
  ],
@@ -20,7 +21,14 @@
    "label": "Asset Version",
    "options": "Asset Version",
    "read_only_depends_on": "eval:!doc.__islocal;",
-   "reqd": 1
+   "reqd": 0
+  },
+  {
+   "fieldname": "generation_artifact",
+   "fieldtype": "Link",
+   "label": "Generation Artifact",
+   "options": "Generation Artifact",
+   "read_only_depends_on": "eval:!doc.__islocal;"
   },
   {
    "description": "Optional execution context explaining how this asset version should be used for this shot.",

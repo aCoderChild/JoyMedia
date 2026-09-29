@@ -209,10 +209,10 @@
           <!-- Card Body -->
           <div class="p-5 space-y-2.5">
             <div class="flex items-center gap-2 text-xs font-medium text-ink-muted">
-              <span class="text-indigo-400 font-semibold truncate">{{ campaign.client_name || campaign.client_organization || 'JoyMedia' }}</span>
-              <template v-if="meaningful(campaign.target_audience)">
+              <span class="text-indigo-400 font-semibold truncate">{{ campaign.client_name || 'JoyMedia' }}</span>
+              <template v-if="meaningful(campaign.campaign_brief)">
                 <span>•</span>
-                <span class="truncate">{{ t('campaign_audience_label') }}: {{ campaign.target_audience }}</span>
+                <span class="truncate">{{ campaign.campaign_brief }}</span>
               </template>
             </div>
 
@@ -443,10 +443,8 @@ const filteredCampaigns = computed(() => {
     list = list.filter((c) => {
       const name = (c.campaign_name || c.project_name || "").toLowerCase();
       const prod = (c.product_name || "").toLowerCase();
-      const org = (c.client_name || c.client_organization || "").toLowerCase();
-      const aud = (c.target_audience || "").toLowerCase();
       const brief = (c.campaign_brief || "").toLowerCase();
-      return name.includes(q) || prod.includes(q) || org.includes(q) || aud.includes(q) || brief.includes(q);
+      return name.includes(q) || prod.includes(q) || brief.includes(q);
     });
   }
 

@@ -13,8 +13,6 @@
   "prompt_text",
   "prompt_hash",
   "status",
-  "requested_by",
-  "priority",
   "generation_request_section",
   "requested_variants",
   "queue_and_execution_section",
@@ -38,13 +36,14 @@
    "label": "Job Overview"
   },
   {
-   "description": "Optional parent run used to orchestrate related shots with the same workflow/model.",
+   "description": "Parent run used to orchestrate related shots with the same workflow/model.",
    "fieldname": "generation_run",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Generation Run",
    "options": "Generation Run",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
   },
   {
    "description": "Shot being executed by this generation job.",
@@ -64,27 +63,6 @@
    "label": "Status",
    "options": "Draft\nReady\nQueued\nRunning\nCompleted\nPartially Completed\nFailed\nCancelled",
    "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "default": "__user",
-   "fieldname": "requested_by",
-   "fieldtype": "Link",
-   "in_standard_filter": 1,
-   "label": "Requested By",
-   "options": "User",
-   "read_only_depends_on": "eval:!doc.__islocal;",
-   "reqd": 1
-  },
-  {
-   "default": "Normal",
-   "description": "Job Queue & Routing concept",
-   "fieldname": "priority",
-   "fieldtype": "Select",
-   "in_standard_filter": 1,
-   "label": "Priority",
-   "options": "Low\nNormal\nHigh\nUrgent",
-   "read_only_depends_on": "eval:doc.status==\"Running\" || doc.status==\"Completed\" || doc.status==\"Partially Completed\" || doc.status==\"Failed\" || doc.status==\"Cancelled\";",
    "reqd": 1
   },
   {
@@ -152,8 +130,9 @@
   },
   {
    "fieldname": "failure_class",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "label": "Failure Class",
+   "options": "Infrastructure\nWorkflow\nInput\nGeneration\nCancelled\nUnknown",
    "read_only": 1
   },
   {
@@ -179,6 +158,7 @@
    "in_standard_filter": 1,
    "label": "Workflow",
    "options": "Workflow",
+   "read_only": 1,
    "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
   },
@@ -186,6 +166,7 @@
    "description": "Exact prompt snapshot sent to the generation workflow.",
    "fieldname": "prompt_text",
    "fieldtype": "Long Text",
+   "label": "Prompt Text",
    "read_only": 1,
    "reqd": 1
   },
@@ -205,18 +186,22 @@
    "default": "1",
    "fieldname": "segment_index",
    "fieldtype": "Int",
-   "label": "Segment Index"
+   "hidden": 1,
+   "label": "Segment Index",
+   "read_only": 1
   },
   {
    "fieldname": "segment_frame_count",
    "fieldtype": "Int",
-   "label": "Segment Frame Count"
+   "hidden": 1,
+   "label": "Segment Frame Count",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-19 00:20:23.917597",
+ "modified": "2026-09-29 10:37:53.392126",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Job",

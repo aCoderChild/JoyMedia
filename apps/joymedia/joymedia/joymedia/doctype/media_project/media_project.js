@@ -204,8 +204,8 @@ function show_campaign_reviews(frm) {
 
 function approve_campaign_review(frm, dialog, review_name) {
 	frappe.call({
-		method: "joymedia.joymedia.doctype.quality_review.quality_review.approve_review",
-		args: { review_name },
+		method: "joymedia.joymedia.doctype.media_project.media_project.approve_campaign_review",
+		args: { campaign_name: frm.doc.name, review_name },
 		freeze: true,
 		freeze_message: __("Approving video..."),
 		callback(r) {
@@ -218,15 +218,15 @@ function approve_campaign_review(frm, dialog, review_name) {
 
 function regenerate_campaign_review(frm, dialog, review_name) {
 	frappe.call({
-		method: "joymedia.joymedia.doctype.quality_review.quality_review.reject_review",
-		args: { review_name, notes: "Regenerated from Campaign review." },
+		method: "joymedia.joymedia.doctype.media_project.media_project.reject_campaign_review",
+		args: { campaign_name: frm.doc.name, review_name, notes: "Changes requested from Campaign review." },
 		freeze: true,
 		freeze_message: __("Rejecting video..."),
 		callback(r) {
 			if (r.exc) return;
 			frappe.call({
-				method: "joymedia.joymedia.doctype.quality_review.quality_review.regenerate_shot_from_ui",
-				args: { quality_review_name: review_name, reason: "Human Review Rejection" },
+				method: "joymedia.joymedia.doctype.media_project.media_project.regenerate_campaign_review",
+				args: { campaign_name: frm.doc.name, review_name, reason: "Manual Retry" },
 				freeze: true,
 				freeze_message: __("Regenerating shot..."),
 				callback(retry_response) {

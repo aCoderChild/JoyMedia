@@ -7,6 +7,7 @@
  "field_order": [
   "artifact_identity_section",
   "artifact_key",
+  "artifact_role",
   "generation_attempt",
   "media_type",
   "frappe_file",
@@ -41,15 +42,15 @@
    "default": "Video",
    "fieldname": "media_type",
    "fieldtype": "Select",
-   "label": "Artifact Type",
-   "options": "Video\nAudio\nImage\nJSON\nOther",
+   "label": "Media Type",
+   "options": "Video\nImage\nAudio\nJSON\nOther",
    "read_only": 1
   },
   {
    "description": "Generated video stored in Frappe for review.",
    "fieldname": "frappe_file",
    "fieldtype": "Attach",
-   "label": "Video File",
+   "label": "File",
    "read_only": 1
   },
   {
@@ -62,21 +63,29 @@
    "description": "Temporary until approved and promoted to an Asset Version.",
    "fieldname": "lifecycle_status",
    "fieldtype": "Select",
-   "label": "Status",
-   "options": "Temporary\nPromoted"
+   "label": "Lifecycle Status",
+   "options": "Temporary\nPromoted\nDiscarded"
   },
   {
    "fieldname": "promoted_asset_version",
    "fieldtype": "Link",
    "label": "Promoted Asset Version",
    "options": "Asset Version",
-   "read_only": 1
+   "read_only_depends_on": "eval:doc.lifecycle_status==\"Promoted\""
+  },
+  {
+   "fieldname": "artifact_role",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Artifact Role",
+   "options": "Primary Video\nLast Frame\nPreview\nIntermediate\nFinal Video",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-20 18:13:07.011752",
+ "modified": "2026-09-29 10:08:18.261714",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Artifact",

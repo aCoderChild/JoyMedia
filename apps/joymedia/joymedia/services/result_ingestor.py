@@ -8,6 +8,7 @@ from frappe import _
 from frappe.utils import get_datetime, now
 
 from .comfyui_client import download_output, get_history
+from .artifact_service import get_attempt_artifact
 
 
 def sync_active_attempts():
@@ -35,17 +36,15 @@ def sync_active_attempts():
 
 def sync_attempt_result(attempt_name):
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
-	if attempt.status == "Completed" and attempt.output_artifact:
-		artifact = frappe.get_doc("Generation Artifact", attempt.output_artifact)
+	primary = get_attempt_artifact(attempt.name, "Primary Video")
+	if attempt.status == "Completed" and primary:
+		artifact = primary
 		_store_artifact_file_in_frappe(artifact, attempt)
 		_refresh_parent_execution_state(attempt.name)
 		return {
 			"status": attempt.status,
-			"output_artifact": attempt.output_artifact,
+			"output_artifact": artifact.name,
 		}
-	if attempt.status == "Completed" and attempt.output_asset_version:
-		_refresh_parent_execution_state(attempt.name)
-		return {"status": attempt.status, "output_asset_version": attempt.output_asset_version}
 	if not attempt.external_job_id:
 		frappe.throw(_("Generation Attempt {0} has no ComfyUI prompt ID.").format(attempt.name))
 
@@ -95,7 +94,7 @@ def sync_attempt_result(attempt_name):
 			_extract_last_frame(video_bytes, output["filename"]),
 			f"{Path(output['filename']).stem}_last_frame.png",
 		)
-	attempt.output_artifact = artifact.name
+	last_frame_artifact = get_attempt_artifact(attempt.name, "Last Frame")
 	attempt.status = "Completed"
 	if not attempt.started_at:
 		attempt.started_at = _execution_timestamp(history, "execution_start") or now()
@@ -105,31 +104,21 @@ def sync_attempt_result(attempt_name):
 			0, (get_datetime(attempt.completed_at) - get_datetime(attempt.started_at)).total_seconds()
 		)
 	attempt.save(ignore_permissions=True)
-	if _should_auto_select_output(attempt):
-		_auto_select_output(attempt, artifact)
-	else:
-		_create_pending_quality_review(attempt, artifact)
+	_select_primary_output(attempt, artifact)
 	_refresh_parent_execution_state(attempt.name)
 	return {
 		"status": attempt.status,
 		"output_artifact": artifact.name,
-		"last_frame_asset_version": attempt.last_frame_asset_version,
+		"last_frame_artifact": last_frame_artifact.name if last_frame_artifact else None,
 	}
 
 
-def _should_auto_select_output(attempt):
-	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	if not job.generation_run:
-		return False
-	return bool(frappe.db.get_value("Generation Run", job.generation_run, "auto_select_outputs"))
-
-
-def _auto_select_output(attempt, artifact):
+def _select_primary_output(attempt, artifact):
 	from joymedia.services.artifact_service import promote_artifact
 
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
 	shot = frappe.get_doc("Shot Specification", job.shot_specification)
-	result = promote_artifact(artifact.name, require_approved_review=False)
+	result = promote_artifact(artifact.name)
 	shot.db_set("selected_output_asset_version", result["asset_version"], update_modified=False)
 
 
@@ -143,8 +132,9 @@ def _find_last_frame_image(history):
 
 
 def _store_last_frame(attempt, output):
-	if attempt.last_frame_asset_version:
-		return frappe.get_doc("Asset Version", attempt.last_frame_asset_version)
+	last_frame_artifact = get_attempt_artifact(attempt.name, "Last Frame")
+	if last_frame_artifact:
+		return last_frame_artifact
 
 	image_bytes = download_output(
 		output["filename"],
@@ -156,13 +146,9 @@ def _store_last_frame(attempt, output):
 
 
 def _store_last_frame_bytes(attempt, image_bytes, file_name):
-	if attempt.last_frame_asset_version:
-		return frappe.get_doc("Asset Version", attempt.last_frame_asset_version)
-
-	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	shot = frappe.get_doc("Shot Specification", job.shot_specification)
-	media_specification = frappe.get_doc("Media Specification", shot.media_specification)
-	media_asset = _get_or_create_continuation_asset(shot.name, media_specification.media_project)
+	last_frame_artifact = get_attempt_artifact(attempt.name, "Last Frame")
+	if last_frame_artifact:
+		return last_frame_artifact
 
 	file_doc = frappe.get_doc(
 		{
@@ -170,23 +156,26 @@ def _store_last_frame_bytes(attempt, image_bytes, file_name):
 			"file_name": file_name,
 			"content": image_bytes,
 			"is_private": 1,
-			"attached_to_doctype": "Media Asset",
-			"attached_to_name": media_asset.name,
 		}
 	)
 	file_doc.insert(ignore_permissions=True)
-
-	asset_version = frappe.get_doc(
+	artifact = frappe.get_doc(
 		{
-			"doctype": "Asset Version",
-			"media_asset": media_asset.name,
-			"file": file_doc.file_url,
-			"source": "Generated",
+			"doctype": "Generation Artifact",
+			"artifact_key": f"{attempt.name}:last_frame",
+			"artifact_role": "Last Frame",
+			"generation_attempt": attempt.name,
+			"media_type": "Image",
+			"lifecycle_status": "Temporary",
 		}
 	)
-	asset_version.insert(ignore_permissions=True)
-	attempt.last_frame_asset_version = asset_version.name
-	return asset_version
+	artifact.insert(ignore_permissions=True)
+	file_doc.attached_to_doctype = "Generation Artifact"
+	file_doc.attached_to_name = artifact.name
+	file_doc.save(ignore_permissions=True)
+	artifact.frappe_file = file_doc.file_url
+	artifact.save(ignore_permissions=True)
+	return artifact
 
 
 def _extract_last_frame(video_bytes, source_name):
@@ -218,37 +207,17 @@ def _extract_last_frame(video_bytes, source_name):
 		frappe.throw(_("Unable to extract the last frame from ComfyUI output: {0}").format(exc))
 
 
-def _get_or_create_continuation_asset(shot_name, media_project):
-	asset_name = f"{shot_name} Continuation Frames"
-	media_asset_name = frappe.db.get_value("Media Asset", {"asset_name": asset_name}, "name")
-	if media_asset_name:
-		return frappe.get_doc("Media Asset", media_asset_name)
-
-	media_asset = frappe.get_doc(
-		{
-			"doctype": "Media Asset",
-			"asset_name": asset_name,
-			"media_type": "Image",
-			"asset_category": "Continuation Frame",
-			"library_visibility": "Internal",
-			"media_project": media_project,
-			"client_organization": frappe.db.get_value("Media Project", media_project, "client_organization"),
-		}
-	)
-	media_asset.insert(ignore_permissions=True)
-	return media_asset
-
-
 def _create_primary_artifact(attempt):
 	artifact_key = f"{attempt.name}:primary_video"
-	existing = frappe.db.get_value("Generation Artifact", {"artifact_key": artifact_key}, "name")
+	existing = get_attempt_artifact(attempt.name, "Primary Video")
 	if existing:
-		return frappe.get_doc("Generation Artifact", existing)
+		return existing
 
 	artifact = frappe.get_doc(
 		{
 			"doctype": "Generation Artifact",
 			"artifact_key": artifact_key,
+			"artifact_role": "Primary Video",
 			"generation_attempt": attempt.name,
 			"media_type": "Video",
 			"lifecycle_status": "Temporary",
@@ -290,22 +259,6 @@ def _store_artifact_file_in_frappe(artifact, attempt, output=None):
 	artifact.frappe_file = file_doc.file_url
 	artifact.save(ignore_permissions=True)
 	return artifact
-
-
-def _create_pending_quality_review(attempt, artifact):
-	if frappe.db.exists(
-		"Quality Review",
-		{"generation_artifact": artifact.name},
-	):
-		return
-
-	frappe.get_doc(
-		{
-			"doctype": "Quality Review",
-			"generation_artifact": artifact.name,
-			"status": "Pending",
-		}
-	).insert(ignore_permissions=True)
 
 
 def _refresh_parent_execution_state(attempt_name):

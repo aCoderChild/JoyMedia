@@ -1,0 +1,85 @@
+# Copyright (c) 2026, JoyMedia and contributors
+# For license information, please see license.txt
+
+import mimetypes
+
+import frappe
+from frappe import _
+
+
+INPUT_ASSET_CATEGORIES = {"Product", "Character", "Background", "Brand", "Style", "Reference", "Audio", "Other"}
+
+
+def detect_media_type(file_doc):
+	content_type = (
+		getattr(file_doc, "mimetype", None)
+		or mimetypes.guess_type(file_doc.file_name or "")[0]
+		or getattr(file_doc, "file_type", None)
+		or ""
+	)
+	if content_type.startswith("image/"):
+		return "Image"
+	if content_type.startswith("video/"):
+		return "Video"
+	if content_type.startswith("audio/"):
+		return "Audio"
+	if content_type == "application/pdf" or content_type.startswith("text/"):
+		return "Document"
+	return "Other"
+
+
+def _get_duplicate_version(content_hash, version_name):
+	return frappe.db.get_value(
+		"Asset Version",
+		{"content_hash": content_hash, "name": ["!=", version_name]},
+		["name", "media_asset"],
+		as_dict=True,
+	)
+
+
+@frappe.whitelist()
+def create_media_asset(asset_name, asset_category, file_url):
+	if frappe.session.user == "Guest":
+		frappe.throw(_("You must be signed in to upload media."))
+	if asset_category not in INPUT_ASSET_CATEGORIES:
+		frappe.throw(_("Uploaded assets must be reference inputs."))
+
+	file_doc = frappe.get_doc("File", {"file_url": file_url})
+	if file_doc.owner != frappe.session.user and frappe.session.user != "Administrator":
+		frappe.throw(_("You can only attach files uploaded by your account."))
+
+	asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": asset_name,
+			"media_type": detect_media_type(file_doc),
+			"asset_category": asset_category,
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
+	version = frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": asset.name,
+			"file": file_url,
+			"source": "Uploaded",
+		}
+	).insert(ignore_permissions=True)
+
+	duplicate = _get_duplicate_version(version.content_hash, version.name)
+	if duplicate:
+		frappe.delete_doc("Asset Version", version.name, force=True, ignore_permissions=True)
+		frappe.delete_doc("Media Asset", asset.name, force=True, ignore_permissions=True)
+		frappe.delete_doc("File", file_doc.name, force=True, ignore_permissions=True)
+		return {
+			"media_asset": duplicate.media_asset,
+			"asset_version": duplicate.name,
+			"reused": True,
+		}
+
+	frappe.db.commit()
+	return {
+		"media_asset": asset.name,
+		"asset_version": version.name,
+		"reused": False,
+	}

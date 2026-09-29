@@ -12,7 +12,7 @@ DEFAULT_TIMEOUT = 600
 def generate_video_plan(
 	*,
 	product_name: str,
-	target_audience: str,
+	campaign_brief: str,
 	video_idea: str,
 	total_video_duration: float,
 	target_fps: float,
@@ -70,7 +70,7 @@ Preserve the reference template's cinematography,
 pacing, composition, scene progression, motion style
 and lighting language.
 
-Adapt the content to the supplied product, target audience,
+Adapt the content to the supplied product and campaign brief,
 video idea and project reference images.
 """
 		).strip()
@@ -107,7 +107,7 @@ video idea and project reference images.
 	user_prompt = (
 		f"{instruction}\n\n"
 		f"PRODUCT NAME\n{product_name}\n\n"
-		f"TARGET AUDIENCE\n{target_audience}\n\n"
+		f"CAMPAIGN BRIEF\n{campaign_brief or ''}\n\n"
 		f"VIDEO IDEA\n{video_idea or ''}\n\n"
 		f"TOTAL VIDEO DURATION: {total_video_duration} seconds\n"
 		f"TARGET FPS: {target_fps}\n"

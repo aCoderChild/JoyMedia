@@ -290,7 +290,7 @@
           <div class="metadata-row"><span>Shot prompt</span><strong>{{ selectedShot?.generation_prompt ? 'Available' : '—' }}</strong></div>
           <div class="metadata-row"><span>Campaign</span><strong>{{ workspace?.campaign?.campaign_name || workspace?.campaign?.project_name || '—' }}</strong></div>
           <div class="metadata-row"><span>Product</span><strong>{{ workspace?.campaign?.product_name || '—' }}</strong></div>
-          <div class="metadata-row"><span>Audience</span><strong>{{ workspace?.campaign?.target_audience || '—' }}</strong></div>
+          <div class="metadata-row"><span>Campaign brief</span><strong>{{ workspace?.campaign_parent?.campaign_brief || '—' }}</strong></div>
         </details>
       </div>
 

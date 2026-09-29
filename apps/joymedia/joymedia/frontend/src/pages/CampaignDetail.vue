@@ -71,7 +71,7 @@
             <span class="text-[11px] text-ink-muted mt-2">Core subject offering</span>
           </div>
 
-          <!-- Target Audience -->
+          <!-- Campaign Brief -->
           <div class="p-4 rounded-xl bg-surface-hover border border-outline-border flex flex-col justify-between">
             <div>
               <div class="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
@@ -81,13 +81,13 @@
                   <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
                   <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                 </svg>
-                <span>Target Audience</span>
+                <span>Campaign Brief</span>
               </div>
               <p class="text-sm text-ink-primary font-medium leading-relaxed">
-                {{ campaignData.campaign.target_audience || "No specific target audience defined." }}
+                {{ campaignData.campaign.campaign_brief || "No campaign brief defined." }}
               </p>
             </div>
-            <span class="text-[11px] text-ink-muted mt-2">Ideal viewer & customer persona</span>
+            <span class="text-[11px] text-ink-muted mt-2">Product and campaign context</span>
           </div>
 
           <!-- Campaign Brief -->
@@ -436,8 +436,7 @@ async function uploadSelectedImages(event) {
     for (const file of files) {
       const uploadedFile = await uploadFile(file, { private: true });
       if (!uploadedFile?.file_url) throw new Error(`Upload did not return a file URL for ${file.name}.`);
-      await call("joymedia.joymedia.doctype.media_project.media_project.create_campaign_shared_asset", {
-        campaign: realCampaignName,
+      await call("joymedia.services.media_asset_service.create_media_asset", {
         asset_name: assetNameFromFile(file.name),
         asset_category: selectedUploadCategory.value || "Product",
         file_url: uploadedFile.file_url,

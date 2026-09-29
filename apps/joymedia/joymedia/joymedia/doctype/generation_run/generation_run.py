@@ -15,8 +15,3 @@ class GenerationRun(Document):
 			frappe.throw(
 				_("Generation Run Workflow must match the Media Specification Workflow.")
 			)
-
-		if (self.requested_variants_per_shot or 0) < 1:
-			frappe.throw(_("Requested Variants Per Shot must be greater than zero."))
-		if (self.max_retries or 0) < 0:
-			frappe.throw(_("Max Retries cannot be negative."))
