@@ -322,3 +322,71 @@ class TestTimelineEditor(FrappeTestCase):
 		video = _final_video(self.project.name, self.spec.name)
 		# Should fall back to Generation Run master again
 		self.assertEqual(video["name"], self.version_1.name)
+
+	def test_timeline_is_outdated_and_rebase_on_new_spec(self):
+		from joymedia.services.timeline_editor import get_project_timeline, reset_project_timeline
+
+		# Spec 1 is current timeline spec
+		data = get_project_timeline(self.project.name)
+		self.assertFalse(data["is_outdated"])
+		self.assertEqual(data["media_specification"], self.spec.name)
+		self.assertEqual(data["timeline_spec_version"], 1)
+
+		# Create Spec 2 with fully generated shots
+		spec_2 = frappe.get_doc(
+			{
+				"doctype": "Media Specification",
+				"media_project": self.project.name,
+				"version_number": 2,
+				"fps": 24,
+				"total_duration_seconds": 10,
+			}
+		).insert(ignore_permissions=True)
+
+		shot_v2 = frappe.get_doc(
+			{
+				"doctype": "Shot Specification",
+				"media_specification": spec_2.name,
+				"shot_number": 1,
+				"subject_identity": "Product Hero V2",
+				"action_plot": "Close-up cinematic rotation V2",
+				"planned_frame_count": 96,
+				"duration_seconds": 4.0,
+			}
+		).insert(ignore_permissions=True)
+		shot_v2.db_set("selected_output_asset_version", self.version_1.name, update_modified=False)
+
+		# Now get_project_timeline should detect Spec 2 is latest generated
+		data = get_project_timeline(self.project.name)
+		self.assertTrue(data["is_outdated"])
+		self.assertEqual(data["media_specification"], self.spec.name)
+		self.assertEqual(data["latest_generated_media_specification"], spec_2.name)
+		self.assertEqual(data["timeline_spec_version"], 1)
+		self.assertEqual(data["latest_spec_version"], 2)
+
+		# User clicks "Update timeline" -> calls reset_project_timeline
+		reset_data = reset_project_timeline(self.project.name)
+		self.assertFalse(reset_data["is_outdated"])
+		self.assertEqual(reset_data["media_specification"], spec_2.name)
+		self.assertEqual(reset_data["timeline_spec_version"], 2)
+
+	def test_queue_project_timeline_export(self):
+		from unittest.mock import patch
+		from joymedia.services.timeline_editor import (
+			queue_project_timeline_export,
+			get_project_timeline_export_status,
+		)
+
+		with patch("frappe.enqueue") as mock_enqueue:
+			res = queue_project_timeline_export(self.project.name)
+			self.assertEqual(res["status"], "Queued")
+			mock_enqueue.assert_called_once()
+
+			status_res = get_project_timeline_export_status(self.project.name)
+			self.assertEqual(status_res["export_status"], "Queued")
+
+			# Re-queueing while Queued returns same status without double-enqueueing
+			mock_enqueue.reset_mock()
+			res_dup = queue_project_timeline_export(self.project.name)
+			self.assertEqual(res_dup["status"], "Queued")
+			mock_enqueue.assert_not_called()

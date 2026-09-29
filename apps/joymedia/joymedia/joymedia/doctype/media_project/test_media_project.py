@@ -114,89 +114,14 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 				apply_campaign_video_plan(campaign_b.name, json.dumps(_video_plan()))
 			with self.assertRaises(frappe.PermissionError):
 				generate_campaign_video(campaign_b.name)
+			with self.assertRaises(frappe.PermissionError):
+				from joymedia.services.timeline_editor import get_project_timeline, queue_project_timeline_export
+				get_project_timeline(campaign_b.name)
+			with self.assertRaises(frappe.PermissionError):
+				queue_project_timeline_export(campaign_b.name)
 		finally:
 			frappe.set_user(original_user)
 
-	def test_real_customer_review_permissions_and_tenant_isolation(self):
-		from joymedia.joymedia.doctype.media_project.media_project import (
-			approve_campaign_review,
-			create_business,
-			create_campaign,
-			reject_campaign_review,
-			regenerate_campaign_review,
-			stream_campaign_review,
-		)
-
-		original_user = frappe.session.user
-		user_a = _create_portal_user("JoyMedia Review Customer A")
-		user_b = _create_portal_user("JoyMedia Review Customer B")
-
-		try:
-			frappe.set_user(user_a)
-			organization_a = create_business("Review Customer A Business")
-			frappe.clear_cache()
-			frappe.set_user(user_a)
-			campaign_a = create_campaign(
-				project_name="Review Customer A Campaign",
-				product_name="Customer A Product",
-				campaign_brief="Customer A Audience",
-			)
-			frappe.set_user(user_b)
-			organization_b = create_business("Review Customer B Business")
-			frappe.clear_cache()
-			frappe.set_user(user_b)
-			campaign_b = create_campaign(
-				project_name="Review Customer B Campaign",
-				product_name="Customer B Product",
-				campaign_brief="Customer B Audience",
-			)
-
-			# Give each campaign a current specification before creating review fixtures.
-			frappe.set_user("Administrator")
-			campaign_a.save_video_settings(8, "Landscape")
-			campaign_b.save_video_settings(8, "Landscape")
-			specification_a = get_latest_media_specification_for_test(campaign_a.name)
-			specification_b = get_latest_media_specification_for_test(campaign_b.name)
-			review_a = _create_pending_review(specification_a.name, frappe.generate_hash(length=8))
-			review_b = _create_pending_review(specification_b.name, frappe.generate_hash(length=8))
-			_file_review_artifact(review_a)
-			_file_review_artifact(review_b)
-
-			frappe.set_user(user_a)
-			stream_campaign_review(campaign_a.name, review_a)
-			self.assertIn(frappe.local.response.filecontent, ("video", b"video"))
-			with patch(
-				"joymedia.joymedia.doctype.asset_version.asset_version.AssetVersion.set_file_metadata"
-			):
-				approve_campaign_review(campaign_a.name, review_a)
-
-			review_for_regeneration = _create_pending_review(
-				specification_a.name, frappe.generate_hash(length=8)
-			)
-			frappe.db.set_value("Generation Run", review_for_regeneration, "status", "Completed")
-			reject_campaign_review(campaign_a.name, review_for_regeneration, "Needs another take")
-			with patch(
-				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.create_qa_retry_attempt_internal",
-				return_value=type("RetryAttempt", (), {"name": "ATT-PORTAL-RETRY"})(),
-			), patch(
-				"joymedia.services.generation_runner.submit_attempt",
-				return_value={"deferred": True},
-			):
-				regeneration = regenerate_campaign_review(
-					campaign_a.name, review_for_regeneration
-				)
-			self.assertTrue(regeneration["deferred"])
-
-			with self.assertRaises(frappe.PermissionError):
-				stream_campaign_review(campaign_b.name, review_b)
-			with self.assertRaises(frappe.PermissionError):
-				approve_campaign_review(campaign_b.name, review_b)
-			with self.assertRaises(frappe.PermissionError):
-				reject_campaign_review(campaign_b.name, review_b)
-			with self.assertRaises(frappe.PermissionError):
-				regenerate_campaign_review(campaign_b.name, review_b)
-		finally:
-			frappe.set_user(original_user)
 	def test_campaign_workspace_aggregates_assets_and_current_storyboard(self):
 		campaign, specification = _create_campaign("Campaign Workspace")
 		asset = frappe.get_doc(
@@ -347,21 +272,6 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			"Second subject",
 		)
 
-	def test_pending_reviews_are_isolated_between_campaigns(self):
-		campaign_a, specification_a = _create_campaign("Review Isolation A")
-		campaign_b, specification_b = _create_campaign("Review Isolation B")
-		suffix_a = frappe.generate_hash(length=8)
-		suffix_b = frappe.generate_hash(length=8)
-
-		review_a = _create_pending_review(specification_a.name, suffix_a)
-		review_b = _create_pending_review(specification_b.name, suffix_b)
-		_file_review_artifact(review_a)
-		_file_review_artifact(review_b)
-
-		reviews = campaign_a.get_pending_reviews()
-
-		self.assertEqual(len(reviews), 1)
-		self.assertEqual(reviews[0]["campaign"], campaign_a.name)
 
 	def test_storyboard_revision_is_persisted_without_mutating_previous_spec(self):
 		campaign, specification = _create_campaign("Revision Persistence")
@@ -404,7 +314,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self, start_run_internal, validate_workflow_for_execution, get_system_stats, filelock
 	):
 		campaign, specification = _create_campaign("Generation Idempotency")
-		_create_pending_review(specification.name, frappe.generate_hash(length=8), create_run=False)
+		_create_shot_fixtures(specification.name, frappe.generate_hash(length=8), create_run=False)
 		def queue_run(run_name):
 			frappe.db.set_value("Generation Run", run_name, "status", "Queued")
 			return {"name": run_name, "status": "Queued"}
@@ -605,7 +515,7 @@ def _ensure_default_h3_workflow():
 	return workflow.name
 
 
-def _create_pending_review(media_specification, suffix, create_run=True):
+def _create_shot_fixtures(media_specification, suffix, create_run=True):
 	workflow = frappe.db.get_value(
 		"Media Specification", media_specification, "workflow"
 	)

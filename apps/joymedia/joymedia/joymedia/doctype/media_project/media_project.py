@@ -14,7 +14,6 @@ from joymedia.joymedia.doctype.workflow.workflow import get_latest_valid_workflo
 ALLOWED_STATUSES = {
 	"Draft",
 	"Generating",
-	"Review",
 	"Completed",
 	"Needs Attention",
 	"Cancelled",
@@ -423,7 +422,6 @@ def get_campaign_workspace(name):
 			else None
 		)
 		if production:
-			reviews = project._get_review_cards(["Pending", "Rejected", "Approved"])
 			final_asset_ver_name = getattr(project, "current_output_asset_version", None) or production.final_asset_version
 			if final_asset_ver_name:
 				final_file = frappe.db.get_value(
@@ -447,6 +445,11 @@ def get_campaign_workspace(name):
 			"video_idea": project.video_idea,
 			"reference_template": project.reference_template,
 			"status": project.status,
+			"current_output_asset_version": getattr(project, "current_output_asset_version", None),
+			"export_status": getattr(project, "export_status", "Idle") or "Idle",
+			"export_error": getattr(project, "export_error", None),
+			"export_started_at": getattr(project, "export_started_at", None),
+			"export_completed_at": getattr(project, "export_completed_at", None),
 		},
 		"campaign_parent": frappe.db.get_value(
 			"Campaign",
@@ -475,7 +478,6 @@ def get_campaign_workspace(name):
 		else None,
 		"storyboard": storyboard,
 		"production": production,
-		"reviews": reviews,
 		"final_video": final_video,
 	}
 
@@ -524,14 +526,6 @@ def get_campaign_production(name):
 			"file": frappe.db.get_value("Asset Version", final_asset_ver, "file"),
 		}
 	return production
-
-
-@frappe.whitelist()
-def get_campaign_reviews(name):
-	"""Return final Generation Run review cards for a project."""
-	project = frappe.get_doc("Media Project", name)
-	project._require_read_access()
-	return [card for card in get_pending_review_cards() if card.get("campaign") == name]
 
 def _get_campaign_assets(media_project):
 	"""Return the reference inputs explicitly selected for a project."""
@@ -722,208 +716,7 @@ def _automatic_shot_count(media_specification, media_project):
 	)
 
 
-@frappe.whitelist()
-def get_pending_review_cards():
-	"""
-	Return only full videos ready for final client review:
-	- Merged/composed multi-shot final deliverable videos
-	- Single-shot campaign full videos
-	Individual intermediate scene shots are reviewed within CampaignDetail.vue.
-	"""
-	full_videos = []
-	for campaign in frappe.get_list(
-		"Media Project",
-		fields=["name", "campaign", "project_name", "status"],
-		order_by="modified desc",
-		limit_page_length=100,
-	):
-		project = frappe.get_doc("Media Project", campaign.name)
-		campaign_product_name = (
-			frappe.db.get_value("Campaign", project.campaign, "product_name")
-			if project.campaign
-			else None
-		)
-		campaign_title = (
-			frappe.db.get_value("Campaign", project.campaign, "campaign_name")
-			if project.campaign
-			else None
-		) or project.project_name
-		media_spec = _get_latest_project_storyboard_specification(project.name)
-		if not media_spec:
-			continue
 
-		shots = frappe.get_all(
-			"Shot Specification",
-			filters={"media_specification": media_spec.name},
-			pluck="name",
-		)
-		shot_count = len(shots)
-		if shot_count == 0:
-			continue
-
-		final_runs = frappe.get_all(
-			"Generation Run",
-			filters={"media_specification": media_spec.name},
-			fields=["name", "final_asset_version", "status"],
-			order_by="creation desc",
-			limit_page_length=20,
-		)
-		final_run = next((run for run in final_runs if run.final_asset_version), None)
-		final_asset_version = final_run.final_asset_version if final_run else None
-		review_status = final_run.status if final_run else None
-
-		# Case 1: Multi-shot campaign -> Only show the composed / merged full video
-		if shot_count > 1:
-			final_asset = None
-			if final_asset_version:
-				asset_ver = frappe.get_doc("Asset Version", final_asset_version)
-				if asset_ver.file:
-					final_asset = {
-						"file": asset_ver.file,
-						"version": asset_ver.name,
-						"duration": asset_ver.duration_seconds or media_spec.total_duration_seconds,
-					}
-			if final_asset:
-				full_videos.append(
-					{
-						"name": f"{project.name}-FULL",
-						"campaign": project.name,
-					"campaign_name": campaign_title,
-						"product_name": campaign_product_name,
-						"video_type": "Merged Full Video",
-						"shot_count": shot_count,
-					"status": review_status,
-					"review_key": final_run.name if final_run else None,
-						"preview_url": final_asset["file"],
-						"duration": final_asset.get("duration"),
-						"asset_version": final_asset.get("version"),
-						"is_single_shot": False,
-					}
-				)
-
-		# Case 2: Single-shot campaign -> The single shot video IS the full video!
-		elif shot_count == 1:
-			if final_asset_version:
-				asset_ver = frappe.get_doc("Asset Version", final_asset_version)
-				if asset_ver.file:
-					full_videos.append(
-						{
-							"name": f"{project.name}-FULL",
-							"campaign": project.name,
-						"campaign_name": campaign_title,
-						"product_name": campaign_product_name,
-							"video_type": "Single-Shot Full Video",
-							"shot_count": 1,
-						"status": review_status,
-						"review_key": final_run.name if final_run else None,
-							"preview_url": asset_ver.file,
-							"duration": asset_ver.duration_seconds or media_spec.total_duration_seconds,
-							"asset_version": asset_ver.name,
-							"is_single_shot": True,
-						}
-					)
-
-	return full_videos
-
-
-@frappe.whitelist()
-def get_reviews_summary():
-	"""Return the review counts used by the JoyMedia navigation shell."""
-	cards = get_pending_review_cards()
-	return {
-		"pending_count": 0,
-		"total_count": len(cards),
-	}
-
-
-@frappe.whitelist()
-def stream_campaign_review(campaign_name: str, review_name: str):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.stream_campaign_review(review_name)
-
-
-@frappe.whitelist()
-def approve_campaign_review(campaign_name: str, review_name: str):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.approve_campaign_review(review_name)
-
-
-@frappe.whitelist()
-def reject_campaign_review(
-	campaign_name: str, review_name: str, notes: str | None = None
-):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.reject_campaign_review(review_name, notes)
-
-
-@frappe.whitelist()
-def review_final_video(project_name: str, decision: str, notes: str | None = None):
-	"""Persist the client decision for the latest composed final video."""
-	project = frappe.get_doc("Media Project", project_name)
-	project._require_write_access()
-	media_specification = get_latest_media_specification(project.name)
-	if not media_specification:
-		frappe.throw(_("This project has no video specification."))
-
-	runs = frappe.get_all(
-		"Generation Run",
-		filters={"media_specification": media_specification.name},
-		fields=["name", "final_asset_version", "status"],
-		order_by="creation desc",
-		limit_page_length=20,
-	)
-	run = next((item for item in runs if item.final_asset_version), None)
-	if not run:
-		frappe.throw(_("This project has no completed final video to review."))
-	if decision not in ("Approved", "Changes Requested"):
-		frappe.throw(_("Invalid final video review decision."))
-
-	frappe.db.set_value(
-		"Generation Run",
-		run.name,
-		"status",
-		"Completed",
-		update_modified=True,
-	)
-	frappe.db.set_value(
-		"Media Project",
-		project.name,
-		"status",
-		"Completed" if decision == "Approved" else "Draft",
-		update_modified=False,
-	)
-	frappe.db.commit()
-	return {"project": project.name, "run": run.name, "status": decision}
-
-
-@frappe.whitelist()
-def approve_review(review_name: str, campaign_name: str | None = None):
-	if campaign_name and frappe.db.exists("Media Project", campaign_name):
-		return approve_campaign_review(campaign_name, review_name)
-	run = frappe.get_doc("Generation Run", review_name)
-	run.status = "Completed"
-	run.save(ignore_permissions=True)
-	return run.as_dict()
-
-
-@frappe.whitelist()
-def reject_review(review_name: str, campaign_name: str | None = None, notes: str | None = None):
-	if campaign_name and frappe.db.exists("Media Project", campaign_name):
-		return reject_campaign_review(campaign_name, review_name, notes)
-	run = frappe.get_doc("Generation Run", review_name)
-	run.status = "Completed"
-	run.save(ignore_permissions=True)
-	return run.as_dict()
-
-
-@frappe.whitelist()
-def regenerate_campaign_review(
-	campaign_name: str,
-	review_name: str,
-	reason: str = "Manual Retry",
-):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.regenerate_campaign_review(review_name, reason)
 
 
 @frappe.whitelist()
@@ -1557,7 +1350,7 @@ class MediaProject(Document):
 							"Wait for the run to finish before changing the format."
 						)
 					)
-				if self.status not in ("Review", "Needs Attention", "Completed") and latest_run_status not in (
+				if self.status not in ("Needs Attention", "Completed") and latest_run_status not in (
 					"Failed",
 				):
 					frappe.throw(_("Create a storyboard revision before changing Video Settings."))
@@ -1900,7 +1693,7 @@ class MediaProject(Document):
 				"status",
 				order_by="creation desc",
 			)
-			if self.status not in ("Review", "Needs Attention", "Completed") and latest_run_status not in (
+			if self.status not in ("Needs Attention", "Completed") and latest_run_status not in (
 				"Failed",
 			):
 				frappe.throw(_("Storyboard revision is not available in the current Campaign state."))
@@ -1934,41 +1727,6 @@ class MediaProject(Document):
 		frappe.db.set_value("Media Project", self.name, "status", "Draft", update_modified=False)
 		frappe.db.commit()
 		return {"media_specification": revision.name, "version_number": revision.version_number}
-
-	@frappe.whitelist()
-	def get_pending_reviews(self):
-		self._require_read_access()
-		return [card for card in get_pending_review_cards() if card.get("campaign") == self.name]
-
-	@frappe.whitelist()
-	def stream_campaign_review(self, review_name):
-		self._require_read_access()
-		run = frappe.get_doc("Generation Run", review_name)
-		asset_version = frappe.get_doc("Asset Version", run.final_asset_version)
-		file_doc = frappe.get_doc("File", {"file_url": asset_version.file})
-		frappe.local.response.filename = file_doc.file_name
-		frappe.local.response.filecontent = file_doc.get_content()
-		frappe.local.response.content_type = "video/mp4"
-		frappe.local.response.display_content_as = "inline"
-		frappe.local.response.type = "download"
-		return
-
-	@frappe.whitelist()
-	def approve_campaign_review(self, review_name):
-		self._require_write_access()
-		return review_final_video(self.name, "Approved")
-
-	@frappe.whitelist()
-	def reject_campaign_review(self, review_name, notes=None):
-		self._require_write_access()
-		return review_final_video(self.name, "Changes Requested", notes)
-
-	@frappe.whitelist()
-	def regenerate_campaign_review(self, review_name, reason="Manual Retry"):
-		self._require_write_access()
-		result = review_final_video(self.name, "Changes Requested")
-		result["deferred"] = True
-		return result
 
 	def _get_project_image_inputs(self):
 		from joymedia.services.project_image_manifest import get_project_image_manifest

@@ -16,9 +16,6 @@ frappe.ui.form.on("Media Project", {
 			open_latest_storyboard(frm);
 		});
 
-		frm.add_custom_button(__("Review Videos"), () => {
-			show_campaign_reviews(frm);
-		});
 
 		if (frm.doc.status === "Draft") {
 			frm.add_custom_button(__("Generate Storyboard"), () => {
@@ -30,7 +27,7 @@ frappe.ui.form.on("Media Project", {
 			});
 		}
 
-		if (["Review", "Needs Attention", "Completed"].includes(frm.doc.status)) {
+		if (["Needs Attention", "Completed"].includes(frm.doc.status)) {
 			frm.add_custom_button(__("Revise Storyboard"), () => {
 				create_storyboard_revision(frm);
 			});
@@ -157,87 +154,7 @@ function open_latest_storyboard(frm) {
 		});
 }
 
-function show_campaign_reviews(frm) {
-	frm.call("get_pending_reviews", {}, (r) => {
-		if (r.exc) return;
-		const reviews = r.message || [];
-		if (!reviews.length) {
-			frappe.msgprint(__("This Campaign has no pending video reviews."));
-			return;
-		}
 
-		const dialog = new frappe.ui.Dialog({
-			title: __("Review Videos"),
-			fields: [{ fieldtype: "HTML", fieldname: "reviews" }],
-			primary_action_label: __("Close"),
-			primary_action() {
-				dialog.hide();
-			},
-		});
-		dialog.fields_dict.reviews.$wrapper.html(
-			reviews
-				.map(
-					(review) => `
-						<div style="margin-bottom: 24px;">
-							<video controls preload="metadata" style="max-width: 100%; width: 100%;">
-								<source src="${review.preview_url}" type="video/mp4">
-								${__("Your browser does not support video playback.")}
-							</video>
-							<div style="margin-top: 8px;">
-								<button class="btn btn-primary joymedia-approve-review" data-review="${review.name}">${__("Approve")}</button>
-								<button class="btn btn-secondary joymedia-regenerate-review" data-review="${review.name}">${__("Regenerate Shot")}</button>
-							</div>
-						</div>
-					`
-				)
-				.join("")
-		);
-		dialog.fields_dict.reviews.$wrapper.on("click", ".joymedia-approve-review", (event) => {
-			approve_campaign_review(frm, dialog, event.currentTarget.dataset.review);
-		});
-		dialog.fields_dict.reviews.$wrapper.on("click", ".joymedia-regenerate-review", (event) => {
-			regenerate_campaign_review(frm, dialog, event.currentTarget.dataset.review);
-		});
-		dialog.show();
-	});
-}
-
-function approve_campaign_review(frm, dialog, review_name) {
-	frappe.call({
-		method: "joymedia.joymedia.doctype.media_project.media_project.approve_campaign_review",
-		args: { campaign_name: frm.doc.name, review_name },
-		freeze: true,
-		freeze_message: __("Approving video..."),
-		callback(r) {
-			if (r.exc) return;
-			dialog.hide();
-			frm.reload_doc();
-		},
-	});
-}
-
-function regenerate_campaign_review(frm, dialog, review_name) {
-	frappe.call({
-		method: "joymedia.joymedia.doctype.media_project.media_project.reject_campaign_review",
-		args: { campaign_name: frm.doc.name, review_name, notes: "Changes requested from Campaign review." },
-		freeze: true,
-		freeze_message: __("Rejecting video..."),
-		callback(r) {
-			if (r.exc) return;
-			frappe.call({
-				method: "joymedia.joymedia.doctype.media_project.media_project.regenerate_campaign_review",
-				args: { campaign_name: frm.doc.name, review_name, reason: "Manual Retry" },
-				freeze: true,
-				freeze_message: __("Regenerating shot..."),
-				callback(retry_response) {
-					if (retry_response.exc) return;
-					dialog.hide();
-					frm.reload_doc();
-				},
-			});
-		},
-	});
-}
 
 function create_storyboard_revision(frm) {
 	frm.call("create_storyboard_revision", {}, (r) => {

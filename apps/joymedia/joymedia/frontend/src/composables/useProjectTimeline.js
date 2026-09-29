@@ -47,6 +47,9 @@ export function useProjectTimeline(projectName) {
       );
 
       applyTimeline(result);
+      if (result && ["Queued", "Running"].includes(result.export_status)) {
+        startExportPolling();
+      }
       return result;
     } catch (_) {
       timeline.value = null;
@@ -154,19 +157,65 @@ export function useProjectTimeline(projectName) {
     );
   }
 
+  let exportPollTimer = null;
+
+  function stopExportPolling() {
+    if (exportPollTimer) {
+      clearTimeout(exportPollTimer);
+      exportPollTimer = null;
+    }
+  }
+
+  function startExportPolling(onSuccess = null, onError = null) {
+    stopExportPolling();
+    async function check() {
+      try {
+        const res = await call(
+          "joymedia.services.timeline_editor.get_project_timeline_export_status",
+          { project_name: project() }
+        );
+        if (timeline.value) {
+          timeline.value.export_status = res.export_status;
+          timeline.value.export_error = res.export_error;
+        }
+        if (res.export_status === "Completed") {
+          stopExportPolling();
+          await loadTimeline(false);
+          if (onSuccess) onSuccess(res);
+        } else if (res.export_status === "Failed") {
+          stopExportPolling();
+          toast({
+            title: "Timeline export failed",
+            text: res.export_error || "Export failed.",
+            type: "error",
+          });
+          if (onError) onError(new Error(res.export_error || "Export failed"));
+        } else {
+          exportPollTimer = setTimeout(check, 2000);
+        }
+      } catch (err) {
+        stopExportPolling();
+        if (onError) onError(err);
+      }
+    }
+    check();
+  }
+
   async function exportTimeline() {
-    if (busy.value) return null;
-    busy.value = true;
+    if (isExporting.value) return null;
     try {
-      const result = await call(
-        "joymedia.services.timeline_editor.compose_project_timeline",
+      const queueRes = await call(
+        "joymedia.services.timeline_editor.queue_project_timeline_export",
         {
           project_name: project(),
         }
       );
-
-      await loadTimeline(false);
-      return result;
+      if (timeline.value) {
+        timeline.value.export_status = queueRes.export_status || "Queued";
+      }
+      return new Promise((resolve, reject) => {
+        startExportPolling(resolve, reject);
+      });
     } catch (error) {
       toast({
         title: "Timeline export failed",
@@ -177,10 +226,15 @@ export function useProjectTimeline(projectName) {
         type: "error",
       });
       return null;
-    } finally {
-      busy.value = false;
     }
   }
+
+  const exportStatus = computed(() => timeline.value?.export_status || "Idle");
+  const exportError = computed(() => timeline.value?.export_error || null);
+  const isExporting = computed(() => ["Queued", "Running"].includes(exportStatus.value));
+  const isOutdated = computed(() => Boolean(timeline.value?.is_outdated));
+  const latestSpecVersion = computed(() => timeline.value?.latest_spec_version || null);
+  const timelineSpecVersion = computed(() => timeline.value?.timeline_spec_version || null);
 
   return {
     timeline,
@@ -190,6 +244,12 @@ export function useProjectTimeline(projectName) {
     selectedClip,
     selectedClipName,
     playheadFrame,
+    exportStatus,
+    exportError,
+    isExporting,
+    isOutdated,
+    latestSpecVersion,
+    timelineSpecVersion,
 
     applyTimeline,
     loadTimeline,
@@ -202,5 +262,6 @@ export function useProjectTimeline(projectName) {
     resetTimeline,
     resetClip,
     exportTimeline,
+    stopExportPolling,
   };
 }

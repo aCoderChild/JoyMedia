@@ -82,6 +82,7 @@
           <article
             class="timeline-clip"
             :class="{ selected: selectedClip?.name === clip.name }"
+            :data-clip-name="clip.name"
             :style="clipStyle(clip)"
             draggable="true"
             @dragstart="onDragStart(clip, $event)"

@@ -14,10 +14,24 @@ TRANSITIONS = {"Cut", "Dissolve", "Fade"}
 MIN_CLIP_SECONDS = 0.25
 
 
+def _require_project_read(project):
+	if hasattr(project, "_require_read_access"):
+		project._require_read_access()
+	else:
+		project.check_permission("read")
+
+
+def _require_project_write(project):
+	if hasattr(project, "_require_write_access"):
+		project._require_write_access()
+	else:
+		project.check_permission("write")
+
+
 @frappe.whitelist()
 def get_project_timeline(project_name: str, create_if_possible=True):
 	project = frappe.get_doc("Media Project", project_name)
-	project.check_permission("read")
+	_require_project_read(project)
 	if not frappe.db.exists("DocType", "Timeline Clip"):
 		return {
 			"ready": False,
@@ -32,7 +46,7 @@ def get_project_timeline(project_name: str, create_if_possible=True):
 
 	clips = _timeline_clip_rows(project.name)
 	if not clips and create_if_possible:
-		project.check_permission("write")
+		_require_project_write(project)
 		_initialize_timeline(project)
 		clips = _timeline_clip_rows(project.name)
 
@@ -43,7 +57,7 @@ def get_project_timeline(project_name: str, create_if_possible=True):
 def reset_project_timeline(project_name: str):
 	"""Rebuild the edit timeline from the newest fully generated shot set."""
 	project = frappe.get_doc("Media Project", project_name)
-	project.check_permission("write")
+	_require_project_write(project)
 	for clip_name in frappe.get_all("Timeline Clip", filters={"media_project": project.name}, pluck="name"):
 		frappe.delete_doc("Timeline Clip", clip_name, ignore_permissions=True, force=True)
 	_initialize_timeline(project)
@@ -242,14 +256,83 @@ def set_timeline_transition(project_name: str, clip_name: str, transition: str, 
 
 
 @frappe.whitelist()
-def compose_project_timeline(project_name: str):
+def queue_project_timeline_export(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
-	project.check_permission("write")
+	_require_project_write(project)
+	if getattr(project, "export_status", None) in ("Queued", "Running"):
+		return {
+			"status": project.export_status,
+			"export_status": project.export_status,
+		}
+	project.db_set("export_status", "Queued")
+	project.db_set("export_error", None)
+	frappe.db.commit()
+	frappe.enqueue(
+		"joymedia.services.timeline_editor.run_project_timeline_export",
+		queue="long",
+		project_name=project.name,
+	)
+	return {
+		"status": "Queued",
+		"export_status": "Queued",
+	}
+
+
+def run_project_timeline_export(project_name: str):
+	project = frappe.get_doc("Media Project", project_name)
 	from joymedia.services.timeline_composer import compose_project_timeline_internal
 
-	result = compose_project_timeline_internal(project.name)
-	frappe.db.commit()
-	return result
+	try:
+		project.db_set("export_status", "Running")
+		project.db_set("export_started_at", frappe.utils.now())
+		frappe.db.commit()
+		result = compose_project_timeline_internal(project.name)
+		project.db_set("export_status", "Completed")
+		project.db_set("export_completed_at", frappe.utils.now())
+		frappe.db.commit()
+		return result
+	except Exception as exc:
+		project.db_set("export_status", "Failed")
+		project.db_set("export_error", str(exc))
+		project.db_set("export_completed_at", frappe.utils.now())
+		frappe.db.commit()
+		frappe.log_error(title=f"Timeline export failed for {project_name}")
+		raise
+
+
+@frappe.whitelist()
+def get_project_timeline_export_status(project_name: str):
+	project = frappe.get_doc("Media Project", project_name)
+	_require_project_read(project)
+	return {
+		"export_status": getattr(project, "export_status", "Idle") or "Idle",
+		"export_error": getattr(project, "export_error", None),
+		"export_started_at": getattr(project, "export_started_at", None),
+		"export_completed_at": getattr(project, "export_completed_at", None),
+		"current_output_asset_version": getattr(project, "current_output_asset_version", None),
+	}
+
+
+@frappe.whitelist()
+def compose_project_timeline(project_name: str):
+	project = frappe.get_doc("Media Project", project_name)
+	_require_project_write(project)
+	from joymedia.services.timeline_composer import compose_project_timeline_internal
+
+	project.db_set("export_status", "Running")
+	project.db_set("export_started_at", frappe.utils.now())
+	try:
+		result = compose_project_timeline_internal(project.name)
+		project.db_set("export_status", "Completed")
+		project.db_set("export_completed_at", frappe.utils.now())
+		frappe.db.commit()
+		return result
+	except Exception as exc:
+		project.db_set("export_status", "Failed")
+		project.db_set("export_error", str(exc))
+		project.db_set("export_completed_at", frappe.utils.now())
+		frappe.db.commit()
+		raise
 
 
 def _initialize_timeline(project):
@@ -352,15 +435,23 @@ def _enabled_clips(clips):
 
 
 def _serialize_timeline(project, clips):
+	latest_spec = _latest_fully_generated_specification(project.name)
 	enabled_clips = _enabled_clips(clips)
 	if not enabled_clips:
 		return {
 			"ready": False,
 			"project": project.name,
+			"media_specification": None,
+			"latest_generated_media_specification": latest_spec.name if latest_spec else None,
+			"latest_spec_version": latest_spec.version_number if latest_spec else None,
+			"timeline_spec_version": None,
+			"is_outdated": False,
 			"clips": [],
 			"fps": 0,
 			"total_frames": 0,
 			"total_seconds": 0,
+			"export_status": getattr(project, "export_status", "Idle") or "Idle",
+			"export_error": getattr(project, "export_error", None),
 			"message": _("Generate every shot before opening the edit timeline."),
 		}
 
@@ -426,15 +517,31 @@ def _serialize_timeline(project, clips):
 		cursor = end - transition_frames
 
 	final_video = _final_video(project.name, specification_name)
+	is_outdated = bool(
+		latest_spec
+		and specification_name
+		and latest_spec.name != specification_name
+	)
+	timeline_spec_version = (
+		frappe.db.get_value("Media Specification", specification_name, "version_number")
+		if specification_name
+		else None
+	)
 	return {
 		"ready": bool(serialized),
 		"project": project.name,
 		"media_specification": specification_name,
+		"latest_generated_media_specification": latest_spec.name if latest_spec else None,
+		"latest_spec_version": latest_spec.version_number if latest_spec else None,
+		"timeline_spec_version": timeline_spec_version,
+		"is_outdated": is_outdated,
 		"fps": fps,
 		"total_frames": max(0, cursor),
 		"total_seconds": max(0, cursor) / fps,
 		"clips": serialized,
 		"final_video": final_video,
+		"export_status": getattr(project, "export_status", "Idle") or "Idle",
+		"export_error": getattr(project, "export_error", None),
 	}
 
 
@@ -470,8 +577,11 @@ def _invalidate_project_output(project_name):
 	frappe.db.set_value(
 		"Media Project",
 		project_name,
-		"current_output_asset_version",
-		None,
+		{
+			"current_output_asset_version": None,
+			"export_status": "Idle",
+			"export_error": None,
+		},
 		update_modified=False,
 	)
 
@@ -518,7 +628,7 @@ def sync_timeline_source_for_shot(shot_name):
 
 def _project_clip(project_name, clip_name):
 	project = frappe.get_doc("Media Project", project_name)
-	project.check_permission("write")
+	_require_project_write(project)
 	clip = frappe.get_doc("Timeline Clip", clip_name)
 	if clip.media_project != project.name:
 		frappe.throw(_("Timeline clip does not belong to this project."))

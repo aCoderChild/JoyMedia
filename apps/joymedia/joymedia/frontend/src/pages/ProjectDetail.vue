@@ -66,18 +66,47 @@
             </button>
           </div>
 
-          <!-- In Edit Mode: Export Button -->
-          <button
-            v-if="studioMode === 'edit'"
-            type="button"
-            class="jm-btn-primary !py-1.5 !px-3 text-xs flex items-center gap-1.5 shadow-sm"
-            :disabled="timelineBusy || exporting"
-            @click="handleExportTimeline"
-          >
-            <span v-if="exporting || timelineBusy" class="lucide-refresh-cw size-3 animate-spin" />
-            <span v-else>💾</span>
-            <span>{{ exporting ? (currentLang === 'vi' ? 'Đang xuất...' : 'Exporting...') : (currentLang === 'vi' ? 'Xuất video' : 'Export video') }}</span>
-          </button>
+          <!-- In Edit Mode: Dirty Edit Badge & Context-Dependent Export Button -->
+          <div v-if="studioMode === 'edit'" class="flex items-center gap-2">
+            <span
+              v-if="hasUnexportedEdits"
+              class="flex items-center gap-1.5 text-[11px] font-semibold text-amber-400 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20"
+            >
+              <span class="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+              {{ currentLang === 'vi' ? 'Chưa xuất bản dựng mới' : 'Unexported changes' }}
+            </span>
+            <span
+              v-else-if="workspace?.project?.current_output_asset_version"
+              class="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400 px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20"
+            >
+              ✓ {{ currentLang === 'vi' ? 'Bản dựng mới nhất' : 'Export up to date' }}
+            </span>
+
+            <button
+              type="button"
+              class="jm-btn-primary !py-1.5 !px-3 text-xs flex items-center gap-1.5 shadow-sm transition-all"
+              :class="{
+                '!bg-emerald-600 hover:!bg-emerald-500': !hasUnexportedEdits && !isExporting && workspace?.project?.current_output_asset_version
+              }"
+              :disabled="timelineBusy || isExporting"
+              @click="handleExportTimeline"
+            >
+              <span v-if="isExporting || timelineBusy" class="lucide-refresh-cw size-3 animate-spin" />
+              <span v-else-if="!hasUnexportedEdits && workspace?.project?.current_output_asset_version">✓</span>
+              <span v-else>💾</span>
+              <span>
+                {{
+                  isExporting
+                    ? (exportStatus === 'Queued'
+                        ? (currentLang === 'vi' ? 'Đang chờ xuất...' : 'Queued...')
+                        : (currentLang === 'vi' ? 'Đang kết xuất...' : 'Rendering...'))
+                    : (!hasUnexportedEdits && workspace?.project?.current_output_asset_version
+                        ? (currentLang === 'vi' ? 'Đã xuất video' : 'Exported')
+                        : (currentLang === 'vi' ? 'Xuất video' : 'Export video'))
+                }}
+              </span>
+            </button>
+          </div>
 
           <button
             v-if="studioMode === 'scene'"
@@ -193,223 +222,96 @@
         </div>
       </div>
 
-      <!-- Cinema Viewport Window (Visual Hero: Dominant Center) -->
-      <div class="flex-1 flex flex-col items-center justify-center min-h-[440px] w-full">
-        <div
-          class="gflow-canvas-viewport w-full relative"
-          :class="{
-            'ratio-landscape': settingsForm.format === 'Landscape',
-            'ratio-portrait': settingsForm.format === 'Portrait',
-            'ratio-square': settingsForm.format === 'Square'
-          }"
-        >
-          <!-- Floating Scene / Target HUD Chip -->
-          <div class="viewport-hud-chip">
-            <span class="size-2 rounded-full bg-indigo-500 animate-pulse" />
-            <span v-if="studioMode === 'edit' && selectedClip">
-              ✂️ {{ selectedClip.shot_number ? t('shot_n', { n: selectedClip.shot_number }) : `Clip ${selectedClip.clip_order || 1}` }} · {{ selectedClip.duration_seconds?.toFixed(2) }}s ({{ selectedClip.source_in_frame }}f–{{ selectedClip.source_out_frame }}f)
-            </span>
-            <span v-else-if="selectedTarget === 'asset' && selectedAsset">
-              🖼️ {{ selectedAsset.asset_name }} · {{ selectedAsset.asset_category }}
-            </span>
-            <span v-else-if="selectedTarget === 'keyframe-start' && activeSelectedShot">
-              ◆ {{ currentLang === 'vi' ? 'Khung đầu (In)' : 'Start Frame' }} · {{ t('shot_n', { n: activeSelectedShot.shot_number }) }}
-            </span>
-            <span v-else-if="selectedTarget === 'keyframe-end' && activeSelectedShot">
-              ◆ {{ currentLang === 'vi' ? 'Khung cuối (Out)' : 'End Frame' }} · {{ t('shot_n', { n: activeSelectedShot.shot_number }) }}
-            </span>
-            <span v-else-if="previewSelection === 'full'">
-              🎬 {{ currentLang === 'vi' ? 'Toàn bộ video' : 'Full Video' }} · 00:00–{{ formatSecondsLabel(timelineTotalSeconds) }}
-            </span>
-            <span v-else-if="activeSelectedShot">
-              🎯 {{ t('shot_n', { n: activeSelectedShot.shot_number }) }} · {{ getShotTimestampRange(activeSelectedShot) }}
-            </span>
-          </div>
-
-          <!-- 62% Zoom Badge -->
-          <div class="absolute top-3.5 right-3.5 z-10 text-[11px] font-mono text-ink-secondary bg-surface-card/90 backdrop-blur-md px-2 py-0.5 rounded-md border border-outline-border shadow-xs">
-            62%
-          </div>
-
-          <!-- Keep generation errors inside the canvas -->
-          <div v-if="productionError" class="flex flex-col items-center justify-center text-center p-6 space-y-2">
-            <span class="size-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center text-xl mb-1 border border-rose-500/30">✕</span>
-            <h3 class="text-sm font-bold text-ink-primary">{{ currentLang === 'vi' ? 'Không thể tạo video' : 'Video generation failed' }}</h3>
-            <p class="text-xs text-rose-300 max-w-lg break-words whitespace-pre-wrap">{{ productionError }}</p>
-            <p v-if="productionStatus" class="text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Trạng thái' : 'Status' }}: {{ productionStatus }}</p>
-            <div class="flex items-center gap-2 pt-2">
-              <button type="button" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs cursor-pointer" :disabled="retryingFailedScenes" @click="retryFailedScenes">
-                {{ retryingFailedScenes ? 'Đang thử lại...' : (currentLang === 'vi' ? 'Thử lại' : 'Retry') }}
-              </button>
-              <button type="button" class="px-3.5 py-1.5 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border text-xs font-semibold shadow-xs cursor-pointer" @click="refresh">
-                {{ currentLang === 'vi' ? 'Làm mới' : 'Refresh' }}
-              </button>
-            </div>
-          </div>
-
-          <!-- Video Preview: Master, Edit Clip, or Scene Shot Video -->
-          <video
-            v-else-if="studioPreview?.isVideo && studioPreview?.url"
-            ref="previewVideo"
-            :key="studioPreview.type === 'clip' ? `${studioPreview.clip?.name}-${studioPreview.url}` : studioPreview.url"
-            :src="studioPreview.url"
-            class="w-full h-full object-contain"
-            controls
-            preload="metadata"
-            playsinline
-            @loadedmetadata="onPreviewLoadedMetadata"
-            @timeupdate="onPreviewTimeUpdate"
-            @play="isPlaying = true"
-            @pause="isPlaying = false"
-            @ended="onPreviewEnded"
-          />
-
-          <!-- Image Preview: Selected Shot Frame or Asset -->
-          <img
-            v-else-if="studioPreview?.url"
-            :key="studioPreview.url"
-            :src="studioPreview.url"
-            :alt="studioPreview.title || 'Preview'"
-            class="w-full h-full object-contain"
-          />
-
-          <!-- Fallback Frame of Selected Shot -->
-          <img
-            v-else-if="selectedShotFrame?.file"
-            :src="selectedShotFrame.file"
-            :alt="selectedShotFrame.name"
-            class="w-full h-full object-contain"
-          />
-
-          <!-- Live Generating Radar Overlay -->
-          <div v-else-if="isProductionActive || isAutoGenerating" class="flex flex-col items-center justify-center text-center p-6">
-            <div class="relative size-14 mb-3 flex items-center justify-center">
-              <span class="lucide-refresh-cw size-9 animate-spin text-indigo-400" />
-              <span class="absolute text-[11px] font-bold font-mono text-ink-primary">{{ production?.progress || 0 }}%</span>
-            </div>
-            <h3 class="text-sm font-semibold text-ink-primary">
-              {{ isAutoGenerating ? autoGenerateStep : (currentLang === 'vi' ? 'Đang kết xuất video quảng cáo...' : 'Rendering video ad...') }}
-            </h3>
-            <p class="text-xs text-ink-muted mt-1">
-              {{ production?.completed_jobs || 0 }} / {{ production?.total_jobs || expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes completed' }} · ETA {{ estimatedFinishLabel }}
+      <!-- Outdated Timeline Revision Alert Banner -->
+      <div
+        v-if="studioMode === 'edit' && isOutdated && !dismissOutdatedBanner"
+        class="mb-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm"
+      >
+        <div class="flex items-start gap-2.5">
+          <span class="text-amber-400 text-base leading-none">⚠️</span>
+          <div>
+            <h4 class="font-bold text-amber-300">
+              {{ currentLang === 'vi' ? 'Đã có phiên bản kết xuất mới hơn.' : 'A newer generated version is available.' }}
+            </h4>
+            <p class="text-ink-secondary mt-0.5">
+              {{ currentLang === 'vi'
+                ? `Timeline biên tập này dựa trên Phiên bản ${timelineSpecVersion || 1}. Các cảnh mới tạo của bạn là Phiên bản ${latestSpecVersion || 2}.`
+                : `This edit timeline is based on Version ${timelineSpecVersion || 1}. Your latest generated scenes are Version ${latestSpecVersion || 2}.`
+              }}
             </p>
           </div>
-
-          <!-- Blank Canvas Placeholder Matching Screenshot -->
-          <div v-else class="flex flex-col items-center justify-center text-center p-8 text-ink-muted">
-            <template v-if="projectAssets.length === 0">
-              <span class="size-14 rounded-2xl bg-surface-card border border-outline-border flex items-center justify-center mb-3 text-ink-secondary text-xl shadow-md">🖼️</span>
-              <p class="text-sm text-ink-primary font-semibold">{{ currentLang === 'vi' ? 'Thêm tư liệu sản phẩm để bắt đầu' : 'Add product media to get started' }}</p>
-              <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Tải ảnh mới hoặc chọn từ Thư viện Media.' : 'Upload a new image or choose one from your Media Library.' }}</p>
-              <div class="flex items-center gap-2 mt-4">
-                <select v-model="uploadCategory" class="px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary cursor-pointer" title="Media category">
-                  <option v-for="category in inputAssetCategories" :key="category" :value="category">{{ category }}</option>
-                </select>
-                <label class="jm-btn-primary cursor-pointer text-xs">
-                  {{ currentLang === 'vi' ? 'Tải ảnh lên' : 'Upload Image' }}
-                  <input class="file-input-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple :disabled="uploadingImages" @change="uploadSelectedImages" />
-                </label>
-                <button type="button" class="jm-btn-secondary text-xs cursor-pointer" @click="openMediaPicker">{{ currentLang === 'vi' ? 'Thư viện Media' : 'Media Library' }}</button>
-              </div>
-            </template>
-            <template v-else-if="activeSelectedShot">
-              <p class="text-sm text-ink-primary font-semibold">{{ t('shot_n', { n: activeSelectedShot.shot_number }) }}</p>
-              <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Chưa có video kết xuất cho cảnh này.' : 'No generated video is available for this shot yet.' }}</p>
-            </template>
-            <template v-else>
-              <p class="text-sm text-ink-primary font-semibold">{{ currentLang === 'vi' ? 'Sẵn sàng tạo video' : 'Ready to create your video' }}</p>
-              <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Nhấn Tạo Video để tạo storyboard.' : 'Click Generate Video to create the storyboard.' }}</p>
-            </template>
-          </div>
         </div>
-
-        <!-- Attached Playback Controls Bar (Directly Under Preview) -->
-        <div class="flex items-center justify-between w-full max-w-[880px] mt-1.5 px-3 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-secondary shadow-xs">
-          <div class="flex items-center gap-2.5">
-            <button
-              type="button"
-              class="size-6 rounded-lg bg-surface-muted hover:bg-surface-hover flex items-center justify-center font-bold text-ink-primary transition-colors cursor-pointer"
-              :title="isPlaying ? (currentLang === 'vi' ? 'Tạm dừng' : 'Pause') : (currentLang === 'vi' ? 'Phát' : 'Play')"
-              @click="togglePlayPause"
-            >
-              <span>{{ isPlaying ? '⏸' : '▶' }}</span>
-            </button>
-            <span class="font-mono text-[11px] font-semibold text-ink-primary">
-              {{ currentTimelinePositionLabel }} / {{ formatSecondsLabel(timelineTotalSeconds) }}
-            </span>
-            <span class="text-ink-muted text-[10px]">·</span>
-            <span v-if="studioMode === 'edit' && selectedClip" class="text-[11px] text-ink-secondary truncate max-w-[180px]">
-              Clip {{ selectedClip.clip_order || 1 }} ({{ selectedClip.duration_seconds?.toFixed(1) }}s)
-            </span>
-            <span v-else-if="activeSelectedShot" class="text-[11px] text-ink-secondary truncate max-w-[180px]">
-              {{ t('shot_n', { n: activeSelectedShot.shot_number }) }} ({{ getShotTimestampRange(activeSelectedShot) }})
-            </span>
-          </div>
-
-          <!-- Keyframe Quick Navigation & Toggle (Only in Scenes Mode) -->
-          <div v-if="studioMode === 'scene'" class="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-muted border border-outline-border text-xs">
-            <button
-              type="button"
-              class="size-5 rounded flex items-center justify-center text-[10px] text-ink-muted hover:text-ink-primary hover:bg-surface-hover transition-colors cursor-pointer"
-              :title="currentLang === 'vi' ? 'Đến Keyframe trước' : 'Previous Keyframe'"
-              @click="jumpToPrevKeyframe"
-            >
-              ◀
-            </button>
-            <button
-              type="button"
-              class="size-5 rounded flex items-center justify-center transition-all cursor-pointer"
-              :class="isPlayheadAtKeyframe ? 'text-indigo-400 font-bold scale-110' : 'text-ink-muted hover:text-ink-primary'"
-              :title="isPlayheadAtKeyframe ? (currentLang === 'vi' ? 'Keyframe đang kích hoạt (Click để xem cảnh)' : 'Active Keyframe at playhead') : (currentLang === 'vi' ? 'Thêm / Đặt Keyframe tại playhead' : 'Add Keyframe at playhead')"
-              @click="toggleKeyframeAtPlayhead"
-            >
-              <span class="text-xs leading-none">{{ isPlayheadAtKeyframe ? '◆' : '◇' }}</span>
-            </button>
-            <button
-              type="button"
-              class="size-5 rounded flex items-center justify-center text-[10px] text-ink-muted hover:text-ink-primary hover:bg-surface-hover transition-colors cursor-pointer"
-              :title="currentLang === 'vi' ? 'Đến Keyframe tiếp theo' : 'Next Keyframe'"
-              @click="jumpToNextKeyframe"
-            >
-              ▶
-            </button>
-          </div>
-
-          <!-- Unsaved timeline changes indicator in Edit Mode -->
-          <div v-else-if="studioMode === 'edit' && !timeline?.final_video && timeline?.ready" class="text-[10.5px] text-amber-400 font-medium px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
-            {{ currentLang === 'vi' ? 'Chưa xuất video mới' : 'Unsaved edits — Export to update' }}
-          </div>
-
-          <div class="flex items-center gap-1.5">
-            <button
-              v-if="finalVideo?.file"
-              type="button"
-              class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-colors cursor-pointer"
-              :class="previewSelection === 'full' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-surface-muted hover:bg-surface-hover text-ink-secondary'"
-              @click="selectFullVideo"
-            >
-              {{ currentLang === 'vi' ? 'Toàn bộ video' : 'Full Video' }}
-            </button>
-            <button
-              v-if="studioMode === 'edit' && selectedClip"
-              type="button"
-              class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-colors cursor-pointer"
-              :class="previewSelection === 'clip' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-surface-muted hover:bg-surface-hover text-ink-secondary'"
-              @click="previewSelection = 'clip'"
-            >
-              Clip {{ selectedClip.clip_order || 1 }}
-            </button>
-            <button
-              v-else-if="activeSelectedShot"
-              type="button"
-              class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-colors cursor-pointer"
-              :class="previewSelection === 'shot' && selectedTarget !== 'asset' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-surface-muted hover:bg-surface-hover text-ink-secondary'"
-              @click="selectShotTarget(activeSelectedShot, selectedShotIndex)"
-            >
-              {{ currentLang === 'vi' ? `Cảnh ${activeSelectedShot.shot_number}` : `Shot ${activeSelectedShot.shot_number}` }}
-            </button>
-          </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            class="px-3 py-1.5 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-secondary border border-outline-border text-xs font-semibold cursor-pointer transition-colors"
+            @click="dismissOutdatedBanner = true"
+          >
+            {{ currentLang === 'vi' ? 'Giữ bản chỉnh sửa hiện tại' : 'Keep current edit' }}
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-xs cursor-pointer transition-colors"
+            @click="confirmUpdateTimelineModal = true"
+          >
+            {{ currentLang === 'vi' ? 'Cập nhật timeline' : 'Update timeline' }}
+          </button>
         </div>
+      </div>
+
+      <!-- Cinema Viewport Window (Visual Hero: Dominant Center via StudioPreview) -->
+      <div class="flex-1 flex flex-col items-center justify-center min-h-[440px] w-full">
+        <StudioPreview
+          ref="studioPreviewRef"
+          :studio-mode="studioMode"
+          :studio-preview="studioPreview"
+          :selected-target="selectedTarget"
+          :selected-asset="selectedAsset"
+          :active-selected-shot="activeSelectedShot"
+          :selected-clip="selectedClip"
+          :selected-shot-frame="selectedShotFrame"
+          :preview-selection="previewSelection"
+          :timeline-total-seconds="timelineTotalSeconds"
+          :current-timeline-position-label="currentTimelinePositionLabel"
+          :is-playing="isPlaying"
+          :is-production-active="isProductionActive"
+          :is-auto-generating="isAutoGenerating"
+          :auto-generate-step="autoGenerateStep"
+          :production="production"
+          :production-error="productionError"
+          :production-status="productionStatus"
+          :expected-shot-count="expectedShotCount"
+          :estimated-finish-label="estimatedFinishLabel"
+          :project-assets="projectAssets"
+          :input-asset-categories="inputAssetCategories"
+          :upload-category="uploadCategory"
+          :settings-format="settingsForm.format"
+          :is-playhead-at-keyframe="isPlayheadAtKeyframe"
+          :final-video="finalVideo"
+          :retrying-failed-scenes="retryingFailedScenes"
+          :uploading-images="uploadingImages"
+          :selected-shot-index="selectedShotIndex"
+          :current-lang="currentLang"
+          :is-outdated="isOutdated"
+          :get-shot-timestamp-range="getShotTimestampRange"
+          @toggle-play-pause="togglePlayPause"
+          @loadedmetadata="onPreviewLoadedMetadata"
+          @timeupdate="onPreviewTimeUpdate"
+          @play="isPlaying = true"
+          @pause="isPlaying = false"
+          @ended="onPreviewEnded"
+          @select-full-video="selectFullVideo"
+          @select-clip="previewSelection = 'clip'"
+          @select-shot-target="selectShotTarget"
+          @jump-to-prev-keyframe="jumpToPrevKeyframe"
+          @jump-to-next-keyframe="jumpToNextKeyframe"
+          @toggle-keyframe-at-playhead="toggleKeyframeAtPlayhead"
+          @retry-failed-scenes="retryFailedScenes"
+          @refresh="refresh"
+          @open-media-picker="openMediaPicker"
+          @upload-selected-images="uploadSelectedImages"
+          @update:upload-category="uploadCategory = $event"
+        />
       </div>
 
       <!-- Scene Builder & CapCut Timeline Architecture -->
@@ -610,579 +512,51 @@
       </footer>
     </main>
 
-    <!-- Right Panel: Clean Separation of Inspector & AI Assistant -->
-    <aside class="gflow-right-panel">
-      <!-- Panel Header with Clear Tabs (Inspector | AI Assistant) -->
-      <div class="gflow-director-header">
-        <div class="flex items-center gap-1 p-0.5 rounded-xl bg-surface-muted border border-outline-border text-xs">
-          <!-- Tab 1: Inspector -->
-          <button
-            type="button"
-            class="px-3 py-1 rounded-lg font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-            :class="activeRightTab === 'shot' ? 'bg-surface-card text-ink-primary font-bold shadow-xs' : 'text-ink-muted hover:text-ink-primary'"
-            @click="activeRightTab = 'shot'"
-          >
-            <span>🔍</span>
-            <span>{{ studioMode === 'edit' ? 'Clip' : 'Inspector' }}</span>
-            <span
-              v-if="studioMode === 'edit' && selectedClip"
-              class="text-[10.5px] text-indigo-400 font-normal"
-            >
-              · Clip {{ selectedClip.clip_order || 1 }}
-            </span>
-            <span
-              v-else-if="activeSelectedShot && selectedTarget !== 'asset'"
-              class="text-[10.5px] text-indigo-400 font-normal"
-            >
-              · C{{ activeSelectedShot.shot_number }}
-            </span>
-            <span
-              v-else-if="selectedTarget === 'asset' && selectedAsset"
-              class="text-[10.5px] text-indigo-400 font-normal"
-            >
-              · Tư liệu
-            </span>
-          </button>
-
-          <!-- Tab 2: AI Assistant (Trợ lý AI) -->
-          <button
-            type="button"
-            class="px-3 py-1 rounded-lg font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-            :class="activeRightTab === 'director' ? 'bg-surface-card text-ink-primary font-bold shadow-xs' : 'text-ink-muted hover:text-ink-primary'"
-            @click="activeRightTab = 'director'"
-          >
-            <span>✨</span>
-            <span>{{ t('tab_ai_assistant') }}</span>
-          </button>
-        </div>
-
-        <div class="flex items-center gap-1 text-ink-muted">
-          <button type="button" class="p-1 rounded-lg hover:text-ink-primary hover:bg-surface-hover transition-colors cursor-pointer" :title="currentLang === 'vi' ? 'Đóng panel' : 'Close panel'" @click="goBack">
-            ✕
-          </button>
-        </div>
-      </div>
-
-      <!-- Tab 1 Body: Contextual Inspector (Selection-based Editor Model) -->
-      <div v-if="activeRightTab === 'shot'">
-        <!-- CASE EDIT MODE: Clip Inspector -->
-        <div v-if="studioMode === 'edit' && selectedClip" class="gflow-director-content space-y-3">
-          <!-- Clip Details Card -->
-          <div class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-3">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-ink-primary flex items-center gap-1.5">
-                <span>✂️</span>
-                <span>{{ `Clip ${selectedClip.clip_order || 1}` }}</span>
-              </span>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-indigo-400 font-bold">
-                {{ selectedClip.duration_seconds?.toFixed(2) }}s · {{ selectedClip.duration_frames }}f
-              </span>
-            </div>
-
-            <!-- IN / OUT / Duration -->
-            <div class="grid grid-cols-2 gap-2 text-xs">
-              <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
-                <span class="block text-[10px] text-ink-muted font-semibold">IN FRAME</span>
-                <span class="font-mono font-bold text-ink-primary text-sm">{{ selectedClip.source_in_frame }}</span>
-              </div>
-              <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
-                <span class="block text-[10px] text-ink-muted font-semibold">OUT FRAME</span>
-                <span class="font-mono font-bold text-ink-primary text-sm">{{ selectedClip.source_out_frame }}</span>
-              </div>
-            </div>
-
-            <!-- Transition to Next -->
-            <div class="space-y-1.5 pt-1">
-              <label class="block text-[11px] font-semibold text-ink-secondary">
-                {{ currentLang === 'vi' ? 'Chuyển cảnh kế tiếp (Transition)' : 'Transition to next' }}
-              </label>
-              <div class="flex items-center gap-2">
-                <select
-                  :value="selectedClip.transition_to_next || 'Cut'"
-                  class="flex-1 px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary cursor-pointer"
-                  :disabled="timelineBusy"
-                  @change="handleTransitionChange($event.target.value)"
-                >
-                  <option value="Cut">Cut (Cắt thẳng)</option>
-                  <option value="Crossfade">Crossfade (Chồng mờ)</option>
-                  <option value="Dissolve">Dissolve (Hòa tan)</option>
-                  <option value="Wipe Left">Wipe Left (Gạt trái)</option>
-                  <option value="Wipe Right">Wipe Right (Gạt phải)</option>
-                  <option value="Fade Black">Fade Black (Mờ đen)</option>
-                  <option value="Fade White">Fade White (Mờ trắng)</option>
-                </select>
-                <input
-                  v-if="selectedClip.transition_to_next && selectedClip.transition_to_next !== 'Cut'"
-                  type="number"
-                  min="4"
-                  max="48"
-                  :value="selectedClip.transition_frames || 12"
-                  class="w-16 px-2 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary font-mono text-center"
-                  :title="currentLang === 'vi' ? 'Số khung hình chuyển tiếp' : 'Transition frames'"
-                  :disabled="timelineBusy"
-                  @change="handleTransitionFramesChange(Number($event.target.value))"
-                />
-              </div>
-            </div>
-
-            <!-- Clip Editorial Actions: Split, Duplicate, Delete -->
-            <div class="grid grid-cols-3 gap-1.5 pt-2 border-t border-outline-border">
-              <button
-                type="button"
-                class="py-1.5 px-2 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                :disabled="timelineBusy"
-                :title="currentLang === 'vi' ? 'Tách clip tại playhead' : 'Split clip at playhead'"
-                @click="splitClipAtCurrentPlayhead"
-              >
-                <span>✂</span>
-                <span>{{ currentLang === 'vi' ? 'Tách' : 'Split' }}</span>
-              </button>
-              <button
-                type="button"
-                class="py-1.5 px-2 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                :disabled="timelineBusy"
-                :title="currentLang === 'vi' ? 'Nhân đôi clip này' : 'Duplicate clip'"
-                @click="duplicateClip(selectedClip)"
-              >
-                <span>⧉</span>
-                <span>{{ currentLang === 'vi' ? 'Nhân đôi' : 'Duplicate' }}</span>
-              </button>
-              <button
-                type="button"
-                class="py-1.5 px-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                :disabled="timelineBusy"
-                :title="currentLang === 'vi' ? 'Xóa clip khỏi timeline' : 'Delete clip'"
-                @click="deleteClip(selectedClip)"
-              >
-                <span>⌫</span>
-                <span>{{ currentLang === 'vi' ? 'Xóa' : 'Delete' }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Source Shot Reference & Regeneration Section -->
-          <div class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-2.5 text-xs">
-            <div class="flex items-center justify-between">
-              <span class="font-bold text-ink-primary flex items-center gap-1.5">
-                <span>🎯</span>
-                <span>{{ currentLang === 'vi' ? 'Cảnh gốc (Source Shot)' : 'Source Shot' }}</span>
-              </span>
-              <span v-if="selectedClipSourceShot" class="text-[10px] font-bold text-indigo-400 bg-surface-card px-2 py-0.5 rounded border border-outline-border">
-                {{ t('shot_n', { n: selectedClipSourceShot.shot_number }) }}
-              </span>
-            </div>
-
-            <div v-if="selectedClipSourceShot" class="space-y-2">
-              <div v-if="selectedClipSourceShot.subject_identity || selectedClipSourceShot.action_plot" class="p-2 rounded-xl bg-surface-card border border-outline-border space-y-1">
-                <p v-if="selectedClipSourceShot.subject_identity" class="text-[11px] text-ink-secondary">
-                  <span class="font-semibold text-ink-muted">{{ currentLang === 'vi' ? 'Chủ thể:' : 'Subject:' }}</span> {{ selectedClipSourceShot.subject_identity }}
-                </p>
-                <p v-if="selectedClipSourceShot.action_plot" class="text-[11px] text-ink-secondary">
-                  <span class="font-semibold text-ink-muted">{{ currentLang === 'vi' ? 'Hành động:' : 'Action:' }}</span> {{ selectedClipSourceShot.action_plot }}
-                </p>
-              </div>
-
-              <!-- Generation Prompt Excerpt -->
-              <div v-if="selectedClipSourceShot.generation_prompt" class="p-2 rounded-xl bg-surface-card border border-outline-border">
-                <span class="block text-[10px] font-semibold text-ink-muted mb-0.5">PROMPT</span>
-                <p class="text-[11px] text-ink-secondary line-clamp-3 font-mono">{{ selectedClipSourceShot.generation_prompt }}</p>
-              </div>
-
-              <!-- Regenerate Source Button -->
-              <button
-                type="button"
-                class="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-                :disabled="timelineBusy || processingReview"
-                @click="regenerateSourceForSelectedClip"
-              >
-                <span v-if="processingReview" class="lucide-refresh-cw size-3 animate-spin" />
-                <span v-else>↻</span>
-                <span>{{ currentLang === 'vi' ? 'Tạo lại cảnh gốc (Regenerate source)' : 'Regenerate source' }}</span>
-              </button>
-              <p class="text-[10px] text-ink-muted text-center">
-                {{ currentLang === 'vi' ? 'Tạo lại cảnh sẽ tự động đồng bộ video mới vào timeline clip.' : 'Regenerating will sync newly rendered video into this timeline clip.' }}
-              </p>
-            </div>
-            <div v-else class="text-ink-muted text-center py-2 text-xs">
-              {{ currentLang === 'vi' ? 'Không tìm thấy thông tin cảnh gốc.' : 'Source shot information not found.' }}
-            </div>
-          </div>
-        </div>
-
-        <!-- CASE 1: Clicked an Asset -> Show Asset Inspector (Scene Mode) -->
-        <div v-else-if="selectedTarget === 'asset' && selectedAsset" class="gflow-director-content space-y-3">
-          <div class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-3">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-ink-primary">📦 {{ currentLang === 'vi' ? 'Chi tiết tư liệu' : 'Asset Details' }}</span>
-              <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface-card text-indigo-400 border border-outline-border">
-                {{ selectedAsset.asset_category }}
-              </span>
-            </div>
-            <div class="aspect-video w-full rounded-xl overflow-hidden bg-black border border-outline-border flex items-center justify-center">
-              <img :src="selectedAsset.file" :alt="selectedAsset.asset_name" class="w-full h-full object-contain" />
-            </div>
-            <div>
-              <span class="block text-xs font-bold text-ink-primary">{{ selectedAsset.asset_name }}</span>
-              <span class="block text-[11px] text-ink-muted mt-0.5">{{ currentLang === 'vi' ? 'Tư liệu hình ảnh trong bộ sưu tập dự án.' : 'Image asset in project collection.' }}</span>
-            </div>
-            <div class="pt-2 border-t border-outline-border flex items-center gap-2">
-              <button
-                v-if="activeSelectedShot"
-                type="button"
-                class="flex-1 jm-btn-primary text-xs"
-                @click="activeSelectedShot.reference_image = selectedAsset.file; activeSelectedShot.reference_asset_name = selectedAsset.asset_name; selectedTarget = 'scene'"
-              >
-                {{ currentLang === 'vi' ? `Gán vào Cảnh ${activeSelectedShot.shot_number}` : `Apply to Shot ${activeSelectedShot.shot_number}` }}
-              </button>
-              <button
-                type="button"
-                class="jm-btn-secondary text-xs"
-                @click="selectedTarget = 'scene'"
-              >
-                {{ currentLang === 'vi' ? 'Xem cảnh' : 'View Shot' }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- CASE 2: Clicked a Keyframe (Start or End) -> Show Keyframe Inspector -->
-        <div v-else-if="(selectedTarget === 'keyframe-start' || selectedTarget === 'keyframe-end') && activeSelectedShot" class="gflow-director-content space-y-3">
-          <!-- Miniature Start -> End Keyframe Strip -->
-          <div class="p-2 rounded-xl bg-surface-muted border border-outline-border flex items-center justify-between gap-2 text-xs">
-            <button
-              type="button"
-              class="flex-1 p-2 rounded-lg border text-center transition-all cursor-pointer"
-              :class="selectedTarget === 'keyframe-start' ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs' : 'border-outline-border bg-surface-card hover:border-indigo-400 text-ink-secondary'"
-              @click="selectKeyframeTarget(activeSelectedShot, selectedShotIndex, 'start')"
-            >
-              <span class="block text-[10.5px]">◆ Frame đầu (In)</span>
-              <span class="block text-[9.5px] text-ink-muted">0.0s</span>
-            </button>
-            <span class="text-ink-muted">──→</span>
-            <button
-              type="button"
-              class="flex-1 p-2 rounded-lg border text-center transition-all cursor-pointer"
-              :class="selectedTarget === 'keyframe-end' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400 font-bold shadow-xs' : 'border-outline-border bg-surface-card hover:border-emerald-400 text-ink-secondary'"
-              @click="selectKeyframeTarget(activeSelectedShot, selectedShotIndex, 'end')"
-            >
-              <span class="block text-[10.5px]">◆ Frame cuối (Out)</span>
-              <span class="block text-[9.5px] text-ink-muted">{{ estimateShotDuration(activeSelectedShot) }}s</span>
-            </button>
-          </div>
-
-          <!-- Keyframe Preview & Guide -->
-          <div class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-3">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-ink-primary flex items-center gap-1.5">
-                <span class="text-indigo-400">◆</span>
-                <span>{{ selectedTarget === 'keyframe-start' ? (currentLang === 'vi' ? 'Keyframe Khởi đầu (In)' : 'Start Keyframe (In)') : (currentLang === 'vi' ? 'Keyframe Kết thúc (Out)' : 'End Keyframe (Out)') }}</span>
-              </span>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-indigo-400 font-bold">
-                {{ selectedTarget === 'keyframe-start' ? formatShotKeyframeTime(selectedShotIndex, 0) : formatShotKeyframeTime(selectedShotIndex, 1) }}
-              </span>
-            </div>
-
-            <!-- Keyframe Visual Frame -->
-            <div class="aspect-video w-full rounded-xl overflow-hidden bg-black border border-outline-border flex items-center justify-center relative group">
-              <img
-                v-if="selectedTarget === 'keyframe-start' && (selectedShotFrame?.file || activeSelectedShot.reference_image)"
-                :src="selectedShotFrame?.file || activeSelectedShot.reference_image"
-                class="w-full h-full object-cover"
-              />
-              <img
-                v-else-if="selectedTarget === 'keyframe-end' && activeSelectedShot.last_frame_image"
-                :src="activeSelectedShot.last_frame_image"
-                class="w-full h-full object-cover"
-              />
-              <span v-else class="text-xs text-ink-muted font-mono">{{ currentLang === 'vi' ? 'Chưa có ảnh keyframe' : 'No keyframe image' }}</span>
-
-              <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                <button
-                  type="button"
-                  class="jm-btn-primary text-xs !py-1 !px-2.5"
-                  @click="openMediaPicker"
-                >
-                  {{ currentLang === 'vi' ? 'Đổi ảnh tham chiếu' : 'Change Image' }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Keyframe Operational Actions (CapCut / Google Flow Style) -->
-            <div class="space-y-1.5 pt-1">
-              <button
-                type="button"
-                class="w-full py-1.5 px-2.5 rounded-xl border border-outline-border bg-surface-card hover:bg-surface-hover text-ink-primary text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                @click="openMediaPicker"
-              >
-                <span>🖼️</span>
-                <span>{{ currentLang === 'vi' ? 'Chọn ảnh Keyframe từ Thư viện' : 'Choose Keyframe from Library' }}</span>
-              </button>
-
-              <button
-                v-if="selectedTarget === 'keyframe-end'"
-                type="button"
-                class="w-full py-1.5 px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                :class="settingsForm.continuity_mode === 'Continuous' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-outline-border bg-surface-card hover:border-indigo-400 text-ink-secondary'"
-                @click="toggleContinuityMode"
-              >
-                <span>🔗</span>
-                <span>{{ settingsForm.continuity_mode === 'Continuous' ? (currentLang === 'vi' ? '✓ Đang nối liền với Cảnh sau' : '✓ Chained to Next Shot') : (currentLang === 'vi' ? 'Nối khung này làm Frame đầu Cảnh sau' : 'Bridge to Next Shot In-Frame') }}</span>
-              </button>
-
-              <button
-                type="button"
-                class="w-full jm-btn-secondary text-xs !py-1.5"
-                @click="selectedTarget = 'scene'"
-              >
-                {{ currentLang === 'vi' ? '← Xem thuộc tính toàn bộ Cảnh' : '← Back to Shot Overview' }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- CASE 3: Active Scene Inspector (Default) -->
-        <div v-else-if="activeSelectedShot" class="gflow-director-content space-y-2.5">
-          <!-- Miniature Start -> End Keyframe Strip at the very top -->
-          <div class="p-2 rounded-xl bg-surface-muted border border-outline-border flex items-center justify-between gap-2 text-xs">
-            <button
-              type="button"
-              class="flex-1 p-1.5 rounded-lg border text-center transition-all cursor-pointer bg-surface-card hover:border-indigo-400 text-ink-secondary"
-              :title="currentLang === 'vi' ? 'Bấm để xem Frame đầu' : 'Preview Start Keyframe'"
-              @click="selectKeyframeTarget(activeSelectedShot, selectedShotIndex, 'start')"
-            >
-              <span class="block text-[10px] font-bold text-indigo-400">◆ Frame đầu (In)</span>
-              <span class="block text-[9px] text-ink-muted truncate">0.0s · {{ activeSelectedShot.reference_asset_name || 'Tham chiếu' }}</span>
-            </button>
-            <span class="text-ink-muted text-xs">──→</span>
-            <button
-              type="button"
-              class="flex-1 p-1.5 rounded-lg border text-center transition-all cursor-pointer bg-surface-card hover:border-emerald-400 text-ink-secondary"
-              :title="currentLang === 'vi' ? 'Bấm để xem Frame cuối' : 'Preview End Keyframe'"
-              @click="selectKeyframeTarget(activeSelectedShot, selectedShotIndex, 'end')"
-            >
-              <span class="block text-[10px] font-bold text-emerald-400">◆ Frame cuối (Out)</span>
-              <span class="block text-[9px] text-ink-muted truncate">{{ estimateShotDuration(activeSelectedShot) }}s · {{ settingsForm.continuity_mode === 'Continuous' ? 'Nối tiếp' : 'Kết cảnh' }}</span>
-            </button>
-          </div>
-
-          <!-- Persistent NLE-style shot trim control. Changes are saved on release. -->
-          <div class="p-2.5 rounded-xl bg-surface-muted border border-outline-border">
-            <div class="flex items-center justify-between mb-1.5">
-              <span class="text-[11px] font-semibold text-ink-secondary">{{ currentLang === 'vi' ? 'Thời lượng cảnh' : 'Shot duration' }}</span>
-              <span class="font-mono text-[11px] text-indigo-400 font-bold">{{ estimateShotDuration(activeSelectedShot) }}s</span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="60"
-              step="0.5"
-              :value="Number(estimateShotDuration(activeSelectedShot))"
-              class="w-full accent-indigo-500 cursor-pointer"
-              :title="currentLang === 'vi' ? 'Kéo để cắt hoặc kéo dài cảnh' : 'Drag to trim or extend this shot'"
-              @change="changeShotDuration(activeSelectedShot, Number($event.target.value) - Number(estimateShotDuration(activeSelectedShot)))"
-            />
-            <div class="flex justify-between text-[9px] text-ink-muted font-mono"><span>01s</span><span>60s</span></div>
-          </div>
-
-          <div v-if="activeSelectedShot" class="p-2.5 rounded-xl bg-surface-muted border border-outline-border space-y-1.5 text-xs">
-            <div class="flex items-center justify-between">
-              <span class="font-bold text-ink-primary">{{ t('shot_n', { n: activeSelectedShot.shot_number }) }}</span>
-              <span
-                class="text-[10px] font-bold px-2 py-0.5 rounded uppercase"
-                :class="getShotVideoFile(activeSelectedShot) ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-surface-card text-ink-muted border border-outline-border'"
-              >
-                {{ getShotVideoFile(activeSelectedShot) ? (currentLang === 'vi' ? 'Đã tạo video' : 'Generated') : (currentLang === 'vi' ? 'Bản nháp' : 'Draft') }}
-              </span>
-            </div>
-            <div class="flex items-center gap-1.5 pt-1">
-              <button
-                type="button"
-                class="flex-1 py-1 px-2.5 rounded-lg bg-surface-card hover:bg-surface-hover text-ink-primary text-[11px] font-semibold border border-outline-border flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                :disabled="processingReview || isProductionActive"
-                @click="regenerateCurrentShot"
-              >
-                <span v-if="processingReview" class="lucide-refresh-cw size-3 animate-spin" />
-                <span v-else>↻</span>
-                <span>{{ t('btn_regenerate') }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Compact Expandable Sections for Scene Attributes -->
-          <div class="space-y-1.5 text-xs">
-            <!-- Section 1: Subject -->
-            <div class="inspector-accordion">
-              <button type="button" class="inspector-accordion-header" @click="toggleAccordion('subject')">
-                <span class="flex items-center gap-1.5">
-                  <span>👤</span>
-                  <span>{{ t('subject_identity_label') }}</span>
-                </span>
-                <div class="flex items-center gap-1.5">
-                  <span v-if="!openAccordion.subject && activeSelectedShot.subject_identity" class="text-[10px] text-ink-muted max-w-[120px] truncate">{{ activeSelectedShot.subject_identity }}</span>
-                  <span class="text-[9px]">{{ openAccordion.subject ? '▲' : '▼' }}</span>
-                </div>
-              </button>
-              <div v-if="openAccordion.subject" class="inspector-accordion-body">
-                <input v-model="activeSelectedShot.subject_identity" :disabled="!isStoryboardDraft" class="gflow-field" :placeholder="t('subject_placeholder')" />
-              </div>
-            </div>
-
-            <!-- Section 2: Motion / Action -->
-            <div class="inspector-accordion">
-              <button type="button" class="inspector-accordion-header" @click="toggleAccordion('motion')">
-                <span class="flex items-center gap-1.5">
-                  <span>🎬</span>
-                  <span>{{ t('action_plot_label') }}</span>
-                </span>
-                <div class="flex items-center gap-1.5">
-                  <span v-if="!openAccordion.motion && activeSelectedShot.action_plot" class="text-[10px] text-ink-muted max-w-[120px] truncate">{{ activeSelectedShot.action_plot }}</span>
-                  <span class="text-[9px]">{{ openAccordion.motion ? '▲' : '▼' }}</span>
-                </div>
-              </button>
-              <div v-if="openAccordion.motion" class="inspector-accordion-body">
-                <textarea v-model="activeSelectedShot.action_plot" :disabled="!isStoryboardDraft" rows="2" class="gflow-field resize-none" :placeholder="t('action_placeholder')" />
-              </div>
-            </div>
-
-            <!-- Section 3: Camera & Environment -->
-            <div class="inspector-accordion">
-              <button type="button" class="inspector-accordion-header" @click="toggleAccordion('camera')">
-                <span class="flex items-center gap-1.5">
-                  <span>🎥</span>
-                  <span>{{ t('camera_direction_label') }} & {{ t('environment_label') }}</span>
-                </span>
-                <span class="text-[9px]">{{ openAccordion.camera ? '▲' : '▼' }}</span>
-              </button>
-              <div v-if="openAccordion.camera" class="inspector-accordion-body space-y-2">
-                <div>
-                  <label class="block text-ink-muted text-[10px] mb-1 font-semibold">{{ t('camera_direction_label') }}</label>
-                  <input v-model="activeSelectedShot.camera_direction" :disabled="!isStoryboardDraft" class="gflow-field" :placeholder="t('camera_placeholder')" />
-                </div>
-                <div>
-                  <label class="block text-ink-muted text-[10px] mb-1 font-semibold">{{ t('environment_label') }}</label>
-                  <input v-model="activeSelectedShot.environment" :disabled="!isStoryboardDraft" class="gflow-field" :placeholder="t('environment_placeholder')" />
-                </div>
-              </div>
-            </div>
-
-            <!-- Section 4: Audio -->
-            <div class="inspector-accordion">
-              <button type="button" class="inspector-accordion-header" @click="toggleAccordion('audio')">
-                <span class="flex items-center gap-1.5">
-                  <span>🎵</span>
-                  <span>{{ t('audio_direction_label') }}</span>
-                </span>
-                <div class="flex items-center gap-1.5">
-                  <span v-if="!openAccordion.audio && activeSelectedShot.audio_direction" class="text-[10px] text-ink-muted max-w-[120px] truncate">{{ activeSelectedShot.audio_direction }}</span>
-                  <span class="text-[9px]">{{ openAccordion.audio ? '▲' : '▼' }}</span>
-                </div>
-              </button>
-              <div v-if="openAccordion.audio" class="inspector-accordion-body">
-                <input v-model="activeSelectedShot.audio_direction" :disabled="!isStoryboardDraft" class="gflow-field" :placeholder="t('audio_placeholder')" />
-              </div>
-            </div>
-
-            <!-- Section 5: Advanced AI Prompt (Collapsible) -->
-            <div v-if="activeSelectedShot.generation_prompt" class="inspector-accordion">
-              <button type="button" class="inspector-accordion-header" @click="showAdvancedPrompt = !showAdvancedPrompt">
-                <span class="flex items-center gap-1.5">
-                  <span>⚙</span>
-                  <span>{{ t('ai_prompt_label') }}</span>
-                </span>
-                <span class="text-[9px]">{{ showAdvancedPrompt ? '▲' : '▼' }}</span>
-              </button>
-              <div v-if="showAdvancedPrompt" class="inspector-accordion-body space-y-2">
-                <div class="flex items-center justify-between">
-                  <span class="text-[10px] text-ink-muted">Raw Generator Prompt</span>
-                  <button type="button" class="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300" @click="copyPrompt(activeSelectedShot.generation_prompt)">
-                    {{ t('btn_copy_prompt') }}
-                  </button>
-                </div>
-                <p class="text-[10px] text-ink-secondary p-2 rounded-lg bg-surface-muted border border-outline-border font-mono leading-relaxed select-text">
-                  {{ activeSelectedShot.generation_prompt }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Save Button if Draft -->
-          <div v-if="isStoryboardDraft && activeSelectedShot.name" class="pt-1">
-            <button type="button" class="w-full jm-btn-primary shadow-xs" :disabled="savingShot" @click="saveActiveShot">
-              <span v-if="savingShot" class="lucide-refresh-cw size-3.5 animate-spin" />
-              <span>{{ savingShot ? t('btn_saving_shot') : t('btn_save_shot') }}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tab 2 Body: Conversational AI Director -->
-      <div v-else class="gflow-director-content">
-        <!-- Assistant Message Bubble -->
-        <div class="gflow-ai-bubble space-y-3">
-          <p class="font-medium">
-            {{ t('director_msg_duration', { duration: settingsForm.duration }) }}
-          </p>
-
-          <ol class="space-y-2 list-decimal list-inside text-xs text-ink-secondary">
-            <li>
-              <strong class="text-ink-primary">{{ t('director_step_1') }}</strong>
-            </li>
-            <li>
-              <strong class="text-ink-primary">{{ t('director_step_2') }}</strong>
-            </li>
-            <li>
-              <strong class="text-ink-primary">{{ t('director_step_3') }}</strong>
-            </li>
-          </ol>
-
-          <p class="text-ink-muted text-xs pt-1">
-            {{ t('director_msg_cta', { product: workspace?.campaign?.product_name || t('product_default') }) }}
-          </p>
-
-          <!-- Feedback & Shot count pill -->
-          <div class="flex items-center justify-between pt-2 border-t border-outline-border text-xs text-ink-muted">
-            <div class="flex items-center gap-3">
-              <button type="button" class="hover:text-ink-primary cursor-pointer" title="Thích">👍</button>
-              <button type="button" class="hover:text-ink-primary cursor-pointer" title="Không thích">👎</button>
-              <button type="button" class="hover:text-ink-primary cursor-pointer" title="Báo cáo">⚑</button>
-            </div>
-            <span class="text-xs font-mono bg-surface-card px-2 py-0.5 rounded-md border border-outline-border text-ink-secondary">
-              {{ hasStoryboard ? expectedShotCount : (currentLang === 'vi' ? `Dự kiến: ${expectedShotCount}` : `Planned: ${expectedShotCount}`) }}
-              {{ hasStoryboard ? (currentLang === 'vi' ? 'cảnh đã tạo' : 'shots created') : (currentLang === 'vi' ? 'cảnh' : 'shots') }}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Bottom Input & Action Bar (Clean Scoped AI Prompt Bar) -->
-      <div class="gflow-bottom-input-bar">
-        <div class="gflow-input-pill">
-          <!-- Text Prompt Input with Scoped Placeholder -->
-          <input
-            v-model="promptInput"
-            type="text"
-            class="flex-1 bg-transparent border-none text-xs text-ink-primary focus:outline-none placeholder:text-ink-muted"
-            :placeholder="selectedTarget === 'scene' && activeSelectedShot ? (currentLang === 'vi' ? `Hỏi AI chỉnh sửa Cảnh ${activeSelectedShot.shot_number}...` : `Edit Scene ${activeSelectedShot.shot_number} with AI...`) : (currentLang === 'vi' ? 'Hỏi AI chỉnh sửa toàn bộ video...' : 'Edit entire video with AI...')"
-            :disabled="isAutoGenerating || generatingVideo"
-            @keydown.enter="handleMagicGenerateClick"
-          />
-
-          <!-- Action Button -->
-          <button
-            type="button"
-            class="gflow-action-btn"
-            :class="{ 'is-active': isAutoGenerating || isProductionActive }"
-            :disabled="!hasInputAsset || isAutoGenerating || isProductionActive"
-            :title="hasInputAsset ? (currentLang === 'vi' ? 'Tạo video tự động bằng AI' : 'Generate video with AI') : (currentLang === 'vi' ? 'Thêm ít nhất một ảnh sản phẩm' : 'Add at least one product image')"
-            @click="handleMagicGenerateClick"
-          >
-            <span v-if="isAutoGenerating" class="lucide-refresh-cw size-3.5 animate-spin" />
-            <span v-else-if="isProductionActive" class="size-2.5 rounded-xs bg-white" />
-            <span v-else class="lucide-sparkles size-3.5" />
-          </button>
-        </div>
-      </div>
-    </aside>
+    <!-- Right Panel: Studio Inspector Component -->
+    <StudioInspector
+      v-model:active-tab="activeRightTab"
+      v-model:selected-target="selectedTarget"
+      v-model:prompt-input="promptInput"
+      :studio-mode="studioMode"
+      :selected-clip="selectedClip"
+      :selected-clip-source-shot="selectedClipSourceShot"
+      :timeline-busy="timelineBusy"
+      :selected-asset="selectedAsset"
+      :active-selected-shot="activeSelectedShot"
+      :selected-shot-frame="selectedShotFrame"
+      :selected-shot-index="selectedShotIndex"
+      :continuity-mode="settingsForm.continuity_mode || 'Multi-shot'"
+      :current-lang="currentLang"
+      :processing-review="processingReview"
+      :is-production-active="isProductionActive"
+      :is-storyboard-draft="isStoryboardDraft"
+      :saving-shot="savingShot"
+      :duration-seconds="Number(settingsForm.duration) || 15"
+      :product-name="campaign.data?.project?.product_name || ''"
+      :has-storyboard="hasStoryboard"
+      :expected-shot-count="expectedShotCount"
+      :is-auto-generating="generatingVideo || retryingFailedScenes || revisingStoryboard"
+      :has-input-asset="Boolean(campaign.data?.assets?.length)"
+      :estimate-shot-duration="estimateShotDuration"
+      :format-shot-keyframe-time="formatShotKeyframeTime"
+      :get-shot-video-file="getShotVideoFile"
+      @go-back="goBack"
+      @change-transition="handleTransitionChange"
+      @change-transition-frames="handleTransitionFramesChange"
+      @split-clip="splitClipAtCurrentPlayhead"
+      @duplicate-clip="duplicateClip"
+      @delete-clip="deleteClip"
+      @regenerate-source-for-selected-clip="regenerateSourceForSelectedClip"
+      @apply-asset-to-shot="applyAssetToShot"
+      @select-keyframe-target="handleSelectKeyframeTarget"
+      @open-media-picker="openMediaPicker"
+      @toggle-continuity-mode="toggleContinuityMode"
+      @change-shot-duration="changeShotDuration"
+      @regenerate-current-shot="regenerateCurrentShot"
+      @copy-prompt="copyPrompt"
+      @save-active-shot="saveActiveShot"
+      @magic-generate="handleMagicGenerateClick"
+    />
 
     <!-- Organization media picker for this project -->
     <div v-if="showMediaPicker" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs" @click.self="showMediaPicker = false">
@@ -1315,6 +689,55 @@
         </div>
       </div>
     </div>
+
+    <!-- Confirmation Dialog: Update Timeline from Latest Generated Specification -->
+    <div
+      v-if="confirmUpdateTimelineModal"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs"
+      @click.self="confirmUpdateTimelineModal = false"
+    >
+      <div class="w-full max-w-md bg-surface-card border border-outline-border rounded-2xl p-5 shadow-2xl space-y-4">
+        <div class="flex items-center gap-3">
+          <div class="size-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-lg shrink-0">
+            ⚠️
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-ink-primary">
+              {{ currentLang === 'vi' ? 'Cập nhật dòng thời gian dựng?' : 'Update edit timeline?' }}
+            </h3>
+            <p class="text-xs text-ink-muted">
+              {{ currentLang === 'vi' ? 'Đã có phiên bản kịch bản phân cảnh mới hơn.' : 'A newer generated scene specification is available.' }}
+            </p>
+          </div>
+        </div>
+
+        <p class="text-xs text-ink-secondary leading-relaxed bg-surface-muted p-3 rounded-xl border border-outline-border">
+          {{ currentLang === 'vi'
+            ? 'Cập nhật timeline sẽ thay thế các điểm cắt (trims), thứ tự clip, tách clip và hiệu ứng chuyển cảnh hiện tại bằng các cảnh mới tạo nhất.'
+            : 'Updating the edit timeline will replace your current trims, clip order, splits and transitions with the newest generated scenes.' }}
+        </p>
+
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button
+            type="button"
+            class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-surface-muted hover:bg-surface-hover text-ink-primary border border-outline-border transition-colors cursor-pointer"
+            :disabled="timelineBusy"
+            @click="confirmUpdateTimelineModal = false"
+          >
+            {{ currentLang === 'vi' ? 'Hủy' : 'Cancel' }}
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-md shadow-amber-600/20 transition-all cursor-pointer flex items-center gap-1.5"
+            :disabled="timelineBusy"
+            @click="handleConfirmUpdateTimeline"
+          >
+            <span v-if="timelineBusy" class="lucide-refresh-cw size-3 animate-spin" />
+            <span>{{ currentLang === 'vi' ? 'Cập nhật timeline' : 'Update timeline' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1325,6 +748,8 @@ import { useRoute } from "vue-router";
 import { useI18n } from "../stores/i18n";
 import { useProjectTimeline } from "../composables/useProjectTimeline";
 import EditTimelineTrack from "../components/studio/EditTimelineTrack.vue";
+import StudioPreview from "../components/studio/StudioPreview.vue";
+import StudioInspector from "../components/studio/StudioInspector.vue";
 
 const { t, currentLang } = useI18n();
 
@@ -1341,6 +766,12 @@ const {
   clips: timelineClips,
   fps: timelineFps,
   busy: timelineBusy,
+  exportStatus,
+  exportError,
+  isExporting,
+  isOutdated,
+  latestSpecVersion,
+  timelineSpecVersion,
   selectedClip,
   selectedClipName,
   playheadFrame,
@@ -1351,6 +782,7 @@ const {
   duplicateClip,
   deleteClip,
   setTransition,
+  resetTimeline,
   exportTimeline,
 } = useProjectTimeline(projectName);
 
@@ -1399,7 +831,53 @@ const selectedTarget = ref("scene"); // 'scene' | 'asset' | 'keyframe-start' | '
 const selectedAsset = ref(null);
 const assetsExpanded = ref(false);
 const isPlaying = ref(false);
-const previewVideo = ref(null);
+const studioPreviewRef = ref(null);
+const previewVideo = computed(() => studioPreviewRef.value?.previewVideo || null);
+const confirmUpdateTimelineModal = ref(false);
+const dismissOutdatedBanner = ref(false);
+
+const hasUnexportedEdits = computed(() =>
+  studioMode.value === "edit" &&
+  timelineReady.value &&
+  !workspace.value?.project?.current_output_asset_version
+);
+
+function applyAssetToShot(asset) {
+  if (!activeSelectedShot.value || !asset) return;
+  activeSelectedShot.value.reference_image = asset.file;
+  activeSelectedShot.value.reference_asset_name = asset.asset_name;
+  selectedTarget.value = "scene";
+}
+
+function handleSelectKeyframeTarget(target) {
+  if (!activeSelectedShot.value) return;
+  selectKeyframeTarget(activeSelectedShot.value, selectedShotIndex.value, target);
+}
+
+
+async function handleConfirmUpdateTimeline() {
+  try {
+    const success = await resetTimeline();
+    if (success) {
+      toast({
+        title: currentLang.value === "vi" ? "Đã cập nhật dòng thời gian" : "Timeline updated",
+        text: currentLang.value === "vi"
+          ? "Đã đồng bộ các cảnh mới nhất vào dòng thời gian dựng."
+          : "Timeline synchronized with the latest generated scenes.",
+        type: "success",
+      });
+      confirmUpdateTimelineModal.value = false;
+      dismissOutdatedBanner.value = false;
+      campaign.reload();
+    }
+  } catch (err) {
+    toast({
+      title: currentLang.value === "vi" ? "Lỗi cập nhật" : "Update failed",
+      text: err.message || "Failed to update timeline",
+      type: "error",
+    });
+  }
+}
 const playheadSeconds = ref(0);
 const openAccordion = reactive({
   subject: false,
@@ -1494,7 +972,6 @@ const production = computed(() => {
   }
   return productionResource.data || workspace.value?.production || null;
 });
-const reviews = computed(() => workspace.value?.reviews || []);
 const finalVideo = computed(() => timeline.value?.final_video || production.value?.final_video || workspace.value?.final_video || null);
 const timelineTotalSeconds = computed(() => {
   if (studioMode.value === "edit") {
@@ -2039,6 +1516,7 @@ watch(
 function handleSelectClip(clip, sourceFrame = null) {
   selectedClipName.value = clip.name;
   previewSelection.value = "clip";
+  activeRightTab.value = "shot";
   const fps = Number(timelineFps.value) || 24;
   if (sourceFrame !== null && previewVideo.value) {
     previewVideo.value.currentTime = sourceFrame / fps;
