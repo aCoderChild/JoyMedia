@@ -276,7 +276,7 @@ def get_campaign_detail(name):
 	projects_raw = frappe.get_list(
 		"Media Project",
 		filters={"campaign": campaign.name},
-		fields=["name", "project_name", "video_idea", "status", "modified"],
+		fields=["name", "project_name", "video_idea", "status", "modified", "current_output_asset_version"],
 		order_by="creation desc",
 		limit_page_length=50,
 	)
@@ -296,8 +296,9 @@ def get_campaign_detail(name):
 			order_by="creation desc",
 			limit_page_length=1,
 		) if media_spec else []
-		if run and run[0].final_asset_version:
-			final_video_url = frappe.db.get_value("Asset Version", run[0].final_asset_version, "file")
+		output_asset_ver = p.current_output_asset_version or (run[0].final_asset_version if run and run[0].final_asset_version else None)
+		if output_asset_ver:
+			final_video_url = frappe.db.get_value("Asset Version", output_asset_ver, "file")
 
 		projects.append({
 			"name": p.name,
@@ -423,12 +424,13 @@ def get_campaign_workspace(name):
 		)
 		if production:
 			reviews = project._get_review_cards(["Pending", "Rejected", "Approved"])
-			if production.final_asset_version:
+			final_asset_ver_name = getattr(project, "current_output_asset_version", None) or production.final_asset_version
+			if final_asset_ver_name:
 				final_file = frappe.db.get_value(
-					"Asset Version", production.final_asset_version, "file"
+					"Asset Version", final_asset_ver_name, "file"
 				)
 				final_video = {
-					"asset_version": production.final_asset_version,
+					"asset_version": final_asset_ver_name,
 					"file": final_file,
 				}
 
@@ -511,10 +513,15 @@ def get_campaign_production(name):
 			"Shot Specification", job.shot_specification, "shot_number"
 		)
 	production["jobs"] = jobs
-	if production.final_asset_version:
+	final_asset_ver = (
+		frappe.db.get_value("Media Project", production.media_project, "current_output_asset_version")
+		if production.get("media_project")
+		else None
+	) or production.final_asset_version
+	if final_asset_ver:
 		production["final_video"] = {
-			"asset_version": production.final_asset_version,
-			"file": frappe.db.get_value("Asset Version", production.final_asset_version, "file"),
+			"asset_version": final_asset_ver,
+			"file": frappe.db.get_value("Asset Version", final_asset_ver, "file"),
 		}
 	return production
 

@@ -3,7 +3,6 @@ import Campaigns from "./pages/Campaigns.vue";
 import CampaignDetail from "./pages/CampaignDetail.vue";
 import ProjectStudio from "./pages/ProjectStudio.vue";
 import Assets from "./pages/Assets.vue";
-import Reviews from "./pages/Reviews.vue";
 import { useSession } from "./stores/session";
 
 const router = createRouter({
@@ -15,7 +14,6 @@ const router = createRouter({
     { path: "/projects/:name", component: ProjectStudio },
     { path: "/campaigns/:campaign/projects/:name", component: ProjectStudio },
     { path: "/assets", component: Assets },
-    { path: "/reviews", component: Reviews },
   ],
 });
 

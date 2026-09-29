@@ -43,9 +43,44 @@
           </span>
         </div>
 
-        <!-- Right: Settings Gear & Primary Generate Button -->
+        <!-- Right: Studio Mode Switch, Settings Gear & Primary Generate Button -->
         <div class="flex items-center gap-2">
+          <!-- Studio Mode Switch: Scenes vs Edit -->
+          <div class="studio-mode-switch">
+            <button
+              type="button"
+              :class="{ active: studioMode === 'scene' }"
+              @click="studioMode = 'scene'"
+            >
+              Scenes
+            </button>
+
+            <button
+              type="button"
+              :class="{ active: studioMode === 'edit' }"
+              :disabled="!timelineReady"
+              :title="!timelineReady ? (currentLang === 'vi' ? 'Cần tạo video xong để mở trình chỉnh sửa Edit' : 'Generate video to enable Edit mode') : ''"
+              @click="studioMode = 'edit'"
+            >
+              Edit
+            </button>
+          </div>
+
+          <!-- In Edit Mode: Export Button -->
           <button
+            v-if="studioMode === 'edit'"
+            type="button"
+            class="jm-btn-primary !py-1.5 !px-3 text-xs flex items-center gap-1.5 shadow-sm"
+            :disabled="timelineBusy || exporting"
+            @click="handleExportTimeline"
+          >
+            <span v-if="exporting || timelineBusy" class="lucide-refresh-cw size-3 animate-spin" />
+            <span v-else>💾</span>
+            <span>{{ exporting ? (currentLang === 'vi' ? 'Đang xuất...' : 'Exporting...') : (currentLang === 'vi' ? 'Xuất video' : 'Export video') }}</span>
+          </button>
+
+          <button
+            v-if="studioMode === 'scene'"
             type="button"
             class="text-xs text-ink-muted hover:text-ink-primary px-2.5 py-1.5 rounded-xl hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer flex items-center gap-1.5 font-semibold bg-surface-muted shadow-xs"
             :title="currentLang === 'vi' ? 'Cài đặt video (Tỉ lệ, Thời lượng, Phong cách)' : 'Video settings (Aspect, Duration, Style)'"
@@ -56,6 +91,7 @@
           </button>
 
           <button
+            v-if="studioMode === 'scene'"
             type="button"
             class="jm-btn-primary shadow-md shadow-indigo-600/20 !py-1.5 !px-3 text-xs"
             :class="{ 'animate-pulse': isAutoGenerating || isProductionActive }"
@@ -170,7 +206,10 @@
           <!-- Floating Scene / Target HUD Chip -->
           <div class="viewport-hud-chip">
             <span class="size-2 rounded-full bg-indigo-500 animate-pulse" />
-            <span v-if="selectedTarget === 'asset' && selectedAsset">
+            <span v-if="studioMode === 'edit' && selectedClip">
+              ✂️ {{ selectedClip.shot_number ? t('shot_n', { n: selectedClip.shot_number }) : `Clip ${selectedClip.clip_order || 1}` }} · {{ selectedClip.duration_seconds?.toFixed(2) }}s ({{ selectedClip.source_in_frame }}f–{{ selectedClip.source_out_frame }}f)
+            </span>
+            <span v-else-if="selectedTarget === 'asset' && selectedAsset">
               🖼️ {{ selectedAsset.asset_name }} · {{ selectedAsset.asset_category }}
             </span>
             <span v-else-if="selectedTarget === 'keyframe-start' && activeSelectedShot">
@@ -180,7 +219,7 @@
               ◆ {{ currentLang === 'vi' ? 'Khung cuối (Out)' : 'End Frame' }} · {{ t('shot_n', { n: activeSelectedShot.shot_number }) }}
             </span>
             <span v-else-if="previewSelection === 'full'">
-              🎬 {{ currentLang === 'vi' ? 'Toàn bộ video' : 'Full Video' }} · 00:00–{{ formatSecondsLabel(settingsForm.duration) }}
+              🎬 {{ currentLang === 'vi' ? 'Toàn bộ video' : 'Full Video' }} · 00:00–{{ formatSecondsLabel(timelineTotalSeconds) }}
             </span>
             <span v-else-if="activeSelectedShot">
               🎯 {{ t('shot_n', { n: activeSelectedShot.shot_number }) }} · {{ getShotTimestampRange(activeSelectedShot) }}
@@ -208,41 +247,29 @@
             </div>
           </div>
 
-          <!-- Master Video if Ready -->
+          <!-- Video Preview: Master, Edit Clip, or Scene Shot Video -->
           <video
-            v-else-if="finalVideo?.file && previewSelection === 'full'"
-            :key="finalVideo.file"
-            :src="finalVideo.file"
-            class="w-full h-full object-contain"
-            controls
-            autoplay
-            loop
-            preload="metadata"
-          />
-
-          <!-- Selected Shot Video Preview -->
-          <video
-            v-else-if="activeCanvasMedia?.isVideo && activeCanvasMedia?.url"
+            v-else-if="studioPreview?.isVideo && studioPreview?.url"
             ref="previewVideo"
-            :key="activeCanvasMedia.url"
-            :src="activeCanvasMedia.url"
+            :key="studioPreview.type === 'clip' ? `${studioPreview.clip?.name}-${studioPreview.url}` : studioPreview.url"
+            :src="studioPreview.url"
             class="w-full h-full object-contain"
             controls
             preload="metadata"
             playsinline
-            @loadedmetadata="syncPreviewToPlayhead"
-            @timeupdate="handlePreviewTimeUpdate"
+            @loadedmetadata="onPreviewLoadedMetadata"
+            @timeupdate="onPreviewTimeUpdate"
             @play="isPlaying = true"
             @pause="isPlaying = false"
-            @ended="handleShotEnded"
+            @ended="onPreviewEnded"
           />
 
-          <!-- Selected Shot Frame or Image -->
+          <!-- Image Preview: Selected Shot Frame or Asset -->
           <img
-            v-else-if="activeCanvasMedia?.url"
-            :key="activeCanvasMedia.url"
-            :src="activeCanvasMedia.url"
-            :alt="activeCanvasMedia.title"
+            v-else-if="studioPreview?.url"
+            :key="studioPreview.url"
+            :src="studioPreview.url"
+            :alt="studioPreview.title || 'Preview'"
             class="w-full h-full object-contain"
           />
 
@@ -308,16 +335,19 @@
               <span>{{ isPlaying ? '⏸' : '▶' }}</span>
             </button>
             <span class="font-mono text-[11px] font-semibold text-ink-primary">
-              {{ currentTimelinePositionLabel }} / {{ formatSecondsLabel(totalDurationSeconds) }}
+              {{ currentTimelinePositionLabel }} / {{ formatSecondsLabel(timelineTotalSeconds) }}
             </span>
             <span class="text-ink-muted text-[10px]">·</span>
-            <span v-if="activeSelectedShot" class="text-[11px] text-ink-secondary truncate max-w-[180px]">
+            <span v-if="studioMode === 'edit' && selectedClip" class="text-[11px] text-ink-secondary truncate max-w-[180px]">
+              Clip {{ selectedClip.clip_order || 1 }} ({{ selectedClip.duration_seconds?.toFixed(1) }}s)
+            </span>
+            <span v-else-if="activeSelectedShot" class="text-[11px] text-ink-secondary truncate max-w-[180px]">
               {{ t('shot_n', { n: activeSelectedShot.shot_number }) }} ({{ getShotTimestampRange(activeSelectedShot) }})
             </span>
           </div>
 
-          <!-- Keyframe Quick Navigation & Toggle (CapCut & Premiere Style) -->
-          <div class="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-muted border border-outline-border text-xs">
+          <!-- Keyframe Quick Navigation & Toggle (Only in Scenes Mode) -->
+          <div v-if="studioMode === 'scene'" class="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-muted border border-outline-border text-xs">
             <button
               type="button"
               class="size-5 rounded flex items-center justify-center text-[10px] text-ink-muted hover:text-ink-primary hover:bg-surface-hover transition-colors cursor-pointer"
@@ -345,6 +375,11 @@
             </button>
           </div>
 
+          <!-- Unsaved timeline changes indicator in Edit Mode -->
+          <div v-else-if="studioMode === 'edit' && !timeline?.final_video && timeline?.ready" class="text-[10.5px] text-amber-400 font-medium px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+            {{ currentLang === 'vi' ? 'Chưa xuất video mới' : 'Unsaved edits — Export to update' }}
+          </div>
+
           <div class="flex items-center gap-1.5">
             <button
               v-if="finalVideo?.file"
@@ -356,7 +391,16 @@
               {{ currentLang === 'vi' ? 'Toàn bộ video' : 'Full Video' }}
             </button>
             <button
-              v-if="activeSelectedShot"
+              v-if="studioMode === 'edit' && selectedClip"
+              type="button"
+              class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-colors cursor-pointer"
+              :class="previewSelection === 'clip' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-surface-muted hover:bg-surface-hover text-ink-secondary'"
+              @click="previewSelection = 'clip'"
+            >
+              Clip {{ selectedClip.clip_order || 1 }}
+            </button>
+            <button
+              v-else-if="activeSelectedShot"
               type="button"
               class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-colors cursor-pointer"
               :class="previewSelection === 'shot' && selectedTarget !== 'asset' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-surface-muted hover:bg-surface-hover text-ink-secondary'"
@@ -369,7 +413,7 @@
       </div>
 
       <!-- Scene Builder & CapCut Timeline Architecture -->
-      <div class="capcut-timeline-container mt-3">
+      <div v-if="studioMode === 'scene'" class="capcut-timeline-container mt-3">
         <!-- Timeline Header -->
         <div class="flex items-center justify-between mb-2 px-1">
           <div class="flex items-center gap-2">
@@ -450,9 +494,9 @@
 
               <!-- Clip Visual Thumbnail Body (Clean, CapCut/Premiere style without awkward trim handles) -->
               <div class="relative w-full aspect-video rounded-lg overflow-hidden bg-black flex items-center justify-center group shadow-xs">
-                <template v-if="getShotReview(shot)?.preview_url || getShotVideoFile(shot)">
+                <template v-if="getShotVideoFile(shot)">
                   <video
-                    :src="getShotReview(shot)?.preview_url || getShotVideoFile(shot)"
+                    :src="getShotVideoFile(shot)"
                     :poster="getShotFirstFrame(shot, Boolean(plan?.shots?.length)).file || shot.last_frame_image || undefined"
                     class="w-full h-full object-cover pointer-events-none"
                     preload="auto"
@@ -539,6 +583,27 @@
         </div>
       </div>
 
+      <!-- Edit Mode: Post-Generation Persistent Editorial Track -->
+      <div v-else class="mt-3">
+        <EditTimelineTrack
+          :clips="timelineClips"
+          :fps="timelineFps"
+          :selected-clip-name="selectedClipName"
+          :playhead-frame="playheadFrame"
+          :busy="timelineBusy"
+          :total-frames="timeline?.total_frames || 0"
+          :total-seconds="timeline?.total_seconds || 0"
+          @select-clip="handleSelectClip"
+          @update:playhead-frame="handleEditSeek"
+          @trim="handleClipTrim"
+          @split="handleClipSplit"
+          @duplicate="duplicateClip"
+          @delete="deleteClip"
+          @reorder="handleClipReorder"
+          @select-transition="handleSelectTransition"
+        />
+      </div>
+
       <!-- Footer Disclaimer -->
       <footer class="mt-3 text-center text-[11px] text-ink-muted">
         {{ t('disclaimer') }}
@@ -558,9 +623,15 @@
             @click="activeRightTab = 'shot'"
           >
             <span>🔍</span>
-            <span>Inspector</span>
+            <span>{{ studioMode === 'edit' ? 'Clip' : 'Inspector' }}</span>
             <span
-              v-if="activeSelectedShot && selectedTarget !== 'asset'"
+              v-if="studioMode === 'edit' && selectedClip"
+              class="text-[10.5px] text-indigo-400 font-normal"
+            >
+              · Clip {{ selectedClip.clip_order || 1 }}
+            </span>
+            <span
+              v-else-if="activeSelectedShot && selectedTarget !== 'asset'"
               class="text-[10.5px] text-indigo-400 font-normal"
             >
               · C{{ activeSelectedShot.shot_number }}
@@ -594,8 +665,152 @@
 
       <!-- Tab 1 Body: Contextual Inspector (Selection-based Editor Model) -->
       <div v-if="activeRightTab === 'shot'">
-        <!-- CASE 1: Clicked an Asset -> Show Asset Inspector -->
-        <div v-if="selectedTarget === 'asset' && selectedAsset" class="gflow-director-content space-y-3">
+        <!-- CASE EDIT MODE: Clip Inspector -->
+        <div v-if="studioMode === 'edit' && selectedClip" class="gflow-director-content space-y-3">
+          <!-- Clip Details Card -->
+          <div class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-ink-primary flex items-center gap-1.5">
+                <span>✂️</span>
+                <span>{{ `Clip ${selectedClip.clip_order || 1}` }}</span>
+              </span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-indigo-400 font-bold">
+                {{ selectedClip.duration_seconds?.toFixed(2) }}s · {{ selectedClip.duration_frames }}f
+              </span>
+            </div>
+
+            <!-- IN / OUT / Duration -->
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
+                <span class="block text-[10px] text-ink-muted font-semibold">IN FRAME</span>
+                <span class="font-mono font-bold text-ink-primary text-sm">{{ selectedClip.source_in_frame }}</span>
+              </div>
+              <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
+                <span class="block text-[10px] text-ink-muted font-semibold">OUT FRAME</span>
+                <span class="font-mono font-bold text-ink-primary text-sm">{{ selectedClip.source_out_frame }}</span>
+              </div>
+            </div>
+
+            <!-- Transition to Next -->
+            <div class="space-y-1.5 pt-1">
+              <label class="block text-[11px] font-semibold text-ink-secondary">
+                {{ currentLang === 'vi' ? 'Chuyển cảnh kế tiếp (Transition)' : 'Transition to next' }}
+              </label>
+              <div class="flex items-center gap-2">
+                <select
+                  :value="selectedClip.transition_to_next || 'Cut'"
+                  class="flex-1 px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary cursor-pointer"
+                  :disabled="timelineBusy"
+                  @change="handleTransitionChange($event.target.value)"
+                >
+                  <option value="Cut">Cut (Cắt thẳng)</option>
+                  <option value="Crossfade">Crossfade (Chồng mờ)</option>
+                  <option value="Dissolve">Dissolve (Hòa tan)</option>
+                  <option value="Wipe Left">Wipe Left (Gạt trái)</option>
+                  <option value="Wipe Right">Wipe Right (Gạt phải)</option>
+                  <option value="Fade Black">Fade Black (Mờ đen)</option>
+                  <option value="Fade White">Fade White (Mờ trắng)</option>
+                </select>
+                <input
+                  v-if="selectedClip.transition_to_next && selectedClip.transition_to_next !== 'Cut'"
+                  type="number"
+                  min="4"
+                  max="48"
+                  :value="selectedClip.transition_frames || 12"
+                  class="w-16 px-2 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary font-mono text-center"
+                  :title="currentLang === 'vi' ? 'Số khung hình chuyển tiếp' : 'Transition frames'"
+                  :disabled="timelineBusy"
+                  @change="handleTransitionFramesChange(Number($event.target.value))"
+                />
+              </div>
+            </div>
+
+            <!-- Clip Editorial Actions: Split, Duplicate, Delete -->
+            <div class="grid grid-cols-3 gap-1.5 pt-2 border-t border-outline-border">
+              <button
+                type="button"
+                class="py-1.5 px-2 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                :disabled="timelineBusy"
+                :title="currentLang === 'vi' ? 'Tách clip tại playhead' : 'Split clip at playhead'"
+                @click="splitClipAtCurrentPlayhead"
+              >
+                <span>✂</span>
+                <span>{{ currentLang === 'vi' ? 'Tách' : 'Split' }}</span>
+              </button>
+              <button
+                type="button"
+                class="py-1.5 px-2 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                :disabled="timelineBusy"
+                :title="currentLang === 'vi' ? 'Nhân đôi clip này' : 'Duplicate clip'"
+                @click="duplicateClip(selectedClip)"
+              >
+                <span>⧉</span>
+                <span>{{ currentLang === 'vi' ? 'Nhân đôi' : 'Duplicate' }}</span>
+              </button>
+              <button
+                type="button"
+                class="py-1.5 px-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                :disabled="timelineBusy"
+                :title="currentLang === 'vi' ? 'Xóa clip khỏi timeline' : 'Delete clip'"
+                @click="deleteClip(selectedClip)"
+              >
+                <span>⌫</span>
+                <span>{{ currentLang === 'vi' ? 'Xóa' : 'Delete' }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Source Shot Reference & Regeneration Section -->
+          <div class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-2.5 text-xs">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-ink-primary flex items-center gap-1.5">
+                <span>🎯</span>
+                <span>{{ currentLang === 'vi' ? 'Cảnh gốc (Source Shot)' : 'Source Shot' }}</span>
+              </span>
+              <span v-if="selectedClipSourceShot" class="text-[10px] font-bold text-indigo-400 bg-surface-card px-2 py-0.5 rounded border border-outline-border">
+                {{ t('shot_n', { n: selectedClipSourceShot.shot_number }) }}
+              </span>
+            </div>
+
+            <div v-if="selectedClipSourceShot" class="space-y-2">
+              <div v-if="selectedClipSourceShot.subject_identity || selectedClipSourceShot.action_plot" class="p-2 rounded-xl bg-surface-card border border-outline-border space-y-1">
+                <p v-if="selectedClipSourceShot.subject_identity" class="text-[11px] text-ink-secondary">
+                  <span class="font-semibold text-ink-muted">{{ currentLang === 'vi' ? 'Chủ thể:' : 'Subject:' }}</span> {{ selectedClipSourceShot.subject_identity }}
+                </p>
+                <p v-if="selectedClipSourceShot.action_plot" class="text-[11px] text-ink-secondary">
+                  <span class="font-semibold text-ink-muted">{{ currentLang === 'vi' ? 'Hành động:' : 'Action:' }}</span> {{ selectedClipSourceShot.action_plot }}
+                </p>
+              </div>
+
+              <!-- Generation Prompt Excerpt -->
+              <div v-if="selectedClipSourceShot.generation_prompt" class="p-2 rounded-xl bg-surface-card border border-outline-border">
+                <span class="block text-[10px] font-semibold text-ink-muted mb-0.5">PROMPT</span>
+                <p class="text-[11px] text-ink-secondary line-clamp-3 font-mono">{{ selectedClipSourceShot.generation_prompt }}</p>
+              </div>
+
+              <!-- Regenerate Source Button -->
+              <button
+                type="button"
+                class="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                :disabled="timelineBusy || processingReview"
+                @click="regenerateSourceForSelectedClip"
+              >
+                <span v-if="processingReview" class="lucide-refresh-cw size-3 animate-spin" />
+                <span v-else>↻</span>
+                <span>{{ currentLang === 'vi' ? 'Tạo lại cảnh gốc (Regenerate source)' : 'Regenerate source' }}</span>
+              </button>
+              <p class="text-[10px] text-ink-muted text-center">
+                {{ currentLang === 'vi' ? 'Tạo lại cảnh sẽ tự động đồng bộ video mới vào timeline clip.' : 'Regenerating will sync newly rendered video into this timeline clip.' }}
+              </p>
+            </div>
+            <div v-else class="text-ink-muted text-center py-2 text-xs">
+              {{ currentLang === 'vi' ? 'Không tìm thấy thông tin cảnh gốc.' : 'Source shot information not found.' }}
+            </div>
+          </div>
+        </div>
+
+        <!-- CASE 1: Clicked an Asset -> Show Asset Inspector (Scene Mode) -->
+        <div v-else-if="selectedTarget === 'asset' && selectedAsset" class="gflow-director-content space-y-3">
           <div class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-3">
             <div class="flex items-center justify-between">
               <span class="text-xs font-bold text-ink-primary">📦 {{ currentLang === 'vi' ? 'Chi tiết tư liệu' : 'Asset Details' }}</span>
@@ -769,24 +984,27 @@
             <div class="flex justify-between text-[9px] text-ink-muted font-mono"><span>01s</span><span>60s</span></div>
           </div>
 
-          <div v-if="activeShotReview" class="p-2.5 rounded-xl bg-surface-muted border border-outline-border space-y-1.5 text-xs">
+          <div v-if="activeSelectedShot" class="p-2.5 rounded-xl bg-surface-muted border border-outline-border space-y-1.5 text-xs">
             <div class="flex items-center justify-between">
               <span class="font-bold text-ink-primary">{{ t('shot_n', { n: activeSelectedShot.shot_number }) }}</span>
               <span
                 class="text-[10px] font-bold px-2 py-0.5 rounded uppercase"
-                :class="{
-                  'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30': activeShotReview.status === 'Approved',
-                  'bg-amber-500/20 text-amber-400 border border-amber-500/30': activeShotReview.status === 'Pending',
-                  'bg-rose-500/20 text-rose-400 border border-rose-500/30': activeShotReview.status === 'Rejected',
-                }"
+                :class="getShotVideoFile(activeSelectedShot) ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-surface-card text-ink-muted border border-outline-border'"
               >
-                {{ activeShotReview.status === 'Approved' ? (currentLang === 'vi' ? 'Đã duyệt' : 'Approved') : (activeShotReview.status === 'Rejected' ? (currentLang === 'vi' ? 'Từ chối' : 'Rejected') : (currentLang === 'vi' ? 'Chờ duyệt' : 'Pending')) }}
+                {{ getShotVideoFile(activeSelectedShot) ? (currentLang === 'vi' ? 'Đã tạo video' : 'Generated') : (currentLang === 'vi' ? 'Bản nháp' : 'Draft') }}
               </span>
             </div>
             <div class="flex items-center gap-1.5 pt-1">
-              <button type="button" class="flex-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold" :disabled="processingReview" @click="approveCurrentShotReview">{{ t('btn_approve') }}</button>
-              <button type="button" class="flex-1 py-1 px-2 rounded-lg bg-rose-600/80 hover:bg-rose-600 text-white text-[11px] font-semibold" :disabled="processingReview" @click="rejectCurrentShotReview">{{ t('btn_reject') }}</button>
-              <button type="button" class="p-1 px-2 rounded-lg bg-surface-card hover:bg-surface-hover text-ink-secondary text-[11px] border border-outline-border" :disabled="processingReview" @click="regenerateCurrentShot">{{ t('btn_regenerate') }}</button>
+              <button
+                type="button"
+                class="flex-1 py-1 px-2.5 rounded-lg bg-surface-card hover:bg-surface-hover text-ink-primary text-[11px] font-semibold border border-outline-border flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                :disabled="processingReview || isProductionActive"
+                @click="regenerateCurrentShot"
+              >
+                <span v-if="processingReview" class="lucide-refresh-cw size-3 animate-spin" />
+                <span v-else>↻</span>
+                <span>{{ t('btn_regenerate') }}</span>
+              </button>
             </div>
           </div>
 
@@ -1102,14 +1320,41 @@
 
 <script setup>
 import { Button, FormControl, call, createResource, toast, upload as uploadFile } from "frappe-ui";
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useI18n } from "../stores/i18n";
+import { useProjectTimeline } from "../composables/useProjectTimeline";
+import EditTimelineTrack from "../components/studio/EditTimelineTrack.vue";
 
 const { t, currentLang } = useI18n();
 
 const route = useRoute();
 const projectName = computed(() => route.params.name);
+
+// Studio Mode: 'scene' (pre-generation / storyboard) vs 'edit' (post-generation NLE)
+const studioMode = ref("scene");
+const exporting = ref(false);
+
+// Timeline State & Editorial Service Controller
+const {
+  timeline,
+  clips: timelineClips,
+  fps: timelineFps,
+  busy: timelineBusy,
+  selectedClip,
+  selectedClipName,
+  playheadFrame,
+  loadTimeline,
+  trimClip,
+  reorderClip,
+  splitClip,
+  duplicateClip,
+  deleteClip,
+  setTransition,
+  exportTimeline,
+} = useProjectTimeline(projectName);
+
+const timelineReady = computed(() => Boolean(timeline.value?.ready));
 
 // Backend Resources
 const campaign = createResource({
@@ -1119,11 +1364,6 @@ const campaign = createResource({
 });
 const productionResource = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_production",
-  params: { name: projectName.value },
-  auto: true,
-});
-const reviewResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_reviews",
   params: { name: projectName.value },
   auto: true,
 });
@@ -1254,8 +1494,14 @@ const production = computed(() => {
   }
   return productionResource.data || workspace.value?.production || null;
 });
-const reviews = computed(() => reviewResource.data || workspace.value?.reviews || []);
-const finalVideo = computed(() => production.value?.final_video || workspace.value?.final_video);
+const reviews = computed(() => workspace.value?.reviews || []);
+const finalVideo = computed(() => timeline.value?.final_video || production.value?.final_video || workspace.value?.final_video || null);
+const timelineTotalSeconds = computed(() => {
+  if (studioMode.value === "edit") {
+    return Number(timeline.value?.total_seconds || totalDurationSeconds.value);
+  }
+  return totalDurationSeconds.value;
+});
 const projectAssets = computed(() => workspace.value?.assets || []);
 const hasInputAsset = computed(() => projectAssets.value.some((asset) => asset.file && asset.media_type === "Image"));
 
@@ -1322,6 +1568,13 @@ const playheadPercent = computed(() => {
 });
 
 const currentTimelinePositionLabel = computed(() => {
+  if (studioMode.value === "edit") {
+    const fps = Number(timelineFps.value || 24);
+    const totalSecs = Math.max(0, Math.floor(Number(playheadFrame.value || 0) / fps));
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
   return formatSecondsLabel(Math.round(playheadSeconds.value));
 });
 
@@ -1505,10 +1758,6 @@ const activeCanvasMedia = computed(() => {
     return { title: "Master Deliverable", url: finalVideo.value.file, isVideo: true, isMaster: true };
   }
   if (activeSelectedShot.value) {
-    const rev = getShotReview(activeSelectedShot.value);
-    if (rev?.preview_url) {
-      return { title: `Cảnh ${activeSelectedShot.value.shot_number}`, url: rev.preview_url, isVideo: true };
-    }
     const outputVideo = getShotVideoFile(activeSelectedShot.value);
     if (outputVideo) {
       return { title: `Cảnh ${activeSelectedShot.value.shot_number}`, url: outputVideo, isVideo: true };
@@ -1521,17 +1770,59 @@ const activeCanvasMedia = computed(() => {
   return null;
 });
 
+const studioPreview = computed(() => {
+  if (
+    studioMode.value === "edit" &&
+    selectedClip.value?.source_file
+  ) {
+    return {
+      type: "clip",
+      url: selectedClip.value.source_file,
+      clip: selectedClip.value,
+      isVideo: true,
+      title: `Clip ${selectedClip.value.clip_order || 1}`,
+    };
+  }
+
+  if (previewSelection.value === "full" && finalVideo.value?.file) {
+    return {
+      type: "master",
+      url: finalVideo.value.file,
+      isVideo: true,
+      title: "Master Deliverable",
+    };
+  }
+
+  if (activeCanvasMedia.value?.url) {
+    return {
+      type: "shot",
+      url: activeCanvasMedia.value.url,
+      isVideo: Boolean(activeCanvasMedia.value.isVideo),
+      media: activeCanvasMedia.value,
+      title: activeCanvasMedia.value.title,
+    };
+  }
+
+  return null;
+});
+
+const selectedClipSourceShot = computed(() => {
+  if (!selectedClip.value) return null;
+  return (
+    allShotsList.value.find(
+      (s) =>
+        s.name === selectedClip.value.shot_specification ||
+        s.shot_number === selectedClip.value.shot_number
+    ) || null
+  );
+});
+
 const activeRightTab = ref("director");
 const savingShot = ref(false);
 const processingReview = ref(false);
 
 const isStoryboardDraft = computed(() => {
   return settings.value?.status === "Draft" || !production.value;
-});
-
-const activeShotReview = computed(() => {
-  if (!activeSelectedShot.value) return null;
-  return getShotReview(activeSelectedShot.value);
 });
 
 function isShotSelected(shot, index) {
@@ -1643,10 +1934,7 @@ async function toggleContinuityMode() {
 }
 
 function shotStatus(shot) {
-  const review = getShotReview(shot);
-  if (review?.status === "Approved") return "Ready";
-  if (review?.status === "Rejected") return "Failed";
-  if (review?.status === "Pending") return "Ready";
+  if (getShotVideoFile(shot)) return "Ready";
   if (isProductionActive.value || isAutoGenerating.value) return "Generating";
   return "Draft";
 }
@@ -1692,40 +1980,161 @@ function copyPrompt(text) {
   toast({ title: "Đã sao chép prompt", text: "Prompt đã được lưu vào clipboard.", type: "success" });
 }
 
-async function approveCurrentShotReview() {
-  const rev = activeShotReview.value;
-  if (!rev) return;
-  processingReview.value = true;
-  try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.approve_campaign_review", {
-      campaign_name: projectName.value,
-      review_name: rev.name,
-    });
-    toast({ title: "Đã duyệt cảnh", text: `Cảnh ${activeSelectedShot.value?.shot_number} đã được phê duyệt.`, type: "success" });
-    await reviewResource.reload();
-  } catch (error) {
-    toast({ title: "Lỗi duyệt cảnh", text: error.message || "Vui lòng thử lại.", type: "error" });
-  } finally {
-    processingReview.value = false;
+// Playback and Editorial Timeline Handlers
+function seekClipStart() {
+  if (!previewVideo.value || !selectedClip.value) return;
+  const fps = Number(timelineFps.value) || 24;
+  previewVideo.value.currentTime = Number(selectedClip.value.source_in_frame || 0) / fps;
+}
+
+function onPreviewLoadedMetadata() {
+  if (studioMode.value === "edit") {
+    seekClipStart();
+  } else {
+    syncPreviewToPlayhead();
   }
 }
 
-async function rejectCurrentShotReview() {
-  const rev = activeShotReview.value;
-  if (!rev) return;
-  processingReview.value = true;
+function onPreviewTimeUpdate() {
+  if (studioMode.value === "edit") {
+    if (!previewVideo.value || !selectedClip.value) return;
+    const fps = Number(timelineFps.value) || 24;
+    const currentFrame = previewVideo.value.currentTime * fps;
+
+    // Sync playhead frame in timeline
+    const clipOffset = currentFrame - Number(selectedClip.value.source_in_frame || 0);
+    playheadFrame.value = Math.max(
+      selectedClip.value.timeline_start_frame,
+      Math.min(selectedClip.value.timeline_end_frame, Math.round(selectedClip.value.timeline_start_frame + clipOffset))
+    );
+
+    if (currentFrame >= Number(selectedClip.value.source_out_frame || 0)) {
+      previewVideo.value.pause();
+      previewVideo.value.currentTime = Number(selectedClip.value.source_in_frame || 0) / fps;
+      isPlaying.value = false;
+    }
+  } else {
+    handlePreviewTimeUpdate();
+  }
+}
+
+function onPreviewEnded() {
+  isPlaying.value = false;
+  if (studioMode.value === "scene") {
+    handleShotEnded();
+  }
+}
+
+watch(
+  () => selectedClip.value?.name,
+  (clipName) => {
+    if (studioMode.value === "edit" && clipName) {
+      nextTick(() => {
+        seekClipStart();
+      });
+    }
+  }
+);
+
+function handleSelectClip(clip, sourceFrame = null) {
+  selectedClipName.value = clip.name;
+  previewSelection.value = "clip";
+  const fps = Number(timelineFps.value) || 24;
+  if (sourceFrame !== null && previewVideo.value) {
+    previewVideo.value.currentTime = sourceFrame / fps;
+  } else {
+    nextTick(seekClipStart);
+  }
+}
+
+function handleEditSeek(frame) {
+  playheadFrame.value = frame;
+  if (selectedClip.value && previewVideo.value) {
+    const fps = Number(timelineFps.value) || 24;
+    const clipStart = selectedClip.value.timeline_start_frame;
+    const clipEnd = selectedClip.value.timeline_end_frame;
+    if (frame >= clipStart && frame <= clipEnd) {
+      const offset = frame - clipStart;
+      previewVideo.value.currentTime = (Number(selectedClip.value.source_in_frame || 0) + offset) / fps;
+    }
+  }
+}
+
+function handleClipTrim({ clip, sourceIn, sourceOut }) {
+  trimClip(clip, sourceIn, sourceOut);
+}
+
+function handleClipSplit({ clip, frame }) {
+  splitClip(clip, frame);
+}
+
+function splitClipAtCurrentPlayhead() {
+  if (!selectedClip.value) return;
+  const clip = selectedClip.value;
+  let sourceSplitFrame;
+  if (playheadFrame.value >= clip.timeline_start_frame && playheadFrame.value <= clip.timeline_end_frame) {
+    const offset = playheadFrame.value - clip.timeline_start_frame;
+    sourceSplitFrame = clip.source_in_frame + offset;
+  } else {
+    sourceSplitFrame = Math.round((clip.source_in_frame + clip.source_out_frame) / 2);
+  }
+  splitClip(clip, sourceSplitFrame);
+}
+
+function handleClipReorder({ clip, targetOrder }) {
+  reorderClip(clip, targetOrder);
+}
+
+function handleSelectTransition(clip) {
+  selectedClipName.value = clip.name;
+  activeRightTab.value = "shot";
+}
+
+function handleTransitionChange(transition) {
+  if (!selectedClip.value) return;
+  const frames = selectedClip.value.transition_frames || 12;
+  setTransition(selectedClip.value, transition, transition === "Cut" ? 0 : frames);
+}
+
+function handleTransitionFramesChange(frames) {
+  if (!selectedClip.value) return;
+  setTransition(selectedClip.value, selectedClip.value.transition_to_next || "Crossfade", frames);
+}
+
+async function regenerateSourceForSelectedClip() {
+  const shot = selectedClipSourceShot.value;
+  if (!shot) return;
+  studioMode.value = "scene";
+  const idx = allShotsList.value.findIndex(
+    (s) => s.name === shot.name || s.shot_number === shot.shot_number
+  );
+  if (idx >= 0) {
+    selectShot(shot, idx);
+  }
+  await regenerateCurrentShot();
+}
+
+async function handleExportTimeline() {
+  if (exporting.value || timelineBusy.value) return;
+  exporting.value = true;
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.reject_campaign_review", {
-      campaign_name: projectName.value,
-      review_name: rev.name,
-      notes: "Cần cải thiện chất lượng",
-    });
-    toast({ title: "Đã từ chối cảnh", text: "Bạn có thể bấm Tạo lại cảnh này.", type: "warning" });
-    await reviewResource.reload();
+    const result = await exportTimeline();
+    if (result) {
+      toast({
+        title: currentLang.value === "vi" ? "Xuất video thành công" : "Timeline exported successfully",
+        text: currentLang.value === "vi" ? "Video đã được cập nhật với các chỉnh sửa mới nhất." : "Final video updated with current timeline edits.",
+        type: "success",
+      });
+      await refresh();
+    }
   } catch (error) {
-    toast({ title: "Lỗi từ chối", text: error.message || "Vui lòng thử lại.", type: "error" });
+    toast({
+      title: currentLang.value === "vi" ? "Xuất video thất bại" : "Export failed",
+      text: error?.message || "Please try again.",
+      type: "error",
+    });
   } finally {
-    processingReview.value = false;
+    exporting.value = false;
   }
 }
 
@@ -1814,12 +2223,6 @@ function quickSelectAspect(format) {
   saveSettings();
 }
 
-function getShotReview(shot) {
-  const num = shot.shot_number;
-  const revs = reviews.value || [];
-  return revs.find((r) => r.shot_number === num || r.shot_name === shot.name);
-}
-
 function getShotFirstFrame(shot, isPlan = false) {
   if (isPlan) {
     const index = Number(shot.first_frame_reference_image_index ?? shot.reference_image_index);
@@ -1868,15 +2271,20 @@ const estimatedFinishLabel = computed(() => {
   return `~${s}s`;
 });
 
-watch(() => production.value?.status, (status) => {
+onMounted(async () => {
+  await loadTimeline(false);
+});
+
+watch(() => production.value?.status, async (status) => {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
   if (ACTIVE_STATUSES.has(status)) {
     pollTimer = setInterval(() => {
       reloadProduction().catch(() => {});
-      reviewResource.reload();
       nowTick.value = Date.now();
     }, 4000);
+  } else if (status === "Completed") {
+    await loadTimeline(true);
   }
 }, { immediate: true });
 
@@ -1888,7 +2296,7 @@ async function refresh() {
   plan.value = null;
   await campaign.reload();
   await reloadProduction();
-  await reviewResource.reload();
+  await loadTimeline(false);
 }
 
 async function reloadProduction() {

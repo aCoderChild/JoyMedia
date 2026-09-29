@@ -78,35 +78,6 @@
             </span>
           </RouterLink>
         </Tooltip>
-
-        <!-- Exports -->
-        <Tooltip :text="t('sidebar_scenes')" side="right" :disabled="!isCollapsed">
-          <RouterLink
-            to="/reviews"
-            class="nav-link"
-            :class="{ 'justify-center p-2.5': isCollapsed }"
-          >
-            <span class="nav-link-icon relative text-base">
-              <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/>
-                <line x1="12" y1="3" x2="12" y2="15"/>
-              </svg>
-              <span
-                v-if="isCollapsed && pendingReviewsCount > 0"
-                class="absolute -top-1 -right-1 size-2 rounded-full bg-amber-500 animate-pulse"
-              />
-            </span>
-            <span v-if="!isCollapsed" class="truncate flex-1">{{ t('sidebar_scenes') }}</span>
-            <span
-              v-if="!isCollapsed && pendingReviewsCount > 0"
-              class="sidebar-counter-badge"
-            >
-              {{ pendingReviewsCount }}
-            </span>
-          </RouterLink>
-        </Tooltip>
-
       </nav>
 
       <!-- Sidebar Footer: Thu gọn -->
@@ -278,14 +249,8 @@ const libraryAssetsResource = createResource({
   auto: true,
 });
 
-const reviewsResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_reviews_summary",
-  auto: true,
-});
-
 const campaignsCount = computed(() => campaignsResource.data?.length || 0);
 const assetsCount = computed(() => libraryAssetsResource.data?.length || 0);
-const pendingReviewsCount = computed(() => reviewsResource.data?.pending_count || 0);
 
 const currentPageTitle = computed(() => {
   const path = route.path;
@@ -293,7 +258,6 @@ const currentPageTitle = computed(() => {
   if (path === "/campaigns" || path === "/") return isEn ? "Campaigns" : "Chiến dịch";
   if (path.startsWith("/campaigns/")) return isEn ? "Campaign Workspace" : "Chi tiết chiến dịch";
   if (path.startsWith("/projects/")) return "JoyMedia Studio";
-  if (path.startsWith("/reviews")) return isEn ? "Exports" : "Xuất bản";
   if (path.startsWith("/assets")) return isEn ? "Media Library" : "Thư viện Media";
   return "JoyMedia Studio";
 });
@@ -306,7 +270,6 @@ const userInitial = computed(() => {
 const headerDropdownOptions = computed(() => [
   { label: "JoyMedia Studio", onClick: () => router.push("/campaigns") },
   { label: currentLang.value === "en" ? "Media Library" : "Thư viện Media", onClick: () => router.push("/assets") },
-  { label: currentLang.value === "en" ? "Exports" : "Xuất bản", onClick: () => router.push("/reviews") },
   {
     label: currentLang.value === "en" ? "🇻🇳 Tiếng Việt" : "🇬🇧 English",
     onClick: () => toggleLang(),

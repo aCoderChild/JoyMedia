@@ -47,6 +47,7 @@ def reset_project_timeline(project_name: str):
 	for clip_name in frappe.get_all("Timeline Clip", filters={"media_project": project.name}, pluck="name"):
 		frappe.delete_doc("Timeline Clip", clip_name, ignore_permissions=True, force=True)
 	_initialize_timeline(project)
+	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
 
@@ -63,6 +64,7 @@ def reset_timeline_clip(project_name: str, clip_name: str):
 	clip.source_out_frame = initial_out
 	clip.save(ignore_permissions=True)
 	_normalize_transitions(project.name)
+	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
 
@@ -86,6 +88,7 @@ def trim_timeline_clip(project_name: str, clip_name: str, source_in_frame, sourc
 	clip.source_out_frame = end
 	clip.save(ignore_permissions=True)
 	_normalize_transitions(project.name)
+	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
 
@@ -102,6 +105,7 @@ def reorder_timeline_clip(project_name: str, clip_name: str, target_order):
 	ordered.insert(target - 1, next(row for row in clips if row.name == clip.name))
 	_set_clip_order(ordered)
 	_normalize_transitions(project.name)
+	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
 
@@ -145,6 +149,7 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 		}
 	).insert(ignore_permissions=True)
 	_normalize_transitions(project.name)
+	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	result = _serialize_timeline(project, _timeline_clip_rows(project.name))
 	result["selected_clip"] = new_clip.name
@@ -182,6 +187,7 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 	clip.transition_frames = 0
 	clip.save(ignore_permissions=True)
 	_normalize_transitions(project.name)
+	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	result = _serialize_timeline(project, _timeline_clip_rows(project.name))
 	result["selected_clip"] = new_clip.name
@@ -194,6 +200,7 @@ def delete_timeline_clip(project_name: str, clip_name: str):
 	frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
 	_set_clip_order(_timeline_clip_rows(project.name))
 	_normalize_transitions(project.name)
+	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
 
@@ -229,6 +236,7 @@ def set_timeline_transition(project_name: str, clip_name: str, transition: str, 
 	clip.transition_to_next = transition
 	clip.transition_frames = frames
 	clip.save(ignore_permissions=True)
+	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
 
@@ -417,7 +425,7 @@ def _serialize_timeline(project, clips):
 		)
 		cursor = end - transition_frames
 
-	final_video = _final_video(specification_name)
+	final_video = _final_video(project.name, specification_name)
 	return {
 		"ready": bool(serialized),
 		"project": project.name,
@@ -430,21 +438,82 @@ def _serialize_timeline(project, clips):
 	}
 
 
-def _final_video(specification_name):
+def _final_video(project_name, specification_name):
 	asset_version_name = frappe.db.get_value(
-		"Generation Run",
-		{"media_specification": specification_name},
-		"final_asset_version",
-		order_by="creation desc",
+		"Media Project",
+		project_name,
+		"current_output_asset_version",
 	)
+	if not asset_version_name:
+		asset_version_name = frappe.db.get_value(
+			"Generation Run",
+			{"media_specification": specification_name},
+			"final_asset_version",
+			order_by="creation desc",
+		)
 	if not asset_version_name:
 		return None
 	return frappe.db.get_value(
 		"Asset Version",
 		asset_version_name,
-		["name", "file", "duration_seconds", "fps"],
+		[
+			"name",
+			"file",
+			"duration_seconds",
+			"fps",
+		],
 		as_dict=True,
 	)
+
+
+def _invalidate_project_output(project_name):
+	frappe.db.set_value(
+		"Media Project",
+		project_name,
+		"current_output_asset_version",
+		None,
+		update_modified=False,
+	)
+
+
+def sync_timeline_source_for_shot(shot_name):
+	shot = frappe.get_doc("Shot Specification", shot_name)
+	new_asset_version = shot.selected_output_asset_version
+	if not new_asset_version:
+		return
+	project_name = frappe.db.get_value(
+		"Media Specification", shot.media_specification, "media_project"
+	)
+	clips = frappe.get_all(
+		"Timeline Clip",
+		filters={
+			"media_project": project_name,
+			"shot_specification": shot.name,
+		},
+		fields=["name", "source_in_frame", "source_out_frame"],
+	)
+	if not clips:
+		return
+	fps = _project_fps(shot.media_specification)
+	max_frames = _source_max_frames(new_asset_version, fps)
+	min_frames = _minimum_clip_frames(fps)
+
+	for clip_data in clips:
+		clip = frappe.get_doc("Timeline Clip", clip_data.name)
+		clip.source_asset_version = new_asset_version
+		if max_frames:
+			if clip.source_out_frame > max_frames:
+				clip.source_out_frame = max_frames
+				if clip.source_out_frame - clip.source_in_frame < min_frames:
+					clip.source_in_frame = max(0, max_frames - min_frames)
+			clip.initial_source_out_frame = min(
+				clip.initial_source_out_frame or max_frames, max_frames
+			)
+		clip.save(ignore_permissions=True)
+
+	_normalize_transitions(project_name)
+	_invalidate_project_output(project_name)
+	frappe.db.commit()
 
 
 def _project_clip(project_name, clip_name):

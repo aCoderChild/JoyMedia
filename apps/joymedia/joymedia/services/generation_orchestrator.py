@@ -847,7 +847,10 @@ def _finalize_completed_shots(run):
 			fields=["status"],
 		)
 		if jobs and all(job.status == "Completed" for job in jobs):
-			compose_shot_segments(run.name, shot_name)
+			assembled_version = compose_shot_segments(run.name, shot_name)
+			if assembled_version:
+				from .timeline_editor import sync_timeline_source_for_shot
+				sync_timeline_source_for_shot(shot_name)
 
 
 def _get_run_job_names(run_name):

@@ -122,20 +122,13 @@ def compose_project_timeline_internal(project_name: str):
 		}
 	).insert(ignore_permissions=True)
 
-	latest_run = frappe.db.get_value(
-		"Generation Run",
-		{"media_specification": media_specification.name},
-		"name",
-		order_by="creation desc",
+	frappe.db.set_value(
+		"Media Project",
+		project.name,
+		"current_output_asset_version",
+		asset_version.name,
+		update_modified=False,
 	)
-	if latest_run:
-		frappe.db.set_value(
-			"Generation Run",
-			latest_run,
-			"final_asset_version",
-			asset_version.name,
-			update_modified=False,
-		)
 
 	return {
 		"final_asset_version": asset_version.name,
