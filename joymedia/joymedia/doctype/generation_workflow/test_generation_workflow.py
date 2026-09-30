@@ -13,7 +13,7 @@ class TestWorkflow(FrappeTestCase):
 	def test_workflow_hash_uses_canonical_json_and_h3_adapter_metadata(self):
 		doc = frappe.new_doc("Generation Workflow")
 		doc.workflow_key = "product_showcase"
-		doc.ai_model_profile = "joymedia-qwen"
+		doc.adapter_key = "minimax_h3"
 		doc.workflow_json = '{"save_video":{"inputs":{"frame_rate":30}},"minimax_cond":{"inputs":{"length":90,"height":1920,"width":1080}}}'
 		Workflow.validate(doc)
 		self.assertEqual(doc.frame_count, 90)
@@ -23,8 +23,17 @@ class TestWorkflow(FrappeTestCase):
 	def test_invalid_binding_is_rejected(self):
 		doc = frappe.new_doc("Generation Workflow")
 		doc.workflow_key = "product_showcase"
+		doc.adapter_key = "minimax_h3"
 		doc.workflow_json = '{"actual_loader":{"inputs":{"image_path":""}}}'
 		doc.append("bindings", {"binding_key": "first_frame", "node_key": "missing_loader", "input_name": "image", "required_input_role": "First Frame", "value_type": "File Path", "required": 1})
+		with self.assertRaises(frappe.ValidationError):
+			Workflow.validate(doc)
+
+	def test_unsupported_adapter_is_rejected(self):
+		doc = frappe.new_doc("Generation Workflow")
+		doc.workflow_key = "unsupported"
+		doc.adapter_key = "missing_adapter"
+		doc.workflow_json = '{}'
 		with self.assertRaises(frappe.ValidationError):
 			Workflow.validate(doc)
 
