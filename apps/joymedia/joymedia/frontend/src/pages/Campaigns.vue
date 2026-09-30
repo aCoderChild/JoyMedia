@@ -366,7 +366,7 @@ const searchQuery = ref("");
 const statusFilter = ref("all"); // 'all' | 'draft' | 'active'
 
 const campaigns = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_cards",
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_project_cards",
   auto: true,
 });
 
@@ -447,7 +447,7 @@ function openStudio(projectName) {
 async function createDraftCampaign() {
   creatingProject.value = true;
   try {
-    const project = await call("joymedia.joymedia.doctype.media_project.media_project.create_draft_campaign");
+    const project = await call("joymedia.joymedia.doctype.media_project.media_project.create_draft_project");
     toast({
       title: currentLang.value === "vi" ? "Đã tạo bản nháp" : "Draft created",
       text: currentLang.value === "vi" ? "Đang mở JoyMedia Studio..." : "Opening JoyMedia Studio...",

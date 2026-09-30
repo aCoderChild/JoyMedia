@@ -239,7 +239,7 @@ onMounted(() => {
 
 // Dynamic Resource Counts
 const campaignsResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_cards",
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_project_cards",
   auto: true,
 });
 

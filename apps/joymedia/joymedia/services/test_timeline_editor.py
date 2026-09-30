@@ -44,19 +44,12 @@ def _generate_video_bytes(seconds=4):
 class TestTimelineEditor(FrappeTestCase):
 	def setUp(self):
 		super().setUp()
-		self.campaign = frappe.get_doc(
-			{
-				"doctype": "Campaign",
-				"campaign_name": "Test Campaign",
-				"product_name": "Test Product",
-			}
-		).insert(ignore_permissions=True)
-
 		self.project = frappe.get_doc(
 			{
 				"doctype": "Media Project",
 				"project_name": "Test Timeline Project",
-				"campaign": self.campaign.name,
+				"product_name": "Test Product",
+				"campaign_brief": "Test Campaign Brief",
 				"status": "Draft",
 			}
 		).insert(ignore_permissions=True)

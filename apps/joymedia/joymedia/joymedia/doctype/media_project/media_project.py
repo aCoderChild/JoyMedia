@@ -169,26 +169,19 @@ def _copy_storyboard_shots(source_specification, target_specification):
 
 
 @frappe.whitelist()
-def get_campaign_cards():
+def get_project_cards():
 	filters = {}
 	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles():
 		filters["owner"] = frappe.session.user
-	campaigns = frappe.get_list(
-		"Campaign",
+	projects = frappe.get_list(
+		"Media Project",
 		filters=filters,
-		fields=["name", "campaign_name", "product_name", "campaign_brief", "modified"],
+		fields=["name", "project_name", "product_name", "campaign_brief", "video_idea", "status", "modified"],
 		order_by="modified desc",
 		limit_page_length=100,
 	)
 
-	for cam in campaigns:
-		campaign_name = cam.name
-		projects = frappe.get_all(
-			"Media Project",
-			filters={"campaign": campaign_name},
-			fields=["name", "status"],
-			order_by="creation asc, name asc",
-		)
+	for project in projects:
 		asset_filters = _asset_scope_filters()
 		asset_filters["asset_category"] = ["in", list(INPUT_ASSET_CATEGORIES)]
 		assets = frappe.get_all(
@@ -206,21 +199,17 @@ def get_campaign_cards():
 				cover_image = v
 				break
 
-		cam.update(
+		project.update(
 			{
-				# Campaign workspace routes currently resolve a Media Project. Keep
-				# the parent campaign identity separately for data aggregation.
-				"campaign": campaign_name,
-				"name": projects[0].name if projects else campaign_name,
-				"project_count": len(projects),
+				"campaign_name": project.project_name,
+				"project_count": 1,
 				"asset_count": len(assets),
 				"cover_image": cover_image,
 				"asset_categories": list({a.asset_category for a in assets if a.asset_category}),
-				"status": "Active" if projects else "Draft",
 			}
 		)
 
-	return campaigns
+	return projects
 
 
 @frappe.whitelist()
@@ -235,93 +224,7 @@ def get_video_styles():
 
 
 @frappe.whitelist()
-def get_campaign_detail(name):
-	if frappe.db.exists("Campaign", name):
-		frappe.has_permission("Campaign", "read", name, throw=True)
-		campaign = frappe.get_doc("Campaign", name)
-	elif frappe.db.exists("Media Project", name):
-		project = frappe.get_doc("Media Project", name)
-		if project.campaign:
-			campaign = frappe.get_doc("Campaign", project.campaign)
-		else:
-			frappe.throw(_("Project {0} has no parent Campaign").format(name))
-	else:
-		frappe.throw(_("Campaign {0} not found").format(name))
-
-	# 1. Fetch Shared Assets belonging to this Campaign (input categories only)
-	asset_filters = _asset_scope_filters()
-	asset_filters["asset_category"] = ["in", list(INPUT_ASSET_CATEGORIES)]
-	assets = frappe.get_list(
-		"Media Asset",
-		filters=asset_filters,
-		fields=["name", "asset_name", "media_type", "asset_category", "creation", "modified"],
-		order_by="modified desc",
-		limit_page_length=100,
-	)
-	for asset in assets:
-		versions = frappe.get_all(
-			"Asset Version",
-			filters={"media_asset": asset.name},
-			fields=["file", "version_number"],
-			order_by="version_number desc",
-			limit_page_length=1,
-		)
-		asset["file"] = versions[0].file if versions else None
-
-	# 2. Fetch Projects under this Campaign
-	projects_raw = frappe.get_list(
-		"Media Project",
-		filters={"campaign": campaign.name},
-		fields=["name", "project_name", "video_idea", "status", "modified", "current_output_asset_version"],
-		order_by="creation desc",
-		limit_page_length=50,
-	)
-	projects = []
-	for p in projects_raw:
-		media_spec = get_latest_media_specification(p.name)
-		shot_count = (
-			frappe.db.count("Shot Specification", {"media_specification": media_spec.name})
-			if media_spec
-			else 0
-		)
-		final_video_url = None
-		run = frappe.get_all(
-			"Generation Run",
-			filters={"media_specification": media_spec.name} if media_spec else {},
-			fields=["final_asset_version"],
-			order_by="creation desc",
-			limit_page_length=1,
-		) if media_spec else []
-		output_asset_ver = p.current_output_asset_version or (run[0].final_asset_version if run and run[0].final_asset_version else None)
-		if output_asset_ver:
-			final_video_url = frappe.db.get_value("Asset Version", output_asset_ver, "file")
-
-		projects.append({
-			"name": p.name,
-			"project_name": p.project_name,
-			"video_idea": p.video_idea,
-			"status": p.status,
-			"duration": media_spec.total_duration_seconds if media_spec else 30,
-			"delivery_preset": media_spec.delivery_preset if media_spec else "Landscape",
-			"video_style_name": _customer_style_details(media_spec).get("video_style_name") if media_spec else "Showcase",
-			"shot_count": shot_count,
-			"final_video_url": final_video_url,
-		})
-
-	return {
-		"campaign": {
-			"name": campaign.name,
-			"campaign_name": campaign.campaign_name,
-			"product_name": campaign.product_name,
-			"campaign_brief": campaign.campaign_brief,
-		},
-		"shared_assets": assets,
-		"projects": projects,
-	}
-
-
-@frappe.whitelist()
-def get_campaign_workspace(name):
+def get_project_workspace(name):
 	project = frappe.get_doc("Media Project", name)
 	project._require_read_access()
 	media_specification = get_latest_media_specification(project.name)
@@ -329,7 +232,7 @@ def get_campaign_workspace(name):
 	storyboard_specification = _get_latest_project_storyboard_specification(
 		project.name, specification_names
 	)
-	assets = _get_campaign_assets(project.name)
+	assets = _get_project_assets(project.name)
 	outputs = _get_project_outputs(project.name)
 	storyboard = []
 	production = None
@@ -430,15 +333,11 @@ def get_campaign_workspace(name):
 				}
 
 	return {
-		"campaign": {
-			"name": project.name,
-			"project_name": project.project_name,
-			"video_idea": project.video_idea,
-			"status": project.status,
-		},
 		"project": {
 			"name": project.name,
 			"project_name": project.project_name,
+			"product_name": project.product_name,
+			"campaign_brief": project.campaign_brief,
 			"video_idea": project.video_idea,
 			"reference_template": project.reference_template,
 			"status": project.status,
@@ -448,14 +347,6 @@ def get_campaign_workspace(name):
 			"export_started_at": getattr(project, "export_started_at", None),
 			"export_completed_at": getattr(project, "export_completed_at", None),
 		},
-		"campaign_parent": frappe.db.get_value(
-			"Campaign",
-			project.campaign,
-			["name", "campaign_name", "product_name", "campaign_brief"],
-			as_dict=True,
-		)
-		if project.campaign
-		else None,
 		"assets": assets,
 		"outputs": outputs,
 		"video_settings": {
@@ -480,11 +371,8 @@ def get_campaign_workspace(name):
 
 
 @frappe.whitelist()
-def get_project_workspace(name):
-	return get_campaign_workspace(name)
-@frappe.whitelist()
-def get_campaign_production(name):
-	"""Return only the current Campaign production state for lightweight polling."""
+def get_project_production(name):
+	"""Return the current project production state for lightweight polling."""
 	project = frappe.get_doc("Media Project", name)
 	project._require_read_access()
 	specification_names = _get_project_specification_names(project.name)
@@ -524,7 +412,7 @@ def get_campaign_production(name):
 		}
 	return production
 
-def _get_campaign_assets(media_project):
+def _get_project_assets(media_project):
 	"""Return the reference inputs explicitly selected for a project."""
 	return _get_project_selected_assets(frappe.get_doc("Media Project", media_project))
 
@@ -717,32 +605,32 @@ def _automatic_shot_count(media_specification, media_project):
 
 
 @frappe.whitelist()
-def save_campaign_video_settings(
-	campaign_name, total_duration_seconds, delivery_preset, video_style=None, continuity_mode=None
+def save_project_video_settings(
+	project_name, total_duration_seconds, delivery_preset, video_style=None, continuity_mode=None
 ):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	campaign._require_write_access()
-	return campaign.save_video_settings(
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	return project.save_video_settings(
 		total_duration_seconds, delivery_preset, video_style, continuity_mode
 	)
 
 
 @frappe.whitelist()
-def generate_campaign_video_plan(campaign_name):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.generate_video_plan()
+def generate_project_video_plan(project_name):
+	project = frappe.get_doc("Media Project", project_name)
+	return project.generate_video_plan()
 
 
 @frappe.whitelist()
-def apply_campaign_video_plan(campaign_name, plan_json):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.apply_video_plan(plan_json)
+def apply_project_video_plan(project_name, plan_json):
+	project = frappe.get_doc("Media Project", project_name)
+	return project.apply_video_plan(plan_json)
 
 
 @frappe.whitelist()
-def generate_campaign_video(campaign_name):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.generate_video()
+def generate_project_video_from_storyboard(project_name):
+	project = frappe.get_doc("Media Project", project_name)
+	return project.generate_video()
 
 
 @frappe.whitelist()
@@ -752,26 +640,26 @@ def generate_project_video(project_name: str):
 
 
 @frappe.whitelist()
-def retry_campaign_failed_jobs(campaign_name):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.retry_failed_jobs()
+def retry_project_failed_jobs(project_name):
+	project = frappe.get_doc("Media Project", project_name)
+	return project.retry_failed_jobs()
 
 
 @frappe.whitelist()
-def revise_campaign_storyboard(campaign_name, use_current_workflow_defaults=False):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	return campaign.create_storyboard_revision(use_current_workflow_defaults)
+def revise_project_storyboard(project_name, use_current_workflow_defaults=False):
+	project = frappe.get_doc("Media Project", project_name)
+	return project.create_storyboard_revision(use_current_workflow_defaults)
 
 
 @frappe.whitelist()
-def update_campaign_shot(campaign_name, shot_name, values):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	campaign._require_write_access()
+def update_project_shot(project_name, shot_name, values):
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
 	shot = frappe.get_doc("Shot Specification", shot_name)
-	media_specification = get_latest_media_specification(campaign.name)
+	media_specification = get_latest_media_specification(project.name)
 	if media_specification and media_specification.status == "Draft" and shot.media_specification != media_specification.name:
 		_copy_storyboard_shots(
-			_get_latest_project_storyboard_specification(campaign.name), media_specification
+			_get_latest_project_storyboard_specification(project.name), media_specification
 		)
 		matching_shot = frappe.db.get_value(
 			"Shot Specification",
@@ -781,7 +669,7 @@ def update_campaign_shot(campaign_name, shot_name, values):
 		if matching_shot:
 			shot = frappe.get_doc("Shot Specification", matching_shot)
 	if not media_specification or shot.media_specification != media_specification.name:
-		frappe.throw(_("Shot does not belong to the current Campaign revision."))
+		frappe.throw(_("Shot does not belong to the current project revision."))
 	if media_specification.status != "Draft":
 		frappe.throw(
 			_(
@@ -829,20 +717,20 @@ def update_campaign_shot(campaign_name, shot_name, values):
 
 
 @frappe.whitelist()
-def set_campaign_shot_keyframe(campaign_name, shot_name, frame_role, asset_version):
+def set_project_shot_keyframe(project_name, shot_name, frame_role, asset_version):
 	"""Persist a shot's start or end keyframe in its editable storyboard revision."""
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	campaign._require_write_access()
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
 	if frame_role not in ("first_frame", "last_frame"):
 		frappe.throw(_("Keyframe role must be first_frame or last_frame."))
 
-	media_specification = get_latest_media_specification(campaign.name)
+	media_specification = get_latest_media_specification(project.name)
 	if not media_specification:
 		frappe.throw(_("This project has no editable video specification."))
 	shot = frappe.get_doc("Shot Specification", shot_name)
 	if media_specification.status == "Draft" and shot.media_specification != media_specification.name:
 		_copy_storyboard_shots(
-			_get_latest_project_storyboard_specification(campaign.name), media_specification
+			_get_latest_project_storyboard_specification(project.name), media_specification
 		)
 		matching_shot = frappe.db.get_value(
 			"Shot Specification",
@@ -852,7 +740,7 @@ def set_campaign_shot_keyframe(campaign_name, shot_name, frame_role, asset_versi
 		if matching_shot:
 			shot = frappe.get_doc("Shot Specification", matching_shot)
 	if shot.media_specification != media_specification.name:
-		frappe.throw(_("Shot does not belong to the current Campaign revision."))
+		frappe.throw(_("Shot does not belong to the current project revision."))
 	if media_specification.status != "Draft":
 		frappe.throw(_("Create a storyboard revision before changing keyframes."))
 
@@ -881,10 +769,10 @@ def set_campaign_shot_keyframe(campaign_name, shot_name, frame_role, asset_versi
 
 
 @frappe.whitelist()
-def update_campaign_shot_timing(campaign_name, shot_name, duration_seconds):
+def update_project_shot_timing(project_name, shot_name, duration_seconds):
 	"""Persist one shot's timeline duration and keep the project timeline frame-exact."""
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	campaign._require_write_access()
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
 	try:
 		duration_seconds = float(duration_seconds)
 	except (TypeError, ValueError):
@@ -892,13 +780,13 @@ def update_campaign_shot_timing(campaign_name, shot_name, duration_seconds):
 	if duration_seconds < 1:
 		frappe.throw(_("Each shot must be at least 1 second long."))
 
-	media_specification = get_latest_media_specification(campaign.name)
+	media_specification = get_latest_media_specification(project.name)
 	if not media_specification:
 		frappe.throw(_("This project has no editable video specification."))
 	shot = frappe.get_doc("Shot Specification", shot_name)
 	if media_specification.status == "Draft" and shot.media_specification != media_specification.name:
 		_copy_storyboard_shots(
-			_get_latest_project_storyboard_specification(campaign.name), media_specification
+			_get_latest_project_storyboard_specification(project.name), media_specification
 		)
 		matching_shot = frappe.db.get_value(
 			"Shot Specification",
@@ -908,7 +796,7 @@ def update_campaign_shot_timing(campaign_name, shot_name, duration_seconds):
 		if matching_shot:
 			shot = frappe.get_doc("Shot Specification", matching_shot)
 	if shot.media_specification != media_specification.name:
-		frappe.throw(_("Shot does not belong to the current Campaign revision."))
+		frappe.throw(_("Shot does not belong to the current project revision."))
 	if media_specification.status != "Draft":
 		frappe.throw(_("Create a storyboard revision before changing shot timing."))
 	shot.selected_output_asset_version = None
@@ -956,20 +844,20 @@ def update_campaign_shot_timing(campaign_name, shot_name, duration_seconds):
 
 
 @frappe.whitelist()
-def reorder_campaign_shot(campaign_name, shot_name, target_shot_number):
+def reorder_project_shot(project_name, shot_name, target_shot_number):
 	"""Persist a storyboard shot's position in the editable revision."""
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	campaign._require_write_access()
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
 	try:
 		target_shot_number = int(target_shot_number)
 	except (TypeError, ValueError):
 		frappe.throw(_("Invalid shot position."))
-	media_specification = get_latest_media_specification(campaign.name)
+	media_specification = get_latest_media_specification(project.name)
 	if not media_specification or media_specification.status != "Draft":
 		frappe.throw(_("Create an editable storyboard revision before reordering shots."))
 	shot = frappe.get_doc("Shot Specification", shot_name)
 	if shot.media_specification != media_specification.name:
-		_copy_storyboard_shots(_get_latest_project_storyboard_specification(campaign.name), media_specification)
+		_copy_storyboard_shots(_get_latest_project_storyboard_specification(project.name), media_specification)
 		matching = frappe.db.get_value(
 			"Shot Specification",
 			{"media_specification": media_specification.name, "shot_number": shot.shot_number},
@@ -997,9 +885,9 @@ def reorder_campaign_shot(campaign_name, shot_name, target_shot_number):
 
 
 @frappe.whitelist()
-def regenerate_campaign_shot(campaign_name, shot_name):
-	campaign = frappe.get_doc("Media Project", campaign_name)
-	campaign._require_write_access()
+def regenerate_project_shot(project_name, shot_name):
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
 	shot = frappe.get_doc("Shot Specification", shot_name)
 	jobs = frappe.get_all(
 		"Generation Job",
@@ -1046,60 +934,46 @@ def regenerate_campaign_shot(campaign_name, shot_name):
 
 
 @frappe.whitelist()
-def create_draft_campaign():
-	"""Create the minimum editable campaign/project pair and open Studio."""
+def create_draft_project():
+	"""Create the minimum editable project and open Studio."""
 	if frappe.session.user == "Guest":
-		frappe.throw(_("You must be signed in to create a Campaign."))
+		frappe.throw(_("You must be signed in to create a project."))
 	if not set(frappe.get_roles()).intersection(
 		{"JoyMedia User", "JoyMedia Specialist", "System Manager"}
 	):
-		frappe.throw(_("You do not have permission to create a Campaign."))
-
-	campaign = frappe.get_doc(
-		{
-			"doctype": "Campaign",
-			"campaign_name": "Untitled",
-			"product_name": "Untitled",
-		}
-	).insert(ignore_permissions=True)
+		frappe.throw(_("You do not have permission to create a project."))
 	project = frappe.get_doc(
 		{
 			"doctype": "Media Project",
-			"campaign": campaign.name,
 			"project_name": "Untitled",
+			"product_name": "Untitled",
 			"status": "Draft",
 		}
 	).insert(ignore_permissions=True)
 	frappe.db.commit()
-	return {"campaign": campaign.name, "project": project.name}
+	return {"project": project.name}
 
 
 @frappe.whitelist()
-def create_campaign(
+def create_project(
 	project_name,
 	product_name,
 	campaign_brief=None,
 	video_idea=None,
-	campaign_name=None,
+	reference_template=None,
 ):
 	if not set(frappe.get_roles()).intersection(
 		{"JoyMedia User", "JoyMedia Specialist", "System Manager"}
 	):
-		frappe.throw(_("You do not have permission to create a Campaign."))
-	campaign = frappe.get_doc(
-		{
-			"doctype": "Campaign",
-			"campaign_name": campaign_name or project_name,
-			"product_name": product_name,
-			"campaign_brief": campaign_brief or video_idea,
-		}
-	).insert(ignore_permissions=True)
+		frappe.throw(_("You do not have permission to create a project."))
 	project = frappe.get_doc(
 		{
 			"doctype": "Media Project",
-			"campaign": campaign.name,
 			"project_name": project_name,
+			"product_name": product_name,
+			"campaign_brief": campaign_brief or video_idea,
 			"video_idea": video_idea,
+			"reference_template": reference_template,
 		}
 	).insert(ignore_permissions=True)
 	frappe.db.commit()
@@ -1107,27 +981,6 @@ def create_campaign(
 
 
 @frappe.whitelist()
-def create_campaign_project(
-	campaign,
-	project_name,
-	video_idea=None,
-):
-	frappe.has_permission("Campaign", "write", campaign, throw=True)
-	campaign_doc = frappe.get_doc("Campaign", campaign)
-
-	project = frappe.get_doc(
-		{
-			"doctype": "Media Project",
-			"campaign": campaign_doc.name,
-			"project_name": (project_name or "").strip(),
-			"video_idea": (video_idea or "").strip(),
-			"status": "Draft",
-		}
-	).insert(ignore_permissions=True)
-	frappe.db.commit()
-	return {"project": project.name, "campaign": campaign_doc.name}
-
-
 @frappe.whitelist()
 def get_library_assets(scope=None, asset_type=None):
 	filters = {"status": "Active", "media_project": ["is", "not set"]}
@@ -1154,29 +1007,6 @@ def get_library_assets(scope=None, asset_type=None):
 
 
 @frappe.whitelist()
-def create_project(campaign, project_name, video_idea=None, reference_template=None):
-	"""Create a video deliverable under an existing Campaign."""
-	frappe.has_permission("Campaign", "read", campaign, throw=True)
-	if not set(frappe.get_roles()).intersection(
-		{"JoyMedia User", "JoyMedia Specialist", "System Manager"}
-	):
-		frappe.throw(_("You do not have permission to create a Project."))
-
-	campaign_doc = frappe.get_doc("Campaign", campaign)
-	project = frappe.get_doc(
-		{
-			"doctype": "Media Project",
-			"campaign": campaign_doc.name,
-			"project_name": project_name,
-			"video_idea": video_idea,
-			"reference_template": reference_template,
-		}
-	).insert(ignore_permissions=True)
-	frappe.db.commit()
-	return project
-
-
-@frappe.whitelist()
 def update_project_name(media_project, project_name):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_write_access()
@@ -1185,8 +1015,6 @@ def update_project_name(media_project, project_name):
 		frappe.throw(_("Project name cannot be empty."))
 	project.project_name = project_name
 	project.save(ignore_permissions=True)
-	if project.campaign:
-		frappe.db.set_value("Campaign", project.campaign, "campaign_name", project_name)
 	frappe.db.commit()
 	return {"project_name": project.project_name}
 
@@ -1212,9 +1040,6 @@ class MediaProject(Document):
 		self.status = "Draft"
 
 	def validate(self):
-		if self.campaign:
-			frappe.get_doc("Campaign", self.campaign)
-
 		self.project_name = (self.project_name or "").strip()
 
 		if not self.project_name:
@@ -1353,7 +1178,7 @@ class MediaProject(Document):
 		if not media_specification:
 			frappe.throw(_("Create Video Settings before generating a storyboard."))
 		if media_specification.status != "Draft":
-			frappe.throw(_("The current Campaign revision is not editable."))
+			frappe.throw(_("The current project revision is not editable."))
 		if not media_specification.workflow:
 			frappe.throw(_("Media Specification must have a Workflow."))
 		if not self._get_project_image_inputs():
@@ -1363,9 +1188,8 @@ class MediaProject(Document):
 			"Workflow",
 			media_specification.workflow,
 		)
-		campaign = frappe.get_doc("Campaign", self.campaign) if self.campaign else None
-		product_name = campaign.product_name if campaign else ""
-		campaign_brief = campaign.campaign_brief if campaign else ""
+		product_name = self.product_name
+		campaign_brief = self.campaign_brief
 
 		shot_count = _automatic_shot_count(media_specification, self.name)
 
@@ -1468,7 +1292,7 @@ class MediaProject(Document):
 		with filelock(f"joymedia-generate-video-{self.name}"):
 			media_specification = get_latest_media_specification(self.name)
 			if not media_specification:
-				frappe.throw(_("This Campaign has no Video Settings."))
+				frappe.throw(_("This project has no Video Settings."))
 
 			media_specification.reload()
 			existing_run = frappe.db.get_value(
@@ -1483,7 +1307,7 @@ class MediaProject(Document):
 			if existing_run:
 				return {"run": existing_run.name, "status": existing_run.status}
 			if media_specification.status != "Draft":
-				frappe.throw(_("This Campaign revision has already been submitted."))
+				frappe.throw(_("This project revision has already been submitted."))
 			if not self._get_project_image_inputs():
 				frappe.throw(_("Add at least one project image before generating a video."))
 			if not frappe.db.exists(
@@ -1526,7 +1350,7 @@ class MediaProject(Document):
 
 		media_specification = get_latest_media_specification(self.name)
 		if not media_specification:
-			frappe.throw(_("This Campaign has no Video Settings."))
+			frappe.throw(_("This project has no Video Settings."))
 
 		run_name = frappe.db.get_value(
 			"Generation Run",
@@ -1538,7 +1362,7 @@ class MediaProject(Document):
 			order_by="creation desc",
 		)
 		if not run_name:
-			frappe.throw(_("This Campaign has no failed video run to retry."))
+			frappe.throw(_("This project has no failed video run to retry."))
 
 		# Retries use the workflow attached to the current specification. This
 		# lets a repaired workflow revision recover a run created with an
@@ -1606,7 +1430,7 @@ class MediaProject(Document):
 		with filelock(f"joymedia-storyboard-revision-{self.name}"):
 			latest = get_latest_media_specification(self.name)
 			if not latest:
-				frappe.throw(_("This Campaign has no Video Settings to revise."))
+				frappe.throw(_("This project has no Video Settings to revise."))
 			if latest.status == "Draft":
 				storyboard_source = _get_latest_project_storyboard_specification(self.name)
 				if storyboard_source and storyboard_source.name != latest.name:
@@ -1625,7 +1449,7 @@ class MediaProject(Document):
 			if self.status not in ("Needs Attention", "Completed") and latest_run_status not in (
 				"Failed",
 			):
-				frappe.throw(_("Storyboard revision is not available in the current Campaign state."))
+				frappe.throw(_("Storyboard revision is not available in the current project state."))
 			workflow = latest.workflow
 			if isinstance(use_current_workflow_defaults, str):
 				use_current_workflow_defaults = frappe.parse_json(use_current_workflow_defaults)

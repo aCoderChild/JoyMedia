@@ -22,11 +22,11 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 	def test_real_customer_portal_permissions_and_tenant_isolation(self):
 		from joymedia.joymedia.doctype.media_project.media_project import (
-			create_campaign,
+			create_project,
 			generate_project_video,
-			get_campaign_cards,
-			get_campaign_workspace,
-			save_campaign_video_settings,
+			get_project_cards,
+			get_project_workspace,
+			save_project_video_settings,
 		)
 
 		original_user = frappe.session.user
@@ -34,18 +34,18 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 		try:
 			frappe.set_user(user_a)
-			campaign_a = create_campaign(
+			campaign_a = create_project(
 				project_name="Customer A Campaign",
 				product_name="Customer A Product",
 				campaign_brief="Customer A Audience",
 			)
 			self.assertIn("JoyMedia User", frappe.get_roles(user_a))
 
-			cards = get_campaign_cards()
+			cards = get_project_cards()
 			self.assertIn(campaign_a.name, [card.name for card in cards])
-			self.assertEqual(get_campaign_workspace(campaign_a.name)["campaign"]["name"], campaign_a.name)
+			self.assertEqual(get_project_workspace(campaign_a.name)["project"]["name"], campaign_a.name)
 
-			settings = save_campaign_video_settings(campaign_a.name, 5, "Landscape")
+			settings = save_project_video_settings(campaign_a.name, 5, "Landscape")
 			self.assertEqual(settings["delivery_preset"], "Landscape")
 
 			file_doc = _create_uploaded_file(user_a, "customer-a-product.png")
@@ -136,10 +136,10 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			},
 		)
 
-		from joymedia.joymedia.doctype.media_project.media_project import get_campaign_workspace
+		from joymedia.joymedia.doctype.media_project.media_project import get_project_workspace
 
-		workspace = get_campaign_workspace(campaign.name)
-		self.assertEqual(workspace["campaign"]["name"], campaign.name)
+		workspace = get_project_workspace(campaign.name)
+		self.assertEqual(workspace["project"]["name"], campaign.name)
 		self.assertEqual(workspace["video_settings"]["name"], specification.name)
 		self.assertEqual(workspace["storyboard"][0]["shot_number"], 1)
 		self.assertEqual(workspace["assets"][0]["file"], file_doc.file_url)
@@ -180,16 +180,16 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		)
 
 	def test_create_campaign_uses_campaign_brief(self):
-		from joymedia.joymedia.doctype.media_project.media_project import create_campaign
+		from joymedia.joymedia.doctype.media_project.media_project import create_project
 
-		campaign = create_campaign(
+		campaign = create_project(
 			project_name="Controlled Campaign",
 			product_name="Test Product",
 			campaign_brief="Test Campaign Brief",
 		)
 
 		self.assertTrue(frappe.db.exists("Media Project", campaign.name))
-		self.assertEqual("Test Campaign Brief", frappe.db.get_value("Campaign", campaign.campaign, "campaign_brief"))
+		self.assertEqual("Test Campaign Brief", campaign.campaign_brief)
 
 	def test_draft_storyboard_can_be_replaced_before_generation(self):
 		from joymedia.services.video_plan_service import apply_video_plan
@@ -298,20 +298,12 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 def _create_campaign(label):
 	workflow = _get_test_workflow()
-	campaign = frappe.get_doc(
-		{
-			"doctype": "Campaign",
-			"campaign_name": label,
-			"product_name": "Test Product",
-			"campaign_brief": "Test Campaign Brief",
-		}
-	).insert(ignore_permissions=True)
-
 	project = frappe.get_doc(
 		{
 			"doctype": "Media Project",
-			"campaign": campaign.name,
 			"project_name": label,
+			"product_name": "Test Product",
+			"campaign_brief": "Test Campaign Brief",
 			"status": "Draft",
 		}
 	).insert(ignore_permissions=True)

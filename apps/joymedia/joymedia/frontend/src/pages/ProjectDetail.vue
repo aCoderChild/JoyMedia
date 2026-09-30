@@ -36,10 +36,10 @@
             {{ displayProjectTitle }}
           </button>
           <span
-            v-if="workspace?.campaign?.status"
+            v-if="workspace?.project?.status"
             class="text-[10px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider bg-surface-muted border border-outline-border text-indigo-400"
           >
-            {{ workspace.campaign.status === 'Active' ? (currentLang === 'vi' ? 'Đang chạy' : 'Active') : (currentLang === 'vi' ? 'Bản nháp' : 'Draft') }}
+            {{ workspace.project.status === 'Generating' ? (currentLang === 'vi' ? 'Đang chạy' : 'Generating') : (currentLang === 'vi' ? 'Bản nháp' : 'Draft') }}
           </span>
         </div>
 
@@ -795,7 +795,7 @@ const campaign = createResource({
   auto: true,
 });
 const productionResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_campaign_production",
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_project_production",
   params: { name: projectName.value },
   auto: true,
 });
@@ -983,11 +983,11 @@ const projectAssets = computed(() => workspace.value?.assets || []);
 const hasInputAsset = computed(() => projectAssets.value.some((asset) => asset.file && asset.media_type === "Image"));
 
 const displayProjectTitle = computed(() => {
-  const pName = workspace.value?.campaign?.project_name;
+  const pName = workspace.value?.project?.project_name;
   if (pName && pName.trim() && pName.trim().toLowerCase() !== "untitled") {
     return pName.trim();
   }
-  const prodName = workspace.value?.campaign?.product_name;
+  const prodName = workspace.value?.project?.product_name;
   const dur = totalDurationSeconds.value;
   if (prodName && prodName.trim()) {
     return `${prodName.trim()} – ${dur}s Product Showcase`;
@@ -1307,7 +1307,7 @@ function isShotSelected(shot, index) {
 }
 
 function startProjectNameEdit() {
-  projectNameDraft.value = workspace.value?.campaign?.project_name || "";
+  projectNameDraft.value = workspace.value?.project?.project_name || "";
   editingProjectName.value = true;
 }
 
@@ -1319,7 +1319,7 @@ function cancelProjectNameEdit() {
 async function saveProjectName() {
   if (!editingProjectName.value) return;
   const nextName = projectNameDraft.value.trim();
-  if (!nextName || nextName === workspace.value?.campaign?.project_name) {
+  if (!nextName || nextName === workspace.value?.project?.project_name) {
     cancelProjectNameEdit();
     return;
   }
@@ -1429,8 +1429,8 @@ async function saveActiveShot() {
   if (!shot || !shot.name) return;
   savingShot.value = true;
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.update_campaign_shot", {
-      campaign_name: projectName.value,
+    await call("joymedia.joymedia.doctype.media_project.media_project.update_project_shot", {
+      project_name: projectName.value,
       shot_name: shot.name,
       values: {
         subject_identity: shot.subject_identity,
@@ -1621,8 +1621,8 @@ async function regenerateCurrentShot() {
   if (!shot || !shot.name) return;
   processingReview.value = true;
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.regenerate_campaign_shot", {
-      campaign_name: projectName.value,
+    await call("joymedia.joymedia.doctype.media_project.media_project.regenerate_project_shot", {
+      project_name: projectName.value,
       shot_name: shot.name,
     });
     toast({ title: "Đang tạo lại cảnh", text: `AI đang kết xuất lại cảnh ${shot.shot_number}.`, type: "success" });
@@ -1639,8 +1639,8 @@ async function retryFailedScenes() {
   productionSnapshot.value = null;
   productionSnapshotLoaded.value = true;
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.retry_campaign_failed_jobs", {
-      campaign_name: projectName.value,
+    await call("joymedia.joymedia.doctype.media_project.media_project.retry_project_failed_jobs", {
+      project_name: projectName.value,
     });
     toast({ title: "Đang thử lại", text: "Đang xử lý lại các cảnh chưa hoàn thành.", type: "success" });
     await refresh();
@@ -1662,8 +1662,8 @@ async function changeShotDuration(shot, delta) {
   const current = Number(estimateShotDuration(shot));
   const next = Math.max(1, Math.min(60, current + delta));
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.update_campaign_shot_timing", {
-      campaign_name: projectName.value,
+    await call("joymedia.joymedia.doctype.media_project.media_project.update_project_shot_timing", {
+      project_name: projectName.value,
       shot_name: shot.name,
       duration_seconds: next,
     });
@@ -1684,8 +1684,8 @@ async function dropShot(targetShot, targetIndex) {
   draggedShot.value = null;
   if (!dragged || dragged.index === targetIndex) return;
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.reorder_campaign_shot", {
-      campaign_name: projectName.value,
+    await call("joymedia.joymedia.doctype.media_project.media_project.reorder_project_shot", {
+      project_name: projectName.value,
       shot_name: dragged.shot.name,
       target_shot_number: targetIndex + 1,
     });
@@ -1780,7 +1780,7 @@ async function refresh() {
 }
 
 async function reloadProduction() {
-  const latest = await call("joymedia.joymedia.doctype.media_project.media_project.get_campaign_production", {
+  const latest = await call("joymedia.joymedia.doctype.media_project.media_project.get_project_production", {
     name: projectName.value,
   });
   // A null response must not erase a completed production already returned
@@ -1824,8 +1824,8 @@ async function selectMediaAsset(asset) {
   selectingMedia.value = true;
   try {
     if ((selectedTarget.value === "keyframe-start" || selectedTarget.value === "keyframe-end") && activeSelectedShot.value) {
-      await call("joymedia.joymedia.doctype.media_project.media_project.set_campaign_shot_keyframe", {
-        campaign_name: projectName.value,
+      await call("joymedia.joymedia.doctype.media_project.media_project.set_project_shot_keyframe", {
+		project_name: projectName.value,
         shot_name: activeSelectedShot.value.name,
         frame_role: selectedTarget.value === "keyframe-start" ? "first_frame" : "last_frame",
         asset_version: asset.asset_version,
@@ -1908,8 +1908,8 @@ async function removeProjectAsset(asset) {
 async function saveSettings() {
   savingSettings.value = true;
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.save_campaign_video_settings", {
-      campaign_name: projectName.value,
+    await call("joymedia.joymedia.doctype.media_project.media_project.save_project_video_settings", {
+		project_name: projectName.value,
       total_duration_seconds: settingsForm.duration,
       delivery_preset: settingsForm.format,
       video_style: settingsForm.video_style,
@@ -1991,8 +1991,8 @@ async function handleMagicGenerateClick() {
 async function createAnotherVersion() {
   revisingStoryboard.value = true;
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.revise_campaign_storyboard", {
-      campaign_name: projectName.value,
+    await call("joymedia.joymedia.doctype.media_project.media_project.revise_project_storyboard", {
+		project_name: projectName.value,
       use_current_workflow_defaults: true,
     });
     await refresh();

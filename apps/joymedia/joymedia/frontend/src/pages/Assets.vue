@@ -239,14 +239,6 @@
             >
               {{ t('asset_open_project') }}
             </Button>
-            <Button
-              v-else-if="selectedAsset.campaign"
-              appearance="subtle"
-              class="text-xs"
-              @click="openCampaign(selectedAsset.campaign)"
-            >
-              {{ t('asset_open_campaign') }}
-            </Button>
 
             <!-- Download Button -->
             <a
@@ -442,10 +434,6 @@ async function handleUploadAsset() {
 
 function openProject(projectName) {
   window.location.href = `/joymedia/projects/${encodeURIComponent(projectName)}`;
-}
-
-function openCampaign(campaignName) {
-  window.location.href = `/joymedia/campaigns/${encodeURIComponent(campaignName)}`;
 }
 
 function openCampaigns() {

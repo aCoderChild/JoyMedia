@@ -4,13 +4,14 @@
  "allow_rename": 1,
  "autoname": "PRJ-.#####",
  "creation": "2026-09-18 09:26:46.325414",
- "description": "A video deliverable under a Campaign. Media specifications, generation jobs and outputs belong to this project.",
+ "description": "A JoyMedia video project. Media specifications, generation jobs and outputs belong to this project.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "project_overview_section",
-  "campaign",
   "project_name",
+  "product_name",
+  "campaign_brief",
   "video_idea",
   "reference_template",
   "selected_media",
@@ -28,14 +29,6 @@
    "label": "Project"
   },
   {
-   "fieldname": "campaign",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Campaign",
-   "options": "Campaign",
-   "reqd": 1
-  },
-  {
    "fieldname": "project_name",
    "fieldtype": "Data",
    "in_global_search": 1,
@@ -43,6 +36,18 @@
    "in_standard_filter": 1,
    "label": "Project Name",
    "reqd": 1
+  },
+  {
+   "fieldname": "product_name",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "label": "Product Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "campaign_brief",
+   "fieldtype": "Small Text",
+   "label": "Campaign Brief"
   },
   {
    "default": "Draft",

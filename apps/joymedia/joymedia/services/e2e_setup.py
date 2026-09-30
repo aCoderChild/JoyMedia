@@ -25,16 +25,11 @@ def setup_e2e_project():
 	project_name = "E2E-STUDIO-TEST-1"
 	cleanup_e2e_project(project_name)
 
-	campaign = frappe.get_doc({
-		"doctype": "Campaign",
-		"campaign_name": "E2E Test Campaign",
-		"product_name": "E2E Headphones",
-	}).insert(ignore_permissions=True)
-
 	project = frappe.get_doc({
 		"doctype": "Media Project",
 		"project_name": "E2E Studio Project",
-		"campaign": campaign.name,
+		"product_name": "E2E Headphones",
+		"campaign_brief": "E2E product showcase",
 		"status": "Generating",
 	})
 	project.name = project_name
@@ -189,8 +184,5 @@ def cleanup_e2e_project(project_name="E2E-STUDIO-TEST-1"):
 	for a in assets:
 		frappe.db.delete("Asset Version", {"media_asset": a})
 		frappe.db.delete("Media Asset", {"name": a})
-	campaign = frappe.db.get_value("Media Project", project_name, "campaign")
 	frappe.db.delete("Media Project", {"name": project_name})
-	if campaign:
-		frappe.db.delete("Campaign", {"name": campaign})
 	frappe.db.commit()
