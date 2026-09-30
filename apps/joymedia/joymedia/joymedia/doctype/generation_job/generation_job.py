@@ -97,14 +97,21 @@ class GenerationJob(Document):
 		for row in frappe.get_all(
 			"Generation Input",
 			filters={"generation_job": self.name},
-			fields=["name", "input_role", "asset_version"],
+			fields=["name", "input_role", "asset_version", "generation_artifact"],
 		):
 			input_role = frappe.scrub(row.input_role or "")
-			if not input_role or not row.asset_version:
-				frappe.throw(_("Generation Input {0} requires an Input Role Key and Asset Version.").format(row.name))
+			if not input_role or (
+				not row.asset_version
+				and not (input_role == "first_frame" and row.generation_artifact)
+			):
+				frappe.throw(
+					_("Generation Input {0} requires an Input Role Key and an Asset Version or Generation Artifact.").format(
+						row.name
+					)
+				)
 			if input_role in snapshot:
 				frappe.throw(_("Generation Job has more than one Generation Input for role '{0}'.").format(input_role))
-			snapshot[input_role] = row.asset_version
+			snapshot[input_role] = row.asset_version or row.generation_artifact
 		return snapshot
 
 	def _validate_generation_input_snapshot(self, workflow_version):
