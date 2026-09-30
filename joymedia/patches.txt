@@ -28,3 +28,4 @@ joymedia.patches.migrate_shot_instructions
 joymedia.patches.backfill_generation_prompts
 joymedia.patches.normalize_minimax_model_profile
 joymedia.patches.remove_generation_backend
+joymedia.patches.simplify_creative_fields
