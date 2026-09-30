@@ -133,12 +133,49 @@ def create_manual_regeneration_attempt_internal(
 	return _create_successor_attempt(completed_attempt, reason)
 
 
+def _invalidate_manual_regeneration_outputs(job):
+	"""Invalidate composed outputs before a completed Job is regenerated.
+
+	A manual reroll replaces part of the effective execution lineage. The old
+	Run-level final video and project export are therefore stale even though
+	their immutable Asset Versions remain available as history.
+	"""
+	if not job.generation_run:
+		return
+
+	run = frappe.get_doc("Generation Run", job.generation_run)
+	frappe.db.set_value(
+		"Generation Run",
+		run.name,
+		{
+			"final_asset_version": None,
+			"completed_at": None,
+			"failure_class": None,
+			"error_summary": None,
+		},
+		update_modified=False,
+	)
+
+	media_project = frappe.db.get_value(
+		"Media Specification",
+		run.media_specification,
+		"media_project",
+	)
+	if media_project:
+		from joymedia.services.timeline_editor import _invalidate_project_output
+
+		_invalidate_project_output(media_project)
+
+
 def _create_successor_attempt(previous_attempt, reason):
 	job = frappe.get_doc("Generation Job", previous_attempt.generation_job)
 	if job.status not in ("Ready", "Queued", "Completed", "Failed"):
 		frappe.throw(
 			_("Generation Job {0} cannot be retried from status {1}.").format(job.name, job.status)
 		)
+
+	if reason in MANUAL_REGENERATION_REASONS:
+		_invalidate_manual_regeneration_outputs(job)
 
 	job.status = "Queued"
 	job.queued_at = now()

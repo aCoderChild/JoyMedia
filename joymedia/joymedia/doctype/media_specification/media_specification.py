@@ -30,8 +30,22 @@ class MediaSpecification(Document):
 		"Portrait": (768, 1344),
 		"Square": (1024, 1024),
 	}
+	REVISION_FIELDS: ClassVar[tuple[str, ...]] = (
+		"workflow",
+		"video_style",
+		"continuity_mode",
+		"total_duration_seconds",
+		"delivery_preset",
+		"delivery_width",
+		"delivery_height",
+		"generation_instructions",
+		"global_consistency_instructions",
+	)
 
 	def validate(self):
+		if self.is_new():
+			self._inherit_revision_state()
+
 		self.continuity_mode = {
 			"Independent": "Multi-shot",
 			"Chained": "Continuous",
@@ -52,6 +66,63 @@ class MediaSpecification(Document):
 			or self.delivery_height <= 0
 		):
 			frappe.throw("Custom delivery presets require a positive width and height")
+
+	def _inherit_revision_state(self):
+		"""Carry stable production context into a newly created specification revision.
+
+		Storyboard revisions are created before copied Shot Specifications are edited.
+		They must preserve the previous generation mode, audio mix and planning snapshot
+		so a later Generate action does not mistake those copied/edited shots for a
+		stale Qwen plan and replace them with another automatic revision.
+		"""
+		if not self.media_project or int(self.version_number or 0) <= 1:
+			return
+
+		previous_rows = frappe.get_all(
+			"Media Specification",
+			filters={
+				"media_project": self.media_project,
+				"version_number": ["<", self.version_number],
+			},
+			fields=["name"],
+			order_by="version_number desc, creation desc",
+			limit_page_length=1,
+		)
+		if not previous_rows:
+			return
+
+		previous = frappe.get_doc("Media Specification", previous_rows[0].name)
+
+		for fieldname in self.REVISION_FIELDS:
+			current_value = self.get(fieldname)
+			previous_value = previous.get(fieldname)
+			if fieldname == "continuity_mode":
+				# A new DocType receives the metadata default ("Multi-shot") even when
+				# the caller omitted the field, so inherit the previous mode explicitly.
+				if previous_value:
+					self.set(fieldname, previous_value)
+			elif current_value in (None, "", 0) and previous_value not in (None, ""):
+				self.set(fieldname, previous_value)
+
+		if not self.planning_context_hash:
+			self.planning_context_hash = previous.planning_context_hash
+			self.planning_context_json = previous.planning_context_json
+
+		if not (self.get("audio_cues") or []):
+			for row in previous.get("audio_cues") or []:
+				self.append(
+					"audio_cues",
+					{
+						"role": row.role,
+						"asset_version": row.asset_version,
+						"start_seconds": row.start_seconds,
+						"end_seconds": row.end_seconds,
+						"gain_db": row.gain_db,
+						"fade_in_seconds": row.fade_in_seconds,
+						"fade_out_seconds": row.fade_out_seconds,
+						"duck_others": row.duck_others,
+					},
+				)
 
 	def _resolve_generation_setup(self):
 		if self.workflow:
@@ -76,8 +147,6 @@ class MediaSpecification(Document):
 		from joymedia.services.workflow_resolver import validate_workflow_bindings
 
 		validate_workflow_bindings(workflow_version)
-
-
 
 	def on_update(self):
 		if self.has_value_changed("total_duration_seconds"):

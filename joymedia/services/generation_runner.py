@@ -161,6 +161,15 @@ def submit_attempt(attempt_name: str):
 			)
 
 		job = frappe.get_doc("Generation Job", attempt.generation_job)
+		if job.depends_on_job and not attach_chained_first_frame(job):
+			# Manual rerolls can create the whole downstream Attempt chain in one
+			# transaction. A dependent Attempt must remain Pending until the newly
+			# effective upstream Attempt has completed and produced its Last Frame.
+			return {
+				"deferred": True,
+				"dependency": job.depends_on_job,
+			}
+
 		_autosave_prompt_snapshot(job)
 		ensure_generation_inputs(job)
 		job.reload()
