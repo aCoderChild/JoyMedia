@@ -28,13 +28,32 @@ def detect_media_type(file_doc):
 	return "Other"
 
 
-def _get_duplicate_version(content_hash, version_name):
-	return frappe.db.get_value(
-		"Asset Version",
-		{"content_hash": content_hash, "name": ["!=", version_name]},
-		["name", "media_asset"],
+def _get_duplicate_version(
+	content_hash,
+	version_name,
+	media_type,
+	asset_category,
+):
+	rows = frappe.db.sql(
+		"""
+		SELECT
+			av.name,
+			av.media_asset
+		FROM `tabAsset Version` av
+		INNER JOIN `tabMedia Asset` ma
+			ON ma.name = av.media_asset
+		WHERE
+			av.content_hash = %s
+			AND av.name != %s
+			AND ma.media_type = %s
+			AND ma.asset_category = %s
+			AND ma.status = 'Active'
+		LIMIT 1
+		""",
+		(content_hash, version_name, media_type, asset_category),
 		as_dict=True,
 	)
+	return rows[0] if rows else None
 
 
 @frappe.whitelist()
@@ -47,12 +66,13 @@ def create_media_asset(asset_name, asset_category, file_url):
 	file_doc = frappe.get_doc("File", {"file_url": file_url})
 	if file_doc.owner != frappe.session.user and frappe.session.user != "Administrator":
 		frappe.throw(_("You can only attach files uploaded by your account."))
+	media_type = detect_media_type(file_doc)
 
 	asset = frappe.get_doc(
 		{
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
-			"media_type": detect_media_type(file_doc),
+			"media_type": media_type,
 			"asset_category": asset_category,
 			"status": "Active",
 		}
@@ -66,7 +86,12 @@ def create_media_asset(asset_name, asset_category, file_url):
 		}
 	).insert(ignore_permissions=True)
 
-	duplicate = _get_duplicate_version(version.content_hash, version.name)
+	duplicate = _get_duplicate_version(
+		version.content_hash,
+		version.name,
+		media_type,
+		asset_category,
+	)
 	if duplicate:
 		frappe.delete_doc("Asset Version", version.name, force=True, ignore_permissions=True)
 		frappe.delete_doc("Media Asset", asset.name, force=True, ignore_permissions=True)

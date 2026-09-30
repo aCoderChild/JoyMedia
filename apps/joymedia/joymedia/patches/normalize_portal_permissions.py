@@ -2,7 +2,7 @@ import frappe
 
 
 def execute():
-	for doctype in ("Client Organization", "Media Project", "Media Asset"):
+	for doctype in ("Media Project", "Media Asset"):
 		for permission in frappe.get_all(
 			"Custom DocPerm",
 			filters={"parent": doctype, "role": "JoyMedia User"},

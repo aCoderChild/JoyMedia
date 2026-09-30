@@ -9,10 +9,7 @@ def get_signup_template():
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=10, seconds=60 * 60, methods="POST")
-def register_with_organization(email, full_name, organization_name, password=None, redirect_to=None):
-	organization_name = (organization_name or "").strip()
-	if not organization_name:
-		frappe.throw(_("Business / Organization name is required."))
+def register_user(email, full_name, password=None, redirect_to=None):
 	password = password or ""
 	if len(password) < 8:
 		frappe.throw(_("Password must be at least 8 characters long."))
@@ -37,36 +34,15 @@ def register_with_organization(email, full_name, organization_name, password=Non
 	update_password(user_name, password)
 	user.db_set("reset_password_key", None, update_modified=False)
 
-	# A matching display name is not proof that a signup belongs to an
-	# existing organization. Public signup must never grant access to another
-	# customer's organization; joining an existing organization needs an
-	# invitation flow instead.
-	organization = frappe.get_doc(
-		{
-			"doctype": "Client Organization",
-			"organization_name": organization_name,
-		}
-	).insert(ignore_permissions=True)
-
 	if not any(role.role == "JoyMedia User" for role in user.roles):
 		user.append("roles", {"role": "JoyMedia User"})
 		user.save(ignore_permissions=True)
 
-	frappe.get_doc(
-		{
-			"doctype": "User Permission",
-			"user": user_name,
-			"allow": "Client Organization",
-			"for_value": organization.name,
-			"is_default": 1,
-		}
-	).insert(ignore_permissions=True)
 	frappe.db.commit()
 	frappe.local.login_manager.login_as(user_name)
 
 	return {
 		"status": 1,
 		"message": _("Account created."),
-		"organization": organization.name,
 		"redirect_url": "/joymedia/campaigns",
 	}

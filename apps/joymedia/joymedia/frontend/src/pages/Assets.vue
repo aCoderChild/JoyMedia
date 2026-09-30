@@ -431,7 +431,7 @@ async function handleUploadAsset() {
       file_url: uploaded.file_url,
     });
 
-    toast({ title: "Đã tải lên tư liệu", text: "Đã thêm vào thư viện của tổ chức.", type: "success" });
+    toast({ title: "Đã tải lên tư liệu", text: "Đã thêm vào thư viện Media.", type: "success" });
     showUploadModal.value = false;
     selectedFile.value = null;
     await assetsResource.reload();

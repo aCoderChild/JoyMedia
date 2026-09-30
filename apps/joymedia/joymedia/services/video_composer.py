@@ -81,6 +81,7 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 			{
 				"doctype": "Media Asset",
 				"asset_name": asset_name,
+				"media_project": media_specification.media_project,
 				"media_type": "Video",
 				"asset_category": "Other",
 				"status": "Active",
@@ -607,7 +608,11 @@ def _frame_rate(value):
 
 def _get_or_create_final_asset(media_specification):
 	asset_name = f"{media_specification.name} Final Video"
-	asset_id = frappe.db.get_value("Media Asset", {"asset_name": asset_name}, "name")
+	asset_id = frappe.db.get_value(
+		"Media Asset",
+		{"asset_name": asset_name, "media_project": media_specification.media_project},
+		"name",
+	)
 	if asset_id:
 		return frappe.get_doc("Media Asset", asset_id)
 
@@ -615,6 +620,7 @@ def _get_or_create_final_asset(media_specification):
 		{
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
+			"media_project": media_specification.media_project,
 			"media_type": "Video",
 			"asset_category": "Other",
 			"status": "Active",

@@ -101,7 +101,11 @@ def promote_artifact(artifact_name: str, *, require_approved_review: bool = Fals
 
 def _get_or_create_shot_output_asset(shot_name, media_project):
 	asset_name = f"{shot_name} Generated Video"
-	media_asset_name = frappe.db.get_value("Media Asset", {"asset_name": asset_name}, "name")
+	media_asset_name = frappe.db.get_value(
+		"Media Asset",
+		{"asset_name": asset_name, "media_project": media_project},
+		"name",
+	)
 	if media_asset_name:
 		return frappe.get_doc("Media Asset", media_asset_name)
 
@@ -109,6 +113,7 @@ def _get_or_create_shot_output_asset(shot_name, media_project):
 		{
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
+			"media_project": media_project,
 			"media_type": "Video",
 			"asset_category": "Other",
 			"status": "Active",

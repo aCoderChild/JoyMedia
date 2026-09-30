@@ -24,10 +24,7 @@ SHOT_REFERENCE_CATEGORIES = INPUT_ASSET_CATEGORIES
 
 
 def _asset_scope_filters():
-	filters = {"status": "Active"}
-	if frappe.session.user not in ("Administrator", "Guest") and "System Manager" not in frappe.get_roles():
-		filters["owner"] = frappe.session.user
-	return filters
+	return {"status": "Active"}
 
 
 def _normalize_generation_mode(value):
@@ -1049,66 +1046,6 @@ def regenerate_campaign_shot(campaign_name, shot_name):
 
 
 @frappe.whitelist()
-def get_businesses():
-	return frappe.get_list(
-		"Client Organization",
-		fields=["name", "organization_name", "industry"],
-		order_by="organization_name asc",
-		limit_page_length=100,
-	)
-
-
-def create_business(organization_name, industry=None):
-	if frappe.session.user == "Guest":
-		frappe.throw(_("You must be signed in to create a business."))
-	organization_name = (organization_name or "").strip()
-	if not organization_name:
-		frappe.throw(_("Business name is required."))
-
-	# A previous organization cleanup can leave User Permission rows pointing to
-	# deleted Client Organization records. Remove those stale rows and clear any
-	# existing default before assigning the newly created business as default.
-	for permission in frappe.get_all(
-		"User Permission",
-		filters={"user": frappe.session.user, "allow": "Client Organization"},
-		fields=["name", "for_value"],
-	):
-		if not frappe.db.exists("Client Organization", permission.for_value):
-			frappe.delete_doc("User Permission", permission.name, ignore_permissions=True, force=True)
-		else:
-			frappe.db.set_value("User Permission", permission.name, "is_default", 0, update_modified=False)
-
-	organization = frappe.get_doc(
-		{
-			"doctype": "Client Organization",
-			"organization_name": organization_name,
-			"industry": (industry or "").strip(),
-		}
-	).insert(ignore_permissions=True)
-
-	user = frappe.get_doc("User", frappe.session.user)
-	if not any(role.role == "JoyMedia User" for role in user.roles):
-		user.append("roles", {"role": "JoyMedia User"})
-		user.save(ignore_permissions=True)
-
-	if not frappe.db.exists(
-		"User Permission",
-		{"user": frappe.session.user, "allow": "Client Organization", "for_value": organization.name},
-	):
-		frappe.get_doc(
-			{
-				"doctype": "User Permission",
-				"user": frappe.session.user,
-				"allow": "Client Organization",
-				"for_value": organization.name,
-				"is_default": 1,
-			}
-		).insert(ignore_permissions=True)
-	frappe.db.commit()
-	return organization
-
-
-@frappe.whitelist()
 def create_draft_campaign():
 	"""Create the minimum editable campaign/project pair and open Studio."""
 	if frappe.session.user == "Guest":
@@ -1117,10 +1054,6 @@ def create_draft_campaign():
 		{"JoyMedia User", "JoyMedia Specialist", "System Manager"}
 	):
 		frappe.throw(_("You do not have permission to create a Campaign."))
-
-	organizations = get_businesses()
-	if not organizations:
-		frappe.throw(_("Your account is not linked to a Business / Organization."))
 
 	campaign = frappe.get_doc(
 		{

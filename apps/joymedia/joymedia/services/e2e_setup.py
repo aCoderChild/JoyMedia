@@ -25,25 +25,16 @@ def setup_e2e_project():
 	project_name = "E2E-STUDIO-TEST-1"
 	cleanup_e2e_project(project_name)
 
-	org = frappe.db.get_value("Client Organization", {}, "name")
-	if not org:
-		org = frappe.get_doc({
-			"doctype": "Client Organization",
-			"organization_name": "E2E Test Org",
-		}).insert(ignore_permissions=True).name
-
 	campaign = frappe.get_doc({
 		"doctype": "Campaign",
 		"campaign_name": "E2E Test Campaign",
 		"product_name": "E2E Headphones",
-		"client_organization": org,
 	}).insert(ignore_permissions=True)
 
 	project = frappe.get_doc({
 		"doctype": "Media Project",
 		"project_name": "E2E Studio Project",
 		"campaign": campaign.name,
-		"client_organization": org,
 		"status": "Generating",
 	})
 	project.name = project_name
@@ -53,7 +44,6 @@ def setup_e2e_project():
 	asset = frappe.get_doc({
 		"doctype": "Media Asset",
 		"asset_name": "E2E Asset",
-		"client_organization": org,
 		"media_project": project.name,
 		"media_type": "Video",
 		"is_output": 1,
@@ -130,7 +120,6 @@ def create_spec_v2(project_name):
 		asset = frappe.get_doc({
 			"doctype": "Media Asset",
 			"asset_name": "E2E Asset V2",
-			"client_organization": project.client_organization,
 			"media_project": project.name,
 			"media_type": "Video",
 			"is_output": 1,

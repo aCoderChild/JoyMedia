@@ -1,6 +1,8 @@
 # Copyright (c) 2026, JoyMedia and Contributors
 # See license.txt
 
+import base64
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -14,18 +16,56 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 class IntegrationTestAssetVersion(IntegrationTestCase):
-	def test_versions_are_numbered_per_media_asset(self):
-		organization = frappe.get_doc(
+	def test_duplicate_uploads_respect_asset_category(self):
+		from joymedia.services.media_asset_service import create_media_asset
+		image_bytes = base64.b64decode(
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+		)
+
+		file_a = frappe.get_doc(
 			{
-				"doctype": "Client Organization",
-				"organization_name": "Asset Version Numbering Test",
+				"doctype": "File",
+				"file_name": "duplicate-category-a.png",
+				"content": image_bytes,
+				"is_private": 1,
+				"owner": frappe.session.user,
 			}
-		).insert()
+		).insert(ignore_permissions=True)
+		first = create_media_asset("Duplicate Category A", "Brand", file_a.file_url)
+
+		file_b = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "duplicate-category-b.png",
+				"content": image_bytes,
+				"is_private": 1,
+				"owner": frappe.session.user,
+			}
+		).insert(ignore_permissions=True)
+		same_category = create_media_asset("Duplicate Category B", "Brand", file_b.file_url)
+
+		file_c = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "duplicate-category-c.png",
+				"content": image_bytes,
+				"is_private": 1,
+				"owner": frappe.session.user,
+			}
+		).insert(ignore_permissions=True)
+		different_category = create_media_asset("Duplicate Category C", "Reference", file_c.file_url)
+
+		self.assertFalse(first["reused"])
+		self.assertTrue(same_category["reused"])
+		self.assertEqual(same_category["media_asset"], first["media_asset"])
+		self.assertFalse(different_category["reused"])
+		self.assertNotEqual(different_category["media_asset"], first["media_asset"])
+
+	def test_versions_are_numbered_per_media_asset(self):
 		asset = frappe.get_doc(
 			{
 				"doctype": "Media Asset",
 				"asset_name": "Asset Version Numbering Test",
-				"client_organization": organization.name,
 				"media_type": "Document",
 				"asset_category": "Other",
 			}

@@ -11,7 +11,7 @@
           {{ t('campaigns_page_title') }}
         </h1>
         <p class="subtitle text-sm text-ink-secondary mt-1">
-          {{ currentOrganizationName ? t('welcome_onboarding_subtitle', { org: currentOrganizationName }) : t('campaigns_page_subtitle') }}
+          {{ t('campaigns_page_subtitle') }}
         </p>
       </div>
 
@@ -374,18 +374,6 @@ const libraryAssets = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_library_assets",
   params: { asset_type: "All" },
   auto: true,
-});
-
-const businesses = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_businesses",
-  auto: true,
-});
-
-const currentOrganizationName = computed(() => {
-  if (businesses.data && businesses.data.length > 0) {
-    return businesses.data[0].organization_name || businesses.data[0].name;
-  }
-  return "";
 });
 
 const allCampaigns = computed(() => campaigns.data || []);

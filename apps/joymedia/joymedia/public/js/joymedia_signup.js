@@ -10,11 +10,6 @@
 		var submitHandler = function (event) {
 			event.preventDefault();
 			event.stopImmediatePropagation();
-			var organization = ($("#signup_organization").val() || "").trim();
-			if (!organization) {
-				login.show_field_error("signup_organization", "Business / Organization is required.");
-				return false;
-			}
 			var password = $("#signup_password").val() || "";
 			var passwordConfirm = $("#signup_password_confirm").val() || "";
 			if (password.length < 8) {
@@ -27,10 +22,9 @@
 			}
 
 			var args = {
-				cmd: "joymedia.registration.register_with_organization",
+				cmd: "joymedia.registration.register_user",
 				email: ($("#signup_email").val() || "").trim(),
 				full_name: frappe.utils.xss_sanitise(($(`#signup_fullname`).val() || "").trim()),
-				organization_name: organization,
 				password: password,
 				redirect_to: frappe.utils.sanitise_redirect(frappe.utils.get_url_arg("redirect-to")),
 			};
@@ -45,12 +39,11 @@
 			var body = new URLSearchParams({
 				email: args.email,
 				full_name: args.full_name,
-				organization_name: args.organization_name,
 				password: args.password,
 				redirect_to: args.redirect_to || "",
 			});
 
-			window.fetch("/api/method/joymedia.registration.register_with_organization", {
+			window.fetch("/api/method/joymedia.registration.register_user", {
 				method: "POST",
 				credentials: "same-origin",
 				headers: {

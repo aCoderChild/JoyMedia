@@ -558,13 +558,13 @@
       @magic-generate="handleMagicGenerateClick"
     />
 
-    <!-- Organization media picker for this project -->
+    <!-- Global media library picker for this project -->
     <div v-if="showMediaPicker" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs" @click.self="showMediaPicker = false">
       <div class="w-full max-w-3xl max-h-[80vh] overflow-hidden bg-surface-card border border-outline-border rounded-2xl shadow-2xl flex flex-col">
         <div class="flex items-center justify-between p-4 border-b border-outline-border">
           <div>
             <h3 class="text-sm font-bold text-ink-primary">{{ currentLang === 'vi' ? 'Thêm tư liệu' : 'Add Media' }}</h3>
-            <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Chọn tư liệu từ thư viện của tổ chức.' : 'Choose media from your organization library.' }}</p>
+            <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Chọn tư liệu từ thư viện Media.' : 'Choose media from the Media Library.' }}</p>
           </div>
           <button type="button" class="text-ink-muted hover:text-ink-primary p-1 cursor-pointer" @click="showMediaPicker = false">✕</button>
         </div>

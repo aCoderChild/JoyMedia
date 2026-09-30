@@ -10,6 +10,7 @@
   "asset_name",
   "media_type",
   "asset_category",
+  "media_project",
   "status"
  ],
  "fields": [
@@ -46,6 +47,14 @@
    "label": "Asset Category",
    "options": "Product\nCharacter\nBackground\nBrand\nStoryboard\nReference\nShot Output\nFinal Deliverable\nAudio\nOther",
    "reqd": 1
+  },
+  {
+   "description": "Project that owns a generated output. Uploaded library assets leave this empty.",
+   "fieldname": "media_project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Media Project",
+   "options": "Media Project"
   },
   {
    "default": "Active",
