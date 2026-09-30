@@ -20,6 +20,7 @@ class MediaSpecification(Document):
 		"delivery_width",
 		"delivery_height",
 		"continuity_mode",
+		"global_consistency_instructions",
 		"planning_context_json",
 		"planning_context_hash",
 	)
@@ -36,7 +37,17 @@ class MediaSpecification(Document):
 		"delivery_preset",
 		"delivery_width",
 		"delivery_height",
+		"global_consistency_instructions",
 	)
+
+	@property
+	def generation_instructions(self):
+		"""Compatibility alias for code created before the prompt model was simplified."""
+		return self.get("global_consistency_instructions")
+
+	@generation_instructions.setter
+	def generation_instructions(self, value):
+		self.set("global_consistency_instructions", value)
 
 	def validate(self):
 		if self.is_new():
@@ -176,7 +187,6 @@ class MediaSpecification(Document):
 					_("Execution contract field {0} cannot change after Generation Jobs or Runs exist.").format(
 						fieldname
 					)
-				)
 
 	def _execution_has_started(self):
 		if frappe.db.exists("Generation Run", {"media_specification": self.name}):
