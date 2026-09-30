@@ -103,6 +103,8 @@ def validate_workflow_for_execution(workflow_version, workflow=None):
 			).format(workflow_version.name, ", ".join(invalid_nodes))
 		)
 
+	_validate_node_references(workflow)
+
 	video_combine_errors = []
 	video_combine_required_inputs = {
 		"images",
@@ -133,6 +135,30 @@ def validate_workflow_for_execution(workflow_version, workflow=None):
 		)
 
 	return workflow
+
+
+def _validate_node_references(workflow):
+	missing_references = []
+	for node_key, node in workflow.items():
+		if not isinstance(node, dict):
+			continue
+		for input_name, value in (node.get("inputs") or {}).items():
+			if (
+				isinstance(value, list)
+				and len(value) == 2
+				and isinstance(value[0], (str, int))
+				and isinstance(value[1], int)
+			):
+				source_node = str(value[0])
+				if source_node not in workflow:
+					missing_references.append(f"{node_key}.{input_name} -> {source_node}")
+
+	if missing_references:
+		frappe.throw(
+			_("Workflow contains references to missing nodes: {0}").format(
+				", ".join(missing_references)
+			)
+		)
 
 
 def _validate_workflow_bindings(workflow_version, workflow):

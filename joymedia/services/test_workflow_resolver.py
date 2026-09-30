@@ -123,6 +123,25 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertIn("filename_prefix", message)
 		self.assertIn("images", message)
 
+	def test_execution_validation_rejects_reference_to_missing_node(self):
+		workflow_version = frappe._dict(
+			name="WFV-00007",
+			workflow_json=(
+				'{"save_video":{"class_type":"VHS_VideoCombine",'
+				'"inputs":{"images":["dec_video",0],"frame_rate":24,'
+				'"loop_count":0,"filename_prefix":"JoyMedia",'
+				'"format":"video/h264-mp4","pingpong":false,'
+				'"save_output":true}}}'
+			),
+		)
+
+		with self.assertRaises(frappe.ValidationError) as context:
+			validate_workflow_for_execution(workflow_version)
+
+		message = str(context.exception)
+		self.assertIn("save_video.images", message)
+		self.assertIn("dec_video", message)
+
 	@patch("joymedia.services.workflow_resolver.frappe.get_doc")
 	def test_runtime_delivery_dimensions_come_from_media_specification(self, get_doc):
 		get_doc.side_effect = [
