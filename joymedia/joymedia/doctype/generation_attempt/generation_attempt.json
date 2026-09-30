@@ -11,7 +11,6 @@
   "attempt_number",
   "status",
   "execution_section",
-  "generation_backend",
   "seed",
   "comfyui_endpoint_url",
   "external_job_id",
@@ -61,13 +60,6 @@
    "label": "Execution"
   },
   {
-   "fieldname": "generation_backend",
-   "fieldtype": "Link",
-   "label": "Generation Backend",
-   "options": "Generation Backend",
-   "read_only": 1
-  },
-  {
    "fieldname": "seed",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -76,17 +68,17 @@
    "reqd": 1
   },
   {
-   "description": "ComfyUI endpoint used when this attempt was submitted. Kept as an execution snapshot for result synchronization.",
+   "description": "ComfyUI endpoint used when this attempt was submitted. Kept as an immutable execution snapshot.",
    "fieldname": "comfyui_endpoint_url",
    "fieldtype": "Data",
    "label": "ComfyUI Endpoint URL",
    "read_only": 1
   },
   {
-   "description": "Identifier returned by the external execution backend for this attempt.",
+   "description": "Prompt identifier returned by ComfyUI for this attempt.",
    "fieldname": "external_job_id",
    "fieldtype": "Data",
-   "label": "External Job ID",
+   "label": "ComfyUI Prompt ID",
    "read_only": 1
   },
   {
