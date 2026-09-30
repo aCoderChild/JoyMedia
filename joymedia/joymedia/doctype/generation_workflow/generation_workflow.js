@@ -16,18 +16,10 @@ frappe.ui.form.on("Generation Workflow", {
 			__("Generation Workflow")
 		);
 		frm.add_custom_button(
-			__("Clone as Draft"),
-			() => clone_as_draft(frm),
+			__("Clone Revision"),
+			() => clone_revision(frm),
 			__("Generation Workflow")
 		);
-
-		if (["Testing", "Production"].includes(frm.doc.status)) {
-			frm.add_custom_button(
-				__("Set as Default"),
-				() => set_as_default(frm),
-				__("Generation Workflow")
-			);
-		}
 	},
 });
 
@@ -64,7 +56,7 @@ function inspect_nodes(frm) {
 			title: __("Workflow Nodes"),
 			wide: true,
 			message: `
-				<p>${__("Use these exact node keys and input names in Dynamic Bindings.")}</p>
+				<p>${__("Use these exact node keys and input names in Bindings.")}</p>
 				<div style="max-height: 60vh; overflow: auto;">
 					<table class="table table-bordered">
 						<thead><tr><th>${__("Node Key")}</th><th>${__("Title")}</th><th>${__("Class")}</th><th>${__("Inputs")}</th></tr></thead>
@@ -75,29 +67,18 @@ function inspect_nodes(frm) {
 	});
 }
 
-function clone_as_draft(frm) {
+function clone_revision(frm) {
 	frappe.confirm(
-		__("Create an editable Draft copy of this Workflow?"),
+		__("Create a new editable revision of this workflow?"),
 		() => {
 			frappe.call({
 				method: "joymedia.joymedia.doctype.generation_workflow.generation_workflow.clone_workflow_as_draft",
 				args: { version_name: frm.doc.name },
 				freeze: true,
-				freeze_message: __("Creating draft workflow..."),
+				freeze_message: __("Creating workflow revision..."),
 			}).then((response) => {
 				frappe.set_route("Form", "Generation Workflow", response.message.name);
 			});
 		}
 	);
-}
-
-function set_as_default(frm) {
-	frappe.call({
-		method: "joymedia.joymedia.doctype.generation_workflow.generation_workflow.set_default_workflow",
-		args: { version_name: frm.doc.name },
-		freeze: true,
-		freeze_message: __("Validating and updating default workflow..."),
-	}).then(() => {
-		frappe.show_alert({ message: __("Default Workflow updated."), indicator: "green" });
-	});
 }
