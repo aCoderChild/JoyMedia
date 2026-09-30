@@ -9,7 +9,7 @@
   "version_identity_section",
   "workflow_key",
   "version_number",
-  "ai_model_profile",
+  "adapter_key",
   "workflow_definition_section",
   "workflow_json",
   "workflow_hash",
@@ -47,15 +47,16 @@
    "reqd": 1
   },
   {
-   "description": "Production model configuration used by this workflow revision.",
-   "fieldname": "ai_model_profile",
-   "fieldtype": "Link",
-   "label": "AI Model Profile",
-   "options": "AI Model Profile",
-   "read_only_depends_on": "eval:!doc.__islocal;"
+   "default": "minimax_h3",
+   "description": "Backend adapter that knows how to bind JoyMedia inputs to this ComfyUI workflow family.",
+   "fieldname": "adapter_key",
+   "fieldtype": "Data",
+   "label": "Adapter Key",
+   "read_only_depends_on": "eval:!doc.__islocal;",
+   "reqd": 1
   },
   {
-   "description": "Paste the entire JSON workflow you uploaded into this field",
+   "description": "Immutable ComfyUI API-format workflow JSON.",
    "fieldname": "workflow_definition_section",
    "fieldtype": "Section Break",
    "label": "Workflow Definition"
@@ -66,6 +67,12 @@
    "label": "Workflow JSON",
    "options": "JSON",
    "reqd": 1
+  },
+  {
+   "fieldname": "workflow_hash",
+   "fieldtype": "Data",
+   "label": "Workflow Hash",
+   "read_only": 1
   },
   {
    "fieldname": "execution_characteristics_section",
@@ -100,15 +107,9 @@
    "read_only": 1
   },
   {
-   "fieldname": "workflow_hash",
-   "fieldtype": "Data",
-   "label": "Workflow Hash",
-   "read_only": 1
-  },
-  {
    "fieldname": "dynamic_bindings_section",
    "fieldtype": "Section Break",
-   "label": "Dynamic Bindings"
+   "label": "Input / Output Bindings"
   },
   {
    "fieldname": "bindings",
@@ -120,7 +121,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-20 18:10:35.933520",
+ "modified": "2026-10-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Workflow",
