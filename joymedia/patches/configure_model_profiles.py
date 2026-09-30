@@ -22,16 +22,3 @@ def execute():
 			frappe.db.set_value(
 				"Generation Workflow", workflow_name, "ai_model_profile", profile, update_modified=False
 			)
-
-	endpoint_url = frappe.conf.get("comfyui_base_url")
-	if endpoint_url and not frappe.db.exists("Generation Backend", {"endpoint_url": endpoint_url}):
-		frappe.get_doc(
-			{
-				"doctype": "Generation Backend",
-				"backend_name": "Default ComfyUI",
-				"backend_type": "ComfyUI",
-				"endpoint_url": endpoint_url,
-				"enabled": 1,
-				"status": "Unknown",
-			}
-		).insert(ignore_permissions=True)
