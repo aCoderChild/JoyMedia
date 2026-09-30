@@ -26,5 +26,5 @@ joymedia.patches.configure_model_profiles
 joymedia.patches.migrate_asset_scope
 joymedia.patches.migrate_shot_instructions
 joymedia.patches.backfill_generation_prompts
-joymedia.patches.ensure_default_generation_backend
 joymedia.patches.normalize_minimax_model_profile
+joymedia.patches.remove_generation_backend
