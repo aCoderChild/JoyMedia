@@ -49,12 +49,13 @@
    "reqd": 1
   },
   {
-   "description": "Project that owns a generated output. Uploaded library assets leave this empty.",
-   "fieldname": "media_project",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Media Project",
-   "options": "Media Project"
+    "description": "Project that owns a generated output. Uploaded library assets leave this empty.",
+    "fieldname": "media_project",
+    "fieldtype": "Link",
+    "label": "Media Project",
+    "options": "Media Project",
+    "read_only": 1,
+    "hidden": 1
   },
   {
    "default": "Active",

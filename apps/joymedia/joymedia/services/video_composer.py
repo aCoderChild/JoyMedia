@@ -83,7 +83,7 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 				"asset_name": asset_name,
 				"media_project": media_specification.media_project,
 				"media_type": "Video",
-				"asset_category": "Other",
+				"asset_category": "Shot Output",
 				"status": "Active",
 			}
 		).insert(ignore_permissions=True)
@@ -622,7 +622,7 @@ def _get_or_create_final_asset(media_specification):
 			"asset_name": asset_name,
 			"media_project": media_specification.media_project,
 			"media_type": "Video",
-			"asset_category": "Other",
+			"asset_category": "Final Deliverable",
 			"status": "Active",
 		}
 	)

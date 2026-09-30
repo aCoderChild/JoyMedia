@@ -115,7 +115,7 @@ def _get_or_create_shot_output_asset(shot_name, media_project):
 			"asset_name": asset_name,
 			"media_project": media_project,
 			"media_type": "Video",
-			"asset_category": "Other",
+			"asset_category": "Shot Output",
 			"status": "Active",
 		}
 	)

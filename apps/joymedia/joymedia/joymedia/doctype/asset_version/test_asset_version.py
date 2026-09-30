@@ -1,9 +1,10 @@
 # Copyright (c) 2026, JoyMedia and Contributors
 # See license.txt
 
-import base64
+from io import BytesIO
 
 import frappe
+from PIL import Image
 from frappe.tests import IntegrationTestCase
 
 
@@ -18,9 +19,10 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 class IntegrationTestAssetVersion(IntegrationTestCase):
 	def test_duplicate_uploads_respect_asset_category(self):
 		from joymedia.services.media_asset_service import create_media_asset
-		image_bytes = base64.b64decode(
-			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-		)
+		image_buffer = BytesIO()
+		color = tuple(int(frappe.generate_hash(length=6)[index : index + 2], 16) for index in (0, 2, 4))
+		Image.new("RGB", (1, 1), color=color).save(image_buffer, format="PNG")
+		image_bytes = image_buffer.getvalue()
 
 		file_a = frappe.get_doc(
 			{
