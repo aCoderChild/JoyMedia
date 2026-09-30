@@ -11,6 +11,7 @@
   "attempt_number",
   "status",
   "execution_section",
+  "generation_backend",
   "seed",
   "comfyui_endpoint_url",
   "external_job_id",
@@ -57,6 +58,13 @@
    "fieldname": "execution_section",
    "fieldtype": "Section Break",
    "label": "Execution"
+  },
+  {
+   "fieldname": "generation_backend",
+   "fieldtype": "Link",
+   "label": "Generation Backend",
+   "options": "Generation Backend",
+   "read_only": 1
   },
   {
    "fieldname": "seed",

@@ -1,0 +1,22 @@
+{
+ "actions": [],
+ "autoname": "field:backend_name",
+ "creation": "2026-09-30 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["backend_name", "backend_type", "endpoint_url", "enabled", "status", "gpu_name", "vram_gb", "last_health_check", "notes"],
+ "fields": [
+  {"fieldname":"backend_name","fieldtype":"Data","label":"Backend Name","reqd":1},
+  {"default":"ComfyUI","fieldname":"backend_type","fieldtype":"Select","label":"Backend Type","options":"ComfyUI","reqd":1},
+  {"fieldname":"endpoint_url","fieldtype":"Data","label":"Endpoint URL","reqd":1},
+  {"default":"1","fieldname":"enabled","fieldtype":"Check","label":"Enabled"},
+  {"default":"Unknown","fieldname":"status","fieldtype":"Select","label":"Status","options":"Unknown\nHealthy\nUnhealthy"},
+  {"fieldname":"gpu_name","fieldtype":"Data","label":"GPU Name"},
+  {"fieldname":"vram_gb","fieldtype":"Float","label":"VRAM (GB)"},
+  {"fieldname":"last_health_check","fieldtype":"Datetime","label":"Last Health Check","read_only":1},
+  {"fieldname":"notes","fieldtype":"Long Text","label":"Notes"}
+ ],
+ "module":"JoyMedia",
+ "name":"Generation Backend",
+ "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1}]
+}

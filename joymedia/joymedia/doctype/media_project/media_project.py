@@ -8,7 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils.synchronization import filelock
 
-from joymedia.joymedia.doctype.workflow.workflow import get_latest_valid_workflow
+from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
 
 
 ALLOWED_STATUSES = {
@@ -24,7 +24,7 @@ SHOT_REFERENCE_CATEGORIES = INPUT_ASSET_CATEGORIES
 
 
 def _asset_scope_filters():
-	return {"status": "Active"}
+	return {"status": "Active", "asset_scope": "Library"}
 
 
 def _normalize_generation_mode(value):
@@ -55,7 +55,7 @@ def _customer_style_details(media_specification):
 	if not media_specification:
 		return {}
 	workflow = (
-		frappe.db.get_value("Workflow", media_specification.workflow, ["workflow_key"], as_dict=True)
+	frappe.db.get_value("Generation Workflow", media_specification.workflow, ["workflow_key"], as_dict=True)
 		if media_specification.workflow else None
 	)
 	workflow_name = (
@@ -149,12 +149,7 @@ def _copy_storyboard_shots(source_specification, target_specification):
 				"shot_name": source.shot_name,
 				"planned_frame_count": source.planned_frame_count,
 				"duration_seconds": source.duration_seconds,
-				"camera_direction": source.camera_direction,
-				"subject_identity": source.subject_identity,
-				"action_plot": source.action_plot,
-				"environment": source.environment,
 				"generation_prompt": source.generation_prompt,
-				"audio_direction": source.audio_direction,
 			}
 		)
 		for input_row in source.generation_inputs or []:
@@ -184,12 +179,7 @@ def get_project_cards():
 	for project in projects:
 		asset_filters = _asset_scope_filters()
 		asset_filters["asset_category"] = ["in", list(INPUT_ASSET_CATEGORIES)]
-		assets = frappe.get_all(
-			"Media Asset",
-			filters=asset_filters,
-			fields=["name", "asset_category"],
-			order_by="modified desc",
-		)
+		assets = _get_project_selected_assets(frappe.get_doc("Media Project", project.name))
 		cover_image = None
 		product_asset = next((a for a in assets if a.asset_category == "Product"), None)
 		cover_candidates = ([product_asset] if product_asset else []) + [a for a in assets if a != product_asset]
@@ -215,7 +205,7 @@ def get_project_cards():
 @frappe.whitelist()
 def get_video_styles():
 	styles = []
-	for row in frappe.get_all("Workflow", fields=["workflow_key"], distinct=True):
+	for row in frappe.get_all("Generation Workflow", fields=["workflow_key"], distinct=True):
 		workflow = get_latest_valid_workflow(row.workflow_key)
 		if workflow:
 			label = " ".join(part.capitalize() for part in workflow.workflow_key.split("_"))
@@ -251,6 +241,7 @@ def get_project_workspace(name):
 				"environment",
 				"audio_direction",
 				"generation_prompt",
+				"shot_instructions",
 				"planned_frame_count",
 				"duration_seconds",
 				"selected_output_asset_version",
@@ -374,11 +365,11 @@ def get_project_production(name):
 	"""Return the current project production state for lightweight polling."""
 	project = frappe.get_doc("Media Project", name)
 	project._require_read_access()
-	specification_names = _get_project_specification_names(project.name)
-	if not specification_names:
+	media_specification = get_latest_media_specification(project.name)
+	if not media_specification:
 		return None
 
-	production = _get_latest_project_generation_run(project.name, specification_names)
+	production = _get_latest_project_generation_run(project.name, [media_specification.name])
 	if not production:
 		return None
 	jobs = frappe.get_all(
@@ -432,11 +423,11 @@ def refresh_project_production(name):
 	"""Refresh an active project run from ComfyUI before returning its state."""
 	project = frappe.get_doc("Media Project", name)
 	project._require_write_access()
-	specification_names = _get_project_specification_names(project.name)
-	if not specification_names:
+	media_specification = get_latest_media_specification(project.name)
+	if not media_specification:
 		return None
 
-	production = _get_latest_project_generation_run(project.name, specification_names)
+	production = _get_latest_project_generation_run(project.name, [media_specification.name])
 	if not production:
 		return None
 
@@ -595,7 +586,7 @@ def _minimum_shot_count(media_specification):
 		return 1
 
 	workflow_version = frappe.get_doc(
-		"Workflow", media_specification.workflow
+		"Generation Workflow", media_specification.workflow
 	)
 	frame_count = int(workflow_version.frame_count or 0)
 	output_fps = float(workflow_version.output_fps or 0)
@@ -642,12 +633,21 @@ def _automatic_shot_count(media_specification, media_project):
 
 @frappe.whitelist()
 def save_project_video_settings(
-	project_name, total_duration_seconds, delivery_preset, video_style=None, continuity_mode=None
+	project_name,
+	total_duration_seconds,
+	delivery_preset,
+	video_style=None,
+	continuity_mode=None,
+	global_consistency_instructions=None,
 ):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
 	return project.save_video_settings(
-		total_duration_seconds, delivery_preset, video_style, continuity_mode
+		total_duration_seconds,
+		delivery_preset,
+		video_style,
+		continuity_mode,
+		global_consistency_instructions,
 	)
 
 
@@ -732,6 +732,7 @@ def update_project_shot(project_name, shot_name, values):
 		values = frappe.parse_json(values)
 
 	updatable_fields = [
+		"shot_instructions",
 		"subject_identity",
 		"action_plot",
 		"camera_direction",
@@ -745,13 +746,13 @@ def update_project_shot(project_name, shot_name, values):
 	# remains available as history, but is no longer the current output.
 	shot.selected_output_asset_version = None
 
-	# The generation prompt is derived from the editable storyboard fields. Do
+	# The generation prompt is derived from the specification and shot instructions. Do
 	# not trust a prompt snapshot sent by the browser: it may be stale after a
 	# continuous-mode shot is edited.
-	from joymedia.services.prompt_compiler import compile_prompt_for_documents
-
-	shot.generation_prompt = ""
-	shot.generation_prompt = compile_prompt_for_documents(shot, media_specification)
+	# Qwen owns creative prompt generation. Legacy shot-direction fields remain
+	# readable for old records but do not create a new execution prompt.
+	if "generation_prompt" in values:
+		shot.generation_prompt = str(values["generation_prompt"] or "").strip()
 	shot.save(ignore_permissions=True)
 	frappe.db.commit()
 	return {
@@ -763,6 +764,7 @@ def update_project_shot(project_name, shot_name, values):
 		"environment": shot.environment,
 		"audio_direction": shot.audio_direction,
 		"generation_prompt": shot.generation_prompt,
+		"shot_instructions": shot.shot_instructions,
 	}
 
 
@@ -1009,14 +1011,14 @@ def create_project(
 @frappe.whitelist()
 @frappe.whitelist()
 def get_library_assets(scope=None, asset_type=None):
-	filters = {"status": "Active", "media_project": ["is", "not set"]}
+	filters = {"status": "Active", "asset_scope": "Library"}
 	if asset_type == "Images":
 		filters["media_type"] = "Image"
 
 	assets = frappe.get_list(
 		"Media Asset",
 		filters=filters,
-		fields=["name", "asset_name", "media_type", "asset_category", "status", "modified"],
+		fields=["name", "asset_name", "media_type", "asset_category", "asset_scope", "status", "modified"],
 		order_by="modified desc",
 		limit_page_length=100,
 	)
@@ -1088,12 +1090,18 @@ class MediaProject(Document):
 			"total_duration_seconds": media_specification.total_duration_seconds,
 			"delivery_preset": media_specification.delivery_preset,
 			"continuity_mode": _normalize_generation_mode(media_specification.continuity_mode),
+			"global_consistency_instructions": media_specification.global_consistency_instructions or "",
 			**_customer_style_details(media_specification),
 		}
 
 	@frappe.whitelist()
 	def save_video_settings(
-		self, total_duration_seconds, delivery_preset, video_style=None, continuity_mode=None
+	self,
+	total_duration_seconds,
+	delivery_preset,
+	video_style=None,
+	continuity_mode=None,
+	global_consistency_instructions=None,
 	):
 		self._require_write_access()
 		try:
@@ -1145,6 +1153,7 @@ class MediaProject(Document):
 						"video_style": latest.video_style,
 						"continuity_mode": latest.continuity_mode,
 						"generation_instructions": latest.generation_instructions,
+						"global_consistency_instructions": latest.global_consistency_instructions,
 						"total_duration_seconds": latest.total_duration_seconds,
 						"delivery_preset": latest.delivery_preset,
 						"delivery_width": latest.delivery_width,
@@ -1166,6 +1175,8 @@ class MediaProject(Document):
 				latest.workflow = workflow.name
 				latest.video_style = workflow.workflow_key
 				latest.continuity_mode = continuity_mode
+				if global_consistency_instructions is not None:
+					latest.global_consistency_instructions = global_consistency_instructions
 				latest.save(ignore_permissions=True)
 				media_specification = latest
 			else:
@@ -1211,11 +1222,10 @@ class MediaProject(Document):
 			frappe.throw(_("Add at least one project image before creating a storyboard."))
 
 		workflow_version = frappe.get_doc(
-			"Workflow",
+			"Generation Workflow",
 			media_specification.workflow,
 		)
 		product_name = self.product_name
-		campaign_brief = self.campaign_brief
 
 		shot_count = _automatic_shot_count(media_specification, self.name)
 
@@ -1227,9 +1237,6 @@ class MediaProject(Document):
 		return generate_video_plan(
 			product_name=_meaningful_project_value(
 				product_name, "The product shown in the supplied reference image"
-			),
-			campaign_brief=_meaningful_project_value(
-				campaign_brief, "Create a clear product-focused commercial for the intended customers."
 			),
 			video_idea=_meaningful_project_value(
 				self.video_idea,
@@ -1340,7 +1347,7 @@ class MediaProject(Document):
 				"Shot Specification", {"media_specification": media_specification.name}
 			):
 				frappe.throw(_("Generate and apply a storyboard first."))
-			workflow = frappe.get_doc("Workflow", media_specification.workflow)
+			workflow = frappe.get_doc("Generation Workflow", media_specification.workflow)
 			shots = frappe.get_all(
 				"Shot Specification",
 				filters={"media_specification": media_specification.name},
@@ -1394,7 +1401,7 @@ class MediaProject(Document):
 		# lets a repaired workflow revision recover a run created with an
 		# obsolete workflow while preserving all old attempts.
 		workflow_version_name = media_specification.workflow
-		workflow_version = frappe.get_doc("Workflow", workflow_version_name)
+		workflow_version = frappe.get_doc("Generation Workflow", workflow_version_name)
 		from joymedia.services.workflow_resolver import (
 			validate_workflow_bindings,
 			validate_workflow_for_execution,
@@ -1493,12 +1500,13 @@ class MediaProject(Document):
 					"status": "Draft",
 					"workflow": workflow,
 					"video_style": latest.video_style
-					or frappe.db.get_value("Workflow", workflow, "workflow_key"),
+					or frappe.db.get_value("Generation Workflow", workflow, "workflow_key"),
 					"total_duration_seconds": latest.total_duration_seconds,
 					"delivery_preset": latest.delivery_preset,
 					"delivery_width": latest.delivery_width,
 					"delivery_height": latest.delivery_height,
 					"generation_instructions": latest.generation_instructions,
+					"global_consistency_instructions": latest.global_consistency_instructions,
 				}
 			).insert(ignore_permissions=True)
 			_copy_storyboard_shots(latest, revision)

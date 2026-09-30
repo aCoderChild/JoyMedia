@@ -10,6 +10,7 @@
   "asset_name",
   "media_type",
   "asset_category",
+  "asset_scope",
   "media_project",
   "status"
  ],
@@ -45,7 +46,17 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Asset Category",
-   "options": "Product\nCharacter\nBackground\nBrand\nStyle\nReference\nAudio\nShot Output\nFinal Deliverable\nOther",
+   "options": "Product\nCharacter\nBackground\nBrand\nStyle\nReference\nAudio\nOther",
+   "reqd": 1
+  },
+  {
+   "default": "Library",
+   "fieldname": "asset_scope",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Asset Scope",
+   "options": "Library\nProject Output",
    "reqd": 1
   },
   {

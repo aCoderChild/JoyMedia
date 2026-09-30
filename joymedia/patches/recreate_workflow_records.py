@@ -2,7 +2,7 @@ import frappe
 
 
 def execute():
-	if frappe.db.exists("Workflow", {"workflow_key": "product_showcase"}):
+	if frappe.db.exists("Generation Workflow", {"workflow_key": "product_showcase"}):
 		return
 
 	old_table = frappe.db.sql("SHOW TABLES LIKE 'tabWorkflow Version'")
@@ -28,7 +28,7 @@ def execute():
 	old_workflow = old_workflow[0]
 	workflow = frappe.get_doc(
 		{
-			"doctype": "Workflow",
+			"doctype": "Generation Workflow",
 			"workflow_key": "product_showcase",
 			"version_number": old_workflow.version_number or 1,
 			"workflow_json": old_workflow.workflow_json,
@@ -37,8 +37,8 @@ def execute():
 
 	for binding in frappe.db.sql(
 		"""
-		SELECT binding_key, node_key, input_name, value_source,
-			required_input_role, value_type, required, allow_override, description
+		SELECT binding_key, node_key, input_name,
+			required_input_role, value_type, required
 		FROM `tabWorkflow Binding`
 		WHERE parent = %s AND parenttype = 'Workflow Version'
 		""",

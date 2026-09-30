@@ -23,8 +23,11 @@ class IntegrationTestAssetVersion(IntegrationTestCase):
 
 		self.assertIn("Style", options)
 		self.assertNotIn("Storyboard", options)
-		self.assertIn("Shot Output", options)
-		self.assertIn("Final Deliverable", options)
+		self.assertIn("Other", options)
+		self.assertNotIn("Shot Output", options)
+		self.assertNotIn("Final Deliverable", options)
+		scope = frappe.get_meta("Media Asset").get_field("asset_scope")
+		self.assertEqual({"Library", "Project Output"}, set((scope.options or "").splitlines()))
 
 	def test_duplicate_uploads_respect_asset_category(self):
 		from joymedia.services.media_asset_service import create_media_asset

@@ -74,6 +74,7 @@ def create_media_asset(asset_name, asset_category, file_url):
 			"asset_name": asset_name,
 			"media_type": media_type,
 			"asset_category": asset_category,
+			"asset_scope": "Library",
 			"status": "Active",
 		}
 	).insert(ignore_permissions=True)

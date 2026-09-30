@@ -6,7 +6,7 @@ frappe.query_reports["Generation Failure Distribution"] = {
 			fieldname: "workflow_version",
 			label: "Workflow",
 			fieldtype: "Link",
-			options: "Workflow",
+			options: "Generation Workflow",
 		},
 	],
 };

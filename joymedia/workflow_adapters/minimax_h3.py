@@ -20,6 +20,40 @@ class MiniMaxH3WorkflowAdapter(GenericWorkflowAdapter):
 	def compile_prompt(self, shot, media_spec):
 		return super().compile_prompt(shot, media_spec)
 
+	def prepare_execution(
+		self,
+		workflow,
+		*,
+		seed,
+		width,
+		height,
+		frame_count,
+		output_prefix,
+		last_frame_index,
+		last_frame_prefix,
+	):
+		for node_key, input_name, value in (
+			("sampler", "seed", seed),
+			("minimax_cond", "length", frame_count),
+			("minimax_cond", "width", width),
+			("minimax_cond", "height", height),
+			("scale_img", "width", width),
+			("scale_img", "height", height),
+			("2", "width", width),
+			("2", "height", height),
+			("save_video", "filename_prefix", output_prefix),
+		):
+			_set_execution_input(workflow, node_key, input_name, value)
+
+		for node_key, input_name, value in (
+			("last_frame", "batch_index", last_frame_index),
+			("save_last_frame", "filename_prefix", last_frame_prefix),
+		):
+			if node_key in workflow:
+				_set_execution_input(workflow, node_key, input_name, value)
+
+		return workflow
+
 	def finalize_workflow(self, workflow, workflow_version, staged_inputs):
 		if staged_inputs.get("last_frame"):
 			return workflow
@@ -77,3 +111,13 @@ class MiniMaxH3WorkflowAdapter(GenericWorkflowAdapter):
 
 def _references_node(value, node_key):
 	return isinstance(value, (list, tuple)) and value and str(value[0]) == node_key
+
+
+def _set_execution_input(workflow, node_key, input_name, value):
+	node = workflow.get(node_key)
+	inputs = node.get("inputs") if isinstance(node, dict) else None
+	if not isinstance(inputs, dict) or input_name not in inputs:
+		raise ValueError(
+			f"MiniMax H3 workflow is missing execution input {node_key}.{input_name}"
+		)
+	inputs[input_name] = value

@@ -276,11 +276,13 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		outputs_are_selected.assert_called_once_with(run.name)
 		enqueue.assert_called_once_with("finalize_run", run.name)
 
-	@patch("joymedia.services.generation_orchestrator.compose_media_specification")
+	@patch("joymedia.services.generation_orchestrator.compose_project_timeline_internal")
+	@patch("joymedia.services.generation_orchestrator._initialize_timeline")
+	@patch("joymedia.services.generation_orchestrator.frappe.db.get_value", return_value="PROJ-00001")
 	@patch("joymedia.services.generation_orchestrator.refresh_run")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_doc")
 	def test_finalization_sets_completed_only_after_composition(
-		self, get_doc, refresh_run, compose_media_specification
+		self, get_doc, refresh_run, get_value, initialize_timeline, compose_timeline
 	):
 		run = MagicMock()
 		run.name = "RUN-00001"
@@ -288,12 +290,13 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		run.media_specification = "SPEC-00001"
 		run.final_asset_version = None
 		get_doc.return_value = run
-		compose_media_specification.return_value = {"final_asset_version": "ASTV-00001"}
+		compose_timeline.return_value = {"final_asset_version": "ASTV-00001"}
 
 		generation_orchestrator.finalize_run(run.name)
 
 		refresh_run.assert_called_once_with(run.name, enqueue_finalization=False)
-		compose_media_specification.assert_called_once_with("SPEC-00001")
+		initialize_timeline.assert_called_once()
+		compose_timeline.assert_called_once_with("PROJ-00001")
 		self.assertEqual(run.status, "Completed")
 		self.assertEqual(run.final_asset_version, "ASTV-00001")
 		self.assertIsNotNone(run.completed_at)

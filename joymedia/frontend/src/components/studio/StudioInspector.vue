@@ -394,8 +394,24 @@
           </div>
         </div>
 
-        <!-- Accordions for Scene Attributes -->
-        <div class="space-y-1.5 text-xs">
+        <div class="p-2.5 rounded-xl bg-surface-muted border border-outline-border space-y-1.5">
+          <label class="text-[11px] font-semibold text-ink-secondary">
+            {{ currentLang === 'vi' ? 'Hướng dẫn cảnh' : 'Shot Instructions' }}
+          </label>
+          <textarea
+            v-model="activeSelectedShot.shot_instructions"
+            :disabled="!isStoryboardDraft"
+            rows="7"
+            class="gflow-field resize-none"
+            :placeholder="currentLang === 'vi' ? 'Mô tả tự nhiên những gì xảy ra trong cảnh này.' : 'Describe what should happen in this shot.'"
+          />
+          <p class="text-[10px] text-ink-muted">
+            {{ currentLang === 'vi' ? 'Yêu cầu nhất quán toàn video nằm trong Video Settings.' : 'Video-wide consistency belongs in Video Settings.' }}
+          </p>
+        </div>
+
+        <!-- Legacy structured fields remain hidden for migrated records. -->
+        <div v-if="false" class="space-y-1.5 text-xs">
           <!-- Section 1: Subject -->
           <div class="inspector-accordion">
             <button type="button" class="inspector-accordion-header" @click="toggleAccordion('subject')">

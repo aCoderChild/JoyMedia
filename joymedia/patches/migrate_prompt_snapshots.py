@@ -26,12 +26,3 @@ def execute():
 				)
 			"""
 		)
-
-	if frappe.db.table_exists("Workflow Binding"):
-		frappe.db.sql(
-			"""
-			UPDATE `tabWorkflow Binding`
-			SET value_source = 'Generation Prompt'
-			WHERE value_source = 'Compiled Prompt'
-		"""
-		)

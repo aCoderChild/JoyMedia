@@ -15,6 +15,16 @@ def get_base_url(base_url: str | None = None):
 	return base_url.rstrip("/")
 
 
+def get_request_auth():
+	username = frappe.conf.get("comfyui_username")
+	password = frappe.conf.get("comfyui_password")
+	if not username and not password:
+		return None
+	if not username or not password:
+		frappe.throw(_("Both comfyui_username and comfyui_password must be configured."))
+	return username, password
+
+
 def get_input_dir(input_dir: str | None = None):
 	return input_dir or frappe.conf.get("comfyui_input_dir", "/home/ubuntu/ComfyUI/input")
 
@@ -35,6 +45,7 @@ def upload_frappe_file(file_url: str, *, base_url: str | None = None, input_dir:
 				f"{get_base_url(base_url)}/upload/image",
 				files={"image": (comfyui_filename, file_handle)},
 				data={"type": "input", "overwrite": "true"},
+				auth=get_request_auth(),
 				timeout=DEFAULT_TIMEOUT,
 			)
 	except requests.ConnectionError as exc:
@@ -58,6 +69,7 @@ def submit_workflow(workflow: dict, *, base_url: str | None = None) -> dict:
 		response = requests.post(
 			f"{get_base_url(base_url)}/prompt",
 			json={"prompt": workflow, "client_id": client_id},
+			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
 		)
 	except requests.ConnectionError as exc:
@@ -73,6 +85,7 @@ def get_history(prompt_id: str, *, base_url: str | None = None) -> dict:
 	try:
 		response = requests.get(
 			f"{get_base_url(base_url)}/history/{prompt_id}",
+			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
 		)
 	except requests.ConnectionError as exc:
@@ -85,6 +98,7 @@ def get_system_stats(*, base_url: str | None = None) -> dict:
 	try:
 		response = requests.get(
 			f"{get_base_url(base_url)}/system_stats",
+			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
 		)
 	except requests.ConnectionError as exc:
@@ -100,6 +114,7 @@ def download_output(
 		response = requests.get(
 			f"{get_base_url(base_url)}/view",
 			params={"filename": filename, "subfolder": subfolder, "type": file_type},
+			auth=get_request_auth(),
 			timeout=120,
 		)
 	except requests.ConnectionError as exc:

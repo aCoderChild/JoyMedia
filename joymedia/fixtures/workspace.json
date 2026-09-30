@@ -29,7 +29,7 @@
     "shortcuts": [
       {"color": "Grey", "doc_view": "List", "label": "Campaigns", "link_to": "Media Project", "stats_filter": "[]", "type": "DocType"},
       {"color": "Grey", "doc_view": "List", "label": "Assets", "link_to": "Media Asset", "stats_filter": "[]", "type": "DocType"},
-      {"color": "Grey", "doc_view": "List", "label": "Workflows", "link_to": "Workflow", "stats_filter": "[]", "type": "DocType"}
+      {"color": "Grey", "doc_view": "List", "label": "Generation Workflows", "link_to": "Generation Workflow", "stats_filter": "[]", "type": "DocType"}
     ],
     "title": "JoyMedia",
     "type": "Workspace"

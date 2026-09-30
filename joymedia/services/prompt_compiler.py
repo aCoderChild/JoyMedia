@@ -1,8 +1,7 @@
 import hashlib
 
 import frappe
-
-from joymedia.workflow_adapters import get_workflow_adapter
+from frappe import _
 
 
 @frappe.whitelist()
@@ -37,12 +36,11 @@ def compile_segment_prompt(shot_specification: str, segment_index: int, segment_
 
 
 def compile_prompt_for_documents(shot, media_spec):
-	if shot.generation_prompt:
-		prompt = shot.generation_prompt.strip()
-	else:
-		workflow = frappe.get_doc("Workflow", media_spec.workflow)
-		adapter = get_workflow_adapter(workflow)
-		prompt = adapter.compile_prompt(shot, media_spec)
+	prompt = (shot.generation_prompt or "").strip()
+	if not prompt:
+		frappe.throw(
+			_("Shot Specification {0} has no Qwen-generated generation_prompt.").format(shot.name)
+		)
 
 	if media_spec.continuity_mode in ("Continuous", "Consistency") and int(shot.shot_number or 0) > 1:
 		prompt = (
@@ -59,10 +57,5 @@ def _build_source_snapshot(shot, media_spec):
 	return {
 		"media_specification": media_spec.name,
 		"shot_specification": shot.name,
-		"generation_instructions": media_spec.generation_instructions or "",
-		"camera_direction": shot.camera_direction or "",
-		"subject_identity": shot.subject_identity or "",
-		"action_plot": shot.action_plot or "",
-		"environment": shot.environment or "",
-		"audio_direction": shot.audio_direction or "",
+		"generation_prompt": shot.generation_prompt or "",
 	}

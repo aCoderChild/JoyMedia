@@ -3,7 +3,7 @@ import frappe
 
 def execute():
 	workflow_versions = frappe.get_all(
-		"Workflow",
+		"Generation Workflow",
 		fields=["name", "workflow_key", "workflow_json"],
 	)
 

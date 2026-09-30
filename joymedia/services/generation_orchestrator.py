@@ -20,7 +20,9 @@ from .generation_runner import (
 from .generation_segment_planner import plan_generation_segments
 from .prompt_compiler import compile_segment_prompt
 from .result_ingestor import sync_attempt_result
-from .video_composer import compose_media_specification, compose_shot_segments
+from .video_composer import compose_shot_segments
+from .timeline_composer import compose_project_timeline_internal
+from .timeline_editor import _initialize_timeline
 from .workflow_resolver import (
 	validate_workflow_bindings,
 	validate_workflow_for_execution,
@@ -55,7 +57,7 @@ def start_run_internal(run_name: str):
 	from .shot_duration_planner import recalculate_shot_durations
 
 	recalculate_shot_durations(media_specification.name)
-	workflow_version = frappe.get_doc("Workflow", run.workflow_version)
+	workflow_version = frappe.get_doc("Generation Workflow", run.workflow_version)
 	shots = frappe.get_all(
 		"Shot Specification",
 		filters={"media_specification": media_specification.name},
@@ -94,7 +96,7 @@ def prepare_run(run_name: str):
 
 	media_specification = frappe.get_doc("Media Specification", run.media_specification)
 	workflow_version = frappe.get_doc(
-		"Workflow",
+		"Generation Workflow",
 		run.workflow_version,
 	)
 	shots = frappe.get_all(
@@ -183,7 +185,7 @@ def validate_generation_preflight(
 	required_roles = {
 		frappe.scrub(binding.required_input_role)
 		for binding in workflow_version.bindings
-		if binding.value_source == "Generation Input"
+		if binding.binding_key in {"first_frame", "last_frame"}
 		and binding.required
 		and binding.required_input_role
 	}
@@ -273,7 +275,7 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 		return _run_summary(run)
 	if run.status in ACTIVE_RUN_STATUSES:
 		try:
-			workflow_version = frappe.get_doc("Workflow", run.workflow_version)
+			workflow_version = frappe.get_doc("Generation Workflow", run.workflow_version)
 			validate_workflow_for_execution(workflow_version)
 		except Exception as exc:
 			message = _exception_message(exc)
@@ -518,7 +520,14 @@ def finalize_run(run_name: str):
 		return _run_summary(run)
 
 	try:
-		result = compose_media_specification(run.media_specification)
+		media_project = frappe.db.get_value(
+			"Media Specification", run.media_specification, "media_project"
+		)
+		if not media_project:
+			frappe.throw(_("Media Specification has no Media Project."))
+		project = frappe.get_doc("Media Project", media_project)
+		_initialize_timeline(project)
+		result = compose_project_timeline_internal(media_project)
 	except Exception as exc:
 		_raise_run_error(run, _exception_message(exc))
 		return _run_summary(run)

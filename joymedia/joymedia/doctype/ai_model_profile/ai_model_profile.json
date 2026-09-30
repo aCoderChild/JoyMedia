@@ -1,0 +1,30 @@
+{
+ "actions": [],
+ "autoname": "field:model_key",
+ "creation": "2026-09-30 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["model_name", "model_key", "model_family", "capability", "adapter_key", "enabled", "production_approved", "primary_model_file", "default_fps", "max_frame_count", "supports_text_to_video", "supports_image_to_video", "supports_first_frame", "supports_last_frame", "supports_audio", "configuration_json", "notes"],
+ "fields": [
+  {"fieldname":"model_name","fieldtype":"Data","label":"Model Name","reqd":1},
+  {"fieldname":"model_key","fieldtype":"Data","label":"Model Key","reqd":1,"unique":1},
+  {"fieldname":"model_family","fieldtype":"Data","label":"Model Family"},
+  {"fieldname":"capability","fieldtype":"Data","label":"Capability"},
+  {"fieldname":"adapter_key","fieldtype":"Data","label":"Adapter Key","reqd":1},
+  {"default":"1","fieldname":"enabled","fieldtype":"Check","label":"Enabled"},
+  {"default":"0","fieldname":"production_approved","fieldtype":"Check","label":"Production Approved"},
+  {"fieldname":"primary_model_file","fieldtype":"Data","label":"Primary Model File"},
+  {"fieldname":"default_fps","fieldtype":"Float","label":"Default FPS"},
+  {"fieldname":"max_frame_count","fieldtype":"Int","label":"Maximum Frame Count"},
+  {"fieldname":"supports_text_to_video","fieldtype":"Check","label":"Supports Text To Video"},
+  {"fieldname":"supports_image_to_video","fieldtype":"Check","label":"Supports Image To Video"},
+  {"fieldname":"supports_first_frame","fieldtype":"Check","label":"Supports First Frame"},
+  {"fieldname":"supports_last_frame","fieldtype":"Check","label":"Supports Last Frame"},
+  {"fieldname":"supports_audio","fieldtype":"Check","label":"Supports Audio"},
+  {"fieldname":"configuration_json","fieldtype":"Code","label":"Configuration JSON","options":"JSON"},
+  {"fieldname":"notes","fieldtype":"Long Text","label":"Notes"}
+ ],
+ "module":"JoyMedia",
+ "name":"AI Model Profile",
+ "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1}]
+}

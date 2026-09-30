@@ -716,6 +716,18 @@
           />
         </div>
 
+        <div>
+          <label class="block text-ink-secondary mb-1 font-semibold">
+            {{ currentLang === 'vi' ? 'Hướng dẫn nhất quán toàn video' : 'Global Video Instructions' }}
+          </label>
+          <textarea
+            v-model="settingsForm.global_consistency_instructions"
+            rows="4"
+            class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:border-indigo-500 focus:outline-none resize-none"
+            :placeholder="currentLang === 'vi' ? 'Sản phẩm, phong cách, ánh sáng và quy tắc liên tục chung.' : 'Product identity, style, lighting, and continuity rules shared across shots.'"
+          />
+        </div>
+
         <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-outline-border">
           <button
             type="button"
@@ -1045,7 +1057,7 @@ const autoGenerateStep = ref("");
 const magicGenerateError = ref("");
 const productionPollError = ref("");
 
-const settingsForm = reactive({ duration: 15, format: "Landscape", video_style: "", continuity_mode: "Multi-shot" });
+const settingsForm = reactive({ duration: 15, format: "Landscape", video_style: "", continuity_mode: "Multi-shot", global_consistency_instructions: "" });
 const totalDurationSeconds = computed(() => Number(settingsForm.duration) || 15);
 const durationOptions = [5, 8, 10, 15, 20, 30, 45, 60];
 const availableDurations = computed(() => {
@@ -1537,6 +1549,7 @@ async function saveActiveShot() {
       project_name: projectName.value,
       shot_name: shot.name,
       values: {
+        shot_instructions: shot.shot_instructions,
         subject_identity: shot.subject_identity,
         action_plot: shot.action_plot,
         camera_direction: shot.camera_direction,
@@ -1861,6 +1874,7 @@ watch(settings, (value) => {
   settingsForm.format = value.delivery_preset || "Landscape";
   settingsForm.video_style = value.video_style || settingsForm.video_style;
   settingsForm.continuity_mode = value.continuity_mode || "Multi-shot";
+  settingsForm.global_consistency_instructions = value.global_consistency_instructions || "";
 }, { immediate: true });
 
 // Production Polling Logic
@@ -2064,6 +2078,7 @@ async function saveSettings() {
       delivery_preset: settingsForm.format,
       video_style: settingsForm.video_style,
       continuity_mode: settingsForm.continuity_mode,
+      global_consistency_instructions: settingsForm.global_consistency_instructions,
     });
     showSettings.value = false;
     await refresh();

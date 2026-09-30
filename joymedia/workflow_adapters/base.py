@@ -12,26 +12,23 @@ class GenericWorkflowAdapter:
 		return {}
 
 	def compile_prompt(self, shot, media_spec):
-		return "\n".join(
-			line.strip()
-			for line in (
-				"Camera & Framing:",
-				shot.camera_direction or "",
-				"Subject:",
-				shot.subject_identity or "",
-				"Motion:",
-				shot.action_plot or "",
-				"Lighting & Environment:",
-				shot.environment or "",
-				"Audio:",
-				shot.audio_direction or "",
-				"Global Instructions:",
-				media_spec.generation_instructions or "",
-			)
-			if line.strip()
-		)
+		return (getattr(shot, "generation_prompt", None) or "").strip()
 
 	def finalize_workflow(self, workflow, workflow_version, staged_inputs):
+		return workflow
+
+	def prepare_execution(
+		self,
+		workflow,
+		*,
+		seed,
+		width,
+		height,
+		frame_count,
+		output_prefix,
+		last_frame_index,
+		last_frame_prefix,
+	):
 		return workflow
 
 	@staticmethod

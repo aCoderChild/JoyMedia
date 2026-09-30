@@ -91,7 +91,6 @@ def generate_shot_revision(*, instruction, shot, product_name="", campaign_brief
 def generate_video_plan(
 	*,
 	product_name: str,
-	campaign_brief: str,
 	video_idea: str,
 	total_video_duration: float,
 	target_fps: float,
@@ -123,20 +122,14 @@ def generate_video_plan(
 		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
 
 	base_instruction = """
-You are a professional cinematic commercial director for MiniMax H3.
+You are the creative planner for JoyMedia product videos.
 
-For every shot, produce one detailed generation_prompt suitable for MiniMax H3.
-The prompt should describe the product, subject action, camera movement,
-composition, lighting, environment, continuity, and synchronized audio when
-those details are relevant. Do not contradict camera movement and subject
-motion. Distinguish optical zoom from physical camera movement. Do not describe
-camera equipment or dolly sounds as audio unless they are intentional story
-elements.
-
-Every shot must contain non-empty camera, subject, motion, lighting, and
-generation_prompt fields. Audio is optional metadata. Never return null or
-empty strings for the required fields. JoyMedia assigns reference images
-separately; do not choose or emit reference image indexes.
+Understand the complete video idea first, then divide it into a coherent
+sequence of creative shots. For every shot, produce exactly one detailed
+generation_prompt suitable for the configured video model. The prompt should
+contain the visual action, subject, camera, environment, lighting, continuity,
+and audio intent when relevant. JoyMedia assigns reference assets separately;
+do not claim to inspect their contents or emit reference image indexes.
 """.strip()
 
 	if reference_template:
@@ -178,24 +171,23 @@ video idea and project reference images.
 		)
 
 	response_shape = (
-		'{"shots":[{"shot_number":1,"camera":"...","subject":"...",'
-		'"motion":"...","lighting":"...","audio":"",'
-		'"generation_prompt":"..."}]}'
+		'{"shots":[{"shot_number":1,"shot_name":"...",'
+		'"duration_seconds":5,"generation_prompt":"..."}]}'
 	)
 
 	user_prompt = (
 		f"{instruction}\n\n"
 		f"PRODUCT NAME\n{product_name}\n\n"
-		f"CAMPAIGN BRIEF\n{campaign_brief or ''}\n\n"
 		f"VIDEO IDEA\n{video_idea or ''}\n\n"
 		f"TOTAL VIDEO DURATION: {total_video_duration} seconds\n"
 		f"TARGET FPS: {target_fps}\n"
 		f"NUMBER OF SHOTS: {shot_count}\n\n"
 		f"Return exactly {shot_count} shots. Organize the shots into a coherent narrative progression.\n\n"
 		"IMPORTANT OUTPUT RULES:\n"
-		"- Every shot MUST contain all required fields.\n"
-		"- camera, subject, motion, lighting, and generation_prompt MUST be non-empty.\n"
-		"- Never return null or empty strings for required fields.\n\n"
+		"- Every shot MUST contain a positive integer shot_number.\n"
+		"- Every shot MUST contain one non-empty generation_prompt.\n"
+		"- shot_name and duration_seconds are optional planning metadata.\n"
+		"- Never return null or empty generation_prompt values.\n\n"
 		"Return only valid JSON with this shape:\n"
 		f"{response_shape}"
 	)
@@ -300,25 +292,13 @@ def _normalize_qwen_plan(
 			shot.get("video_prompt"),
 			shot.get("description"),
 		)
-		subject = _first_non_empty(shot.get("subject"), product_name, "Product")
-		motion = _first_non_empty(
-			shot.get("motion"),
-			video_idea,
-			"The product remains the visual focus while the composition develops through cinematic camera and environmental motion.",
-		)
 		normalized = {
 			"shot_number": shot.get("shot_number") or index,
-			"camera": _first_non_empty(
-				shot.get("camera"), "Cinematic product-focused composition"
-			),
-			"subject": subject,
-			"motion": motion,
-			"lighting": _first_non_empty(
-				shot.get("lighting"), "Controlled cinematic commercial lighting"
-			),
-			"audio": _first_non_empty(shot.get("audio")),
+			"shot_name": _first_non_empty(shot.get("shot_name"), f"Shot {index}"),
 			"generation_prompt": generation_prompt,
 		}
+		if shot.get("duration_seconds") is not None:
+			normalized["duration_seconds"] = shot.get("duration_seconds")
 
 		# The text model cannot inspect the uploaded images. Reference selection
 		# is therefore deterministic backend state, not model output.
@@ -365,26 +345,29 @@ def _validate_video_plan(
 	for shot in result["shots"]:
 		if not isinstance(shot, dict) or not required_fields.issubset(shot):
 			frappe.throw(_("Each Qwen shot must contain the required video plan fields."))
-		for field in ("camera", "subject", "motion", "lighting", "generation_prompt"):
-			if not str(shot.get(field) or "").strip():
-				frappe.throw(
-					_("Qwen returned an empty required field '{0}' for shot {1}.").format(
-						field, shot.get("shot_number", "?")
-					)
+		if not str(shot.get("generation_prompt") or "").strip():
+			frappe.throw(
+				_("Qwen returned an empty generation_prompt for shot {0}.").format(
+					shot.get("shot_number", "?")
 				)
+			)
 
 		if type(shot["shot_number"]) is not int or shot["shot_number"] < 1:
 			frappe.throw(_("Shot number must be a positive integer."))
 
 		normalized = {
 			"shot_number": shot["shot_number"],
-			"camera": str(shot.get("camera", "")).strip(),
-			"subject": str(shot.get("subject", "")).strip(),
-			"motion": str(shot.get("motion", "")).strip(),
-			"lighting": str(shot.get("lighting", "")).strip(),
-			"audio": str(shot.get("audio", "")).strip(),
+			"shot_name": str(shot.get("shot_name") or f"Shot {shot['shot_number']}").strip(),
 			"generation_prompt": str(shot["generation_prompt"]).strip(),
 		}
+		if shot.get("duration_seconds") is not None:
+			try:
+				duration_seconds = float(shot["duration_seconds"])
+			except (TypeError, ValueError):
+				frappe.throw(_("Shot duration must be numeric."))
+			if duration_seconds <= 0:
+				frappe.throw(_("Shot duration must be greater than zero."))
+			normalized["duration_seconds"] = duration_seconds
 
 		if reference_image_count:
 			if generation_mode == "Multi-shot":

@@ -18,7 +18,7 @@ class GenerationJob(Document):
 		if self.status not in ("Ready", "Queued"):
 			frappe.throw(_("Generation Job {0} must be Ready or Queued for execution.").format(self.name))
 
-		workflow_version = frappe.get_doc("Workflow", self.workflow_version)
+		workflow_version = frappe.get_doc("Generation Workflow", self.workflow_version)
 
 	def _validate_segment_frame_count(self, workflow_version):
 		if (
@@ -36,8 +36,8 @@ class GenerationJob(Document):
 	def _validate_execution_references(self):
 		if not self.shot_specification or not frappe.db.exists("Shot Specification", self.shot_specification):
 			frappe.throw(_("Generation Job requires an existing Shot Specification."))
-		if not self.workflow_version or not frappe.db.exists("Workflow", self.workflow_version):
-			frappe.throw(_("Generation Job requires an existing Workflow."))
+		if not self.workflow_version or not frappe.db.exists("Generation Workflow", self.workflow_version):
+			frappe.throw(_("Generation Job requires an existing Generation Workflow."))
 		if not self.prompt_text:
 			frappe.throw(_("Generation Job requires a prompt text snapshot."))
 		if not self.prompt_hash:
@@ -66,7 +66,7 @@ class GenerationJob(Document):
 		if duplicate:
 			frappe.throw(_("Only one Generation Job may exist for each shot segment in a run."))
 
-		return frappe.get_doc("Workflow", self.workflow_version)
+		return frappe.get_doc("Generation Workflow", self.workflow_version)
 
 	def _validate_generation_run(self, media_specification):
 		if not self.generation_run:
@@ -128,7 +128,9 @@ class GenerationJob(Document):
 		required_roles = {
 			frappe.scrub(binding.required_input_role)
 			for binding in workflow_version.bindings
-			if binding.value_source == "Generation Input" and binding.required and binding.required_input_role
+			if binding.binding_key in {"first_frame", "last_frame"}
+			and binding.required
+			and binding.required_input_role
 		}
 		for role in required_roles:
 			if self.depends_on_job and role == "first_frame":

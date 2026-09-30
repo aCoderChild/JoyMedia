@@ -9,6 +9,7 @@
   "version_identity_section",
   "workflow_key",
   "version_number",
+  "ai_model_profile",
   "workflow_definition_section",
   "workflow_json",
   "workflow_hash",
@@ -44,6 +45,14 @@
    "label": "Version Number",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "description": "Production model configuration used by this workflow revision.",
+   "fieldname": "ai_model_profile",
+   "fieldtype": "Link",
+   "label": "AI Model Profile",
+   "options": "AI Model Profile",
+   "read_only_depends_on": "eval:!doc.__islocal;"
   },
   {
    "description": "Paste the entire JSON workflow you uploaded into this field",
@@ -114,7 +123,7 @@
  "modified": "2026-09-20 18:10:35.933520",
  "modified_by": "Administrator",
  "module": "JoyMedia",
- "name": "Workflow",
+ "name": "Generation Workflow",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [

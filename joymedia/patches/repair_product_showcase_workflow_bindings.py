@@ -10,7 +10,7 @@ def execute():
 	must not be selected for new generation runs.
 	"""
 	rows = frappe.get_all(
-		"Workflow",
+		"Generation Workflow",
 		filters={"workflow_key": "product_showcase"},
 		fields=["name", "workflow_json"],
 		order_by="version_number desc, modified desc",
@@ -38,8 +38,7 @@ def execute():
 		"Workflow Binding",
 		{
 			"parent": source.name,
-			"parenttype": "Workflow",
-			"value_source": "Generation Input",
+			"parenttype": "Generation Workflow",
 			"required": 1,
 			"required_input_role": ["is", "set"],
 		},
@@ -53,7 +52,7 @@ def execute():
 
 	clone = frappe.get_doc(
 		{
-			"doctype": "Workflow",
+			"doctype": "Generation Workflow",
 			"workflow_key": "product_showcase",
 			"workflow_json": source.workflow_json,
 		}
@@ -64,11 +63,9 @@ def execute():
 			"binding_key": "first_frame",
 			"node_key": first_frame_node,
 			"input_name": "image",
-			"value_source": "Generation Input",
 			"required_input_role": "first_frame",
 			"value_type": "File Path",
 			"required": 1,
-			"allow_override": 0,
 		},
 	)
 
@@ -80,11 +77,9 @@ def execute():
 				"binding_key": "last_frame",
 				"node_key": last_frame_node,
 				"input_name": "image",
-				"value_source": "Generation Input",
 				"required_input_role": "last_frame",
 				"value_type": "File Path",
 				"required": 0,
-				"allow_override": 0,
 			},
 		)
 

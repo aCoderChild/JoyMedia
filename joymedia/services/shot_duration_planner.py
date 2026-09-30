@@ -17,7 +17,7 @@ def rebalance_shot_duration(media_specification_name: str, shot_name: str, targe
 		frappe.throw(_("The Media Specification has no Shot Specifications."))
 	if not media_specification.workflow:
 		frappe.throw(_("Media Specification must have a Workflow."))
-	workflow_version = frappe.get_doc("Workflow", media_specification.workflow)
+	workflow_version = frappe.get_doc("Generation Workflow", media_specification.workflow)
 	fps = float(workflow_version.output_fps or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))
@@ -86,7 +86,7 @@ def recalculate_shot_durations(media_specification_name: str):
 	if not media_specification.workflow:
 		frappe.throw(_("Media Specification must have a Workflow."))
 	workflow_version = frappe.get_doc(
-		"Workflow",
+		"Generation Workflow",
 		media_specification.workflow,
 	)
 	fps = float(workflow_version.output_fps or 0)

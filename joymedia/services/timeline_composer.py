@@ -142,7 +142,7 @@ def compose_project_timeline_internal(project_name: str):
 def _delivery_profile(media_specification):
 	if not media_specification.workflow:
 		frappe.throw(_("Media Specification must have a Workflow."))
-	workflow = frappe.get_doc("Workflow", media_specification.workflow)
+	workflow = frappe.get_doc("Generation Workflow", media_specification.workflow)
 	fps = float(workflow.output_fps or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))

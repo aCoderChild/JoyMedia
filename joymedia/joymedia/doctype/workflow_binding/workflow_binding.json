@@ -9,12 +9,9 @@
   "binding_key",
   "node_key",
   "input_name",
-  "value_source",
   "required_input_role",
   "value_type",
-  "required",
-  "allow_override",
-  "description"
+  "required"
  ],
  "fields": [
   {
@@ -42,20 +39,10 @@
    "reqd": 1
   },
   {
-   "fieldname": "value_source",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Value Source",
-   "options": "Generation Input\nGeneration Prompt\nAttempt Seed\nJob Value\nRuntime Value",
-   "reqd": 1
-  },
-  {
-   "depends_on": "eval:doc.value_source==\"Generation Input\";",
    "description": "JoyMedia input role supplied by Shot Input Mapping / Generation Input, e.g. first_frame, last_frame, mask.",
    "fieldname": "required_input_role",
    "fieldtype": "Data",
-   "label": "Input Role Key",
-   "mandatory_depends_on": "eval:doc.value_source==\"Generation Input\";"
+   "label": "Input Role"
   },
   {
    "fieldname": "value_type",
@@ -69,24 +56,13 @@
    "fieldname": "required",
    "fieldtype": "Check",
    "label": "Required"
-  },
-  {
-   "default": "0",
-   "fieldname": "allow_override",
-   "fieldtype": "Check",
-   "label": "Allow Override"
-  },
-  {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-05 23:43:57.530754",
+ "modified": "2026-09-30 21:21:23.697579",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Workflow Binding",

@@ -36,11 +36,11 @@ class ShotSpecification(Document):
 		media_specification = frappe.get_doc("Media Specification", self.media_specification)
 		if (
 			media_asset.media_type != "Video"
-			or media_asset.asset_category != "Shot Output"
+			or media_asset.asset_scope != "Project Output"
 			or media_asset.media_project != media_specification.media_project
 		):
 			frappe.throw(
-				"Selected Output Asset Version must belong to a Video Shot Output "
+				"Selected Output Asset Version must belong to a project output "
 				"for this Media Specification's Media Project."
 			)
 
@@ -61,10 +61,10 @@ class ShotSpecification(Document):
 			"Workflow Binding",
 			filters={
 				"parent": ["in", workflow_versions],
-				"parenttype": "Workflow",
+				"parenttype": "Generation Workflow",
 				"parentfield": "bindings",
-				"value_source": "Generation Input",
 				"required": 1,
+				"binding_key": ["in", ["first_frame", "last_frame"]],
 			},
 			fields=["parent", "required_input_role"],
 		)

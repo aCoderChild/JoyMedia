@@ -10,13 +10,14 @@ from joymedia.workflow_adapters.base import canonical_workflow_json
 
 
 _SKIP_BINDING = object()
+SEMANTIC_BINDING_KEYS = {"first_frame", "last_frame", "generation_prompt"}
 
 
 def resolve_attempt(attempt_name: str, staged_inputs=None):
 	staged_inputs = staged_inputs or {}
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	workflow_version = frappe.get_doc("Workflow", job.workflow_version)
+	workflow_version = frappe.get_doc("Generation Workflow", job.workflow_version)
 	try:
 		base_workflow = json.loads(workflow_version.workflow_json)
 	except json.JSONDecodeError as exc:
@@ -26,23 +27,31 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 	workflow = copy.deepcopy(base_workflow)
 	_validate_workflow_bindings(workflow_version, workflow)
 	for binding in workflow_version.bindings:
-		value = _resolve_binding(binding, job, attempt, staged_inputs)
+		value = _resolve_semantic_binding(binding, job, staged_inputs)
 		node = workflow[binding.node_key]
 		if value is _SKIP_BINDING:
 			continue
 		node["inputs"][binding.input_name] = value
 
+	shot = frappe.get_doc("Shot Specification", job.shot_specification)
+	media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+	adapter = get_workflow_adapter(workflow_version)
+	adapter.prepare_execution(
+		workflow,
+		seed=int(attempt.seed),
+		width=int(media_specification.delivery_width),
+		height=int(media_specification.delivery_height),
+		frame_count=int(job.segment_frame_count),
+		output_prefix=f"{job.name}_{attempt.name}",
+		last_frame_index=int(job.segment_frame_count) - 1,
+		last_frame_prefix=f"{job.name}_{attempt.name}_last_frame",
+	)
+
 	if any(
-		binding.binding_key == "last_frame"
-		and binding.value_source == "Generation Input"
-		and not staged_inputs.get("last_frame")
+		binding.binding_key == "last_frame" and not staged_inputs.get("last_frame")
 		for binding in workflow_version.bindings
 	):
-		get_workflow_adapter(workflow_version).finalize_workflow(
-			workflow,
-			workflow_version,
-			staged_inputs,
-		)
+		adapter.finalize_workflow(workflow, workflow_version, staged_inputs)
 
 	canonical = canonical_workflow_json(workflow)
 	attempt.resolved_workflow_json = json.dumps(workflow, indent=2, ensure_ascii=False)
@@ -163,6 +172,14 @@ def _validate_node_references(workflow):
 
 def _validate_workflow_bindings(workflow_version, workflow):
 	for binding in workflow_version.bindings:
+		if binding.binding_key not in SEMANTIC_BINDING_KEYS:
+			frappe.throw(
+				_("Unsupported semantic Workflow Binding: {0}").format(binding.binding_key)
+			)
+		if binding.binding_key in {"first_frame", "last_frame"} and not binding.required_input_role:
+			frappe.throw(
+				_("Workflow Binding {0} requires an Input Role.").format(binding.binding_key)
+			)
 		node = workflow.get(binding.node_key)
 		if node is None or binding.input_name not in node.get("inputs", {}):
 			frappe.throw(
@@ -178,23 +195,17 @@ def _validate_workflow_bindings(workflow_version, workflow):
 			)
 
 
-def _resolve_binding(binding, job, attempt, staged_inputs):
-	if binding.value_source == "Generation Input":
+def _resolve_semantic_binding(binding, job, staged_inputs):
+	if binding.binding_key in {"first_frame", "last_frame"}:
 		return _resolve_generation_input(
 			job,
 			binding.required_input_role,
 			staged_inputs,
 			required=bool(binding.required),
 		)
-	if binding.value_source == "Generation Prompt":
+	if binding.binding_key == "generation_prompt":
 		return job.prompt_text
-	if binding.value_source == "Attempt Seed":
-		return int(attempt.seed)
-	if binding.value_source == "Runtime Value":
-		return _resolve_runtime_value(binding.binding_key, job, attempt)
-	if binding.value_source == "Job Value":
-		return _resolve_job_value(binding.binding_key, job)
-	frappe.throw(_("Unsupported Workflow Binding Value Source: {0}").format(binding.value_source))
+	frappe.throw(_("Unsupported semantic Workflow Binding: {0}").format(binding.binding_key))
 
 
 def _resolve_generation_input(job, required_role, staged_inputs, required=True):
@@ -211,25 +222,3 @@ def _resolve_generation_input(job, required_role, staged_inputs, required=True):
 			normalized_role, job.name
 		)
 	)
-
-
-def _resolve_runtime_value(binding_key, job, attempt):
-	if binding_key == "output_filename_prefix":
-		return f"{job.name}_{attempt.name}"
-	if binding_key in {"delivery_width", "delivery_height"}:
-		shot = frappe.get_doc("Shot Specification", job.shot_specification)
-		media_spec = frappe.get_doc("Media Specification", shot.media_specification)
-		if binding_key == "delivery_width":
-			return int(media_spec.delivery_width)
-		return int(media_spec.delivery_height)
-	if binding_key == "segment_last_frame_index":
-		return int(job.segment_frame_count) - 1
-	if binding_key == "last_frame_filename_prefix":
-		return f"{job.name}_{attempt.name}_last_frame"
-	frappe.throw(_("Unsupported Runtime Value binding: {0}").format(binding_key))
-
-
-def _resolve_job_value(binding_key, job):
-	if not hasattr(job, binding_key):
-		frappe.throw(_("Generation Job does not contain field '{0}'.").format(binding_key))
-	return getattr(job, binding_key)

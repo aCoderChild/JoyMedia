@@ -126,11 +126,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 				"shots": [
 					{
 						"shot_number": 1,
-						"camera": "Camera",
-						"subject": "Subject",
-						"motion": "Motion",
-						"lighting": "Lighting",
-						"audio": "Audio",
+						"generation_prompt": "A concise product reveal.",
 					}
 				]
 			},
@@ -159,7 +155,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual(updated.delivery_width, 1024)
 		self.assertEqual(updated.delivery_height, 1024)
 		self.assertEqual(
-			frappe.db.get_value("Workflow", updated.workflow, "workflow_key"),
+			frappe.db.get_value("Generation Workflow", updated.workflow, "workflow_key"),
 			"product_showcase",
 		)
 
@@ -172,7 +168,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 		self.assertEqual(updated.video_style, "product_showcase")
 		self.assertEqual(
-			frappe.db.get_value("Workflow", updated.workflow, "workflow_key"),
+			frappe.db.get_value("Generation Workflow", updated.workflow, "workflow_key"),
 			"product_showcase",
 		)
 		self.assertTrue(
@@ -199,11 +195,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			"shots": [
 				{
 					"shot_number": 1,
-					"camera": "First camera",
-					"subject": "First subject",
-					"motion": "First motion",
-					"lighting": "First lighting",
-					"audio": "First audio",
+					"generation_prompt": "First generated shot.",
 				}
 			]
 		}
@@ -211,11 +203,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			"shots": [
 				{
 					"shot_number": 1,
-					"camera": "Second camera",
-					"subject": "Second subject",
-					"motion": "Second motion",
-					"lighting": "Second lighting",
-					"audio": "Second audio",
+					"generation_prompt": "Second generated shot.",
 				}
 			]
 		}
@@ -230,8 +218,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			1,
 		)
 		self.assertEqual(
-			frappe.db.get_value("Shot Specification", second_shots[0], "subject_identity"),
-			"Second subject",
+			frappe.db.get_value("Shot Specification", second_shots[0], "generation_prompt"),
+			"Second generated shot.",
 		)
 
 
@@ -379,11 +367,6 @@ def _video_plan():
 		"shots": [
 			{
 				"shot_number": 1,
-				"camera": "A controlled product close-up.",
-				"subject": "The product centered in frame.",
-				"motion": "A slow forward camera movement.",
-				"lighting": "Soft commercial lighting with a clean background.",
-				"audio": "Subtle product movement and ambient sound.",
 				"reference_image_index": 1,
 				"generation_prompt": "A clean product commercial with a slow forward camera movement.",
 			}
@@ -440,10 +423,11 @@ def _file_review_artifact(review_name):
 def _get_test_workflow():
 	workflow = frappe.get_doc(
 		{
-			"doctype": "Workflow",
+			"doctype": "Generation Workflow",
+			"ai_model_profile": "joymedia-qwen",
 			"workflow_key": f"test_showcase_{frappe.generate_hash(length=6)}",
 			"workflow_json": '{"load_img":{"inputs":{"image":""}},"minimax_cond":{"inputs":{"length":124}},"save_video":{"inputs":{"frame_rate":24}}}',
-			"bindings": [{"binding_key": "first_frame", "node_key": "load_img", "input_name": "image", "value_source": "Generation Input", "required_input_role": "first_frame", "value_type": "File Path", "required": 1}],
+			"bindings": [{"binding_key": "first_frame", "node_key": "load_img", "input_name": "image", "required_input_role": "first_frame", "value_type": "File Path", "required": 1}],
 		}
 	).insert(ignore_permissions=True)
 	return workflow.name
@@ -452,7 +436,8 @@ def _get_test_workflow():
 def _ensure_default_h3_workflow():
 	workflow = frappe.get_doc(
 		{
-			"doctype": "Workflow",
+			"doctype": "Generation Workflow",
+			"ai_model_profile": "joymedia-qwen",
 			"workflow_key": "product_showcase",
 			"workflow_json": (
 				'{"load_img":{"inputs":{"image":""},"class_type":"VHS_LoadImagePath"},'
@@ -461,7 +446,7 @@ def _ensure_default_h3_workflow():
 				'"filename_prefix":"JoyMedia","loop_count":0,"format":"video/h264-mp4",'
 				'"pingpong":false,"save_output":true},"class_type":"VHS_VideoCombine"}}'
 			),
-			"bindings": [{"binding_key": "first_frame", "node_key": "load_img", "input_name": "image", "value_source": "Generation Input", "required_input_role": "first_frame", "value_type": "File Path", "required": 1}],
+			"bindings": [{"binding_key": "first_frame", "node_key": "load_img", "input_name": "image", "required_input_role": "first_frame", "value_type": "File Path", "required": 1}],
 		}
 	).insert(ignore_permissions=True)
 	return workflow.name
@@ -478,9 +463,9 @@ def _create_shot_fixtures(media_specification, suffix, create_run=True):
 		"Workflow Binding",
 		{
 			"parent": workflow,
-			"parenttype": "Workflow",
+			"parenttype": "Generation Workflow",
 			"parentfield": "bindings",
-			"value_source": "Generation Input",
+			"binding_key": ["in", ["first_frame", "last_frame"]],
 			"required": 1,
 		},
 		pluck="required_input_role",

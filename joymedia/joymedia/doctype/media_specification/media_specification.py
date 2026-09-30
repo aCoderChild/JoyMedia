@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from joymedia.joymedia.doctype.workflow.workflow import get_latest_valid_workflow
+from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
 
 
 class MediaSpecification(Document):
@@ -21,6 +21,7 @@ class MediaSpecification(Document):
 		"delivery_height",
 		"continuity_mode",
 		"generation_instructions",
+		"global_consistency_instructions",
 	)
 	PRESET_DIMENSIONS: ClassVar[dict[str, tuple[int, int]]] = {
 		"Landscape": (1344, 768),
@@ -56,7 +57,7 @@ class MediaSpecification(Document):
 
 		workflow_doc = get_latest_valid_workflow()
 		if not workflow_doc:
-			frappe.throw(_("No default Workflow is configured."))
+			frappe.throw(_("No default Generation Workflow is configured."))
 		self.workflow = workflow_doc.name
 
 	def validate_generation_setup(self):
@@ -67,7 +68,7 @@ class MediaSpecification(Document):
 			frappe.throw(_("Ready Media Specifications require a Workflow."))
 
 		workflow_version = frappe.get_doc(
-			"Workflow",
+			"Generation Workflow",
 			self.workflow,
 		)
 		from joymedia.services.workflow_resolver import validate_workflow_bindings
@@ -86,7 +87,7 @@ class MediaSpecification(Document):
 		if (self.total_duration_seconds or 0) <= 0:
 			frappe.throw(_("Total Duration must be greater than zero."))
 		if self.workflow:
-			workflow_version = frappe.get_doc("Workflow", self.workflow)
+			workflow_version = frappe.get_doc("Generation Workflow", self.workflow)
 			if (workflow_version.output_fps or 0) <= 0:
 				frappe.throw(_("Workflow output FPS must be greater than zero."))
 

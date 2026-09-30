@@ -6,7 +6,6 @@ from frappe.tests.utils import FrappeTestCase
 from joymedia.services.workflow_resolver import (
 	_SKIP_BINDING,
 	_resolve_generation_input,
-	_resolve_runtime_value,
 	validate_workflow_bindings,
 	validate_workflow_for_execution,
 )
@@ -83,6 +82,7 @@ class TestWorkflowResolver(FrappeTestCase):
 					binding_key="first_frame",
 					node_key="load_img",
 					input_name="image",
+					required_input_role="first_frame",
 				)
 			],
 		)
@@ -142,19 +142,31 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertIn("save_video.images", message)
 		self.assertIn("dec_video", message)
 
-	@patch("joymedia.services.workflow_resolver.frappe.get_doc")
-	def test_runtime_delivery_dimensions_come_from_media_specification(self, get_doc):
-		get_doc.side_effect = [
-			frappe._dict(media_specification="SPEC-00001"),
-			frappe._dict(delivery_width=1280, delivery_height=720),
-		]
-		job = frappe._dict(shot_specification="SHOT-00001")
+	def test_h3_prepare_execution_injects_internal_execution_values(self):
+		workflow = {
+			"sampler": {"inputs": {"seed": 0}},
+			"minimax_cond": {"inputs": {"length": 1, "width": 1, "height": 1}},
+			"scale_img": {"inputs": {"width": 1, "height": 1}},
+			"2": {"inputs": {"width": 1, "height": 1}},
+			"save_video": {"inputs": {"filename_prefix": "old"}},
+			"last_frame": {"inputs": {"batch_index": 0}},
+			"save_last_frame": {"inputs": {"filename_prefix": "old"}},
+		}
 
-		self.assertEqual(1280, _resolve_runtime_value("delivery_width", job, None))
+		MiniMaxH3WorkflowAdapter().prepare_execution(
+			workflow,
+			seed=94821731,
+			width=1280,
+			height=720,
+			frame_count=120,
+			output_prefix="JOB-1_ATT-1",
+			last_frame_index=119,
+			last_frame_prefix="JOB-1_ATT-1_last_frame",
+		)
 
-		get_doc.reset_mock()
-		get_doc.side_effect = [
-			frappe._dict(media_specification="SPEC-00001"),
-			frappe._dict(delivery_width=1280, delivery_height=720),
-		]
-		self.assertEqual(720, _resolve_runtime_value("delivery_height", job, None))
+		self.assertEqual(94821731, workflow["sampler"]["inputs"]["seed"])
+		self.assertEqual(120, workflow["minimax_cond"]["inputs"]["length"])
+		self.assertEqual(1280, workflow["2"]["inputs"]["width"])
+		self.assertEqual(720, workflow["scale_img"]["inputs"]["height"])
+		self.assertEqual("JOB-1_ATT-1", workflow["save_video"]["inputs"]["filename_prefix"])
+		self.assertEqual(119, workflow["last_frame"]["inputs"]["batch_index"])

@@ -139,7 +139,8 @@ def _get_or_create_shot_output_asset(shot, media_project):
 		{
 			"asset_name": asset_name,
 			"media_project": media_project,
-			"asset_category": "Shot Output",
+			"asset_category": "Other",
+			"asset_scope": "Project Output",
 		},
 		"name",
 	)
@@ -151,110 +152,11 @@ def _get_or_create_shot_output_asset(shot, media_project):
 			"asset_name": asset_name,
 			"media_project": media_project,
 			"media_type": "Video",
-			"asset_category": "Shot Output",
+			"asset_category": "Other",
+			"asset_scope": "Project Output",
 			"status": "Active",
 		}
 	).insert(ignore_permissions=True)
-
-
-def compose_media_specification(media_specification_name: str):
-	"""Create the final video from the persisted editor timeline.
-
-	Shot order and frame counts are the source of truth. Each generated shot is
-	normalized and trimmed/padded to its planned timeline frame count before the
-	clips are concatenated. This keeps the exported master in sync with the
-	storyboard editor instead of concatenating the full raw generation outputs.
-	"""
-	media_specification = frappe.get_doc("Media Specification", media_specification_name)
-	profile = _get_delivery_profile(media_specification)
-	shots = frappe.get_all(
-		"Shot Specification",
-		filters={"media_specification": media_specification.name},
-		fields=[
-			"name",
-			"shot_number",
-			"planned_frame_count",
-			"duration_seconds",
-			"selected_output_asset_version",
-		],
-		order_by="shot_number asc",
-	)
-	_validate_shots(shots, media_specification.name)
-	audio_mixed = False
-	expected_total_frames = sum(_shot_frame_count(shot, profile) for shot in shots)
-
-	try:
-		with tempfile.TemporaryDirectory(prefix="joymedia-compose-") as temp_dir:
-			temporary_path = Path(temp_dir)
-			normalized_paths = []
-			for shot in shots:
-				source_path = _get_shot_output_path(shot)
-				_inspect_video(source_path)
-				planned_frames = _shot_frame_count(shot, profile)
-				normalized_path = temporary_path / f"{shot.shot_number:04d}-{shot.name}.mp4"
-				_normalize_shot(source_path, normalized_path, profile, planned_frames)
-				_validate_normalized_video(
-					normalized_path,
-					profile,
-					expected_frames=planned_frames,
-				)
-				normalized_paths.append(normalized_path)
-
-			silent_master_path = temporary_path / f"{media_specification.name}-silent.mp4"
-			_concatenate_normalized_shots(normalized_paths, silent_master_path, profile)
-			_validate_normalized_video(
-				silent_master_path,
-				profile,
-				expected_frames=expected_total_frames,
-			)
-
-			audio_sources = _get_audio_sources(media_specification, _get_video_duration(silent_master_path))
-			delivery_path = silent_master_path
-			if audio_sources:
-				delivery_path = temporary_path / f"{media_specification.name}.mp4"
-				_mix_audio(silent_master_path, audio_sources, delivery_path)
-				audio_mixed = True
-			_validate_normalized_video(
-				delivery_path,
-				profile,
-				expected_frames=expected_total_frames,
-			)
-			video_duration = _get_video_duration(delivery_path)
-			video_bytes = delivery_path.read_bytes()
-	except (OSError, subprocess.CalledProcessError, ValueError) as exc:
-		frappe.throw(_("Unable to compose final video: {0}").format(_command_error(exc)))
-
-	output_asset = _get_or_create_final_asset(media_specification)
-	file_doc = frappe.get_doc(
-		{
-			"doctype": "File",
-			"file_name": f"{media_specification.name}.mp4",
-			"content": video_bytes,
-			"is_private": 1,
-			"attached_to_doctype": "Media Asset",
-			"attached_to_name": output_asset.name,
-		}
-	)
-	file_doc.insert(ignore_permissions=True)
-
-	asset_version = frappe.get_doc(
-		{
-			"doctype": "Asset Version",
-			"media_asset": output_asset.name,
-			"file": file_doc.file_url,
-			"source": "Composed",
-			"duration_seconds": video_duration,
-			"fps": profile["fps"],
-		}
-	)
-	asset_version.insert(ignore_permissions=True)
-
-	return {
-		"final_asset_version": asset_version.name,
-		"duration_seconds": video_duration,
-		"timeline_frames": expected_total_frames,
-		"audio_mixed": audio_mixed,
-	}
 
 
 def _get_delivery_profile(media_specification):
@@ -264,7 +166,7 @@ def _get_delivery_profile(media_specification):
 		frappe.throw(_("Media Specification must have a Workflow before composition."))
 
 	workflow_version = frappe.get_doc(
-		"Workflow",
+		"Generation Workflow",
 		media_specification.workflow,
 	)
 	if not workflow_version.output_fps:
@@ -678,7 +580,8 @@ def _get_or_create_final_asset(media_specification):
 			"asset_name": asset_name,
 			"media_project": media_specification.media_project,
 			"media_type": "Video",
-			"asset_category": "Final Deliverable",
+			"asset_category": "Other",
+			"asset_scope": "Project Output",
 			"status": "Active",
 		}
 	)

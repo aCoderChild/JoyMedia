@@ -125,7 +125,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Workflow",
-   "options": "Workflow",
+   "options": "Generation Workflow",
    "read_only": 1,
    "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1

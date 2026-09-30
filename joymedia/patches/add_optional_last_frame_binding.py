@@ -3,12 +3,12 @@ import frappe
 
 def execute():
 	workflow_version_name = frappe.db.get_value(
-		"Workflow", {"workflow_key": "product_showcase"}, "name", order_by="version_number desc"
+		"Generation Workflow", {"workflow_key": "product_showcase"}, "name", order_by="version_number desc"
 	)
 	if not workflow_version_name:
 		return
 
-	workflow_version = frappe.get_doc("Workflow", workflow_version_name)
+	workflow_version = frappe.get_doc("Generation Workflow", workflow_version_name)
 	workflow = frappe.parse_json(workflow_version.workflow_json)
 	minimax_conditioning = workflow.get("minimax_cond")
 	if not isinstance(minimax_conditioning, dict):
@@ -29,12 +29,9 @@ def execute():
 				"binding_key": "last_frame",
 				"node_key": "minimax_cond",
 				"input_name": "last_frame",
-				"value_source": "Generation Input",
 				"required_input_role": "Last Frame",
 				"value_type": "File Path",
 				"required": 0,
-				"allow_override": 0,
-				"description": "Optional continuation frame; omitted for first-frame-only generation.",
 			},
 		)
 

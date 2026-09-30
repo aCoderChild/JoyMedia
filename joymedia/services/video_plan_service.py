@@ -37,6 +37,7 @@ def parse_video_plan(plan_json: str):
 
 def apply_video_plan(media_specification_name: str, plan: dict):
 	media_spec = frappe.get_doc("Media Specification", media_specification_name)
+	_validate_plan_shape(plan)
 
 	if media_spec.status != "Draft":
 		frappe.throw(_("Video plans can only be applied to Draft Media Specifications."))
@@ -74,11 +75,11 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 		if not media_spec.workflow:
 			frappe.throw(_("The Media Specification requires a Workflow."))
 
-		workflow_version = frappe.get_doc("Workflow", media_spec.workflow)
+		workflow_version = frappe.get_doc("Generation Workflow", media_spec.workflow)
 		required_input_roles = {
 			frappe.scrub(binding.required_input_role)
 			for binding in workflow_version.bindings
-			if binding.value_source == "Generation Input"
+			if binding.binding_key in {"first_frame", "last_frame"}
 			and binding.required
 			and binding.required_input_role
 		}
@@ -115,14 +116,12 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 				"doctype": "Shot Specification",
 				"media_specification": media_spec.name,
 				"shot_number": shot["shot_number"],
-				"camera_direction": shot["camera"],
-				"subject_identity": shot["subject"],
-				"action_plot": shot["motion"],
-				"environment": shot["lighting"],
-				"audio_direction": shot["audio"],
-				"generation_prompt": shot.get("generation_prompt") or _fallback_generation_prompt(shot),
+				"shot_name": shot.get("shot_name") or f"Shot {shot['shot_number']}",
+				"generation_prompt": shot["generation_prompt"],
 			}
 		)
+		if shot.get("duration_seconds") is not None:
+			doc.duration_seconds = shot["duration_seconds"]
 		first_reference_index = shot.get("first_frame_reference_image_index")
 		if first_reference_index is None:
 			first_reference_index = shot.get("reference_image_index")
@@ -193,15 +192,25 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 	return created_shots
 
 
-def _fallback_generation_prompt(shot):
-	return "\n".join(
-		line
-		for line in (
-			f"Camera & Framing: {shot.get('camera', '')}",
-			f"Subject: {shot.get('subject', '')}",
-			f"Motion: {shot.get('motion', '')}",
-			f"Lighting & Environment: {shot.get('lighting', '')}",
-			f"Audio: {shot.get('audio', '')}",
-		)
-		if line.split(": ", 1)[1].strip()
-	)
+def _validate_plan_shape(plan):
+	if not isinstance(plan, dict) or not isinstance(plan.get("shots"), list) or not plan["shots"]:
+		frappe.throw(_("Video plan must contain a non-empty shots list."))
+	seen_numbers = set()
+	for shot in plan["shots"]:
+		if not isinstance(shot, dict):
+			frappe.throw(_("Every video plan shot must be an object."))
+		shot_number = shot.get("shot_number")
+		prompt = str(shot.get("generation_prompt") or "").strip()
+		if type(shot_number) is not int or shot_number < 1:
+			frappe.throw(_("Every video plan shot must have a positive integer shot_number."))
+		if shot_number in seen_numbers:
+			frappe.throw(_("Video plan contains duplicate shot numbers."))
+		if not prompt:
+			frappe.throw(_("Every video plan shot must have a non-empty generation_prompt."))
+		seen_numbers.add(shot_number)
+		if shot.get("duration_seconds") is not None:
+			try:
+				if float(shot["duration_seconds"]) <= 0:
+					raise ValueError
+			except (TypeError, ValueError):
+				frappe.throw(_("Shot duration_seconds must be greater than zero."))

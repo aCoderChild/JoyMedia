@@ -14,6 +14,7 @@ from joymedia.workflow_adapters.base import canonical_workflow_json
 IMMUTABLE_FIELDS = (
 	"workflow_key",
 	"version_number",
+	"ai_model_profile",
 	"workflow_json",
 	"bindings",
 	"frame_count",
@@ -34,18 +35,18 @@ def get_latest_valid_workflow(workflow_key=None):
 
 	filters = {"workflow_key": workflow_key} if workflow_key else {}
 	rows = frappe.get_all(
-		"Workflow",
+		"Generation Workflow",
 		filters=filters,
 		fields=["name", "workflow_key", "version_number"],
 		order_by="version_number desc, modified desc",
 	)
 	for row in rows:
-		workflow = frappe.get_doc("Workflow", row.name)
+		workflow = frappe.get_doc("Generation Workflow", row.name)
 		try:
 			validate_workflow_bindings(workflow)
 			validate_workflow_for_execution(workflow)
 			if workflow.workflow_key == DEFAULT_WORKFLOW_KEY and not any(
-				binding.value_source == "Generation Input"
+				binding.binding_key == "first_frame"
 				and binding.required
 				and binding.required_input_role
 				for binding in workflow.bindings
@@ -60,8 +61,8 @@ def get_latest_valid_workflow(workflow_key=None):
 @frappe.whitelist()
 def validate_workflow(version_name: str):
 	"""Validate an existing Workflow's dynamic bindings on demand."""
-	frappe.has_permission("Workflow", "read", version_name, throw=True)
-	workflow_version = frappe.get_doc("Workflow", version_name)
+	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
+	workflow_version = frappe.get_doc("Generation Workflow", version_name)
 	from joymedia.services.workflow_resolver import (
 		validate_workflow_bindings,
 		validate_workflow_for_execution,
@@ -75,8 +76,8 @@ def validate_workflow(version_name: str):
 @frappe.whitelist()
 def get_workflow_nodes(version_name: str):
 	"""Return the node keys and available inputs from a stored ComfyUI API workflow."""
-	frappe.has_permission("Workflow", "read", version_name, throw=True)
-	workflow_version = frappe.get_doc("Workflow", version_name)
+	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
+	workflow_version = frappe.get_doc("Generation Workflow", version_name)
 	workflow = frappe.parse_json(workflow_version.workflow_json)
 	if not isinstance(workflow, dict):
 		frappe.throw(_("Workflow JSON must define a JSON object."))
@@ -102,13 +103,13 @@ def get_workflow_nodes(version_name: str):
 @frappe.whitelist()
 def clone_workflow_as_draft(version_name: str):
 	"""Create a new immutable revision of an existing Workflow."""
-	frappe.has_permission("Workflow", "read", version_name, throw=True)
-	frappe.has_permission("Workflow", "create", throw=True)
-	workflow_version = frappe.get_doc("Workflow", version_name)
+	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
+	frappe.has_permission("Generation Workflow", "create", throw=True)
+	workflow_version = frappe.get_doc("Generation Workflow", version_name)
 
 	clone = frappe.get_doc(
 		{
-			"doctype": "Workflow",
+			"doctype": "Generation Workflow",
 			"workflow_key": workflow_version.workflow_key,
 			"workflow_json": workflow_version.workflow_json,
 		}
@@ -120,12 +121,9 @@ def clone_workflow_as_draft(version_name: str):
 				"binding_key": binding.binding_key,
 				"node_key": binding.node_key,
 				"input_name": binding.input_name,
-				"value_source": binding.value_source,
 				"required_input_role": binding.required_input_role,
 				"value_type": binding.value_type,
 				"required": binding.required,
-				"allow_override": binding.allow_override,
-				"description": binding.description,
 			},
 		)
 	clone.insert()
@@ -135,8 +133,8 @@ def clone_workflow_as_draft(version_name: str):
 @frappe.whitelist()
 def set_default_workflow(version_name: str):
 	"""Validate a workflow for compatibility with older Desk actions."""
-	frappe.has_permission("Workflow", "read", version_name, throw=True)
-	workflow_version = frappe.get_doc("Workflow", version_name)
+	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
+	workflow_version = frappe.get_doc("Generation Workflow", version_name)
 	from joymedia.services.workflow_resolver import (
 		validate_workflow_bindings,
 		validate_workflow_for_execution,
@@ -149,7 +147,7 @@ def set_default_workflow(version_name: str):
 	}
 
 
-class Workflow(Document):
+class GenerationWorkflow(Document):
 	def validate(self):
 		self._set_backend_defaults()
 		self._set_version_number()
@@ -179,7 +177,7 @@ class Workflow(Document):
 			return
 
 		latest = frappe.get_all(
-			"Workflow",
+			"Generation Workflow",
 			filters={"workflow_key": self.workflow_key},
 			fields=["version_number"],
 			order_by="version_number desc",
@@ -200,5 +198,5 @@ class Workflow(Document):
 		if not changed_fields:
 			return
 		frappe.throw(
-			_("Workflow {0} is immutable after creation.").format(self.name)
+			_("Generation Workflow {0} is immutable after creation.").format(self.name)
 		)

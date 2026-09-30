@@ -336,12 +336,22 @@ def compose_project_timeline(project_name: str):
 
 
 def _initialize_timeline(project):
-	if frappe.db.exists("Timeline Clip", {"media_project": project.name}):
-		return
-
 	media_specification = _latest_fully_generated_specification(project.name)
 	if not media_specification:
 		return
+	existing_clips = frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project.name},
+		fields=["name", "media_specification"],
+	)
+	if existing_clips and all(
+		clip.media_specification == media_specification.name for clip in existing_clips
+	):
+		return
+	if existing_clips:
+		for clip in existing_clips:
+			frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
+
 	fps = _project_fps(media_specification.name)
 	shots = frappe.get_all(
 		"Shot Specification",
@@ -639,7 +649,7 @@ def _project_fps(media_specification_name):
 	workflow_name = frappe.db.get_value("Media Specification", media_specification_name, "workflow")
 	if not workflow_name:
 		frappe.throw(_("Media Specification has no Workflow."))
-	fps = float(frappe.db.get_value("Workflow", workflow_name, "output_fps") or 0)
+	fps = float(frappe.db.get_value("Generation Workflow", workflow_name, "output_fps") or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))
 	return fps

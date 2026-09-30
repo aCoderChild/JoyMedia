@@ -1,31 +1,31 @@
 // Copyright (c) 2026, JoyMedia and contributors
 // For license information, please see license.txt
 
-frappe.ui.form.on("Workflow", {
+frappe.ui.form.on("Generation Workflow", {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
 		frm.add_custom_button(
 			__("Validate Bindings"),
 			() => validate_bindings(frm),
-			__("Workflow")
+			__("Generation Workflow")
 		);
 		frm.add_custom_button(
 			__("Inspect Nodes"),
 			() => inspect_nodes(frm),
-			__("Workflow")
+			__("Generation Workflow")
 		);
 		frm.add_custom_button(
 			__("Clone as Draft"),
 			() => clone_as_draft(frm),
-			__("Workflow")
+			__("Generation Workflow")
 		);
 
 		if (["Testing", "Production"].includes(frm.doc.status)) {
 			frm.add_custom_button(
 				__("Set as Default"),
 				() => set_as_default(frm),
-				__("Workflow")
+				__("Generation Workflow")
 			);
 		}
 	},
@@ -33,7 +33,7 @@ frappe.ui.form.on("Workflow", {
 
 function validate_bindings(frm) {
 	frappe.call({
-		method: "joymedia.joymedia.doctype.workflow.workflow.validate_workflow",
+		method: "joymedia.joymedia.doctype.generation_workflow.generation_workflow.validate_workflow",
 		args: { version_name: frm.doc.name },
 		freeze: true,
 		freeze_message: __("Validating workflow bindings..."),
@@ -44,7 +44,7 @@ function validate_bindings(frm) {
 
 function inspect_nodes(frm) {
 	frappe.call({
-		method: "joymedia.joymedia.doctype.workflow.workflow.get_workflow_nodes",
+		method: "joymedia.joymedia.doctype.generation_workflow.generation_workflow.get_workflow_nodes",
 		args: { version_name: frm.doc.name },
 		freeze: true,
 		freeze_message: __("Reading workflow nodes..."),
@@ -80,12 +80,12 @@ function clone_as_draft(frm) {
 		__("Create an editable Draft copy of this Workflow?"),
 		() => {
 			frappe.call({
-				method: "joymedia.joymedia.doctype.workflow.workflow.clone_workflow_as_draft",
+				method: "joymedia.joymedia.doctype.generation_workflow.generation_workflow.clone_workflow_as_draft",
 				args: { version_name: frm.doc.name },
 				freeze: true,
 				freeze_message: __("Creating draft workflow..."),
 			}).then((response) => {
-				frappe.set_route("Form", "Workflow", response.message.name);
+				frappe.set_route("Form", "Generation Workflow", response.message.name);
 			});
 		}
 	);
@@ -93,7 +93,7 @@ function clone_as_draft(frm) {
 
 function set_as_default(frm) {
 	frappe.call({
-		method: "joymedia.joymedia.doctype.workflow.workflow.set_default_workflow",
+		method: "joymedia.joymedia.doctype.generation_workflow.generation_workflow.set_default_workflow",
 		args: { version_name: frm.doc.name },
 		freeze: true,
 		freeze_message: __("Validating and updating default workflow..."),

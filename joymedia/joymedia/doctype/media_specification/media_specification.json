@@ -23,7 +23,8 @@
   "audio_mix_section",
   "audio_cues",
   "global_content_requirements_section",
-  "generation_instructions"
+  "generation_instructions",
+  "global_consistency_instructions"
  ],
  "fields": [
   {
@@ -77,8 +78,8 @@
    "description": "Exact immutable workflow used for this specification.",
    "fieldname": "workflow",
    "fieldtype": "Link",
-   "label": "Workflow",
-   "options": "Workflow",
+   "label": "Generation Workflow",
+   "options": "Generation Workflow",
    "read_only_depends_on": "eval:doc.status!=\"Draft\";",
    "reqd": 1
   },
@@ -148,6 +149,12 @@
    "fieldname": "generation_instructions",
    "fieldtype": "Long Text",
    "label": "Generation Instructions"
+  },
+  {
+   "description": "Requirements that must remain consistent across all shots in this specification.",
+   "fieldname": "global_consistency_instructions",
+   "fieldtype": "Long Text",
+   "label": "Global Consistency Instructions"
   }
  ],
  "grid_page_length": 50,

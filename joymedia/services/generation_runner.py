@@ -191,6 +191,13 @@ def submit_attempt(attempt_name: str):
 		result = submit_workflow(workflow, base_url=endpoint_url)
 
 		attempt.comfyui_endpoint_url = endpoint_url
+		backend_name = frappe.db.get_value(
+			"Generation Backend",
+			{"endpoint_url": endpoint_url, "enabled": 1},
+			"name",
+		)
+		if backend_name:
+			attempt.generation_backend = backend_name
 		attempt.external_job_id = result["prompt_id"]
 		attempt.status = "Queued"
 		attempt.queued_at = now()
