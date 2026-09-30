@@ -14,7 +14,7 @@ from joymedia.workflow_adapters.base import canonical_workflow_json
 IMMUTABLE_FIELDS = (
 	"workflow_key",
 	"version_number",
-	"ai_model_profile",
+	"adapter_key",
 	"workflow_json",
 	"bindings",
 	"frame_count",
@@ -24,10 +24,11 @@ IMMUTABLE_FIELDS = (
 )
 
 DEFAULT_WORKFLOW_KEY = "product_showcase"
+DEFAULT_ADAPTER_KEY = "minimax_h3"
 
 
 def get_latest_valid_workflow(workflow_key=None):
-	"""Return the newest workflow whose stored graph and bindings are valid."""
+	"""Return the newest workflow whose stored graph and bindings are executable."""
 	from joymedia.services.workflow_resolver import (
 		validate_workflow_bindings,
 		validate_workflow_for_execution,
@@ -43,6 +44,7 @@ def get_latest_valid_workflow(workflow_key=None):
 	for row in rows:
 		workflow = frappe.get_doc("Generation Workflow", row.name)
 		try:
+			get_workflow_adapter(workflow)
 			validate_workflow_bindings(workflow)
 			validate_workflow_for_execution(workflow)
 			if workflow.workflow_key == DEFAULT_WORKFLOW_KEY and not any(
@@ -60,7 +62,7 @@ def get_latest_valid_workflow(workflow_key=None):
 
 @frappe.whitelist()
 def validate_workflow(version_name: str):
-	"""Validate an existing Workflow's dynamic bindings on demand."""
+	"""Validate an existing Generation Workflow on demand."""
 	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
 	workflow_version = frappe.get_doc("Generation Workflow", version_name)
 	from joymedia.services.workflow_resolver import (
@@ -68,6 +70,7 @@ def validate_workflow(version_name: str):
 		validate_workflow_for_execution,
 	)
 
+	get_workflow_adapter(workflow_version)
 	validate_workflow_bindings(workflow_version)
 	validate_workflow_for_execution(workflow_version)
 	return {"valid": True, "workflow_version": workflow_version.name}
@@ -75,7 +78,7 @@ def validate_workflow(version_name: str):
 
 @frappe.whitelist()
 def get_workflow_nodes(version_name: str):
-	"""Return the node keys and available inputs from a stored ComfyUI API workflow."""
+	"""Return node keys and available inputs from the stored ComfyUI API workflow."""
 	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
 	workflow_version = frappe.get_doc("Generation Workflow", version_name)
 	workflow = frappe.parse_json(workflow_version.workflow_json)
@@ -102,7 +105,7 @@ def get_workflow_nodes(version_name: str):
 
 @frappe.whitelist()
 def clone_workflow_as_draft(version_name: str):
-	"""Create a new immutable revision of an existing Workflow."""
+	"""Create a new immutable revision of an existing Generation Workflow."""
 	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
 	frappe.has_permission("Generation Workflow", "create", throw=True)
 	workflow_version = frappe.get_doc("Generation Workflow", version_name)
@@ -111,6 +114,7 @@ def clone_workflow_as_draft(version_name: str):
 		{
 			"doctype": "Generation Workflow",
 			"workflow_key": workflow_version.workflow_key,
+			"adapter_key": workflow_version.adapter_key,
 			"workflow_json": workflow_version.workflow_json,
 		}
 	)
@@ -140,16 +144,15 @@ def set_default_workflow(version_name: str):
 		validate_workflow_for_execution,
 	)
 
+	get_workflow_adapter(workflow_version)
 	validate_workflow_bindings(workflow_version)
 	validate_workflow_for_execution(workflow_version)
-	return {
-		"workflow": workflow_version.name,
-	}
+	return {"workflow": workflow_version.name}
 
 
 class GenerationWorkflow(Document):
 	def validate(self):
-		self._set_backend_defaults()
+		self._set_defaults()
 		self._set_version_number()
 		self._validate_immutable_content()
 		workflow_data = frappe.parse_json(self.workflow_json)
@@ -158,6 +161,7 @@ class GenerationWorkflow(Document):
 
 		from joymedia.services.workflow_resolver import validate_workflow_bindings
 
+		get_workflow_adapter(self)
 		validate_workflow_bindings(self)
 		self.workflow_hash = hashlib.sha256(
 			canonical_workflow_json(workflow_data).encode("utf-8")
@@ -168,9 +172,11 @@ class GenerationWorkflow(Document):
 		).items():
 			setattr(self, fieldname, value)
 
-	def _set_backend_defaults(self):
+	def _set_defaults(self):
 		if not self.workflow_key:
 			self.workflow_key = DEFAULT_WORKFLOW_KEY
+		if not self.adapter_key:
+			self.adapter_key = DEFAULT_ADAPTER_KEY
 
 	def _set_version_number(self):
 		if not self.is_new() or not self.workflow_key:
