@@ -9,16 +9,17 @@ ADAPTERS = {
 
 
 def get_workflow_adapter(workflow):
-	"""Resolve a workflow's explicitly configured model adapter."""
-	profile_name = getattr(workflow, "ai_model_profile", None)
-	if not profile_name:
-		frappe.throw(frappe._("Generation Workflow {0} requires an AI Model Profile.").format(workflow.name))
-	adapter_key = frappe.db.get_value("AI Model Profile", profile_name, "adapter_key")
+	"""Resolve the adapter configured directly on a Generation Workflow."""
+	adapter_key = str(getattr(workflow, "adapter_key", "") or "").strip()
+	if not adapter_key:
+		frappe.throw(
+			frappe._("Generation Workflow {0} requires an adapter key.").format(workflow.name)
+		)
 	adapter = ADAPTERS.get(adapter_key)
 	if not adapter:
 		frappe.throw(
-			frappe._("Unsupported AI model adapter '{0}' for AI Model Profile {1}.").format(
-				adapter_key or "(empty)", profile_name
+			frappe._("Unsupported generation adapter '{0}' for Generation Workflow {1}.").format(
+				adapter_key, workflow.name
 			)
 		)
 	return adapter()
