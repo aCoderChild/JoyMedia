@@ -387,6 +387,7 @@ def get_project_production(name):
 		fields=[
 			"name",
 			"shot_specification",
+			"depends_on_job",
 			"status",
 			"progress",
 			"failure_class",
@@ -395,8 +396,22 @@ def get_project_production(name):
 		order_by="creation asc",
 	)
 	for job in jobs:
-		job["shot_number"] = frappe.db.get_value(
-			"Shot Specification", job.shot_specification, "shot_number"
+		shot = frappe.db.get_value(
+			"Shot Specification",
+			job.shot_specification,
+			["shot_number", "selected_output_asset_version"],
+			as_dict=True,
+		)
+		job["shot_number"] = shot.shot_number if shot else None
+		job["selected_output_asset_version"] = (
+			shot.selected_output_asset_version if shot else None
+		)
+		job["output_video"] = (
+			frappe.db.get_value(
+				"Asset Version", shot.selected_output_asset_version, "file"
+			)
+			if shot and shot.selected_output_asset_version
+			else None
 		)
 	production["jobs"] = jobs
 	final_asset_ver = (
@@ -410,6 +425,28 @@ def get_project_production(name):
 			"file": frappe.db.get_value("Asset Version", final_asset_ver, "file"),
 		}
 	return production
+
+
+@frappe.whitelist()
+def refresh_project_production(name):
+	"""Refresh an active project run from ComfyUI before returning its state."""
+	project = frappe.get_doc("Media Project", name)
+	project._require_write_access()
+	specification_names = _get_project_specification_names(project.name)
+	if not specification_names:
+		return None
+
+	production = _get_latest_project_generation_run(project.name, specification_names)
+	if not production:
+		return None
+
+	if production.status in ("Queued", "Running"):
+		from joymedia.services.generation_orchestrator import refresh_run
+
+		refresh_run(production.name)
+		frappe.db.commit()
+
+	return get_project_production(project.name)
 
 def _get_project_assets(media_project):
 	"""Return the reference inputs explicitly selected for a project."""

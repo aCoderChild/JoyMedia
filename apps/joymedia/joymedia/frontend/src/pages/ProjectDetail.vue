@@ -416,7 +416,23 @@
                   :src="getShotFirstFrame(shot, Boolean(plan?.shots?.length)).file"
                   class="w-full h-full object-cover"
                 />
-                <span v-else class="text-[10px] text-ink-muted font-mono">{{ t('shot_n', { n: shot.shot_number }) }}</span>
+                <div v-else class="flex flex-col items-center gap-1 text-center">
+                  <span class="text-[10px] text-ink-muted font-mono">{{ t('shot_n', { n: shot.shot_number }) }}</span>
+                  <span
+                    v-if="isProductionActive && getShotProductionState(shot)"
+                    class="text-[9px] text-ink-muted"
+                  >
+                    {{ getShotProductionState(shot) === 'Generating'
+                      ? (currentLang === 'vi' ? '◉ Đang tạo' : '◉ Generating')
+                      : getShotProductionState(shot) === 'Waiting for previous frame'
+                        ? (currentLang === 'vi' ? '◌ Chờ frame trước' : '◌ Waiting for previous frame')
+                        : getShotProductionState(shot) === 'Waiting'
+                          ? (currentLang === 'vi' ? '◌ Đang chờ' : '◌ Waiting')
+                          : getShotProductionState(shot) === 'Failed'
+                            ? (currentLang === 'vi' ? '✕ Lỗi' : '✕ Failed')
+                            : getShotProductionState(shot) }}
+                  </span>
+                </div>
               </div>
 
               <!-- CapCut / Adobe Premiere / Google Flow Keyframe Track Lane -->
@@ -1182,23 +1198,24 @@ async function handleShotEnded() {
 }
 
 const productionError = computed(() => {
-  if (magicGenerateError.value) return magicGenerateError.value;
-  if (!production.value) return "";
-  if (production.value.error_summary) return production.value.error_summary;
-  const failedJob = (production.value.jobs || []).find(
-    (job) => job.status === "Failed" && job.error_summary
-  );
-  if (failedJob?.error_summary) return failedJob.error_summary;
-  if (production.value.status === "Failed" || production.value.failed_jobs > 0) {
-    return currentLang.value === "vi"
-      ? "Một hoặc nhiều cảnh không thể tạo. Vui lòng thử lại."
-      : "One or more shots could not be generated. Please retry.";
-  }
-  return "";
+	if (production.value) {
+		if (production.value.status === "Failed") {
+			return (
+				production.value.error_summary ||
+				(currentLang.value === "vi"
+					? "Quá trình tạo video thất bại."
+					: "Video generation failed.")
+			);
+		}
+		if (["Queued", "Running", "Completed"].includes(production.value.status)) {
+			return "";
+		}
+	}
+
+	return magicGenerateError.value || "";
 });
 const productionStatus = computed(() => {
-  if (productionError.value) return "Failed";
-  return production.value?.status || "";
+	return production.value?.status || "";
 });
 const expectedShotCount = computed(() => {
   const productionTotal = Number(production.value?.total_jobs || 0);
@@ -1714,6 +1731,42 @@ function getShotVideoFile(shot) {
   return shot?.selected_output_file || shot?.output_video || null;
 }
 
+function getShotProductionJob(shot) {
+  return (production.value?.jobs || []).find(
+    (job) => job.shot_specification === shot?.name || Number(job.shot_number) === Number(shot?.shot_number),
+  );
+}
+
+function getShotProductionState(shot) {
+  if (getShotVideoFile(shot)) return "Completed";
+  const job = getShotProductionJob(shot);
+  if (!job) return null;
+  if (job.status === "Running" || job.status === "Queued") return "Generating";
+  if (job.status === "Ready" && job.depends_on_job) return "Waiting for previous frame";
+  if (job.status === "Ready") return "Waiting";
+  if (job.status === "Failed") return "Failed";
+	return job.status;
+}
+
+function syncProductionOutputsToStoryboard() {
+	const jobs = production.value?.jobs || [];
+	const shots = workspace.value?.storyboard || [];
+
+	for (const job of jobs) {
+		if (!job.shot_specification) continue;
+		const shot = shots.find((item) => item.name === job.shot_specification);
+		if (!shot) continue;
+
+		if (job.selected_output_asset_version) {
+			shot.selected_output_asset_version = job.selected_output_asset_version;
+		}
+		if (job.output_video) {
+			shot.selected_output_file = job.output_video;
+			shot.output_video = job.output_video;
+		}
+	}
+}
+
 // Watch settings updates
 watch(settings, (value) => {
   if (!value) return;
@@ -1773,22 +1826,27 @@ onBeforeUnmount(() => {
 });
 
 async function refresh() {
-  plan.value = null;
+	magicGenerateError.value = "";
+	plan.value = null;
   await campaign.reload();
   await reloadProduction();
   await loadTimeline(false);
 }
 
 async function reloadProduction() {
-  const latest = await call("joymedia.joymedia.doctype.media_project.media_project.get_project_production", {
+  const method = ACTIVE_STATUSES.has(production.value?.status)
+    ? "joymedia.joymedia.doctype.media_project.media_project.refresh_project_production"
+    : "joymedia.joymedia.doctype.media_project.media_project.get_project_production";
+  const latest = await call(method, {
     name: projectName.value,
   });
   // A null response must not erase a completed production already returned
   // by the workspace payload during reload.
-  if (latest) {
-    productionSnapshot.value = latest;
-    productionSnapshotLoaded.value = true;
-  }
+	if (latest) {
+		productionSnapshot.value = latest;
+		productionSnapshotLoaded.value = true;
+		syncProductionOutputsToStoryboard();
+	}
   return latest;
 }
 
@@ -1798,6 +1856,7 @@ watch(() => productionResource.data, (value) => {
   if (!productionSnapshotLoaded.value && value) {
     productionSnapshot.value = value;
     productionSnapshotLoaded.value = true;
+    syncProductionOutputsToStoryboard();
   }
 }, { immediate: true });
 
