@@ -181,10 +181,10 @@
             <button
               type="button"
               class="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-              :disabled="timelineBusy || processingReview"
+              :disabled="timelineBusy || regeneratingSource"
               @click="$emit('regenerateSourceForSelectedClip')"
             >
-              <span v-if="processingReview" class="lucide-refresh-cw size-3 animate-spin" />
+              <span v-if="regeneratingSource" class="lucide-refresh-cw size-3 animate-spin" />
               <span v-else>↻</span>
               <span>{{ currentLang === 'vi' ? 'Tạo lại cảnh gốc (Regenerate source)' : 'Regenerate source' }}</span>
             </button>
@@ -387,10 +387,10 @@
             <button
               type="button"
               class="flex-1 py-1 px-2.5 rounded-lg bg-surface-card hover:bg-surface-hover text-ink-primary text-[11px] font-semibold border border-outline-border flex items-center justify-center gap-1 cursor-pointer transition-colors"
-              :disabled="processingReview || isProductionActive"
+              :disabled="regeneratingSource || isProductionActive"
               @click="$emit('regenerateCurrentShot')"
             >
-              <span v-if="processingReview" class="lucide-refresh-cw size-3 animate-spin" />
+              <span v-if="regeneratingSource" class="lucide-refresh-cw size-3 animate-spin" />
               <span v-else>↻</span>
               <span>{{ t('btn_regenerate') }}</span>
             </button>
@@ -614,7 +614,7 @@ const props = defineProps({
   selectedShotIndex: { type: Number, default: 0 },
   continuityMode: { type: String, default: "Multi-shot" },
   currentLang: { type: String, default: "vi" },
-  processingReview: { type: Boolean, default: false },
+  regeneratingSource: { type: Boolean, default: false },
   isProductionActive: { type: Boolean, default: false },
   isStoryboardDraft: { type: Boolean, default: true },
   savingShot: { type: Boolean, default: false },

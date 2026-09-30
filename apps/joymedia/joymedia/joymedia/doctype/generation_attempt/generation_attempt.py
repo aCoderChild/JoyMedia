@@ -125,7 +125,7 @@ def create_manual_regeneration_attempt_internal(
 	_validate_retry_reason(reason)
 	completed_attempt = frappe.get_doc("Generation Attempt", completed_attempt_name)
 	if completed_attempt.status != "Completed":
-		frappe.throw(_("Only completed Generation Attempts can be retried after QA review."))
+		frappe.throw(_("Only completed Generation Attempts can be manually regenerated."))
 	if frappe.db.exists("Generation Attempt", {"retry_of": completed_attempt.name}):
 		frappe.throw(_("Generation Attempt {0} already has a retry successor.").format(completed_attempt.name))
 	return _create_successor_attempt(completed_attempt, reason)

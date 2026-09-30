@@ -1009,25 +1009,6 @@ h2 {
   text-overflow: ellipsis;
 }
 
-.review-shot-card {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 20px;
-  border: 1px solid var(--outline-border);
-  border-radius: 14px;
-  background-color: var(--surface-card);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
-}
-
-.review-shot-video {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background-color: #000000;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
 .muted {
   color: var(--ink-muted);
   font-size: 13.5px;
@@ -1120,8 +1101,7 @@ h2 {
   font-size: 13px;
 }
 
-.asset-placeholder,
-.review-placeholder {
+.asset-placeholder {
   display: grid;
   min-height: 120px;
   place-items: center;
@@ -1130,11 +1110,6 @@ h2 {
   color: #94a3b8;
   font-size: 13px;
   font-weight: 500;
-}
-
-.review-placeholder {
-  background: linear-gradient(135deg, #312e81, #4338ca);
-  color: #c7d2fe;
 }
 
 .inline-form {
@@ -1280,15 +1255,13 @@ h2 {
   color: var(--ink-secondary);
 }
 
-.storyboard-grid,
-.review-grid {
+.storyboard-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
 
-.storyboard-card,
-.review-card {
+.storyboard-card {
   padding: 20px;
   border: 1px solid var(--outline-border);
   border-radius: 12px;
@@ -1453,27 +1426,12 @@ h2 {
   font-size: 13px;
 }
 
-.review-card video,
 .final-video {
   display: block;
   width: 100%;
   max-height: 360px;
   border-radius: 8px;
   background: #000;
-}
-
-.review-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.review-actions span {
-  margin-right: auto;
-  color: var(--ink-secondary);
-  font-size: 13px;
-  font-weight: 500;
 }
 
 /* Responsive Breakpoints */
@@ -1536,7 +1494,6 @@ h2 {
   .card-grid,
   .simple-grid,
   .storyboard-grid,
-  .review-grid,
   .campaign-summary,
   .style-grid,
   .asset-grid {

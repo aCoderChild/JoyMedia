@@ -17,6 +17,15 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 class IntegrationTestAssetVersion(IntegrationTestCase):
+	def test_media_asset_category_contract(self):
+		field = frappe.get_meta("Media Asset").get_field("asset_category")
+		options = {option for option in (field.options or "").splitlines() if option}
+
+		self.assertIn("Style", options)
+		self.assertNotIn("Storyboard", options)
+		self.assertIn("Shot Output", options)
+		self.assertIn("Final Deliverable", options)
+
 	def test_duplicate_uploads_respect_asset_category(self):
 		from joymedia.services.media_asset_service import create_media_asset
 		image_buffer = BytesIO()

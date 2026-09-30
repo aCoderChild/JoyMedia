@@ -16,7 +16,7 @@ frappe.ui.form.on("Media Project", {
 			});
 		}
 
-		if (["Needs Attention", "Failed"].includes(frm.doc.status)) {
+		if (frm.doc.status === "Needs Attention") {
 			frm.add_custom_button(__("Retry Failed Generation"), () => {
 				retry_failed_generation(frm);
 			});

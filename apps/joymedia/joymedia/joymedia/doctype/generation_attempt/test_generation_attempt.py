@@ -12,6 +12,21 @@ from joymedia.services.generation_runner import submit_attempt
 
 
 class TestGenerationAttempt(FrappeTestCase):
+	def test_retry_taxonomy(self):
+		field = frappe.get_meta("Generation Attempt").get_field("retry_reason")
+		options = {option for option in (field.options or "").splitlines() if option}
+
+		self.assertEqual(
+			options,
+			{
+				"Execution Failure",
+				"Workflow Revision",
+				"Input Revision",
+				"Manual Retry",
+				"Other",
+			},
+		)
+
 	def test_attempt_number_is_assigned_from_the_job_history(self):
 		attempt = frappe.new_doc("Generation Attempt")
 		attempt.generation_job = "JOB-00001"

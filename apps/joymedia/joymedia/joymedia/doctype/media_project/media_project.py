@@ -236,7 +236,6 @@ def get_project_workspace(name):
 	outputs = _get_project_outputs(project.name)
 	storyboard = []
 	production = None
-	reviews = []
 	final_video = None
 
 	if storyboard_specification:

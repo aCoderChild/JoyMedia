@@ -2,6 +2,9 @@ import frappe
 
 
 def execute():
+	if not frappe.db.has_column("Media Asset", "library_visibility"):
+		return
+
 	frappe.db.sql(
 		"""
 		UPDATE `tabMedia Asset`

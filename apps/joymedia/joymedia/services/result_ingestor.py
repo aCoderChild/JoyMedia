@@ -215,7 +215,7 @@ def _create_primary_artifact(attempt):
 
 
 def _store_artifact_file_in_frappe(artifact, attempt, output=None):
-	"""Copy a temporary ComfyUI output into Frappe for review without promoting it."""
+	"""Persist a raw ComfyUI output as a Generation Artifact file."""
 	if artifact.frappe_file:
 		return artifact
 

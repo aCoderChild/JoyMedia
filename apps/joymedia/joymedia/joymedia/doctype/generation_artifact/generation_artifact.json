@@ -44,7 +44,7 @@
    "read_only": 1
   },
   {
-   "description": "Generated video stored in Frappe for review.",
+   "description": "Raw output file produced by a Generation Attempt.",
    "fieldname": "frappe_file",
    "fieldtype": "Attach",
    "label": "File",

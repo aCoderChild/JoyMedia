@@ -15,7 +15,7 @@ frappe.ui.form.on("Generation Job", {
 						fieldtype: "Select",
 						label: "Retry Reason",
 						options:
-							"Execution Failure\nWorkflow Revision\nInput Revision\nManual Retry\nOther",
+								"Execution Failure\nWorkflow Revision\nInput Revision\nOther",
 						default: "Execution Failure",
 						reqd: 1
 					}

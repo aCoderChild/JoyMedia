@@ -527,7 +527,7 @@
       :selected-shot-index="selectedShotIndex"
       :continuity-mode="settingsForm.continuity_mode || 'Multi-shot'"
       :current-lang="currentLang"
-      :processing-review="processingReview"
+      :regenerating-source="regeneratingSource"
       :is-production-active="isProductionActive"
       :is-storyboard-draft="isStoryboardDraft"
       :saving-shot="savingShot"
@@ -1296,7 +1296,7 @@ const selectedClipSourceShot = computed(() => {
 
 const activeRightTab = ref("director");
 const savingShot = ref(false);
-const processingReview = ref(false);
+const regeneratingSource = ref(false);
 
 const isStoryboardDraft = computed(() => {
   return settings.value?.status === "Draft" || !production.value;
@@ -1619,7 +1619,7 @@ async function handleExportTimeline() {
 async function regenerateCurrentShot() {
   const shot = activeSelectedShot.value;
   if (!shot || !shot.name) return;
-  processingReview.value = true;
+  regeneratingSource.value = true;
   try {
     await call("joymedia.joymedia.doctype.media_project.media_project.regenerate_project_shot", {
       project_name: projectName.value,
@@ -1630,7 +1630,7 @@ async function regenerateCurrentShot() {
   } catch (error) {
     toast({ title: "Lỗi tạo lại", text: error.message || "Vui lòng thử lại.", type: "error" });
   } finally {
-    processingReview.value = false;
+    regeneratingSource.value = false;
   }
 }
 

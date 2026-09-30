@@ -34,7 +34,7 @@ frappe.ui.form.on("Generation Attempt", {
 							fieldtype: "Select",
 							label: "Retry Reason",
 							options:
-								"Execution Failure\nQA Failure\nHuman Review Rejection\nPrompt Revision\nWorkflow Revision\nInput Revision\nOther",
+								"Execution Failure\nWorkflow Revision\nInput Revision\nOther",
 							default: "Execution Failure",
 							reqd: 1
 						}
