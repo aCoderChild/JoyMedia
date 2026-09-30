@@ -8,36 +8,13 @@
  "field_order": [
   "generation_input_section",
   "generation_job",
-  "asset_version",
-  "generation_artifact",
   "input_role",
-  "notes"
+  "asset_version",
+  "generation_artifact"
  ],
  "fields": [
   {
-   "fieldname": "asset_version",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Asset Version",
-   "options": "Asset Version",
-   "read_only_depends_on": "eval:!doc.__islocal;",
-   "reqd": 0
-  },
-  {
-   "fieldname": "generation_artifact",
-   "fieldtype": "Link",
-   "label": "Generation Artifact",
-   "options": "Generation Artifact",
-   "read_only_depends_on": "eval:!doc.__islocal;"
-  },
-  {
-   "description": "Optional execution context explaining how this asset version should be used for this shot.",
-   "fieldname": "notes",
-   "fieldtype": "Small Text",
-   "label": "Notes"
-  },
-  {
-   "description": "Execution Request",
+   "description": "Frozen input assigned to one generation task. Source can be a reusable Asset Version or an upstream runtime Artifact.",
    "fieldname": "generation_input_section",
    "fieldtype": "Section Break",
    "label": "Generation Input"
@@ -53,7 +30,7 @@
    "reqd": 1
   },
   {
-   "description": "Stable workflow input role key. e.g. first_frame, last_frame, mask, product_reference.",
+   "description": "Stable workflow input role key, e.g. first_frame, last_frame, mask, product_reference, audio_reference.",
    "fieldname": "input_role",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -61,12 +38,27 @@
    "label": "Input Role Key",
    "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
+  },
+  {
+   "fieldname": "asset_version",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Asset Version",
+   "options": "Asset Version",
+   "read_only_depends_on": "eval:!doc.__islocal;"
+  },
+  {
+   "fieldname": "generation_artifact",
+   "fieldtype": "Link",
+   "label": "Generation Artifact",
+   "options": "Generation Artifact",
+   "read_only_depends_on": "eval:!doc.__islocal;"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-05 23:05:06.179051",
+ "modified": "2026-10-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Input",
