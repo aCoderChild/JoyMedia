@@ -22,8 +22,6 @@ class MediaSpecification(Document):
 		"continuity_mode",
 		"planning_context_json",
 		"planning_context_hash",
-		"generation_instructions",
-		"global_consistency_instructions",
 	)
 	PRESET_DIMENSIONS: ClassVar[dict[str, tuple[int, int]]] = {
 		"Landscape": (1344, 768),
@@ -38,8 +36,6 @@ class MediaSpecification(Document):
 		"delivery_preset",
 		"delivery_width",
 		"delivery_height",
-		"generation_instructions",
-		"global_consistency_instructions",
 	)
 
 	def validate(self):
@@ -68,13 +64,7 @@ class MediaSpecification(Document):
 			frappe.throw("Custom delivery presets require a positive width and height")
 
 	def _inherit_revision_state(self):
-		"""Carry stable production context into a newly created specification revision.
-
-		Storyboard revisions are created before copied Shot Specifications are edited.
-		They must preserve the previous generation mode, audio mix and planning snapshot
-		so a later Generate action does not mistake those copied/edited shots for a
-		stale Qwen plan and replace them with another automatic revision.
-		"""
+		"""Carry stable production settings into a new specification revision."""
 		if not self.media_project or int(self.version_number or 0) <= 1:
 			return
 
