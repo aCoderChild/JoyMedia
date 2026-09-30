@@ -42,6 +42,14 @@ def compile_prompt_for_documents(shot, media_spec):
 			_("Shot Specification {0} has no Qwen-generated generation_prompt.").format(shot.name)
 		)
 
+	global_instructions = str(media_spec.get("global_consistency_instructions") or "").strip()
+	if global_instructions:
+		prompt = (
+			f"{prompt}\n\n"
+			"Global instructions that apply to every shot:\n"
+			f"{global_instructions}"
+		)
+
 	if media_spec.continuity_mode in ("Continuous", "Consistency") and int(shot.shot_number or 0) > 1:
 		prompt = (
 			f"{prompt}\n\n"
