@@ -221,6 +221,10 @@
           </div>
         </div>
       </div>
+      <div v-if="productionPollError && !productionError" class="mb-2 p-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 shadow-xs text-xs text-amber-200">
+        {{ currentLang === 'vi' ? 'Không thể cập nhật trạng thái tạo video.' : 'Unable to refresh generation state.' }}
+        <span class="block mt-1 text-[11px] text-amber-300/80">{{ productionPollError }}</span>
+      </div>
 
       <!-- Outdated Timeline Revision Alert Banner -->
       <div
@@ -963,6 +967,7 @@ function selectKeyframeTarget(shot, index, type) {
 const isAutoGenerating = ref(false);
 const autoGenerateStep = ref("");
 const magicGenerateError = ref("");
+const productionPollError = ref("");
 
 const settingsForm = reactive({ duration: 15, format: "Landscape", video_style: "", continuity_mode: "Multi-shot" });
 const totalDurationSeconds = computed(() => Number(settingsForm.duration) || 15);
@@ -1017,6 +1022,12 @@ const generateButtonText = computed(() => {
   }
   const status = production.value?.status;
   if (status === "Running") {
+		const preparingNextShot = (production.value?.jobs || []).some(
+			(job) => job.status === "Ready" && job.depends_on_job,
+		);
+		if (preparingNextShot) {
+			return currentLang.value === "vi" ? "Đang chuẩn bị cảnh tiếp theo..." : "Preparing next shot...";
+		}
     const comp = Number(production.value?.completed_jobs || 0);
     const tot = Number(production.value?.total_jobs || 0);
     const pct = production.value?.progress_percent ?? production.value?.progress;
@@ -1810,10 +1821,16 @@ watch(() => production.value?.status, async (status, previousStatus) => {
 	if (pollTimer) clearInterval(pollTimer);
 	pollTimer = null;
 	if (ACTIVE_STATUSES.has(status)) {
-    pollTimer = setInterval(() => {
-      reloadProduction().catch(() => {});
-      nowTick.value = Date.now();
-    }, 4000);
+		pollTimer = setInterval(async () => {
+			try {
+				await reloadProduction();
+				productionPollError.value = "";
+			} catch (error) {
+				console.error("Production polling failed:", error);
+				productionPollError.value = error?.message || "Unable to refresh generation state.";
+			}
+			nowTick.value = Date.now();
+		}, 4000);
 	} else if (status === "Completed" && previousStatus !== "Completed") {
 		await refresh();
 		previewSelection.value = "full";
@@ -1834,10 +1851,7 @@ async function refresh() {
 }
 
 async function reloadProduction() {
-  const method = ACTIVE_STATUSES.has(production.value?.status)
-    ? "joymedia.joymedia.doctype.media_project.media_project.refresh_project_production"
-    : "joymedia.joymedia.doctype.media_project.media_project.get_project_production";
-  const latest = await call(method, {
+  const latest = await call("joymedia.joymedia.doctype.media_project.media_project.get_project_production", {
     name: projectName.value,
   });
   // A null response must not erase a completed production already returned
@@ -1847,6 +1861,7 @@ async function reloadProduction() {
 		productionSnapshotLoaded.value = true;
 		syncProductionOutputsToStoryboard();
 	}
+	productionPollError.value = "";
   return latest;
 }
 

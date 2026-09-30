@@ -81,15 +81,16 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		commit.assert_called_once_with()
 
 	@patch("joymedia.services.generation_orchestrator.frappe.enqueue")
-	def test_enqueue_deduplicates_each_run_operation(self, enqueue):
-		generation_orchestrator._enqueue("submit_run", "RUN-00001")
+	@patch("joymedia.services.generation_orchestrator.frappe.db.get_value", return_value="JOB-00002")
+	def test_enqueue_submit_run_uses_job_specific_deduplication(self, get_value, enqueue):
+		generation_orchestrator._enqueue_submit_run("RUN-00001")
 
 		enqueue.assert_called_once_with(
 			"joymedia.services.generation_orchestrator.submit_run",
 			queue="long",
 			run_name="RUN-00001",
 			enqueue_after_commit=True,
-			job_id="joymedia:submit_run:RUN-00001",
+			job_id="joymedia:submit_run:RUN-00001:JOB-00002",
 			deduplicate=True,
 		)
 

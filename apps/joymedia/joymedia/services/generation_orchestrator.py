@@ -164,7 +164,7 @@ def prepare_run(run_name: str):
 		return _run_summary(run)
 
 	_refresh_run_counters(run)
-	_enqueue("submit_run", run.name)
+	_enqueue_submit_run(run.name)
 	return _run_summary(run)
 
 
@@ -300,37 +300,38 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 				"Unable to refresh Generation Attempt %s for Run %s", attempt_name, run.name
 			)
 
-	jobs = [frappe.get_doc("Generation Job", job_name) for job_name in _get_run_job_names(run.name)]
-	for job in jobs:
-		_update_job_summary(job)
-	_finalize_completed_shots(run)
-
-	if _create_retry_attempt(run, jobs):
-		_enqueue("submit_run", run.name)
-	elif _has_submittable_work(run.name) and _has_submission_capacity(run):
-		_enqueue("submit_run", run.name)
-
-	_refresh_run_counters(run)
-	if enqueue_finalization:
-		_enqueue_finalization_if_ready(run)
-	sync_media_project_status_for_run(run.name)
-	return _run_summary(run)
+	return _advance_run(run, enqueue_finalization=enqueue_finalization)
 
 
 def refresh_generation_state_for_attempt(attempt_name: str):
 	"""Derive the parent Job and Run state after an Attempt state change."""
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	_update_job_summary(job)
 	if not job.generation_run:
+		_update_job_summary(job)
 		return {"generation_job": job.name, "job_status": job.status}
 
 	run = frappe.get_doc("Generation Run", job.generation_run)
 	if run.status == "Cancelled":
 		return _run_summary(run)
-	_refresh_run_counters(run)
+	return _advance_run(run)
+
+
+def _advance_run(run, enqueue_finalization=True):
+	"""Advance jobs, retries, chained submissions, and run completion together."""
+	jobs = [frappe.get_doc("Generation Job", job_name) for job_name in _get_run_job_names(run.name)]
+	for job in jobs:
+		_update_job_summary(job)
 	_finalize_completed_shots(run)
-	_enqueue_finalization_if_ready(run)
+
+	if _create_retry_attempt(run, jobs):
+		_enqueue_submit_run(run.name)
+	elif _has_submittable_work(run.name) and _has_submission_capacity(run):
+		_enqueue_submit_run(run.name)
+
+	_refresh_run_counters(run)
+	if enqueue_finalization:
+		_enqueue_finalization_if_ready(run)
 	sync_media_project_status_for_run(run.name)
 	return _run_summary(run)
 
@@ -932,6 +933,33 @@ def _enqueue(method_name, run_name):
 		run_name=run_name,
 		enqueue_after_commit=True,
 		job_id=f"joymedia:{method_name}:{run_name}",
+		deduplicate=True,
+	)
+
+
+def _enqueue_submit_run(run_name):
+	"""Queue the next submission stage with a job-specific deduplication key."""
+	next_job = frappe.db.get_value(
+		"Generation Job",
+		{"generation_run": run_name, "status": "Ready"},
+		"name",
+		order_by="creation asc",
+	)
+	if not next_job:
+		next_job = frappe.db.get_value(
+			"Generation Job",
+			{"generation_run": run_name, "status": "Queued"},
+			"name",
+			order_by="creation asc",
+		)
+	if not next_job:
+		return
+	frappe.enqueue(
+		"joymedia.services.generation_orchestrator.submit_run",
+		queue="long",
+		run_name=run_name,
+		enqueue_after_commit=True,
+		job_id=f"joymedia:submit_run:{run_name}:{next_job}",
 		deduplicate=True,
 	)
 
