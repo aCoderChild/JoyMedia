@@ -15,6 +15,7 @@
   "total_duration_seconds",
   "delivery_preset",
   "continuity_mode",
+  "global_consistency_instructions",
   "audio_mix_section",
   "audio_cues",
   "technical_snapshot_section",
@@ -23,10 +24,7 @@
   "delivery_width",
   "delivery_height",
   "planning_context_json",
-  "planning_context_hash",
-  "legacy_generation_section",
-  "generation_instructions",
-  "global_consistency_instructions"
+  "planning_context_hash"
  ],
  "fields": [
   {
@@ -95,6 +93,13 @@
    "reqd": 1
   },
   {
+   "description": "Optional video-wide constraints that must apply to every shot. The main creative request belongs in Media Project.video_idea.",
+   "fieldname": "global_consistency_instructions",
+   "fieldtype": "Long Text",
+   "label": "Global Instructions",
+   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
+  },
+  {
    "fieldname": "audio_mix_section",
    "fieldtype": "Section Break",
    "label": "Audio"
@@ -161,27 +166,6 @@
    "hidden": 1,
    "label": "Planning Context Hash",
    "read_only": 1
-  },
-  {
-   "description": "Compatibility-only fields from the earlier prompt architecture. New generation does not use these fields.",
-   "fieldname": "legacy_generation_section",
-   "fieldtype": "Section Break",
-   "hidden": 1,
-   "label": "Legacy Generation Fields"
-  },
-  {
-   "description": "Deprecated. Creative intent now comes from Media Project.video_idea and Qwen-generated Shot generation_prompt.",
-   "fieldname": "generation_instructions",
-   "fieldtype": "Long Text",
-   "hidden": 1,
-   "label": "Generation Instructions"
-  },
-  {
-   "description": "Deprecated. Cross-shot creative consistency is handled by Qwen from the project idea and selected assets.",
-   "fieldname": "global_consistency_instructions",
-   "fieldtype": "Long Text",
-   "hidden": 1,
-   "label": "Global Consistency Instructions"
   }
  ],
  "grid_page_length": 50,
