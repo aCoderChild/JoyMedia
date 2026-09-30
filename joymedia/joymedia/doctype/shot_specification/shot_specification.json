@@ -12,16 +12,8 @@
   "shot_name",
   "planned_frame_count",
   "duration_seconds",
-  "shot_instructions",
-  "generation_inputs",
-  "visual_direction_section",
-  "camera_direction",
-  "subject_identity",
-  "action_plot",
-  "environment",
   "generation_prompt",
-  "audio_section",
-  "audio_direction",
+  "generation_inputs",
   "selected_output_section",
   "selected_output_asset_version"
  ],
@@ -29,7 +21,7 @@
   {
    "fieldname": "shot_overview_section",
    "fieldtype": "Section Break",
-   "label": "Shot Overview"
+   "label": "Shot"
   },
   {
    "fieldname": "media_specification",
@@ -55,7 +47,7 @@
   },
   {
    "default": "0",
-   "description": "Derived from the Media Specification total duration and number of Shots. Not directly editable.",
+   "description": "Creative duration for this shot. JoyMedia may split it into multiple technical generation Jobs when required by the selected workflow.",
    "fieldname": "duration_seconds",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -64,70 +56,19 @@
    "reqd": 1
   },
   {
-   "description": "Frame-exact share of the Media Specification timeline assigned to this shot.",
+   "description": "Frame-exact duration derived from the shot timing and workflow FPS.",
    "fieldname": "planned_frame_count",
    "fieldtype": "Int",
+   "hidden": 1,
    "label": "Planned Frame Count",
    "read_only": 1
   },
   {
-   "description": "Natural-language instructions specific to this shot. Global consistency belongs to the Media Specification.",
-    "fieldname": "shot_instructions",
-    "fieldtype": "Long Text",
-    "hidden": 1,
-   "in_list_view": 1,
-   "label": "Shot Instructions"
-  },
-  {
-   "fieldname": "visual_direction_section",
-   "fieldtype": "Section Break",
-   "label": "Visual Direction"
-  },
-  {
-   "description": "Shot framing, camera movement, lens perspective, focus behavior and composition instructions.\nDefine where/how the camera sees the world",
-    "fieldname": "camera_direction",
-    "fieldtype": "Long Text",
-    "hidden": 1,
-   "label": "Camera Direction"
-  },
-  {
-   "description": "Defines the primary subject and identity properties that must be preserved within this shot.",
-    "fieldname": "subject_identity",
-    "fieldtype": "Long Text",
-    "hidden": 1,
-   "label": "Subject Identity"
-  },
-  {
-   "description": "Describes what happens during the shot, including state changes and interactions.",
-    "fieldname": "action_plot",
-    "fieldtype": "Long Text",
-    "hidden": 1,
-   "label": "Action / Motion"
-  },
-  {
-   "description": "Defines the physical setting, background, lighting environment and scene context.",
-    "fieldname": "environment",
-    "fieldtype": "Long Text",
-    "hidden": 1,
-   "label": "Lighting & Environment"
-  },
-  {
-   "description": "Final coherent prompt sent to the selected generation workflow.",
+   "description": "Canonical Qwen-generated creative prompt for this shot. Camera, subject, action, environment, lighting and sound intent belong inside this one prompt rather than separate fields.",
    "fieldname": "generation_prompt",
    "fieldtype": "Long Text",
-   "label": "Generation Prompt"
-  },
-  {
-   "description": "Describes the desired sound, ambience, dialogue, music characteristics, or sound effects for this shot. This is TEXTUAL INTENT, not an attached audio file.",
-    "fieldname": "audio_direction",
-    "fieldtype": "Long Text",
-    "hidden": 1,
-   "label": "Audio SFX"
-  },
-  {
-   "fieldname": "audio_section",
-   "fieldtype": "Section Break",
-   "label": "Audio"
+   "label": "Shot Prompt",
+   "reqd": 1
   },
   {
    "description": "Assets assigned to workflow input roles for this shot, such as first_frame, last_frame, mask, or product_reference.",
@@ -144,7 +85,7 @@
    "label": "Selected Output"
   },
   {
-   "description": "Project-scoped Video Shot Output selected for this shot's final composition. It may be generated, imported, or edited.",
+   "description": "Project-scoped video Asset Version selected as the durable output for this shot.",
    "fieldname": "selected_output_asset_version",
    "fieldtype": "Link",
    "hidden": 1,
@@ -155,7 +96,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-19 17:03:22.898740",
+ "modified": "2026-10-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Shot Specification",
