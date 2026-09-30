@@ -24,7 +24,8 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 		if not jobs or any(job.status != "Completed" for job in jobs):
 			return None
 
-		segment_versions = []
+		media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+		segments = []
 		for job in jobs:
 			attempt = frappe.db.get_value(
 				"Generation Attempt",
@@ -34,30 +35,41 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 			)
 			if not attempt:
 				return None
-			artifact = frappe.get_doc("Generation Artifact", {"generation_attempt": attempt, "artifact_role": "Primary Video"})
-			if not artifact.promoted_asset_version:
+			artifact = frappe.get_doc(
+				"Generation Artifact",
+				{"generation_attempt": attempt, "artifact_role": "Primary Video"},
+			)
+			if not artifact.frappe_file:
 				return None
-			segment_versions.append((job, artifact.promoted_asset_version))
+			segments.append((job, artifact))
 
-		if len(segment_versions) == 1:
-			shot.db_set("selected_output_asset_version", segment_versions[0][1], update_modified=False)
-			return segment_versions[0][1]
+		shot_asset = _get_or_create_shot_output_asset(shot, media_specification.media_project)
+		if len(segments) == 1:
+			asset_version = frappe.get_doc(
+				{
+					"doctype": "Asset Version",
+					"media_asset": shot_asset.name,
+					"file": segments[0][1].frappe_file,
+					"source": "Generated",
+				}
+			).insert(ignore_permissions=True)
+			shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
+			return asset_version.name
 
-		media_specification = frappe.get_doc("Media Specification", shot.media_specification)
 		profile = _get_delivery_profile(media_specification)
 		try:
 			with tempfile.TemporaryDirectory(prefix=f"joymedia-shot-{shot.name}-") as temp_dir:
 				temporary_path = Path(temp_dir)
 				normalized_paths = []
 				expected_frames = 0
-				for index, (job, asset_version_name) in enumerate(segment_versions):
+				for index, (job, artifact) in enumerate(segments):
 					generated_frames = int(job.segment_frame_count or 0)
 					effective_frames = generated_frames if index == 0 else generated_frames - 1
 					if effective_frames <= 0:
 						raise ValueError(f"Generation Job {job.name} has no effective segment frames")
 					normalized_path = temporary_path / f"{index + 1:04d}-{job.name}.mp4"
 					_normalize_segment(
-						_get_asset_version_path(asset_version_name),
+						_get_artifact_path(artifact),
 						normalized_path,
 						profile,
 						generated_frames,
@@ -75,18 +87,6 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 		except (OSError, subprocess.CalledProcessError, ValueError) as exc:
 			frappe.throw(_("Unable to assemble Shot segments: {0}").format(_command_error(exc)))
 
-		asset_name = f"{shot.name} Assembled Video"
-		media_asset_name = frappe.db.get_value("Media Asset", {"asset_name": asset_name}, "name")
-		media_asset = frappe.get_doc("Media Asset", media_asset_name) if media_asset_name else frappe.get_doc(
-			{
-				"doctype": "Media Asset",
-				"asset_name": asset_name,
-				"media_project": media_specification.media_project,
-				"media_type": "Video",
-				"asset_category": "Shot Output",
-				"status": "Active",
-			}
-		).insert(ignore_permissions=True)
 		file_doc = frappe.get_doc(
 			{
 				"doctype": "File",
@@ -94,13 +94,13 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 				"content": video_bytes,
 				"is_private": 1,
 				"attached_to_doctype": "Media Asset",
-				"attached_to_name": media_asset.name,
+				"attached_to_name": shot_asset.name,
 			}
 		).insert(ignore_permissions=True)
 		asset_version = frappe.get_doc(
 			{
 				"doctype": "Asset Version",
-				"media_asset": media_asset.name,
+				"media_asset": shot_asset.name,
 				"file": file_doc.file_url,
 				"source": "Composed",
 				"duration_seconds": video_duration,
@@ -109,6 +109,31 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 		).insert(ignore_permissions=True)
 		shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
 		return asset_version.name
+
+
+def _get_or_create_shot_output_asset(shot, media_project):
+	asset_name = f"{shot.name} Output"
+	asset_id = frappe.db.get_value(
+		"Media Asset",
+		{
+			"asset_name": asset_name,
+			"media_project": media_project,
+			"asset_category": "Shot Output",
+		},
+		"name",
+	)
+	if asset_id:
+		return frappe.get_doc("Media Asset", asset_id)
+	return frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": asset_name,
+			"media_project": media_project,
+			"media_type": "Video",
+			"asset_category": "Shot Output",
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
 
 
 def compose_media_specification(media_specification_name: str):
@@ -409,6 +434,16 @@ def _get_asset_version_path(asset_version_name):
 	path = Path(file_doc.get_full_path())
 	if not path.exists():
 		raise ValueError(f"Asset Version file does not exist: {path}")
+	return path
+
+
+def _get_artifact_path(artifact):
+	if not artifact.frappe_file:
+		raise ValueError(f"Generation Artifact {artifact.name} has no file")
+	file_doc = frappe.get_doc("File", {"file_url": artifact.frappe_file})
+	path = Path(file_doc.get_full_path())
+	if not path.exists():
+		raise ValueError(f"Generation Artifact file does not exist: {path}")
 	return path
 
 

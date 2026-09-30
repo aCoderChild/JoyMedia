@@ -17,3 +17,4 @@ joymedia.patches.set_internal_library_visibility
 joymedia.patches.backfill_media_asset_content_hashes
 joymedia.patches.repair_product_showcase_workflow_bindings
 joymedia.patches.remove_client_organization
+joymedia.patches.remove_generation_artifact_promotion_fields

@@ -95,16 +95,15 @@
         <div class="relative rounded-lg overflow-hidden bg-black/10 aspect-video flex items-center justify-center mb-2.5 group-hover:opacity-95 transition-opacity">
           <!-- Category Pill -->
           <span
-            class="absolute top-2 left-2 z-10 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider backdrop-blur-md shadow-xs"
-            :class="asset.is_output ? 'bg-purple-600/90 text-white' : 'bg-indigo-600/90 text-white'"
+            class="absolute top-2 left-2 z-10 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider backdrop-blur-md shadow-xs bg-indigo-600/90 text-white"
           >
-            {{ asset.asset_category || (asset.is_output ? 'Output' : 'Reference') }}
+            {{ asset.asset_category || 'Reference' }}
           </span>
 
 
           <!-- Play overlay icon for videos -->
           <div
-            v-if="asset.media_type === 'Video' || isVideoUrl(asset.file) || asset.is_output"
+            v-if="asset.media_type === 'Video' || isVideoUrl(asset.file)"
             class="absolute inset-0 z-10 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors pointer-events-none"
           >
             <div class="size-9 rounded-full bg-white/90 dark:bg-slate-900/90 flex items-center justify-center text-indigo-600 shadow-md group-hover:scale-110 transition-transform">
@@ -139,7 +138,7 @@
             {{ asset.asset_name }}
           </h3>
           <div class="flex items-center justify-between pt-1 border-t border-outline-subtle text-[11px] text-ink-muted">
-            <span class="capitalize">{{ asset.is_output ? 'Project Output' : 'Reference Input' }}</span>
+            <span class="capitalize">Reference Input</span>
             <span class="font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
               <span>{{ t('asset_view') }}</span>
               <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -175,10 +174,9 @@
           <div class="min-w-0">
             <div class="flex items-center gap-2 mb-1">
               <span
-                class="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider"
-                :class="selectedAsset.is_output ? 'bg-purple-600 text-white' : 'bg-indigo-600 text-white'"
+                class="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider bg-indigo-600 text-white"
               >
-                {{ selectedAsset.asset_category || (selectedAsset.is_output ? 'Output' : 'Reference') }}
+                {{ selectedAsset.asset_category || 'Reference' }}
               </span>
             </div>
             <h2 class="text-base font-bold text-ink-primary truncate" :title="selectedAsset.asset_name">
@@ -199,7 +197,7 @@
         <div class="p-4 bg-black/5 dark:bg-black/40 flex items-center justify-center overflow-hidden flex-1 min-h-[260px] max-h-[55vh]">
           <!-- Video Player -->
           <video
-            v-if="selectedAsset.file && (selectedAsset.media_type === 'Video' || isVideoUrl(selectedAsset.file) || selectedAsset.is_output)"
+            v-if="selectedAsset.file && (selectedAsset.media_type === 'Video' || isVideoUrl(selectedAsset.file))"
             :src="selectedAsset.file"
             controls
             autoplay
@@ -226,7 +224,7 @@
         <!-- Modal Footer & Metadata Details -->
         <div class="p-4 bg-surface-card border-t border-outline-border flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-3 text-xs text-ink-secondary">
-            <span>{{ t('asset_type_label') }}: <strong>{{ selectedAsset.media_type || (selectedAsset.is_output ? t('type_videos') : t('type_images')) }}</strong></span>
+            <span>{{ t('asset_type_label') }}: <strong>{{ selectedAsset.media_type || t('type_images') }}</strong></span>
             <span>·</span>
             <span>{{ t('asset_modified_label') }}: <strong>{{ formatDate(selectedAsset.modified) }}</strong></span>
           </div>

@@ -53,12 +53,12 @@ def get_attempt_analytics(filters=None):
 	artifacts = frappe.get_all(
 			"Generation Artifact",
 			filters={"generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
-			fields=["name", "generation_attempt", "artifact_role", "promoted_asset_version"],
+			fields=["name", "generation_attempt", "artifact_role", "frappe_file"],
 		)
 	primary_outputs_by_attempt = {
-		artifact.generation_attempt: artifact.promoted_asset_version
+		artifact.generation_attempt: artifact.name
 		for artifact in artifacts
-		if artifact.artifact_role == "Primary Video" and artifact.promoted_asset_version
+		if artifact.artifact_role == "Primary Video" and artifact.frappe_file
 	}
 	enriched_attempts = []
 	for attempt in attempts:

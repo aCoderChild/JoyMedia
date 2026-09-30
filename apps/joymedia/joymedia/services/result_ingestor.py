@@ -104,20 +104,12 @@ def sync_attempt_result(attempt_name):
 			0, (get_datetime(attempt.completed_at) - get_datetime(attempt.started_at)).total_seconds()
 		)
 	attempt.save(ignore_permissions=True)
-	_promote_generation_output(artifact)
 	_refresh_parent_execution_state(attempt.name)
 	return {
 		"status": attempt.status,
 		"output_artifact": artifact.name,
 		"last_frame_artifact": last_frame_artifact.name if last_frame_artifact else None,
 	}
-
-
-def _promote_generation_output(artifact):
-	from joymedia.services.artifact_service import promote_artifact
-
-	return promote_artifact(artifact.name)
-
 
 def _find_last_frame_image(history):
 	node_output = (history.get("outputs") or {}).get("save_last_frame", {})
@@ -163,7 +155,6 @@ def _store_last_frame_bytes(attempt, image_bytes, file_name):
 			"artifact_role": "Last Frame",
 			"generation_attempt": attempt.name,
 			"media_type": "Image",
-			"lifecycle_status": "Temporary",
 		}
 	)
 	artifact.insert(ignore_permissions=True)
@@ -217,7 +208,6 @@ def _create_primary_artifact(attempt):
 			"artifact_role": "Primary Video",
 			"generation_attempt": attempt.name,
 			"media_type": "Video",
-			"lifecycle_status": "Temporary",
 		}
 	)
 	artifact.insert(ignore_permissions=True)

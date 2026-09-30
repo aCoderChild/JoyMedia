@@ -489,7 +489,6 @@ def _create_shot_fixtures(media_specification, suffix, create_run=True):
 				"asset_name": f"Review Input {suffix} {required_input_role}",
 				"media_type": "Image",
 				"asset_category": "Product",
-				"media_project": media_project,
 			}
 		).insert(ignore_permissions=True)
 		file_doc = frappe.get_doc(
@@ -577,7 +576,6 @@ def _create_shot_fixtures(media_specification, suffix, create_run=True):
 			"artifact_role": "Primary Video",
 			"generation_attempt": attempt.name,
 			"media_type": "Video",
-			"lifecycle_status": "Temporary",
 		}
 	)
 	artifact.db_insert()

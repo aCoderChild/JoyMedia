@@ -660,7 +660,7 @@ def _get_project_outputs(media_project):
 	return frappe.get_all(
 		"Generation Artifact",
 		filters={"generation_attempt": ["in", attempts]},
-		fields=["name", "artifact_key", "artifact_role", "media_type", "frappe_file", "lifecycle_status", "creation"],
+		fields=["name", "artifact_key", "artifact_role", "media_type", "frappe_file", "creation"],
 		order_by="creation desc",
 		limit_page_length=100,
 	)
@@ -1130,9 +1130,7 @@ def create_campaign_project(
 
 @frappe.whitelist()
 def get_library_assets(scope=None, asset_type=None):
-	filters = {"status": "Active"}
-	if frappe.session.user not in ("Administrator", "Guest") and "System Manager" not in frappe.get_roles():
-		filters["owner"] = frappe.session.user
+	filters = {"status": "Active", "media_project": ["is", "not set"]}
 	if asset_type == "Images":
 		filters["media_type"] = "Image"
 
@@ -1152,8 +1150,6 @@ def get_library_assets(scope=None, asset_type=None):
 			limit_page_length=1,
 		)
 		a["file"] = v[0].file if v else None
-		a["is_output"] = False
-
 	return assets
 
 

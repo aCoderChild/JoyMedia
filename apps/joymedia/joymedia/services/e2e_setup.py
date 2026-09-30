@@ -46,7 +46,7 @@ def setup_e2e_project():
 		"asset_name": "E2E Asset",
 		"media_project": project.name,
 		"media_type": "Video",
-		"is_output": 1,
+		"asset_category": "Shot Output",
 	}).insert(ignore_permissions=True)
 
 	# Video File
@@ -122,7 +122,7 @@ def create_spec_v2(project_name):
 			"asset_name": "E2E Asset V2",
 			"media_project": project.name,
 			"media_type": "Video",
-			"is_output": 1,
+			"asset_category": "Shot Output",
 		}).insert(ignore_permissions=True).name
 	file_doc = frappe.get_doc({
 		"doctype": "File",

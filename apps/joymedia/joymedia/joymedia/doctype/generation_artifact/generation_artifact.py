@@ -19,15 +19,13 @@ class GenerationArtifact(Document):
 	def validate(self):
 		if not self.artifact_role:
 			frappe.throw(_("Artifact Role is required."))
-		if self.lifecycle_status == "Promoted" and not self.promoted_asset_version:
-			frappe.throw(_("Promoted Generation Artifacts require a Promoted Asset Version."))
 		if self.is_new():
 			return
 
 		previous = frappe.db.get_value(
 			"Generation Artifact",
 			self.name,
-			["lifecycle_status", *IDENTITY_FIELDS],
+			IDENTITY_FIELDS,
 			as_dict=True,
 		)
 		if not previous:

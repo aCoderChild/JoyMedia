@@ -9,7 +9,7 @@ from joymedia.services.result_ingestor import _create_primary_artifact
 class TestGenerationArtifactCreation(FrappeTestCase):
 	@patch("joymedia.services.result_ingestor.frappe.get_doc")
 	@patch("joymedia.services.result_ingestor.frappe.db.get_value", return_value=None)
-	def test_primary_artifact_starts_as_temporary_frappe_file_artifact(
+	def test_primary_artifact_starts_as_frappe_file_artifact(
 		self, get_value, get_doc
 	):
 		artifact = MagicMock()
@@ -30,7 +30,6 @@ class TestGenerationArtifactCreation(FrappeTestCase):
 				"artifact_role": "Primary Video",
 				"generation_attempt": "ATT-00001",
 				"media_type": "Video",
-				"lifecycle_status": "Temporary",
 			}
 		)
 		artifact.insert.assert_called_once_with(ignore_permissions=True)

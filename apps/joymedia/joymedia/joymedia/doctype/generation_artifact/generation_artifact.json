@@ -10,10 +10,7 @@
   "artifact_role",
   "generation_attempt",
   "media_type",
-  "frappe_file",
-  "retention_section",
-  "lifecycle_status",
-  "promoted_asset_version"
+  "frappe_file"
  ],
  "fields": [
   {
@@ -52,26 +49,6 @@
    "fieldtype": "Attach",
    "label": "File",
    "read_only": 1
-  },
-  {
-   "fieldname": "retention_section",
-   "fieldtype": "Section Break",
-   "label": "Review / Promotion"
-  },
-  {
-   "default": "Temporary",
-   "description": "Temporary until approved and promoted to an Asset Version.",
-   "fieldname": "lifecycle_status",
-   "fieldtype": "Select",
-   "label": "Lifecycle Status",
-   "options": "Temporary\nPromoted\nDiscarded"
-  },
-  {
-   "fieldname": "promoted_asset_version",
-   "fieldtype": "Link",
-   "label": "Promoted Asset Version",
-   "options": "Asset Version",
-   "read_only_depends_on": "eval:doc.lifecycle_status==\"Promoted\""
   },
   {
    "fieldname": "artifact_role",
