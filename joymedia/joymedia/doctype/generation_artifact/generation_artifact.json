@@ -16,7 +16,7 @@
   {
    "fieldname": "artifact_identity_section",
    "fieldtype": "Section Break",
-   "label": "Artifact Identity"
+   "label": "Attempt Output"
   },
   {
    "fieldname": "artifact_key",
@@ -25,6 +25,14 @@
    "label": "Artifact Key",
    "read_only": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "artifact_role",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Artifact Role",
+   "options": "Primary Video\nLast Frame\nPreview\nIntermediate",
+   "reqd": 1
   },
   {
    "fieldname": "generation_attempt",
@@ -44,25 +52,17 @@
    "read_only": 1
   },
   {
-   "description": "Raw output file produced by a Generation Attempt.",
+   "description": "Raw output file produced by this execution attempt. Durable Shot and final project outputs are stored as Asset Versions instead.",
    "fieldname": "frappe_file",
    "fieldtype": "Attach",
    "label": "File",
    "read_only": 1
-  },
-  {
-   "fieldname": "artifact_role",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Artifact Role",
-   "options": "Primary Video\nLast Frame\nPreview\nIntermediate\nFinal Video",
-   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-29 10:08:18.261714",
+ "modified": "2026-10-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Artifact",
