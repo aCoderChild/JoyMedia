@@ -1753,17 +1753,19 @@ onMounted(async () => {
   await loadTimeline(false);
 });
 
-watch(() => production.value?.status, async (status) => {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = null;
-  if (ACTIVE_STATUSES.has(status)) {
+watch(() => production.value?.status, async (status, previousStatus) => {
+	if (pollTimer) clearInterval(pollTimer);
+	pollTimer = null;
+	if (ACTIVE_STATUSES.has(status)) {
     pollTimer = setInterval(() => {
       reloadProduction().catch(() => {});
       nowTick.value = Date.now();
     }, 4000);
-  } else if (status === "Completed") {
-    await loadTimeline(true);
-  }
+	} else if (status === "Completed" && previousStatus !== "Completed") {
+		await refresh();
+		previewSelection.value = "full";
+		autoGenerateStep.value = "";
+	}
 }, { immediate: true });
 
 onBeforeUnmount(() => {
@@ -1946,34 +1948,30 @@ async function handleMagicGenerateClick() {
       text: currentLang.value === "vi" ? "Tải ảnh lên hoặc chọn ảnh từ Thư viện Media trước khi tạo video." : "Upload an image or choose one from the Media Library before creating a video.",
       type: "error",
     });
-    return;
-  }
-  isAutoGenerating.value = true;
-  magicGenerateError.value = "";
+		return;
+	}
+	if (isAutoGenerating.value || isProductionActive.value) {
+		return;
+	}
+	isAutoGenerating.value = true;
+	magicGenerateError.value = "";
   // Remove the previous run from the UI immediately. The next snapshot will
   // contain the newly created run and its real status.
   productionSnapshot.value = null;
-  productionSnapshotLoaded.value = true;
-  try {
-    if (!allShotsList.value.length) {
-      autoGenerateStep.value = currentLang.value === "vi" ? "Đang phân tích sản phẩm..." : "Analyzing your product...";
-      const planResult = await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video_plan", {
-        campaign_name: projectName.value,
-      });
-      autoGenerateStep.value = currentLang.value === "vi" ? "Đang lưu kịch bản phân cảnh..." : "Saving storyboard...";
-      await call("joymedia.joymedia.doctype.media_project.media_project.apply_campaign_video_plan", {
-        campaign_name: projectName.value,
-        plan_json: JSON.stringify(planResult),
-      });
-      await refresh();
-    }
-
-    autoGenerateStep.value = currentLang.value === "vi" ? "Đang kiểm tra trình kết xuất..." : "Checking video renderer...";
-    await call("joymedia.joymedia.doctype.media_project.media_project.generate_campaign_video", {
-      campaign_name: projectName.value,
-    });
-    autoGenerateStep.value = currentLang.value === "vi" ? "Đang kết xuất video..." : "Rendering your video...";
-    await refresh();
+	productionSnapshotLoaded.value = true;
+	try {
+		autoGenerateStep.value = currentLang.value === "vi" ? "Đang chuẩn bị video..." : "Preparing your video...";
+		const result = await call("joymedia.joymedia.doctype.media_project.media_project.generate_project_video", {
+			project_name: projectName.value,
+		});
+		productionSnapshot.value = {
+			...(productionSnapshot.value || {}),
+			name: result?.run || productionSnapshot.value?.name,
+			status: result?.status || "Queued",
+		};
+		productionSnapshotLoaded.value = true;
+		autoGenerateStep.value = currentLang.value === "vi" ? "Đang tạo video..." : "Generating your video...";
+		await refresh();
     promptInput.value = "";
     toast({
       title: currentLang.value === "vi" ? "Đã bắt đầu tạo video!" : "Video Generation Started!",
