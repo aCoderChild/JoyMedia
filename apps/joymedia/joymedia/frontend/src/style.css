@@ -1949,6 +1949,66 @@ h2 {
   min-width: 0;
 }
 
+.studio-rail-button {
+  width: 44px;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--ink-muted);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.studio-rail-button small {
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.studio-rail-button:hover,
+.studio-rail-button.active {
+  color: var(--ink-primary);
+  background: var(--surface-card);
+  border-color: var(--outline-border);
+}
+
+.studio-media-drawer {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  bottom: 0;
+  left: 56px;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-ground);
+  border-right: 1px solid var(--outline-border);
+  box-shadow: 12px 0 30px rgba(0, 0, 0, 0.18);
+}
+
+.icon-button {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--outline-border);
+  border-radius: 8px;
+  color: var(--ink-secondary);
+  background: var(--surface-muted);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  color: var(--ink-primary);
+  background: var(--surface-hover);
+}
+
 .project-studio-page .gflow-center-canvas {
   min-height: 0;
   overflow: hidden;
@@ -2256,18 +2316,18 @@ h2 {
   align-items: stretch;
   gap: 4px;
   overflow-x: auto;
-  padding: 2px 0 6px 0;
+  padding: 2px 0 4px 0;
   scroll-behavior: smooth;
 }
 
 .capcut-clip {
   position: relative;
   flex: 1 1 0%;
-  min-width: 140px;
+  min-width: 160px;
   border-radius: 10px;
   background-color: var(--surface-muted);
   border: 2px solid var(--outline-border);
-  padding: 6px;
+  padding: 5px;
   cursor: pointer;
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
@@ -2500,6 +2560,50 @@ h2 {
   border: 1px solid var(--outline-border);
   border-radius: 12px;
   gap: 2px;
+}
+
+.playback-transport {
+  width: 100%;
+  max-width: 880px;
+  margin-top: 6px;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ink-secondary);
+  background: var(--surface-card);
+  border: 1px solid var(--outline-border);
+  border-radius: 10px;
+}
+
+.transport-button,
+.transport-view-button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--ink-secondary);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.transport-button:hover,
+.transport-view-button:hover,
+.transport-view-button.active {
+  color: var(--ink-primary);
+  background: var(--surface-muted);
+  border-color: var(--outline-border);
+}
+
+.transport-play {
+  color: #fff;
+  background: #4f46e5;
 }
 
 .studio-mode-switch button {

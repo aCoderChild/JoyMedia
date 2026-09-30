@@ -1,5 +1,8 @@
 <template>
-  <aside class="w-full xl:w-[380px] shrink-0 border-t xl:border-t-0 xl:border-l border-outline-border flex flex-col bg-surface-ground">
+  <aside
+    class="shrink-0 overflow-hidden border-t xl:border-t-0 xl:border-l border-outline-border flex flex-col bg-surface-ground transition-[width] duration-200"
+    :class="open ? 'w-full xl:w-[320px]' : 'w-0 border-0'"
+  >
     <!-- Inspector Top Navigation Bar (Matching Left Tab System) -->
     <div class="p-3 border-b border-outline-border flex items-center justify-between gap-2 bg-surface-card">
       <div class="flex items-center gap-1 bg-surface-muted p-1 rounded-xl text-xs border border-outline-border">
@@ -49,7 +52,7 @@
           type="button"
           class="p-1 rounded-lg hover:text-ink-primary hover:bg-surface-hover transition-colors cursor-pointer"
           :title="currentLang === 'vi' ? 'Quay lại' : 'Go back'"
-          @click="$emit('goBack')"
+          @click="emit('update:open', false)"
         >
           ✕
         </button>
@@ -244,7 +247,7 @@
             :class="selectedTarget === 'keyframe-start' ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs' : 'border-outline-border bg-surface-card hover:border-indigo-400 text-ink-secondary'"
             @click="$emit('selectKeyframeTarget', activeSelectedShot, selectedShotIndex, 'start')"
           >
-            <span class="block text-[10.5px]">◆ {{ currentLang === 'vi' ? 'Frame đầu (In)' : 'Start Frame' }}</span>
+            <span class="block text-[10.5px]">{{ currentLang === 'vi' ? 'Start Reference' : 'Start Reference' }}</span>
             <span class="block text-[9.5px] text-ink-muted">0.0s</span>
           </button>
           <span class="text-ink-muted">──→</span>
@@ -254,7 +257,7 @@
             :class="selectedTarget === 'keyframe-end' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400 font-bold shadow-xs' : 'border-outline-border bg-surface-card hover:border-emerald-400 text-ink-secondary'"
             @click="$emit('selectKeyframeTarget', activeSelectedShot, selectedShotIndex, 'end')"
           >
-            <span class="block text-[10.5px]">◆ {{ currentLang === 'vi' ? 'Frame cuối (Out)' : 'End Frame' }}</span>
+            <span class="block text-[10.5px]">{{ currentLang === 'vi' ? 'End Reference' : 'End Reference' }}</span>
             <span class="block text-[9.5px] text-ink-muted">{{ estimateShotDuration(activeSelectedShot) }}s</span>
           </button>
         </div>
@@ -264,7 +267,7 @@
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-ink-primary flex items-center gap-1.5">
               <span class="text-indigo-400">◆</span>
-              <span>{{ selectedTarget === 'keyframe-start' ? (currentLang === 'vi' ? 'Keyframe Khởi đầu (In)' : 'Start Keyframe (In)') : (currentLang === 'vi' ? 'Keyframe Kết thúc (Out)' : 'End Keyframe (Out)') }}</span>
+              <span>{{ selectedTarget === 'keyframe-start' ? 'Start Reference' : (continuityMode === 'Continuous' ? 'Continuity Frame' : 'End Reference') }}</span>
             </span>
             <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-indigo-400 font-bold">
               {{ selectedTarget === 'keyframe-start' ? formatShotKeyframeTime(selectedShotIndex, 0) : formatShotKeyframeTime(selectedShotIndex, 1) }}
@@ -283,7 +286,7 @@
               :src="activeSelectedShot.last_frame_image"
               class="w-full h-full object-cover"
             />
-            <span v-else class="text-xs text-ink-muted font-mono">{{ currentLang === 'vi' ? 'Chưa có ảnh keyframe' : 'No keyframe image' }}</span>
+            <span v-else class="text-xs text-ink-muted font-mono">{{ currentLang === 'vi' ? 'Chưa có ảnh tham chiếu' : 'No reference image' }}</span>
 
             <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
               <button
@@ -304,7 +307,7 @@
               @click="$emit('openMediaPicker')"
             >
               <span>🖼️</span>
-              <span>{{ currentLang === 'vi' ? 'Chọn ảnh Keyframe từ Thư viện' : 'Choose Keyframe from Library' }}</span>
+              <span>{{ currentLang === 'vi' ? 'Chọn ảnh tham chiếu từ Thư viện' : 'Choose reference from Library' }}</span>
             </button>
 
             <button
@@ -339,7 +342,7 @@
             :title="currentLang === 'vi' ? 'Bấm để xem Frame đầu' : 'Preview Start Keyframe'"
             @click="$emit('selectKeyframeTarget', activeSelectedShot, selectedShotIndex, 'start')"
           >
-            <span class="block text-[10px] font-bold text-indigo-400">◆ Frame đầu (In)</span>
+            <span class="block text-[10px] font-bold text-indigo-400">{{ currentLang === 'vi' ? 'Start Reference' : 'Start Reference' }}</span>
             <span class="block text-[9px] text-ink-muted truncate">0.0s · {{ activeSelectedShot.reference_asset_name || (currentLang === 'vi' ? 'Tham chiếu' : 'Reference') }}</span>
           </button>
           <span class="text-ink-muted text-xs">──→</span>
@@ -349,28 +352,22 @@
             :title="currentLang === 'vi' ? 'Bấm để xem Frame cuối' : 'Preview End Keyframe'"
             @click="$emit('selectKeyframeTarget', activeSelectedShot, selectedShotIndex, 'end')"
           >
-            <span class="block text-[10px] font-bold text-emerald-400">◆ Frame cuối (Out)</span>
-            <span class="block text-[9px] text-ink-muted truncate">{{ estimateShotDuration(activeSelectedShot) }}s · {{ continuityMode === 'Continuous' ? (currentLang === 'vi' ? 'Nối tiếp' : 'Continuous') : (currentLang === 'vi' ? 'Kết cảnh' : 'Cut') }}</span>
+            <span class="block text-[10px] font-bold text-emerald-400">{{ continuityMode === 'Continuous' ? (currentLang === 'vi' ? 'Continuity Frame' : 'Continuity Frame') : (currentLang === 'vi' ? 'End Reference' : 'End Reference') }}</span>
+            <span class="block text-[9px] text-ink-muted truncate">{{ estimateShotDuration(activeSelectedShot) }}s · {{ continuityMode === 'Continuous' ? (currentLang === 'vi' ? 'Từ cảnh trước' : 'From previous shot') : (currentLang === 'vi' ? 'Tham chiếu kết' : 'End reference') }}</span>
           </button>
         </div>
 
-        <!-- Persistent NLE-style shot trim control -->
+        <!-- Storyboard timing control: constrained redistribution, not timeline trimming. -->
         <div class="p-2.5 rounded-xl bg-surface-muted border border-outline-border">
           <div class="flex items-center justify-between mb-1.5">
-            <span class="text-[11px] font-semibold text-ink-secondary">{{ currentLang === 'vi' ? 'Thời lượng cảnh' : 'Shot duration' }}</span>
+            <span class="text-[11px] font-semibold text-ink-secondary">{{ currentLang === 'vi' ? 'Thời lượng storyboard' : 'Storyboard duration' }}</span>
             <span class="font-mono text-[11px] text-indigo-400 font-bold">{{ estimateShotDuration(activeSelectedShot) }}s</span>
           </div>
-          <input
-            type="range"
-            min="1"
-            max="60"
-            step="0.5"
-            :value="Number(estimateShotDuration(activeSelectedShot))"
-            class="w-full accent-indigo-500 cursor-pointer"
-            :title="currentLang === 'vi' ? 'Kéo để cắt hoặc kéo dài cảnh' : 'Drag to trim or extend this shot'"
-            @change="$emit('changeShotDuration', activeSelectedShot, Number($event.target.value) - Number(estimateShotDuration(activeSelectedShot)))"
-          />
-          <div class="flex justify-between text-[9px] text-ink-muted font-mono"><span>01s</span><span>60s</span></div>
+          <div class="flex items-center gap-2">
+            <button type="button" class="duration-step" :disabled="timelineBusy" @click="$emit('changeShotDuration', activeSelectedShot, -0.5)">−</button>
+            <div class="flex-1 text-center text-[10px] text-ink-muted">{{ currentLang === 'vi' ? 'Tổng thời lượng giữ nguyên' : 'Project total stays fixed' }}</div>
+            <button type="button" class="duration-step" :disabled="timelineBusy" @click="$emit('changeShotDuration', activeSelectedShot, 0.5)">+</button>
+          </div>
         </div>
 
         <div class="p-2.5 rounded-xl bg-surface-muted border border-outline-border space-y-1.5 text-xs">
@@ -507,38 +504,46 @@
     <!-- Tab 2 Body: Conversational AI Director -->
     <div v-else class="p-3 overflow-y-auto flex-1">
       <div class="gflow-director-content">
-        <div class="gflow-ai-bubble space-y-3">
-          <p class="font-medium">
-            {{ t('director_msg_duration', { duration: durationSeconds }) }}
-          </p>
+        <div class="space-y-4">
+          <div>
+            <p class="text-sm font-bold text-ink-primary">
+              {{ activeSelectedShot ? (currentLang === 'vi' ? `Hỏi AI về Cảnh ${activeSelectedShot.shot_number}` : `Ask AI about Shot ${activeSelectedShot.shot_number}`) : (currentLang === 'vi' ? 'Hỏi AI về video' : 'Ask AI about your video') }}
+            </p>
+            <p class="mt-1 text-xs text-ink-muted">
+              {{ currentLang === 'vi' ? 'Đưa ra thay đổi cụ thể cho cảnh đang chọn.' : 'Describe a focused change for the selected shot.' }}
+            </p>
+          </div>
 
-          <ol class="space-y-2 list-decimal list-inside text-xs text-ink-secondary">
-            <li>
-              <strong class="text-ink-primary">{{ t('director_step_1') }}</strong>
-            </li>
-            <li>
-              <strong class="text-ink-primary">{{ t('director_step_2') }}</strong>
-            </li>
-            <li>
-              <strong class="text-ink-primary">{{ t('director_step_3') }}</strong>
-            </li>
-          </ol>
+          <div class="flex flex-wrap gap-2">
+            <button v-for="suggestion in [
+              currentLang === 'vi' ? 'Làm chuyển động máy chậm hơn' : 'Make the camera movement slower',
+              currentLang === 'vi' ? 'Giữ nhân vật giống Cảnh 2' : 'Keep the same character as Shot 2',
+              currentLang === 'vi' ? 'Đổi ánh sáng sang hoàng hôn' : 'Change lighting to sunset',
+            ]" :key="suggestion" type="button" class="ai-suggestion" @click="emit('update:promptInput', suggestion)">
+              {{ suggestion }}
+            </button>
+          </div>
 
-          <p class="text-ink-muted text-xs pt-1">
-            {{ t('director_msg_cta', { product: productName || t('product_default') }) }}
-          </p>
+          <div v-if="hasStoryboard" class="text-[11px] text-ink-muted border-t border-outline-border pt-3">
+            {{ expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh trong storyboard' : 'shots in the storyboard' }}
+          </div>
 
-          <!-- Feedback & Shot count pill -->
-          <div class="flex items-center justify-between pt-2 border-t border-outline-border text-xs text-ink-muted">
-            <div class="flex items-center gap-3">
-              <button type="button" class="hover:text-ink-primary cursor-pointer" title="Thích">👍</button>
-              <button type="button" class="hover:text-ink-primary cursor-pointer" title="Không thích">👎</button>
-              <button type="button" class="hover:text-ink-primary cursor-pointer" title="Báo cáo">⚑</button>
+          <div v-if="aiRevision" class="space-y-3 border-t border-outline-border pt-3">
+            <p class="text-xs font-semibold text-ink-primary">{{ aiRevision.summary }}</p>
+            <ul class="space-y-1.5 text-xs text-ink-secondary">
+              <li v-for="change in aiRevision.changes" :key="change.field" class="flex gap-2">
+                <span class="text-indigo-400">•</span>
+                <span><strong class="text-ink-primary">{{ change.field }}:</strong> {{ change.detail }}</span>
+              </li>
+            </ul>
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" class="jm-btn-secondary text-xs" :disabled="aiApplying" @click="$emit('apply-ai-revision', false)">
+                {{ currentLang === 'vi' ? 'Áp dụng thay đổi' : 'Apply changes' }}
+              </button>
+              <button type="button" class="jm-btn-primary text-xs" :disabled="aiApplying" @click="$emit('apply-ai-revision', true)">
+                {{ aiApplying ? (currentLang === 'vi' ? 'Đang lưu...' : 'Applying...') : (currentLang === 'vi' ? 'Áp dụng & Tạo lại' : 'Apply & Regenerate') }}
+              </button>
             </div>
-            <span class="text-xs font-mono bg-surface-card px-2 py-0.5 rounded-md border border-outline-border text-ink-secondary">
-              {{ hasStoryboard ? expectedShotCount : (currentLang === 'vi' ? `Dự kiến: ${expectedShotCount}` : `Planned: ${expectedShotCount}`) }}
-              {{ hasStoryboard ? (currentLang === 'vi' ? 'cảnh đã tạo' : 'shots created') : (currentLang === 'vi' ? 'cảnh' : 'shots') }}
-            </span>
           </div>
         </div>
       </div>
@@ -554,18 +559,18 @@
           :placeholder="selectedTarget === 'scene' && activeSelectedShot ? (currentLang === 'vi' ? `Hỏi AI chỉnh sửa Cảnh ${activeSelectedShot.shot_number}...` : `Edit Scene ${activeSelectedShot.shot_number} with AI...`) : (currentLang === 'vi' ? 'Hỏi AI chỉnh sửa toàn bộ video...' : 'Edit entire video with AI...')"
           :disabled="isAutoGenerating || isProductionActive"
           @input="$emit('update:promptInput', $event.target.value)"
-          @keydown.enter="$emit('magicGenerate')"
+          @keydown.enter.prevent="$emit('ask-ai')"
         />
 
         <button
           type="button"
           class="gflow-action-btn size-7 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center cursor-pointer transition-colors shadow-xs"
           :class="{ 'is-active': isAutoGenerating || isProductionActive }"
-          :disabled="!hasInputAsset || isAutoGenerating || isProductionActive"
+          :disabled="!activeSelectedShot || !promptInput.trim() || aiRevisionLoading || isAutoGenerating || isProductionActive"
           :title="hasInputAsset ? (currentLang === 'vi' ? 'Tạo video tự động bằng AI' : 'Generate video with AI') : (currentLang === 'vi' ? 'Thêm ít nhất một ảnh sản phẩm' : 'Add at least one product image')"
-          @click="$emit('magicGenerate')"
+          @click="$emit('ask-ai')"
         >
-          <span v-if="isAutoGenerating" class="lucide-refresh-cw size-3.5 animate-spin" />
+          <span v-if="aiRevisionLoading" class="lucide-refresh-cw size-3.5 animate-spin" />
           <span v-else-if="isProductionActive" class="size-2.5 rounded-xs bg-white" />
           <span v-else class="lucide-sparkles size-3.5" />
         </button>
@@ -602,6 +607,7 @@ function toggleAccordion(key) {
 }
 
 const props = defineProps({
+  open: { type: Boolean, default: true },
   activeTab: { type: String, default: "shot" },
   studioMode: { type: String, default: "scene" },
   selectedClip: { type: Object, default: null },
@@ -623,6 +629,9 @@ const props = defineProps({
   hasStoryboard: { type: Boolean, default: false },
   expectedShotCount: { type: Number, default: 0 },
   promptInput: { type: String, default: "" },
+  aiRevision: { type: Object, default: null },
+  aiRevisionLoading: { type: Boolean, default: false },
+  aiApplying: { type: Boolean, default: false },
   isAutoGenerating: { type: Boolean, default: false },
   hasInputAsset: { type: Boolean, default: false },
   estimateShotDuration: { type: Function, default: (shot) => shot?.duration_seconds || 4 },
@@ -631,6 +640,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits([
+  "update:open",
   "update:activeTab",
   "goBack",
   "changeTransition",
@@ -649,6 +659,8 @@ const emit = defineEmits([
   "copyPrompt",
   "saveActiveShot",
   "update:promptInput",
+  "askAi",
+  "applyAiRevision",
   "magicGenerate",
 ]);
 </script>
@@ -659,6 +671,46 @@ const emit = defineEmits([
   background: var(--surface-muted, #1e293b);
   border: 1px solid var(--outline-border, #334155);
   overflow: hidden;
+}
+
+.ai-suggestion {
+  padding: 7px 9px;
+  border: 1px solid var(--outline-border, #334155);
+  border-radius: 9px;
+  color: var(--ink-secondary, #cbd5e1);
+  background: var(--surface-muted, #1e293b);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.ai-suggestion:hover {
+  color: var(--ink-primary, #fff);
+  background: var(--surface-hover, #263449);
+  border-color: #6366f1;
+}
+
+.duration-step {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--outline-border, #334155);
+  border-radius: 8px;
+  color: var(--ink-primary, #fff);
+  background: var(--surface-card, #0f172a);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.duration-step:hover:not(:disabled) {
+  border-color: #6366f1;
+  background: var(--surface-hover, #263449);
+}
+
+.duration-step:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .inspector-accordion-header {

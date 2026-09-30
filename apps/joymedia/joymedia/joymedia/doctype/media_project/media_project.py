@@ -676,6 +676,20 @@ def generate_project_video(project_name: str):
 
 
 @frappe.whitelist()
+def revise_project_shot_with_ai(project_name, shot_name, instruction):
+	from joymedia.services.ai_director import revise_project_shot_with_ai as revise
+
+	return revise(project_name, shot_name, instruction)
+
+
+@frappe.whitelist()
+def apply_project_shot_ai_revision(project_name, shot_name, values, regenerate=False):
+	from joymedia.services.ai_director import apply_project_shot_ai_revision as apply_revision
+
+	return apply_revision(project_name, shot_name, values, regenerate)
+
+
+@frappe.whitelist()
 def retry_project_failed_jobs(project_name):
 	project = frappe.get_doc("Media Project", project_name)
 	return project.retry_failed_jobs()
@@ -806,7 +820,7 @@ def set_project_shot_keyframe(project_name, shot_name, frame_role, asset_version
 
 @frappe.whitelist()
 def update_project_shot_timing(project_name, shot_name, duration_seconds):
-	"""Persist one shot's timeline duration and keep the project timeline frame-exact."""
+	"""Persist one shot's timing while keeping the specification duration fixed."""
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
 	try:
@@ -844,38 +858,14 @@ def update_project_shot_timing(project_name, shot_name, duration_seconds):
 		fields=["name", "shot_number", "duration_seconds"],
 		order_by="shot_number asc, name asc",
 	)
-	workflow = frappe.get_doc("Workflow", media_specification.workflow)
-	fps = float(workflow.output_fps or 0)
-	if fps <= 0:
-		frappe.throw(_("Workflow output FPS must be greater than zero."))
+	from joymedia.services.shot_duration_planner import rebalance_shot_duration
 
-	requested_frames = max(1, round(duration_seconds * fps))
-	for row in shots:
-		if row.name == shot.name:
-			row.duration_seconds = requested_frames / fps
-		else:
-			row.duration_seconds = float(row.duration_seconds or 0)
-		if row.duration_seconds < 1:
-			row.duration_seconds = 1
-
-	frame_counts = [max(1, round(row.duration_seconds * fps)) for row in shots]
-	total_frames = sum(frame_counts)
-	for row, frame_count in zip(shots, frame_counts):
-		frappe.db.set_value(
-			"Shot Specification",
-			row.name,
-			{"planned_frame_count": frame_count, "duration_seconds": frame_count / fps},
-			update_modified=False,
-		)
-	media_specification.total_duration_seconds = total_frames / fps
-	media_specification.save(ignore_permissions=True)
+	result = rebalance_shot_duration(media_specification.name, shot.name, duration_seconds)
 	frappe.db.commit()
-	selected_index = next(index for index, row in enumerate(shots) if row.name == shot.name)
 	return {
 		"shot_name": shot.name,
 		"shot_number": shot.shot_number,
-		"duration_seconds": frame_counts[selected_index] / fps,
-		"total_duration_seconds": media_specification.total_duration_seconds,
+		**result,
 	}
 
 

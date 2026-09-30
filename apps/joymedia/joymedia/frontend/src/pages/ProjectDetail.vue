@@ -1,9 +1,77 @@
 <template>
-  <div class="project-studio-page flex-1 flex overflow-hidden w-full h-full min-h-[calc(100vh-52px)] bg-surface-base">
+  <div class="project-studio-page relative flex-1 flex overflow-hidden w-full h-full min-h-[calc(100vh-52px)] bg-surface-base">
+    <!-- Quiet tool rail: secondary tools stay available without competing with the canvas. -->
+    <nav class="hidden md:flex w-14 shrink-0 flex-col items-center gap-2 border-r border-outline-border bg-surface-ground py-3">
+      <button
+        type="button"
+        class="studio-rail-button"
+        :class="{ active: mediaDrawerOpen }"
+        :title="currentLang === 'vi' ? 'Mở Media' : 'Open Media'"
+        @click="mediaDrawerOpen = !mediaDrawerOpen"
+      >
+        <span>▧</span>
+        <small>{{ currentLang === 'vi' ? 'Media' : 'Media' }}</small>
+      </button>
+      <button
+        type="button"
+        class="studio-rail-button active"
+        :title="currentLang === 'vi' ? 'Cảnh' : 'Scenes'"
+        @click="studioMode = 'scene'"
+      >
+        <span>▤</span>
+        <small>{{ currentLang === 'vi' ? 'Cảnh' : 'Scenes' }}</small>
+      </button>
+      <button
+        type="button"
+        class="studio-rail-button"
+        :class="{ active: activeRightTab === 'director' }"
+        :title="currentLang === 'vi' ? 'Hỏi AI' : 'Ask AI'"
+        @click="activeRightTab = 'director'; inspectorOpen = true"
+      >
+        <span>✦</span>
+        <small>AI</small>
+      </button>
+    </nav>
+
+    <!-- Media drawer: assets no longer occupy the primary canvas header. -->
+    <aside v-if="mediaDrawerOpen" class="studio-media-drawer">
+      <div class="flex items-center justify-between border-b border-outline-border px-4 py-3">
+        <div>
+          <h2 class="text-sm font-bold text-ink-primary">{{ currentLang === 'vi' ? 'Media' : 'Media' }}</h2>
+          <p class="mt-0.5 text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Tư liệu của dự án' : 'Project assets' }}</p>
+        </div>
+        <button type="button" class="text-ink-muted hover:text-ink-primary" @click="mediaDrawerOpen = false">✕</button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-3">
+        <div v-if="projectAssets.length" class="grid grid-cols-2 gap-2">
+          <button
+            v-for="asset in projectAssets"
+            :key="asset.asset_version"
+            type="button"
+            class="group overflow-hidden rounded-lg border text-left transition-colors"
+            :class="selectedTarget === 'asset' && selectedAsset?.asset_version === asset.asset_version ? 'border-indigo-500 bg-indigo-500/10' : 'border-outline-border bg-surface-muted hover:border-indigo-400'"
+            @click="selectAssetTarget(asset); inspectorOpen = true"
+          >
+            <img v-if="asset.file" :src="asset.file" :alt="asset.asset_name" class="aspect-square w-full object-cover" />
+            <div class="px-2 py-1.5">
+              <span class="block truncate text-[11px] font-semibold text-ink-primary">{{ asset.asset_name }}</span>
+              <span class="block truncate text-[10px] text-ink-muted">{{ asset.asset_category }}</span>
+            </div>
+          </button>
+        </div>
+        <p v-else class="py-8 text-center text-xs text-ink-muted">{{ currentLang === 'vi' ? 'Chưa có tư liệu.' : 'No project assets yet.' }}</p>
+      </div>
+      <div class="border-t border-outline-border p-3">
+        <button type="button" class="jm-btn-secondary w-full text-xs" @click="openMediaPicker">
+          {{ currentLang === 'vi' ? 'Thư viện Media' : 'Open Media Library' }}
+        </button>
+      </div>
+    </aside>
+
     <!-- Center Stage: Cinema Canvas & Scene Builder -->
     <main class="gflow-center-canvas">
       <!-- Top Studio Control Strip (Inside Canvas View) -->
-      <div class="flex items-center justify-between gap-3 mb-2 px-3 py-2 rounded-xl bg-surface-card border border-outline-border shadow-xs">
+      <div class="flex items-center justify-between gap-3 mb-3 px-1 py-1">
         <!-- Left: Project Name & Back to Campaigns -->
         <div class="flex items-center gap-2 min-w-0">
           <button
@@ -14,8 +82,7 @@
             <span>←</span>
             <span>{{ currentLang === 'vi' ? 'Chiến dịch' : 'Campaigns' }}</span>
           </button>
-          <span class="text-ink-muted">/</span>
-          <input
+            <input
             v-if="editingProjectName"
             v-model="projectNameDraft"
             class="gflow-project-name-input"
@@ -29,7 +96,7 @@
           <button
             v-else
             type="button"
-            class="text-xs font-bold text-ink-primary truncate cursor-text hover:text-indigo-400 transition-colors"
+            class="text-sm font-bold text-ink-primary truncate cursor-text hover:text-indigo-400 transition-colors"
             :title="currentLang === 'vi' ? 'Bấm để đổi tên dự án' : 'Click to rename project'"
             @click="startProjectNameEdit"
           >
@@ -37,9 +104,9 @@
           </button>
           <span
             v-if="workspace?.project?.status"
-            class="text-[10px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider bg-surface-muted border border-outline-border text-indigo-400"
+            class="text-[10px] px-2 py-0.5 rounded-md font-semibold bg-surface-muted text-ink-muted"
           >
-            {{ workspace.project.status === 'Generating' ? (currentLang === 'vi' ? 'Đang chạy' : 'Generating') : (currentLang === 'vi' ? 'Bản nháp' : 'Draft') }}
+            {{ productionStatus || (currentLang === 'vi' ? 'Đã lưu' : 'Saved') }}
           </span>
         </div>
 
@@ -109,6 +176,15 @@
           </div>
 
           <button
+            type="button"
+            class="icon-button"
+            :title="inspectorOpen ? (currentLang === 'vi' ? 'Thu gọn Inspector' : 'Collapse inspector') : (currentLang === 'vi' ? 'Mở Inspector' : 'Open inspector')"
+            @click="inspectorOpen = !inspectorOpen"
+          >
+            {{ inspectorOpen ? '→' : '←' }}
+          </button>
+
+          <button
             v-if="studioMode === 'scene'"
             type="button"
             class="text-xs text-ink-muted hover:text-ink-primary px-2.5 py-1.5 rounded-xl hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer flex items-center gap-1.5 font-semibold bg-surface-muted shadow-xs"
@@ -131,61 +207,6 @@
             <span v-else class="lucide-sparkles size-3" />
             <span>{{ generateButtonText }}</span>
           </button>
-        </div>
-      </div>
-
-      <!-- Collapsible Product Assets Pill (Saves vertical space) -->
-      <div v-if="projectAssets.length" class="mb-2">
-        <div class="flex items-center justify-between py-1 px-3 rounded-xl bg-surface-card border border-outline-border text-xs">
-          <button
-            type="button"
-            class="flex items-center gap-2 font-semibold text-ink-primary hover:text-indigo-400 transition-colors cursor-pointer"
-            @click="assetsExpanded = !assetsExpanded"
-          >
-            <span>📦 {{ currentLang === 'vi' ? 'Tư liệu sản phẩm' : 'Product assets' }} · {{ projectAssets.length }}</span>
-            <div class="flex items-center -space-x-1.5 overflow-hidden">
-              <img
-                v-for="asset in projectAssets.slice(0, 3)"
-                :key="asset.name"
-                :src="asset.file"
-                class="size-5 rounded-full object-cover border border-outline-border bg-black/10"
-              />
-            </div>
-            <span class="text-[10px] text-ink-muted font-normal">
-              {{ assetsExpanded ? (currentLang === 'vi' ? '▲ Thu gọn' : '▲ Collapse') : (currentLang === 'vi' ? '▼ Xem tất cả' : '▼ Expand') }}
-            </span>
-          </button>
-          <button
-            type="button"
-            class="text-xs font-semibold text-indigo-500 hover:text-indigo-400 px-2 py-0.5 rounded-lg hover:bg-indigo-500/10 transition-colors cursor-pointer"
-            @click="openMediaPicker"
-          >
-            + {{ currentLang === 'vi' ? 'Thêm' : 'Add' }}
-          </button>
-        </div>
-        <!-- Expanded asset strip -->
-        <div v-if="assetsExpanded" class="mt-1.5 flex items-center gap-2 overflow-x-auto p-2 rounded-xl bg-surface-muted border border-outline-border">
-          <div
-            v-for="asset in projectAssets"
-            :key="asset.asset_version"
-            class="group relative flex items-center gap-2 shrink-0 px-2.5 py-1.5 pr-7 rounded-lg bg-surface-card border transition-all cursor-pointer"
-            :class="selectedTarget === 'asset' && selectedAsset?.asset_version === asset.asset_version ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-outline-border hover:border-indigo-500/40'"
-            @click="selectAssetTarget(asset)"
-          >
-            <img v-if="asset.file" :src="asset.file" :alt="asset.asset_name" class="size-7 rounded object-cover" />
-            <div class="min-w-0">
-              <span class="block max-w-[120px] truncate text-[11px] text-ink-primary font-medium">{{ asset.asset_name }}</span>
-              <span class="block text-[9px] text-ink-muted">{{ asset.asset_category }}</span>
-            </div>
-            <button
-              type="button"
-              class="absolute right-1 top-1/2 -translate-y-1/2 size-5 rounded-full text-ink-muted hover:text-rose-500 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-              :title="currentLang === 'vi' ? 'Xóa khỏi dự án' : 'Remove from project'"
-              @click.stop="removeProjectAsset(asset)"
-            >
-              ×
-            </button>
-          </div>
         </div>
       </div>
 
@@ -325,7 +346,7 @@
           <div class="flex items-center gap-2">
             <span class="text-xs font-bold uppercase tracking-wider text-ink-primary flex items-center gap-1.5">
               <span>🎞️</span>
-              <span>{{ t('scene_builder') }}</span>
+              <span>{{ currentLang === 'vi' ? 'Storyboard' : 'Storyboard' }}</span>
             </span>
             <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-indigo-400 border border-outline-border font-bold">
               {{ allShotsList.length }} {{ currentLang === 'vi' ? 'Cảnh' : 'Shots' }} · {{ totalDurationSeconds }}s
@@ -448,7 +469,7 @@
                   :class="{ 'opacity-100': isShotSelected(shot, index), 'opacity-40': !isShotSelected(shot, index) }"
                 />
 
-                <!-- Start Keyframe Node (0.0s / In) -->
+                <!-- Start Reference node -->
                 <button
                   type="button"
                   class="capcut-kf-node relative z-10 cursor-pointer transition-transform hover:scale-125"
@@ -456,14 +477,14 @@
                     'is-active': selectedTarget === 'keyframe-start' && selectedShotIndex === index,
                     'is-shot-active': isShotSelected(shot, index)
                   }"
-                  :title="currentLang === 'vi' ? `Keyframe Khởi đầu (In): ${formatShotKeyframeTime(index, 0)} - Bấm để xem và sửa` : `Start Keyframe (In): ${formatShotKeyframeTime(index, 0)}`"
+                  :title="currentLang === 'vi' ? `Start Reference: ${formatShotKeyframeTime(index, 0)}` : `Start Reference: ${formatShotKeyframeTime(index, 0)}`"
                   @click.stop="selectKeyframeTarget(shot, index, 'start')"
                 >
                   <span class="capcut-kf-diamond capcut-kf-in" />
-                  <span class="capcut-kf-time-badge">In · {{ formatShotKeyframeTime(index, 0) }}</span>
+                  <span class="capcut-kf-time-badge">Start · {{ formatShotKeyframeTime(index, 0) }}</span>
                 </button>
 
-                <!-- End Keyframe Node (Duration / Out / Continuity Bridge) -->
+                <!-- End Reference / Continuity Frame node -->
                 <button
                   type="button"
                   class="capcut-kf-node relative z-10 cursor-pointer transition-transform hover:scale-125"
@@ -471,14 +492,14 @@
                     'is-active': selectedTarget === 'keyframe-end' && selectedShotIndex === index,
                     'is-shot-active': isShotSelected(shot, index)
                   }"
-                  :title="currentLang === 'vi' ? `Keyframe Kết thúc (Out): ${formatShotKeyframeTime(index, 1)} - Bấm để xem và sửa` : `End Keyframe (Out): ${formatShotKeyframeTime(index, 1)}`"
+                  :title="currentLang === 'vi' ? `End Reference: ${formatShotKeyframeTime(index, 1)}` : `End Reference: ${formatShotKeyframeTime(index, 1)}`"
                   @click.stop="selectKeyframeTarget(shot, index, 'end')"
                 >
                   <span
                     class="capcut-kf-diamond"
                     :class="shot.last_frame_image || settingsForm.continuity_mode === 'Continuous' ? 'capcut-kf-out-set' : 'capcut-kf-out-empty'"
                   />
-                  <span class="capcut-kf-time-badge">Out · {{ formatShotKeyframeTime(index, 1) }}</span>
+                  <span class="capcut-kf-time-badge">{{ settingsForm.continuity_mode === 'Continuous' ? 'Continuity' : 'End' }} · {{ formatShotKeyframeTime(index, 1) }}</span>
                 </button>
               </div>
             </div>
@@ -534,6 +555,7 @@
 
     <!-- Right Panel: Studio Inspector Component -->
     <StudioInspector
+      v-model:open="inspectorOpen"
       v-model:active-tab="activeRightTab"
       v-model:selected-target="selectedTarget"
       v-model:prompt-input="promptInput"
@@ -551,6 +573,9 @@
       :is-production-active="isProductionActive"
       :is-storyboard-draft="isStoryboardDraft"
       :saving-shot="savingShot"
+      :ai-revision="aiRevision"
+      :ai-revision-loading="aiRevisionLoading"
+      :ai-applying="aiApplying"
       :duration-seconds="Number(settingsForm.duration) || 15"
       :product-name="campaign.data?.project?.product_name || ''"
       :has-storyboard="hasStoryboard"
@@ -575,6 +600,8 @@
       @regenerate-current-shot="regenerateCurrentShot"
       @copy-prompt="copyPrompt"
       @save-active-shot="saveActiveShot"
+      @ask-ai="askAiToReviseShot"
+      @apply-ai-revision="applyAiRevision"
       @magic-generate="handleMagicGenerateClick"
     />
 
@@ -833,6 +860,8 @@ const retryingFailedScenes = ref(false);
 const revisingStoryboard = ref(false);
 const uploadingImages = ref(false);
 const showMediaPicker = ref(false);
+const mediaDrawerOpen = ref(false);
+const inspectorOpen = ref(false);
 const mediaCandidates = ref([]);
 const mediaCandidatesLoading = ref(false);
 const selectingMedia = ref(false);
@@ -844,12 +873,14 @@ const draggedShot = ref(null);
 const activeCanvasPreview = ref(null);
 const previewSelection = ref("full");
 const promptInput = ref("");
+const aiRevision = ref(null);
+const aiRevisionLoading = ref(false);
+const aiApplying = ref(false);
 const showAdvancedPrompt = ref(false);
 
 // Contextual Selection-Based Editor State
 const selectedTarget = ref("scene"); // 'scene' | 'asset' | 'keyframe-start' | 'keyframe-end' | 'full'
 const selectedAsset = ref(null);
-const assetsExpanded = ref(false);
 const isPlaying = ref(false);
 const studioPreviewRef = ref(null);
 const previewVideo = computed(() => studioPreviewRef.value?.previewVideo || null);
@@ -949,10 +980,55 @@ function selectAssetTarget(asset) {
     isVideo: false,
   };
   activeRightTab.value = "shot";
+  inspectorOpen.value = true;
+}
+
+async function askAiToReviseShot() {
+  const shot = activeSelectedShot.value;
+  const instruction = promptInput.value.trim();
+  if (!shot?.name || !instruction || aiRevisionLoading.value) return;
+  aiRevisionLoading.value = true;
+  try {
+    aiRevision.value = await call("joymedia.joymedia.doctype.media_project.media_project.revise_project_shot_with_ai", {
+      project_name: projectName.value,
+      shot_name: shot.name,
+      instruction,
+    });
+  } catch (error) {
+    toast({ title: currentLang.value === "vi" ? "AI không thể cập nhật cảnh" : "AI could not revise the shot", text: error.message || "", type: "error" });
+  } finally {
+    aiRevisionLoading.value = false;
+  }
+}
+
+async function applyAiRevision(regenerate = false) {
+  if (!aiRevision.value?.shot || aiApplying.value) return;
+  aiApplying.value = true;
+  try {
+    await call("joymedia.joymedia.doctype.media_project.media_project.apply_project_shot_ai_revision", {
+      project_name: projectName.value,
+      shot_name: aiRevision.value.shot_name,
+      values: aiRevision.value.shot,
+      regenerate,
+    });
+    aiRevision.value = null;
+    promptInput.value = "";
+    await refresh();
+    toast({
+      title: currentLang.value === "vi" ? "Đã áp dụng thay đổi" : "Shot changes applied",
+      text: regenerate ? (currentLang.value === "vi" ? "Cảnh đang được tạo lại." : "The shot is being regenerated.") : (currentLang.value === "vi" ? "Bạn có thể kiểm tra rồi tạo lại cảnh." : "Review the shot and regenerate when ready."),
+      type: "success",
+    });
+  } catch (error) {
+    toast({ title: currentLang.value === "vi" ? "Không thể áp dụng thay đổi" : "Could not apply changes", text: error.message || "", type: "error" });
+  } finally {
+    aiApplying.value = false;
+  }
 }
 
 function selectShotTarget(shot, index) {
   selectedTarget.value = "scene";
+  inspectorOpen.value = true;
   selectShot(shot, index);
 }
 
@@ -1322,7 +1398,7 @@ const selectedClipSourceShot = computed(() => {
   );
 });
 
-const activeRightTab = ref("director");
+const activeRightTab = ref("shot");
 const savingShot = ref(false);
 const regeneratingSource = ref(false);
 
@@ -1400,7 +1476,7 @@ function previewKeyframe(shot, type) {
       };
       previewSelection.value = "shot";
       toast({
-        title: currentLang.value === "vi" ? "Khung hình mẫu đầu (In)" : "Start Keyframe (In)",
+        title: currentLang.value === "vi" ? "Start Reference" : "Start Reference",
         text: currentLang.value === "vi" ? `Xem khung hình mẫu cảnh ${shot.shot_number}.` : `Viewing start frame of shot ${shot.shot_number}.`,
         type: "info",
       });
@@ -1415,7 +1491,7 @@ function previewKeyframe(shot, type) {
       };
       previewSelection.value = "shot";
       toast({
-        title: currentLang.value === "vi" ? "Khung hình mẫu cuối (Out)" : "End Keyframe (Bridge)",
+        title: currentLang.value === "vi" ? "Continuity Frame" : "Continuity Frame",
         text: currentLang.value === "vi" ? `Xem khung hình nối cảnh ${shot.shot_number}.` : `Viewing bridge frame of shot ${shot.shot_number}.`,
         type: "info",
       });
@@ -1688,7 +1764,7 @@ function estimateShotDuration(shot) {
 
 async function changeShotDuration(shot, delta) {
   const current = Number(estimateShotDuration(shot));
-  const next = Math.max(1, Math.min(60, current + delta));
+  const next = Math.max(1, current + delta);
   try {
     await call("joymedia.joymedia.doctype.media_project.media_project.update_project_shot_timing", {
       project_name: projectName.value,

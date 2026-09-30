@@ -9,6 +9,85 @@ from frappe import _
 DEFAULT_TIMEOUT = 600
 
 
+def generate_shot_revision(*, instruction, shot, product_name="", campaign_brief=""):
+	"""Ask the configured text model for structured changes to one shot."""
+	base_url = frappe.conf.get("qwen_base_url")
+	model = frappe.conf.get("qwen_model")
+	if not base_url:
+		frappe.throw(_("qwen_base_url is not configured."))
+	if not model:
+		frappe.throw(_("qwen_model is not configured."))
+
+	try:
+		timeout = float(frappe.conf.get("qwen_timeout", DEFAULT_TIMEOUT))
+	except (TypeError, ValueError):
+		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
+	if timeout <= 0:
+		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
+
+	current = {
+		"subject_identity": shot.get("subject_identity") or "",
+		"action_plot": shot.get("action_plot") or "",
+		"camera_direction": shot.get("camera_direction") or "",
+		"environment": shot.get("environment") or "",
+		"audio_direction": shot.get("audio_direction") or "",
+	}
+	user_prompt = (
+		"Revise exactly one cinematic commercial shot. Return only valid JSON.\n\n"
+		f"PRODUCT: {product_name}\n"
+		f"CAMPAIGN BRIEF: {campaign_brief}\n"
+		f"USER INSTRUCTION: {instruction}\n\n"
+		"CURRENT SHOT:\n"
+		f"{json.dumps(current, ensure_ascii=False)}\n\n"
+		"Return this shape:\n"
+		'{"summary":"short explanation",'
+		'"changes":[{"field":"Camera","detail":"..."}],'
+		'"shot":{"subject_identity":"...","action_plot":"...",'
+		'"camera_direction":"...","environment":"...","audio_direction":"..."}}\n'
+		"Preserve current values for fields the instruction does not change."
+	)
+	payload = {
+		"model": model,
+		"messages": [
+			{
+				"role": "system",
+				"content": "You revise structured shot specifications. Do not include markdown fences or commentary.",
+			},
+			{"role": "user", "content": user_prompt},
+		],
+		"response_format": {"type": "json_object"},
+		"temperature": 0.2,
+		"max_tokens": 1200,
+	}
+	try:
+		response = requests.post(
+			f"{base_url.rstrip('/')}/chat/completions",
+			json=payload,
+			timeout=(10, timeout),
+		)
+	except requests.Timeout:
+		frappe.throw(_("Qwen did not return a shot revision within {0} seconds.").format(int(timeout)))
+	except requests.RequestException as exc:
+		frappe.throw(_("Qwen is unavailable at {0}: {1}").format(base_url, str(exc)))
+	if not response.ok:
+		frappe.throw(_("Qwen request failed ({0}): {1}").format(response.status_code, response.text))
+	try:
+		content = response.json()["choices"][0]["message"]["content"]
+		result = json.loads(content)
+	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+		frappe.throw(_("Qwen returned invalid shot revision JSON: {0}").format(str(exc)))
+
+	if not isinstance(result, dict) or not isinstance(result.get("shot"), dict):
+		frappe.throw(_("Qwen returned an invalid shot revision."))
+	result["shot"] = {
+		field: str(result["shot"].get(field) or current[field]).strip()
+		for field in current
+	}
+	result["changes"] = result.get("changes") if isinstance(result.get("changes"), list) else []
+	result["summary"] = str(result.get("summary") or "Shot changes are ready to review.").strip()
+	return result
+
+
 def generate_video_plan(
 	*,
 	product_name: str,

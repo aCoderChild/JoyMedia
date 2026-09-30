@@ -60,7 +60,6 @@
         :key="studioPreview.type === 'clip' ? `${studioPreview.clip?.name}-${studioPreview.url}` : studioPreview.url"
         :src="studioPreview.url"
         class="w-full h-full object-contain"
-        controls
         preload="metadata"
         playsinline
         @loadedmetadata="$emit('loadedmetadata', $event)"
@@ -134,8 +133,26 @@
       </div>
     </div>
 
-    <!-- Attached Playback Controls Bar (Directly Under Preview) -->
-    <div class="flex items-center justify-between w-full max-w-[880px] mt-1.5 px-3 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-secondary shadow-xs">
+    <PlaybackTransport
+      :active-selected-shot="activeSelectedShot"
+      :current-lang="currentLang"
+      :current-timeline-position-label="currentTimelinePositionLabel"
+      :final-video="finalVideo"
+      :is-playing="isPlaying"
+      :preview-selection="previewSelection"
+      :selected-shot-index="selectedShotIndex"
+      :timeline-total-seconds="timelineTotalSeconds"
+      @fullscreen="requestFullscreen"
+      @next-shot="$emit('jumpToNextKeyframe')"
+      @previous-shot="$emit('jumpToPrevKeyframe')"
+      @select-full-video="$emit('selectFullVideo')"
+      @select-shot-target="$emit('selectShotTarget', activeSelectedShot, selectedShotIndex)"
+      @toggle-mute="toggleMute"
+      @toggle-play-pause="$emit('togglePlayPause')"
+    />
+
+    <!-- Legacy transport retained as a non-rendered fallback during migration. -->
+    <div v-if="false" class="flex items-center justify-between w-full max-w-[880px] mt-1.5 px-3 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-secondary shadow-xs">
       <div class="flex items-center gap-2.5">
         <button
           type="button"
@@ -227,6 +244,7 @@
 <script setup>
 import { ref } from "vue";
 import { useI18n } from "../../stores/i18n";
+import PlaybackTransport from "./PlaybackTransport.vue";
 
 const { t } = useI18n();
 
@@ -291,6 +309,14 @@ function formatSecondsLabel(totalSeconds) {
   const mins = Math.floor(safeSeconds / 60);
   const secs = Math.floor(safeSeconds % 60);
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function toggleMute() {
+  if (previewVideo.value) previewVideo.value.muted = !previewVideo.value.muted;
+}
+
+function requestFullscreen() {
+  previewVideo.value?.requestFullscreen?.();
 }
 
 defineExpose({
