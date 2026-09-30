@@ -1,7 +1,8 @@
 # Copyright (c) 2026, JoyMedia and contributors
 # For license information, please see license.txt
 
-import math
+import hashlib
+import json
 
 import frappe
 from frappe import _
@@ -18,7 +19,6 @@ ALLOWED_STATUSES = {
 	"Needs Attention",
 	"Cancelled",
 }
-MIN_SHOT_DURATION_SECONDS = 2.5
 INPUT_ASSET_CATEGORIES = {"Product", "Character", "Background", "Brand", "Style", "Reference"}
 SHOT_REFERENCE_CATEGORIES = INPUT_ASSET_CATEGORIES
 
@@ -49,6 +49,26 @@ def _get_customer_workflow(video_style=None):
 def _meaningful_project_value(value, fallback):
 	value = (value or "").strip()
 	return value if value and value.lower() != "untitled" else fallback
+
+
+def _build_planning_context(project, media_specification):
+	selected_asset_versions = sorted(
+		row.asset_version
+		for row in project.selected_media or []
+		if row.asset_version
+	)
+	context = {
+		"video_idea": project.video_idea or "",
+		"product_name": project.product_name or "",
+		"selected_asset_versions": selected_asset_versions,
+		"reference_template": project.reference_template or None,
+		"workflow": media_specification.workflow or "",
+		"continuity_mode": media_specification.continuity_mode or "",
+		"total_duration_seconds": float(media_specification.total_duration_seconds or 0),
+		"delivery_preset": media_specification.delivery_preset or "",
+	}
+	serialized = json.dumps(context, sort_keys=True, separators=(",", ":"))
+	return context, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _customer_style_details(media_specification):
@@ -235,13 +255,8 @@ def get_project_workspace(name):
 			fields=[
 				"name",
 				"shot_number",
-				"camera_direction",
-				"subject_identity",
-				"action_plot",
-				"environment",
-				"audio_direction",
+				"shot_name",
 				"generation_prompt",
-				"shot_instructions",
 				"planned_frame_count",
 				"duration_seconds",
 				"selected_output_asset_version",
@@ -348,7 +363,6 @@ def get_project_workspace(name):
 			"continuity_mode": _normalize_generation_mode(
 				getattr(media_specification, "continuity_mode", None)
 			),
-			"automatic_shot_count": _automatic_shot_count(media_specification, project.name),
 			"reference_asset_count": _reference_asset_count(project.name),
 			**_customer_style_details(media_specification),
 		}
@@ -581,28 +595,6 @@ def _get_project_outputs(media_project):
 	)
 
 
-def _minimum_shot_count(media_specification):
-	if not media_specification or not media_specification.workflow:
-		return 1
-
-	workflow_version = frappe.get_doc(
-		"Generation Workflow", media_specification.workflow
-	)
-	frame_count = int(workflow_version.frame_count or 0)
-	output_fps = float(workflow_version.output_fps or 0)
-	if frame_count < 1 or output_fps <= 0:
-		return 1
-
-	return max(
-		1,
-		math.ceil(
-			float(media_specification.total_duration_seconds or 0)
-			* output_fps
-			/ frame_count
-		),
-	)
-
-
 def _reference_asset_count(media_project):
 	from joymedia.services.project_image_manifest import get_project_image_manifest
 
@@ -610,25 +602,6 @@ def _reference_asset_count(media_project):
 		item.get("asset_category") in SHOT_REFERENCE_CATEGORIES
 		for item in get_project_image_manifest(media_project)
 	)
-
-
-def _automatic_shot_count(media_specification, media_project):
-	technical_minimum = _minimum_shot_count(media_specification)
-	if not media_specification:
-		return technical_minimum
-
-	duration = float(media_specification.total_duration_seconds or 0)
-	max_creative_shots = max(
-		technical_minimum,
-		math.floor(duration / MIN_SHOT_DURATION_SECONDS),
-	)
-	return min(
-		max(technical_minimum, _reference_asset_count(media_project)),
-		max_creative_shots,
-	)
-
-
-
 
 
 @frappe.whitelist()
@@ -731,14 +704,7 @@ def update_project_shot(project_name, shot_name, values):
 	if isinstance(values, str):
 		values = frappe.parse_json(values)
 
-	updatable_fields = [
-		"shot_instructions",
-		"subject_identity",
-		"action_plot",
-		"camera_direction",
-		"environment",
-		"audio_direction",
-	]
+	updatable_fields = ["generation_prompt"]
 	for f in updatable_fields:
 		if f in values:
 			setattr(shot, f, values[f])
@@ -758,13 +724,8 @@ def update_project_shot(project_name, shot_name, values):
 	return {
 		"name": shot.name,
 		"shot_number": shot.shot_number,
-		"camera_direction": shot.camera_direction,
-		"subject_identity": shot.subject_identity,
-		"action_plot": shot.action_plot,
-		"environment": shot.environment,
-		"audio_direction": shot.audio_direction,
+		"shot_name": shot.shot_name,
 		"generation_prompt": shot.generation_prompt,
-		"shot_instructions": shot.shot_instructions,
 	}
 
 
@@ -941,7 +902,7 @@ def regenerate_project_shot(project_name, shot_name):
 		attempt_names = []
 		if first_attempt and first_attempt.status == "Completed":
 			attempt_names.extend(prepare_chained_regeneration(first_attempt.name))
-			first_retry = create_manual_regeneration_attempt_internal(first_attempt.name, "Manual Retry")
+			first_retry = create_manual_regeneration_attempt_internal(first_attempt.name, "Reroll")
 			attempt_names.insert(0, first_retry.name)
 		elif first_attempt and first_attempt.status == "Failed":
 			results = _retry_and_submit_latest_failed_attempts(
@@ -1227,8 +1188,6 @@ class MediaProject(Document):
 		)
 		product_name = self.product_name
 
-		shot_count = _automatic_shot_count(media_specification, self.name)
-
 		template = None
 		if self.reference_template:
 			ref = frappe.get_doc("Video Reference Template", self.reference_template)
@@ -1244,7 +1203,7 @@ class MediaProject(Document):
 			),
 			total_video_duration=media_specification.total_duration_seconds,
 			target_fps=workflow_version.output_fps,
-			shot_count=shot_count,
+			shot_count=None,
 			reference_template=template,
 			reference_images=self._get_project_image_inputs(),
 			video_style=media_specification.video_style or workflow_version.workflow_key,
@@ -1271,6 +1230,62 @@ class MediaProject(Document):
 			}
 		).insert(ignore_permissions=True)
 
+	def _ensure_current_planning_specification(self, media_specification):
+		context, context_hash = _build_planning_context(self, media_specification)
+		if media_specification.planning_context_hash == context_hash:
+			return media_specification
+
+		has_shots = frappe.db.exists(
+			"Shot Specification", {"media_specification": media_specification.name}
+		)
+		if (
+			media_specification.status == "Draft"
+			and not has_shots
+			and not media_specification.planning_context_hash
+		):
+			media_specification.planning_context_json = json.dumps(
+				context, sort_keys=True, indent=2
+			)
+			media_specification.planning_context_hash = context_hash
+			media_specification.save(ignore_permissions=True)
+			return media_specification
+
+		previous = media_specification
+		revision = frappe.get_doc(
+			{
+				"doctype": "Media Specification",
+				"media_project": self.name,
+				"version_number": (previous.version_number or 0) + 1,
+				"status": "Draft",
+				"workflow": previous.workflow,
+				"video_style": previous.video_style,
+				"continuity_mode": previous.continuity_mode,
+				"total_duration_seconds": previous.total_duration_seconds,
+				"delivery_preset": previous.delivery_preset,
+				"delivery_width": previous.delivery_width,
+				"delivery_height": previous.delivery_height,
+				"audio_cues": [
+					{
+						"role": row.role,
+						"asset_version": row.asset_version,
+						"start_seconds": row.start_seconds,
+						"end_seconds": row.end_seconds,
+						"gain_db": row.gain_db,
+						"fade_in_seconds": row.fade_in_seconds,
+						"fade_out_seconds": row.fade_out_seconds,
+						"duck_others": row.duck_others,
+					}
+					for row in (previous.audio_cues or [])
+				],
+				"planning_context_json": json.dumps(context, sort_keys=True, indent=2),
+				"planning_context_hash": context_hash,
+			}
+		).insert(ignore_permissions=True)
+		previous.status = "Superseded"
+		previous.save(ignore_permissions=True)
+		frappe.db.commit()
+		return revision
+
 	@frappe.whitelist()
 	def generate_end_to_end(self):
 		self._require_write_access()
@@ -1278,6 +1293,8 @@ class MediaProject(Document):
 			frappe.throw(_("Add at least one image before generating a video."))
 
 		media_specification = self._ensure_default_video_specification()
+		media_specification.reload()
+		media_specification = self._ensure_current_planning_specification(media_specification)
 		media_specification.reload()
 		if media_specification.status != "Draft":
 			latest_run = frappe.db.get_value(

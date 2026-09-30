@@ -9,8 +9,8 @@ class TestQwenClient(FrappeTestCase):
 		plan = _normalize_qwen_plan(
 			{
 				"shots": [
-					{"prompt": "A product hero reveal."},
-					{"video_prompt": "A slow closing detail shot."},
+					{"prompt": "A product hero reveal.", "duration_seconds": 2.5},
+					{"video_prompt": "A slow closing detail shot.", "duration_seconds": 2.5},
 				]
 			},
 			reference_image_count=2,
@@ -31,7 +31,12 @@ class TestQwenClient(FrappeTestCase):
 
 	def test_continuous_mode_assigns_only_the_first_reference(self):
 		plan = _normalize_qwen_plan(
-			{"shots": [{"generation_prompt": "Opening shot."}, {"generation_prompt": "Continuation."}]},
+			{
+				"shots": [
+					{"generation_prompt": "Opening shot.", "duration_seconds": 2.5},
+					{"generation_prompt": "Continuation.", "duration_seconds": 2.5},
+				]
+			},
 			reference_image_count=1,
 			generation_mode="Continuous",
 		)

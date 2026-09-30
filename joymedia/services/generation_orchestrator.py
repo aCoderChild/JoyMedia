@@ -503,7 +503,7 @@ def prepare_chained_regeneration(attempt_name: str):
 			None,
 			update_modified=False,
 		)
-		retry_attempt = create_manual_regeneration_attempt_internal(completed_attempt, "Manual Retry")
+		retry_attempt = create_manual_regeneration_attempt_internal(completed_attempt, "Reroll")
 		prepared.append(retry_attempt.name)
 
 	return prepared

@@ -22,6 +22,7 @@
   "resolved_execution_section",
   "resolved_workflow_json",
   "resolved_workflow_hash",
+  "resolved_inputs_json",
   "failure_section",
   "error_summary",
   "error_details",
@@ -130,6 +131,13 @@
    "read_only": 1
   },
   {
+   "description": "Exact static and runtime inputs resolved for this attempt.",
+   "fieldname": "resolved_inputs_json",
+   "fieldtype": "Code",
+   "label": "Resolved Inputs JSON",
+   "read_only": 1
+  },
+  {
    "fieldname": "failure_section",
    "fieldtype": "Section Break",
    "label": "Failure"
@@ -171,7 +179,7 @@
    "fieldtype": "Select",
    "label": "Retry Reason",
    "mandatory_depends_on": "eval:doc.retry_of;",
-   "options": "\nExecution Failure\nWorkflow Revision\nInput Revision\nManual Retry\nOther",
+   "options": "\nExecution Failure\nWorkflow Revision\nInput Revision\nManual Retry\nReroll\nOther",
    "read_only_depends_on": "eval:!doc.__islocal;"
   },
   {

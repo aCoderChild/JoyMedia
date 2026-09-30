@@ -24,7 +24,9 @@
   "audio_cues",
   "global_content_requirements_section",
   "generation_instructions",
-  "global_consistency_instructions"
+  "global_consistency_instructions",
+  "planning_context_json",
+  "planning_context_hash"
  ],
  "fields": [
   {
@@ -155,6 +157,22 @@
    "fieldname": "global_consistency_instructions",
    "fieldtype": "Long Text",
    "label": "Global Consistency Instructions"
+  },
+  {
+   "description": "Immutable inputs used for the Qwen planning snapshot.",
+   "fieldname": "planning_context_json",
+   "fieldtype": "Code",
+   "hidden": 1,
+   "label": "Planning Context JSON",
+   "read_only": 1
+  },
+  {
+   "description": "SHA-256 hash of the Qwen planning context.",
+   "fieldname": "planning_context_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Planning Context Hash",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

@@ -126,6 +126,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 				"shots": [
 					{
 						"shot_number": 1,
+						"duration_seconds": 5,
 						"generation_prompt": "A concise product reveal.",
 					}
 				]
@@ -175,6 +176,29 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			any(style.workflow_key == "product_showcase" for style in get_video_styles())
 		)
 
+	def test_planning_context_change_creates_a_new_specification_revision(self):
+		campaign, specification = _create_campaign("Planning Context")
+
+		current = campaign._ensure_current_planning_specification(specification)
+		self.assertEqual(current.name, specification.name)
+		self.assertTrue(current.planning_context_hash)
+		self.assertTrue(current.planning_context_json)
+
+		campaign.video_idea = "A bright energetic product reveal."
+		campaign.save(ignore_permissions=True)
+		from joymedia.joymedia.doctype.media_project.media_project import _build_planning_context
+		_, changed_hash = _build_planning_context(campaign, current)
+		self.assertNotEqual(current.planning_context_hash, changed_hash)
+		revision = campaign._ensure_current_planning_specification(current)
+
+		self.assertNotEqual(revision.name, specification.name)
+		self.assertEqual(revision.version_number, specification.version_number + 1)
+		self.assertEqual(revision.status, "Draft")
+		self.assertEqual(
+			frappe.db.get_value("Media Specification", specification.name, "status"),
+			"Superseded",
+		)
+
 	def test_create_campaign_uses_campaign_brief(self):
 		from joymedia.joymedia.doctype.media_project.media_project import create_project
 
@@ -195,7 +219,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			"shots": [
 				{
 					"shot_number": 1,
-					"generation_prompt": "First generated shot.",
+					"duration_seconds": 5,
+						"generation_prompt": "First generated shot.",
 				}
 			]
 		}
@@ -203,7 +228,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			"shots": [
 				{
 					"shot_number": 1,
-					"generation_prompt": "Second generated shot.",
+					"duration_seconds": 5,
+						"generation_prompt": "Second generated shot.",
 				}
 			]
 		}
@@ -367,6 +393,7 @@ def _video_plan():
 		"shots": [
 			{
 				"shot_number": 1,
+				"duration_seconds": 5,
 				"reference_image_index": 1,
 				"generation_prompt": "A clean product commercial with a slow forward camera movement.",
 			}

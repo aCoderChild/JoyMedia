@@ -20,6 +20,8 @@ class MediaSpecification(Document):
 		"delivery_width",
 		"delivery_height",
 		"continuity_mode",
+		"planning_context_json",
+		"planning_context_hash",
 		"generation_instructions",
 		"global_consistency_instructions",
 	)

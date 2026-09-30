@@ -72,8 +72,9 @@
   },
   {
    "description": "Natural-language instructions specific to this shot. Global consistency belongs to the Media Specification.",
-   "fieldname": "shot_instructions",
-   "fieldtype": "Long Text",
+    "fieldname": "shot_instructions",
+    "fieldtype": "Long Text",
+    "hidden": 1,
    "in_list_view": 1,
    "label": "Shot Instructions"
   },
@@ -84,26 +85,30 @@
   },
   {
    "description": "Shot framing, camera movement, lens perspective, focus behavior and composition instructions.\nDefine where/how the camera sees the world",
-   "fieldname": "camera_direction",
-   "fieldtype": "Long Text",
+    "fieldname": "camera_direction",
+    "fieldtype": "Long Text",
+    "hidden": 1,
    "label": "Camera Direction"
   },
   {
    "description": "Defines the primary subject and identity properties that must be preserved within this shot.",
-   "fieldname": "subject_identity",
-   "fieldtype": "Long Text",
+    "fieldname": "subject_identity",
+    "fieldtype": "Long Text",
+    "hidden": 1,
    "label": "Subject Identity"
   },
   {
    "description": "Describes what happens during the shot, including state changes and interactions.",
-   "fieldname": "action_plot",
-   "fieldtype": "Long Text",
+    "fieldname": "action_plot",
+    "fieldtype": "Long Text",
+    "hidden": 1,
    "label": "Action / Motion"
   },
   {
    "description": "Defines the physical setting, background, lighting environment and scene context.",
-   "fieldname": "environment",
-   "fieldtype": "Long Text",
+    "fieldname": "environment",
+    "fieldtype": "Long Text",
+    "hidden": 1,
    "label": "Lighting & Environment"
   },
   {
@@ -114,8 +119,9 @@
   },
   {
    "description": "Describes the desired sound, ambience, dialogue, music characteristics, or sound effects for this shot. This is TEXTUAL INTENT, not an attached audio file.",
-   "fieldname": "audio_direction",
-   "fieldtype": "Long Text",
+    "fieldname": "audio_direction",
+    "fieldtype": "Long Text",
+    "hidden": 1,
    "label": "Audio SFX"
   },
   {

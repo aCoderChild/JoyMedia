@@ -23,6 +23,7 @@ class TestGenerationAttempt(FrappeTestCase):
 				"Workflow Revision",
 				"Input Revision",
 				"Manual Retry",
+				"Reroll",
 				"Other",
 			},
 		)

@@ -1,4 +1,5 @@
 import hashlib
+import json
 
 import frappe
 from frappe import _
@@ -82,7 +83,7 @@ def prepare_generation_job(job_name: str):
 
 
 def attach_chained_first_frame(job):
-	"""Attach the previous chained job's generated last frame to this job."""
+	"""Check that a chained job has an upstream Last Frame Artifact available."""
 	if not job.depends_on_job:
 		return True
 
@@ -90,19 +91,7 @@ def attach_chained_first_frame(job):
 	if not previous_attempt or previous_attempt.status != "Completed":
 		return False
 	last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
-	if not last_frame_artifact:
-		return False
-
-	frappe.db.delete("Generation Input", {"generation_job": job.name, "input_role": "first_frame"})
-	frappe.get_doc(
-		{
-			"doctype": "Generation Input",
-			"generation_job": job.name,
-			"generation_artifact": last_frame_artifact.name,
-			"input_role": "first_frame",
-		}
-	).insert(ignore_permissions=True)
-	return True
+	return bool(last_frame_artifact)
 
 
 def ensure_generation_inputs(job):
@@ -135,20 +124,12 @@ def ensure_generation_inputs(job):
 				}
 			).insert(ignore_permissions=True)
 
-	if job.depends_on_job:
-		current_roles = {
-			frappe.scrub(row.input_role or "") for row in frappe.get_all(
-				"Generation Input",
-				filters={"generation_job": job.name},
-				fields=["input_role"],
-			)
-		}
-		if "first_frame" not in current_roles and not attach_chained_first_frame(job):
-			frappe.throw(
-				_(
-					"Generation Job {0} cannot run until its previous chained shot has a last frame."
-				).format(job.name)
-			)
+	if job.depends_on_job and not attach_chained_first_frame(job):
+		frappe.throw(
+			_(
+				"Generation Job {0} cannot run until its previous chained shot has a last frame."
+			).format(job.name)
+		)
 	return True
 
 
@@ -184,7 +165,7 @@ def submit_attempt(attempt_name: str):
 		ensure_generation_inputs(job)
 		job.reload()
 		job.validate_for_execution()
-		staged_inputs = _stage_generation_inputs(job)
+		staged_inputs = _stage_generation_inputs(job, attempt)
 		workflow = resolve_attempt(attempt.name, staged_inputs=staged_inputs)
 		attempt.reload()
 		endpoint_url = get_base_url()
@@ -205,7 +186,7 @@ def submit_attempt(attempt_name: str):
 		return result
 
 
-def _stage_generation_inputs(job):
+def _stage_generation_inputs(job, attempt):
 	rows = frappe.get_all(
 		"Generation Input",
 		filters={"generation_job": job.name},
@@ -216,15 +197,24 @@ def _stage_generation_inputs(job):
 		frappe.throw(_("Generation Job {0} has no Generation Inputs.").format(job.name))
 
 	staged = {}
+	resolved_inputs = {}
 	for row in rows:
 		file_url = None
 		if row.generation_artifact:
 			file_url = frappe.db.get_value("Generation Artifact", row.generation_artifact, "frappe_file")
 			if not file_url:
 				frappe.throw(_("Generation Artifact {0} has no file.").format(row.generation_artifact))
+			resolved_inputs[frappe.scrub(row.input_role)] = {
+				"source": "Generation Artifact",
+				"artifact": row.generation_artifact,
+			}
 		else:
 			asset_version = frappe.get_doc("Asset Version", row.asset_version)
 			file_url = asset_version.file
+			resolved_inputs.setdefault(
+				frappe.scrub(row.input_role),
+				{"source": "Asset Version", "asset_version": row.asset_version},
+			)
 		if not file_url:
 			frappe.throw(_("Generation input {0} has no file.").format(row.name))
 		uploaded = upload_frappe_file(
@@ -232,4 +222,24 @@ def _stage_generation_inputs(job):
 		)
 		role = frappe.scrub(row.input_role or "")
 		staged[role] = uploaded["server_path"]
+
+	if job.depends_on_job:
+		previous_attempt = get_effective_attempt(job.depends_on_job)
+		if not previous_attempt or previous_attempt.status != "Completed":
+			frappe.throw(_("A chained Generation Job requires a completed upstream Attempt."))
+		last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
+		if not last_frame_artifact:
+			frappe.throw(_("The upstream Attempt has no Last Frame Artifact."))
+		file_url = last_frame_artifact.frappe_file
+		if not file_url:
+			frappe.throw(_("Last Frame Artifact {0} has no file.").format(last_frame_artifact.name))
+		uploaded = upload_frappe_file(file_url)
+		staged["first_frame"] = uploaded["server_path"]
+		resolved_inputs["first_frame"] = {
+			"source": "Generation Artifact",
+			"artifact": last_frame_artifact.name,
+		}
+
+	attempt.resolved_inputs_json = json.dumps(resolved_inputs, sort_keys=True)
+	attempt.save(ignore_permissions=True)
 	return staged

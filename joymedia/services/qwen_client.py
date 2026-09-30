@@ -25,26 +25,18 @@ def generate_shot_revision(*, instruction, shot, product_name="", campaign_brief
 	if timeout <= 0:
 		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
 
-	current = {
-		"subject_identity": shot.get("subject_identity") or "",
-		"action_plot": shot.get("action_plot") or "",
-		"camera_direction": shot.get("camera_direction") or "",
-		"environment": shot.get("environment") or "",
-		"audio_direction": shot.get("audio_direction") or "",
-	}
+	current_prompt = str(shot.get("generation_prompt") or "").strip()
 	user_prompt = (
 		"Revise exactly one cinematic commercial shot. Return only valid JSON.\n\n"
 		f"PRODUCT: {product_name}\n"
-		f"CAMPAIGN BRIEF: {campaign_brief}\n"
 		f"USER INSTRUCTION: {instruction}\n\n"
-		"CURRENT SHOT:\n"
-		f"{json.dumps(current, ensure_ascii=False)}\n\n"
+		"CURRENT GENERATION PROMPT:\n"
+		f"{current_prompt}\n\n"
 		"Return this shape:\n"
 		'{"summary":"short explanation",'
-		'"changes":[{"field":"Camera","detail":"..."}],'
-		'"shot":{"subject_identity":"...","action_plot":"...",'
-		'"camera_direction":"...","environment":"...","audio_direction":"..."}}\n'
-		"Preserve current values for fields the instruction does not change."
+		'"changes":[{"field":"Generation Prompt","detail":"..."}],'
+		'"generation_prompt":"..."}\n'
+		"Return one complete replacement generation_prompt, preserving details not changed by the instruction."
 	)
 	payload = {
 		"model": model,
@@ -77,12 +69,12 @@ def generate_shot_revision(*, instruction, shot, product_name="", campaign_brief
 	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
 		frappe.throw(_("Qwen returned invalid shot revision JSON: {0}").format(str(exc)))
 
-	if not isinstance(result, dict) or not isinstance(result.get("shot"), dict):
+	if not isinstance(result, dict):
 		frappe.throw(_("Qwen returned an invalid shot revision."))
-	result["shot"] = {
-		field: str(result["shot"].get(field) or current[field]).strip()
-		for field in current
-	}
+	generation_prompt = str(result.get("generation_prompt") or "").strip()
+	if not generation_prompt:
+		frappe.throw(_("Qwen returned an empty generation_prompt for the shot revision."))
+	result["generation_prompt"] = generation_prompt
 	result["changes"] = result.get("changes") if isinstance(result.get("changes"), list) else []
 	result["summary"] = str(result.get("summary") or "Shot changes are ready to review.").strip()
 	return result
@@ -94,7 +86,7 @@ def generate_video_plan(
 	video_idea: str,
 	total_video_duration: float,
 	target_fps: float,
-	shot_count: int,
+	shot_count: int | None = None,
 	reference_template: dict | None = None,
 	reference_images: list[dict] | None = None,
 	video_style: str | None = None,
@@ -181,12 +173,18 @@ video idea and project reference images.
 		f"VIDEO IDEA\n{video_idea or ''}\n\n"
 		f"TOTAL VIDEO DURATION: {total_video_duration} seconds\n"
 		f"TARGET FPS: {target_fps}\n"
-		f"NUMBER OF SHOTS: {shot_count}\n\n"
-		f"Return exactly {shot_count} shots. Organize the shots into a coherent narrative progression.\n\n"
+		f"SHOT COUNT GUIDANCE: {shot_count if shot_count is not None else 'Choose the appropriate number of creative shots; do not use model frame capacity to choose it.'}\n\n"
+		+
+		(
+			f"Return exactly {shot_count} shots. "
+			if shot_count is not None
+			else "Choose a coherent storyboard structure, normally between 1 and 8 shots. "
+		)
+		+ "Organize the shots into a coherent narrative progression.\n\n"
 		"IMPORTANT OUTPUT RULES:\n"
 		"- Every shot MUST contain a positive integer shot_number.\n"
 		"- Every shot MUST contain one non-empty generation_prompt.\n"
-		"- shot_name and duration_seconds are optional planning metadata.\n"
+		"- Every shot MUST contain a positive duration_seconds value.\n"
 		"- Never return null or empty generation_prompt values.\n\n"
 		"Return only valid JSON with this shape:\n"
 		f"{response_shape}"
@@ -297,8 +295,7 @@ def _normalize_qwen_plan(
 			"shot_name": _first_non_empty(shot.get("shot_name"), f"Shot {index}"),
 			"generation_prompt": generation_prompt,
 		}
-		if shot.get("duration_seconds") is not None:
-			normalized["duration_seconds"] = shot.get("duration_seconds")
+		normalized["duration_seconds"] = shot.get("duration_seconds")
 
 		# The text model cannot inspect the uploaded images. Reference selection
 		# is therefore deterministic backend state, not model output.
@@ -330,6 +327,8 @@ def _validate_video_plan(
 
 	if not result["shots"]:
 		frappe.throw(_("Qwen video plan must contain at least one shot."))
+	if len(result["shots"]) > 8:
+		frappe.throw(_("Qwen video plan must not contain more than 8 creative shots."))
 
 	if shot_count is not None and len(result["shots"]) != shot_count:
 		frappe.throw(_("Qwen returned {0} shots; expected {1}.").format(len(result["shots"]), shot_count))
@@ -351,6 +350,15 @@ def _validate_video_plan(
 					shot.get("shot_number", "?")
 				)
 			)
+		try:
+			if float(shot.get("duration_seconds")) <= 0:
+				raise ValueError
+		except (TypeError, ValueError):
+			frappe.throw(
+				_("Qwen returned an invalid duration_seconds for shot {0}.").format(
+					shot.get("shot_number", "?")
+				)
+			)
 
 		if type(shot["shot_number"]) is not int or shot["shot_number"] < 1:
 			frappe.throw(_("Shot number must be a positive integer."))
@@ -360,14 +368,13 @@ def _validate_video_plan(
 			"shot_name": str(shot.get("shot_name") or f"Shot {shot['shot_number']}").strip(),
 			"generation_prompt": str(shot["generation_prompt"]).strip(),
 		}
-		if shot.get("duration_seconds") is not None:
-			try:
-				duration_seconds = float(shot["duration_seconds"])
-			except (TypeError, ValueError):
-				frappe.throw(_("Shot duration must be numeric."))
-			if duration_seconds <= 0:
-				frappe.throw(_("Shot duration must be greater than zero."))
-			normalized["duration_seconds"] = duration_seconds
+		try:
+			duration_seconds = float(shot["duration_seconds"])
+		except (KeyError, TypeError, ValueError):
+			frappe.throw(_("Every Qwen shot must contain a numeric duration_seconds."))
+		if duration_seconds <= 0:
+			frappe.throw(_("Shot duration must be greater than zero."))
+		normalized["duration_seconds"] = duration_seconds
 
 		if reference_image_count:
 			if generation_mode == "Multi-shot":

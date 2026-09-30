@@ -2,13 +2,7 @@ import frappe
 from frappe import _
 
 
-SHOT_FIELDS = (
-	"subject_identity",
-	"action_plot",
-	"camera_direction",
-	"environment",
-	"audio_direction",
-)
+SHOT_FIELDS = ("generation_prompt",)
 
 
 def _get_editable_shot(project, shot_name):
@@ -44,7 +38,6 @@ def revise_project_shot_with_ai(project_name, shot_name, instruction):
 		instruction=instruction,
 		shot=shot,
 		product_name=project.product_name,
-		campaign_brief=project.campaign_brief,
 	)
 	return {
 		"shot_name": shot.name,
@@ -52,7 +45,7 @@ def revise_project_shot_with_ai(project_name, shot_name, instruction):
 		"instruction": instruction,
 		"summary": result["summary"],
 		"changes": result["changes"],
-		"shot": result["shot"],
+		"generation_prompt": result["generation_prompt"],
 	}
 
 

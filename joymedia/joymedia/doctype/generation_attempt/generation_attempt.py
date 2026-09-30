@@ -1,13 +1,15 @@
 # Copyright (c) 2026, JoyMedia and contributors
 # For license information, please see license.txt
 
+import secrets
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now
 
 
-MANUAL_REGENERATION_REASONS = {"Manual Retry"}
+MANUAL_REGENERATION_REASONS = {"Manual Retry", "Reroll"}
 
 
 class GenerationAttempt(Document):
@@ -121,7 +123,7 @@ def create_manual_regeneration_attempt_internal(
 	"""Create a manual regeneration after the caller has authorized the owning project."""
 	reason = (reason or "").strip()
 	if reason not in MANUAL_REGENERATION_REASONS:
-		frappe.throw(_("Manual regeneration must use Manual Retry."))
+		frappe.throw(_("Manual regeneration must use Manual Retry or Reroll."))
 	_validate_retry_reason(reason)
 	completed_attempt = frappe.get_doc("Generation Attempt", completed_attempt_name)
 	if completed_attempt.status != "Completed":
@@ -146,7 +148,11 @@ def _create_successor_attempt(previous_attempt, reason):
 		{
 			"doctype": "Generation Attempt",
 			"generation_job": job.name,
-			"seed": previous_attempt.seed,
+			"seed": (
+				secrets.randbelow(2_147_483_648)
+				if reason in MANUAL_REGENERATION_REASONS
+				else previous_attempt.seed
+			),
 			"retry_of": previous_attempt.name,
 			"retry_reason": reason,
 			"status": "Pending",

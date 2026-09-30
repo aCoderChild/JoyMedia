@@ -17,9 +17,14 @@ class TestGenerationRunner(FrappeTestCase):
 		]
 		get_doc.return_value = frappe._dict(name="ASTV-00001", file="/private/files/first.png")
 
-		staged = _stage_generation_inputs(job)
+		attempt = frappe._dict(name="ATT-00001", save=MagicMock())
+		staged = _stage_generation_inputs(job, attempt)
 
 		self.assertEqual({"first_frame": "first.png"}, staged)
+		self.assertEqual(
+			'{"first_frame": {"asset_version": "ASTV-00001", "source": "Asset Version"}}',
+			attempt.resolved_inputs_json,
+		)
 		upload_frappe_file.assert_called_once_with(
 			"/private/files/first.png"
 		)
@@ -46,7 +51,7 @@ class TestGenerationRunner(FrappeTestCase):
 		result = submit_attempt(attempt.name)
 
 		self.assertEqual(result, {"prompt_id": "comfy-1"})
-		stage_generation_inputs.assert_called_once_with(job)
+		stage_generation_inputs.assert_called_once_with(job, attempt)
 		get_base_url.assert_called_once_with()
 		submit_workflow.assert_called_once_with({}, base_url="http://legacy:8188")
 		self.assertEqual(attempt.status, "Queued")

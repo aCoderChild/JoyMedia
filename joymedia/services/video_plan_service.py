@@ -120,8 +120,7 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 				"generation_prompt": shot["generation_prompt"],
 			}
 		)
-		if shot.get("duration_seconds") is not None:
-			doc.duration_seconds = shot["duration_seconds"]
+		doc.duration_seconds = shot["duration_seconds"]
 		first_reference_index = shot.get("first_frame_reference_image_index")
 		if first_reference_index is None:
 			first_reference_index = shot.get("reference_image_index")
@@ -208,9 +207,8 @@ def _validate_plan_shape(plan):
 		if not prompt:
 			frappe.throw(_("Every video plan shot must have a non-empty generation_prompt."))
 		seen_numbers.add(shot_number)
-		if shot.get("duration_seconds") is not None:
-			try:
-				if float(shot["duration_seconds"]) <= 0:
-					raise ValueError
-			except (TypeError, ValueError):
-				frappe.throw(_("Shot duration_seconds must be greater than zero."))
+		try:
+			if float(shot["duration_seconds"]) <= 0:
+				raise ValueError
+		except (KeyError, TypeError, ValueError):
+			frappe.throw(_("Every video plan shot must have a positive duration_seconds."))
