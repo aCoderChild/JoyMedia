@@ -45,11 +45,17 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 
 		shot_asset = _get_or_create_shot_output_asset(shot, media_specification.media_project)
 		if len(segments) == 1:
+			artifact = segments[0][1]
+			promoted_file = _promote_artifact_file(
+				artifact,
+				shot_asset,
+				f"{shot.name}.mp4",
+			)
 			asset_version = frappe.get_doc(
 				{
 					"doctype": "Asset Version",
 					"media_asset": shot_asset.name,
-					"file": segments[0][1].frappe_file,
+					"file": promoted_file.file_url,
 					"source": "Generated",
 				}
 			).insert(ignore_permissions=True)
@@ -109,6 +115,21 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 		).insert(ignore_permissions=True)
 		shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
 		return asset_version.name
+
+
+def _promote_artifact_file(artifact, media_asset, file_name):
+	"""Copy an internal artifact file into the customer-visible asset library."""
+	source_file = frappe.get_doc("File", {"file_url": artifact.frappe_file})
+	return frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": file_name,
+			"content": source_file.get_content(),
+			"is_private": 1,
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": media_asset.name,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _get_or_create_shot_output_asset(shot, media_project):
