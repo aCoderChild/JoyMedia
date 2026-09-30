@@ -7,7 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import now
 
 
-QA_RETRY_REASONS = {"Manual Retry"}
+MANUAL_REGENERATION_REASONS = {"Manual Retry"}
 
 
 class GenerationAttempt(Document):
@@ -57,10 +57,10 @@ class GenerationAttempt(Document):
 		_validate_retry_reason(self.retry_reason)
 		if previous_attempt.status == "Failed":
 			return
-		if previous_attempt.status == "Completed" and self.retry_reason in QA_RETRY_REASONS:
+		if previous_attempt.status == "Completed" and self.retry_reason in MANUAL_REGENERATION_REASONS:
 			return
 		frappe.throw(
-			_("Retry Of must be a failed Generation Attempt, unless this is a QA retry of a completed Attempt.")
+			_("Retry Of must be a failed Generation Attempt, unless this is a manual regeneration of a completed Attempt.")
 		)
 
 
@@ -109,19 +109,19 @@ def create_retry_attempt_internal(failed_attempt_name: str, reason: str):
 	return _create_successor_attempt(failed_attempt, reason)
 
 
-def create_qa_retry_attempt(completed_attempt_name: str, reason: str = "Manual Retry"):
-	"""Create a Pending QA successor for a completed Attempt rejected in review."""
+def create_manual_regeneration_attempt(completed_attempt_name: str, reason: str = "Manual Retry"):
+	"""Create a Pending successor for a completed Attempt selected for manual regeneration."""
 	frappe.has_permission("Generation Attempt", "create", throw=True)
-	return create_qa_retry_attempt_internal(completed_attempt_name, reason)
+	return create_manual_regeneration_attempt_internal(completed_attempt_name, reason)
 
 
-def create_qa_retry_attempt_internal(
+def create_manual_regeneration_attempt_internal(
 	completed_attempt_name: str, reason: str = "Manual Retry"
 ):
-	"""Create a QA retry after the caller has authorized the owning Campaign."""
+	"""Create a manual regeneration after the caller has authorized the owning project."""
 	reason = (reason or "").strip()
-	if reason not in QA_RETRY_REASONS:
-		frappe.throw(_("QA retries must use Manual Retry."))
+	if reason not in MANUAL_REGENERATION_REASONS:
+		frappe.throw(_("Manual regeneration must use Manual Retry."))
 	_validate_retry_reason(reason)
 	completed_attempt = frappe.get_doc("Generation Attempt", completed_attempt_name)
 	if completed_attempt.status != "Completed":

@@ -22,9 +22,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 	def test_real_customer_portal_permissions_and_tenant_isolation(self):
 		from joymedia.joymedia.doctype.media_project.media_project import (
-			apply_campaign_video_plan,
 			create_campaign,
-			generate_campaign_video,
+			generate_project_video,
 			get_campaign_cards,
 			get_campaign_workspace,
 			save_campaign_video_settings,
@@ -59,16 +58,29 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			from joymedia.joymedia.doctype.media_project.media_project import select_project_reference
 			select_project_reference(campaign_a.name, asset_result["media_asset"])
 
-			apply_campaign_video_plan(campaign_a.name, json.dumps(_video_plan()))
 			with patch.dict(
 				frappe.conf, {"comfyui_base_url": "http://comfyui.test"}, clear=False
 			), patch("joymedia.services.generation_orchestrator._enqueue"), patch(
 				"joymedia.services.comfyui_client.get_system_stats", return_value={}
 			), patch(
 				"joymedia.services.generation_orchestrator.validate_workflow_for_execution"
+			), patch(
+				"joymedia.joymedia.doctype.media_project.media_project.MediaProject.generate_video_plan",
+				return_value=_video_plan(),
 			):
-				generation_result = generate_campaign_video(campaign_a.name)
+				generation_result = generate_project_video(campaign_a.name)
 			self.assertEqual(generation_result["status"], "Queued")
+			self.assertTrue(frappe.db.exists("Generation Run", generation_result["run"]))
+			media_specification = frappe.db.get_value(
+				"Media Specification",
+				{"media_project": campaign_a.name},
+				"name",
+				order_by="version_number desc",
+			)
+			self.assertEqual(
+				frappe.db.count("Shot Specification", {"media_specification": media_specification}),
+				1,
+			)
 		finally:
 			frappe.set_user(original_user)
 

@@ -1009,7 +1009,7 @@ def regenerate_campaign_shot(campaign_name, shot_name):
 	)
 	if jobs:
 		from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
-			create_qa_retry_attempt_internal,
+			create_manual_regeneration_attempt_internal,
 			get_effective_attempt,
 		)
 		from joymedia.services.generation_orchestrator import (
@@ -1025,7 +1025,7 @@ def regenerate_campaign_shot(campaign_name, shot_name):
 		attempt_names = []
 		if first_attempt and first_attempt.status == "Completed":
 			attempt_names.extend(prepare_chained_regeneration(first_attempt.name))
-			first_retry = create_qa_retry_attempt_internal(first_attempt.name, "Manual Retry")
+			first_retry = create_manual_regeneration_attempt_internal(first_attempt.name, "Manual Retry")
 			attempt_names.insert(0, first_retry.name)
 		elif first_attempt and first_attempt.status == "Failed":
 			results = _retry_and_submit_latest_failed_attempts(

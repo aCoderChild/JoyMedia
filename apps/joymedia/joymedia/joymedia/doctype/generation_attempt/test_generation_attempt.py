@@ -3,7 +3,11 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from .generation_attempt import GenerationAttempt, create_qa_retry_attempt, create_retry_attempt
+from .generation_attempt import (
+	GenerationAttempt,
+	create_manual_regeneration_attempt,
+	create_retry_attempt,
+)
 from joymedia.services.generation_runner import submit_attempt
 
 
@@ -77,7 +81,7 @@ class TestGenerationAttempt(FrappeTestCase):
 		)
 		retry_attempt.insert.assert_called_once_with(ignore_permissions=True)
 
-	def test_completed_attempt_can_create_one_qa_retry_successor(self):
+	def test_completed_attempt_can_create_one_manual_regeneration_successor(self):
 		completed_attempt = frappe._dict(
 			name="ATT-00001", status="Completed", generation_job="JOB-00001", seed=42
 		)
@@ -102,7 +106,7 @@ class TestGenerationAttempt(FrappeTestCase):
 				side_effect=[completed_attempt, job, retry_attempt],
 			) as get_doc,
 		):
-			result = create_qa_retry_attempt(completed_attempt.name, "Manual Retry")
+			result = create_manual_regeneration_attempt(completed_attempt.name, "Manual Retry")
 
 		self.assertIs(result, retry_attempt)
 		self.assertEqual(job.status, "Queued")

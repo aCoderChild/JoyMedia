@@ -223,7 +223,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		job.db_set.assert_called_once()
 
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_qa_retry_replaces_the_rejected_completed_variant(self, get_all):
+	def test_manual_regeneration_replaces_the_rejected_completed_attempt(self, get_all):
 		job = frappe._dict(name="JOB-00001", completed_at=None)
 		job.db_set = MagicMock()
 		get_all.return_value = [

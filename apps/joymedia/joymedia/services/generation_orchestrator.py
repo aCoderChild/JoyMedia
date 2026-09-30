@@ -453,7 +453,7 @@ def prepare_chained_regeneration(attempt_name: str):
 		return []
 
 	from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
-		create_qa_retry_attempt_internal,
+		create_manual_regeneration_attempt_internal,
 		get_effective_attempt,
 	)
 
@@ -500,7 +500,7 @@ def prepare_chained_regeneration(attempt_name: str):
 			None,
 			update_modified=False,
 		)
-		retry_attempt = create_qa_retry_attempt_internal(completed_attempt, "Manual Retry")
+		retry_attempt = create_manual_regeneration_attempt_internal(completed_attempt, "Manual Retry")
 		prepared.append(retry_attempt.name)
 
 	return prepared

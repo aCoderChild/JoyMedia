@@ -160,7 +160,7 @@ def _resolve_binding(binding, job, attempt, staged_inputs):
 			staged_inputs,
 			required=bool(binding.required),
 		)
-	if binding.value_source in {"Generation Prompt", "Compiled Prompt"}:
+	if binding.value_source == "Generation Prompt":
 		return job.prompt_text
 	if binding.value_source == "Attempt Seed":
 		return int(attempt.seed)
