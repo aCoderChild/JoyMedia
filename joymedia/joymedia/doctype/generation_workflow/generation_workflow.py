@@ -134,22 +134,6 @@ def clone_workflow_as_draft(version_name: str):
 	return {"name": clone.name, "version_number": clone.version_number}
 
 
-@frappe.whitelist()
-def set_default_workflow(version_name: str):
-	"""Validate a workflow for compatibility with older Desk actions."""
-	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
-	workflow_version = frappe.get_doc("Generation Workflow", version_name)
-	from joymedia.services.workflow_resolver import (
-		validate_workflow_bindings,
-		validate_workflow_for_execution,
-	)
-
-	get_workflow_adapter(workflow_version)
-	validate_workflow_bindings(workflow_version)
-	validate_workflow_for_execution(workflow_version)
-	return {"workflow": workflow_version.name}
-
-
 class GenerationWorkflow(Document):
 	def validate(self):
 		self._set_defaults()
@@ -161,15 +145,13 @@ class GenerationWorkflow(Document):
 
 		from joymedia.services.workflow_resolver import validate_workflow_bindings
 
-		get_workflow_adapter(self)
+		adapter = get_workflow_adapter(self)
 		validate_workflow_bindings(self)
 		self.workflow_hash = hashlib.sha256(
 			canonical_workflow_json(workflow_data).encode("utf-8")
 		).hexdigest()
 
-		for fieldname, value in get_workflow_adapter(self).extract_execution_metadata(
-			workflow_data
-		).items():
+		for fieldname, value in adapter.extract_execution_metadata(workflow_data).items():
 			setattr(self, fieldname, value)
 
 	def _set_defaults(self):
