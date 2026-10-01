@@ -4,16 +4,14 @@
  "allow_rename": 1,
  "autoname": "PRJ-.#####",
  "creation": "2026-09-18 09:26:46.325414",
- "description": "A JoyMedia video project. Media specifications, generation jobs and outputs belong to this project.",
+ "description": "A JoyMedia video project: prompt, selected reference media, current status and final output.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "project_overview_section",
   "project_name",
   "product_name",
-  "campaign_brief",
   "video_idea",
-  "reference_template",
   "selected_media",
   "current_output_asset_version",
   "export_status",
@@ -23,132 +21,31 @@
   "status"
  ],
  "fields": [
-  {
-   "fieldname": "project_overview_section",
-   "fieldtype": "Section Break",
-   "label": "Project"
-  },
-  {
-   "fieldname": "project_name",
-   "fieldtype": "Data",
-   "in_global_search": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Project Name",
-   "reqd": 1
-  },
-  {
-   "fieldname": "product_name",
-   "fieldtype": "Data",
-   "in_global_search": 1,
-   "label": "Product Name",
-   "reqd": 1
-  },
-  {
-   "fieldname": "campaign_brief",
-   "fieldtype": "Small Text",
-   "label": "Campaign Brief"
-  },
-  {
-   "default": "Draft",
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Status",
-   "options": "Draft\nGenerating\nCompleted\nNeeds Attention\nCancelled",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "video_idea",
-   "fieldtype": "Small Text",
-   "label": "Video Idea"
-  },
-  {
-   "fieldname": "reference_template",
-   "fieldtype": "Link",
-   "label": "Reference Template",
-   "options": "Video Reference Template"
-  },
-  {
-   "fieldname": "selected_media",
-   "fieldtype": "Table",
-   "label": "Selected Media",
-   "options": "Project Media Selection"
-  },
-  {
-   "fieldname": "current_output_asset_version",
-   "fieldtype": "Link",
-   "label": "Current Output Asset Version",
-   "options": "Asset Version",
-   "read_only": 1
-  },
-  {
-   "default": "Idle",
-   "fieldname": "export_status",
-   "fieldtype": "Select",
-   "label": "Export Status",
-   "options": "Idle\nQueued\nRunning\nCompleted\nFailed",
-   "read_only": 1
-  },
-  {
-   "fieldname": "export_error",
-   "fieldtype": "Small Text",
-   "label": "Export Error",
-   "read_only": 1
-  },
-  {
-   "fieldname": "export_started_at",
-   "fieldtype": "Datetime",
-   "label": "Export Started At",
-   "read_only": 1
-  },
-  {
-   "fieldname": "export_completed_at",
-   "fieldtype": "Datetime",
-   "label": "Export Completed At",
-   "read_only": 1
-  }
+  {"fieldname":"project_overview_section","fieldtype":"Section Break","label":"Project"},
+  {"fieldname":"project_name","fieldtype":"Data","in_global_search":1,"in_list_view":1,"in_standard_filter":1,"label":"Project Name","reqd":1},
+  {"fieldname":"product_name","fieldtype":"Data","in_global_search":1,"label":"Product Name","reqd":1},
+  {"description":"The canonical whole-video creative request. Qwen expands this into the storyboard and per-shot prompts.","fieldname":"video_idea","fieldtype":"Small Text","label":"Video Idea"},
+  {"description":"Project ingredients/references. Each row points to an immutable Asset Version and may represent image, video or audio media.","fieldname":"selected_media","fieldtype":"Table","label":"Selected Media","options":"Project Media Selection"},
+  {"description":"Current composed/exported project video.","fieldname":"current_output_asset_version","fieldtype":"Link","label":"Current Output","options":"Asset Version","read_only":1},
+  {"default":"Idle","fieldname":"export_status","fieldtype":"Select","hidden":1,"label":"Export Status","options":"Idle\nQueued\nRunning\nCompleted\nFailed","read_only":1},
+  {"fieldname":"export_error","fieldtype":"Small Text","hidden":1,"label":"Export Error","read_only":1},
+  {"fieldname":"export_started_at","fieldtype":"Datetime","hidden":1,"label":"Export Started At","read_only":1},
+  {"fieldname":"export_completed_at","fieldtype":"Datetime","hidden":1,"label":"Export Completed At","read_only":1},
+  {"default":"Draft","fieldname":"status","fieldtype":"Select","in_list_view":1,"in_standard_filter":1,"label":"Status","options":"Draft\nGenerating\nCompleted\nNeeds Attention\nCancelled","read_only":1,"reqd":1}
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-29 09:25:00.240349",
+ "modified": "2026-10-01 07:25:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Project",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "System Manager",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "JoyMedia Specialist",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "read": 1,
-   "role": "JoyMedia User",
-   "write": 1
-  }
+  {"create":1,"delete":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"System Manager","share":1,"write":1},
+  {"create":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"JoyMedia Specialist","share":1,"write":1},
+  {"read":1,"role":"JoyMedia User","write":1}
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
