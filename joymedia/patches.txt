@@ -27,3 +27,4 @@ joymedia.patches.remove_generation_backend
 joymedia.patches.simplify_creative_fields
 joymedia.patches.simplify_generation_domain
 joymedia.patches.simplify_project_references
+joymedia.patches.make_generation_inputs_job_children
