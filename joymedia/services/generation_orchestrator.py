@@ -198,8 +198,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 	required_roles = {
 		frappe.scrub(binding.required_input_role)
 		for binding in workflow.bindings
-		if binding.binding_key in {"first_frame", "last_frame"}
-		and binding.required
+		if binding.required
 		and binding.required_input_role
 	}
 
@@ -435,6 +434,13 @@ def prepare_chained_regeneration(attempt_name: str):
 	job = frappe.get_doc("Generation Task", attempt.generation_task)
 	shot = frappe.get_doc("Shot", job.shot)
 	project = frappe.get_doc("Media Project", shot.media_project)
+	run_snapshot = {}
+	if job.generation_run:
+		run = frappe.get_doc("Generation Run", job.generation_run)
+		try:
+			run_snapshot = frappe.parse_json(run.project_snapshot_json or "{}")
+		except (TypeError, ValueError):
+			frappe.throw(_("Generation Run {0} has invalid project snapshot JSON.").format(run.name))
 	if not job.generation_run:
 		return []
 
@@ -456,7 +462,7 @@ def prepare_chained_regeneration(attempt_name: str):
 		for child in children_by_parent.get(parent, []):
 			if (
 				child.shot != shot.shot
-				and project.generation_mode not in ("Continuous", "Consistency")
+				and run_snapshot.get("generation_mode") not in ("Continuous", "Consistency")
 			):
 				continue
 			downstream.append(child)

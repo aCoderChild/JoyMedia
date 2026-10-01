@@ -107,8 +107,8 @@ of creative shots. For every shot, return exactly one detailed generation_prompt
 Put subject, action, camera, environment, lighting, continuity and relevant sound
 intent inside that one prompt rather than separate creative fields.
 
-Project reference media are ingredients/context. Do not emit asset IDs or reference
-indexes. JoyMedia resolves the actual generation inputs after planning.
+Project reference media are named ingredients/context. Use their reference_key when
+a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 """.strip()
 
 	if video_style:
@@ -131,7 +131,8 @@ indexes. JoyMedia resolves the actual generation inputs after planning.
 
 	response_shape = (
 		'{"shots":[{"shot_number":1,"shot_name":"...",'
-		'"duration_seconds":5,"generation_prompt":"..."}]}'
+		'"duration_seconds":5,"generation_prompt":"...",'
+		'"references":[{"reference_key":"hero_product","usage_role":"product_reference"}]}]}'
 	)
 	user_prompt = (
 		f"{instruction}\n\n"
@@ -146,7 +147,8 @@ indexes. JoyMedia resolves the actual generation inputs after planning.
 		"- Every shot MUST contain a positive integer shot_number.\n"
 		"- Every shot MUST contain one non-empty generation_prompt.\n"
 		"- Every shot MUST contain a positive duration_seconds value.\n"
-		"- Never return null or empty generation_prompt values.\n\n"
+		"- Never return null or empty generation_prompt values.\n"
+		"- References must use only supplied reference_key values and semantic usage_role values.\n\n"
 		"Return only valid JSON with this shape:\n"
 		f"{response_shape}"
 	)
@@ -155,7 +157,9 @@ indexes. JoyMedia resolves the actual generation inputs after planning.
 		user_prompt += "\n\nSELECTED PROJECT REFERENCES / INGREDIENTS\n"
 		for index, item in enumerate(reference_media, start=1):
 			line = (
-				f"\nREFERENCE {index}: name={item.get('asset_name') or 'Untitled'}, "
+				f"\nREFERENCE {index}: key={item.get('reference_key')}, "
+				f"role={item.get('reference_role') or 'General'}, label={item.get('label') or ''}, "
+				f"name={item.get('asset_name') or 'Untitled'}, "
 				f"type={item.get('media_type') or 'Unknown'}, category={item.get('asset_category') or 'Other'}"
 			)
 			analysis = item.get("analysis")
@@ -221,7 +225,7 @@ indexes. JoyMedia resolves the actual generation inputs after planning.
 
 
 def _normalize_qwen_plan(result, reference_image_count=0, generation_mode="Multi-shot"):
-	"""Normalize model output and keep reference assignment deterministic in the backend."""
+	"""Normalize model output without inventing semantic reference assignments."""
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		return result
 
@@ -241,13 +245,15 @@ def _normalize_qwen_plan(result, reference_image_count=0, generation_mode="Multi
 			"shot_name": _first_non_empty(shot.get("shot_name"), f"Shot {index}"),
 			"generation_prompt": generation_prompt,
 			"duration_seconds": shot.get("duration_seconds"),
+			"references": shot.get("references") if isinstance(shot.get("references"), list) else [],
 		}
-		if reference_image_count:
-			if generation_mode == "Multi-shot":
-				normalized["first_frame_reference_image_index"] = ((index - 1) % reference_image_count) + 1
-				normalized["last_frame_reference_image_index"] = (index % reference_image_count) + 1
-			elif index == 1:
-				normalized["reference_image_index"] = 1
+		for fieldname in (
+			"reference_image_index",
+			"first_frame_reference_image_index",
+			"last_frame_reference_image_index",
+		):
+			if fieldname in shot:
+				normalized[fieldname] = shot[fieldname]
 		normalized_shots.append(normalized)
 	return {"shots": normalized_shots}
 
@@ -271,8 +277,6 @@ def _validate_video_plan(result, reference_image_count=0, shot_count=None, gener
 		frappe.throw(_("Qwen returned {0} shots; expected {1}.").format(len(result["shots"]), shot_count))
 
 	required_fields = {"shot_number", "generation_prompt"}
-	if reference_image_count and generation_mode == "Multi-shot":
-		required_fields.update({"first_frame_reference_image_index", "last_frame_reference_image_index"})
 
 	normalized_shots = []
 	for shot in result["shots"]:
@@ -294,23 +298,38 @@ def _validate_video_plan(result, reference_image_count=0, shot_count=None, gener
 			"shot_name": str(shot.get("shot_name") or f"Shot {shot['shot_number']}").strip(),
 			"generation_prompt": prompt,
 			"duration_seconds": duration_seconds,
+			"references": shot.get("references") if isinstance(shot.get("references"), list) else [],
 		}
+		_seen_roles = set()
+		for reference in normalized["references"]:
+			if not isinstance(reference, dict) or not str(reference.get("reference_key") or "").strip():
+				frappe.throw(_("Each Qwen shot reference must contain a reference_key."))
+			usage_role = frappe.scrub(reference.get("usage_role") or "")
+			if not usage_role:
+				frappe.throw(_("Each Qwen shot reference must contain a usage_role."))
+			if usage_role in _seen_roles:
+				frappe.throw(_("A Qwen shot cannot use one reference role more than once."))
+			_seen_roles.add(usage_role)
+			reference["reference_key"] = str(reference["reference_key"]).strip()
+			reference["usage_role"] = usage_role
 		if reference_image_count:
-			if generation_mode == "Multi-shot":
-				first_index = shot["first_frame_reference_image_index"]
-				last_index = shot["last_frame_reference_image_index"]
-				if any(type(i) is not int or i < 1 or i > reference_image_count for i in (first_index, last_index)):
-					frappe.throw(_("Invalid first or last frame reference image index."))
-				normalized["first_frame_reference_image_index"] = first_index
-				normalized["last_frame_reference_image_index"] = last_index
-			elif "reference_image_index" in shot:
-				image_index = shot["reference_image_index"]
+			for fieldname in (
+				"reference_image_index",
+				"first_frame_reference_image_index",
+				"last_frame_reference_image_index",
+			):
+				if fieldname not in shot:
+					continue
+				image_index = shot[fieldname]
 				if type(image_index) is not int or image_index < 1 or image_index > reference_image_count:
 					frappe.throw(_("Invalid reference image index."))
-				normalized["reference_image_index"] = image_index
+				normalized[fieldname] = image_index
 		normalized_shots.append(normalized)
 
-	if generation_mode == "Multi-shot" and reference_image_count:
+	if generation_mode == "Multi-shot" and reference_image_count and all(
+		"first_frame_reference_image_index" in shot and "last_frame_reference_image_index" in shot
+		for shot in normalized_shots
+	):
 		for current, following in zip(normalized_shots, normalized_shots[1:]):
 			if current["last_frame_reference_image_index"] != following["first_frame_reference_image_index"]:
 				frappe.throw(

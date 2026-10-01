@@ -10,13 +10,18 @@ from joymedia.workflow_adapters.base import canonical_workflow_json
 
 
 _SKIP_BINDING = object()
-SEMANTIC_BINDING_KEYS = {"first_frame", "last_frame", "generation_prompt"}
+PROMPT_BINDING_KEY = "generation_prompt"
 
 
 def resolve_attempt(attempt_name: str, staged_inputs=None):
 	staged_inputs = staged_inputs or {}
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	job = frappe.get_doc("Generation Task", attempt.generation_task)
+	run = frappe.get_doc("Generation Run", job.generation_run)
+	try:
+		run_snapshot = frappe.parse_json(run.project_snapshot_json or "{}")
+	except (TypeError, ValueError):
+		frappe.throw(_("Generation Run {0} has invalid project snapshot JSON.").format(run.name))
 	workflow_version = frappe.get_doc("Generation Workflow", job.workflow)
 	try:
 		base_workflow = json.loads(workflow_version.workflow_json)
@@ -33,14 +38,16 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 			continue
 		node["inputs"][binding.input_name] = value
 
-	shot = frappe.get_doc("Shot", job.shot)
-	project = frappe.get_doc("Media Project", shot.media_project)
 	adapter = get_workflow_adapter(workflow)
+	width = run_snapshot.get("delivery_width")
+	height = run_snapshot.get("delivery_height")
+	if not width or not height:
+		frappe.throw(_("Generation Run {0} has no valid delivery dimensions in its snapshot.").format(run.name))
 	adapter.prepare_execution(
 		workflow,
 		seed=int(attempt.seed),
-		width=int(project.delivery_width),
-		height=int(project.delivery_height),
+		width=int(width),
+		height=int(height),
 		frame_count=int(job.segment_frame_count),
 		output_prefix=f"{job.name}_{attempt.name}",
 		last_frame_index=int(job.segment_frame_count) - 1,
@@ -172,11 +179,10 @@ def _validate_node_references(workflow):
 
 def _validate_workflow_bindings(workflow_version, workflow):
 	for binding in workflow_version.bindings:
-		if binding.binding_key not in SEMANTIC_BINDING_KEYS:
-			frappe.throw(
-				_("Unsupported semantic Workflow Binding: {0}").format(binding.binding_key)
-			)
-		if binding.binding_key in {"first_frame", "last_frame"} and not binding.required_input_role:
+		binding_key = frappe.scrub(binding.binding_key or "")
+		if not binding_key:
+			frappe.throw(_("Every Workflow Binding requires a Binding Key."))
+		if binding_key != PROMPT_BINDING_KEY and not binding.required_input_role:
 			frappe.throw(
 				_("Workflow Binding {0} requires an Input Role.").format(binding.binding_key)
 			)
@@ -196,16 +202,14 @@ def _validate_workflow_bindings(workflow_version, workflow):
 
 
 def _resolve_semantic_binding(binding, job, staged_inputs):
-	if binding.binding_key in {"first_frame", "last_frame"}:
-		return _resolve_generation_input(
-			job,
-			binding.required_input_role,
-			staged_inputs,
-			required=bool(binding.required),
-		)
-	if binding.binding_key == "generation_prompt":
+	if frappe.scrub(binding.binding_key or "") == PROMPT_BINDING_KEY:
 		return job.prompt_text
-	frappe.throw(_("Unsupported semantic Workflow Binding: {0}").format(binding.binding_key))
+	return _resolve_generation_input(
+		job,
+		binding.required_input_role,
+		staged_inputs,
+		required=bool(binding.required),
+	)
 
 
 def _resolve_generation_input(job, required_role, staged_inputs, required=True):

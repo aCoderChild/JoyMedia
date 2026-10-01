@@ -62,7 +62,7 @@ def compose_shot_segments(generation_run_name, shot_name):
 			shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
 			return asset_version.name
 
-		profile = _get_delivery_profile(project)
+		profile = _get_delivery_profile(project, generation_run_name)
 		try:
 			with tempfile.TemporaryDirectory(prefix=f"joymedia-shot-{shot.name}-") as temp_dir:
 				temporary_path = Path(temp_dir)
@@ -159,15 +159,28 @@ def _get_or_create_shot_output_asset(shot, media_project):
 	).insert(ignore_permissions=True)
 
 
-def _get_delivery_profile(project):
-	if not project.delivery_width or not project.delivery_height:
+
+def _get_delivery_profile(project, generation_run_name=None):
+	width = project.delivery_width
+	height = project.delivery_height
+	workflow_name = project.workflow
+	if generation_run_name:
+		run = frappe.get_doc("Generation Run", generation_run_name)
+		try:
+			snapshot = frappe.parse_json(run.project_snapshot_json or "{}")
+		except (TypeError, ValueError):
+			frappe.throw(_("Generation Run {0} has invalid project snapshot JSON.").format(run.name))
+		width = snapshot.get("delivery_width")
+		height = snapshot.get("delivery_height")
+		workflow_name = snapshot.get("workflow") or run.workflow
+	if not width or not height:
 		frappe.throw(_("Media Project must have delivery width and height before composition."))
-	if not project.workflow:
+	if not workflow_name:
 		frappe.throw(_("Media Project must have a Workflow before composition."))
 
 	workflow = frappe.get_doc(
 		"Generation Workflow",
-		project.workflow,
+		workflow_name,
 	)
 	if not workflow.output_fps:
 		frappe.throw(_("Workflow must have output FPS before composition."))

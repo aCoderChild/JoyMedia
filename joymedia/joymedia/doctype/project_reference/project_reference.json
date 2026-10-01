@@ -4,11 +4,20 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "reference_key",
   "asset_version",
   "reference_role",
   "label"
  ],
  "fields": [
+  {
+   "description": "Stable machine-safe identity used by the creative planner within this Media Project.",
+   "fieldname": "reference_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Reference Key",
+   "reqd": 0
+  },
   {
    "fieldname": "asset_version",
    "fieldtype": "Link",

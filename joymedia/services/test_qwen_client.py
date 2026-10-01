@@ -5,7 +5,7 @@ from joymedia.services.qwen_client import _normalize_qwen_plan, _validate_video_
 
 
 class TestQwenClient(FrappeTestCase):
-	def test_text_model_prompt_only_output_is_normalized(self):
+	def test_text_model_prompt_only_output_does_not_invent_reference_assignments(self):
 		plan = _normalize_qwen_plan(
 			{
 				"shots": [
@@ -25,11 +25,10 @@ class TestQwenClient(FrappeTestCase):
 		self.assertNotIn("subject", plan["shots"][0])
 		self.assertNotIn("camera", plan["shots"][0])
 		self.assertNotIn("lighting", plan["shots"][0])
-		self.assertEqual(plan["shots"][0]["first_frame_reference_image_index"], 1)
-		self.assertEqual(plan["shots"][0]["last_frame_reference_image_index"], 2)
-		self.assertEqual(plan["shots"][1]["first_frame_reference_image_index"], 2)
+		self.assertNotIn("first_frame_reference_image_index", plan["shots"][0])
+		self.assertNotIn("last_frame_reference_image_index", plan["shots"][0])
 
-	def test_continuous_mode_assigns_only_the_first_reference(self):
+	def test_continuous_mode_does_not_invent_reference_assignments(self):
 		plan = _normalize_qwen_plan(
 			{
 				"shots": [
@@ -43,5 +42,24 @@ class TestQwenClient(FrappeTestCase):
 
 		_validate_video_plan(plan, reference_image_count=1, shot_count=2, generation_mode="Continuous")
 
-		self.assertEqual(plan["shots"][0]["reference_image_index"], 1)
+		self.assertNotIn("reference_image_index", plan["shots"][0])
 		self.assertNotIn("reference_image_index", plan["shots"][1])
+
+	def test_semantic_shot_reference_usage_is_preserved(self):
+		plan = _normalize_qwen_plan(
+			{
+				"shots": [{
+					"shot_number": 1,
+					"shot_name": "Hero reveal",
+					"generation_prompt": "Reveal the product.",
+					"duration_seconds": 5,
+					"references": [
+						{"reference_key": "hero_product", "usage_role": "product_reference"},
+						{"reference_key": "camera_motion_01", "usage_role": "motion_reference"},
+					],
+				}],
+			}
+		)
+		_validate_video_plan(plan)
+		self.assertEqual(plan["shots"][0]["references"][0]["reference_key"], "hero_product")
+		self.assertEqual(plan["shots"][0]["references"][1]["usage_role"], "motion_reference")

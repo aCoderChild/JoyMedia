@@ -7,8 +7,26 @@ from frappe.model.document import Document
 
 class Shot(Document):
 	def validate(self):
+		self._validate_active_run_changes()
 		self.validate_required_workflow_input_mappings()
 		self.validate_selected_output_asset_version()
+
+	def on_trash(self):
+		if frappe.db.exists(
+			"Generation Run", {"media_project": self.media_project, "status": ["in", ["Queued", "Running"]]}
+		):
+			frappe.throw("Shots cannot be deleted while a Generation Run is active.")
+
+	def _validate_active_run_changes(self):
+		if self.is_new() or not self.media_project or not frappe.db.exists("Media Project", self.media_project):
+			return
+		if not frappe.db.exists(
+			"Generation Run", {"media_project": self.media_project, "status": ["in", ["Queued", "Running"]]}
+		):
+			return
+		fields = ("shot_number", "duration_seconds", "planned_frame_count", "generation_prompt", "generation_inputs")
+		if any(self.has_value_changed(fieldname) for fieldname in fields):
+			frappe.throw("Generation-affecting Shot fields are read-only while a Generation Run is active.")
 
 	def after_insert(self):
 		self._recalculate_durations()

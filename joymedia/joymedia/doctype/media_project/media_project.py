@@ -105,6 +105,7 @@ def build_project_snapshot(project):
 		"references": [
 			{
 				"asset_version": row.asset_version,
+				"reference_key": getattr(row, "reference_key", None) or "",
 				"reference_role": row.reference_role or "General",
 				"label": row.label or "",
 			}
@@ -169,6 +170,7 @@ def _get_project_selected_assets(project):
 				name=asset.name,
 				media_asset=asset.name,
 				asset_version=version.name,
+				reference_key=getattr(selection, "reference_key", None) or "",
 				reference_role=selection.reference_role or "General",
 				label=selection.label or "",
 				asset_name=asset.asset_name,
@@ -196,6 +198,7 @@ def _get_project_reference_contexts(project):
 			"asset_category": asset.asset_category,
 			"reference_role": asset.reference_role,
 			"label": asset.label,
+			"reference_key": getattr(asset, "reference_key", None) or "",
 		}
 		if asset.analysis_status == "Ready" and asset.analysis_json:
 			try:
@@ -405,7 +408,7 @@ def get_project_asset_candidates(media_project, media_type=None):
 
 
 @frappe.whitelist()
-def select_project_asset(media_project, asset_name, reference_role="Product", label=None):
+def select_project_asset(media_project, asset_name, reference_role="Product", label=None, reference_key=None):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_write_access()
 	asset = frappe.get_doc("Media Asset", asset_name)
@@ -420,6 +423,8 @@ def select_project_asset(media_project, asset_name, reference_role="Product", la
 	if selected:
 		selected.reference_role = reference_role or "General"
 		selected.label = label or ""
+		if reference_key:
+			selected.reference_key = reference_key
 		project.save(ignore_permissions=True)
 		frappe.db.commit()
 		return {"asset_version": version.name, "selected": True}
@@ -427,6 +432,7 @@ def select_project_asset(media_project, asset_name, reference_role="Product", la
 		"selected_media",
 		{
 			"asset_version": version.name,
+			"reference_key": reference_key or "",
 			"reference_role": reference_role or "General",
 			"label": label or "",
 		},
@@ -456,8 +462,8 @@ def get_project_reference_candidates(media_project):
 
 
 @frappe.whitelist()
-def select_project_reference(media_project, asset_name, reference_role="Product", label=None):
-	return select_project_asset(media_project, asset_name, reference_role, label)
+def select_project_reference(media_project, asset_name, reference_role="Product", label=None, reference_key=None):
+	return select_project_asset(media_project, asset_name, reference_role, label, reference_key)
 
 
 @frappe.whitelist()
@@ -740,6 +746,7 @@ class MediaProject(Document):
 		self.status = "Draft"
 
 	def validate(self):
+		self._validate_generation_affecting_changes()
 		self.project_name = (self.project_name or "").strip()
 		self.product_name = (self.product_name or "").strip()
 		if not self.project_name:
@@ -748,6 +755,23 @@ class MediaProject(Document):
 			frappe.throw(_("Product Name is required."))
 		if self.status not in ALLOWED_STATUSES:
 			frappe.throw(_("Invalid Media Project status."))
+
+	def _validate_generation_affecting_changes(self):
+		if self.is_new() or not frappe.db.exists("Media Project", self.name):
+			return
+		if not frappe.db.exists(
+			"Generation Run", {"media_project": self.name, "status": ["in", ["Queued", "Running"]]}
+		):
+			return
+		fields = (
+			"workflow", "generation_mode", "delivery_preset", "delivery_width",
+			"delivery_height", "total_duration_seconds", "global_instructions", "selected_media",
+		)
+		if any(self.has_value_changed(fieldname) for fieldname in fields):
+			frappe.throw(
+				_("Generation-affecting project settings are read-only while a Generation Run is active. "
+				  "Stop the active run or create a new revision first.")
+			)
 
 	@frappe.whitelist()
 	def get_video_settings(self):

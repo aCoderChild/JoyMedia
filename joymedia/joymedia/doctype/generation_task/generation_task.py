@@ -109,8 +109,7 @@ class GenerationTask(Document):
 		required_roles = {
 			frappe.scrub(binding.required_input_role)
 			for binding in workflow.bindings
-			if binding.binding_key in {"first_frame", "last_frame"}
-			and binding.required
+			if binding.required
 			and binding.required_input_role
 		}
 		for role in required_roles:

@@ -50,6 +50,11 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 		for shot in plan["shots"]
 		for fieldname in ("first_frame_reference_image_index", "last_frame_reference_image_index")
 	)
+	project_references = {
+		getattr(row, "reference_key", None): row
+		for row in project.selected_media or []
+		if getattr(row, "reference_key", None)
+	}
 
 	shot_numbers = [shot["shot_number"] for shot in plan["shots"]]
 	if len(shot_numbers) != len(set(shot_numbers)):
@@ -120,6 +125,24 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 			}
 		)
 		doc.duration_seconds = shot["duration_seconds"]
+		seen_reference_roles = set()
+		for reference in shot.get("references") or []:
+			if not isinstance(reference, dict) or not reference.get("reference_key"):
+				frappe.throw(_("Every Shot Reference must contain a reference_key."))
+			key = reference["reference_key"]
+			project_reference = project_references.get(key)
+			if not project_reference:
+				frappe.throw(_("Unknown Project Reference key '{0}'.").format(key))
+			usage_role = frappe.scrub(reference.get("usage_role") or "general")
+			if usage_role in seen_reference_roles:
+				frappe.throw(_("Shot {0} uses reference role '{1}' more than once.").format(shot["shot_number"], usage_role))
+			seen_reference_roles.add(usage_role)
+			if not project_reference.asset_version:
+				frappe.throw(_("Project Reference '{0}' has no Asset Version.").format(key))
+			doc.append(
+				"generation_inputs",
+				{"reference_role": usage_role, "asset_version": project_reference.asset_version},
+			)
 		first_reference_index = shot.get("first_frame_reference_image_index")
 		if first_reference_index is None:
 			first_reference_index = shot.get("reference_image_index")
@@ -206,6 +229,19 @@ def _validate_plan_shape(plan):
 		if not prompt:
 			frappe.throw(_("Every video plan shot must have a non-empty generation_prompt."))
 		seen_numbers.add(shot_number)
+		references = shot.get("references") or []
+		if not isinstance(references, list):
+			frappe.throw(_("Shot references must be a list."))
+		seen_roles = set()
+		for reference in references:
+			if not isinstance(reference, dict) or not str(reference.get("reference_key") or "").strip():
+				frappe.throw(_("Every Shot Reference must contain a reference_key."))
+			role = frappe.scrub(reference.get("usage_role") or "")
+			if not role:
+				frappe.throw(_("Every Shot Reference must contain a usage_role."))
+			if role in seen_roles:
+				frappe.throw(_("A shot cannot use one reference role more than once."))
+			seen_roles.add(role)
 		try:
 			if float(shot["duration_seconds"]) <= 0:
 				raise ValueError
