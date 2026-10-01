@@ -747,6 +747,9 @@ class MediaProject(Document):
 
 	def validate(self):
 		self._validate_generation_affecting_changes()
+		from joymedia.joymedia.doctype.project_reference.project_reference import assign_reference_key
+		for reference in self.selected_media or []:
+			assign_reference_key(reference, self)
 		self.project_name = (self.project_name or "").strip()
 		self.product_name = (self.product_name or "").strip()
 		if not self.project_name:

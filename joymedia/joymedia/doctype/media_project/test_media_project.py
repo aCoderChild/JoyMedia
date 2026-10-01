@@ -36,6 +36,21 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		selected = _get_project_selected_assets(project)
 		self.assertEqual({row.media_type for row in selected}, {"Image", "Video", "Audio"})
 
+	def test_project_reference_key_uses_logical_asset_name_and_resolves_collisions(self):
+		project, _ = _create_project("Reference Keys", self.workflow)
+		first_asset, first_version = _create_asset_version(project, "Image", "png")
+		first_asset.asset_name = "Nike Air Max"
+		first_asset.save(ignore_permissions=True)
+		second_asset, second_version = _create_asset_version(project, "Image", "png")
+		second_asset.asset_name = "Nike Air Max"
+		second_asset.save(ignore_permissions=True)
+		project.append("selected_media", {"asset_version": first_version.name})
+		project.append("selected_media", {"asset_version": second_version.name})
+		project.save(ignore_permissions=True)
+		keys = [row.reference_key for row in project.selected_media]
+		self.assertEqual(keys, ["nike_air_max", "nike_air_max_2"])
+		self.assertNotIn(first_version.name.lower(), keys)
+
 	def test_workspace_exposes_business_data_not_raw_artifacts(self):
 		from joymedia.joymedia.doctype.media_project.media_project import get_project_workspace
 		from joymedia.services.video_plan_service import apply_video_plan
