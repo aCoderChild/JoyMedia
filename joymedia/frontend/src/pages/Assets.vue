@@ -92,52 +92,15 @@
         class="group p-3 rounded-xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-indigo-500/60 shadow-xs hover:shadow-md transition-all flex flex-col justify-between cursor-pointer select-none"
         @click="openAssetModal(asset)"
       >
-        <div class="relative rounded-lg overflow-hidden bg-black/10 aspect-video flex items-center justify-center mb-2.5 group-hover:opacity-95 transition-opacity">
-          <!-- Category Pill -->
-          <span
-            class="absolute top-2 left-2 z-10 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider backdrop-blur-md shadow-xs bg-indigo-600/90 text-white"
-          >
-            {{ asset.asset_category || 'Reference' }}
-          </span>
-
-
-          <!-- Play overlay icon for videos -->
-          <div
-            v-if="asset.media_type === 'Video' || isVideoUrl(asset.file)"
-            class="absolute inset-0 z-10 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors pointer-events-none"
-          >
-            <div class="size-9 rounded-full bg-white/90 dark:bg-slate-900/90 flex items-center justify-center text-indigo-600 shadow-md group-hover:scale-110 transition-transform">
-              <svg class="size-4 fill-current ml-0.5" viewBox="0 0 24 24">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-              </svg>
-            </div>
-          </div>
-
-          <!-- Video thumbnail if video -->
-          <video
-            v-if="asset.file && (asset.media_type === 'Video' || isVideoUrl(asset.file))"
+        <div class="mb-2.5">
+          <MediaThumbnail
             :src="asset.file"
-            class="w-full h-full object-cover pointer-events-none"
-            preload="metadata"
-          />
-          <audio
-            v-else-if="asset.file && asset.media_type === 'Audio'"
-            :src="asset.file"
-            controls
-            class="w-full px-3"
-            @click.stop
-          />
-          <!-- Image preview if image -->
-          <img
-            v-else-if="asset.file"
-            :src="asset.file"
+            :media-type="asset.media_type"
             :alt="asset.asset_name"
-            class="w-full h-full object-cover"
+            :badge="asset.asset_category || 'Reference'"
+            :duration="asset.duration_seconds"
+            aspect="aspect-video"
           />
-          <div v-else class="flex flex-col items-center justify-center text-ink-muted">
-            <span class="lucide-image size-7 mb-1 opacity-70" />
-            <span class="text-xs">{{ asset.media_type || "Media" }}</span>
-          </div>
         </div>
 
         <div>
@@ -332,6 +295,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { Button, FormControl, call, createResource, toast, upload as uploadFile } from "frappe-ui";
 import { useI18n } from "../stores/i18n";
+import MediaThumbnail from "../components/MediaThumbnail.vue";
 
 const { t } = useI18n();
 const route = useRoute();

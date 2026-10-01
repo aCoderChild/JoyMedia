@@ -1,7 +1,7 @@
 <template>
   <div class="app-shell" :class="{ 'is-project-studio': isProjectStudio }">
     <!-- Left Sidebar (Frappe UI AppShell) -->
-    <aside class="sidebar" :class="{ 'is-collapsed': isCollapsed }">
+    <aside v-if="!isProjectStudio" class="sidebar" :class="{ 'is-collapsed': isCollapsed }">
       <!-- Top Brand Header (JoyMedia Studio) -->
       <div class="sidebar-header">
         <Dropdown :options="headerDropdownOptions" :side="'bottom'" :align="'start'">
@@ -43,15 +43,15 @@
 
       <!-- Navigation Links -->
       <nav class="sidebar-nav" aria-label="Main navigation">
-        <!-- Campaigns -->
-        <Tooltip :text="t('sidebar_all_art_full')" side="right" :disabled="!isCollapsed">
+        <!-- Projects -->
+        <Tooltip :text="currentLang === 'vi' ? 'Dự án Video' : 'Projects'" side="right" :disabled="!isCollapsed">
           <RouterLink
             to="/campaigns"
             class="nav-link"
             :class="{ 'justify-center p-2.5': isCollapsed }"
           >
             <span class="nav-link-icon text-base">▦</span>
-            <span v-if="!isCollapsed" class="truncate flex-1">{{ t('sidebar_all_art') }}</span>
+            <span v-if="!isCollapsed" class="truncate flex-1">{{ currentLang === 'vi' ? 'Dự án' : 'Projects' }}</span>
             <span
               v-if="!isCollapsed && campaignsCount"
               class="sidebar-counter-chip"
@@ -103,13 +103,13 @@
     <!-- Main Workspace Area -->
     <main class="main-content">
       <!-- Topbar -->
-      <header class="topbar">
+      <header v-if="!isProjectStudio" class="topbar">
         <!-- Left: Home / Project Navigation -->
         <div class="flex items-center gap-3">
           <button
             type="button"
             class="p-1 rounded text-ink-muted hover:text-ink-primary transition-colors"
-            title="Trang chủ chiến dịch"
+            :title="currentLang === 'vi' ? 'Dự án' : 'Projects'"
             @click="router.push('/campaigns')"
           >
             <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -255,8 +255,8 @@ const assetsCount = computed(() => libraryAssetsResource.data?.length || 0);
 const currentPageTitle = computed(() => {
   const path = route.path;
   const isEn = currentLang.value === "en";
-  if (path === "/campaigns" || path === "/") return isEn ? "Campaigns" : "Chiến dịch";
-  if (path.startsWith("/campaigns/")) return isEn ? "Campaign Workspace" : "Chi tiết chiến dịch";
+  if (path === "/campaigns" || path === "/" || path === "/projects") return isEn ? "Projects" : "Dự án";
+  if (path.startsWith("/campaigns/")) return isEn ? "Project Workspace" : "Chi tiết dự án";
   if (path.startsWith("/projects/")) return "JoyMedia Studio";
   if (path.startsWith("/assets")) return isEn ? "Media Library" : "Thư viện Media";
   return "JoyMedia Studio";

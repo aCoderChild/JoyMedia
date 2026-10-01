@@ -1,467 +1,379 @@
 <template>
-  <div class="page-section max-w-7xl mx-auto w-full">
+  <div class="page-section max-w-7xl mx-auto w-full p-4 sm:p-6 space-y-6">
     <!-- 1. Page Header -->
-    <div class="page-heading">
-      <!-- 0 Campaigns: Onboarding Header with Business/Org Continuity -->
-      <div v-if="!allCampaigns.length && !campaigns.loading">
-        <p class="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-1">
-          {{ t('welcome_onboarding_title') }}
-        </p>
-        <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-ink-primary">
-          {{ t('campaigns_page_title') }}
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink-primary">
+          {{ currentLang === 'vi' ? 'Dự án của bạn' : 'Your Projects' }}
         </h1>
-        <p class="subtitle text-sm text-ink-secondary mt-1">
-          {{ t('campaigns_page_subtitle') }}
+        <p class="text-xs sm:text-sm text-ink-secondary mt-1">
+          {{ currentLang === 'vi' ? 'Sản xuất và quản lý các video quảng cáo sản phẩm với AI Studio.' : 'Create and manage your AI product video projects.' }}
         </p>
       </div>
 
-      <!-- Populated Campaigns Header -->
-      <div v-else>
-        <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-ink-primary">
-          {{ t('campaigns_page_title') }}
-        </h1>
-        <p class="subtitle text-sm text-ink-secondary mt-1">
-          {{ t('campaigns_page_subtitle') }}
-        </p>
-      </div>
-
-      <!-- Top Right Actions: Only show New Campaign button when campaigns exist -->
-      <div v-if="allCampaigns.length > 0" class="flex items-center gap-3">
+      <!-- New Project Action -->
+      <div class="flex items-center gap-2">
         <button
           type="button"
           class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
           :disabled="creatingProject"
-          @click="createDraftCampaign"
+          @click="showCreateModal = true"
         >
-          <span class="lucide-plus size-4" />
-          <span>{{ t('new_campaign_btn') }}</span>
+          <span v-if="creatingProject" class="lucide-refresh-cw size-4 animate-spin" />
+          <span v-else class="text-sm font-bold">+</span>
+          <span>{{ currentLang === 'vi' ? 'Dự án mới' : 'New Project' }}</span>
         </button>
       </div>
     </div>
 
-    <!-- 2. Statistics Summary Strip (Only visible when campaigns exist) -->
-    <div v-if="allCampaigns.length > 0" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-      <div class="p-4 rounded-2xl bg-surface-card border border-outline-border shadow-xs flex items-center justify-between transition-all hover:border-indigo-500/30">
-        <div>
-          <span class="text-xs font-semibold text-ink-muted uppercase tracking-wider block">
-            {{ t('total_campaigns_stat') }}
-          </span>
-          <span class="text-2xl font-extrabold text-ink-primary block mt-1">
-            {{ allCampaigns.length }}
-          </span>
-        </div>
-        <div class="size-11 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-lg shadow-xs">
-          🎯
-        </div>
-      </div>
-
-      <div class="p-4 rounded-2xl bg-surface-card border border-outline-border shadow-xs flex items-center justify-between transition-all hover:border-emerald-500/30">
-        <div>
-          <span class="text-xs font-semibold text-ink-muted uppercase tracking-wider block">
-            {{ t('total_projects_stat') }}
-          </span>
-          <span class="text-2xl font-extrabold text-ink-primary block mt-1">
-            {{ totalProjectsCount }}
-          </span>
-        </div>
-        <div class="size-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg shadow-xs">
-          🎬
-        </div>
-      </div>
-
-      <div class="p-4 rounded-2xl bg-surface-card border border-outline-border shadow-xs flex items-center justify-between transition-all hover:border-amber-500/30">
-        <div>
-          <span class="text-xs font-semibold text-ink-muted uppercase tracking-wider block">
-            {{ t('total_assets_stat') }}
-          </span>
-          <span class="text-2xl font-extrabold text-ink-primary block mt-1">
-            {{ totalAssetsCount }}
-          </span>
-        </div>
-        <div class="size-11 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-lg shadow-xs">
-          📁
-        </div>
-      </div>
-    </div>
-
-    <!-- 3. Toolbar: Status Filter Tabs & Search (Only visible when campaigns exist) -->
-    <div v-if="allCampaigns.length > 0" class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 rounded-2xl bg-surface-card border border-outline-border shadow-xs mb-6">
-      <!-- Status Tabs -->
-      <div class="flex items-center gap-1.5 p-1 rounded-xl bg-surface-muted border border-outline-border">
+    <!-- 2. Toolbar: Clean Status Filters & Search Bar -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 rounded-2xl bg-surface-card border border-outline-border shadow-xs">
+      <!-- Status Tabs: All, Draft, Generating, Completed -->
+      <div class="flex items-center gap-1 p-1 rounded-xl bg-surface-muted border border-outline-border text-xs">
         <button
           type="button"
-          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+          class="px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5"
           :class="statusFilter === 'all'
             ? 'bg-indigo-600 text-white shadow-xs'
             : 'text-ink-secondary hover:text-ink-primary'"
           @click="statusFilter = 'all'"
         >
-          <span>{{ t('filter_all') }}</span>
-          <span
-            class="text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold"
-            :class="statusFilter === 'all' ? 'bg-indigo-700/80 text-white' : 'bg-surface-hover text-ink-muted'"
-          >
-            {{ allCampaigns.length }}
+          <span>{{ currentLang === 'vi' ? 'Tất cả' : 'All' }}</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold" :class="statusFilter === 'all' ? 'bg-indigo-700 text-white' : 'bg-surface-card text-ink-muted'">
+            {{ projectsList.length }}
           </span>
         </button>
 
         <button
           type="button"
-          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
-          :class="statusFilter === 'draft'
+          class="px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5"
+          :class="statusFilter === 'Draft'
             ? 'bg-indigo-600 text-white shadow-xs'
             : 'text-ink-secondary hover:text-ink-primary'"
-          @click="statusFilter = 'draft'"
+          @click="statusFilter = 'Draft'"
         >
           <span class="size-1.5 rounded-full bg-zinc-400 inline-block" />
-          <span>{{ t('filter_draft') }}</span>
-          <span
-            class="text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold"
-            :class="statusFilter === 'draft' ? 'bg-indigo-700/80 text-white' : 'bg-surface-hover text-ink-muted'"
-          >
-            {{ draftCampaignsCount }}
+          <span>{{ currentLang === 'vi' ? 'Bản nháp' : 'Draft' }}</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold" :class="statusFilter === 'Draft' ? 'bg-indigo-700 text-white' : 'bg-surface-card text-ink-muted'">
+            {{ countByStatus('Draft') }}
           </span>
         </button>
 
         <button
           type="button"
-          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
-          :class="statusFilter === 'active'
+          class="px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5"
+          :class="statusFilter === 'Generating'
             ? 'bg-indigo-600 text-white shadow-xs'
             : 'text-ink-secondary hover:text-ink-primary'"
-          @click="statusFilter = 'active'"
+          @click="statusFilter = 'Generating'"
+        >
+          <span class="size-1.5 rounded-full bg-indigo-400 inline-block animate-pulse" />
+          <span>{{ currentLang === 'vi' ? 'Đang tạo' : 'Generating' }}</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold" :class="statusFilter === 'Generating' ? 'bg-indigo-700 text-white' : 'bg-surface-card text-ink-muted'">
+            {{ countByStatus('Generating') }}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5"
+          :class="statusFilter === 'Completed'
+            ? 'bg-indigo-600 text-white shadow-xs'
+            : 'text-ink-secondary hover:text-ink-primary'"
+          @click="statusFilter = 'Completed'"
         >
           <span class="size-1.5 rounded-full bg-emerald-400 inline-block" />
-          <span>{{ t('filter_active') }}</span>
-          <span
-            class="text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold"
-            :class="statusFilter === 'active' ? 'bg-indigo-700/80 text-white' : 'bg-surface-hover text-ink-muted'"
-          >
-            {{ activeCampaignsCount }}
+          <span>{{ currentLang === 'vi' ? 'Đã hoàn thành' : 'Completed' }}</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold" :class="statusFilter === 'Completed' ? 'bg-indigo-700 text-white' : 'bg-surface-card text-ink-muted'">
+            {{ countByStatus('Completed') }}
           </span>
         </button>
       </div>
 
       <!-- Search Input -->
-      <div class="w-full sm:w-80 relative flex items-center">
+      <div class="w-full sm:w-72 relative flex items-center">
         <span class="lucide-search size-3.5 text-ink-muted absolute left-3 pointer-events-none" />
         <input
           v-model="searchQuery"
           type="text"
-          :placeholder="t('search_campaigns_placeholder')"
-          class="w-full bg-surface-muted border border-outline-border rounded-xl pl-9 pr-3.5 py-1.5 text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-xs transition-all"
+          :placeholder="currentLang === 'vi' ? 'Tìm theo tên dự án, sản phẩm...' : 'Search projects or products...'"
+          class="w-full bg-surface-muted border border-outline-border rounded-xl pl-9 pr-3.5 py-1.5 text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 shadow-xs"
         />
       </div>
     </div>
 
-    <!-- 4. Loading Skeleton -->
-    <div v-if="campaigns.loading && !allCampaigns.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      <div v-for="i in 3" :key="i" class="p-5 rounded-2xl bg-surface-card border border-outline-border animate-pulse space-y-4">
+    <!-- 3. Loading Skeleton -->
+    <div v-if="projectsResource.loading && !projectsList.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div v-for="i in 3" :key="i" class="p-4 rounded-2xl bg-surface-card border border-outline-border animate-pulse space-y-3">
         <div class="aspect-video bg-surface-hover rounded-xl" />
-        <div class="h-4 bg-surface-hover rounded w-3/4" />
+        <div class="h-4 bg-surface-hover rounded w-2/3" />
         <div class="h-3 bg-surface-hover rounded w-1/2" />
       </div>
     </div>
 
-    <!-- 5. Populated State: Visual Campaign Cards Grid -->
-    <div v-else-if="filteredCampaigns.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    <!-- 4. Projects Cards Grid (1 Card = 1 Media Project) -->
+    <div v-else-if="filteredProjects.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
       <article
-        v-for="campaign in filteredCampaigns"
-        :key="campaign.name"
+        v-for="project in filteredProjects"
+        :key="project.name"
         class="group rounded-2xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-indigo-500/50 shadow-xs hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col justify-between overflow-hidden"
-        @click="openStudio(campaign.name)"
+        @click="openStudio(project.name)"
       >
-        <!-- Top Media Thumbnail -->
         <div>
+          <!-- Thumbnail via MediaThumbnail Component -->
           <div class="relative aspect-video overflow-hidden bg-surface-muted border-b border-outline-border">
-            <img
-              v-if="campaign.cover_image"
-              :src="campaign.cover_image"
-              :alt="campaign.campaign_name"
-              class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            <MediaThumbnail
+              :src="project.cover_image"
+              :alt="project.project_name"
+              aspect="aspect-video"
             />
-            <div
-              v-else
-              class="w-full h-full flex flex-col items-center justify-center p-6 text-center"
-              :class="campaign.status === 'Active' ? 'cover-generating' : 'cover-draft'"
-            >
-              <div class="size-11 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white mb-2 shadow-sm group-hover:scale-110 transition-transform">
-                <span class="lucide-clapperboard size-5 text-white" />
-              </div>
-              <span class="text-xs font-semibold text-white/90 drop-shadow-sm">JoyMedia Studio</span>
-            </div>
 
             <!-- Top Left Status Badge -->
-            <div class="absolute top-3 left-3 z-10 status-badge">
+            <div class="absolute top-2.5 left-2.5 z-10">
               <span
-                class="status-dot"
-                :class="campaign.status === 'Active' ? 'bg-emerald-400' : 'bg-zinc-400'"
-              />
-              <span>{{ campaign.status === 'Active' ? (currentLang === 'vi' ? 'Đang chạy' : 'Active') : (currentLang === 'vi' ? 'Bản nháp' : 'Draft') }}</span>
+                class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider backdrop-blur-md shadow-xs border"
+                :class="statusBadgeClass(project.status)"
+              >
+                <span class="size-1.5 rounded-full" :class="statusDotClass(project.status)" />
+                <span>{{ formatStatus(project.status) }}</span>
+              </span>
             </div>
-
-            <!-- Top Right Project Count Pill -->
-            <span class="absolute top-3 right-3 z-10 text-[11px] font-mono font-medium px-2 py-0.5 rounded-md backdrop-blur-md shadow-xs bg-black/60 text-white/90 border border-white/15">
-              {{ projectLabel(campaign.project_count || 1) }}
-            </span>
           </div>
 
           <!-- Card Body -->
-          <div class="p-5 space-y-2.5">
-            <div class="flex items-center gap-2 text-xs font-medium text-ink-muted">
-              <span class="text-indigo-400 font-semibold truncate">{{ campaign.client_name || 'JoyMedia' }}</span>
-              <template v-if="meaningful(campaign.campaign_brief)">
-                <span>•</span>
-                <span class="truncate">{{ campaign.campaign_brief }}</span>
-              </template>
-            </div>
-
-            <h3 class="text-base font-bold text-ink-primary group-hover:text-indigo-400 transition-colors line-clamp-1">
-              {{ campaignTitle(campaign) }}
+          <div class="p-4 space-y-2">
+            <!-- Project Title -->
+            <h3 class="text-sm sm:text-base font-bold text-ink-primary group-hover:text-indigo-400 transition-colors line-clamp-1">
+              {{ project.project_name || "Untitled Project" }}
             </h3>
 
-            <div v-if="meaningful(campaign.product_name)" class="flex items-center gap-1.5 text-xs text-ink-secondary font-medium">
-              <span class="text-indigo-400">🏷️</span>
-              <span class="truncate">{{ campaign.product_name }}</span>
+            <!-- Product Tag -->
+            <div v-if="project.product_name" class="flex items-center gap-1.5 text-xs text-ink-secondary">
+              <span>🏷️</span>
+              <span class="font-medium truncate">{{ project.product_name }}</span>
             </div>
 
-            <p v-if="campaign.campaign_brief" class="text-xs text-ink-muted line-clamp-2 leading-relaxed pt-1">
-              {{ campaign.campaign_brief }}
+            <!-- Video Idea snippet -->
+            <p v-if="project.video_idea" class="text-xs text-ink-muted line-clamp-2 leading-relaxed pt-0.5">
+              {{ project.video_idea }}
             </p>
-            <p v-else class="text-xs text-ink-muted italic pt-1">
-              {{ currentLang === 'vi' ? 'Bấm để mở kịch bản và sản xuất video quảng cáo với AI Director.' : 'Click to launch storyboard and produce video ads with AI Director.' }}
+            <p v-else class="text-xs text-ink-muted italic pt-0.5">
+              {{ currentLang === 'vi' ? 'Bấm để mở Studio và sản xuất video với AI.' : 'Click to launch studio and produce video with AI.' }}
             </p>
           </div>
         </div>
 
         <!-- Card Footer -->
-        <div class="px-5 py-3.5 bg-surface-muted/50 border-t border-outline-border flex items-center justify-between text-xs">
-          <span class="text-ink-muted font-mono text-[11px] flex items-center gap-1.5">
-            <span>📁</span>
-            <span>{{ assetLabel(campaign.asset_count || 0) }}</span>
+        <div class="px-4 py-3 bg-surface-muted/40 border-t border-outline-border flex items-center justify-between text-xs">
+          <span class="text-ink-muted font-mono text-[11px] flex items-center gap-1">
+            <span>📎</span>
+            <span>{{ project.asset_count || 0 }} {{ currentLang === 'vi' ? 'tư liệu' : 'references' }}</span>
           </span>
 
-          <button
-            type="button"
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition-all cursor-pointer group-hover:shadow-md"
-            @click.stop="openStudio(campaign.name)"
-          >
-            <span>{{ currentLang === 'vi' ? 'Mở JoyMedia Studio' : 'Open JoyMedia Studio' }}</span>
-            <span class="transition-transform group-hover:translate-x-1">→</span>
-          </button>
+          <span class="text-xs font-semibold text-indigo-400 group-hover:text-indigo-300 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+            <span>{{ currentLang === 'vi' ? 'Mở Studio' : 'Open Studio' }}</span>
+            <span>→</span>
+          </span>
         </div>
       </article>
     </div>
 
-    <!-- 6. Search Filter Empty State (When campaigns exist but search query has no match) -->
-    <div v-else-if="allCampaigns.length > 0" class="empty-state">
-      <div class="empty-state-icon">
-        <span class="lucide-search size-6 text-indigo-400" />
-      </div>
-      <h2>{{ t('no_campaigns_found') }}</h2>
-      <p>{{ t('no_campaigns_desc') }}</p>
+    <!-- 5. Empty State -->
+    <div v-else class="py-16 text-center text-xs text-ink-muted p-8 rounded-2xl bg-surface-card border border-outline-border space-y-3">
+      <span class="text-4xl block mb-2 opacity-50">🎬</span>
+      <h3 class="text-base font-bold text-ink-primary">
+        {{ currentLang === 'vi' ? 'Chưa có dự án video nào' : 'No projects found' }}
+      </h3>
+      <p class="max-w-md mx-auto text-xs text-ink-muted">
+        {{ currentLang === 'vi' ? 'Tạo dự án video đầu tiên để tải lên hình ảnh sản phẩm và sản xuất video quảng cáo tự động.' : 'Create your first project to upload product references and generate video ads automatically.' }}
+      </p>
       <button
         type="button"
-        class="mt-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border transition-all cursor-pointer"
-        @click="searchQuery = ''; statusFilter = 'all'"
+        class="jm-btn-primary !py-2 !px-4 text-xs font-bold shadow-md cursor-pointer"
+        @click="showCreateModal = true"
       >
-        {{ currentLang === 'vi' ? 'Xoá bộ lọc' : 'Clear filters' }}
+        + {{ currentLang === 'vi' ? 'Tạo dự án mới' : 'Create New Project' }}
       </button>
     </div>
 
-    <!-- 7. Zero-Data Onboarding Hero (Empty State for New User) -->
-    <div v-else class="py-10 px-4 flex flex-col items-center text-center max-w-2xl mx-auto">
-      <!-- Central Animated Icon -->
-      <div class="size-16 rounded-3xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-3xl mb-6 shadow-sm">
-        🎬
-      </div>
-
-      <!-- Hero Heading -->
-      <h2 class="text-2xl sm:text-3xl font-extrabold text-ink-primary tracking-tight mb-3">
-        {{ t('create_first_ai_campaign') }}
-      </h2>
-
-      <!-- Hero Subtitle -->
-      <p class="text-ink-secondary text-sm sm:text-base leading-relaxed max-w-lg mb-8">
-        {{ t('create_first_ai_desc') }}
-      </p>
-
-      <!-- Primary Action Button -->
-      <button
-        type="button"
-        class="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/35 transition-all transform hover:-translate-y-0.5 cursor-pointer mb-10"
-        :disabled="creatingProject"
-        @click="createDraftCampaign"
-      >
-        <span class="lucide-plus size-4.5" />
-        <span>{{ t('create_first_campaign') }}</span>
-      </button>
-
-      <!-- Workflow Guide Card -->
-      <div class="w-full p-6 rounded-2xl bg-surface-card/60 border border-outline-border/80 backdrop-blur-sm shadow-xs">
-        <div class="flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-400 mb-4">
-          <span>✨</span>
-          <span>{{ currentLang === 'vi' ? 'Quy trình sản xuất video JoyMedia AI' : 'How JoyMedia AI Video Production Works' }}</span>
+    <!-- Create Project Modal -->
+    <div v-if="showCreateModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs" @click.self="showCreateModal = false">
+      <div class="w-full max-w-md bg-surface-card border border-outline-border rounded-2xl p-6 shadow-2xl space-y-4 text-xs">
+        <div class="flex items-center justify-between pb-3 border-b border-outline-border">
+          <div>
+            <h3 class="text-sm font-bold text-ink-primary">
+              {{ currentLang === 'vi' ? 'Tạo Dự Án Video Mới' : 'Create New Video Project' }}
+            </h3>
+            <p class="text-[11px] text-ink-muted mt-0.5">
+              {{ currentLang === 'vi' ? 'Nhập tên sản phẩm để bắt đầu' : 'Enter product name to get started' }}
+            </p>
+          </div>
+          <button type="button" class="text-ink-muted hover:text-ink-primary p-1 rounded cursor-pointer" @click="showCreateModal = false">✕</button>
         </div>
 
-        <!-- 4-step workflow horizontal flow -->
-        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 text-left">
-          <div class="p-3.5 rounded-xl bg-surface-muted/50 border border-outline-border/60 flex flex-col justify-between">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-base">📦</span>
-              <span class="text-[10px] font-mono font-bold text-ink-muted px-1.5 py-0.5 rounded bg-surface-hover">01</span>
-            </div>
-            <div class="text-xs font-bold text-ink-primary">{{ t('workflow_step_1') }}</div>
-            <div class="text-[11px] text-ink-muted mt-0.5 leading-tight">{{ t('workflow_step_1_sub') }}</div>
+        <form class="space-y-3" @submit.prevent="submitCreateProject">
+          <div class="space-y-1">
+            <label class="block font-bold text-ink-primary">
+              {{ currentLang === 'vi' ? 'Tên sản phẩm *' : 'Product Name *' }}
+            </label>
+            <input
+              v-model="newProjectForm.product_name"
+              type="text"
+              required
+              :placeholder="currentLang === 'vi' ? 'VD: Giày thể thao Pro Runner...' : 'e.g. Leather Oxford Shoes...'"
+              class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
+            />
           </div>
 
-          <div class="p-3.5 rounded-xl bg-surface-muted/50 border border-outline-border/60 flex flex-col justify-between">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-base">🧠</span>
-              <span class="text-[10px] font-mono font-bold text-ink-muted px-1.5 py-0.5 rounded bg-surface-hover">02</span>
-            </div>
-            <div class="text-xs font-bold text-ink-primary">{{ t('workflow_step_2') }}</div>
-            <div class="text-[11px] text-ink-muted mt-0.5 leading-tight">{{ t('workflow_step_2_sub') }}</div>
+          <div class="space-y-1">
+            <label class="block font-bold text-ink-primary">
+              {{ currentLang === 'vi' ? 'Tên dự án' : 'Project Name' }}
+            </label>
+            <input
+              v-model="newProjectForm.project_name"
+              type="text"
+              :placeholder="currentLang === 'vi' ? 'VD: Video Giới thiệu Sản phẩm Mùa hè' : 'e.g. Summer Launch Video Ad'"
+              class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
+            />
           </div>
 
-          <div class="p-3.5 rounded-xl bg-surface-muted/50 border border-outline-border/60 flex flex-col justify-between">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-base">⚡</span>
-              <span class="text-[10px] font-mono font-bold text-ink-muted px-1.5 py-0.5 rounded bg-surface-hover">03</span>
-            </div>
-            <div class="text-xs font-bold text-ink-primary">{{ t('workflow_step_3') }}</div>
-            <div class="text-[11px] text-ink-muted mt-0.5 leading-tight">{{ t('workflow_step_3_sub') }}</div>
+          <div class="space-y-1">
+            <label class="block font-bold text-ink-primary">
+              {{ currentLang === 'vi' ? 'Ý tưởng video ban đầu (tuỳ chọn)' : 'Video Idea / Concept (optional)' }}
+            </label>
+            <textarea
+              v-model="newProjectForm.video_idea"
+              rows="2"
+              :placeholder="currentLang === 'vi' ? 'Mô tả góc quay, cảm xúc, không gian mong muốn...' : 'Describe camera movement, tone, mood...'"
+              class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500 resize-none"
+            />
           </div>
 
-          <div class="p-3.5 rounded-xl bg-surface-muted/50 border border-outline-border/60 flex flex-col justify-between">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-base">🚀</span>
-              <span class="text-[10px] font-mono font-bold text-ink-muted px-1.5 py-0.5 rounded bg-surface-hover">04</span>
-            </div>
-            <div class="text-xs font-bold text-ink-primary">{{ t('workflow_step_4') }}</div>
-            <div class="text-[11px] text-ink-muted mt-0.5 leading-tight">{{ t('workflow_step_4_sub') }}</div>
+          <div class="pt-3 border-t border-outline-border flex items-center justify-end gap-2">
+            <button
+              type="button"
+              class="jm-btn-secondary text-xs !py-1.5 !px-3 cursor-pointer"
+              @click="showCreateModal = false"
+            >
+              {{ currentLang === 'vi' ? 'Huỷ' : 'Cancel' }}
+            </button>
+            <button
+              type="submit"
+              class="jm-btn-primary text-xs !py-1.5 !px-4 cursor-pointer font-bold"
+              :disabled="creatingProject || !newProjectForm.product_name.trim()"
+            >
+              <span v-if="creatingProject" class="lucide-refresh-cw size-3 animate-spin inline-block mr-1" />
+              <span>{{ currentLang === 'vi' ? 'Bắt đầu Studio ✦' : 'Launch Studio ✦' }}</span>
+            </button>
           </div>
-        </div>
-
-        <!-- Campaign Mental Model Note -->
-        <p class="text-xs text-ink-muted mt-4 pt-3 border-t border-outline-border/40 text-center leading-relaxed">
-          {{ t('campaign_meaning_tip') }}
-        </p>
+        </form>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { call, createResource, toast } from "frappe-ui";
 import { useI18n } from "../stores/i18n";
+import MediaThumbnail from "../components/MediaThumbnail.vue";
 
+const { currentLang } = useI18n();
 const router = useRouter();
-const { t, currentLang } = useI18n();
 
-const creatingProject = ref(false);
+const statusFilter = ref("all");
 const searchQuery = ref("");
-const statusFilter = ref("all"); // 'all' | 'draft' | 'active'
+const showCreateModal = ref(false);
+const creatingProject = ref(false);
 
-const campaigns = createResource({
+const newProjectForm = reactive({
+  product_name: "",
+  project_name: "",
+  video_idea: "",
+});
+
+const projectsResource = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_project_cards",
   auto: true,
 });
 
-const libraryAssets = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_library_assets",
-  params: { asset_type: "All" },
-  auto: true,
-});
+const projectsList = computed(() => projectsResource.data || []);
 
-const allCampaigns = computed(() => campaigns.data || []);
-
-const activeCampaignsCount = computed(() => {
-  return allCampaigns.value.filter((c) => (c.status || "Active").toLowerCase() === "active").length;
-});
-
-const draftCampaignsCount = computed(() => {
-  return allCampaigns.value.filter((c) => (c.status || "").toLowerCase() === "draft").length;
-});
-
-const totalProjectsCount = computed(() => {
-  return allCampaigns.value.reduce((acc, c) => acc + (c.project_count || 1), 0);
-});
-
-const totalAssetsCount = computed(() => libraryAssets.data?.length || 0);
-
-function meaningful(value) {
-  const text = String(value || "").trim();
-  return Boolean(text) && text.toLowerCase() !== "untitled";
+function countByStatus(status) {
+  return projectsList.value.filter((p) => p.status === status).length;
 }
 
-function campaignTitle(campaign) {
-  if (meaningful(campaign.campaign_name)) return campaign.campaign_name;
-  if (meaningful(campaign.product_name)) return `${campaign.product_name} Campaign`;
-  return currentLang.value === "vi" ? "Chiến dịch mới" : "New Campaign";
-}
-
-function projectLabel(count) {
-  return currentLang.value === "vi"
-    ? `${count} dự án`
-    : `${count} ${count === 1 ? "project" : "projects"}`;
-}
-
-function assetLabel(count) {
-  return currentLang.value === "vi"
-    ? `${count} tư liệu`
-    : `${count} ${count === 1 ? "asset" : "assets"}`;
-}
-
-const filteredCampaigns = computed(() => {
-  let list = allCampaigns.value;
-
-  // Status Filter
-  if (statusFilter.value === "active") {
-    list = list.filter((c) => (c.status || "Active").toLowerCase() === "active");
-  } else if (statusFilter.value === "draft") {
-    list = list.filter((c) => (c.status || "").toLowerCase() === "draft");
-  }
-
-  // Search Filter
-  if (searchQuery.value.trim()) {
-    const q = searchQuery.value.trim().toLowerCase();
-    list = list.filter((c) => {
-      const name = (c.campaign_name || c.project_name || "").toLowerCase();
-      const prod = (c.product_name || "").toLowerCase();
-      const brief = (c.campaign_brief || "").toLowerCase();
-      return name.includes(q) || prod.includes(q) || brief.includes(q);
-    });
-  }
-
-  return list;
+const filteredProjects = computed(() => {
+  return projectsList.value.filter((p) => {
+    if (statusFilter.value !== "all" && p.status !== statusFilter.value) {
+      return false;
+    }
+    if (searchQuery.value) {
+      const q = searchQuery.value.toLowerCase();
+      const title = (p.project_name || "").toLowerCase();
+      const product = (p.product_name || "").toLowerCase();
+      const idea = (p.video_idea || "").toLowerCase();
+      if (!title.includes(q) && !product.includes(q) && !idea.includes(q)) return false;
+    }
+    return true;
+  });
 });
 
 function openStudio(projectName) {
-  if (!projectName) return;
-  router.push(`/projects/${encodeURIComponent(projectName)}`);
+  router.push(`/projects/${projectName}`);
 }
 
-async function createDraftCampaign() {
+async function submitCreateProject() {
+  if (!newProjectForm.product_name.trim() || creatingProject.value) return;
   creatingProject.value = true;
   try {
-    const project = await call("joymedia.joymedia.doctype.media_project.media_project.create_draft_project");
-    toast({
-      title: currentLang.value === "vi" ? "Đã tạo bản nháp" : "Draft created",
-      text: currentLang.value === "vi" ? "Đang mở JoyMedia Studio..." : "Opening JoyMedia Studio...",
-      type: "success"
+    const pName = newProjectForm.project_name.trim() || newProjectForm.product_name.trim();
+    const created = await call("joymedia.joymedia.doctype.media_project.media_project.create_project", {
+      project_name: pName,
+      product_name: newProjectForm.product_name.trim(),
+      video_idea: newProjectForm.video_idea.trim() || null,
     });
-    router.push(`/projects/${encodeURIComponent(project.project)}`);
-  } catch (error) {
+    showCreateModal.value = false;
+    const targetName = created?.name || created?.project;
+    if (targetName) {
+      router.push(`/projects/${targetName}`);
+    } else {
+      await projectsResource.fetch();
+    }
+  } catch (err) {
     toast({
-      title: currentLang.value === "vi" ? "Lỗi tạo bản nháp" : "Unable to create draft",
-      text: error.message || "Vui lòng thử lại.",
-      type: "error"
+      title: "Error",
+      text: err?.message || "Failed to create project.",
+      type: "error",
     });
   } finally {
     creatingProject.value = false;
   }
+}
+
+function formatStatus(status) {
+  const s = status || "Draft";
+  if (currentLang.value === "vi") {
+    if (s === "Draft") return "Bản nháp";
+    if (s === "Generating") return "Đang tạo";
+    if (s === "Completed") return "Hoàn thành";
+    if (s === "Needs Attention") return "Cần chú ý";
+  }
+  return s;
+}
+
+function statusBadgeClass(status) {
+  if (status === "Generating") return "bg-indigo-600/90 text-white border-indigo-500";
+  if (status === "Completed") return "bg-emerald-600/90 text-white border-emerald-500";
+  if (status === "Needs Attention") return "bg-rose-600/90 text-white border-rose-500";
+  return "bg-black/60 text-white/90 border-white/20";
+}
+
+function statusDotClass(status) {
+  if (status === "Generating") return "bg-amber-300 animate-pulse";
+  if (status === "Completed") return "bg-emerald-300";
+  if (status === "Needs Attention") return "bg-rose-300";
+  return "bg-zinc-400";
 }
 </script>
