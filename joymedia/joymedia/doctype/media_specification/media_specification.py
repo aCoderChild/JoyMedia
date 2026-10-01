@@ -20,7 +20,7 @@ class MediaSpecification(Document):
 		"delivery_width",
 		"delivery_height",
 		"continuity_mode",
-		"global_consistency_instructions",
+		"global_instructions",
 		"planning_context_json",
 		"planning_context_hash",
 	)
@@ -37,17 +37,26 @@ class MediaSpecification(Document):
 		"delivery_preset",
 		"delivery_width",
 		"delivery_height",
-		"global_consistency_instructions",
+		"global_instructions",
 	)
 
+	# Temporary compatibility aliases for server code/tests created before the
+	# prompt model was simplified. These are not DocType fields.
 	@property
 	def generation_instructions(self):
-		"""Compatibility alias for code created before the prompt model was simplified."""
-		return self.get("global_consistency_instructions")
+		return self.get("global_instructions")
 
 	@generation_instructions.setter
 	def generation_instructions(self, value):
-		self.set("global_consistency_instructions", value)
+		self.set("global_instructions", value)
+
+	@property
+	def global_consistency_instructions(self):
+		return self.get("global_instructions")
+
+	@global_consistency_instructions.setter
+	def global_consistency_instructions(self, value):
+		self.set("global_instructions", value)
 
 	def validate(self):
 		if self.is_new():
@@ -93,13 +102,10 @@ class MediaSpecification(Document):
 			return
 
 		previous = frappe.get_doc("Media Specification", previous_rows[0].name)
-
 		for fieldname in self.REVISION_FIELDS:
 			current_value = self.get(fieldname)
 			previous_value = previous.get(fieldname)
 			if fieldname == "continuity_mode":
-				# A new DocType receives the metadata default ("Multi-shot") even when
-				# the caller omitted the field, so inherit the previous mode explicitly.
 				if previous_value:
 					self.set(fieldname, previous_value)
 			elif current_value in (None, "", 0) and previous_value not in (None, ""):
@@ -128,7 +134,6 @@ class MediaSpecification(Document):
 	def _resolve_generation_setup(self):
 		if self.workflow:
 			return
-
 		workflow_doc = get_latest_valid_workflow()
 		if not workflow_doc:
 			frappe.throw(_("No default Generation Workflow is configured."))
@@ -137,22 +142,15 @@ class MediaSpecification(Document):
 	def validate_generation_setup(self):
 		if self.status != "Ready":
 			return
-
 		if not self.workflow:
 			frappe.throw(_("Ready Media Specifications require a Workflow."))
-
-		workflow_version = frappe.get_doc(
-			"Generation Workflow",
-			self.workflow,
-		)
+		workflow_version = frappe.get_doc("Generation Workflow", self.workflow)
 		from joymedia.services.workflow_resolver import validate_workflow_bindings
-
 		validate_workflow_bindings(workflow_version)
 
 	def on_update(self):
 		if self.has_value_changed("total_duration_seconds"):
 			from joymedia.services.shot_duration_planner import recalculate_shot_durations
-
 			recalculate_shot_durations(self.name)
 
 	def _validate_timeline(self):
@@ -166,27 +164,21 @@ class MediaSpecification(Document):
 	def _validate_version_immutability(self):
 		if self.is_new():
 			return
-
 		previous = self.get_doc_before_save()
 		if not previous:
 			return
-
-		for fieldname in MediaSpecification.IDENTITY_FIELDS:
+		for fieldname in self.IDENTITY_FIELDS:
 			if self.get(fieldname) != previous.get(fieldname):
 				frappe.throw(_("Media Specification {0} cannot be changed after creation.").format(fieldname))
-
 		if previous.status != "Draft" and self.status == "Draft":
 			frappe.throw(_("A Ready, Superseded, or Archived Media Specification cannot return to Draft."))
-
-		if not MediaSpecification._execution_has_started(self):
+		if not self._execution_has_started():
 			return
-
-		for fieldname in MediaSpecification.EXECUTION_CONTRACT_FIELDS:
+		for fieldname in self.EXECUTION_CONTRACT_FIELDS:
 			if self.get(fieldname) != previous.get(fieldname):
 				frappe.throw(
-					_("Execution contract field {0} cannot change after Generation Jobs or Runs exist.").format(
-						fieldname
-					)
+					_("Execution contract field {0} cannot change after Generation Jobs or Runs exist.").format(fieldname)
+				)
 
 	def _execution_has_started(self):
 		if frappe.db.exists("Generation Run", {"media_specification": self.name}):
