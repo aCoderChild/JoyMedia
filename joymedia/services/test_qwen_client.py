@@ -63,3 +63,25 @@ class TestQwenClient(FrappeTestCase):
 		_validate_video_plan(plan)
 		self.assertEqual(plan["shots"][0]["references"][0]["reference_key"], "hero_product")
 		self.assertEqual(plan["shots"][0]["references"][1]["usage_role"], "product_reference")
+
+	def test_workflow_contract_rejects_unsupported_or_repeated_roles(self):
+		contract = [{
+			"role": "product_reference",
+			"value_type": "File Path",
+			"required": False,
+			"accepted_media_type": "Image",
+			"allow_multiple": False,
+		}]
+		plan = _normalize_qwen_plan({
+			"shots": [{
+				"shot_number": 1,
+				"generation_prompt": "Show the product.",
+				"duration_seconds": 2,
+				"references": [
+					{"reference_key": "one", "usage_role": "product_reference"},
+					{"reference_key": "two", "usage_role": "product_reference"},
+				],
+			}],
+		})
+		with self.assertRaises(frappe.ValidationError):
+			_validate_video_plan(plan, workflow_input_contract=contract)

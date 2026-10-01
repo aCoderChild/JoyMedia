@@ -13,6 +13,33 @@ _SKIP_BINDING = object()
 PROMPT_BINDING_KEY = "generation_prompt"
 
 
+def get_workflow_input_contract(workflow):
+	"""Return the selected workflow's staged-input contract by semantic role."""
+	contract = {}
+	for binding in workflow.bindings:
+		role = frappe.scrub(binding.required_input_role or "")
+		if not role:
+			continue
+		entry = {
+			"role": role,
+			"value_type": getattr(binding, "value_type", None) or "File Path",
+			"required": bool(binding.required),
+			"accepted_media_type": getattr(binding, "accepted_media_type", None) or "Any",
+			"allow_multiple": bool(getattr(binding, "allow_multiple", 0)),
+		}
+		previous = contract.get(role)
+		if previous and any(
+			previous[field] != entry[field]
+			for field in ("value_type", "accepted_media_type", "allow_multiple")
+		):
+			frappe.throw(_("Workflow bindings for role '{0}' have conflicting input contracts.").format(role))
+		if previous:
+			previous["required"] = previous["required"] or entry["required"]
+		else:
+			contract[role] = entry
+	return list(contract.values())
+
+
 def resolve_attempt(attempt_name: str, staged_inputs=None):
 	staged_inputs = staged_inputs or {}
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
@@ -182,6 +209,7 @@ def _validate_node_references(workflow):
 
 
 def _validate_workflow_bindings(workflow_version, workflow):
+	get_workflow_input_contract(workflow_version)
 	for binding in workflow_version.bindings:
 		binding_key = frappe.scrub(binding.binding_key or "")
 		if not binding_key:
@@ -190,6 +218,11 @@ def _validate_workflow_bindings(workflow_version, workflow):
 			frappe.throw(
 				_("Workflow Binding {0} requires an Input Role.").format(binding.binding_key)
 			)
+		accepted_media_type = getattr(binding, "accepted_media_type", None)
+		if accepted_media_type not in (None, "", "Any", "Image", "Video", "Audio"):
+			frappe.throw(_("Unsupported Accepted Media Type: {0}").format(accepted_media_type))
+		if getattr(binding, "allow_multiple", 0) and getattr(binding, "value_type", None) != "File Paths":
+			frappe.throw(_("Workflow Binding {0} must use File Paths when Allow Multiple is enabled.").format(binding.binding_key))
 		node = workflow.get(binding.node_key)
 		if node is None or binding.input_name not in node.get("inputs", {}):
 			frappe.throw(

@@ -124,6 +124,19 @@ class GenerationTask(Document):
 				 if binding.required and frappe.scrub(binding.required_input_role or "") == role),
 				None,
 			)
+			accepted_media_type = getattr(binding, "accepted_media_type", None) if binding else None
+			if binding and accepted_media_type not in (None, "", "Any"):
+				for row in self.inputs:
+					if frappe.scrub(row.input_role or "") != role or not row.asset_version:
+						continue
+					media_asset = frappe.db.get_value("Asset Version", row.asset_version, "media_asset")
+					media_type = frappe.db.get_value("Media Asset", media_asset, "media_type")
+					if media_type != binding.accepted_media_type:
+						frappe.throw(
+							_("Workflow input role '{0}' accepts {1} media, not {2}.").format(
+								role, accepted_media_type, media_type or "unknown"
+							)
+						)
 			if binding and binding.value_type != "File Paths" and len(asset_versions) != 1:
 				frappe.throw(
 					_("Workflow binding for role '{0}' accepts exactly one input; found {1}.").format(

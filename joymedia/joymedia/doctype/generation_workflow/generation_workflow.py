@@ -128,6 +128,8 @@ def clone_workflow_as_draft(version_name: str):
 				"required_input_role": binding.required_input_role,
 				"value_type": binding.value_type,
 				"required": binding.required,
+				"accepted_media_type": getattr(binding, "accepted_media_type", None) or "Any",
+				"allow_multiple": getattr(binding, "allow_multiple", 0),
 			},
 		)
 	clone.insert()

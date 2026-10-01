@@ -841,6 +841,7 @@ class MediaProject(Document):
 		if not image_inputs:
 			frappe.throw(_("Add at least one image reference before creating a storyboard."))
 		workflow = frappe.get_doc("Generation Workflow", settings.workflow)
+		from joymedia.services.workflow_resolver import get_workflow_input_contract
 		return generate_video_plan(
 			product_name=_meaningful_project_value(self.product_name, "The supplied product"),
 			video_idea=_meaningful_project_value(self.video_idea, "Create a premium cinematic product showcase."),
@@ -853,6 +854,7 @@ class MediaProject(Document):
 			generation_mode=settings.generation_mode,
 			global_instructions=settings.global_instructions,
 			format_preset=settings.delivery_preset,
+			workflow_input_contract=get_workflow_input_contract(workflow),
 		)
 
 	@frappe.whitelist()

@@ -216,6 +216,15 @@ def _ensure_workflow():
 			"required_input_role": "first_frame",
 			"value_type": "File Path",
 			"required": 1,
+		}, {
+			"binding_key": "product_reference",
+			"node_key": "load_img",
+			"input_name": "image",
+			"required_input_role": "product_reference",
+			"value_type": "File Paths",
+			"accepted_media_type": "Image",
+			"allow_multiple": 1,
+			"required": 0,
 		}],
 	}).insert(ignore_permissions=True)
 	return workflow.name

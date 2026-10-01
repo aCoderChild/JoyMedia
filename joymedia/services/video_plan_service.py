@@ -55,6 +55,35 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 		for row in project.selected_media or []
 		if getattr(row, "reference_key", None)
 	}
+	workflow_contract = None
+	if settings.workflow:
+		from joymedia.services.workflow_resolver import get_workflow_input_contract
+		workflow_contract = get_workflow_input_contract(frappe.get_doc("Generation Workflow", settings.workflow))
+	contract_by_role = {item["role"]: item for item in (workflow_contract or [])}
+	for shot in plan["shots"]:
+		role_counts = {}
+		for reference in shot.get("references") or []:
+			role = frappe.scrub(reference.get("usage_role") or "")
+			contract = contract_by_role.get(role)
+			if workflow_contract is not None and not contract:
+				frappe.throw(_("Workflow does not support Shot Reference role '{0}'.").format(role))
+			role_counts[role] = role_counts.get(role, 0) + 1
+			if contract and role_counts[role] > 1 and not contract["allow_multiple"]:
+				frappe.throw(_("Workflow input role '{0}' accepts exactly one reference.").format(role))
+			if contract and contract["accepted_media_type"] != "Any":
+				project_reference = project_references.get(reference.get("reference_key"))
+				media_type = (
+					frappe.db.get_value("Media Asset", frappe.db.get_value(
+						"Asset Version", project_reference.asset_version, "media_asset"
+					), "media_type")
+					if project_reference else None
+				)
+				if media_type != contract["accepted_media_type"]:
+					frappe.throw(
+						_("Workflow input role '{0}' accepts {1} media, not {2}.").format(
+							role, contract["accepted_media_type"], media_type or "unknown"
+						)
+					)
 
 	shot_numbers = [shot["shot_number"] for shot in plan["shots"]]
 	if len(shot_numbers) != len(set(shot_numbers)):

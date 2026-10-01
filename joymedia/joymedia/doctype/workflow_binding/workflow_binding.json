@@ -11,7 +11,9 @@
   "input_name",
   "required_input_role",
   "value_type",
-  "required"
+  "required",
+  "accepted_media_type",
+  "allow_multiple"
  ],
  "fields": [
   {
@@ -56,6 +58,20 @@
    "fieldname": "required",
    "fieldtype": "Check",
    "label": "Required"
+  },
+  {
+   "default": "Any",
+   "fieldname": "accepted_media_type",
+   "fieldtype": "Select",
+   "label": "Accepted Media Type",
+   "options": "Any\nImage\nVideo\nAudio"
+  },
+  {
+   "default": "0",
+   "description": "Allow an ordered list of inputs for this role.",
+   "fieldname": "allow_multiple",
+   "fieldtype": "Check",
+   "label": "Allow Multiple"
   }
  ],
  "grid_page_length": 50,

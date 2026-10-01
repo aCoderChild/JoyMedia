@@ -87,6 +87,7 @@ def generate_video_plan(
 	generation_mode: str = "Multi-shot",
 	global_instructions: str | None = None,
 	format_preset: str | None = None,
+	workflow_input_contract: list[dict] | None = None,
 ) -> dict:
 	"""Create one structured storyboard from the project prompt and selected references.
 
@@ -113,6 +114,12 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 
 	if video_style:
 		instruction += f"\n\nVIDEO STYLE / WORKFLOW KEY:\n{video_style}"
+	if workflow_input_contract:
+		instruction += (
+			"\n\nAVAILABLE INPUT ROLES FOR THIS WORKFLOW:\n"
+			+ json.dumps(workflow_input_contract, ensure_ascii=False, indent=2)
+			+ "\nUse only these roles. Respect accepted_media_type, required, and allow_multiple."
+		)
 	if format_preset:
 		instruction += f"\n\nOUTPUT FORMAT:\n{format_preset}. Frame each shot appropriately for this format."
 	if global_instructions:
@@ -220,6 +227,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		reference_image_count=len(reference_images or []),
 		shot_count=shot_count,
 		generation_mode=generation_mode,
+		workflow_input_contract=workflow_input_contract,
 	)
 	return result
 
@@ -266,7 +274,13 @@ def _first_non_empty(*values):
 	return ""
 
 
-def _validate_video_plan(result, reference_image_count=0, shot_count=None, generation_mode="Multi-shot"):
+def _validate_video_plan(
+	result,
+	reference_image_count=0,
+	shot_count=None,
+	generation_mode="Multi-shot",
+	workflow_input_contract=None,
+):
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		frappe.throw(_("Qwen video plan must contain a shots list."))
 	if not result["shots"]:
@@ -300,12 +314,22 @@ def _validate_video_plan(result, reference_image_count=0, shot_count=None, gener
 			"duration_seconds": duration_seconds,
 			"references": shot.get("references") if isinstance(shot.get("references"), list) else [],
 		}
+		contract_by_role = {
+			item["role"]: item for item in (workflow_input_contract or []) if item.get("role")
+		}
+		role_counts = {}
 		for reference in normalized["references"]:
 			if not isinstance(reference, dict) or not str(reference.get("reference_key") or "").strip():
 				frappe.throw(_("Each Qwen shot reference must contain a reference_key."))
 			usage_role = frappe.scrub(reference.get("usage_role") or "")
 			if not usage_role:
 				frappe.throw(_("Each Qwen shot reference must contain a usage_role."))
+			contract = contract_by_role.get(usage_role)
+			if workflow_input_contract is not None and not contract:
+				frappe.throw(_("Qwen returned unsupported workflow input role '{0}'.").format(usage_role))
+			role_counts[usage_role] = role_counts.get(usage_role, 0) + 1
+			if contract and role_counts[usage_role] > 1 and not contract.get("allow_multiple"):
+				frappe.throw(_("Workflow input role '{0}' does not allow multiple references.").format(usage_role))
 			reference["reference_key"] = str(reference["reference_key"]).strip()
 			reference["usage_role"] = usage_role
 		if reference_image_count:
