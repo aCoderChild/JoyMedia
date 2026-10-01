@@ -36,7 +36,7 @@ def _meaningful_project_value(value, fallback):
 	return value if value and value.lower() != "untitled" else fallback
 
 
-def _get_latest_project_generation_run(media_project, specification_names=None):
+def _get_latest_project_generation_run(media_project):
 	rows = frappe.get_all(
 		"Generation Run",
 		filters={"media_project": media_project},
@@ -808,13 +808,6 @@ class MediaProject(Document):
 			global_instructions=settings.global_instructions,
 			format_preset=settings.delivery_preset,
 		)
-
-	def _ensure_default_video_specification(self):
-		"""Compatibility accessor; new projects store settings on Media Project."""
-		return _project_settings(self)
-
-	def _ensure_current_planning_specification(self, specification):
-		return _project_settings(self)
 
 	@frappe.whitelist()
 	def generate_end_to_end(self):
