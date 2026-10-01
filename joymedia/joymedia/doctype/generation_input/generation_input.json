@@ -1,87 +1,44 @@
 {
- "actions": [],
- "allow_bulk_edit": 0,
- "autoname": "GENIN-.#####",
  "creation": "2026-09-03 16:31:58.341764",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "generation_input_section",
-  "generation_job",
   "input_role",
   "asset_version",
   "generation_artifact"
  ],
  "fields": [
   {
-   "description": "Frozen input assigned to one generation task. Source can be a reusable Asset Version or an upstream runtime Artifact.",
-   "fieldname": "generation_input_section",
-   "fieldtype": "Section Break",
-   "label": "Generation Input"
-  },
-  {
-   "fieldname": "generation_job",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Generation Job",
-   "options": "Generation Job",
-   "read_only_depends_on": "eval:!doc.__islocal;",
-   "reqd": 1
-  },
-  {
-   "description": "Stable workflow input role key, e.g. first_frame, last_frame, mask, product_reference, audio_reference.",
+   "description": "Stable workflow input role key, e.g. first_frame, last_frame, mask, product_reference or audio_reference.",
    "fieldname": "input_role",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Input Role Key",
-   "read_only_depends_on": "eval:!doc.__islocal;",
+   "label": "Input Role",
    "reqd": 1
   },
   {
+   "description": "Reusable/static input captured from the project or shot.",
    "fieldname": "asset_version",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Asset Version",
-   "options": "Asset Version",
-   "read_only_depends_on": "eval:!doc.__islocal;"
+   "options": "Asset Version"
   },
   {
+   "description": "Runtime lineage input from an upstream generation, used when applicable.",
    "fieldname": "generation_artifact",
    "fieldtype": "Link",
    "label": "Generation Artifact",
-   "options": "Generation Artifact",
-   "read_only_depends_on": "eval:!doc.__islocal;"
+   "options": "Generation Artifact"
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
- "links": [],
- "modified": "2026-10-01 00:00:00.000000",
+ "istable": 1,
+ "modified": "2026-10-01 07:30:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Input",
- "naming_rule": "Expression",
  "owner": "Administrator",
- "permissions": [
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "System Manager",
-   "share": 1,
-   "write": 1
-  }
- ],
  "row_format": "Dynamic",
- "rows_threshold_for_grid_search": 20,
- "sort_field": "creation",
- "sort_order": "DESC",
- "states": [],
- "track_changes": 1
+ "rows_threshold_for_grid_search": 20
 }
