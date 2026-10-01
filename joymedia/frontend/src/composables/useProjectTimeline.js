@@ -157,6 +157,14 @@ export function useProjectTimeline(projectName) {
     );
   }
 
+  function updateSourceForShot(shotName) {
+    return mutate(
+      "update_timeline_source_for_shot",
+      { shot_name: shotName },
+      selectedClipName.value
+    );
+  }
+
   let exportPollTimer = null;
 
   function stopExportPolling() {
@@ -257,6 +265,7 @@ export function useProjectTimeline(projectName) {
     setTransition,
     resetTimeline,
     resetClip,
+    updateSourceForShot,
     exportTimeline,
     stopExportPolling,
   };

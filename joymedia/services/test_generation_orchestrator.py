@@ -99,10 +99,8 @@ class TestGenerationOrchestrator(FrappeTestCase):
 	@patch("joymedia.services.generation_orchestrator.frappe.has_permission")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_doc")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	@patch("joymedia.services.shot_duration_planner.recalculate_shot_durations")
 	def test_start_run_only_queues_background_preparation(
 		self,
-		recalculate_shot_durations,
 		get_all,
 		get_doc,
 		has_permission,
@@ -123,7 +121,6 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		result = generation_orchestrator.start_run(run.name)
 
 		has_permission.assert_called_once_with("Generation Run", "write", run.name, throw=True)
-		recalculate_shot_durations.assert_called_once_with(project.name)
 		validate_generation_preflight.assert_called_once_with(
 			project,
 			workflow,

@@ -36,3 +36,5 @@ joymedia.patches.remove_legacy_media_specification_metadata
 joymedia.patches.rename_run_task_counters
 joymedia.patches.backfill_project_reference_keys
 joymedia.patches.repair_asset_version_derived_reference_keys
+joymedia.patches.migrate_timeline_clip_tracks
+joymedia.patches.migrate_audio_cues_to_timeline

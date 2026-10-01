@@ -182,6 +182,15 @@
 
             <!-- Regenerate Source Button -->
             <button
+              v-if="selectedClip?.is_outdated && selectedClipSourceShot"
+              type="button"
+              class="w-full py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+              :disabled="timelineBusy"
+              @click="$emit('updateSourceForSelectedClip')"
+            >
+              ↻ {{ currentLang === 'vi' ? 'Cập nhật clip từ cảnh mới' : 'Update clip from new shot output' }}
+            </button>
+            <button
               type="button"
               class="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
               :disabled="timelineBusy || regeneratingSource"
@@ -192,7 +201,7 @@
               <span>{{ currentLang === 'vi' ? 'Tạo lại cảnh gốc (Regenerate source)' : 'Regenerate source' }}</span>
             </button>
             <p class="text-[10px] text-ink-muted text-center">
-              {{ currentLang === 'vi' ? 'Tạo lại cảnh sẽ tự động đồng bộ video mới vào timeline clip.' : 'Regenerating will sync newly rendered video into this timeline clip.' }}
+              {{ currentLang === 'vi' ? 'Tạo lại cảnh sẽ đánh dấu clip cũ là lỗi thời; bạn có thể cập nhật thủ công.' : 'Regeneration marks this editorial clip outdated; update it explicitly when ready.' }}
             </p>
           </div>
           <div v-else class="text-ink-muted text-center py-2 text-xs">
@@ -665,6 +674,7 @@ const emit = defineEmits([
   "duplicateClip",
   "deleteClip",
   "regenerateSourceForSelectedClip",
+  "updateSourceForSelectedClip",
   "applyAssetToShot",
   "update:selectedTarget",
   "selectKeyframeTarget",

@@ -12,6 +12,8 @@ from joymedia.services.timeline_editor import (
 	split_timeline_clip,
 	sync_timeline_source_for_shot,
 	trim_timeline_clip,
+	update_timeline_source_for_shot,
+	move_timeline_clip,
 )
 
 
@@ -112,15 +114,29 @@ class TestTimelineEditor(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			set_timeline_transition(self.project.name, self.clip_1.name, "Wipe Left", 12)
 
-	def test_shot_regeneration_can_replace_timeline_source(self):
+	def test_shot_regeneration_marks_timeline_source_stale_without_replacing_it(self):
 		_, version_2 = _create_output_version(self.project, "test-v2.mp4", 3, asset=self.asset)
 		self.shot.db_set("selected_output_asset_version", version_2.name, update_modified=False)
 		frappe.db.set_value("Media Project", self.project.name, "current_output_asset_version", self.version_1.name)
 		sync_timeline_source_for_shot(self.shot.name)
 		self.clip_1.reload()
+		self.assertEqual(self.clip_1.source_asset_version, self.version_1.name)
+		self.assertEqual(self.clip_1.source_out_frame, 96)
+		self.assertTrue(self.clip_1.is_outdated)
+		update_timeline_source_for_shot(self.project.name, self.shot.name)
+		self.clip_1.reload()
 		self.assertEqual(self.clip_1.source_asset_version, version_2.name)
 		self.assertEqual(self.clip_1.source_out_frame, 72)
+		self.assertFalse(self.clip_1.is_outdated)
 		self.assertIsNone(frappe.db.get_value("Media Project", self.project.name, "current_output_asset_version"))
+
+	def test_timeline_position_is_persisted_and_movable(self):
+		move_timeline_clip(self.project.name, self.clip_1.name, 48, "Video", 1)
+		self.clip_1.reload()
+		self.assertEqual(self.clip_1.timeline_start_frame, 48)
+		from joymedia.services.timeline_editor import get_project_timeline
+		clip = get_project_timeline(self.project.name)["clips"][0]
+		self.assertEqual(clip["timeline_start_frame"], 48)
 
 	def test_timeline_is_owned_by_the_project(self):
 		from joymedia.services.timeline_editor import get_project_timeline

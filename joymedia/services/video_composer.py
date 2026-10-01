@@ -237,30 +237,36 @@ def _get_shot_output_path(shot):
 	return path
 
 
-def _get_audio_sources(project, video_duration):
+def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
 	sources = []
-	for cue in project.get("audio_cues") or []:
-		start_seconds = float(cue.start_seconds or 0)
-		end_seconds = min(float(cue.end_seconds or video_duration), video_duration)
+	if timeline_clips is None:
+		return sources
+	fps = float(fps or 0)
+	if fps <= 0:
+		frappe.throw(_("Workflow output FPS must be greater than zero."))
+	for clip in timeline_clips:
+		start_seconds = float(clip.timeline_start_frame or 0) / fps
+		clip_frames = int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0)
+		end_seconds = min(start_seconds + clip_frames / fps, video_duration)
 		if start_seconds >= video_duration:
-			frappe.throw(_("Audio Cue {0} starts after the composed video ends.").format(cue.idx))
+			frappe.throw(_("Audio clip {0} starts after the composed video ends.").format(clip.name))
 		if end_seconds <= start_seconds:
-			frappe.throw(_("Audio Cue {0} has no usable timeline duration.").format(cue.idx))
+			frappe.throw(_("Audio clip {0} has no usable timeline duration.").format(clip.name))
 		cue_duration = end_seconds - start_seconds
-		fade_in_seconds = float(cue.fade_in_seconds or 0)
-		fade_out_seconds = float(cue.fade_out_seconds or 0)
+		fade_in_seconds = float(clip.fade_in_frames or 0) / fps
+		fade_out_seconds = float(clip.fade_out_frames or 0) / fps
 		if fade_in_seconds + fade_out_seconds > cue_duration:
-			frappe.throw(_("Audio Cue {0} fades exceed its timeline duration.").format(cue.idx))
+			frappe.throw(_("Audio clip {0} fades exceed its timeline duration.").format(clip.name))
 		sources.append(
 			{
-				"path": _get_audio_asset_path(cue.asset_version),
+				"path": _get_audio_asset_path(clip.source_asset_version),
 				"start_seconds": start_seconds,
 				"duration_seconds": cue_duration,
-				"gain_db": float(cue.gain_db or 0),
+				"gain_db": float(clip.gain_db or 0),
 				"fade_in_seconds": fade_in_seconds,
 				"fade_out_seconds": fade_out_seconds,
-				"duck_others": bool(cue.duck_others),
-				"loop": cue.role == "BGM",
+				"duck_others": bool(clip.duck_others),
+				"loop": clip.audio_role == "BGM",
 			}
 		)
 	return sources

@@ -53,9 +53,6 @@ def start_run_internal(run_name: str):
 	if not project.workflow:
 		frappe.throw(_("Media Project {0} has no Generation Workflow.").format(project.name))
 
-	from .shot_duration_planner import recalculate_shot_durations
-
-	recalculate_shot_durations(project.name)
 	workflow = frappe.get_doc("Generation Workflow", run.workflow)
 	shots = frappe.get_all(
 		"Shot",

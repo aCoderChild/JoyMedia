@@ -151,6 +151,9 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 			"media_project": clip.media_project,
 			"shot": clip.shot,
 			"clip_order": clip.clip_order + 1,
+			"track_type": clip.track_type,
+			"track_index": clip.track_index,
+			"timeline_start_frame": int(clip.timeline_start_frame or 0) + split_frame - int(clip.source_in_frame),
 			"enabled": clip.enabled,
 			"source_asset_version": clip.source_asset_version,
 			"source_in_frame": split_frame,
@@ -159,6 +162,12 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 			"initial_source_out_frame": old_out,
 			"transition_to_next": old_transition,
 			"transition_frames": old_transition_frames,
+			"audio_role": clip.audio_role,
+			"gain_db": clip.gain_db,
+			"fade_in_frames": clip.fade_in_frames,
+			"fade_out_frames": clip.fade_out_frames,
+			"duck_others": clip.duck_others,
+			"is_outdated": clip.is_outdated,
 		}
 	).insert(ignore_permissions=True)
 	_normalize_transitions(project.name)
@@ -183,6 +192,9 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 			"media_project": clip.media_project,
 			"shot": clip.shot,
 			"clip_order": clip.clip_order + 1,
+			"track_type": clip.track_type,
+			"track_index": clip.track_index,
+			"timeline_start_frame": int(clip.timeline_start_frame or 0) + _clip_length(clip),
 			"enabled": clip.enabled,
 			"source_asset_version": clip.source_asset_version,
 			"source_in_frame": clip.source_in_frame,
@@ -191,6 +203,12 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 			"initial_source_out_frame": clip.initial_source_out_frame,
 			"transition_to_next": clip.transition_to_next,
 			"transition_frames": clip.transition_frames,
+			"audio_role": clip.audio_role,
+			"gain_db": clip.gain_db,
+			"fade_in_frames": clip.fade_in_frames,
+			"fade_out_frames": clip.fade_out_frames,
+			"duck_others": clip.duck_others,
+			"is_outdated": clip.is_outdated,
 		}
 	).insert(ignore_permissions=True)
 	# A duplicate is an independent edit instance. The original becomes a cut
@@ -357,6 +375,7 @@ def _initialize_timeline(project):
 		],
 		order_by="shot_number asc, name asc",
 	)
+	timeline_cursor = 0
 	for order, shot in enumerate(shots, start=1):
 		planned_frames = int(shot.planned_frame_count or round(float(shot.duration_seconds or 0) * fps))
 		if planned_frames <= 0:
@@ -371,6 +390,9 @@ def _initialize_timeline(project):
 				"media_project": project.name,
 				"shot": shot.name,
 				"clip_order": order,
+				"track_type": "Video",
+				"track_index": 0,
+				"timeline_start_frame": timeline_cursor,
 				"enabled": 1,
 				"source_asset_version": shot.selected_output_asset_version,
 				"source_in_frame": 0,
@@ -381,6 +403,7 @@ def _initialize_timeline(project):
 				"transition_frames": 0,
 			}
 		).insert(ignore_permissions=True)
+		timeline_cursor += source_out
 	frappe.db.commit()
 
 
@@ -416,6 +439,9 @@ def _timeline_clip_rows(project_name):
 			"media_project",
 			"shot",
 			"clip_order",
+			"track_type",
+			"track_index",
+			"timeline_start_frame",
 			"enabled",
 			"source_asset_version",
 			"source_in_frame",
@@ -424,6 +450,12 @@ def _timeline_clip_rows(project_name):
 			"initial_source_out_frame",
 			"transition_to_next",
 			"transition_frames",
+			"audio_role",
+			"gain_db",
+			"fade_in_frames",
+			"fade_out_frames",
+			"duck_others",
+			"is_outdated",
 		],
 		order_by="clip_order asc, creation asc",
 	)
@@ -453,7 +485,6 @@ def _serialize_timeline(project, clips):
 		}
 
 	fps = _project_fps(project.name)
-	cursor = 0
 	serialized = []
 	for index, clip in enumerate(enabled_clips):
 		length = _clip_length(clip)
@@ -475,7 +506,7 @@ def _serialize_timeline(project, clips):
 			if clip.shot
 			else None
 		)
-		start = cursor
+		start = int(clip.timeline_start_frame or 0)
 		end = start + length
 		transition = clip.transition_to_next or "Cut"
 		transition_frames = int(clip.transition_frames or 0) if transition != "Cut" else 0
@@ -486,6 +517,8 @@ def _serialize_timeline(project, clips):
 			{
 				"name": clip.name,
 				"clip_order": clip.clip_order,
+				"track_type": clip.track_type or "Video",
+				"track_index": int(clip.track_index or 0),
 				"shot": clip.shot,
 				"shot_number": shot_number,
 				"source_asset_version": clip.source_asset_version,
@@ -508,20 +541,26 @@ def _serialize_timeline(project, clips):
 				"timeline_end_frame": end,
 				"transition_to_next": transition,
 				"transition_frames": transition_frames,
+				"is_outdated": bool(clip.is_outdated),
+				"audio_role": clip.audio_role,
+				"gain_db": float(clip.gain_db or 0),
+				"fade_in_frames": int(clip.fade_in_frames or 0),
+				"fade_out_frames": int(clip.fade_out_frames or 0),
+				"duck_others": bool(clip.duck_others),
 			}
 		)
-		cursor = end - transition_frames
 
 	final_video = _final_video(project.name)
+	total_frames = max((item["timeline_end_frame"] for item in serialized), default=0)
 	return {
 		"ready": bool(serialized),
 		"project": project.name,
 		"media_project": project.name,
 		"latest_generation_run": latest_run.name if latest_run else None,
-		"is_outdated": False,
+		"is_outdated": any(item["is_outdated"] for item in serialized),
 		"fps": fps,
-		"total_frames": max(0, cursor),
-		"total_seconds": max(0, cursor) / fps,
+		"total_frames": total_frames,
+		"total_seconds": total_frames / fps,
 		"clips": serialized,
 		"final_video": final_video,
 		"export_status": getattr(project, "export_status", "Idle") or "Idle",
@@ -571,6 +610,10 @@ def _invalidate_project_output(project_name):
 
 
 def sync_timeline_source_for_shot(shot_name):
+	"""Mark editorial clips stale when a Shot receives a new output.
+
+		Generation must not replace an existing editorial source automatically.
+	"""
 	shot = frappe.get_doc("Shot", shot_name)
 	new_asset_version = shot.selected_output_asset_version
 	if not new_asset_version:
@@ -586,26 +629,64 @@ def sync_timeline_source_for_shot(shot_name):
 	)
 	if not clips:
 		return
-	fps = _project_fps(project_name)
-	max_frames = _source_max_frames(new_asset_version, fps)
-	min_frames = _minimum_clip_frames(fps)
-
 	for clip_data in clips:
-		clip = frappe.get_doc("Timeline Clip", clip_data.name)
-		clip.source_asset_version = new_asset_version
-		if max_frames:
-			if clip.source_out_frame > max_frames:
-				clip.source_out_frame = max_frames
-				if clip.source_out_frame - clip.source_in_frame < min_frames:
-					clip.source_in_frame = max(0, max_frames - min_frames)
-			clip.initial_source_out_frame = min(
-				clip.initial_source_out_frame or max_frames, max_frames
-			)
-		clip.save(ignore_permissions=True)
+		frappe.db.set_value("Timeline Clip", clip_data.name, "is_outdated", 1, update_modified=False)
 
-	_normalize_transitions(project_name)
 	_invalidate_project_output(project_name)
 	frappe.db.commit()
+
+
+@frappe.whitelist()
+def update_timeline_source_for_shot(project_name: str, shot_name: str):
+	"""Explicitly replace editorial clips with the Shot's current output."""
+	project = frappe.get_doc("Media Project", project_name)
+	_require_project_write(project)
+	shot = frappe.get_doc("Shot", shot_name)
+	if shot.media_project != project.name:
+		frappe.throw(_("Shot does not belong to this project."))
+	if not shot.selected_output_asset_version:
+		frappe.throw(_("Shot has no selected output Asset Version."))
+	for clip_name in frappe.get_all(
+		"Timeline Clip", filters={"media_project": project.name, "shot": shot.name}, pluck="name"
+	):
+		clip = frappe.get_doc("Timeline Clip", clip_name)
+		if clip.track_type == "Video":
+			max_frames = _source_max_frames(shot.selected_output_asset_version, _project_fps(project.name))
+			if max_frames and clip.source_out_frame > max_frames:
+				clip.source_out_frame = max_frames
+				if clip.source_out_frame - clip.source_in_frame < _minimum_clip_frames(_project_fps(project.name)):
+					clip.source_in_frame = max(0, max_frames - _minimum_clip_frames(_project_fps(project.name)))
+			clip.source_asset_version = shot.selected_output_asset_version
+			clip.initial_source_out_frame = min(
+				clip.initial_source_out_frame or clip.source_out_frame, clip.source_out_frame
+			)
+			clip.is_outdated = 0
+			clip.save(ignore_permissions=True)
+	_normalize_transitions(project.name)
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
+@frappe.whitelist()
+def move_timeline_clip(project_name: str, clip_name: str, timeline_start_frame, track_type=None, track_index=None):
+	project, clip = _project_clip(project_name, clip_name)
+	start = _int_value(timeline_start_frame, _("Timeline start frame must be an integer."))
+	if start < 0:
+		frappe.throw(_("Timeline start frame cannot be negative."))
+	if track_type is not None and track_type not in ("Video", "Audio"):
+		frappe.throw(_("Timeline clip track type must be Video or Audio."))
+	clip.timeline_start_frame = start
+	if track_type is not None:
+		clip.track_type = track_type
+	if track_index is not None:
+		clip.track_index = _int_value(track_index, _("Track index must be an integer."))
+		if clip.track_index < 0:
+			frappe.throw(_("Track index cannot be negative."))
+	clip.save(ignore_permissions=True)
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
 
 
 def _project_clip(project_name, clip_name):

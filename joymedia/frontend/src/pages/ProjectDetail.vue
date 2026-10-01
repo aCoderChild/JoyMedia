@@ -592,6 +592,7 @@
       @duplicate-clip="duplicateClip"
       @delete-clip="deleteClip"
       @regenerate-source-for-selected-clip="regenerateSourceForSelectedClip"
+      @update-source-for-selected-clip="updateSourceForSelectedClip"
       @apply-asset-to-shot="applyAssetToShot"
       @select-keyframe-target="handleSelectKeyframeTarget"
       @open-media-picker="openMediaPicker"
@@ -840,6 +841,7 @@ const {
   deleteClip,
   setTransition,
   resetTimeline,
+  updateSourceForShot,
   exportTimeline,
 } = useProjectTimeline(projectName);
 
@@ -1705,6 +1707,21 @@ async function regenerateSourceForSelectedClip() {
     selectShot(shot, idx);
   }
   await regenerateCurrentShot();
+}
+
+async function updateSourceForSelectedClip() {
+  const shot = selectedClipSourceShot.value;
+  if (!shot) return;
+  const result = await updateSourceForShot(shot.name);
+  if (result) {
+    toast({
+      title: currentLang.value === "vi" ? "Đã cập nhật clip" : "Clip updated",
+      text: currentLang.value === "vi"
+        ? "Đã thay thế nguồn clip theo lựa chọn của bạn."
+        : "The clip source was explicitly updated to the latest shot output.",
+      type: "success",
+    });
+  }
 }
 
 async function handleExportTimeline() {

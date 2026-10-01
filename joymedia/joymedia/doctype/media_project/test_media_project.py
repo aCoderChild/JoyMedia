@@ -141,6 +141,48 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual(workflow.adapter_key, "minimax_h3")
 		self.assertFalse(frappe.db.exists("DocType", "AI Model Profile"))
 
+	@patch("joymedia.services.generation_orchestrator.start_run_internal")
+	@patch("joymedia.services.generation_orchestrator.validate_generation_preflight")
+	def test_generation_recalculates_shots_before_freezing_run_snapshot(
+		self, validate_preflight, start_run
+	):
+		from joymedia.joymedia.doctype.media_project.media_project import build_project_snapshot
+		from joymedia.services.shot_duration_planner import recalculate_shot_durations
+		from joymedia.services.video_plan_service import apply_video_plan
+
+		project, _ = _create_project("Snapshot Duration Order", self.workflow)
+		apply_video_plan(project.name, {
+			"shots": [{
+				"shot_number": 1,
+				"duration_seconds": 5,
+				"generation_prompt": "A product reveal.",
+			}],
+		})
+		project.reload()
+		events = []
+
+		def recalculate(media_project_name):
+			events.append("recalculate")
+			return recalculate_shot_durations(media_project_name)
+
+		def snapshot(current_project):
+			events.append("snapshot")
+			return build_project_snapshot(current_project)
+
+		start_run.return_value = {"status": "Queued"}
+		with patch(
+			"joymedia.services.shot_duration_planner.recalculate_shot_durations",
+			side_effect=recalculate,
+		), patch(
+			"joymedia.joymedia.doctype.media_project.media_project.build_project_snapshot",
+			side_effect=snapshot,
+		):
+			result = project.generate_video()
+
+		self.assertEqual(result["status"], "Queued")
+		self.assertEqual(events, ["recalculate", "snapshot"])
+		start_run.assert_called_once()
+
 
 def _create_project(label, workflow):
 	project = frappe.get_doc({

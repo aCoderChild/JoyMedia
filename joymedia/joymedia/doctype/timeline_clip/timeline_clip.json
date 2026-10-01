@@ -8,6 +8,9 @@
   "media_project",
   "shot",
   "clip_order",
+  "track_type",
+  "track_index",
+  "timeline_start_frame",
   "enabled",
   "source_section",
   "source_asset_version",
@@ -15,6 +18,13 @@
   "source_out_frame",
   "initial_source_in_frame",
   "initial_source_out_frame",
+  "audio_section",
+  "audio_role",
+  "gain_db",
+  "fade_in_frames",
+  "fade_out_frames",
+  "duck_others",
+  "is_outdated",
   "transition_section",
   "transition_to_next",
   "transition_frames"
@@ -46,6 +56,29 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Clip Order",
+   "reqd": 1
+  },
+  {
+   "default": "Video",
+   "fieldname": "track_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Track Type",
+   "options": "Video\nAudio",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "track_index",
+   "fieldtype": "Int",
+   "label": "Track Index",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "timeline_start_frame",
+   "fieldtype": "Int",
+   "label": "Timeline Start Frame",
    "reqd": 1
   },
   {
@@ -94,6 +127,48 @@
    "fieldname": "initial_source_out_frame",
    "fieldtype": "Int",
    "label": "Initial Source Out Frame"
+  },
+  {
+   "fieldname": "audio_section",
+   "fieldtype": "Section Break",
+   "label": "Audio"
+  },
+  {
+   "fieldname": "audio_role",
+   "fieldtype": "Select",
+   "label": "Audio Role",
+   "options": "BGM\nVoiceover\nSFX"
+  },
+  {
+   "default": "0",
+   "fieldname": "gain_db",
+   "fieldtype": "Float",
+   "label": "Gain dB"
+  },
+  {
+   "default": "0",
+   "fieldname": "fade_in_frames",
+   "fieldtype": "Int",
+   "label": "Fade In Frames"
+  },
+  {
+   "default": "0",
+   "fieldname": "fade_out_frames",
+   "fieldtype": "Int",
+   "label": "Fade Out Frames"
+  },
+  {
+   "default": "0",
+   "fieldname": "duck_others",
+   "fieldtype": "Check",
+   "label": "Duck Others"
+  },
+  {
+   "default": "0",
+   "description": "The selected Shot output changed after this editorial clip was created.",
+   "fieldname": "is_outdated",
+   "fieldtype": "Check",
+   "label": "Is Outdated"
   },
   {
    "fieldname": "transition_section",

@@ -30,6 +30,9 @@ def compose_project_timeline_internal(project_name: str):
 		fields=[
 			"name",
 			"clip_order",
+			"track_type",
+			"track_index",
+			"timeline_start_frame",
 			"source_asset_version",
 			"source_in_frame",
 			"source_out_frame",
@@ -38,22 +41,24 @@ def compose_project_timeline_internal(project_name: str):
 		],
 		order_by="clip_order asc, creation asc",
 	)
-	if not clips:
+	video_clips = [clip for clip in clips if (clip.track_type or "Video") == "Video"]
+	audio_clips = [clip for clip in clips if clip.track_type == "Audio"]
+	if not video_clips:
 		frappe.throw(_("The project timeline has no enabled clips."))
 
 	profile = _delivery_profile(project)
-	clip_frames = [int(clip.source_out_frame) - int(clip.source_in_frame) for clip in clips]
+	clip_frames = [int(clip.source_out_frame) - int(clip.source_in_frame) for clip in video_clips]
 	if any(frames <= 0 for frames in clip_frames):
 		frappe.throw(_("Every timeline clip must contain at least one frame."))
 
-	transition_frames = _validated_transition_frames(clips, clip_frames)
+	transition_frames = _validated_transition_frames(video_clips, clip_frames)
 	expected_frames = sum(clip_frames) - sum(transition_frames)
 
 	try:
 		with tempfile.TemporaryDirectory(prefix="joymedia-timeline-") as temp_dir:
 			temp_path = Path(temp_dir)
 			normalized_paths = []
-			for index, (clip, frame_count) in enumerate(zip(clips, clip_frames), start=1):
+			for index, (clip, frame_count) in enumerate(zip(video_clips, clip_frames), start=1):
 				source_path = _asset_version_path(clip.source_asset_version)
 				normalized_path = temp_path / f"{index:04d}-{clip.name}.mp4"
 				_normalize_clip(
@@ -78,7 +83,9 @@ def compose_project_timeline_internal(project_name: str):
 			_validate_normalized_video(silent_master, profile, expected_frames=expected_frames)
 
 			delivery_path = silent_master
-			audio_sources = _get_audio_sources(project, _get_video_duration(silent_master))
+			audio_sources = _get_audio_sources(
+				project, _get_video_duration(silent_master), audio_clips, profile["fps"]
+			)
 			if audio_sources:
 				delivery_path = temp_path / f"{project.name}-timeline.mp4"
 				_mix_audio(silent_master, audio_sources, delivery_path)

@@ -885,6 +885,7 @@ class MediaProject(Document):
 	def generate_video(self):
 		self._require_write_access()
 		from joymedia.services.generation_orchestrator import start_run_internal, validate_generation_preflight
+		from joymedia.services.shot_duration_planner import recalculate_shot_durations
 		with filelock(f"joymedia-generate-video-{self.name}"):
 			existing = frappe.db.get_value(
 				"Generation Run",
@@ -899,6 +900,7 @@ class MediaProject(Document):
 			if not settings.workflow:
 				frappe.throw(_("This project has no active Generation Workflow."))
 			workflow = frappe.get_doc("Generation Workflow", settings.workflow)
+			recalculate_shot_durations(self.name)
 			shots = frappe.get_all(
 				"Shot", filters={"media_project": self.name},
 				fields=["name", "shot_number", "planned_frame_count"], order_by="shot_number asc, name asc",
