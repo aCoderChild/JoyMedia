@@ -96,7 +96,7 @@
           {{ isAutoGenerating ? autoGenerateStep : (currentLang === 'vi' ? 'Đang kết xuất video quảng cáo...' : 'Rendering video ad...') }}
         </h3>
         <p class="text-xs text-ink-muted mt-1">
-          {{ production?.completed_jobs || 0 }} / {{ production?.total_jobs || expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes completed' }} · ETA {{ estimatedFinishLabel }}
+          {{ completedShotCount(production) }} / {{ production?.shots?.length || expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes completed' }} · ETA {{ estimatedFinishLabel }}
         </p>
       </div>
 
@@ -309,6 +309,10 @@ function formatSecondsLabel(totalSeconds) {
   const mins = Math.floor(safeSeconds / 60);
   const secs = Math.floor(safeSeconds % 60);
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function completedShotCount(production) {
+  return (production?.shots || []).filter((shot) => shot.status === "Completed").length;
 }
 
 function toggleMute() {

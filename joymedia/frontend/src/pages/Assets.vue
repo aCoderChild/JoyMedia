@@ -120,6 +120,13 @@
             class="w-full h-full object-cover pointer-events-none"
             preload="metadata"
           />
+          <audio
+            v-else-if="asset.file && asset.media_type === 'Audio'"
+            :src="asset.file"
+            controls
+            class="w-full px-3"
+            @click.stop
+          />
           <!-- Image preview if image -->
           <img
             v-else-if="asset.file"
@@ -203,6 +210,15 @@
             autoplay
             preload="metadata"
             class="max-h-[52vh] w-full rounded-xl bg-black object-contain shadow-lg"
+          />
+
+          <!-- Audio Player -->
+          <audio
+            v-else-if="selectedAsset.file && selectedAsset.media_type === 'Audio'"
+            :src="selectedAsset.file"
+            controls
+            autoplay
+            class="w-full"
           />
 
           <!-- Image Viewer -->
@@ -296,7 +312,7 @@
           <label class="block text-ink-secondary font-semibold mb-1">{{ t('upload_file_label') }}</label>
           <input
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
+            accept="image/*,video/*,audio/*"
             class="w-full text-xs text-ink-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-surface-muted file:text-ink-primary hover:file:bg-surface-hover cursor-pointer"
             @change="onFileChange"
           />
@@ -332,6 +348,8 @@ const selectedFile = ref(null);
 const typeOptions = computed(() => [
   { label: t('type_all_assets'), value: "All" },
   { label: t('type_images'), value: "Images" },
+  { label: t('type_videos'), value: "Videos" },
+  { label: t('type_audio'), value: "Audio" },
 ]);
 
 const categoryOptions = computed(() => [

@@ -1110,14 +1110,8 @@ const generateButtonText = computed(() => {
   }
   const status = production.value?.status;
   if (status === "Running") {
-		const preparingNextShot = (production.value?.jobs || []).some(
-			(job) => job.status === "Ready" && job.depends_on_job,
-		);
-		if (preparingNextShot) {
-			return currentLang.value === "vi" ? "Đang chuẩn bị cảnh tiếp theo..." : "Preparing next shot...";
-		}
-    const comp = Number(production.value?.completed_jobs || 0);
-    const tot = Number(production.value?.total_jobs || 0);
+    const comp = Number(production.value?.completed_tasks || 0);
+    const tot = Number(production.value?.total_tasks || 0);
     const pct = production.value?.progress_percent ?? production.value?.progress;
     if (pct >= 100 || (tot > 0 && comp >= tot)) {
       return currentLang.value === "vi" ? "Đang hoàn thiện..." : "Finalizing...";
@@ -1317,7 +1311,7 @@ const productionStatus = computed(() => {
 	return production.value?.status || "";
 });
 const expectedShotCount = computed(() => {
-  const productionTotal = Number(production.value?.total_jobs || 0);
+  const productionTotal = Number(production.value?.shots?.length || 0);
   if (productionTotal > 0) return productionTotal;
 
   const storyboardCount = Number(workspace.value?.storyboard?.length || 0);
@@ -1404,7 +1398,7 @@ const selectedClipSourceShot = computed(() => {
   return (
     allShotsList.value.find(
       (s) =>
-        s.name === selectedClip.value.shot_specification ||
+        s.name === selectedClip.value.shot ||
         s.shot_number === selectedClip.value.shot_number
     ) || null
   );
@@ -1846,38 +1840,34 @@ function getShotVideoFile(shot) {
   return shot?.selected_output_file || shot?.output_video || null;
 }
 
-function getShotProductionJob(shot) {
-  return (production.value?.jobs || []).find(
-    (job) => job.shot_specification === shot?.name || Number(job.shot_number) === Number(shot?.shot_number),
+function getShotProductionShot(shot) {
+  return (production.value?.shots || []).find(
+    (shotProgress) => shotProgress.shot === shot?.name || Number(shotProgress.shot_number) === Number(shot?.shot_number),
   );
 }
 
 function getShotProductionState(shot) {
   if (getShotVideoFile(shot)) return "Completed";
-  const job = getShotProductionJob(shot);
-  if (!job) return null;
-  if (job.status === "Running" || job.status === "Queued") return "Generating";
-  if (job.status === "Ready" && job.depends_on_job) return "Waiting for previous frame";
-  if (job.status === "Ready") return "Waiting";
-  if (job.status === "Failed") return "Failed";
-	return job.status;
+  const shotProgress = getShotProductionShot(shot);
+  if (!shotProgress) return null;
+  return shotProgress.status;
 }
 
 function syncProductionOutputsToStoryboard() {
-	const jobs = production.value?.jobs || [];
+	const shotProgresses = production.value?.shots || [];
 	const shots = workspace.value?.storyboard || [];
 
-	for (const job of jobs) {
-		if (!job.shot_specification) continue;
-		const shot = shots.find((item) => item.name === job.shot_specification);
+	for (const shotProgress of shotProgresses) {
+		if (!shotProgress.shot) continue;
+		const shot = shots.find((item) => item.name === shotProgress.shot);
 		if (!shot) continue;
 
-		if (job.selected_output_asset_version) {
-			shot.selected_output_asset_version = job.selected_output_asset_version;
+		if (shotProgress.selected_output_asset_version) {
+			shot.selected_output_asset_version = shotProgress.selected_output_asset_version;
 		}
-		if (job.output_video) {
-			shot.selected_output_file = job.output_video;
-			shot.output_video = job.output_video;
+		if (shotProgress.output_video) {
+			shot.selected_output_file = shotProgress.output_video;
+			shot.output_video = shotProgress.output_video;
 		}
 	}
 }
@@ -1909,8 +1899,8 @@ const productionElapsedSeconds = computed(() => {
 });
 
 const estimatedFinishLabel = computed(() => {
-  const comp = Number(production.value?.completed_jobs || 0);
-  const tot = Number(production.value?.total_jobs || 0);
+  const comp = Number(production.value?.completed_tasks || 0);
+  const tot = Number(production.value?.total_tasks || 0);
   const rem = tot - comp;
   if (!rem) return "hoàn thành";
   if (!comp || !productionElapsedSeconds.value) return "ước tính...";

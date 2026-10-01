@@ -662,6 +662,8 @@ def update_project_shot_timing(project_name, shot_name, duration_seconds):
 def reorder_project_shot(project_name, shot_name, target_shot_number):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
+	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
+	ensure_shot_planning_editable(project.name)
 	try:
 		target_shot_number = int(target_shot_number)
 	except (TypeError, ValueError):

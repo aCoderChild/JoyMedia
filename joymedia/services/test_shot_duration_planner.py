@@ -3,10 +3,19 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from .shot_duration_planner import recalculate_shot_durations
+from .shot_duration_planner import ensure_shot_planning_editable, recalculate_shot_durations
 
 
 class TestShotDurationPlanner(FrappeTestCase):
+	@patch("joymedia.services.shot_duration_planner.frappe.db.exists", return_value="RUN-00001")
+	def test_active_generation_blocks_shot_planning_edits(self, exists):
+		with self.assertRaises(frappe.ValidationError):
+			ensure_shot_planning_editable("PROJ-00001")
+		exists.assert_called_once_with(
+			"Generation Run",
+			{"media_project": "PROJ-00001", "status": ["in", ["Queued", "Running"]]},
+		)
+
 	@patch("joymedia.services.shot_duration_planner.frappe.db.set_value")
 	@patch("joymedia.services.shot_duration_planner.frappe.get_all")
 	@patch("joymedia.services.shot_duration_planner.frappe.get_doc")

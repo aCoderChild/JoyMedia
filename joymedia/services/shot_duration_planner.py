@@ -4,8 +4,17 @@ import frappe
 from frappe import _
 
 
+def ensure_shot_planning_editable(media_project_name: str):
+	if frappe.db.exists(
+		"Generation Run",
+		{"media_project": media_project_name, "status": ["in", ["Queued", "Running"]]},
+	):
+		frappe.throw(_("Shots cannot be edited while generation is active."))
+
+
 def rebalance_shot_duration(media_project_name: str, shot_name: str, target_duration_seconds: float):
 	"""Change one shot while keeping the project's canonical duration fixed."""
+	ensure_shot_planning_editable(media_project_name)
 	project = frappe.get_doc("Media Project", media_project_name)
 	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
 	settings = _project_settings(project)
