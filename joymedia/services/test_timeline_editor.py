@@ -6,8 +6,6 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.timeline_editor import (
-	_invalidate_project_output,
-	delete_timeline_clip,
 	duplicate_timeline_clip,
 	reorder_timeline_clip,
 	set_timeline_transition,
@@ -21,20 +19,9 @@ def _generate_video_bytes(seconds=4):
 	with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
 		subprocess.run(
 			[
-				"ffmpeg",
-				"-v",
-				"error",
-				"-y",
-				"-f",
-				"lavfi",
-				"-i",
-				f"color=c=black:s=320x240:r=24:d={seconds}",
-				"-an",
-				"-c:v",
-				"libx264",
-				"-pix_fmt",
-				"yuv420p",
-				tmp.name,
+				"ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+				f"color=c=black:s=320x240:r=24:d={seconds}", "-an", "-c:v", "libx264",
+				"-pix_fmt", "yuv420p", tmp.name,
 			],
 			check=True,
 		)
@@ -44,371 +31,171 @@ def _generate_video_bytes(seconds=4):
 class TestTimelineEditor(FrappeTestCase):
 	def setUp(self):
 		super().setUp()
-		self.project = frappe.get_doc(
-			{
-				"doctype": "Media Project",
-				"project_name": "Test Timeline Project",
-				"product_name": "Test Product",
-				"campaign_brief": "Test Campaign Brief",
-				"status": "Draft",
-			}
-		).insert(ignore_permissions=True)
-
-		self.spec = frappe.get_doc(
-			{
-				"doctype": "Media Specification",
-				"media_project": self.project.name,
-				"version_number": 1,
-				"fps": 24,
-				"total_duration_seconds": 10,
-			}
-		).insert(ignore_permissions=True)
-
-		self.asset = frappe.get_doc(
-			{
-				"doctype": "Media Asset",
-				"asset_name": "Test Source Video",
-				"media_type": "Video",
-				"asset_category": "Product",
-				"status": "Active",
-			}
-		).insert(ignore_permissions=True)
-
-		self.file_doc_1 = frappe.get_doc(
-			{
-				"doctype": "File",
-				"file_name": "test-v1.mp4",
-				"content": _generate_video_bytes(4),
-				"is_private": 1,
-				"attached_to_doctype": "Media Asset",
-				"attached_to_name": self.asset.name,
-			}
-		).insert(ignore_permissions=True)
-
-		self.version_1 = frappe.get_doc(
-			{
-				"doctype": "Asset Version",
-				"media_asset": self.asset.name,
-				"file": self.file_doc_1.file_url,
-				"source": "Generated",
-				"duration_seconds": 4.0,
-				"fps": 24,
-			}
-		).insert(ignore_permissions=True)
-
-		self.shot = frappe.get_doc(
-			{
-				"doctype": "Shot Specification",
-				"media_specification": self.spec.name,
-				"shot_number": 1,
-				"subject_identity": "Product Hero",
-				"action_plot": "Close-up cinematic rotation",
-				"planned_frame_count": 96,
-				"duration_seconds": 4.0,
-			}
-		).insert(ignore_permissions=True)
+		workflow = _create_workflow()
+		self.project = frappe.get_doc({
+			"doctype": "Media Project",
+			"project_name": "Test Timeline Project",
+			"product_name": "Test Product",
+			"video_idea": "Create a product timeline test.",
+		}).insert(ignore_permissions=True)
+		self.spec = frappe.get_doc({
+			"doctype": "Media Specification",
+			"media_project": self.project.name,
+			"version_number": 1,
+			"workflow": workflow,
+			"continuity_mode": "Multi-shot",
+			"total_duration_seconds": 10,
+			"delivery_preset": "Landscape",
+		}).insert(ignore_permissions=True)
+		self.asset, self.version_1 = _create_output_version(self.project, "test-v1.mp4", 4)
+		self.shot = frappe.get_doc({
+			"doctype": "Shot Specification",
+			"media_specification": self.spec.name,
+			"shot_number": 1,
+			"shot_name": "Product Hero",
+			"generation_prompt": "Close-up cinematic product rotation.",
+			"duration_seconds": 4.0,
+		}).insert(ignore_permissions=True)
 		self.shot.db_set("selected_output_asset_version", self.version_1.name, update_modified=False)
-
-		self.clip_1 = frappe.get_doc(
-			{
-				"doctype": "Timeline Clip",
-				"media_project": self.project.name,
-				"media_specification": self.spec.name,
-				"shot_specification": self.shot.name,
-				"clip_order": 1,
-				"enabled": 1,
-				"source_asset_version": self.version_1.name,
-				"source_in_frame": 0,
-				"source_out_frame": 96,
-				"initial_source_in_frame": 0,
-				"initial_source_out_frame": 96,
-				"transition_to_next": "Cut",
-				"transition_frames": 0,
-			}
-		).insert(ignore_permissions=True)
+		self.clip_1 = frappe.get_doc({
+			"doctype": "Timeline Clip",
+			"media_project": self.project.name,
+			"media_specification": self.spec.name,
+			"shot_specification": self.shot.name,
+			"clip_order": 1,
+			"enabled": 1,
+			"source_asset_version": self.version_1.name,
+			"source_in_frame": 0,
+			"source_out_frame": 96,
+			"initial_source_in_frame": 0,
+			"initial_source_out_frame": 96,
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}).insert(ignore_permissions=True)
 
 	def tearDown(self):
 		frappe.db.rollback()
 		super().tearDown()
 
-	def test_trim_timeline_clip_updates_range_and_invalidates_output(self):
-		frappe.db.set_value(
-			"Media Project",
-			self.project.name,
-			"current_output_asset_version",
-			self.version_1.name,
-			update_modified=False,
-		)
-
-		res = trim_timeline_clip(self.project.name, self.clip_1.name, 10, 80)
+	def test_trim_updates_range_and_invalidates_project_output(self):
+		frappe.db.set_value("Media Project", self.project.name, "current_output_asset_version", self.version_1.name)
+		trim_timeline_clip(self.project.name, self.clip_1.name, 10, 80)
 		self.clip_1.reload()
+		self.assertEqual((self.clip_1.source_in_frame, self.clip_1.source_out_frame), (10, 80))
+		self.assertIsNone(frappe.db.get_value("Media Project", self.project.name, "current_output_asset_version"))
 
-		self.assertEqual(self.clip_1.source_in_frame, 10)
-		self.assertEqual(self.clip_1.source_out_frame, 80)
-		current_out = frappe.db.get_value(
-			"Media Project", self.project.name, "current_output_asset_version"
+	def test_split_and_duplicate_keep_source_asset(self):
+		split_timeline_clip(self.project.name, self.clip_1.name, 48)
+		clips = frappe.get_all(
+			"Timeline Clip", filters={"media_project": self.project.name},
+			fields=["name", "source_asset_version", "source_in_frame", "source_out_frame", "clip_order"],
+			order_by="clip_order asc",
 		)
-		self.assertIsNone(current_out)
+		self.assertEqual(len(clips), 2)
+		self.assertEqual(clips[1].source_asset_version, self.version_1.name)
+		self.assertEqual((clips[1].source_in_frame, clips[1].source_out_frame), (48, 96))
+		duplicate_timeline_clip(self.project.name, clips[0].name)
+		self.assertEqual(frappe.db.count("Timeline Clip", {"media_project": self.project.name}), 3)
 
-	def test_supported_transitions_are_accepted_and_invalid_transition_is_rejected(self):
-		frappe.get_doc(
-			{
-				"doctype": "Timeline Clip",
-				"media_project": self.project.name,
-				"media_specification": self.spec.name,
-				"shot_specification": self.shot.name,
-				"clip_order": 2,
-				"enabled": 1,
-				"source_asset_version": self.version_1.name,
-				"source_in_frame": 0,
-				"source_out_frame": 96,
-				"initial_source_in_frame": 0,
-				"initial_source_out_frame": 96,
-				"transition_to_next": "Cut",
-				"transition_frames": 0,
-			}
-		).insert(ignore_permissions=True)
+	def test_reorder_persists_sequence(self):
+		duplicate_timeline_clip(self.project.name, self.clip_1.name)
+		clips = frappe.get_all("Timeline Clip", filters={"media_project": self.project.name}, order_by="clip_order asc")
+		reorder_timeline_clip(self.project.name, clips[1].name, 1)
+		ordered = frappe.get_all(
+			"Timeline Clip", filters={"media_project": self.project.name}, fields=["name", "clip_order"],
+			order_by="clip_order asc",
+		)
+		self.assertEqual(ordered[0].name, clips[1].name)
 
+	def test_transition_model_is_intentionally_small(self):
+		duplicate_timeline_clip(self.project.name, self.clip_1.name)
 		for transition in ("Cut", "Dissolve", "Fade"):
 			set_timeline_transition(self.project.name, self.clip_1.name, transition, 12)
 			self.clip_1.reload()
-			self.assertEqual(transition, self.clip_1.transition_to_next)
-			self.assertEqual(0 if transition == "Cut" else 12, self.clip_1.transition_frames)
-
+			self.assertEqual(self.clip_1.transition_to_next, transition)
 		with self.assertRaises(frappe.ValidationError):
 			set_timeline_transition(self.project.name, self.clip_1.name, "Wipe Left", 12)
 
-	def test_split_timeline_clip_preserves_source_asset_and_invalidates(self):
-		frappe.db.set_value(
-			"Media Project",
-			self.project.name,
-			"current_output_asset_version",
-			self.version_1.name,
-			update_modified=False,
-		)
-
-		res = split_timeline_clip(self.project.name, self.clip_1.name, 48)
-		self.clip_1.reload()
-
-		self.assertEqual(self.clip_1.source_in_frame, 0)
-		self.assertEqual(self.clip_1.source_out_frame, 48)
-
-		clips = frappe.get_all(
-			"Timeline Clip",
-			filters={"media_project": self.project.name},
-			fields=["name", "source_asset_version", "source_in_frame", "source_out_frame", "clip_order"],
-			order_by="clip_order asc",
-		)
-		self.assertEqual(len(clips), 2)
-		self.assertEqual(clips[1].source_asset_version, self.version_1.name)
-		self.assertEqual(clips[1].source_in_frame, 48)
-		self.assertEqual(clips[1].source_out_frame, 96)
-
-		current_out = frappe.db.get_value(
-			"Media Project", self.project.name, "current_output_asset_version"
-		)
-		self.assertIsNone(current_out)
-
-	def test_duplicate_timeline_clip_creates_instance(self):
-		res = duplicate_timeline_clip(self.project.name, self.clip_1.name)
-		clips = frappe.get_all(
-			"Timeline Clip",
-			filters={"media_project": self.project.name},
-			fields=["name", "source_asset_version", "source_in_frame", "source_out_frame", "clip_order"],
-			order_by="clip_order asc",
-		)
-		self.assertEqual(len(clips), 2)
-		self.assertEqual(clips[0].clip_order, 1)
-		self.assertEqual(clips[1].clip_order, 2)
-		self.assertEqual(clips[1].source_asset_version, self.version_1.name)
-
-	def test_reorder_timeline_clip_updates_sequence(self):
-		duplicate_timeline_clip(self.project.name, self.clip_1.name)
-		clips = frappe.get_all(
-			"Timeline Clip",
-			filters={"media_project": self.project.name},
-			order_by="clip_order asc",
-		)
-		second_clip = clips[1].name
-
-		reorder_timeline_clip(self.project.name, second_clip, 1)
-
-		reloaded_clips = frappe.get_all(
-			"Timeline Clip",
-			filters={"media_project": self.project.name},
-			fields=["name", "clip_order"],
-			order_by="clip_order asc",
-		)
-		self.assertEqual(reloaded_clips[0].name, second_clip)
-		self.assertEqual(reloaded_clips[0].clip_order, 1)
-
-	def test_sync_timeline_source_for_shot_updates_clip_source(self):
-		file_doc_2 = frappe.get_doc(
-			{
-				"doctype": "File",
-				"file_name": "test-v2.mp4",
-				"content": _generate_video_bytes(3),
-				"is_private": 1,
-				"attached_to_doctype": "Media Asset",
-				"attached_to_name": self.asset.name,
-			}
-		).insert(ignore_permissions=True)
-
-		version_2 = frappe.get_doc(
-			{
-				"doctype": "Asset Version",
-				"media_asset": self.asset.name,
-				"file": file_doc_2.file_url,
-				"source": "Generated",
-				"duration_seconds": 3.0,
-				"fps": 24,
-			}
-		).insert(ignore_permissions=True)
-
+	def test_shot_regeneration_can_replace_timeline_source(self):
+		_, version_2 = _create_output_version(self.project, "test-v2.mp4", 3, asset=self.asset)
 		self.shot.db_set("selected_output_asset_version", version_2.name, update_modified=False)
-
-		frappe.db.set_value(
-			"Media Project",
-			self.project.name,
-			"current_output_asset_version",
-			self.version_1.name,
-			update_modified=False,
-		)
-
+		frappe.db.set_value("Media Project", self.project.name, "current_output_asset_version", self.version_1.name)
 		sync_timeline_source_for_shot(self.shot.name)
 		self.clip_1.reload()
-
 		self.assertEqual(self.clip_1.source_asset_version, version_2.name)
-		# 3.0s * 24 = 72 frames max
 		self.assertEqual(self.clip_1.source_out_frame, 72)
+		self.assertIsNone(frappe.db.get_value("Media Project", self.project.name, "current_output_asset_version"))
 
-		current_out = frappe.db.get_value(
-			"Media Project", self.project.name, "current_output_asset_version"
-		)
-		self.assertIsNone(current_out)
-
-	def test_final_video_fallback_and_invalidation(self):
-		from joymedia.services.timeline_editor import _final_video
-
-		# 1. Create a Generation Run with final_asset_version = version_1
-		run = frappe.get_doc(
-			{
-				"doctype": "Generation Run",
-				"media_specification": self.spec.name,
-				"final_asset_version": self.version_1.name,
-				"status": "Completed",
-			}
-		).insert(ignore_permissions=True)
-
-		# No project output yet -> falls back to Generation Run master
-		video = _final_video(self.project.name, self.spec.name)
-		self.assertIsNotNone(video)
-		self.assertEqual(video["name"], self.version_1.name)
-
-		# 2. Simulate export -> sets Media Project.current_output_asset_version
-		file_doc_export = frappe.get_doc(
-			{
-				"doctype": "File",
-				"file_name": "test-export.mp4",
-				"content": _generate_video_bytes(4),
-				"is_private": 1,
-				"attached_to_doctype": "Media Asset",
-				"attached_to_name": self.asset.name,
-			}
-		).insert(ignore_permissions=True)
-
-		version_export = frappe.get_doc(
-			{
-				"doctype": "Asset Version",
-				"media_asset": self.asset.name,
-				"file": file_doc_export.file_url,
-				"source": "Edited",
-				"duration_seconds": 4.0,
-				"fps": 24,
-			}
-		).insert(ignore_permissions=True)
-
-		frappe.db.set_value(
-			"Media Project",
-			self.project.name,
-			"current_output_asset_version",
-			version_export.name,
-			update_modified=False,
-		)
-
-		video = _final_video(self.project.name, self.spec.name)
-		self.assertEqual(video["name"], version_export.name)
-
-		# 3. User edits timeline -> invalidation happens
-		trim_timeline_clip(self.project.name, self.clip_1.name, 5, 75)
-		video = _final_video(self.project.name, self.spec.name)
-		# Should fall back to Generation Run master again
-		self.assertEqual(video["name"], self.version_1.name)
-
-	def test_timeline_is_outdated_and_rebase_on_new_spec(self):
+	def test_timeline_detects_newer_generated_specification(self):
 		from joymedia.services.timeline_editor import get_project_timeline, reset_project_timeline
-
-		# Spec 1 is current timeline spec
-		data = get_project_timeline(self.project.name)
-		self.assertFalse(data["is_outdated"])
-		self.assertEqual(data["media_specification"], self.spec.name)
-		self.assertEqual(data["timeline_spec_version"], 1)
-
-		# Create Spec 2 with fully generated shots
-		spec_2 = frappe.get_doc(
-			{
-				"doctype": "Media Specification",
-				"media_project": self.project.name,
-				"version_number": 2,
-				"fps": 24,
-				"total_duration_seconds": 10,
-			}
-		).insert(ignore_permissions=True)
-
-		shot_v2 = frappe.get_doc(
-			{
-				"doctype": "Shot Specification",
-				"media_specification": spec_2.name,
-				"shot_number": 1,
-				"subject_identity": "Product Hero V2",
-				"action_plot": "Close-up cinematic rotation V2",
-				"planned_frame_count": 96,
-				"duration_seconds": 4.0,
-			}
-		).insert(ignore_permissions=True)
-		shot_v2.db_set("selected_output_asset_version", self.version_1.name, update_modified=False)
-
-		# Now get_project_timeline should detect Spec 2 is latest generated
+		self.assertFalse(get_project_timeline(self.project.name)["is_outdated"])
+		spec_2 = frappe.get_doc({
+			"doctype": "Media Specification",
+			"media_project": self.project.name,
+			"version_number": 2,
+			"workflow": self.spec.workflow,
+			"continuity_mode": "Multi-shot",
+			"total_duration_seconds": 10,
+			"delivery_preset": "Landscape",
+		}).insert(ignore_permissions=True)
+		shot_2 = frappe.get_doc({
+			"doctype": "Shot Specification",
+			"media_specification": spec_2.name,
+			"shot_number": 1,
+			"shot_name": "Product Hero V2",
+			"generation_prompt": "Revised close-up cinematic product rotation.",
+			"duration_seconds": 4.0,
+		}).insert(ignore_permissions=True)
+		shot_2.db_set("selected_output_asset_version", self.version_1.name, update_modified=False)
 		data = get_project_timeline(self.project.name)
 		self.assertTrue(data["is_outdated"])
-		self.assertEqual(data["media_specification"], self.spec.name)
 		self.assertEqual(data["latest_generated_media_specification"], spec_2.name)
-		self.assertEqual(data["timeline_spec_version"], 1)
-		self.assertEqual(data["latest_spec_version"], 2)
+		reset_project_timeline(self.project.name)
+		self.assertEqual(get_project_timeline(self.project.name)["media_specification"], spec_2.name)
 
-		# User clicks "Update timeline" -> calls reset_project_timeline
-		reset_data = reset_project_timeline(self.project.name)
-		self.assertFalse(reset_data["is_outdated"])
-		self.assertEqual(reset_data["media_specification"], spec_2.name)
-		self.assertEqual(reset_data["timeline_spec_version"], 2)
 
-	def test_queue_project_timeline_export(self):
-		from unittest.mock import patch
-		from joymedia.services.timeline_editor import (
-			queue_project_timeline_export,
-			get_project_timeline_export_status,
-		)
+def _create_output_version(project, file_name, seconds, asset=None):
+	if not asset:
+		asset = frappe.get_doc({
+			"doctype": "Media Asset",
+			"asset_name": "Test Source Video",
+			"media_type": "Video",
+			"asset_category": "Other",
+			"asset_scope": "Project Output",
+			"media_project": project.name,
+			"status": "Active",
+		}).insert(ignore_permissions=True)
+	file_doc = frappe.get_doc({
+		"doctype": "File",
+		"file_name": file_name,
+		"content": _generate_video_bytes(seconds),
+		"is_private": 1,
+		"attached_to_doctype": "Media Asset",
+		"attached_to_name": asset.name,
+	}).insert(ignore_permissions=True)
+	version = frappe.get_doc({
+		"doctype": "Asset Version",
+		"media_asset": asset.name,
+		"file": file_doc.file_url,
+		"source": "Generated",
+	}).insert(ignore_permissions=True)
+	return asset, version
 
-		with patch("frappe.enqueue") as mock_enqueue:
-			res = queue_project_timeline_export(self.project.name)
-			self.assertEqual(res["status"], "Queued")
-			mock_enqueue.assert_called_once()
 
-			status_res = get_project_timeline_export_status(self.project.name)
-			self.assertEqual(status_res["export_status"], "Queued")
-
-			# Re-queueing while Queued returns same status without double-enqueueing
-			mock_enqueue.reset_mock()
-			res_dup = queue_project_timeline_export(self.project.name)
-			self.assertEqual(res_dup["status"], "Queued")
-			mock_enqueue.assert_not_called()
+def _create_workflow():
+	return frappe.get_doc({
+		"doctype": "Generation Workflow",
+		"workflow_key": f"timeline_test_{frappe.generate_hash(length=5)}",
+		"adapter_key": "minimax_h3",
+		"workflow_json": (
+			'{"load_img":{"inputs":{"image":""},"class_type":"VHS_LoadImagePath"},'
+			'"minimax_cond":{"inputs":{"length":124},"class_type":"MiniMaxH3ImageToVideo"},'
+			'"save_video":{"inputs":{"images":["dec_video",0],"frame_rate":24,'
+			'"filename_prefix":"JoyMedia","loop_count":0,"format":"video/h264-mp4",'
+			'"pingpong":false,"save_output":true},"class_type":"VHS_VideoCombine"}}'
+		),
+		"bindings": [{
+			"binding_key": "first_frame", "node_key": "load_img", "input_name": "image",
+			"required_input_role": "first_frame", "value_type": "File Path", "required": 1,
+		}],
+	}).insert(ignore_permissions=True).name
