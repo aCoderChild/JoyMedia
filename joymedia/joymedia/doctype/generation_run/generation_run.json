@@ -13,10 +13,10 @@
   "status",
   "requested_by",
   "execution_summary_section",
-  "total_jobs",
-  "completed_jobs",
-  "failed_jobs",
-  "running_jobs",
+  "total_tasks",
+  "completed_tasks",
+  "failed_tasks",
+  "running_tasks",
   "progress",
   "execution_section",
   "started_at",
@@ -96,30 +96,30 @@
   },
   {
    "default": "0",
-   "fieldname": "total_jobs",
+   "fieldname": "total_tasks",
    "fieldtype": "Int",
-   "label": "Total Jobs",
+   "label": "Total Tasks",
    "read_only": 1
   },
   {
    "default": "0",
-   "fieldname": "completed_jobs",
+   "fieldname": "completed_tasks",
    "fieldtype": "Int",
-   "label": "Completed Jobs",
+   "label": "Completed Tasks",
    "read_only": 1
   },
   {
    "default": "0",
-   "fieldname": "failed_jobs",
+   "fieldname": "failed_tasks",
    "fieldtype": "Int",
-   "label": "Failed Jobs",
+   "label": "Failed Tasks",
    "read_only": 1
   },
   {
    "default": "0",
-   "fieldname": "running_jobs",
+   "fieldname": "running_tasks",
    "fieldtype": "Int",
-   "label": "Running Jobs",
+   "label": "Running Tasks",
    "read_only": 1
   },
   {

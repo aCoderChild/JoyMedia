@@ -42,7 +42,7 @@ def _get_latest_project_generation_run(media_project):
 		filters={"media_project": media_project},
 		fields=[
 			"name", "media_project", "status", "started_at", "completed_at",
-			"progress", "completed_jobs", "total_jobs", "failed_jobs", "running_jobs",
+			"progress", "completed_tasks", "total_tasks", "failed_tasks", "running_tasks",
 			"error_summary", "final_asset_version",
 		],
 		order_by="creation desc",
@@ -102,12 +102,41 @@ def build_project_snapshot(project):
 		"generation_mode": settings.generation_mode or "Multi-shot",
 		"global_instructions": settings.global_instructions or "",
 		"workflow": settings.workflow or "",
-		"selected_media": [
-			{"asset_version": row.asset_version}
+		"references": [
+			{
+				"asset_version": row.asset_version,
+				"reference_role": row.reference_role or "General",
+				"label": row.label or "",
+			}
 			for row in project.selected_media or []
 			if row.asset_version
 		],
 	}
+	snapshot["shots"] = []
+	for shot in frappe.get_all(
+		"Shot",
+		filters={"media_project": project.name},
+		fields=["name", "shot_number", "duration_seconds", "planned_frame_count", "generation_prompt"],
+		order_by="shot_number asc, name asc",
+	):
+		shot_doc = frappe.get_doc("Shot", shot.name)
+		snapshot["shots"].append(
+			{
+				"shot": shot.name,
+				"shot_number": shot.shot_number,
+				"duration_seconds": float(shot.duration_seconds or 0),
+				"planned_frame_count": int(shot.planned_frame_count or 0),
+				"generation_prompt": shot.generation_prompt or "",
+				"references": [
+					{
+						"reference_role": row.reference_role or "",
+						"asset_version": row.asset_version,
+					}
+					for row in shot_doc.generation_inputs or []
+					if row.reference_role and row.asset_version
+				],
+			}
+		)
 	serialized = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
 	return serialized, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
@@ -140,6 +169,8 @@ def _get_project_selected_assets(project):
 				name=asset.name,
 				media_asset=asset.name,
 				asset_version=version.name,
+				reference_role=selection.reference_role or "General",
+				label=selection.label or "",
 				asset_name=asset.asset_name,
 				media_type=asset.media_type,
 				asset_category=asset.asset_category,
@@ -163,6 +194,8 @@ def _get_project_reference_contexts(project):
 			"asset_name": asset.asset_name,
 			"media_type": asset.media_type,
 			"asset_category": asset.asset_category,
+			"reference_role": asset.reference_role,
+			"label": asset.label,
 		}
 		if asset.analysis_status == "Ready" and asset.analysis_json:
 			try:
@@ -171,32 +204,6 @@ def _get_project_reference_contexts(project):
 				context["analysis"] = asset.analysis_json
 		contexts.append(context)
 	return contexts
-
-
-def _copy_storyboard_shots(source_specification, target_specification):
-	if frappe.db.exists("Shot", {"media_project": target_specification.name}):
-		return
-	for shot_name in frappe.get_all(
-		"Shot",
-		filters={"media_project": source_specification.name},
-		pluck="name",
-		order_by="shot_number asc, name asc",
-	):
-		source = frappe.get_doc("Shot", shot_name)
-		copy = frappe.get_doc({
-			"doctype": "Shot",
-			"media_project": target_specification.name,
-			"shot_number": source.shot_number,
-			"shot_name": source.shot_name,
-			"duration_seconds": source.duration_seconds,
-			"generation_prompt": source.generation_prompt,
-		})
-		for input_row in source.generation_inputs or []:
-			copy.append("generation_inputs", {
-				"input_role": input_row.input_role,
-				"asset_version": input_row.asset_version,
-			})
-		copy.insert(ignore_permissions=True)
 
 
 @frappe.whitelist()
@@ -398,7 +405,7 @@ def get_project_asset_candidates(media_project, media_type=None):
 
 
 @frappe.whitelist()
-def select_project_asset(media_project, asset_name):
+def select_project_asset(media_project, asset_name, reference_role="Product", label=None):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_write_access()
 	asset = frappe.get_doc("Media Asset", asset_name)
@@ -409,9 +416,21 @@ def select_project_asset(media_project, asset_name):
 	)
 	if not version or not version.file:
 		frappe.throw(_("The selected asset has no usable version."))
-	if any(row.asset_version == version.name for row in project.selected_media or []):
+	selected = next((row for row in project.selected_media or [] if row.asset_version == version.name), None)
+	if selected:
+		selected.reference_role = reference_role or "General"
+		selected.label = label or ""
+		project.save(ignore_permissions=True)
+		frappe.db.commit()
 		return {"asset_version": version.name, "selected": True}
-	project.append("selected_media", {"asset_version": version.name})
+	project.append(
+		"selected_media",
+		{
+			"asset_version": version.name,
+			"reference_role": reference_role or "General",
+			"label": label or "",
+		},
+	)
 	project.save(ignore_permissions=True)
 	frappe.db.commit()
 	return {"asset_version": version.name, "selected": True}
@@ -437,8 +456,8 @@ def get_project_reference_candidates(media_project):
 
 
 @frappe.whitelist()
-def select_project_reference(media_project, asset_name):
-	return select_project_asset(media_project, asset_name)
+def select_project_reference(media_project, asset_name, reference_role="Product", label=None):
+	return select_project_asset(media_project, asset_name, reference_role, label)
 
 
 @frappe.whitelist()
@@ -816,14 +835,17 @@ class MediaProject(Document):
 			frappe.throw(_("The active generation workflow requires at least one image reference."))
 		if not self.workflow:
 			frappe.throw(_("Configure Video Settings before generating a storyboard."))
+		_, current_snapshot_hash = build_project_snapshot(self)
 		latest_run = frappe.db.get_value(
 			"Generation Run", {"media_project": self.name}, ["name", "status"],
 			as_dict=True, order_by="creation desc",
 		)
-		if latest_run and latest_run.status in ("Queued", "Running", "Completed"):
+		if latest_run and latest_run.status in ("Queued", "Running"):
 			return {"run": latest_run.name, "status": latest_run.status}
 		if latest_run and latest_run.status == "Failed":
-			return self.retry_failed_jobs()
+			latest_hash = frappe.db.get_value("Generation Run", latest_run.name, "project_snapshot_hash")
+			if latest_hash == current_snapshot_hash:
+				return self.retry_failed_jobs()
 		if not frappe.db.exists("Shot", {"media_project": self.name}):
 			from joymedia.services.video_plan_service import apply_video_plan
 			apply_video_plan(self.name, self.generate_video_plan())

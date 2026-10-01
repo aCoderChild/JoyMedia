@@ -18,7 +18,7 @@ from .generation_runner import (
 	submit_attempt,
 )
 from .generation_segment_planner import plan_generation_segments
-from .prompt_compiler import compile_segment_prompt
+from .prompt_compiler import compile_segment_prompt_from_snapshot
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_shot_segments
 from .timeline_composer import compose_project_timeline_internal
@@ -79,7 +79,7 @@ def start_run_internal(run_name: str):
 
 
 def prepare_run(run_name: str):
-	"""Create one Job and frozen Generation Input snapshot for each Shot in a run."""
+	"""Create one Generation Task and frozen Generation Input snapshot for each Shot in a run."""
 	run = frappe.get_doc("Generation Run", run_name)
 	if run.status == "Cancelled":
 		return _run_summary(run)
@@ -87,27 +87,32 @@ def prepare_run(run_name: str):
 		frappe.throw(_("Generation Run {0} cannot be prepared from status {1}.").format(run.name, run.status))
 
 	project = frappe.get_doc("Media Project", run.media_project)
+	try:
+		snapshot = frappe.parse_json(run.project_snapshot_json or "{}")
+	except (TypeError, ValueError):
+		_raise_run_error(run, _("Generation Run {0} has invalid project snapshot JSON.").format(run.name))
+		return _run_summary(run)
+	if snapshot.get("media_project") != run.media_project:
+		_raise_run_error(run, _("Generation Run {0} snapshot belongs to another Media Project.").format(run.name))
+		return _run_summary(run)
 	workflow = frappe.get_doc(
 		"Generation Workflow",
 		run.workflow,
 	)
-	shots = frappe.get_all(
-		"Shot",
-		filters={"media_project": project.name},
-		fields=["name", "shot_number", "planned_frame_count"],
-		order_by="shot_number asc, name asc",
-	)
+	shots = snapshot.get("shots") or []
 	if not shots:
 		_raise_run_error(run, _("Media Project {0} has no Shots.").format(project.name))
 		return _run_summary(run)
 
 	try:
-		validate_generation_preflight(project, workflow, shots)
+		validate_workflow_for_execution(workflow)
+		validate_workflow_bindings(workflow)
 		jobs_to_prepare = []
 		previous_shot_tail_job = None
 		for shot in shots:
+			shot_name = shot.get("shot")
 			segments = plan_generation_segments(
-				shot.planned_frame_count,
+				shot.get("planned_frame_count"),
 				max_segment_frames=workflow.frame_count,
 			)
 			previous_segment_job = None
@@ -116,7 +121,7 @@ def prepare_run(run_name: str):
 					"Generation Task",
 					{
 						"generation_run": run.name,
-						"shot": shot.name,
+						"shot": shot_name,
 						"segment_index": segment["segment_index"],
 					},
 					"name",
@@ -126,10 +131,15 @@ def prepare_run(run_name: str):
 					continue
 
 				dependency = previous_segment_job
-				if not dependency and project.generation_mode in ("Continuous", "Consistency"):
+				if not dependency and snapshot.get("generation_mode") in ("Continuous", "Consistency"):
 					dependency = previous_shot_tail_job
-				prompt_text = compile_segment_prompt(
-					shot.name,
+				prompt_text = compile_segment_prompt_from_snapshot(
+					frappe._dict(
+						name=shot_name,
+						shot_number=shot.get("shot_number"),
+						generation_prompt=shot.get("generation_prompt"),
+					),
+					frappe._dict(snapshot),
 					segment["segment_index"],
 					len(segments),
 				)
@@ -137,7 +147,7 @@ def prepare_run(run_name: str):
 					{
 						"doctype": "Generation Task",
 						"generation_run": run.name,
-						"shot": shot.name,
+					"shot": shot_name,
 						"workflow": run.workflow,
 						"prompt_text": prompt_text,
 						"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
@@ -147,12 +157,25 @@ def prepare_run(run_name: str):
 						"depends_on_task": dependency,
 					}
 				).insert(ignore_permissions=True)
+				job.set(
+					"inputs",
+					[
+						{"input_role": reference.get("reference_role"), "asset_version": reference.get("asset_version")}
+						for reference in shot.get("references") or []
+						if reference.get("reference_role") and reference.get("asset_version")
+					],
+				)
+				job.save(ignore_permissions=True)
 				jobs_to_prepare.append(job)
 				previous_segment_job = job.name
 			previous_shot_tail_job = previous_segment_job
 
 		for job in jobs_to_prepare:
-			prepare_generation_task(job.name)
+			shot_snapshot = next(
+				(item for item in shots if item.get("shot") == job.shot),
+				{"references": []},
+			)
+			prepare_generation_task(job.name, shot_snapshot.get("references"))
 	except Exception as exc:
 		_raise_run_error(run, _exception_message(exc))
 		return _run_summary(run)
@@ -190,9 +213,9 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 			)
 
 		mappings = {
-			frappe.scrub(mapping.input_role): mapping.asset_version
+			frappe.scrub(mapping.reference_role): mapping.asset_version
 			for mapping in shot.generation_inputs
-			if mapping.input_role and mapping.asset_version
+			if mapping.reference_role and mapping.asset_version
 		}
 		for role in required_roles:
 			asset_version = mappings.get(role)
@@ -730,20 +753,20 @@ def _refresh_run_counters(run):
 		filters={"generation_run": run.name},
 		fields=["status", "failure_class", "error_summary"],
 	)
-	run.total_jobs = len(jobs)
-	run.completed_jobs = sum(job.status == "Completed" for job in jobs)
-	run.failed_jobs = sum(job.status == "Failed" for job in jobs)
-	run.running_jobs = sum(job.status == "Running" for job in jobs)
-	run.progress = round(run.completed_jobs / run.total_jobs * 100, 2) if run.total_jobs else 0
+	run.total_tasks = len(jobs)
+	run.completed_tasks = sum(job.status == "Completed" for job in jobs)
+	run.failed_tasks = sum(job.status == "Failed" for job in jobs)
+	run.running_tasks = sum(job.status == "Running" for job in jobs)
+	run.progress = round(run.completed_tasks / run.total_tasks * 100, 2) if run.total_tasks else 0
 
-	if run.total_jobs and run.completed_jobs == run.total_jobs:
+	if run.total_tasks and run.completed_tasks == run.total_tasks:
 		if run.final_asset_version:
 			run.status = "Completed"
 			run.completed_at = run.completed_at or now()
 		else:
 			run.status = "Running"
 			run.completed_at = None
-	elif run.total_jobs and run.failed_jobs > 0:
+	elif run.total_tasks and run.failed_tasks > 0:
 		run.status = "Failed"
 		run.completed_at = run.completed_at or now()
 		latest_failed_job = next(
@@ -756,11 +779,11 @@ def _refresh_run_counters(run):
 		)
 		run.failure_class = latest_failed_job.failure_class if latest_failed_job else None
 		run.error_summary = latest_failed_job.error_summary if latest_failed_job else None
-	elif run.total_jobs and any(job.status == "Running" for job in jobs):
+	elif run.total_tasks and any(job.status == "Running" for job in jobs):
 		run.status = "Running"
 		run.failure_class = None
 		run.error_summary = None
-	elif run.total_jobs and any(job.status in ("Ready", "Queued") for job in jobs):
+	elif run.total_tasks and any(job.status in ("Ready", "Queued") for job in jobs):
 		run.status = "Queued"
 		run.failure_class = None
 		run.error_summary = None
@@ -769,10 +792,10 @@ def _refresh_run_counters(run):
 	# would roll back the whole background job after ComfyUI has accepted a prompt.
 	run.db_set(
 		{
-			"total_jobs": run.total_jobs,
-			"completed_jobs": run.completed_jobs,
-			"failed_jobs": run.failed_jobs,
-			"running_jobs": run.running_jobs,
+			"total_tasks": run.total_tasks,
+			"completed_tasks": run.completed_tasks,
+			"failed_tasks": run.failed_tasks,
+			"running_tasks": run.running_tasks,
 			"progress": run.progress,
 			"status": run.status,
 			"completed_at": run.completed_at,
@@ -787,8 +810,8 @@ def _enqueue_finalization_if_ready(run):
 	if (
 		run.status != "Running"
 		or run.final_asset_version
-		or not run.total_jobs
-		or run.completed_jobs != run.total_jobs
+		or not run.total_tasks
+		or run.completed_tasks != run.total_tasks
 		or not _run_outputs_are_selected(run.name)
 	):
 		return
@@ -953,10 +976,10 @@ def _run_summary(run):
 	return {
 		"name": run.name,
 		"status": run.status,
-		"total_jobs": run.total_jobs,
-		"completed_jobs": run.completed_jobs,
-		"failed_jobs": run.failed_jobs,
-		"running_jobs": run.running_jobs,
+		"total_tasks": run.total_tasks,
+		"completed_tasks": run.completed_tasks,
+		"failed_tasks": run.failed_tasks,
+		"running_tasks": run.running_tasks,
 		"progress": run.progress,
 		"final_asset_version": run.final_asset_version,
 	}

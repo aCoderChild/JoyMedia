@@ -149,10 +149,10 @@ class TestGenerationOrchestrator(FrappeTestCase):
 
 		generation_orchestrator._refresh_run_counters(run)
 
-		self.assertEqual(run.total_jobs, 4)
-		self.assertEqual(run.completed_jobs, 2)
-		self.assertEqual(run.failed_jobs, 0)
-		self.assertEqual(run.running_jobs, 1)
+		self.assertEqual(run.total_tasks, 4)
+		self.assertEqual(run.completed_tasks, 2)
+		self.assertEqual(run.failed_tasks, 0)
+		self.assertEqual(run.running_tasks, 1)
 		self.assertEqual(run.progress, 50)
 		self.assertEqual(run.status, "Running")
 		run.db_set.assert_called_once()
@@ -168,7 +168,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		generation_orchestrator._refresh_run_counters(run)
 
 		self.assertEqual(run.status, "Queued")
-		self.assertEqual(run.running_jobs, 0)
+		self.assertEqual(run.running_tasks, 0)
 
 	@patch("joymedia.services.generation_orchestrator.frappe.db.exists", return_value=True)
 	@patch(
@@ -268,7 +268,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=True)
 	def test_completed_running_run_with_selected_outputs_queues_finalization(self, outputs_are_selected, enqueue):
 		run = frappe._dict(
-			name="RUN-00001", status="Running", total_jobs=1, completed_jobs=1, final_asset_version=None
+			name="RUN-00001", status="Running", total_tasks=1, completed_tasks=1, final_asset_version=None
 		)
 
 		generation_orchestrator._enqueue_finalization_if_ready(run)

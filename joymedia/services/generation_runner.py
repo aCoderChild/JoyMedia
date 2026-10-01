@@ -37,8 +37,8 @@ def prepare_attempt(attempt_name: str):
 	return resolve_attempt(attempt_name)
 
 
-def prepare_generation_task(job_name: str):
-	"""Freeze the Shot Reference directly onto its Generation Task."""
+def prepare_generation_task(job_name: str, input_snapshot=None):
+	"""Freeze the supplied snapshot onto its Generation Task."""
 	job = frappe.get_doc("Generation Task", job_name)
 	if job.status != "Draft":
 		frappe.throw(_("Generation Task {0} must be Draft to prepare it.").format(job.name))
@@ -47,7 +47,15 @@ def prepare_generation_task(job_name: str):
 
 	job.validate()
 	job.set("inputs", [])
-	snapshot = job.get_shot_input_snapshot()
+	snapshot = input_snapshot
+	if snapshot is None:
+		snapshot = job.get_shot_input_snapshot()
+	else:
+		snapshot = {
+			frappe.scrub(row.get("reference_role")): row.get("asset_version")
+			for row in snapshot
+			if row.get("reference_role") and row.get("asset_version")
+		}
 	if job.depends_on_task:
 		# Continuation is runtime lineage and is resolved from the upstream Attempt,
 		# rather than persisted as if it were a reusable project asset.

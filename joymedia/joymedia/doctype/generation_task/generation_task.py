@@ -46,8 +46,6 @@ class GenerationTask(Document):
 			frappe.throw(_("Shot requires a Media Project."))
 		project = frappe.get_doc("Media Project", shot.media_project)
 		self._validate_generation_run(project)
-		if self.workflow != project.workflow:
-			frappe.throw(_("Generation Task Workflow must match the Media Project Workflow."))
 		if self.depends_on_task:
 			dependency = frappe.get_doc("Generation Task", self.depends_on_task)
 			if dependency.generation_run != self.generation_run:
@@ -103,14 +101,10 @@ class GenerationTask(Document):
 		return snapshot
 
 	def _validate_generation_input_snapshot(self, workflow):
-		expected_snapshot = self.get_shot_input_snapshot()
 		actual_snapshot = self.get_generation_input_snapshot()
 		# Continuous first_frame is runtime lineage resolved from the dependency per Attempt.
 		if self.depends_on_task:
-			expected_snapshot.pop("first_frame", None)
 			actual_snapshot.pop("first_frame", None)
-		if actual_snapshot != expected_snapshot:
-			frappe.throw(_("Generation Task inputs must exactly match the Shot Reference snapshot."))
 
 		required_roles = {
 			frappe.scrub(binding.required_input_role)

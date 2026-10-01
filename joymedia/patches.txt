@@ -33,3 +33,4 @@ joymedia.patches.rename_generation_domain
 joymedia.patches.repair_generation_input_children
 joymedia.patches.remove_legacy_media_specification
 joymedia.patches.remove_legacy_media_specification_metadata
+joymedia.patches.rename_run_task_counters
