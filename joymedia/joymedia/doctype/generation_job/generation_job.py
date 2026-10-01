@@ -10,6 +10,7 @@ class GenerationJob(Document):
 	def validate(self):
 		workflow_version = self._validate_execution_references()
 		self._validate_segment_frame_count(workflow_version)
+		self._validate_input_immutability()
 		if self.status != "Draft":
 			self._validate_generation_input_snapshot(workflow_version)
 
@@ -17,8 +18,6 @@ class GenerationJob(Document):
 		self.validate()
 		if self.status not in ("Ready", "Queued"):
 			frappe.throw(_("Generation Job {0} must be Ready or Queued for execution.").format(self.name))
-
-		workflow_version = frappe.get_doc("Generation Workflow", self.workflow_version)
 
 	def _validate_segment_frame_count(self, workflow_version):
 		if (
@@ -28,8 +27,7 @@ class GenerationJob(Document):
 		):
 			frappe.throw(
 				_("Segment Frame Count must be between 1 and {0} for Workflow {1}.").format(
-					workflow_version.frame_count,
-					workflow_version.name,
+					workflow_version.frame_count, workflow_version.name
 				)
 			)
 
@@ -65,18 +63,14 @@ class GenerationJob(Document):
 		)
 		if duplicate:
 			frappe.throw(_("Only one Generation Job may exist for each shot segment in a run."))
-
 		return frappe.get_doc("Generation Workflow", self.workflow_version)
 
 	def _validate_generation_run(self, media_specification):
 		if not self.generation_run:
 			frappe.throw(_("Generation Job requires a Generation Run."))
-
 		run = frappe.get_doc("Generation Run", self.generation_run)
 		if run.media_specification != media_specification.name:
-			frappe.throw(
-				_("Generation Run Media Specification must match the Generation Job Shot Specification.")
-			)
+			frappe.throw(_("Generation Run Media Specification must match the Generation Job Shot Specification."))
 		if run.workflow_version != self.workflow_version:
 			frappe.throw(_("Generation Run Workflow must match the Generation Job Workflow."))
 
@@ -86,44 +80,35 @@ class GenerationJob(Document):
 		for mapping in shot.get("generation_inputs") or []:
 			input_role = frappe.scrub(mapping.input_role or "")
 			if not input_role or not mapping.asset_version:
-				frappe.throw(_("Shot Input Mapping requires an Input Role Key and Asset Version."))
+				frappe.throw(_("Shot Input Mapping requires an Input Role and Asset Version."))
 			if input_role in snapshot:
 				frappe.throw(_("Shot Input Mapping has more than one entry for role '{0}'.").format(input_role))
 			snapshot[input_role] = mapping.asset_version
 		return snapshot
 
-	def _get_generation_input_snapshot(self):
+	def get_generation_input_snapshot(self):
+		"""Return the Job-owned frozen input map."""
 		snapshot = {}
-		for row in frappe.get_all(
-			"Generation Input",
-			filters={"generation_job": self.name},
-			fields=["name", "input_role", "asset_version", "generation_artifact"],
-		):
+		for row in self.get("inputs") or []:
 			input_role = frappe.scrub(row.input_role or "")
-			if not input_role or (
-				not row.asset_version
-				and not (input_role == "first_frame" and row.generation_artifact)
-			):
-				frappe.throw(
-					_("Generation Input {0} requires an Input Role Key and an Asset Version or Generation Artifact.").format(
-						row.name
-					)
-				)
+			if not input_role:
+				frappe.throw(_("Generation Input requires an Input Role."))
+			if bool(row.asset_version) == bool(row.generation_artifact):
+				frappe.throw(_("Generation Input must reference exactly one Asset Version or Generation Artifact."))
 			if input_role in snapshot:
-				frappe.throw(_("Generation Job has more than one Generation Input for role '{0}'.").format(input_role))
+				frappe.throw(_("Generation Job has more than one input for role '{0}'.").format(input_role))
 			snapshot[input_role] = row.asset_version or row.generation_artifact
 		return snapshot
 
 	def _validate_generation_input_snapshot(self, workflow_version):
 		expected_snapshot = self.get_shot_input_snapshot()
-		actual_snapshot = self._get_generation_input_snapshot()
-		# In Continuous mode, first_frame is a runtime lineage input produced by the
-		# dependency. The creative Shot Input Mapping remains unchanged for audit.
+		actual_snapshot = self.get_generation_input_snapshot()
+		# Continuous first_frame is runtime lineage resolved from the dependency per Attempt.
 		if self.depends_on_job:
 			expected_snapshot.pop("first_frame", None)
 			actual_snapshot.pop("first_frame", None)
 		if actual_snapshot != expected_snapshot:
-			frappe.throw(_("Generation Inputs must exactly match the Shot Input Mapping snapshot."))
+			frappe.throw(_("Generation Job inputs must exactly match the Shot Input Mapping snapshot."))
 
 		required_roles = {
 			frappe.scrub(binding.required_input_role)
@@ -138,7 +123,25 @@ class GenerationJob(Document):
 			asset_version = actual_snapshot.get(role)
 			if not asset_version or not frappe.db.get_value("Asset Version", asset_version, "file"):
 				frappe.throw(
-					_("Generation Job {0} requires exactly one usable input with role '{1}'.").format(
-						self.name, role
-					)
+					_("Generation Job {0} requires one usable input with role '{1}'.").format(self.name, role)
 				)
+
+	def _validate_input_immutability(self):
+		if self.is_new() or not frappe.db.exists("Generation Attempt", {"generation_job": self.name}):
+			return
+		previous = self.get_doc_before_save()
+		if not previous:
+			return
+		if self._normalized_inputs(self.get("inputs")) != self._normalized_inputs(previous.get("inputs")):
+			frappe.throw(_("Generation Job inputs are immutable after execution begins."))
+
+	@staticmethod
+	def _normalized_inputs(rows):
+		return sorted(
+			(
+				frappe.scrub(row.input_role or ""),
+				row.asset_version or "",
+				row.generation_artifact or "",
+			)
+			for row in (rows or [])
+		)
