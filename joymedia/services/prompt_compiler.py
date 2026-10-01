@@ -42,7 +42,7 @@ def compile_prompt_for_documents(shot, media_spec):
 			_("Shot Specification {0} has no Qwen-generated generation_prompt.").format(shot.name)
 		)
 
-	global_instructions = str(media_spec.get("global_consistency_instructions") or "").strip()
+	global_instructions = str(media_spec.get("global_instructions") or "").strip()
 	if global_instructions:
 		prompt = (
 			f"{prompt}\n\n"
@@ -66,4 +66,5 @@ def _build_source_snapshot(shot, media_spec):
 		"media_specification": media_spec.name,
 		"shot_specification": shot.name,
 		"generation_prompt": shot.generation_prompt or "",
+		"global_instructions": media_spec.get("global_instructions") or "",
 	}
