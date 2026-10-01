@@ -5,7 +5,8 @@
  "field_order": [
   "input_role",
   "asset_version",
-  "generation_artifact"
+  "generation_artifact",
+  "generation_job"
  ],
  "fields": [
   {
@@ -30,11 +31,20 @@
    "fieldtype": "Link",
    "label": "Generation Artifact",
    "options": "Generation Artifact"
+  },
+  {
+   "description": "Compatibility mirror of the child-table parent. Not part of the domain model.",
+   "fieldname": "generation_job",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Generation Job",
+   "options": "Generation Job",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "istable": 1,
- "modified": "2026-10-01 07:30:00.000000",
+ "modified": "2026-10-01 07:35:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Input",
