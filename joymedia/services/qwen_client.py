@@ -9,42 +9,42 @@ from frappe import _
 DEFAULT_TIMEOUT = 600
 
 
-def generate_shot_revision(*, instruction, shot, product_name="", campaign_brief=""):
-	"""Ask the configured text model for structured changes to one shot."""
+def _qwen_config():
 	base_url = frappe.conf.get("qwen_base_url")
 	model = frappe.conf.get("qwen_model")
 	if not base_url:
 		frappe.throw(_("qwen_base_url is not configured."))
 	if not model:
 		frappe.throw(_("qwen_model is not configured."))
-
 	try:
 		timeout = float(frappe.conf.get("qwen_timeout", DEFAULT_TIMEOUT))
 	except (TypeError, ValueError):
 		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
 	if timeout <= 0:
 		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
+	return base_url.rstrip("/"), model, timeout
 
+
+def generate_shot_revision(*, instruction, shot, product_name=""):
+	"""Ask Qwen to replace one canonical shot prompt."""
+	base_url, model, timeout = _qwen_config()
 	current_prompt = str(shot.get("generation_prompt") or "").strip()
 	user_prompt = (
 		"Revise exactly one cinematic commercial shot. Return only valid JSON.\n\n"
 		f"PRODUCT: {product_name}\n"
 		f"USER INSTRUCTION: {instruction}\n\n"
-		"CURRENT GENERATION PROMPT:\n"
+		"CURRENT SHOT PROMPT:\n"
 		f"{current_prompt}\n\n"
 		"Return this shape:\n"
 		'{"summary":"short explanation",'
-		'"changes":[{"field":"Generation Prompt","detail":"..."}],'
+		'"changes":[{"field":"Shot Prompt","detail":"..."}],'
 		'"generation_prompt":"..."}\n'
 		"Return one complete replacement generation_prompt, preserving details not changed by the instruction."
 	)
 	payload = {
 		"model": model,
 		"messages": [
-			{
-				"role": "system",
-				"content": "You revise structured shot specifications. Do not include markdown fences or commentary.",
-			},
+			{"role": "system", "content": "You revise one video-generation shot prompt. Return JSON only."},
 			{"role": "user", "content": user_prompt},
 		],
 		"response_format": {"type": "json_object"},
@@ -52,11 +52,7 @@ def generate_shot_revision(*, instruction, shot, product_name="", campaign_brief
 		"max_tokens": 1200,
 	}
 	try:
-		response = requests.post(
-			f"{base_url.rstrip('/')}/chat/completions",
-			json=payload,
-			timeout=(10, timeout),
-		)
+		response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
 	except requests.Timeout:
 		frappe.throw(_("Qwen did not return a shot revision within {0} seconds.").format(int(timeout)))
 	except requests.RequestException as exc:
@@ -64,11 +60,9 @@ def generate_shot_revision(*, instruction, shot, product_name="", campaign_brief
 	if not response.ok:
 		frappe.throw(_("Qwen request failed ({0}): {1}").format(response.status_code, response.text))
 	try:
-		content = response.json()["choices"][0]["message"]["content"]
-		result = json.loads(content)
+		result = json.loads(response.json()["choices"][0]["message"]["content"])
 	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
 		frappe.throw(_("Qwen returned invalid shot revision JSON: {0}").format(str(exc)))
-
 	if not isinstance(result, dict):
 		frappe.throw(_("Qwen returned an invalid shot revision."))
 	generation_prompt = str(result.get("generation_prompt") or "").strip()
@@ -87,86 +81,58 @@ def generate_video_plan(
 	total_video_duration: float,
 	target_fps: float,
 	shot_count: int | None = None,
-	reference_template: dict | None = None,
 	reference_images: list[dict] | None = None,
+	reference_media: list[dict] | None = None,
 	video_style: str | None = None,
 	generation_mode: str = "Multi-shot",
+	global_instructions: str | None = None,
+	format_preset: str | None = None,
 ) -> dict:
+	"""Create one structured storyboard from the project prompt and selected references.
+
+	Reference media is planning context only. Actual workflow inputs are resolved by
+	JoyMedia after planning so Asset/Asset Version stays separate from Generation Input.
+	"""
 	generation_mode = {"Independent": "Multi-shot", "Chained": "Continuous", "Consistency": "Continuous"}.get(
 		generation_mode, generation_mode
 	)
 	if generation_mode not in ("Multi-shot", "Continuous"):
 		frappe.throw(_("Select Continuous or Multi-shot generation mode."))
+	base_url, model, timeout = _qwen_config()
 
-	base_url = frappe.conf.get("qwen_base_url")
-	model = frappe.conf.get("qwen_model")
-	if not base_url:
-		frappe.throw(_("qwen_base_url is not configured."))
-	if not model:
-		frappe.throw(_("qwen_model is not configured."))
-
-	timeout = frappe.conf.get("qwen_timeout", DEFAULT_TIMEOUT)
-	try:
-		timeout = float(timeout)
-	except (TypeError, ValueError):
-		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
-	if timeout <= 0:
-		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
-
-	base_instruction = """
+	instruction = """
 You are the creative planner for JoyMedia product videos.
+Understand the complete video idea first, then divide it into a coherent sequence
+of creative shots. For every shot, return exactly one detailed generation_prompt.
+Put subject, action, camera, environment, lighting, continuity and relevant sound
+intent inside that one prompt rather than separate creative fields.
 
-Understand the complete video idea first, then divide it into a coherent
-sequence of creative shots. For every shot, produce exactly one detailed
-generation_prompt suitable for the configured video model. The prompt should
-contain the visual action, subject, camera, environment, lighting, continuity,
-and audio intent when relevant. JoyMedia assigns reference assets separately;
-do not claim to inspect their contents or emit reference image indexes.
+Project reference media are ingredients/context. Do not emit asset IDs or reference
+indexes. JoyMedia resolves the actual generation inputs after planning.
 """.strip()
 
-	if reference_template:
-		instruction = (
-			base_instruction
-			+ """
-
-REFERENCE TEMPLATE:
-Preserve the reference template's cinematography,
-pacing, composition, scene progression, motion style
-and lighting language.
-
-Adapt the content to the supplied product and campaign brief,
-video idea and project reference images.
-"""
-		).strip()
-	else:
-		instruction = base_instruction
 	if video_style:
+		instruction += f"\n\nVIDEO STYLE / WORKFLOW KEY:\n{video_style}"
+	if format_preset:
+		instruction += f"\n\nOUTPUT FORMAT:\n{format_preset}. Frame each shot appropriately for this format."
+	if global_instructions:
+		instruction += f"\n\nGLOBAL INSTRUCTIONS FOR EVERY SHOT:\n{global_instructions}"
+	if generation_mode == "Continuous":
 		instruction += (
-			"\n\nVIDEO STYLE:\n"
-			f"{video_style}\n"
-			"Use this style to guide the shot pacing, framing, movement, lighting, "
-			"environment, and sound while keeping the product and story consistent."
-		)
-	if generation_mode in ("Continuous", "Consistency"):
-		instruction += (
-			"\n\nGENERATION MODE: CONSISTENCY\n"
-			"JoyMedia will attach the first shot to the supplied reference image. Each later shot "
-			"must continue from the previous shot's generated last frame. Describe the next "
-			"movement from the existing pose and preserve product geometry, color, orientation, "
-			"and scene state."
+			"\n\nGENERATION MODE: CONTINUOUS\n"
+			"The first shot starts from a selected image. Later shots continue from the previous generated last frame. "
+			"Plan motion that can continue naturally while preserving product identity and scene state."
 		)
 	else:
 		instruction += (
 			"\n\nGENERATION MODE: MULTI-SHOT\n"
-			"JoyMedia will attach first-frame and last-frame references after planning. "
-			"Keep the shots coherent as a connected keyframe sequence."
+			"Shots are generated from explicitly resolved keyframes/references. Keep boundaries coherent."
 		)
 
 	response_shape = (
 		'{"shots":[{"shot_number":1,"shot_name":"...",'
 		'"duration_seconds":5,"generation_prompt":"..."}]}'
 	)
-
 	user_prompt = (
 		f"{instruction}\n\n"
 		f"PRODUCT NAME\n{product_name}\n\n"
@@ -174,12 +140,7 @@ video idea and project reference images.
 		f"TOTAL VIDEO DURATION: {total_video_duration} seconds\n"
 		f"TARGET FPS: {target_fps}\n"
 		f"SHOT COUNT GUIDANCE: {shot_count if shot_count is not None else 'Choose the appropriate number of creative shots; do not use model frame capacity to choose it.'}\n\n"
-		+
-		(
-			f"Return exactly {shot_count} shots. "
-			if shot_count is not None
-			else "Choose a coherent storyboard structure, normally between 1 and 8 shots. "
-		)
+		+ (f"Return exactly {shot_count} shots. " if shot_count is not None else "Choose a coherent storyboard structure, normally between 1 and 8 shots. ")
 		+ "Organize the shots into a coherent narrative progression.\n\n"
 		"IMPORTANT OUTPUT RULES:\n"
 		"- Every shot MUST contain a positive integer shot_number.\n"
@@ -189,72 +150,64 @@ video idea and project reference images.
 		"Return only valid JSON with this shape:\n"
 		f"{response_shape}"
 	)
-	if reference_template:
-		user_prompt += "\n\nREFERENCE TEMPLATE\n" + json.dumps(reference_template, ensure_ascii=False)
+
+	if reference_media:
+		user_prompt += "\n\nSELECTED PROJECT REFERENCES / INGREDIENTS\n"
+		for index, item in enumerate(reference_media, start=1):
+			line = (
+				f"\nREFERENCE {index}: name={item.get('asset_name') or 'Untitled'}, "
+				f"type={item.get('media_type') or 'Unknown'}, category={item.get('asset_category') or 'Other'}"
+			)
+			analysis = item.get("analysis")
+			if analysis:
+				line += "\nANALYSIS: " + json.dumps(analysis, ensure_ascii=False)
+			user_prompt += line
+		user_prompt += (
+			"\nUse reference analysis when provided. For media without analysis, use only the supplied name/type/category; "
+			"do not claim to have inspected its pixels, audio or frames."
+		)
+
 	if reference_images:
 		user_prompt += (
-			"\n\nAVAILABLE REFERENCE ASSETS\n"
-			+ f"JoyMedia will assign from these {len(reference_images)} assets after planning.\n"
-			"Do not output reference image indexes or claim to see the asset contents."
+			"\n\nGENERATION IMAGE REFERENCES\n"
+			+ f"JoyMedia will resolve {len(reference_images)} selected image references after planning. "
+			"Do not output image indexes."
 		)
 		for image in reference_images:
-			user_prompt += (
-				f"\nREFERENCE IMAGE {image['index']}: "
-				f"{image['asset_name']}"
-			)
-	user_content = user_prompt
+			user_prompt += f"\nIMAGE {image['index']}: {image['asset_name']}"
 
 	request_payload = {
 		"model": model,
 		"messages": [
-			{
-				"role": "system",
-				"content": "You produce structured JSON video plans. Do not include markdown fences or commentary.",
-			},
-			{"role": "user", "content": user_content},
+			{"role": "system", "content": "You produce structured JSON video plans. Do not include markdown fences or commentary."},
+			{"role": "user", "content": user_prompt},
 		],
 		"response_format": {"type": "json_object"},
 		"temperature": 0.2,
 		"max_tokens": 3000,
 	}
+
 	response = None
 	for attempt in range(3):
 		try:
-			response = requests.post(
-				f"{base_url.rstrip('/')}/chat/completions",
-				json=request_payload,
-				timeout=(10, timeout),
-			)
+			response = requests.post(f"{base_url}/chat/completions", json=request_payload, timeout=(10, timeout))
 			break
-		except requests.ConnectionError as exc:
+		except requests.ConnectionError:
 			if attempt < 2:
 				time.sleep(1)
 		except requests.Timeout:
-			frappe.throw(
-				_("Qwen did not return a video plan within {0} seconds.").format(int(timeout))
-			)
-
+			frappe.throw(_("Qwen did not return a video plan within {0} seconds.").format(int(timeout)))
 	if response is None:
-		frappe.throw(
-			_("Qwen is unavailable at {0}. Check the Qwen service or SSH tunnel, then try again.").format(
-				base_url
-			)
-		)
+		frappe.throw(_("Qwen is unavailable at {0}. Check the Qwen service or SSH tunnel, then try again.").format(base_url))
 	if not response.ok:
-		frappe.throw(
-			_("Qwen request failed ({0}): {1}").format(response.status_code, response.text)
-		)
-
+		frappe.throw(_("Qwen request failed ({0}): {1}").format(response.status_code, response.text))
 	try:
-		content = response.json()["choices"][0]["message"]["content"]
-		result = json.loads(content)
+		result = json.loads(response.json()["choices"][0]["message"]["content"])
 	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
 		frappe.throw(_("Qwen returned invalid video plan JSON: {0}").format(str(exc)))
 
 	result = _normalize_qwen_plan(
 		result,
-		product_name=product_name,
-		video_idea=video_idea,
 		reference_image_count=len(reference_images or []),
 		generation_mode=generation_mode,
 	)
@@ -267,14 +220,8 @@ video idea and project reference images.
 	return result
 
 
-def _normalize_qwen_plan(
-	result,
-	product_name="",
-	video_idea="",
-	reference_image_count=0,
-	generation_mode="Multi-shot",
-):
-	"""Adapt the fine-tuned text model output to JoyMedia's canonical plan."""
+def _normalize_qwen_plan(result, reference_image_count=0, generation_mode="Multi-shot"):
+	"""Normalize model output and keep reference assignment deterministic in the backend."""
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		return result
 
@@ -283,7 +230,6 @@ def _normalize_qwen_plan(
 		if not isinstance(shot, dict):
 			normalized_shots.append(shot)
 			continue
-
 		generation_prompt = _first_non_empty(
 			shot.get("generation_prompt"),
 			shot.get("prompt"),
@@ -294,20 +240,15 @@ def _normalize_qwen_plan(
 			"shot_number": shot.get("shot_number") or index,
 			"shot_name": _first_non_empty(shot.get("shot_name"), f"Shot {index}"),
 			"generation_prompt": generation_prompt,
+			"duration_seconds": shot.get("duration_seconds"),
 		}
-		normalized["duration_seconds"] = shot.get("duration_seconds")
-
-		# The text model cannot inspect the uploaded images. Reference selection
-		# is therefore deterministic backend state, not model output.
 		if reference_image_count:
 			if generation_mode == "Multi-shot":
 				normalized["first_frame_reference_image_index"] = ((index - 1) % reference_image_count) + 1
 				normalized["last_frame_reference_image_index"] = (index % reference_image_count) + 1
 			elif index == 1:
 				normalized["reference_image_index"] = 1
-
 		normalized_shots.append(normalized)
-
 	return {"shots": normalized_shots}
 
 
@@ -319,91 +260,62 @@ def _first_non_empty(*values):
 	return ""
 
 
-def _validate_video_plan(
-	result, reference_image_count=0, shot_count=None, generation_mode="Multi-shot"
-):
+def _validate_video_plan(result, reference_image_count=0, shot_count=None, generation_mode="Multi-shot"):
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		frappe.throw(_("Qwen video plan must contain a shots list."))
-
 	if not result["shots"]:
 		frappe.throw(_("Qwen video plan must contain at least one shot."))
 	if len(result["shots"]) > 8:
 		frappe.throw(_("Qwen video plan must not contain more than 8 creative shots."))
-
 	if shot_count is not None and len(result["shots"]) != shot_count:
 		frappe.throw(_("Qwen returned {0} shots; expected {1}.").format(len(result["shots"]), shot_count))
 
 	required_fields = {"shot_number", "generation_prompt"}
 	if reference_image_count and generation_mode == "Multi-shot":
-		required_fields.update(
-			{"first_frame_reference_image_index", "last_frame_reference_image_index"}
-		)
+		required_fields.update({"first_frame_reference_image_index", "last_frame_reference_image_index"})
 
 	normalized_shots = []
-
 	for shot in result["shots"]:
 		if not isinstance(shot, dict) or not required_fields.issubset(shot):
 			frappe.throw(_("Each Qwen shot must contain the required video plan fields."))
-		if not str(shot.get("generation_prompt") or "").strip():
-			frappe.throw(
-				_("Qwen returned an empty generation_prompt for shot {0}.").format(
-					shot.get("shot_number", "?")
-				)
-			)
-		try:
-			if float(shot.get("duration_seconds")) <= 0:
-				raise ValueError
-		except (TypeError, ValueError):
-			frappe.throw(
-				_("Qwen returned an invalid duration_seconds for shot {0}.").format(
-					shot.get("shot_number", "?")
-				)
-			)
-
 		if type(shot["shot_number"]) is not int or shot["shot_number"] < 1:
 			frappe.throw(_("Shot number must be a positive integer."))
-
-		normalized = {
-			"shot_number": shot["shot_number"],
-			"shot_name": str(shot.get("shot_name") or f"Shot {shot['shot_number']}").strip(),
-			"generation_prompt": str(shot["generation_prompt"]).strip(),
-		}
+		prompt = str(shot.get("generation_prompt") or "").strip()
+		if not prompt:
+			frappe.throw(_("Qwen returned an empty generation_prompt for shot {0}.").format(shot.get("shot_number", "?")))
 		try:
 			duration_seconds = float(shot["duration_seconds"])
 		except (KeyError, TypeError, ValueError):
 			frappe.throw(_("Every Qwen shot must contain a numeric duration_seconds."))
 		if duration_seconds <= 0:
 			frappe.throw(_("Shot duration must be greater than zero."))
-		normalized["duration_seconds"] = duration_seconds
-
+		normalized = {
+			"shot_number": shot["shot_number"],
+			"shot_name": str(shot.get("shot_name") or f"Shot {shot['shot_number']}").strip(),
+			"generation_prompt": prompt,
+			"duration_seconds": duration_seconds,
+		}
 		if reference_image_count:
 			if generation_mode == "Multi-shot":
 				first_index = shot["first_frame_reference_image_index"]
 				last_index = shot["last_frame_reference_image_index"]
-				if any(
-					type(index) is not int or index < 1 or index > reference_image_count
-					for index in (first_index, last_index)
-				):
+				if any(type(i) is not int or i < 1 or i > reference_image_count for i in (first_index, last_index)):
 					frappe.throw(_("Invalid first or last frame reference image index."))
 				normalized["first_frame_reference_image_index"] = first_index
 				normalized["last_frame_reference_image_index"] = last_index
 			elif "reference_image_index" in shot:
-				index = shot["reference_image_index"]
-				if type(index) is not int or index < 1 or index > reference_image_count:
+				image_index = shot["reference_image_index"]
+				if type(image_index) is not int or image_index < 1 or image_index > reference_image_count:
 					frappe.throw(_("Invalid reference image index."))
-				normalized["reference_image_index"] = index
-
+				normalized["reference_image_index"] = image_index
 		normalized_shots.append(normalized)
 
 	if generation_mode == "Multi-shot" and reference_image_count:
 		for current, following in zip(normalized_shots, normalized_shots[1:]):
-			if current["last_frame_reference_image_index"] != following[
-				"first_frame_reference_image_index"
-			]:
+			if current["last_frame_reference_image_index"] != following["first_frame_reference_image_index"]:
 				frappe.throw(
 					_("Multi-shot boundary is invalid between shots {0} and {1}.").format(
 						current["shot_number"], following["shot_number"]
 					)
 				)
-
 	result["shots"] = normalized_shots
