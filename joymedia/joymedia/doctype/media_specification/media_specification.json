@@ -15,7 +15,7 @@
   "total_duration_seconds",
   "delivery_preset",
   "continuity_mode",
-  "global_consistency_instructions",
+  "global_instructions",
   "audio_mix_section",
   "audio_cues",
   "technical_snapshot_section",
@@ -27,180 +27,37 @@
   "planning_context_hash"
  ],
  "fields": [
-  {
-   "fieldname": "specification_overview_section",
-   "fieldtype": "Section Break",
-   "label": "Specification"
-  },
-  {
-   "fieldname": "media_project",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Media Project",
-   "options": "Media Project",
-   "read_only_depends_on": "eval:!doc.__islocal;",
-   "reqd": 1
-  },
-  {
-   "fieldname": "version_number",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Version",
-   "read_only_depends_on": "eval:!doc.__islocal;",
-   "reqd": 1
-  },
-  {
-   "default": "Draft",
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Status",
-   "options": "Draft\nReady\nSuperseded\nArchived",
-   "reqd": 1
-  },
-  {
-   "fieldname": "video_settings_section",
-   "fieldtype": "Section Break",
-   "label": "Video Settings"
-  },
-  {
-   "description": "Target duration for the final video. Individual shots may be split into technical generation segments automatically.",
-   "fieldname": "total_duration_seconds",
-   "fieldtype": "Float",
-   "label": "Duration (Seconds)",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
-   "reqd": 1
-  },
-  {
-   "fieldname": "delivery_preset",
-   "fieldtype": "Select",
-   "in_standard_filter": 1,
-   "label": "Format",
-   "options": "Landscape\nPortrait\nSquare\nCustom",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
-   "reqd": 1
-  },
-  {
-   "default": "Multi-shot",
-   "description": "Continuous chains each shot from the previous generated last frame. Multi-shot uses independently planned keyframes.",
-   "fieldname": "continuity_mode",
-   "fieldtype": "Select",
-   "label": "Generation Mode",
-   "options": "Continuous\nMulti-shot",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
-   "reqd": 1
-  },
-  {
-   "description": "Optional video-wide constraints that must apply to every shot. The main creative request belongs in Media Project.video_idea.",
-   "fieldname": "global_consistency_instructions",
-   "fieldtype": "Long Text",
-   "label": "Global Instructions",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
-  },
-  {
-   "fieldname": "audio_mix_section",
-   "fieldtype": "Section Break",
-   "label": "Audio"
-  },
-  {
-   "description": "Optional BGM, voiceover and sound-effect cues used by final timeline composition.",
-   "fieldname": "audio_cues",
-   "fieldtype": "Table",
-   "label": "Audio Cues",
-   "options": "Audio Cue"
-  },
-  {
-   "fieldname": "technical_snapshot_section",
-   "fieldtype": "Section Break",
-   "hidden": 1,
-   "label": "Technical Snapshot"
-  },
-  {
-   "description": "Customer-facing style key captured for this revision.",
-   "fieldname": "video_style",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Video Style",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
-  },
-  {
-   "description": "Exact immutable ComfyUI workflow used by this revision.",
-   "fieldname": "workflow",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Generation Workflow",
-   "options": "Generation Workflow",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
-   "reqd": 1
-  },
-  {
-   "description": "Resolved output width. Derived from Format for standard presets.",
-   "fieldname": "delivery_width",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Delivery Width",
-   "read_only": 1
-  },
-  {
-   "description": "Resolved output height. Derived from Format for standard presets.",
-   "fieldname": "delivery_height",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Delivery Height",
-   "read_only": 1
-  },
-  {
-   "description": "Immutable inputs used for the Qwen planning snapshot.",
-   "fieldname": "planning_context_json",
-   "fieldtype": "Code",
-   "hidden": 1,
-   "label": "Planning Context JSON",
-   "read_only": 1
-  },
-  {
-   "description": "SHA-256 hash of the Qwen planning context.",
-   "fieldname": "planning_context_hash",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Planning Context Hash",
-   "read_only": 1
-  }
+  {"fieldname":"specification_overview_section","fieldtype":"Section Break","label":"Specification"},
+  {"fieldname":"media_project","fieldtype":"Link","in_list_view":1,"in_standard_filter":1,"label":"Media Project","options":"Media Project","read_only_depends_on":"eval:!doc.__islocal;","reqd":1},
+  {"fieldname":"version_number","fieldtype":"Int","in_list_view":1,"label":"Version","read_only_depends_on":"eval:!doc.__islocal;","reqd":1},
+  {"default":"Draft","fieldname":"status","fieldtype":"Select","in_list_view":1,"in_standard_filter":1,"label":"Status","options":"Draft\nReady\nSuperseded\nArchived","reqd":1},
+  {"fieldname":"video_settings_section","fieldtype":"Section Break","label":"Video Settings"},
+  {"description":"Target duration for the final video. Long creative shots are split into technical generation segments automatically.","fieldname":"total_duration_seconds","fieldtype":"Float","label":"Duration (Seconds)","read_only_depends_on":"eval:doc.status!=\"Draft\";","reqd":1},
+  {"fieldname":"delivery_preset","fieldtype":"Select","in_standard_filter":1,"label":"Format","options":"Landscape\nPortrait\nSquare\nCustom","read_only_depends_on":"eval:doc.status!=\"Draft\";","reqd":1},
+  {"default":"Multi-shot","description":"Continuous chains later shots from generated last frames. Multi-shot uses independently assigned keyframes.","fieldname":"continuity_mode","fieldtype":"Select","label":"Generation Mode","options":"Continuous\nMulti-shot","read_only_depends_on":"eval:doc.status!=\"Draft\";","reqd":1},
+  {"description":"Optional video-wide constraints that apply to every shot. The main creative request belongs in Media Project.video_idea.","fieldname":"global_instructions","fieldtype":"Long Text","label":"Global Instructions","read_only_depends_on":"eval:doc.status!=\"Draft\";"},
+  {"fieldname":"audio_mix_section","fieldtype":"Section Break","label":"Audio"},
+  {"description":"Optional BGM, voiceover and sound-effect cues used by final timeline composition.","fieldname":"audio_cues","fieldtype":"Table","label":"Audio Cues","options":"Audio Cue"},
+  {"fieldname":"technical_snapshot_section","fieldtype":"Section Break","hidden":1,"label":"Technical Snapshot"},
+  {"description":"Customer-facing style/workflow key captured for this revision.","fieldname":"video_style","fieldtype":"Data","hidden":1,"label":"Video Style","read_only_depends_on":"eval:doc.status!=\"Draft\";"},
+  {"description":"Exact immutable ComfyUI workflow used by this revision.","fieldname":"workflow","fieldtype":"Link","hidden":1,"label":"Generation Workflow","options":"Generation Workflow","read_only_depends_on":"eval:doc.status!=\"Draft\";","reqd":1},
+  {"description":"Resolved output width. Derived from Format for standard presets.","fieldname":"delivery_width","fieldtype":"Int","hidden":1,"label":"Delivery Width","read_only":1},
+  {"description":"Resolved output height. Derived from Format for standard presets.","fieldname":"delivery_height","fieldtype":"Int","hidden":1,"label":"Delivery Height","read_only":1},
+  {"description":"Immutable inputs used for the Qwen planning snapshot.","fieldname":"planning_context_json","fieldtype":"Code","hidden":1,"label":"Planning Context JSON","read_only":1},
+  {"description":"SHA-256 hash of the Qwen planning context.","fieldname":"planning_context_hash","fieldtype":"Data","hidden":1,"label":"Planning Context Hash","read_only":1}
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-01 00:00:00.000000",
+ "modified": "2026-10-01 07:15:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Media Specification",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "System Manager",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "JoyMedia Specialist",
-   "share": 1,
-   "write": 1
-  }
+  {"create":1,"delete":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"System Manager","share":1,"write":1},
+  {"create":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"JoyMedia Specialist","share":1,"write":1}
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
