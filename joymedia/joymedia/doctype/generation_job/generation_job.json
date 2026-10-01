@@ -12,13 +12,13 @@
   "workflow_version",
   "prompt_text",
   "prompt_hash",
+  "inputs",
   "status",
   "queue_and_execution_section",
   "queued_at",
   "started_at",
   "completed_at",
   "progress",
-  "segment_execution_section",
   "segment_index",
   "segment_frame_count",
   "result_summary_section",
@@ -26,168 +26,37 @@
   "error_summary"
  ],
  "fields": [
-  {
-   "fieldname": "job_overview_section",
-   "fieldtype": "Section Break",
-   "label": "Job Overview"
-  },
-  {
-   "description": "Parent run used to orchestrate related shots with the same workflow/model.",
-   "fieldname": "generation_run",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Generation Run",
-   "options": "Generation Run",
-   "read_only_depends_on": "eval:!doc.__islocal;",
-   "reqd": 1
-  },
-  {
-   "description": "Shot being executed by this generation job.",
-   "fieldname": "shot_specification",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Shot Specification",
-   "options": "Shot Specification",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
-   "reqd": 1
-  },
-  {
-   "default": "Draft",
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "label": "Status",
-   "options": "Draft\nReady\nQueued\nRunning\nCompleted\nFailed\nCancelled",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "queue_and_execution_section",
-   "fieldtype": "Section Break",
-   "label": "Queue And Execution"
-  },
-  {
-   "fieldname": "queued_at",
-   "fieldtype": "Datetime",
-   "label": "Queued At",
-   "read_only": 1
-  },
-  {
-   "fieldname": "started_at",
-   "fieldtype": "Datetime",
-   "label": "Started At",
-   "read_only": 1
-  },
-  {
-   "fieldname": "completed_at",
-   "fieldtype": "Datetime",
-   "label": "Completed At",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "progress",
-   "fieldtype": "Percent",
-   "label": "Progress",
-   "read_only": 1
-  },
-  {
-   "fieldname": "result_summary_section",
-   "fieldtype": "Section Break",
-   "label": "Result Summary"
-  },
-  {
-   "fieldname": "failure_class",
-   "fieldtype": "Select",
-   "label": "Failure Class",
-   "options": "Infrastructure\nWorkflow\nInput\nGeneration\nCancelled\nUnknown",
-   "read_only": 1
-  },
-  {
-   "description": "High-level job failure summary aggregated from execution attempts.",
-   "fieldname": "error_summary",
-   "fieldtype": "Long Text",
-   "label": "Error Summary",
-   "read_only": 1
-  },
-  {
-   "description": "Previous job required by a Continuous Media Specification.",
-   "fieldname": "depends_on_job",
-   "fieldtype": "Link",
-   "label": "Depends On Job",
-   "options": "Generation Job",
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";"
-  },
-  {
-   "description": "Exact Workflow used for execution. Inherited from the Media Specification.",
-   "fieldname": "workflow_version",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Workflow",
-   "options": "Generation Workflow",
-   "read_only": 1,
-   "read_only_depends_on": "eval:doc.status!=\"Draft\";",
-   "reqd": 1
-  },
-  {
-   "description": "Exact prompt snapshot sent to the generation workflow.",
-   "fieldname": "prompt_text",
-   "fieldtype": "Long Text",
-   "label": "Prompt Text",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "prompt_hash",
-   "fieldtype": "Data",
-   "label": "Prompt Hash",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "segment_execution_section",
-   "fieldtype": "Section Break",
-   "label": "Segment Execution"
-  },
-  {
-   "default": "1",
-   "fieldname": "segment_index",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Segment Index",
-   "read_only": 1
-  },
-  {
-   "fieldname": "segment_frame_count",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Segment Frame Count",
-   "read_only": 1
-  }
+  {"fieldname":"job_overview_section","fieldtype":"Section Break","label":"Generation Task"},
+  {"description":"Parent execution for the complete video revision.","fieldname":"generation_run","fieldtype":"Link","in_list_view":1,"label":"Generation Run","options":"Generation Run","read_only_depends_on":"eval:!doc.__islocal;","reqd":1},
+  {"description":"Creative shot executed by this task.","fieldname":"shot_specification","fieldtype":"Link","in_list_view":1,"in_standard_filter":1,"label":"Shot","options":"Shot Specification","read_only_depends_on":"eval:doc.status!=\"Draft\";","reqd":1},
+  {"description":"Previous technical task that must complete before this task can run.","fieldname":"depends_on_job","fieldtype":"Link","hidden":1,"label":"Depends On","options":"Generation Job","read_only_depends_on":"eval:doc.status!=\"Draft\";"},
+  {"description":"Exact immutable ComfyUI workflow used by this task.","fieldname":"workflow_version","fieldtype":"Link","hidden":1,"label":"Workflow","options":"Generation Workflow","read_only":1,"reqd":1},
+  {"description":"Immutable execution prompt snapshot.","fieldname":"prompt_text","fieldtype":"Long Text","hidden":1,"label":"Prompt Snapshot","read_only":1,"reqd":1},
+  {"fieldname":"prompt_hash","fieldtype":"Data","hidden":1,"label":"Prompt Hash","read_only":1,"reqd":1},
+  {"description":"Frozen static input references owned by this task. Runtime continuation inputs are resolved per Attempt.","fieldname":"inputs","fieldtype":"Table","hidden":1,"label":"Inputs","options":"Generation Input"},
+  {"default":"Draft","fieldname":"status","fieldtype":"Select","in_list_view":1,"label":"Status","options":"Draft\nReady\nQueued\nRunning\nCompleted\nFailed\nCancelled","read_only":1,"reqd":1},
+  {"fieldname":"queue_and_execution_section","fieldtype":"Section Break","label":"Execution"},
+  {"fieldname":"queued_at","fieldtype":"Datetime","label":"Queued At","read_only":1},
+  {"fieldname":"started_at","fieldtype":"Datetime","label":"Started At","read_only":1},
+  {"fieldname":"completed_at","fieldtype":"Datetime","label":"Completed At","read_only":1},
+  {"default":"0","fieldname":"progress","fieldtype":"Percent","in_list_view":1,"label":"Progress","read_only":1},
+  {"default":"1","description":"Technical segment index when a creative shot exceeds the workflow frame limit.","fieldname":"segment_index","fieldtype":"Int","hidden":1,"label":"Segment Index","read_only":1},
+  {"description":"Technical frame count for this execution segment.","fieldname":"segment_frame_count","fieldtype":"Int","hidden":1,"label":"Segment Frame Count","read_only":1},
+  {"fieldname":"result_summary_section","fieldtype":"Section Break","label":"Result"},
+  {"fieldname":"failure_class","fieldtype":"Select","hidden":1,"label":"Failure Class","options":"Infrastructure\nWorkflow\nInput\nGeneration\nCancelled\nUnknown","read_only":1},
+  {"description":"High-level task failure summary aggregated from execution attempts.","fieldname":"error_summary","fieldtype":"Long Text","label":"Error Summary","read_only":1}
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-29 20:24:14.205588",
+ "modified": "2026-10-01 07:32:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Generation Job",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "System Manager",
-   "share": 1,
-   "write": 1
-  }
+  {"create":1,"delete":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"System Manager","share":1,"write":1}
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
