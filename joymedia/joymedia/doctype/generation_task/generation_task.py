@@ -81,13 +81,11 @@ class GenerationTask(Document):
 			input_role = frappe.scrub(mapping.reference_role or "")
 			if not input_role or not mapping.asset_version:
 				frappe.throw(_("Shot Reference requires an Input Role and Asset Version."))
-			if input_role in snapshot:
-				frappe.throw(_("Shot Reference has more than one entry for role '{0}'.").format(input_role))
-			snapshot[input_role] = mapping.asset_version
+			snapshot.setdefault(input_role, []).append(mapping.asset_version)
 		return snapshot
 
 	def get_generation_input_snapshot(self):
-		"""Return the Job-owned frozen input map."""
+		"""Return the Job-owned frozen input map, preserving repeated role order."""
 		snapshot = {}
 		for row in self.get("inputs") or []:
 			input_role = frappe.scrub(row.input_role or "")
@@ -95,9 +93,7 @@ class GenerationTask(Document):
 				frappe.throw(_("Generation Input requires an Input Role."))
 			if bool(row.asset_version) == bool(row.generation_artifact):
 				frappe.throw(_("Generation Input must reference exactly one Asset Version or Generation Artifact."))
-			if input_role in snapshot:
-				frappe.throw(_("Generation Task has more than one input for role '{0}'.").format(input_role))
-			snapshot[input_role] = row.asset_version or row.generation_artifact
+			snapshot.setdefault(input_role, []).append(row.asset_version or row.generation_artifact)
 		return snapshot
 
 	def _validate_generation_input_snapshot(self, workflow):
@@ -115,10 +111,24 @@ class GenerationTask(Document):
 		for role in required_roles:
 			if self.depends_on_task and role == "first_frame":
 				continue
-			asset_version = actual_snapshot.get(role)
-			if not asset_version or not frappe.db.get_value("Asset Version", asset_version, "file"):
+			asset_versions = actual_snapshot.get(role, [])
+			if not asset_versions or any(
+				not frappe.db.get_value("Asset Version", asset_version, "file")
+				for asset_version in asset_versions
+			):
 				frappe.throw(
-					_("Generation Task {0} requires one usable input with role '{1}'.").format(self.name, role)
+					_("Generation Task {0} requires usable input(s) with role '{1}'.").format(self.name, role)
+				)
+			binding = next(
+				(binding for binding in workflow.bindings
+				 if binding.required and frappe.scrub(binding.required_input_role or "") == role),
+				None,
+			)
+			if binding and binding.value_type != "File Paths" and len(asset_versions) != 1:
+				frappe.throw(
+					_("Workflow binding for role '{0}' accepts exactly one input; found {1}.").format(
+						role, len(asset_versions)
+					)
 				)
 
 	def _validate_input_immutability(self):

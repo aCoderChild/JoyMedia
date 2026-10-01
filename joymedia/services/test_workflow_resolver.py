@@ -36,6 +36,29 @@ class TestWorkflowResolver(FrappeTestCase):
 
 		self.assertIs(value, _SKIP_BINDING)
 
+	def test_file_paths_binding_preserves_repeated_role_inputs(self):
+		job = frappe._dict(name="JOB-00001")
+
+		value = _resolve_generation_input(
+			job,
+			"PRODUCT REFERENCE",
+			{"product_reference": ["one.png", "two.png"]},
+			value_type="File Paths",
+		)
+
+		self.assertEqual(["one.png", "two.png"], value)
+
+	def test_file_path_binding_rejects_repeated_role_inputs(self):
+		job = frappe._dict(name="JOB-00001")
+
+		with self.assertRaises(frappe.ValidationError):
+			_resolve_generation_input(
+				job,
+				"PRODUCT REFERENCE",
+				{"product_reference": ["one.png", "two.png"]},
+				value_type="File Path",
+			)
+
 	def test_h3_optional_last_frame_removes_stale_conditioning_branch(self):
 		workflow = {
 			"1": {"inputs": {"image": "ComfyUI/input/2.png"}},

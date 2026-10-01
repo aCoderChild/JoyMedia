@@ -84,7 +84,7 @@ class Shot(Document):
 				"required": 1,
 				"binding_key": ["in", ["first_frame", "last_frame"]],
 			},
-			fields=["parent", "required_input_role"],
+			fields=["parent", "required_input_role", "value_type"],
 		)
 
 		mapping_counts = {}
@@ -93,14 +93,18 @@ class Shot(Document):
 				input_role = frappe.scrub(mapping.reference_role)
 				mapping_counts[input_role] = mapping_counts.get(input_role, 0) + 1
 
-		for workflow, input_role in {
-			(binding.parent, binding.required_input_role)
+		for workflow, input_role, value_type in {
+			(binding.parent, binding.required_input_role, binding.value_type)
 			for binding in required_bindings
 			if binding.required_input_role
 		}:
 			input_role = frappe.scrub(input_role)
 			mapping_count = mapping_counts.get(input_role, 0)
-			if mapping_count != 1:
+			if (value_type == "File Paths" and mapping_count < 1) or (
+				value_type != "File Paths" and mapping_count != 1
+			):
 				frappe.throw(
-					f"Workflow {workflow} requires exactly one {input_role} mapping; found {mapping_count}."
+					f"Workflow {workflow} requires "
+					f"{'at least one' if value_type == 'File Paths' else 'exactly one'} "
+					f"{input_role} mapping; found {mapping_count}."
 				)

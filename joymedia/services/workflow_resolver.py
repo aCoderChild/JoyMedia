@@ -58,7 +58,11 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		binding.binding_key == "last_frame" and not staged_inputs.get("last_frame")
 		for binding in workflow.bindings
 	):
-		adapter.finalize_workflow(workflow, workflow_version, staged_inputs)
+		adapter_inputs = {
+			role: values[0] if isinstance(values, list) and len(values) == 1 else values
+			for role, values in staged_inputs.items()
+		}
+		adapter.finalize_workflow(workflow, workflow_version, adapter_inputs)
 
 	canonical = canonical_workflow_json(workflow)
 	attempt.resolved_workflow_json = json.dumps(workflow, indent=2, ensure_ascii=False)
@@ -208,17 +212,27 @@ def _resolve_semantic_binding(binding, job, staged_inputs):
 		job,
 		binding.required_input_role,
 		staged_inputs,
+		value_type=binding.value_type,
 		required=bool(binding.required),
 	)
 
 
-def _resolve_generation_input(job, required_role, staged_inputs, required=True):
+def _resolve_generation_input(job, required_role, staged_inputs, value_type="File Path", required=True):
 	if not required_role:
 		frappe.throw(_("Generation Input binding requires Required Input Role."))
 	normalized_role = frappe.scrub(required_role)
 	staged_value = staged_inputs.get(normalized_role)
-	if staged_value:
-		return staged_value
+	values = staged_value if isinstance(staged_value, list) else ([staged_value] if staged_value else [])
+	if values:
+		if value_type == "File Paths":
+			return values
+		if len(values) != 1:
+			frappe.throw(
+				_("Workflow binding for role '{0}' accepts exactly one input; found {1}.").format(
+					normalized_role, len(values)
+				)
+			)
+		return values[0]
 	if not required:
 		return _SKIP_BINDING
 	frappe.throw(

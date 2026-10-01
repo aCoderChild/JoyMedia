@@ -72,6 +72,37 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertNotIn("outputs", workspace)
 		self.assertEqual(workspace["assets"][0]["asset_version"], version.name)
 
+	def test_shot_can_preserve_multiple_references_with_one_role(self):
+		from joymedia.services.video_plan_service import apply_video_plan
+
+		project, _ = _create_project("Multiple References", self.workflow)
+		first_asset, first_version = _create_asset_version(project, "Image", "png")
+		first_asset.asset_name = "Shoe Front"
+		first_asset.save(ignore_permissions=True)
+		second_asset, second_version = _create_asset_version(project, "Image", "png")
+		second_asset.asset_name = "Shoe Side"
+		second_asset.save(ignore_permissions=True)
+		project.append("selected_media", {"asset_version": first_version.name})
+		project.append("selected_media", {"asset_version": second_version.name})
+		project.save(ignore_permissions=True)
+		keys = [row.reference_key for row in project.selected_media]
+		apply_video_plan(project.name, {
+			"shots": [{
+				"shot_number": 1,
+				"duration_seconds": 5,
+				"generation_prompt": "Show the shoe from multiple angles.",
+				"references": [
+					{"reference_key": keys[0], "usage_role": "product_reference"},
+					{"reference_key": keys[1], "usage_role": "product_reference"},
+				],
+			}],
+		})
+		shot = frappe.get_doc("Shot", frappe.db.get_value("Shot", {"media_project": project.name}))
+		self.assertEqual(
+			[(row.reference_role, row.asset_version) for row in shot.generation_inputs],
+			[("product_reference", first_version.name), ("product_reference", second_version.name)],
+		)
+
 	def test_planning_context_tracks_prompt_assets_settings_and_global_instructions(self):
 		from joymedia.joymedia.doctype.media_project.media_project import _build_planning_context
 

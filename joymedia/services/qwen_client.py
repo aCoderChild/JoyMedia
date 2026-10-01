@@ -300,16 +300,12 @@ def _validate_video_plan(result, reference_image_count=0, shot_count=None, gener
 			"duration_seconds": duration_seconds,
 			"references": shot.get("references") if isinstance(shot.get("references"), list) else [],
 		}
-		_seen_roles = set()
 		for reference in normalized["references"]:
 			if not isinstance(reference, dict) or not str(reference.get("reference_key") or "").strip():
 				frappe.throw(_("Each Qwen shot reference must contain a reference_key."))
 			usage_role = frappe.scrub(reference.get("usage_role") or "")
 			if not usage_role:
 				frappe.throw(_("Each Qwen shot reference must contain a usage_role."))
-			if usage_role in _seen_roles:
-				frappe.throw(_("A Qwen shot cannot use one reference role more than once."))
-			_seen_roles.add(usage_role)
 			reference["reference_key"] = str(reference["reference_key"]).strip()
 			reference["usage_role"] = usage_role
 		if reference_image_count:

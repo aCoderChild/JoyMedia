@@ -23,9 +23,9 @@ class TestGenerationRunner(FrappeTestCase):
 		attempt = frappe._dict(name="ATT-00001", save=MagicMock())
 		staged = _stage_generation_inputs(job, attempt)
 
-		self.assertEqual({"first_frame": "first.png"}, staged)
+		self.assertEqual({"first_frame": ["first.png"]}, staged)
 		self.assertEqual(
-			'{"first_frame": {"asset_version": "ASTV-00001", "source": "Asset Version"}}',
+			'{"first_frame": [{"asset_version": "ASTV-00001", "source": "Asset Version"}]}',
 			attempt.resolved_inputs_json,
 		)
 		upload_frappe_file.assert_called_once_with(

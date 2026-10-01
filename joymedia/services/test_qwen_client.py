@@ -55,11 +55,11 @@ class TestQwenClient(FrappeTestCase):
 					"duration_seconds": 5,
 					"references": [
 						{"reference_key": "hero_product", "usage_role": "product_reference"},
-						{"reference_key": "camera_motion_01", "usage_role": "motion_reference"},
+						{"reference_key": "hero_product_side", "usage_role": "product_reference"},
 					],
 				}],
 			}
 		)
 		_validate_video_plan(plan)
 		self.assertEqual(plan["shots"][0]["references"][0]["reference_key"], "hero_product")
-		self.assertEqual(plan["shots"][0]["references"][1]["usage_role"], "motion_reference")
+		self.assertEqual(plan["shots"][0]["references"][1]["usage_role"], "product_reference")

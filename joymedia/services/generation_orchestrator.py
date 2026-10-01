@@ -211,23 +211,36 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 				)
 			)
 
-		mappings = {
-			frappe.scrub(mapping.reference_role): mapping.asset_version
-			for mapping in shot.generation_inputs
-			if mapping.reference_role and mapping.asset_version
-		}
+		mappings = {}
+		for mapping in shot.generation_inputs:
+			if mapping.reference_role and mapping.asset_version:
+				mappings.setdefault(frappe.scrub(mapping.reference_role), []).append(mapping.asset_version)
 		for role in required_roles:
-			asset_version = mappings.get(role)
 			if (
 				project.generation_mode in ("Continuous", "Consistency")
 				and shot_row.shot_number > 1
 				and role == "first_frame"
 			):
 				continue
-			if not asset_version or not frappe.db.get_value("Asset Version", asset_version, "file"):
+			asset_versions = mappings.get(role, [])
+			if not asset_versions or any(
+				not frappe.db.get_value("Asset Version", asset_version, "file")
+				for asset_version in asset_versions
+			):
 				frappe.throw(
-					_("Shot {0} requires a usable input with role '{1}'.").format(
+					_("Shot {0} requires usable input(s) with role '{1}'.").format(
 						shot.name, role
+					)
+				)
+			binding = next(
+				(binding for binding in workflow.bindings
+				 if binding.required and frappe.scrub(binding.required_input_role or "") == role),
+				None,
+			)
+			if binding and binding.value_type != "File Paths" and len(asset_versions) != 1:
+				frappe.throw(
+					_("Workflow binding for role '{0}' accepts exactly one input; found {1}.").format(
+						role, len(asset_versions)
 					)
 				)
 

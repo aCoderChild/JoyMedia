@@ -51,17 +51,18 @@ def prepare_generation_task(job_name: str, input_snapshot=None):
 	if snapshot is None:
 		snapshot = job.get_shot_input_snapshot()
 	else:
-		snapshot = {
-			frappe.scrub(row.get("reference_role")): row.get("asset_version")
-			for row in snapshot
-			if row.get("reference_role") and row.get("asset_version")
-		}
+		grouped = {}
+		for row in snapshot:
+			if row.get("reference_role") and row.get("asset_version"):
+				grouped.setdefault(frappe.scrub(row["reference_role"]), []).append(row["asset_version"])
+		snapshot = grouped
 	if job.depends_on_task:
 		# Continuation is runtime lineage and is resolved from the upstream Attempt,
 		# rather than persisted as if it were a reusable project asset.
 		snapshot.pop("first_frame", None)
-	for input_role, asset_version in snapshot.items():
-		job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
+	for input_role, asset_versions in snapshot.items():
+		for asset_version in asset_versions if isinstance(asset_versions, list) else [asset_versions]:
+			job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
 	job.status = "Ready"
 	job.save(ignore_permissions=True)
 	return {
@@ -98,8 +99,9 @@ def ensure_generation_inputs(job):
 	snapshot = job.get_shot_input_snapshot()
 	if job.depends_on_task:
 		snapshot.pop("first_frame", None)
-	for input_role, asset_version in snapshot.items():
-		job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
+	for input_role, asset_versions in snapshot.items():
+		for asset_version in asset_versions if isinstance(asset_versions, list) else [asset_versions]:
+			job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
 	job.save(ignore_permissions=True)
 	return True
 
@@ -158,14 +160,14 @@ def _stage_generation_inputs(job, attempt):
 			file_url = frappe.db.get_value("Generation Artifact", row.generation_artifact, "frappe_file")
 			if not file_url:
 				frappe.throw(_("Generation Artifact {0} has no file.").format(row.generation_artifact))
-			resolved_inputs[role] = {"source": "Generation Artifact", "artifact": row.generation_artifact}
+			resolved_inputs.setdefault(role, []).append({"source": "Generation Artifact", "artifact": row.generation_artifact})
 		else:
 			asset_version = frappe.get_doc("Asset Version", row.asset_version)
 			file_url = asset_version.file
-			resolved_inputs[role] = {"source": "Asset Version", "asset_version": row.asset_version}
+			resolved_inputs.setdefault(role, []).append({"source": "Asset Version", "asset_version": row.asset_version})
 		if not file_url:
 			frappe.throw(_("Generation input role {0} has no file.").format(role))
-		staged[role] = upload_frappe_file(file_url)["server_path"]
+		staged.setdefault(role, []).append(upload_frappe_file(file_url)["server_path"])
 
 	if job.depends_on_task:
 		previous_attempt = get_effective_attempt(job.depends_on_task)
@@ -174,11 +176,11 @@ def _stage_generation_inputs(job, attempt):
 		last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
 		if not last_frame_artifact or not last_frame_artifact.frappe_file:
 			frappe.throw(_("The upstream Attempt has no usable Last Frame Artifact."))
-		staged["first_frame"] = upload_frappe_file(last_frame_artifact.frappe_file)["server_path"]
-		resolved_inputs["first_frame"] = {
+		staged["first_frame"] = [upload_frappe_file(last_frame_artifact.frappe_file)["server_path"]]
+		resolved_inputs["first_frame"] = [{
 			"source": "Generation Artifact",
 			"artifact": last_frame_artifact.name,
-		}
+		}]
 
 	if not staged:
 		frappe.throw(_("Generation Task {0} has no resolved inputs.").format(job.name))

@@ -48,7 +48,7 @@
    "fieldname": "value_type",
    "fieldtype": "Select",
    "label": "Value Type",
-   "options": "Text\nInteger\nFloat\nBoolean\nFile Path\nJSON",
+   "options": "Text\nInteger\nFloat\nBoolean\nFile Path\nFile Paths\nJSON",
    "reqd": 1
   },
   {
