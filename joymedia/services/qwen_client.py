@@ -74,6 +74,87 @@ def generate_shot_revision(*, instruction, shot, product_name=""):
 	return result
 
 
+def improve_video_idea(
+	*,
+	current_idea: str,
+	product_name: str = "",
+	references: list[dict] | None = None,
+	duration: float | None = None,
+	delivery_preset: str | None = None,
+) -> dict:
+	"""Call Qwen to elevate a raw commercial video idea into a cinematic, structured concept."""
+	try:
+		base_url, model, timeout = _qwen_config()
+	except Exception:
+		# Fallback if Qwen is not configured
+		fallback = _build_fallback_improved_idea(current_idea, product_name, references)
+		return {"improved_idea": fallback}
+
+	ref_lines = []
+	for ref in (references or []):
+		key = ref.get("reference_key") or ref.get("asset_name") or ""
+		role = ref.get("reference_role") or ref.get("asset_category") or "Reference"
+		analysis = ref.get("analysis_summary") or ref.get("analysis") or ""
+		if key:
+			desc = f"- @{key} ({role})"
+			if analysis:
+				desc += f": {analysis[:120]}"
+			ref_lines.append(desc)
+	ref_text = "\n".join(ref_lines) if ref_lines else "None provided."
+
+	user_prompt = (
+		"You are an elite creative director for commercial AI video advertising (like Google Flow and Runway Gen-3).\n"
+		"Enhance the creator's video idea into a vivid, cinematic, and compelling commercial video concept.\n\n"
+		f"PRODUCT: {product_name or 'Commercial Showcase'}\n"
+		f"CURRENT IDEA: {current_idea or 'Showcase the product in a stylish setting.'}\n"
+		f"PLANNED DURATION: {duration or 15}s\n"
+		f"ASPECT RATIO / FORMAT: {delivery_preset or 'Landscape 16:9'}\n"
+		f"PROJECT INGREDIENTS / REFERENCES:\n{ref_text}\n\n"
+		"RULES:\n"
+		"1. Elevate narrative hook, lighting mood, camera motion, tactile material textures, and commercial elegance.\n"
+		"2. Where appropriate, refer to ingredients using their exact @reference_key tag (e.g., @hero_shoe).\n"
+		"3. Keep the prompt concise (2-4 sentences max), punchy, and production-ready for video synthesis.\n"
+		"4. Return ONLY valid JSON with shape:\n"
+		'{"improved_idea": "The enhanced creative video concept..."}'
+	)
+
+	payload = {
+		"model": model,
+		"messages": [
+			{"role": "system", "content": "You are a professional AI commercial video director. Return JSON only with key 'improved_idea'."},
+			{"role": "user", "content": user_prompt},
+		],
+		"response_format": {"type": "json_object"},
+		"temperature": 0.7,
+		"max_tokens": 600,
+	}
+
+	try:
+		response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(5, timeout))
+		if response.ok:
+			parsed = json.loads(response.json()["choices"][0]["message"]["content"])
+			improved = str(parsed.get("improved_idea") or "").strip()
+			if improved:
+				return {"improved_idea": improved}
+	except Exception as exc:
+		frappe.logger().warning(f"Qwen idea improvement failed, falling back: {exc}")
+
+	return {"improved_idea": _build_fallback_improved_idea(current_idea, product_name, references)}
+
+
+def _build_fallback_improved_idea(current_idea, product_name, references):
+	base = (current_idea or "").strip()
+	prod = product_name or "the product"
+	ref_tags = [f"@{r.get('reference_key')}" for r in (references or []) if r.get("reference_key")]
+	ref_str = f" highlighting {', '.join(ref_tags)}" if ref_tags else ""
+
+	if not base:
+		return f"A high-end cinematic commercial showcasing {prod}{ref_str} with dramatic studio lighting, macro texture passes, dynamic camera orbits, and an aspirational final brand resolve."
+	if len(base) < 60:
+		return f"{base.rstrip('.')}. Shot in crisp 4K with dramatic rim lighting, macro textural detail{ref_str}, seamless cinematic camera tracking, and a sleek modern aesthetic."
+	return f"{base.rstrip('.')}. Enhanced with dynamic atmospheric depth, photorealistic textures{ref_str}, and fluid camera choreography."
+
+
 def generate_video_plan(
 	*,
 	product_name: str,

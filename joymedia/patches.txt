@@ -40,3 +40,4 @@ joymedia.patches.migrate_timeline_clip_tracks
 joymedia.patches.migrate_audio_cues_to_timeline
 joymedia.patches.repair_media_library_file_attachments
 joymedia.patches.repair_media_library_file_permissions
+joymedia.patches.repair_legacy_generated_assets

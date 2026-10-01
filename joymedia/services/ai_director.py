@@ -52,3 +52,29 @@ def apply_project_shot_ai_revision(project_name, shot_name, values, regenerate=F
 	if frappe.parse_json(regenerate) if isinstance(regenerate, str) else regenerate:
 		result["regeneration"] = regenerate_project_shot(project_name, shot_name)
 	return result
+
+
+@frappe.whitelist()
+def improve_project_video_idea(project_name, current_idea=""):
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	from joymedia.joymedia.doctype.media_project.media_project import _get_project_selected_assets
+	from joymedia.services.qwen_client import improve_video_idea
+
+	references = _get_project_selected_assets(project)
+	idea_text = (current_idea or "").strip() or project.video_idea or ""
+
+	result = improve_video_idea(
+		current_idea=idea_text,
+		product_name=project.product_name or "",
+		references=references,
+		duration=float(project.total_duration_seconds or 15),
+		delivery_preset=project.delivery_preset or "Landscape",
+	)
+
+	improved_idea = result.get("improved_idea") or idea_text
+	return {
+		"project_name": project.name,
+		"original_idea": idea_text,
+		"improved_idea": improved_idea,
+	}

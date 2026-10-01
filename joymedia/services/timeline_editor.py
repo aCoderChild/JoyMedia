@@ -689,6 +689,85 @@ def move_timeline_clip(project_name: str, clip_name: str, timeline_start_frame, 
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
 
 
+@frappe.whitelist()
+def update_timeline_clip_audio(
+	project_name: str,
+	clip_name: str,
+	gain_db=None,
+	fade_in_frames=None,
+	fade_out_frames=None,
+	duck_others=None,
+	audio_role=None,
+):
+	project, clip = _project_clip(project_name, clip_name)
+	if gain_db is not None:
+		try:
+			clip.gain_db = float(gain_db)
+		except (TypeError, ValueError):
+			frappe.throw(_("Gain must be a valid number."))
+	if fade_in_frames is not None:
+		clip.fade_in_frames = max(0, _int_value(fade_in_frames, _("Fade in frames must be an integer.")))
+	if fade_out_frames is not None:
+		clip.fade_out_frames = max(0, _int_value(fade_out_frames, _("Fade out frames must be an integer.")))
+	if duck_others is not None:
+		clip.duck_others = 1 if _as_bool(duck_others) else 0
+	if audio_role is not None:
+		role = str(audio_role).strip()
+		if role in ("BGM", "Voiceover", "SFX"):
+			clip.audio_role = role
+	clip.save(ignore_permissions=True)
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
+@frappe.whitelist()
+def add_timeline_audio_clip(
+	project_name: str,
+	asset_version_name: str,
+	timeline_start_frame=0,
+	audio_role="BGM",
+):
+	project = frappe.get_doc("Media Project", project_name)
+	_require_project_write(project)
+	asset_version = frappe.get_doc("Asset Version", asset_version_name)
+	fps = _project_fps(project.name)
+	duration = float(asset_version.duration_seconds or 0)
+	source_out = max(1, round(duration * fps)) if duration > 0 else max(1, round(10.0 * fps))
+	start_frame = max(0, _int_value(timeline_start_frame, _("Start frame must be an integer.")))
+
+	order = (frappe.db.count("Timeline Clip", {"media_project": project.name}) or 0) + 1
+	new_clip = frappe.get_doc(
+		{
+			"doctype": "Timeline Clip",
+			"media_project": project.name,
+			"clip_order": order,
+			"track_type": "Audio",
+			"track_index": 0,
+			"timeline_start_frame": start_frame,
+			"enabled": 1,
+			"source_asset_version": asset_version.name,
+			"source_in_frame": 0,
+			"source_out_frame": source_out,
+			"initial_source_in_frame": 0,
+			"initial_source_out_frame": source_out,
+			"audio_role": audio_role or "BGM",
+			"gain_db": 0.0,
+			"fade_in_frames": 0,
+			"fade_out_frames": 0,
+			"duck_others": 0,
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}
+	).insert(ignore_permissions=True)
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	result = _serialize_timeline(project, _timeline_clip_rows(project.name))
+	result["selected_clip"] = new_clip.name
+	return result
+
+
+
 def _project_clip(project_name, clip_name):
 	project = frappe.get_doc("Media Project", project_name)
 	_require_project_write(project)

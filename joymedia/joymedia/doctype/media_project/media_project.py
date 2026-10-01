@@ -144,6 +144,8 @@ def build_project_snapshot(project):
 
 def _get_project_selected_assets(project):
 	"""Return project ingredients as immutable Asset Versions, regardless of media type."""
+	if isinstance(project, str):
+		project = frappe.get_doc("Media Project", project)
 	assets = []
 	for selection in project.selected_media or []:
 		version = frappe.db.get_value(
@@ -378,11 +380,35 @@ def refresh_project_production(name):
 	return get_project_production(project.name)
 
 
+def _get_asset_file_url(media_asset, file_url):
+	"""Return a private file URL tied to the exact Media Asset attachment."""
+	if not file_url:
+		return None
+
+	file_name = frappe.db.get_value(
+		"File",
+		{
+			"file_url": file_url,
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": media_asset,
+		},
+		"name",
+	)
+	if not file_name:
+		return file_url
+
+	return frappe.get_doc("File", file_name).unique_url
+
+
 @frappe.whitelist()
 def get_project_asset_candidates(media_project, media_type=None):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_read_access()
-	filters = {"status": "Active", "asset_scope": "Library"}
+	filters = {
+		"status": "Active",
+		"asset_scope": "Library",
+		"asset_category": ["not in", ["Shot Output", "Final Deliverable", "Deliverable", "Storyboard"]],
+	}
 	if media_type:
 		if media_type not in SUPPORTED_PROJECT_MEDIA_TYPES:
 			frappe.throw(_("Project references support Image, Video, or Audio assets."))
@@ -391,20 +417,26 @@ def get_project_asset_candidates(media_project, media_type=None):
 		filters["media_type"] = ["in", sorted(SUPPORTED_PROJECT_MEDIA_TYPES)]
 	assets = frappe.get_list(
 		"Media Asset", filters=filters,
-		fields=["name", "asset_name", "media_type", "asset_category"],
+		fields=["name", "asset_name", "media_type", "asset_category", "media_project"],
 		order_by="modified desc", limit_page_length=200,
 	)
 	selected = {row.asset_version for row in project.selected_media or [] if row.asset_version}
+	valid_assets = []
 	for asset in assets:
+		if asset.get("media_project"):
+			continue
 		version = frappe.db.get_value(
-			"Asset Version", {"media_asset": asset.name}, ["name", "file", "analysis_status"],
+			"Asset Version", {"media_asset": asset.name}, ["name", "file", "analysis_status", "source"],
 			order_by="version_number desc", as_dict=True,
 		)
+		if version and version.source in ("Generated", "Composed"):
+			continue
 		asset["asset_version"] = version.name if version else None
-		asset["file"] = version.file if version else None
+		asset["file"] = _get_asset_file_url(asset.name, version.file if version else None)
 		asset["analysis_status"] = version.analysis_status if version else None
 		asset["selected"] = bool(version and version.name in selected)
-	return assets
+		valid_assets.append(asset)
+	return valid_assets
 
 
 @frappe.whitelist()
@@ -473,7 +505,11 @@ def remove_project_reference(media_project, asset_version):
 
 @frappe.whitelist()
 def get_library_assets(scope=None, asset_type=None, media_type=None):
-	filters = {"status": "Active", "asset_scope": "Library"}
+	filters = {
+		"status": "Active",
+		"asset_scope": "Library",
+		"asset_category": ["not in", ["Shot Output", "Final Deliverable", "Deliverable", "Storyboard"]],
+	}
 	requested_type = media_type
 	if not requested_type and asset_type:
 		requested_type = {"Images": "Image", "Videos": "Video", "Audio": "Audio"}.get(asset_type)
@@ -481,18 +517,24 @@ def get_library_assets(scope=None, asset_type=None, media_type=None):
 		filters["media_type"] = requested_type
 	assets = frappe.get_list(
 		"Media Asset", filters=filters,
-		fields=["name", "asset_name", "media_type", "asset_category", "asset_scope", "status", "modified"],
+		fields=["name", "asset_name", "media_type", "asset_category", "asset_scope", "status", "modified", "media_project"],
 		order_by="modified desc", limit_page_length=200,
 	)
+	filtered_assets = []
 	for asset in assets:
+		if asset.get("media_project"):
+			continue
 		version = frappe.db.get_value(
-			"Asset Version", {"media_asset": asset.name}, ["name", "file", "analysis_status"],
+			"Asset Version", {"media_asset": asset.name}, ["name", "file", "analysis_status", "source"],
 			order_by="version_number desc", as_dict=True,
 		)
+		if version and version.source in ("Generated", "Composed"):
+			continue
 		asset["asset_version"] = version.name if version else None
-		asset["file"] = version.file if version else None
+		asset["file"] = _get_asset_file_url(asset.name, version.file if version else None)
 		asset["analysis_status"] = version.analysis_status if version else None
-	return assets
+		filtered_assets.append(asset)
+	return filtered_assets
 
 
 @frappe.whitelist()
@@ -952,3 +994,9 @@ class MediaProject(Document):
 		frappe.db.set_value("Media Project", self.name, "status", "Draft", update_modified=False)
 		frappe.db.commit()
 		return {"media_project": self.name, "version_number": None}
+
+	@frappe.whitelist()
+	def improve_video_idea(self, current_idea=""):
+		self._require_write_access()
+		from joymedia.services.ai_director import improve_project_video_idea
+		return improve_project_video_idea(self.name, current_idea=current_idea)

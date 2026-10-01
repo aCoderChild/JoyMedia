@@ -1,21 +1,21 @@
 <template>
-  <header class="studio-header flex items-center justify-between gap-3 h-12 px-3 border-b border-outline-border bg-surface-card shrink-0 select-none z-10">
+  <header class="studio-header flex items-center justify-between gap-3 h-12 px-3 sm:px-4 border-b border-outline-border bg-surface-card shrink-0 select-none z-10">
     <!-- Left: Back to Projects, Project Title & Status -->
-    <div class="flex items-center gap-2 min-w-0">
+    <div class="flex items-center gap-2 sm:gap-3 min-w-0">
       <button
         type="button"
-        class="text-xs text-ink-muted hover:text-ink-primary flex items-center gap-1 font-semibold shrink-0 cursor-pointer px-2 py-1 rounded-lg hover:bg-surface-hover transition-colors"
+        class="text-xs text-ink-muted hover:text-ink-primary flex items-center gap-1.5 font-semibold shrink-0 cursor-pointer px-2 py-1 rounded-lg hover:bg-surface-hover transition-colors"
         :title="currentLang === 'vi' ? 'Quay lại danh sách dự án' : 'Back to projects'"
         @click="$emit('goBack')"
       >
-        <span>←</span>
+        <span class="text-sm">←</span>
         <span>{{ currentLang === 'vi' ? 'Dự án' : 'Projects' }}</span>
       </button>
 
       <div class="h-4 w-px bg-outline-border shrink-0" />
 
       <!-- Editable Project Title -->
-      <div class="flex items-center gap-1.5 min-w-0">
+      <div class="flex items-center gap-2 min-w-0">
         <input
           v-if="isEditingName"
           ref="titleInputRef"
@@ -30,7 +30,7 @@
         <button
           v-else
           type="button"
-          class="text-xs sm:text-sm font-bold text-ink-primary truncate cursor-text hover:text-indigo-400 transition-colors text-left"
+          class="text-xs sm:text-sm font-bold text-ink-primary truncate cursor-text hover:text-indigo-400 transition-colors text-left max-w-[160px] sm:max-w-xs"
           :title="currentLang === 'vi' ? 'Bấm để đổi tên dự án' : 'Click to rename'"
           @click="startNameEdit"
         >
@@ -40,7 +40,7 @@
         <!-- Project Status Badge -->
         <span
           v-if="projectStatus"
-          class="text-[10px] px-2 py-0.5 rounded-md font-semibold tracking-wide border shrink-0"
+          class="text-[10px] px-2 py-0.5 rounded-md font-semibold tracking-wide border shrink-0 hidden sm:inline-block"
           :class="statusBadgeClass"
         >
           {{ formattedStatus }}
@@ -48,57 +48,60 @@
       </div>
     </div>
 
-    <!-- Center / Right: Studio Mode Switch, Actions & Controls -->
-    <div class="flex items-center gap-2">
-      <!-- Studio Mode Switch: Scenes vs Edit -->
-      <div class="flex items-center p-0.5 rounded-xl bg-surface-muted border border-outline-border text-xs">
-        <button
-          type="button"
-          class="px-3 py-1 rounded-lg font-semibold transition-all flex items-center gap-1 cursor-pointer"
-          :class="studioMode === 'scene'
+    <!-- Center: Studio Mode Switch (Scenes | Edit) -->
+    <div class="flex items-center p-0.5 rounded-xl bg-surface-muted border border-outline-border text-xs">
+      <button
+        type="button"
+        class="px-3.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+        :class="studioMode === 'scene'
+          ? 'bg-indigo-600 text-white shadow-xs'
+          : 'text-ink-secondary hover:text-ink-primary'"
+        @click="$emit('update:studioMode', 'scene')"
+      >
+        <span>▤</span>
+        <span>Scenes</span>
+      </button>
+
+      <button
+        type="button"
+        class="px-3.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+        :class="[
+          studioMode === 'edit'
             ? 'bg-indigo-600 text-white shadow-xs'
-            : 'text-ink-secondary hover:text-ink-primary'"
-          @click="$emit('update:studioMode', 'scene')"
-        >
-          <span>▤</span>
-          <span>Scenes</span>
-        </button>
+            : 'text-ink-secondary hover:text-ink-primary',
+          { 'opacity-50 cursor-not-allowed': !timelineReady }
+        ]"
+        :disabled="!timelineReady"
+        :title="!timelineReady ? (currentLang === 'vi' ? 'Cần tạo video xong để mở trình chỉnh sửa Edit' : 'Generate video to enable Edit mode') : ''"
+        @click="$emit('update:studioMode', 'edit')"
+      >
+        <span>✂</span>
+        <span>Edit</span>
+      </button>
+    </div>
 
-        <button
-          type="button"
-          class="px-3 py-1 rounded-lg font-semibold transition-all flex items-center gap-1 cursor-pointer"
-          :class="[
-            studioMode === 'edit'
-              ? 'bg-indigo-600 text-white shadow-xs'
-              : 'text-ink-secondary hover:text-ink-primary',
-            { 'opacity-50 cursor-not-allowed': !timelineReady }
-          ]"
-          :disabled="!timelineReady"
-          :title="!timelineReady ? (currentLang === 'vi' ? 'Cần tạo video xong để mở trình chỉnh sửa Edit' : 'Generate video to enable Edit mode') : ''"
-          @click="$emit('update:studioMode', 'edit')"
+    <!-- Right: Media Drawer Toggle + Export Button (in Edit mode) + Language + User Avatar -->
+    <div class="flex items-center gap-2">
+      <!-- Media Drawer Quick Toggle -->
+      <button
+        type="button"
+        class="text-xs text-ink-muted hover:text-ink-primary px-2.5 py-1 rounded-xl hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer flex items-center gap-1.5 font-medium bg-surface-muted"
+        :class="{ '!border-indigo-500 !text-indigo-400': mediaDrawerOpen }"
+        :title="currentLang === 'vi' ? 'Xem tư liệu dự án' : 'Project Media'"
+        @click="$emit('toggleMediaDrawer')"
+      >
+        <span>▧</span>
+        <span class="hidden sm:inline">Media</span>
+        <span
+          v-if="projectAssetsCount"
+          class="size-4 rounded-full bg-indigo-600 text-white text-[9px] font-mono font-bold flex items-center justify-center"
         >
-          <span>✂</span>
-          <span>Edit</span>
-        </button>
-      </div>
+          {{ projectAssetsCount }}
+        </span>
+      </button>
 
-      <!-- In Edit Mode: Export Button & Edit Status -->
+      <!-- In Edit Mode: Export Button -->
       <template v-if="studioMode === 'edit'">
-        <div class="hidden sm:flex items-center gap-1.5">
-          <span
-            v-if="hasUnexportedEdits"
-            class="text-[10px] font-semibold text-amber-400 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20"
-          >
-            ● {{ currentLang === 'vi' ? 'Chưa xuất bản dựng mới' : 'Unsaved edits' }}
-          </span>
-          <span
-            v-else-if="currentOutputAssetVersion"
-            class="text-[10px] font-semibold text-emerald-400 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20"
-          >
-            ✓ {{ currentLang === 'vi' ? 'Đã xuất video' : 'Exported' }}
-          </span>
-        </div>
-
         <button
           type="button"
           class="jm-btn-primary !py-1 !px-3 text-xs flex items-center gap-1.5 shadow-sm transition-all"
@@ -118,26 +121,23 @@
         </button>
       </template>
 
-      <!-- Settings Modal Button (Gear) -->
+      <!-- Language Switcher -->
       <button
         type="button"
-        class="text-xs text-ink-muted hover:text-ink-primary px-2.5 py-1 rounded-xl hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer flex items-center gap-1.5 font-semibold bg-surface-muted shadow-xs"
-        :title="currentLang === 'vi' ? 'Cài đặt video (Tỉ lệ, Thời lượng, Phong cách)' : 'Video settings'"
-        @click="$emit('openSettings')"
+        class="p-1 px-1.5 rounded-lg text-[11px] font-mono font-bold text-ink-muted hover:text-ink-primary hover:bg-surface-hover border border-outline-border/60 transition-colors cursor-pointer select-none"
+        :title="currentLang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'"
+        @click="$emit('toggleLang')"
       >
-        <span>⚙</span>
-        <span class="hidden sm:inline">{{ currentLang === 'vi' ? 'Cài đặt' : 'Settings' }}</span>
+        {{ currentLang.toUpperCase() }}
       </button>
 
-      <!-- Inspector Toggle Button -->
-      <button
-        type="button"
-        class="p-1.5 rounded-xl border border-outline-border bg-surface-muted hover:bg-surface-hover text-ink-muted hover:text-ink-primary transition-colors cursor-pointer"
-        :title="inspectorOpen ? (currentLang === 'vi' ? 'Thu gọn Inspector' : 'Collapse inspector') : (currentLang === 'vi' ? 'Mở Inspector' : 'Open inspector')"
-        @click="$emit('update:inspectorOpen', !inspectorOpen)"
+      <!-- User Avatar -->
+      <div
+        class="size-7 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center text-xs font-bold shadow-xs select-none"
+        :title="user || 'Creator'"
       >
-        <span class="text-xs font-mono font-bold">{{ inspectorOpen ? '→' : '←' }}</span>
-      </button>
+        {{ (user || 'C').charAt(0).toUpperCase() }}
+      </div>
     </div>
   </header>
 </template>
@@ -155,15 +155,18 @@ const props = defineProps({
   isExporting: { type: Boolean, default: false },
   exportStatus: { type: String, default: "Idle" },
   currentOutputAssetVersion: { type: String, default: "" },
-  inspectorOpen: { type: Boolean, default: true },
+  mediaDrawerOpen: { type: Boolean, default: false },
+  projectAssetsCount: { type: Number, default: 0 },
   currentLang: { type: String, default: "en" },
+  user: { type: String, default: "" },
 });
 
 const emit = defineEmits([
   "goBack",
   "saveProjectName",
   "update:studioMode",
-  "update:inspectorOpen",
+  "toggleMediaDrawer",
+  "toggleLang",
   "openSettings",
   "exportTimeline",
 ]);

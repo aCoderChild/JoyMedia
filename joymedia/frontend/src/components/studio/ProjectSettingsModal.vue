@@ -78,10 +78,10 @@
           </div>
         </div>
 
-        <!-- 3. Generation Mode (Continuous vs Multi-shot) -->
+        <!-- 3. Scene Continuity -->
         <div class="space-y-1.5">
           <label class="block font-bold text-ink-primary">
-            {{ currentLang === 'vi' ? 'Chế độ tạo cảnh (Generation Mode):' : 'Generation Continuity Mode:' }}
+            {{ currentLang === 'vi' ? 'Liên kết giữa các cảnh:' : 'Scene continuity:' }}
           </label>
           <div class="grid grid-cols-2 gap-2">
             <button
@@ -94,10 +94,10 @@
             >
               <div class="flex items-center gap-1.5">
                 <span>🔗</span>
-                <span class="text-xs font-semibold">Continuous</span>
+                <span class="text-xs font-semibold">{{ currentLang === 'vi' ? 'Nối tiếp liền mạch' : 'Keep scenes consistent' }}</span>
               </div>
               <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">
-                {{ currentLang === 'vi' ? 'Chuyển động mượt mà, khung cuối cảnh trước là khung đầu cảnh sau.' : 'Chained continuity from last frames of preceding shots.' }}
+                {{ currentLang === 'vi' ? 'Cảnh sau tiếp nối trực tiếp chuyển động của cảnh trước.' : 'Smooth visual transitions chaining consecutive scenes.' }}
               </p>
             </button>
 
@@ -111,48 +111,62 @@
             >
               <div class="flex items-center gap-1.5">
                 <span>⧉</span>
-                <span class="text-xs font-semibold">Multi-shot</span>
+                <span class="text-xs font-semibold">{{ currentLang === 'vi' ? 'Các cảnh độc lập' : 'Independent scenes' }}</span>
               </div>
               <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">
-                {{ currentLang === 'vi' ? 'Cắt cảnh độc lập theo nhịp quảng cáo, gán keyframe riêng từng cảnh.' : 'Independent shot keyframing and cuts.' }}
+                {{ currentLang === 'vi' ? 'Cắt cảnh linh hoạt theo từng góc quay riêng biệt.' : 'Dynamic commercial cuts with distinct camera angles.' }}
               </p>
             </button>
           </div>
         </div>
 
-        <!-- 4. Video Style / Workflow Selection -->
-        <div v-if="videoStyles.length" class="space-y-1.5">
-          <label class="block font-bold text-ink-primary">
-            {{ currentLang === 'vi' ? 'Phong cách Video (Style):' : 'Video Style / Workflow:' }}
-          </label>
-          <select
-            v-model="form.video_style"
-            class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary cursor-pointer focus:outline-none focus:border-indigo-500"
+        <!-- Collapsible Advanced Settings (Style & Global Instructions) -->
+        <div class="pt-2 border-t border-outline-border">
+          <button
+            type="button"
+            class="text-xs text-ink-muted hover:text-ink-primary font-semibold flex items-center gap-1.5 cursor-pointer py-1"
+            @click="showAdvanced = !showAdvanced"
           >
-            <option :value="null">{{ currentLang === 'vi' ? 'Mặc định (Default System Workflow)' : 'Default System Workflow' }}</option>
-            <option
-              v-for="s in videoStyles"
-              :key="s.workflow_key"
-              :value="s.workflow_key"
-            >
-              {{ s.client_name || s.workflow_key }}
-            </option>
-          </select>
-        </div>
+            <span>{{ showAdvanced ? '▾' : '▸' }}</span>
+            <span>{{ currentLang === 'vi' ? 'Cài đặt nâng cao' : 'Advanced settings' }}</span>
+          </button>
 
-        <!-- 5. Global Instructions -->
-        <div class="space-y-1.5">
-          <label class="block font-bold text-ink-primary">
-            {{ currentLang === 'vi' ? 'Chỉ dẫn chung toàn video (Global Instructions):' : 'Global Instructions:' }}
-          </label>
-          <textarea
-            v-model="form.global_instructions"
-            rows="2"
-            :placeholder="currentLang === 'vi'
-              ? 'Áp dụng cho mọi cảnh: Tông màu ấm, không gian hiện đại, màu sắc tự nhiên...'
-              : 'Applies to all scenes: Warm tones, minimalist modern studio, cinematic lighting...'"
-            class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 resize-none"
-          />
+          <div v-if="showAdvanced" class="space-y-3 pt-2">
+            <!-- Video Style / Workflow Selection -->
+            <div v-if="videoStyles.length" class="space-y-1.5">
+              <label class="block font-semibold text-ink-primary">
+                {{ currentLang === 'vi' ? 'Phong cách Video (Style):' : 'Video Style / Workflow:' }}
+              </label>
+              <select
+                v-model="form.video_style"
+                class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary cursor-pointer focus:outline-none focus:border-indigo-500"
+              >
+                <option :value="null">{{ currentLang === 'vi' ? 'Mặc định (Default System Workflow)' : 'Default System Workflow' }}</option>
+                <option
+                  v-for="s in videoStyles"
+                  :key="s.workflow_key"
+                  :value="s.workflow_key"
+                >
+                  {{ s.client_name || s.workflow_key }}
+                </option>
+              </select>
+            </div>
+
+            <!-- Global Instructions -->
+            <div class="space-y-1.5">
+              <label class="block font-semibold text-ink-primary">
+                {{ currentLang === 'vi' ? 'Chỉ dẫn chung toàn video (Instructions):' : 'Additional Instructions:' }}
+              </label>
+              <textarea
+                v-model="form.global_instructions"
+                rows="2"
+                :placeholder="currentLang === 'vi'
+                  ? 'Tông màu ấm, không gian hiện đại, màu sắc tự nhiên...'
+                  : 'Warm tones, minimalist modern studio, cinematic lighting...'"
+                class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 resize-none"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -180,7 +194,7 @@
 </template>
 
 <script setup>
-import { reactive, watch } from "vue";
+import { reactive, ref, watch } from "vue";
 
 const props = defineProps({
   settings: { type: Object, default: () => ({}) },
@@ -190,6 +204,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["close", "save"]);
+const showAdvanced = ref(false);
 
 const formatPresets = [
   { value: "Landscape", label: "Landscape", sub: "16:9 · 1920x1080", icon: "🖥️" },

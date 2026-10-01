@@ -1,5 +1,5 @@
 <template>
-  <aside class="studio-media-drawer flex flex-col h-full bg-surface-card border-r border-outline-border w-72 shrink-0 select-none z-20">
+  <aside class="studio-media-drawer flex flex-col h-full bg-surface-card border-r border-outline-border w-[270px] shrink-0 select-none z-20">
     <!-- Drawer Header -->
     <div class="flex items-center justify-between border-b border-outline-border px-4 py-3 bg-surface-muted/60">
       <div class="min-w-0">

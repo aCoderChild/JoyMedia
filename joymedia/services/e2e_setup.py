@@ -90,8 +90,44 @@ def setup_e2e_project():
 	version = _create_output_asset(project, "E2E Shot Output", "e2e-clip.mp4")
 	_create_shot(project, 1, "Opening hero product shot.", version)
 	_create_shot(project, 2, "Closing hero product shot.", version)
-	from joymedia.services.timeline_editor import get_project_timeline
-	timeline = get_project_timeline(project.name)
+	audio_asset = frappe.get_doc({
+		"doctype": "Media Asset",
+		"asset_name": "Upbeat Cinematic Music",
+		"media_type": "Audio",
+		"asset_category": "Audio",
+		"asset_scope": "Library",
+	}).insert(ignore_permissions=True)
+	audio_file_doc = frappe.get_doc({
+		"doctype": "File",
+		"file_name": "bgm.mp3",
+		"content": _generate_video_bytes(2),
+		"is_private": 0,
+		"attached_to_doctype": "Media Asset",
+		"attached_to_name": audio_asset.name,
+	}).insert(ignore_permissions=True)
+	audio_version = frappe.get_doc({
+		"doctype": "Asset Version",
+		"media_asset": audio_asset.name,
+		"file": audio_file_doc.file_url,
+		"source": "Uploaded",
+		"duration_seconds": 15.0,
+	}).insert(ignore_permissions=True)
+	from joymedia.joymedia.doctype.media_project.media_project import select_project_reference
+	select_project_reference(project.name, audio_asset.name, reference_role="Audio")
+	from joymedia.joymedia.doctype.media_project.media_project import build_project_snapshot
+	project_snapshot_json, project_snapshot_hash = build_project_snapshot(project)
+	frappe.get_doc({
+		"doctype": "Generation Run",
+		"media_project": project.name,
+		"project_snapshot_json": project_snapshot_json,
+		"project_snapshot_hash": project_snapshot_hash,
+		"workflow": project.workflow,
+		"requested_by": "Administrator",
+		"status": "Completed",
+	}).insert(ignore_permissions=True)
+	from joymedia.services.timeline_editor import get_project_timeline, add_timeline_audio_clip
+	get_project_timeline(project.name)
+	timeline = add_timeline_audio_clip(project.name, audio_version.name, timeline_start_frame=0, audio_role="BGM")
 	frappe.db.commit()
 	return {"project_name": project.name, "timeline": timeline}
 
@@ -110,6 +146,7 @@ def cleanup_e2e_project(project_name="E2E-STUDIO-TEST-1"):
 	frappe.set_user("Administrator")
 	if not frappe.db.exists("Media Project", project_name):
 		return
+	frappe.db.delete("Generation Run", {"media_project": project_name})
 	frappe.db.delete("Timeline Clip", {"media_project": project_name})
 	frappe.db.delete("Shot", {"media_project": project_name})
 	assets = frappe.get_all("Media Asset", filters={"media_project": project_name}, pluck="name")

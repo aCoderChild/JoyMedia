@@ -9,7 +9,7 @@ export function useProjectWorkspace(projectName) {
   const selectedTarget = ref("scene"); // "scene" | "asset" | "keyframe-start" | "keyframe-end"
   const selectedAsset = ref(null);
   const selectedShotIndex = ref(0);
-  const inspectorOpen = ref(true);
+  const inspectorOpen = ref(false);
   const showSettings = ref(false);
   const videoStyles = ref([]);
   const savingSettings = ref(false);

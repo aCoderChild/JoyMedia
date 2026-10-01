@@ -22,16 +22,16 @@
       </div>
     </div>
 
-    <!-- Toolbar: Type Categorisation Filters -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-surface-card border border-outline-border shadow-xs mb-6">
-      <div class="flex flex-wrap items-center gap-3">
-        <!-- Media Type Filter -->
-        <div class="flex items-center gap-1.5 p-1 rounded-xl bg-surface-hover border border-outline-border">
+    <!-- Single Clean Filter Row: Types + Filter Dropdown + Search -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 sm:p-3 rounded-2xl bg-surface-card border border-outline-border shadow-xs mb-6">
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Media Type Filter Pills -->
+        <div class="flex items-center gap-1 p-0.5 rounded-xl bg-surface-muted border border-outline-border text-xs">
           <button
             v-for="opt in typeOptions"
             :key="opt.value"
             type="button"
-            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            class="px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer"
             :class="activeType === opt.value
               ? 'bg-indigo-600 text-white shadow-xs'
               : 'text-ink-secondary hover:text-ink-primary'"
@@ -41,9 +41,24 @@
           </button>
         </div>
 
+        <!-- Category Dropdown Filter: Filter ▾ -->
+        <div class="relative">
+          <select
+            v-model="activeCategory"
+            class="text-xs font-semibold px-3 py-1.5 rounded-xl bg-surface-muted border border-outline-border text-ink-secondary hover:text-ink-primary cursor-pointer focus:outline-none focus:border-indigo-500"
+          >
+            <option value="All">{{ currentLang === 'vi' ? 'Mọi danh mục ▾' : 'All Categories ▾' }}</option>
+            <option value="Product">👟 Product</option>
+            <option value="Character">👤 Character</option>
+            <option value="Background">🏞️ Environment</option>
+            <option value="Brand">🏷️ Brand</option>
+            <option value="Style">🎨 Style</option>
+            <option value="Reference">📎 Reference</option>
+          </select>
+        </div>
       </div>
 
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2.5">
         <span class="text-xs font-medium text-ink-muted">
           {{ filteredAssets.length }} {{ filteredAssets.length === 1 ? t('asset_singular') : t('asset_plural') }}
         </span>
@@ -51,29 +66,13 @@
           v-model="search"
           type="text"
           :placeholder="t('asset_search_placeholder')"
-          class="w-full sm:w-56"
+          class="w-full sm:w-52"
         >
           <template #prefix>
             <span class="lucide-search size-4 text-ink-muted" />
           </template>
         </FormControl>
       </div>
-    </div>
-
-    <!-- Category Filter Chips (Frappe INPUT_ASSET_CATEGORIES) -->
-    <div class="flex items-center gap-2 mb-6 overflow-x-auto pb-1">
-      <button
-        v-for="cat in categoryOptions"
-        :key="cat.value"
-        type="button"
-        class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0"
-        :class="activeCategory === cat.value
-          ? 'bg-indigo-600 text-white shadow-xs'
-          : 'bg-surface-card hover:bg-surface-hover text-ink-secondary hover:text-ink-primary border border-outline-border'"
-        @click="activeCategory = cat.value"
-      >
-        {{ cat.label }}
-      </button>
     </div>
 
     <div v-if="assetsResource.loading" class="empty-state">
@@ -84,38 +83,27 @@
       <p>{{ t('assets_loading_desc') }}</p>
     </div>
 
-    <!-- Asset Cards Grid -->
-    <div v-else-if="filteredAssets.length" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+    <!-- Asset Cards Grid (Clean Flow-like minimal cards) -->
+    <div v-else-if="filteredAssets.length" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
       <article
         v-for="asset in filteredAssets"
         :key="asset.name"
-        class="group p-3 rounded-xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-indigo-500/60 shadow-xs hover:shadow-md transition-all flex flex-col justify-between cursor-pointer select-none"
+        class="group p-2 rounded-2xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-indigo-500/50 shadow-xs hover:shadow-md transition-all cursor-pointer select-none flex flex-col gap-2"
         @click="openAssetModal(asset)"
       >
-        <div class="mb-2.5">
-          <MediaThumbnail
-            :src="asset.file"
-            :media-type="asset.media_type"
-            :alt="asset.asset_name"
-            :badge="asset.asset_category || 'Reference'"
-            :duration="asset.duration_seconds"
-            aspect="aspect-video"
-          />
-        </div>
+        <MediaThumbnail
+          :src="asset.file"
+          :media-type="asset.media_type"
+          :alt="asset.asset_name"
+          :badge="asset.asset_category || 'Reference'"
+          :duration="asset.duration_seconds"
+          aspect="aspect-square"
+        />
 
-        <div>
-          <h3 class="text-xs font-semibold text-ink-primary truncate mb-1" :title="asset.asset_name">
+        <div class="px-1 pb-0.5">
+          <h3 class="text-xs font-semibold text-ink-primary truncate" :title="asset.asset_name">
             {{ asset.asset_name }}
           </h3>
-          <div class="flex items-center justify-between pt-1 border-t border-outline-subtle text-[11px] text-ink-muted">
-            <span class="capitalize">Reference Input</span>
-            <span class="font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-              <span>{{ t('asset_view') }}</span>
-              <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-            </span>
-          </div>
         </div>
       </article>
     </div>

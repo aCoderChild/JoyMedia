@@ -1,137 +1,47 @@
 <template>
-  <div class="project-studio-root relative flex w-screen h-screen overflow-hidden bg-surface-base text-ink-primary">
-    <!-- Slim Creative Tool Rail (Google Flow / Runway single-chrome design) -->
-    <aside class="w-14 shrink-0 flex flex-col items-center justify-between border-r border-outline-border bg-surface-card py-3 select-none z-20">
-      <!-- Top Rail Tools -->
-      <div class="flex flex-col items-center gap-3">
-        <!-- Brand Mark (Navigates to Projects Home) -->
-        <button
-          type="button"
-          class="brand-mark size-9 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center font-bold text-base shadow-sm transition-transform hover:scale-105 cursor-pointer"
-          :title="currentLang === 'vi' ? 'Quay lại danh sách dự án' : 'JoyMedia Projects'"
-          @click="router.push('/campaigns')"
-        >
-          ✦
-        </button>
-
-        <div class="w-8 h-px bg-outline-border my-0.5" />
-
-        <!-- Media Drawer Toggle -->
-        <button
-          type="button"
-          class="studio-rail-button relative"
-          :class="{ active: mediaDrawerOpen }"
-          :title="currentLang === 'vi' ? 'Mở tư liệu tham chiếu' : 'Project Media'"
-          @click="mediaDrawerOpen = !mediaDrawerOpen"
-        >
-          <span class="text-base">▧</span>
-          <small class="text-[9px] font-bold">Media</small>
-          <span
-            v-if="projectAssets.length"
-            class="absolute -top-1 -right-1 size-4 rounded-full bg-indigo-600 text-white text-[9px] font-mono font-bold flex items-center justify-center shadow-xs"
-          >
-            {{ projectAssets.length }}
-          </span>
-        </button>
-
-        <!-- Scenes Mode Button -->
-        <button
-          type="button"
-          class="studio-rail-button"
-          :class="{ active: studioMode === 'scene' }"
-          :title="currentLang === 'vi' ? 'Chế độ kịch bản phân cảnh' : 'Scene Builder'"
-          @click="studioMode = 'scene'"
-        >
-          <span class="text-base">▤</span>
-          <small class="text-[9px] font-bold">Scenes</small>
-        </button>
-
-        <!-- Edit Mode Button -->
-        <button
-          type="button"
-          class="studio-rail-button"
-          :class="[
-            { active: studioMode === 'edit' },
-            timelineReady ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'
-          ]"
-          :disabled="!timelineReady"
-          :title="timelineReady ? (currentLang === 'vi' ? 'Trình dựng Edit' : 'Edit Timeline') : (currentLang === 'vi' ? 'Tạo video để kích hoạt chế độ Edit' : 'Generate video to enable Edit mode')"
-          @click="studioMode = 'edit'"
-        >
-          <span class="text-base">✂</span>
-          <small class="text-[9px] font-bold">Edit</small>
-        </button>
-      </div>
-
-      <!-- Bottom Rail Navigation & Preferences -->
-      <div class="flex flex-col items-center gap-2.5">
-        <!-- Media Library Link -->
-        <button
-          type="button"
-          class="p-2 rounded-xl text-ink-muted hover:text-ink-primary hover:bg-surface-hover transition-colors cursor-pointer"
-          :title="currentLang === 'vi' ? 'Thư viện Media chung' : 'Media Library'"
-          @click="router.push('/assets')"
-        >
-          <span class="text-base">🖼️</span>
-        </button>
-
-        <!-- Language Switcher -->
-        <button
-          type="button"
-          class="p-1.5 rounded-xl text-xs font-mono font-bold text-ink-muted hover:text-ink-primary hover:bg-surface-hover border border-outline-border/60 transition-colors cursor-pointer select-none"
-          :title="currentLang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'"
-          @click="toggleLang"
-        >
-          {{ currentLang.toUpperCase() }}
-        </button>
-
-        <!-- User Avatar -->
-        <div
-          class="size-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center text-xs font-bold shadow-xs select-none"
-          :title="user || 'Creator'"
-        >
-          {{ (user || 'C').charAt(0).toUpperCase() }}
-        </div>
-      </div>
-    </aside>
-
-    <!-- Media Drawer (Collapsible) -->
-    <MediaDrawer
-      v-if="mediaDrawerOpen"
-      :project-assets="projectAssets"
-      :selected-asset="selectedAsset"
+  <div class="project-studio-root relative flex flex-col w-screen h-screen overflow-hidden bg-surface-base text-ink-primary">
+    <!-- 1. Single Studio Header (Full width across top: Projects | Title | Scenes/Edit | Media) -->
+    <StudioHeader
+      :project-name="projectName"
+      :project-title="projectTitle"
+      :project-status="projectStatus"
+      :studio-mode="studioMode"
+      :timeline-ready="timelineReady"
+      :has-unexported-edits="hasUnexportedEdits"
+      :is-exporting="isExporting"
+      :export-status="exportStatus"
+      :current-output-asset-version="currentOutputAssetVersion"
+      :media-drawer-open="mediaDrawerOpen"
+      :project-assets-count="projectAssets.length"
       :current-lang="currentLang"
-      @close="mediaDrawerOpen = false"
-      @select-asset="onSelectAssetTarget"
-      @remove-asset="removeReference"
-      @open-media-picker="openPicker"
+      :user="user"
+      @go-back="router.push('/campaigns')"
+      @save-project-name="updateProjectName"
+      @update:studio-mode="studioMode = $event"
+      @toggle-media-drawer="mediaDrawerOpen = !mediaDrawerOpen"
+      @toggle-lang="toggleLang"
+      @open-settings="showSettings = true"
+      @export-timeline="exportTimeline"
     />
 
-    <!-- Center Stage Canvas: Header + Viewport + Timeline -->
-    <div class="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-surface-base">
-      <!-- 1. Single Studio Header -->
-      <StudioHeader
-        :project-name="projectName"
-        :project-title="projectTitle"
-        :project-status="projectStatus"
-        :studio-mode="studioMode"
-        :timeline-ready="timelineReady"
-        :has-unexported-edits="hasUnexportedEdits"
-        :is-exporting="isExporting"
-        :export-status="exportStatus"
-        :current-output-asset-version="currentOutputAssetVersion"
-        :inspector-open="inspectorOpen"
+    <!-- 2. Studio Workspace Body: Media Drawer + Canvas + Contextual Inspector -->
+    <div class="flex-1 flex min-h-0 w-full overflow-hidden relative">
+      <!-- Media Drawer (Begins below header, 270px width, pushes canvas) -->
+      <MediaDrawer
+        v-if="mediaDrawerOpen"
+        :project-assets="projectAssets"
+        :selected-asset="selectedAsset"
         :current-lang="currentLang"
-        @go-back="router.push('/campaigns')"
-        @save-project-name="updateProjectName"
-        @update:studio-mode="studioMode = $event"
-        @update:inspector-open="inspectorOpen = $event"
-        @open-settings="showSettings = true"
-        @export-timeline="exportTimeline"
+        @close="mediaDrawerOpen = false"
+        @select-asset="onSelectAssetTarget"
+        @remove-asset="removeReference"
+        @open-media-picker="openPicker"
       />
 
-      <!-- 2. Scrollable Studio Canvas -->
-      <div class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
+      <!-- Center Stage Canvas: Viewport + Timeline -->
+      <div class="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-surface-base">
+        <!-- Scrollable Studio Canvas -->
+        <div class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
         <!-- Error Alert Banner -->
         <div v-if="productionError" class="p-3 rounded-xl border border-rose-500/40 bg-rose-500/10 text-xs flex items-center justify-between gap-3">
           <div class="flex items-center gap-2 text-rose-300 min-w-0">
@@ -148,7 +58,7 @@
         </div>
 
         <!-- Cinema Viewport Hero (StudioPreview) -->
-        <div class="flex flex-col items-center justify-center min-h-[380px] w-full">
+        <div class="flex flex-col items-center justify-center w-full" :class="studioMode === 'scene' ? 'max-h-[46vh] shrink-0' : 'min-h-[340px]'">
           <StudioPreview
             :studio-mode="studioMode"
             :studio-preview="studioPreview"
@@ -162,21 +72,12 @@
             :current-timeline-position-label="currentTimelinePositionLabel"
             :is-playing="isPlaying"
             :is-production-active="isProductionActive"
-            :is-auto-generating="isGenerating"
-            :auto-generate-step="currentRun?.status ? `Generating (${currentRun.status})...` : ''"
             :production="currentRun"
             :production-error="productionError"
             :production-status="projectStatus"
-            :expected-shot-count="storyboardShots.length || 4"
-            :estimated-finish-label="'...'"
             :project-assets="projectAssets"
-            :input-asset-categories="[]"
-            :upload-category="'Product'"
             :settings-format="videoSettings.delivery_preset"
-            :is-playhead-at-keyframe="false"
             :final-video="finalVideo"
-            :retrying-failed-scenes="false"
-            :uploading-images="uploadingMedia"
             :selected-shot-index="selectedShotIndex"
             :current-lang="currentLang"
             :is-outdated="isOutdated"
@@ -200,6 +101,7 @@
             v-model:prompt="videoIdeaPrompt"
             :project-assets="projectAssets"
             :is-generating="isGenerating || isProductionActive"
+            :is-improving-prompt="improvingIdea"
             :has-storyboard="Boolean(storyboardShots.length)"
             :duration-seconds="videoSettings.duration || 15"
             :delivery-preset="videoSettings.delivery_preset || 'Landscape'"
@@ -236,10 +138,12 @@
           />
         </template>
 
-        <!-- 4. EDIT MODE: Editorial Tracks (Video 0 + Audio 0) -->
+        <!-- 4. EDIT MODE: Editorial Tracks (Video + Music / Audio) -->
         <template v-else>
           <EditTimeline
             :clips="clips"
+            :video-clips="videoClips"
+            :audio-clips="audioClips"
             :fps="fps"
             :selected-clip-name="selectedClipName"
             :playhead-frame="playheadFrame"
@@ -255,6 +159,7 @@
             @delete="deleteClip"
             @reorder="reorderClip"
             @select-transition="setTransition"
+            @open-audio-picker="openAudioPicker"
           />
         </template>
       </div>
@@ -262,6 +167,7 @@
 
     <!-- Right Side: Selection-driven Contextual Inspector -->
     <StudioInspector
+      v-if="inspectorOpen && hasInspectorSelection"
       v-model:open="inspectorOpen"
       :studio-mode="studioMode"
       :selected-target="selectedTarget"
@@ -272,6 +178,7 @@
       :selected-clip="selectedClip"
       :selected-clip-source-shot="selectedClipSourceShot"
       :timeline-busy="timelineBusy"
+      :fps="fps"
       :generation-mode="videoSettings.generation_mode"
       :current-duration="videoSettings.duration || 15"
       :current-preset="videoSettings.delivery_preset || 'Landscape'"
@@ -285,6 +192,7 @@
       @split-clip="splitClipAtPlayhead"
       @duplicate-clip="duplicateClip(selectedClip)"
       @delete-clip="deleteClip(selectedClip)"
+      @update-audio-clip="onUpdateAudioClip"
       @update-source-for-selected-clip="onUpdateSourceForClip"
       @regenerate-source-for-selected-clip="onRegenerateSourceForClip"
       @apply-asset-to-shot="applyAssetToShot"
@@ -299,18 +207,20 @@
       @open-settings="showSettings = true"
       @open-media-picker="openPicker"
     />
+  </div>
 
-    <!-- Modal: Explicit Role Reference Picker -->
+  <!-- Modal: Explicit Role Reference Picker -->
     <MediaPicker
       v-if="showMediaPicker"
       :candidates="mediaCandidates"
       :loading="candidatesLoading"
       :saving="savingReference"
       :uploading="uploadingMedia"
+      :initial-type-filter="mediaPickerFilter"
       :is-keyframe-target="selectedTarget === 'keyframe-start' || selectedTarget === 'keyframe-end'"
       :current-lang="currentLang"
       @close="showMediaPicker = false"
-      @select-reference="addReference"
+      @select-reference="handleSelectReference"
       @set-keyframe="onSetKeyframeFromPicker"
       @upload-files="uploadAndAddFiles"
     />
@@ -404,6 +314,7 @@ const {
 const {
   isGenerating,
   isRevising,
+  improvingIdea,
   aiRevisionLoading,
   productionError,
   videoIdeaPrompt,
@@ -421,6 +332,8 @@ const {
 const {
   timeline,
   clips,
+  videoClips,
+  audioClips,
   fps,
   busy: timelineBusy,
   selectedClip,
@@ -437,6 +350,8 @@ const {
   deleteClip,
   setTransition,
   updateSourceForShot,
+  updateAudioClip,
+  addAudioClip,
   exportTimeline,
 } = useProjectTimeline(projectName);
 
@@ -444,9 +359,59 @@ const {
 const mediaDrawerOpen = ref(false);
 const isPlaying = ref(false);
 const previewSelection = ref("shot"); // "shot" | "full" | "clip"
+const mediaPickerFilter = ref("All");
+
+function openAudioPicker() {
+  mediaPickerFilter.value = "Audio";
+  openPicker();
+}
+
+async function onUpdateAudioClip(clip, settings) {
+  await updateAudioClip(clip, settings);
+}
+
+async function handleSelectReference({ asset, role }) {
+  await addReference({ asset, role });
+  // If in Edit mode or if this is an Audio asset, add an audio clip record to the timeline
+  if (studioMode.value === "edit" || role === "Audio" || asset.media_type === "Audio") {
+    if (asset.asset_version || asset.name) {
+      await addAudioClip(asset.asset_version || asset.name, playheadFrame.value || 0, role === "Audio" ? "BGM" : role);
+    }
+  }
+  // If product name is "Untitled Product" and user selected a Product reference, initialize product name automatically
+  if (
+    workspace.value?.project?.product_name === "Untitled Product" &&
+    (role === "Product" || asset.asset_category === "Product") &&
+    asset.asset_name
+  ) {
+    try {
+      await call("frappe.client.set_value", {
+        doctype: "Media Project",
+        name: projectName.value,
+        fieldname: "product_name",
+        value: asset.asset_name,
+      });
+      if (workspace.value?.project) {
+        workspace.value.project.product_name = asset.asset_name;
+      }
+    } catch (_) {}
+  }
+}
 
 const timelineReady = computed(() => Boolean(clips.value?.length));
 const hasUnexportedEdits = computed(() => isOutdated.value);
+
+const hasInspectorSelection = computed(() => {
+  if (studioMode.value === "edit") {
+    return Boolean(selectedClip.value);
+  }
+  return Boolean(
+    ((selectedTarget.value === "scene" || selectedTarget.value === "shot") && activeSelectedShot.value) ||
+    (selectedTarget.value === "asset" && selectedAsset.value) ||
+    selectedTarget.value === "keyframe-start" ||
+    selectedTarget.value === "keyframe-end"
+  );
+});
 
 const activeSelectedShot = computed(() => {
   return storyboardShots.value[selectedShotIndex.value] || storyboardShots.value[0] || null;
@@ -580,8 +545,9 @@ function getShotTimestampRange(shot) {
 // User Actions
 function onSelectShot(shot, index) {
   selectedShotIndex.value = index;
-  selectedTarget.value = "scene";
+  selectedTarget.value = "shot";
   previewSelection.value = "shot";
+  inspectorOpen.value = true;
 }
 
 function onSelectKeyframe(shot, index, targetRole) {

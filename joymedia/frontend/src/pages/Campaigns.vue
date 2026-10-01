@@ -12,19 +12,20 @@
       </div>
 
       <!-- New Project Action -->
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
-          :disabled="creatingProject"
-          @click="showCreateModal = true"
-        >
-          <span v-if="creatingProject" class="lucide-refresh-cw size-4 animate-spin" />
-          <span v-else class="text-sm font-bold">+</span>
-          <span>{{ currentLang === 'vi' ? 'Dự án mới' : 'New Project' }}</span>
-        </button>
+        <!-- New Project Action -->
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+            :disabled="creatingProject"
+            @click="handleNewProject"
+          >
+            <span v-if="creatingProject" class="lucide-refresh-cw size-4 animate-spin" />
+            <span v-else class="text-sm font-bold">+</span>
+            <span>{{ currentLang === 'vi' ? 'Dự án mới' : 'New Project' }}</span>
+          </button>
+        </div>
       </div>
-    </div>
 
     <!-- 2. Toolbar: Clean Status Filters & Search Bar -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 rounded-2xl bg-surface-card border border-outline-border shadow-xs">
@@ -190,90 +191,18 @@
       <button
         type="button"
         class="jm-btn-primary !py-2 !px-4 text-xs font-bold shadow-md cursor-pointer"
-        @click="showCreateModal = true"
+        :disabled="creatingProject"
+        @click="handleNewProject"
       >
-        + {{ currentLang === 'vi' ? 'Tạo dự án mới' : 'Create New Project' }}
+        <span v-if="creatingProject" class="lucide-refresh-cw size-3.5 animate-spin mr-1 inline-block" />
+        <span>+ {{ currentLang === 'vi' ? 'Tạo dự án mới' : 'Create New Project' }}</span>
       </button>
-    </div>
-
-    <!-- Create Project Modal -->
-    <div v-if="showCreateModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs" @click.self="showCreateModal = false">
-      <div class="w-full max-w-md bg-surface-card border border-outline-border rounded-2xl p-6 shadow-2xl space-y-4 text-xs">
-        <div class="flex items-center justify-between pb-3 border-b border-outline-border">
-          <div>
-            <h3 class="text-sm font-bold text-ink-primary">
-              {{ currentLang === 'vi' ? 'Tạo Dự Án Video Mới' : 'Create New Video Project' }}
-            </h3>
-            <p class="text-[11px] text-ink-muted mt-0.5">
-              {{ currentLang === 'vi' ? 'Nhập tên sản phẩm để bắt đầu' : 'Enter product name to get started' }}
-            </p>
-          </div>
-          <button type="button" class="text-ink-muted hover:text-ink-primary p-1 rounded cursor-pointer" @click="showCreateModal = false">✕</button>
-        </div>
-
-        <form class="space-y-3" @submit.prevent="submitCreateProject">
-          <div class="space-y-1">
-            <label class="block font-bold text-ink-primary">
-              {{ currentLang === 'vi' ? 'Tên sản phẩm *' : 'Product Name *' }}
-            </label>
-            <input
-              v-model="newProjectForm.product_name"
-              type="text"
-              required
-              :placeholder="currentLang === 'vi' ? 'VD: Giày thể thao Pro Runner...' : 'e.g. Leather Oxford Shoes...'"
-              class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
-            />
-          </div>
-
-          <div class="space-y-1">
-            <label class="block font-bold text-ink-primary">
-              {{ currentLang === 'vi' ? 'Tên dự án' : 'Project Name' }}
-            </label>
-            <input
-              v-model="newProjectForm.project_name"
-              type="text"
-              :placeholder="currentLang === 'vi' ? 'VD: Video Giới thiệu Sản phẩm Mùa hè' : 'e.g. Summer Launch Video Ad'"
-              class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
-            />
-          </div>
-
-          <div class="space-y-1">
-            <label class="block font-bold text-ink-primary">
-              {{ currentLang === 'vi' ? 'Ý tưởng video ban đầu (tuỳ chọn)' : 'Video Idea / Concept (optional)' }}
-            </label>
-            <textarea
-              v-model="newProjectForm.video_idea"
-              rows="2"
-              :placeholder="currentLang === 'vi' ? 'Mô tả góc quay, cảm xúc, không gian mong muốn...' : 'Describe camera movement, tone, mood...'"
-              class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500 resize-none"
-            />
-          </div>
-
-          <div class="pt-3 border-t border-outline-border flex items-center justify-end gap-2">
-            <button
-              type="button"
-              class="jm-btn-secondary text-xs !py-1.5 !px-3 cursor-pointer"
-              @click="showCreateModal = false"
-            >
-              {{ currentLang === 'vi' ? 'Huỷ' : 'Cancel' }}
-            </button>
-            <button
-              type="submit"
-              class="jm-btn-primary text-xs !py-1.5 !px-4 cursor-pointer font-bold"
-              :disabled="creatingProject || !newProjectForm.product_name.trim()"
-            >
-              <span v-if="creatingProject" class="lucide-refresh-cw size-3 animate-spin inline-block mr-1" />
-              <span>{{ currentLang === 'vi' ? 'Bắt đầu Studio ✦' : 'Launch Studio ✦' }}</span>
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { call, createResource, toast } from "frappe-ui";
 import { useI18n } from "../stores/i18n";
@@ -284,14 +213,7 @@ const router = useRouter();
 
 const statusFilter = ref("all");
 const searchQuery = ref("");
-const showCreateModal = ref(false);
 const creatingProject = ref(false);
-
-const newProjectForm = reactive({
-  product_name: "",
-  project_name: "",
-  video_idea: "",
-});
 
 const projectsResource = createResource({
   url: "joymedia.joymedia.doctype.media_project.media_project.get_project_cards",
@@ -324,17 +246,15 @@ function openStudio(projectName) {
   router.push(`/projects/${projectName}`);
 }
 
-async function submitCreateProject() {
-  if (!newProjectForm.product_name.trim() || creatingProject.value) return;
+async function handleNewProject() {
+  if (creatingProject.value) return;
   creatingProject.value = true;
   try {
-    const pName = newProjectForm.project_name.trim() || newProjectForm.product_name.trim();
     const created = await call("joymedia.joymedia.doctype.media_project.media_project.create_project", {
-      project_name: pName,
-      product_name: newProjectForm.product_name.trim(),
-      video_idea: newProjectForm.video_idea.trim() || null,
+      project_name: currentLang.value === "vi" ? "Dự án mới" : "Untitled Project",
+      product_name: currentLang.value === "vi" ? "Sản phẩm mới" : "Untitled Product",
+      video_idea: null,
     });
-    showCreateModal.value = false;
     const targetName = created?.name || created?.project;
     if (targetName) {
       router.push(`/projects/${targetName}`);

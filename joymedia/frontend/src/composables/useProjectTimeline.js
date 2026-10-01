@@ -8,10 +8,12 @@ export function useProjectTimeline(projectName) {
   const playheadFrame = ref(0);
 
   const clips = computed(() => timeline.value?.clips || []);
+  const videoClips = computed(() => clips.value.filter((clip) => (clip.track_type || "Video") === "Video"));
+  const audioClips = computed(() => clips.value.filter((clip) => clip.track_type === "Audio"));
   const fps = computed(() => Number(timeline.value?.fps || 0));
 
   const selectedClip = computed(() =>
-    clips.value.find((clip) => clip.name === selectedClipName.value) || clips.value[0] || null
+    clips.value.find((clip) => clip.name === selectedClipName.value) || videoClips.value[0] || audioClips.value[0] || null
   );
 
   function project() {
@@ -237,6 +239,28 @@ export function useProjectTimeline(projectName) {
     }
   }
 
+  function updateAudioClip(clip, settings) {
+    return mutate(
+      "update_timeline_clip_audio",
+      {
+        clip_name: clip.name,
+        ...settings,
+      },
+      clip.name
+    );
+  }
+
+  function addAudioClip(assetVersionName, timelineStartFrame = 0, audioRole = "BGM") {
+    return mutate(
+      "add_timeline_audio_clip",
+      {
+        asset_version_name: assetVersionName,
+        timeline_start_frame: timelineStartFrame,
+        audio_role: audioRole,
+      }
+    );
+  }
+
   const exportStatus = computed(() => timeline.value?.export_status || "Idle");
   const exportError = computed(() => timeline.value?.export_error || null);
   const isExporting = computed(() => ["Queued", "Running"].includes(exportStatus.value));
@@ -245,6 +269,8 @@ export function useProjectTimeline(projectName) {
   return {
     timeline,
     clips,
+    videoClips,
+    audioClips,
     fps,
     busy,
     selectedClip,
@@ -266,6 +292,8 @@ export function useProjectTimeline(projectName) {
     resetTimeline,
     resetClip,
     updateSourceForShot,
+    updateAudioClip,
+    addAudioClip,
     exportTimeline,
     stopExportPolling,
   };

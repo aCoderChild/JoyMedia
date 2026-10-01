@@ -145,15 +145,51 @@ export function useProjectGeneration(projectName, onRefresh) {
     }
   }
 
+  const improvingIdea = ref(false);
+
   async function improveVideoIdea(currentIdea) {
-    if (!currentIdea?.trim()) return;
+    const textToImprove = (currentIdea || videoIdeaPrompt.value || "").trim();
+    if (!textToImprove || improvingIdea.value) return;
+    improvingIdea.value = true;
     try {
-      toast({ title: "Improving with AI...", text: "Expanding idea into cinematic visual instructions.", type: "info" });
-      // Enhance prompt with cinematic guidelines
-      const enhanced = `${currentIdea.trim()}. Cinematic lighting, crisp 4k detail, elegant camera motion, studio advertising grade presentation.`;
-      videoIdeaPrompt.value = enhanced;
-      toast({ title: "Idea enhanced", text: "Prompt updated with cinematic directions.", type: "success" });
-    } catch (_) {}
+      toast({
+        title: "Qwen AI Creative Planner",
+        text: "Analyzing product & ingredients to craft cinematic video concept...",
+        type: "info",
+      });
+      const res = await call(
+        "joymedia.services.ai_director.improve_project_video_idea",
+        {
+          project_name: project(),
+          current_idea: textToImprove,
+        }
+      );
+      if (res?.improved_idea) {
+        videoIdeaPrompt.value = res.improved_idea;
+        try {
+          await call("frappe.client.set_value", {
+            doctype: "Media Project",
+            name: project(),
+            fieldname: "video_idea",
+            value: res.improved_idea,
+          });
+        } catch (_) {}
+        toast({
+          title: "Idea elevated ✨",
+          text: "Qwen enhanced your concept with cinematic directions and ingredient references.",
+          type: "success",
+        });
+        return res.improved_idea;
+      }
+    } catch (err) {
+      toast({
+        title: "AI idea improvement",
+        text: err?.message || "Could not reach Qwen planner.",
+        type: "error",
+      });
+    } finally {
+      improvingIdea.value = false;
+    }
   }
 
   const isProductionActive = computed(() => {
@@ -164,6 +200,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     isGenerating,
     isRevising,
     aiRevisionLoading,
+    improvingIdea,
     productionError,
     videoIdeaPrompt,
     currentRun,

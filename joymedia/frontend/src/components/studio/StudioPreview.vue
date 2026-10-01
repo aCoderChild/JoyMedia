@@ -2,7 +2,7 @@
   <div class="flex flex-col items-center w-full">
     <!-- Viewport Container with CapCut dark canvas border -->
     <div
-      class="gflow-viewport w-full max-w-[880px] bg-black/90 rounded-2xl overflow-hidden relative flex items-center justify-center border border-outline-border shadow-2xl transition-all"
+      class="gflow-viewport w-full max-w-[800px] max-h-[44vh] bg-black/90 rounded-2xl overflow-hidden relative flex items-center justify-center border border-outline-border shadow-2xl transition-all"
       :class="{
         'ratio-landscape': settingsFormat === 'Landscape',
         'ratio-portrait': settingsFormat === 'Portrait',
@@ -44,8 +44,8 @@
         <p class="text-xs text-rose-300 max-w-lg break-words whitespace-pre-wrap">{{ productionError }}</p>
         <p v-if="productionStatus" class="text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Trạng thái' : 'Status' }}: {{ productionStatus }}</p>
         <div class="flex items-center gap-2 pt-2">
-          <button type="button" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs cursor-pointer" :disabled="retryingFailedScenes" @click="$emit('retryFailedScenes')">
-            {{ retryingFailedScenes ? 'Đang thử lại...' : (currentLang === 'vi' ? 'Thử lại' : 'Retry') }}
+          <button type="button" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs cursor-pointer" @click="$emit('retryFailedScenes')">
+            {{ currentLang === 'vi' ? 'Thử lại' : 'Retry' }}
           </button>
           <button type="button" class="px-3.5 py-1.5 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border text-xs font-semibold shadow-xs cursor-pointer" @click="$emit('refresh')">
             {{ currentLang === 'vi' ? 'Làm mới' : 'Refresh' }}
@@ -87,48 +87,29 @@
       />
 
       <!-- Live Generating Radar Overlay -->
-      <div v-else-if="isProductionActive || isAutoGenerating" class="flex flex-col items-center justify-center text-center p-6">
+      <div v-else-if="isProductionActive" class="flex flex-col items-center justify-center text-center p-6">
         <div class="relative size-14 mb-3 flex items-center justify-center">
           <span class="lucide-refresh-cw size-9 animate-spin text-indigo-400" />
           <span class="absolute text-[11px] font-bold font-mono text-ink-primary">{{ production?.progress || 0 }}%</span>
         </div>
         <h3 class="text-sm font-semibold text-ink-primary">
-          {{ isAutoGenerating ? autoGenerateStep : (currentLang === 'vi' ? 'Đang kết xuất video quảng cáo...' : 'Rendering video ad...') }}
+          {{ currentLang === 'vi' ? 'Đang kết xuất video quảng cáo...' : 'Rendering video ad...' }}
         </h3>
         <p class="text-xs text-ink-muted mt-1">
-          {{ completedShotCount(production) }} / {{ production?.shots?.length || expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes completed' }} · ETA {{ estimatedFinishLabel }}
+          {{ completedShotCount(production) }} / {{ production?.shots?.length || (production?.total_tasks || 4) }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes completed' }}
         </p>
       </div>
 
-      <!-- Blank Canvas Placeholder Matching Screenshot -->
+      <!-- Blank Canvas Placeholder -->
       <div v-else class="flex flex-col items-center justify-center text-center p-8 text-ink-muted">
-        <template v-if="projectAssets.length === 0">
-          <span class="size-14 rounded-2xl bg-surface-card border border-outline-border flex items-center justify-center mb-3 text-ink-secondary text-xl shadow-md">🖼️</span>
-          <p class="text-sm text-ink-primary font-semibold">{{ currentLang === 'vi' ? 'Thêm tư liệu sản phẩm để bắt đầu' : 'Add product media to get started' }}</p>
-          <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Tải ảnh mới hoặc chọn từ Thư viện Media.' : 'Upload a new image or choose one from your Media Library.' }}</p>
-          <div class="flex items-center gap-2 mt-4">
-            <select
-              :value="uploadCategory"
-              class="px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary cursor-pointer"
-              title="Media category"
-              @change="$emit('update:uploadCategory', $event.target.value)"
-            >
-              <option v-for="category in inputAssetCategories" :key="category" :value="category">{{ category }}</option>
-            </select>
-            <label class="jm-btn-primary cursor-pointer text-xs">
-              {{ currentLang === 'vi' ? 'Tải ảnh lên' : 'Upload Image' }}
-              <input class="file-input-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple :disabled="uploadingImages" @change="$emit('uploadSelectedImages', $event)" />
-            </label>
-            <button type="button" class="jm-btn-secondary text-xs cursor-pointer" @click="$emit('openMediaPicker')">{{ currentLang === 'vi' ? 'Thư viện Media' : 'Media Library' }}</button>
-          </div>
-        </template>
-        <template v-else-if="activeSelectedShot">
+        <span class="size-14 rounded-2xl bg-surface-card border border-outline-border flex items-center justify-center mb-3 text-ink-secondary text-2xl shadow-md">🎬</span>
+        <template v-if="activeSelectedShot">
           <p class="text-sm text-ink-primary font-semibold">{{ t('shot_n', { n: activeSelectedShot.shot_number }) }}</p>
           <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Chưa có video kết xuất cho cảnh này.' : 'No generated video is available for this shot yet.' }}</p>
         </template>
         <template v-else>
-          <p class="text-sm text-ink-primary font-semibold">{{ currentLang === 'vi' ? 'Sẵn sàng tạo video' : 'Ready to create your video' }}</p>
-          <p class="text-xs text-ink-muted mt-1">{{ currentLang === 'vi' ? 'Nhấn Tạo Video để tạo storyboard.' : 'Click Generate Video to create the storyboard.' }}</p>
+          <p class="text-sm text-ink-primary font-semibold">{{ currentLang === 'vi' ? 'Sẵn sàng sản xuất video' : 'Ready to create video' }}</p>
+          <p class="text-xs text-ink-muted mt-1 max-w-sm">{{ currentLang === 'vi' ? 'Nhập ý tưởng và thêm tư liệu tham chiếu bên dưới để bắt đầu tạo video.' : 'Enter your video prompt and add reference media below to generate scenes.' }}</p>
         </template>
       </div>
     </div>
@@ -263,21 +244,12 @@ defineProps({
   currentTimelinePositionLabel: { type: String, default: "00:00" },
   isPlaying: { type: Boolean, default: false },
   isProductionActive: { type: Boolean, default: false },
-  isAutoGenerating: { type: Boolean, default: false },
-  autoGenerateStep: { type: String, default: "" },
   production: { type: Object, default: null },
   productionError: { type: String, default: "" },
   productionStatus: { type: String, default: "" },
-  expectedShotCount: { type: Number, default: 0 },
-  estimatedFinishLabel: { type: String, default: "" },
   projectAssets: { type: Array, default: () => [] },
-  inputAssetCategories: { type: Array, default: () => [] },
-  uploadCategory: { type: String, default: "Product" },
   settingsFormat: { type: String, default: "Landscape" },
-  isPlayheadAtKeyframe: { type: Boolean, default: false },
   finalVideo: { type: Object, default: null },
-  retryingFailedScenes: { type: Boolean, default: false },
-  uploadingImages: { type: Boolean, default: false },
   selectedShotIndex: { type: Number, default: 0 },
   currentLang: { type: String, default: "vi" },
   isOutdated: { type: Boolean, default: false },
@@ -300,8 +272,6 @@ defineEmits([
   "retryFailedScenes",
   "refresh",
   "openMediaPicker",
-  "uploadSelectedImages",
-  "update:uploadCategory",
 ]);
 
 function formatSecondsLabel(totalSeconds) {

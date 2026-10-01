@@ -12,11 +12,12 @@
         </span>
         <button
           type="button"
-          class="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md font-semibold bg-surface-muted text-ink-secondary border border-outline-border cursor-pointer hover:border-indigo-400 transition-colors"
-          :title="currentLang === 'vi' ? 'Bấm để đổi chế độ nối cảnh' : 'Click to toggle continuity mode'"
+          class="hidden sm:inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-md font-semibold bg-surface-muted text-ink-secondary border border-outline-border cursor-pointer hover:border-indigo-400 transition-colors"
+          :title="currentLang === 'vi' ? 'Bấm để đổi chế độ nối cảnh' : 'Click to toggle scene continuity'"
           @click="$emit('toggleContinuityMode')"
         >
-          <span>{{ generationMode === 'Continuous' ? '🔗 Continuous (Chained)' : '⧉ Multi-shot' }}</span>
+          <span class="size-1.5 rounded-full" :class="generationMode === 'Continuous' ? 'bg-indigo-500' : 'bg-ink-muted'" />
+          <span>{{ generationMode === 'Continuous' ? (currentLang === 'vi' ? 'Giữ cảnh liền mạch' : 'Keep scenes consistent') : (currentLang === 'vi' ? 'Cảnh độc lập' : 'Independent scenes') }}</span>
         </button>
       </div>
 
