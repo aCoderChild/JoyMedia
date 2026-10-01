@@ -6,16 +6,16 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "input_role",
+  "reference_role",
   "asset_version"
  ],
  "fields": [
   {
    "description": "Stable workflow input role key. Must match the role required by the Workflow Binding",
-   "fieldname": "input_role",
+   "fieldname": "reference_role",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Input Role Key",
+   "label": "Reference Role",
    "reqd": 1
   },
   {
@@ -34,7 +34,7 @@
  "modified": "2026-09-05 23:23:38.049835",
  "modified_by": "Administrator",
  "module": "JoyMedia",
- "name": "Shot Input Mapping",
+ "name": "Shot Reference",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",

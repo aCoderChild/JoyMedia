@@ -6,7 +6,7 @@
  "field_order": [
   "timeline_section",
   "media_project",
-  "shot_specification",
+  "shot",
   "clip_order",
   "enabled",
   "source_section",
@@ -36,10 +36,10 @@
   },
   {
    "description": "Generation shot that produced the clip. The timeline can contain multiple clip instances derived from one shot.",
-   "fieldname": "shot_specification",
+   "fieldname": "shot",
    "fieldtype": "Link",
    "label": "Source Shot",
-   "options": "Shot Specification"
+   "options": "Shot"
   },
   {
    "fieldname": "clip_order",

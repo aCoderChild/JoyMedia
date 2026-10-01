@@ -30,7 +30,7 @@ class TestGenerationAttempt(FrappeTestCase):
 
 	def test_attempt_number_is_assigned_from_the_job_history(self):
 		attempt = frappe.new_doc("Generation Attempt")
-		attempt.generation_job = "JOB-00001"
+		attempt.generation_task = "JOB-00001"
 		attempt.seed = 42
 		job = MagicMock(status="Queued")
 
@@ -54,13 +54,13 @@ class TestGenerationAttempt(FrappeTestCase):
 		job.validate_for_execution.assert_called_once()
 		get_value.assert_called_once_with(
 			"Generation Attempt",
-			{"generation_job": "JOB-00001"},
+			{"generation_task": "JOB-00001"},
 			[{"MAX": "attempt_number"}],
 		)
 
 	def test_create_retry_attempt_creates_a_pending_successor(self):
 		failed_attempt = frappe._dict(
-			name="ATT-00001", status="Failed", generation_job="JOB-00001", seed=42
+			name="ATT-00001", status="Failed", generation_task="JOB-00001", seed=42
 		)
 		job = frappe._dict(name="JOB-00001", status="Failed")
 		job.save = MagicMock()
@@ -88,7 +88,7 @@ class TestGenerationAttempt(FrappeTestCase):
 			get_doc.call_args_list[2].args[0],
 			{
 				"doctype": "Generation Attempt",
-				"generation_job": "JOB-00001",
+				"generation_task": "JOB-00001",
 				"seed": 42,
 				"retry_of": "ATT-00001",
 				"retry_reason": "Execution Failure",
@@ -99,7 +99,7 @@ class TestGenerationAttempt(FrappeTestCase):
 
 	def test_completed_attempt_can_create_one_manual_regeneration_successor(self):
 		completed_attempt = frappe._dict(
-			name="ATT-00001", status="Completed", generation_job="JOB-00001", seed=42
+			name="ATT-00001", status="Completed", generation_task="JOB-00001", seed=42
 		)
 		job = frappe._dict(name="JOB-00001", status="Completed")
 		job.save = MagicMock()

@@ -46,7 +46,7 @@ class TestTimelineEditor(FrappeTestCase):
 		}).insert(ignore_permissions=True)
 		self.asset, self.version_1 = _create_output_version(self.project, "test-v1.mp4", 4)
 		self.shot = frappe.get_doc({
-			"doctype": "Shot Specification",
+			"doctype": "Shot",
 			"media_project": self.project.name,
 			"shot_number": 1,
 			"shot_name": "Product Hero",
@@ -57,7 +57,7 @@ class TestTimelineEditor(FrappeTestCase):
 		self.clip_1 = frappe.get_doc({
 			"doctype": "Timeline Clip",
 			"media_project": self.project.name,
-			"shot_specification": self.shot.name,
+			"shot": self.shot.name,
 			"clip_order": 1,
 			"enabled": 1,
 			"source_asset_version": self.version_1.name,

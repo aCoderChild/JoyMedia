@@ -5,7 +5,7 @@ from joymedia.joymedia.report.analytics import get_attempt_analytics
 
 COLUMNS = [
 	{"fieldname": "source", "label": "Source", "fieldtype": "Data", "width": 120},
-	{"fieldname": "workflow_version", "label": "Generation Workflow", "fieldtype": "Link", "options": "Generation Workflow", "width": 150},
+	{"fieldname": "workflow", "label": "Generation Workflow", "fieldtype": "Link", "options": "Generation Workflow", "width": 150},
 	{"fieldname": "failure_class", "label": "Failure Class", "fieldtype": "Data", "width": 160},
 	{"fieldname": "retry_reason", "label": "Retry Reason", "fieldtype": "Data", "width": 170},
 	{"fieldname": "count", "label": "Count", "fieldtype": "Int", "width": 80},
@@ -21,7 +21,7 @@ def execute(filters=None):
 			buckets[
 				(
 					"Execution Attempt",
-					attempt.workflow_version or "Unassigned",
+					attempt.workflow or "Unassigned",
 				attempt.failure_class,
 					attempt.retry_reason or "",
 				)
@@ -30,12 +30,12 @@ def execute(filters=None):
 	return COLUMNS, [
 		{
 			"source": source,
-			"workflow_version": workflow_version,
+			"workflow": workflow,
 			"failure_class": failure_class,
 			"retry_reason": retry_reason,
 			"count": count,
 		}
-		for (source, workflow_version, failure_class, retry_reason), count in sorted(
+		for (source, workflow, failure_class, retry_reason), count in sorted(
 			buckets.items(), key=lambda item: item[1], reverse=True
 		)
 	]

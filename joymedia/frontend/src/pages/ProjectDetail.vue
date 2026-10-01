@@ -260,8 +260,8 @@
             </h4>
             <p class="text-ink-secondary mt-0.5">
               {{ currentLang === 'vi'
-                ? `Timeline biên tập này dựa trên Phiên bản ${timelineSpecVersion || 1}. Các cảnh mới tạo của bạn là Phiên bản ${latestSpecVersion || 2}.`
-                : `This edit timeline is based on Version ${timelineSpecVersion || 1}. Your latest generated scenes are Version ${latestSpecVersion || 2}.`
+                ? 'Có kết quả tạo mới hơn cho dự án này.'
+                : 'New generated results are available for this project.'
               }}
             </p>
           </div>
@@ -356,7 +356,7 @@
               :title="currentLang === 'vi' ? 'Bấm để đổi chế độ nối cảnh' : 'Click to toggle continuity mode'"
               @click="toggleContinuityMode"
             >
-              🔗 {{ settingsForm.continuity_mode === 'Continuous' ? 'Continuous (Chained)' : 'Multi-shot' }}
+              🔗 {{ settingsForm.generation_mode === 'Continuous' ? 'Continuous (Chained)' : 'Multi-shot' }}
             </span>
           </div>
 
@@ -497,9 +497,9 @@
                 >
                   <span
                     class="capcut-kf-diamond"
-                    :class="shot.last_frame_image || settingsForm.continuity_mode === 'Continuous' ? 'capcut-kf-out-set' : 'capcut-kf-out-empty'"
+                    :class="shot.last_frame_image || settingsForm.generation_mode === 'Continuous' ? 'capcut-kf-out-set' : 'capcut-kf-out-empty'"
                   />
-                  <span class="capcut-kf-time-badge">{{ settingsForm.continuity_mode === 'Continuous' ? 'Continuity' : 'End' }} · {{ formatShotKeyframeTime(index, 1) }}</span>
+                  <span class="capcut-kf-time-badge">{{ settingsForm.generation_mode === 'Continuous' ? 'Continuity' : 'End' }} · {{ formatShotKeyframeTime(index, 1) }}</span>
                 </button>
               </div>
             </div>
@@ -509,13 +509,13 @@
               <button
                 type="button"
                 class="capcut-transition-pill"
-                :title="settingsForm.continuity_mode === 'Continuous'
+                  :title="settingsForm.generation_mode === 'Continuous'
                   ? (currentLang === 'vi' ? 'Chế độ Nối liền: Frame cuối Cảnh ' + shot.shot_number + ' là Frame đầu Cảnh ' + (shot.shot_number + 1) : 'Continuous: End frame of Shot ' + shot.shot_number + ' chains to next shot')
                   : (currentLang === 'vi' ? 'Chế độ Cắt cảnh độc lập (Multi-shot)' : 'Multi-shot independent cut')"
                 @click="toggleContinuityMode"
               >
-                <span>{{ settingsForm.continuity_mode === 'Continuous' ? '⫸' : '⧉' }}</span>
-                <span class="hidden md:inline">{{ settingsForm.continuity_mode === 'Continuous' ? (currentLang === 'vi' ? 'Nối liền' : 'Continuous') : (currentLang === 'vi' ? 'Cắt cảnh' : 'Cut') }}</span>
+                <span>{{ settingsForm.generation_mode === 'Continuous' ? '⫸' : '⧉' }}</span>
+                <span class="hidden md:inline">{{ settingsForm.generation_mode === 'Continuous' ? (currentLang === 'vi' ? 'Nối liền' : 'Continuous') : (currentLang === 'vi' ? 'Cắt cảnh' : 'Cut') }}</span>
               </button>
             </div>
           </template>
@@ -567,7 +567,7 @@
       :active-selected-shot="activeSelectedShot"
       :selected-shot-frame="selectedShotFrame"
       :selected-shot-index="selectedShotIndex"
-      :continuity-mode="settingsForm.continuity_mode || 'Multi-shot'"
+      :generation-mode="settingsForm.generation_mode || 'Multi-shot'"
       :current-lang="currentLang"
       :regenerating-source="regeneratingSource"
       :is-production-active="isProductionActive"
@@ -595,7 +595,7 @@
       @apply-asset-to-shot="applyAssetToShot"
       @select-keyframe-target="handleSelectKeyframeTarget"
       @open-media-picker="openMediaPicker"
-      @toggle-continuity-mode="toggleContinuityMode"
+      @toggle-generation-mode="toggleContinuityMode"
       @change-shot-duration="changeShotDuration"
       @regenerate-current-shot="regenerateCurrentShot"
       @copy-prompt="copyPrompt"
@@ -698,7 +698,7 @@
         <div>
           <label class="block text-ink-secondary mb-1 font-semibold">{{ t('settings_continuity_label') }}</label>
           <FormControl
-            v-model="settingsForm.continuity_mode"
+            v-model="settingsForm.generation_mode"
             type="select"
             :options="[
               { label: t('opt_multishot'), value: 'Multi-shot' },
@@ -721,7 +721,7 @@
             {{ currentLang === 'vi' ? 'Hướng dẫn nhất quán toàn video' : 'Global Video Instructions' }}
           </label>
           <textarea
-            v-model="settingsForm.global_consistency_instructions"
+            v-model="settingsForm.global_instructions"
             rows="4"
             class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:border-indigo-500 focus:outline-none resize-none"
             :placeholder="currentLang === 'vi' ? 'Sản phẩm, phong cách, ánh sáng và quy tắc liên tục chung.' : 'Product identity, style, lighting, and continuity rules shared across shots.'"
@@ -829,8 +829,6 @@ const {
   exportError,
   isExporting,
   isOutdated,
-  latestSpecVersion,
-  timelineSpecVersion,
   selectedClip,
   selectedClipName,
   playheadFrame,
@@ -1057,7 +1055,7 @@ const autoGenerateStep = ref("");
 const magicGenerateError = ref("");
 const productionPollError = ref("");
 
-const settingsForm = reactive({ duration: 15, format: "Landscape", video_style: "", continuity_mode: "Multi-shot", global_consistency_instructions: "" });
+const settingsForm = reactive({ duration: 15, format: "Landscape", video_style: "", generation_mode: "Multi-shot", global_instructions: "" });
 const totalDurationSeconds = computed(() => Number(settingsForm.duration) || 15);
 const durationOptions = [5, 8, 10, 15, 20, 30, 45, 60];
 const availableDurations = computed(() => {
@@ -1515,11 +1513,11 @@ function previewKeyframe(shot, type) {
 }
 
 async function toggleContinuityMode() {
-  settingsForm.continuity_mode = settingsForm.continuity_mode === "Continuous" ? "Multi-shot" : "Continuous";
+  settingsForm.generation_mode = settingsForm.generation_mode === "Continuous" ? "Multi-shot" : "Continuous";
   await saveSettings();
   toast({
     title: currentLang.value === "vi" ? "Chế độ nối cảnh" : "Continuity Mode",
-    text: settingsForm.continuity_mode === "Continuous"
+    text: settingsForm.generation_mode === "Continuous"
       ? (currentLang.value === "vi" ? "Đã chuyển sang Nối liền (Continuous)" : "Switched to Continuous")
       : (currentLang.value === "vi" ? "Đã chuyển sang Cắt cảnh (Multi-shot)" : "Switched to Multi-shot"),
     type: "info",
@@ -1873,8 +1871,8 @@ watch(settings, (value) => {
   settingsForm.duration = Number(value.duration) || 15;
   settingsForm.format = value.delivery_preset || "Landscape";
   settingsForm.video_style = value.video_style || settingsForm.video_style;
-  settingsForm.continuity_mode = value.continuity_mode || "Multi-shot";
-  settingsForm.global_consistency_instructions = value.global_consistency_instructions || "";
+  settingsForm.generation_mode = value.generation_mode || "Multi-shot";
+  settingsForm.global_instructions = value.global_instructions || "";
 }, { immediate: true });
 
 // Production Polling Logic
@@ -2077,8 +2075,8 @@ async function saveSettings() {
       total_duration_seconds: settingsForm.duration,
       delivery_preset: settingsForm.format,
       video_style: settingsForm.video_style,
-      continuity_mode: settingsForm.continuity_mode,
-      global_consistency_instructions: settingsForm.global_consistency_instructions,
+      generation_mode: settingsForm.generation_mode,
+      global_instructions: settingsForm.global_instructions,
     });
     showSettings.value = false;
     await refresh();

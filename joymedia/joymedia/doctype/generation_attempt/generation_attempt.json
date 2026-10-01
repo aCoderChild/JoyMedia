@@ -7,7 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "attempt_identity_section",
-  "generation_job",
+  "generation_task",
   "attempt_number",
   "status",
   "execution_section",
@@ -36,12 +36,12 @@
    "label": "Attempt Identity"
   },
   {
-   "fieldname": "generation_job",
+   "fieldname": "generation_task",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Generation Job",
-   "options": "Generation Job",
+   "label": "Generation Task",
+   "options": "Generation Task",
    "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },

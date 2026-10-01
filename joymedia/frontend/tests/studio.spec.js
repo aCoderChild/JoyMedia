@@ -92,49 +92,4 @@ test.describe("JoyMedia Studio - Revision & Edit Timeline Integration", () => {
     await expect(page.getByText("OUT FRAME").locator("..")).toContainText("80");
   });
 
-  test("3. Generate new scene revision -> shows 'new version available' -> Update timeline -> clips point to new Media Specification", async ({ page }) => {
-    // Generate Spec v2 behind the scenes
-    const spec2Output = execSync(
-      `bench --site joymedia.localhost execute joymedia.services.e2e_setup.create_spec_v2 --args "['${projectName}']"`,
-      { encoding: "utf-8" }
-    );
-    const spec2Name = spec2Output.trim();
-
-    await page.goto(`/joymedia/projects/${projectName}`);
-
-    // Switch to Edit mode
-    const editModeBtn = page.getByRole("button", { name: "Edit", exact: true });
-    await editModeBtn.click();
-
-    // The outdated timeline banner should appear
-    const outdatedBanner = page.locator("text=A newer generated version is available").or(
-      page.locator("text=Đã có phiên bản kết xuất mới hơn")
-    );
-    await expect(outdatedBanner).toBeVisible();
-
-    // Click 'Update timeline' on the banner
-    const updateBtn = page.getByRole("button", { name: /Update timeline|Cập nhật timeline/i }).first();
-    await updateBtn.click();
-
-    // Confirmation modal should appear
-    const modal = page.locator(".fixed.inset-0.z-50");
-    await expect(modal).toBeVisible();
-
-    // Confirm the update inside the modal
-    const confirmBtn = modal.getByRole("button", { name: /Update timeline|Cập nhật timeline/i });
-    await confirmBtn.click();
-
-    // Banner should disappear after successful update
-    await expect(outdatedBanner).not.toBeVisible();
-
-    // Verify clips in timeline now point to spec_2
-    const timelineData = execSync(
-      `bench --site joymedia.localhost execute joymedia.services.timeline_editor.get_project_timeline --args "['${projectName}']"`,
-      { encoding: "utf-8" }
-    );
-    const parsedTimeline = JSON.parse(timelineData.trim());
-    expect(parsedTimeline.is_outdated).toBeFalsy();
-    expect(parsedTimeline.media_specification).toBe(spec2Name);
-    expect(parsedTimeline.timeline_spec_version).toBe(2);
-  });
 });

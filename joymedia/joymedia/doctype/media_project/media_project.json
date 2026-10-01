@@ -41,7 +41,7 @@
   {"default":"Multi-shot","description":"Continuous chains later shots from generated last frames. Multi-shot uses independently assigned keyframes.","fieldname":"generation_mode","fieldtype":"Select","label":"Generation Mode","options":"Continuous\nMulti-shot"},
   {"description":"Optional video-wide constraints that apply to every shot.","fieldname":"global_instructions","fieldtype":"Long Text","label":"Global Instructions"},
   {"description":"Generation Workflow used for new runs.","fieldname":"workflow","fieldtype":"Link","label":"Generation Workflow","options":"Generation Workflow"},
-  {"description":"Project ingredients/references. Each row points to an immutable Asset Version and may represent image, video or audio media.","fieldname":"selected_media","fieldtype":"Table","label":"Selected Media","options":"Project Media Selection"},
+  {"description":"Project ingredients/references. Each row points to an immutable Asset Version and may represent image, video or audio media.","fieldname":"selected_media","fieldtype":"Table","label":"Selected Media","options":"Project Reference"},
   {"description":"Current composed/exported project video.","fieldname":"current_output_asset_version","fieldtype":"Link","label":"Current Output","options":"Asset Version","read_only":1},
   {"default":"Idle","fieldname":"export_status","fieldtype":"Select","hidden":1,"label":"Export Status","options":"Idle\nQueued\nRunning\nCompleted\nFailed","read_only":1},
   {"fieldname":"export_error","fieldtype":"Small Text","hidden":1,"label":"Export Error","read_only":1},

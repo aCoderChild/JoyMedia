@@ -16,8 +16,8 @@ SEMANTIC_BINDING_KEYS = {"first_frame", "last_frame", "generation_prompt"}
 def resolve_attempt(attempt_name: str, staged_inputs=None):
 	staged_inputs = staged_inputs or {}
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
-	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	workflow_version = frappe.get_doc("Generation Workflow", job.workflow_version)
+	job = frappe.get_doc("Generation Task", attempt.generation_task)
+	workflow_version = frappe.get_doc("Generation Workflow", job.workflow)
 	try:
 		base_workflow = json.loads(workflow_version.workflow_json)
 	except json.JSONDecodeError as exc:
@@ -33,9 +33,9 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 			continue
 		node["inputs"][binding.input_name] = value
 
-	shot = frappe.get_doc("Shot Specification", job.shot_specification)
+	shot = frappe.get_doc("Shot", job.shot)
 	project = frappe.get_doc("Media Project", shot.media_project)
-	adapter = get_workflow_adapter(workflow_version)
+	adapter = get_workflow_adapter(workflow)
 	adapter.prepare_execution(
 		workflow,
 		seed=int(attempt.seed),
@@ -49,7 +49,7 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 
 	if any(
 		binding.binding_key == "last_frame" and not staged_inputs.get("last_frame")
-		for binding in workflow_version.bindings
+		for binding in workflow.bindings
 	):
 		adapter.finalize_workflow(workflow, workflow_version, staged_inputs)
 
@@ -218,7 +218,7 @@ def _resolve_generation_input(job, required_role, staged_inputs, required=True):
 	if not required:
 		return _SKIP_BINDING
 	frappe.throw(
-		_("No staged ComfyUI input found for role '{0}' on Generation Job {1}.").format(
+		_("No staged ComfyUI input found for role '{0}' on Generation Task {1}.").format(
 			normalized_role, job.name
 		)
 	)

@@ -6,7 +6,7 @@ SHOT_FIELDS = ("generation_prompt",)
 
 
 def _get_editable_shot(project, shot_name):
-	shot = frappe.get_doc("Shot Specification", shot_name)
+	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
 	return shot

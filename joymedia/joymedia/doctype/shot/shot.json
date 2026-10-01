@@ -76,7 +76,7 @@
    "fieldtype": "Table",
    "hidden": 1,
    "label": "Generation Inputs",
-   "options": "Shot Input Mapping"
+   "options": "Shot Reference"
   },
   {
    "fieldname": "selected_output_section",
@@ -99,7 +99,7 @@
  "modified": "2026-10-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
- "name": "Shot Specification",
+ "name": "Shot",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [

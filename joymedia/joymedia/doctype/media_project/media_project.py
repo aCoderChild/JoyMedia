@@ -36,33 +36,6 @@ def _meaningful_project_value(value, fallback):
 	return value if value and value.lower() != "untitled" else fallback
 
 
-def get_latest_media_specification(media_project):
-	rows = frappe.get_all(
-		"Media Specification",
-		filters={"media_project": media_project},
-		fields=["name"],
-		order_by="version_number desc, creation desc",
-		limit_page_length=1,
-	)
-	return frappe.get_doc("Media Specification", rows[0].name) if rows else None
-
-
-def _get_project_specification_names(media_project):
-	return frappe.get_all(
-		"Media Specification",
-		filters={"media_project": media_project},
-		pluck="name",
-		order_by="version_number desc, creation desc",
-	)
-
-
-def _get_latest_project_storyboard_specification(media_project, specification_names=None):
-	for specification_name in specification_names or _get_project_specification_names(media_project):
-		if frappe.db.exists("Shot Specification", {"media_specification": specification_name}):
-			return frappe.get_doc("Media Specification", specification_name)
-	return get_latest_media_specification(media_project)
-
-
 def _get_latest_project_generation_run(media_project, specification_names=None):
 	rows = frappe.get_all(
 		"Generation Run",
@@ -78,8 +51,8 @@ def _get_latest_project_generation_run(media_project, specification_names=None):
 	return rows[0] if rows else None
 
 
-def _build_planning_context(project, media_specification=None):
-	settings = media_specification or project
+def _build_planning_context(project, settings=None):
+	settings = settings or project
 	context = {
 		"video_idea": project.video_idea or "",
 		"product_name": project.product_name or "",
@@ -87,7 +60,7 @@ def _build_planning_context(project, media_specification=None):
 			row.asset_version for row in project.selected_media or [] if row.asset_version
 		),
 		"workflow": settings.workflow or "",
-		"generation_mode": getattr(settings, "generation_mode", None) or getattr(settings, "continuity_mode", None) or "",
+		"generation_mode": getattr(settings, "generation_mode", None) or "",
 		"total_duration_seconds": float(settings.total_duration_seconds or 0),
 		"delivery_preset": settings.delivery_preset or "",
 		"global_instructions": settings.global_instructions or "",
@@ -96,36 +69,22 @@ def _build_planning_context(project, media_specification=None):
 	return context, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def _customer_style_details(media_specification):
-	if not media_specification:
+def _customer_style_details(settings):
+	if not settings:
 		return {}
 	workflow = (
-		frappe.db.get_value("Generation Workflow", media_specification.workflow, ["workflow_key"], as_dict=True)
-		if media_specification.workflow else None
+		frappe.db.get_value("Generation Workflow", settings.workflow, ["workflow_key"], as_dict=True)
+		if settings.workflow else None
 	)
 	workflow_name = " ".join(part.capitalize() for part in workflow.workflow_key.split("_")) if workflow else None
 	return {
-		"video_style": getattr(media_specification, "video_style", None) or (workflow.workflow_key if workflow else None),
+		"video_style": getattr(settings, "video_style", None) or (workflow.workflow_key if workflow else None),
 		"video_style_name": workflow_name,
 	}
 
 
 def _project_settings(project):
-	"""Return project-owned settings, falling back to legacy data during migration."""
-	if project.workflow and project.total_duration_seconds:
-		return project
-	legacy = get_latest_media_specification(project.name)
-	if legacy:
-		return frappe._dict(
-			workflow=legacy.workflow,
-			total_duration_seconds=legacy.total_duration_seconds,
-			delivery_preset=legacy.delivery_preset,
-			delivery_width=legacy.delivery_width,
-			delivery_height=legacy.delivery_height,
-			generation_mode=_normalize_generation_mode(legacy.continuity_mode),
-			global_instructions=legacy.global_instructions,
-			video_style=legacy.video_style,
-		)
+	"""Return the project-owned generation settings."""
 	return project
 
 
@@ -215,17 +174,17 @@ def _get_project_reference_contexts(project):
 
 
 def _copy_storyboard_shots(source_specification, target_specification):
-	if frappe.db.exists("Shot Specification", {"media_project": target_specification.name}):
+	if frappe.db.exists("Shot", {"media_project": target_specification.name}):
 		return
 	for shot_name in frappe.get_all(
-		"Shot Specification",
+		"Shot",
 		filters={"media_project": source_specification.name},
 		pluck="name",
 		order_by="shot_number asc, name asc",
 	):
-		source = frappe.get_doc("Shot Specification", shot_name)
+		source = frappe.get_doc("Shot", shot_name)
 		copy = frappe.get_doc({
-			"doctype": "Shot Specification",
+			"doctype": "Shot",
 			"media_project": target_specification.name,
 			"shot_number": source.shot_number,
 			"shot_name": source.shot_name,
@@ -284,7 +243,7 @@ def _storyboard_payload(specification):
 	if not specification:
 		return []
 	shots = frappe.get_all(
-		"Shot Specification",
+		"Shot",
 		filters={"media_project": specification.name},
 		fields=["name", "shot_number", "shot_name", "generation_prompt", "duration_seconds", "selected_output_asset_version"],
 		order_by="shot_number asc, name asc",
@@ -293,13 +252,13 @@ def _storyboard_payload(specification):
 		if shot.selected_output_asset_version:
 			shot["output_video"] = frappe.db.get_value("Asset Version", shot.selected_output_asset_version, "file")
 		input_rows = frappe.get_all(
-			"Shot Input Mapping",
-			filters={"parent": shot.name, "parenttype": "Shot Specification"},
-			fields=["input_role", "asset_version"],
+			"Shot Reference",
+			filters={"parent": shot.name, "parenttype": "Shot"},
+			fields=["reference_role", "asset_version"],
 			order_by="idx asc",
 		)
 		for role, output_key in (("first_frame", "reference_image"), ("last_frame", "last_frame_image")):
-			row = next((r for r in input_rows if frappe.scrub(r.input_role or "") == role), None)
+			row = next((r for r in input_rows if frappe.scrub(r.reference_role or "") == role), None)
 			if row:
 				shot[output_key] = frappe.db.get_value("Asset Version", row.asset_version, "file")
 	return shots
@@ -326,7 +285,6 @@ def get_project_workspace(name):
 			"name": project.name,
 			"duration": settings.total_duration_seconds,
 			"delivery_preset": settings.delivery_preset,
-			"continuity_mode": _normalize_generation_mode(settings.generation_mode),
 			"generation_mode": _normalize_generation_mode(settings.generation_mode),
 			"global_instructions": settings.global_instructions or "",
 			**_customer_style_details(settings),
@@ -342,18 +300,18 @@ def get_project_workspace(name):
 
 def _aggregate_shot_progress(run_name):
 	jobs = frappe.get_all(
-		"Generation Job",
+		"Generation Task",
 		filters={"generation_run": run_name},
-		fields=["shot_specification", "status", "progress", "error_summary"],
+		fields=["shot", "status", "progress", "error_summary"],
 		order_by="creation asc",
 	)
 	groups = {}
 	for job in jobs:
-		groups.setdefault(job.shot_specification, []).append(job)
+		groups.setdefault(job.shot, []).append(job)
 	result = []
 	for shot_name, shot_jobs in groups.items():
 		shot = frappe.db.get_value(
-			"Shot Specification", shot_name,
+			"Shot", shot_name,
 			["shot_number", "shot_name", "selected_output_asset_version"], as_dict=True,
 		)
 		statuses = [row.status for row in shot_jobs]
@@ -370,7 +328,7 @@ def _aggregate_shot_progress(run_name):
 		progress = sum(float(row.progress or 0) for row in shot_jobs) / max(len(shot_jobs), 1)
 		output = shot.selected_output_asset_version if shot else None
 		result.append({
-			"shot_specification": shot_name,
+			"shot": shot_name,
 			"shot_number": shot.shot_number if shot else None,
 			"shot_name": shot.shot_name if shot else None,
 			"status": status,
@@ -379,7 +337,7 @@ def _aggregate_shot_progress(run_name):
 			"selected_output_asset_version": output,
 			"output_video": frappe.db.get_value("Asset Version", output, "file") if output else None,
 		})
-	return sorted(result, key=lambda row: (row["shot_number"] or 0, row["shot_specification"]))
+	return sorted(result, key=lambda row: (row["shot_number"] or 0, row["shot"]))
 
 
 @frappe.whitelist()
@@ -556,15 +514,15 @@ def update_project_name(media_project, project_name):
 @frappe.whitelist()
 def save_project_video_settings(
 	project_name, total_duration_seconds, delivery_preset, video_style=None,
-	continuity_mode=None, global_instructions=None, global_consistency_instructions=None,
+	generation_mode=None, global_instructions=None,
 ):
 	project = frappe.get_doc("Media Project", project_name)
 	return project.save_video_settings(
 		total_duration_seconds,
 		delivery_preset,
 		video_style,
-		continuity_mode,
-		global_instructions if global_instructions is not None else global_consistency_instructions,
+		generation_mode,
+		global_instructions,
 	)
 
 
@@ -615,7 +573,7 @@ def generate_project_video_from_storyboard(project_name):
 def update_project_shot(project_name, shot_name, values):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
-	shot = frappe.get_doc("Shot Specification", shot_name)
+	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
 	if isinstance(values, str):
@@ -639,17 +597,17 @@ def set_project_shot_keyframe(project_name, shot_name, frame_role, asset_version
 	project._require_write_access()
 	if frame_role not in ("first_frame", "last_frame"):
 		frappe.throw(_("Keyframe role must be first_frame or last_frame."))
-	shot = frappe.get_doc("Shot Specification", shot_name)
+	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
 	asset = frappe.db.get_value("Asset Version", asset_version, ["name", "media_asset"], as_dict=True)
 	if not asset or frappe.db.get_value("Media Asset", asset.media_asset, "media_type") != "Image":
 		frappe.throw(_("Keyframes must use an Image Asset Version."))
 	shot.set("generation_inputs", [
-		{"input_role": row.input_role, "asset_version": row.asset_version}
-		for row in shot.generation_inputs or [] if frappe.scrub(row.input_role or "") != frame_role
+				{"reference_role": row.reference_role, "asset_version": row.asset_version}
+		for row in shot.generation_inputs or [] if frappe.scrub(row.reference_role or "") != frame_role
 	])
-	shot.append("generation_inputs", {"input_role": frame_role, "asset_version": asset.name})
+	shot.append("generation_inputs", {"reference_role": frame_role, "asset_version": asset.name})
 	shot.selected_output_asset_version = None
 	shot.save(ignore_permissions=True)
 	frappe.db.commit()
@@ -666,7 +624,7 @@ def update_project_shot_timing(project_name, shot_name, duration_seconds):
 		frappe.throw(_("Shot duration must be a positive number."))
 	if duration_seconds < 1:
 		frappe.throw(_("Each shot must be at least 1 second long."))
-	shot = frappe.get_doc("Shot Specification", shot_name)
+	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
 	from joymedia.services.shot_duration_planner import rebalance_shot_duration
@@ -683,11 +641,11 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 		target_shot_number = int(target_shot_number)
 	except (TypeError, ValueError):
 		frappe.throw(_("Invalid shot position."))
-	shot = frappe.get_doc("Shot Specification", shot_name)
+	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
 	shots = frappe.get_all(
-		"Shot Specification", filters={"media_project": project.name},
+		"Shot", filters={"media_project": project.name},
 		fields=["name", "shot_number"], order_by="shot_number asc, name asc",
 	)
 	if not shots or target_shot_number < 1 or target_shot_number > len(shots):
@@ -695,9 +653,9 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 	ordered = [row for row in shots if row.name != shot.name]
 	ordered.insert(target_shot_number - 1, next(row for row in shots if row.name == shot.name))
 	for index, row in enumerate(ordered, start=1):
-		frappe.db.set_value("Shot Specification", row.name, "shot_number", -index, update_modified=False)
+		frappe.db.set_value("Shot", row.name, "shot_number", -index, update_modified=False)
 	for index, row in enumerate(ordered, start=1):
-		frappe.db.set_value("Shot Specification", row.name, "shot_number", index, update_modified=False)
+		frappe.db.set_value("Shot", row.name, "shot_number", index, update_modified=False)
 	frappe.db.commit()
 	return {"shot_name": shot.name, "shot_number": target_shot_number}
 
@@ -706,9 +664,9 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 def regenerate_project_shot(project_name, shot_name):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
-	shot = frappe.get_doc("Shot Specification", shot_name)
+	shot = frappe.get_doc("Shot", shot_name)
 	jobs = frappe.get_all(
-		"Generation Job", filters={"shot_specification": shot.name},
+		"Generation Task", filters={"shot": shot.name},
 		fields=["name", "segment_index", "status"], order_by="segment_index asc, creation asc",
 	)
 	if not jobs:
@@ -728,7 +686,7 @@ def regenerate_project_shot(project_name, shot_name):
 		return {
 			"shot_name": shot.name,
 			"attempts": _retry_and_submit_latest_failed_attempts(
-				frappe.get_doc("Generation Job", jobs[0].name), "Manual Retry"
+				frappe.get_doc("Generation Task", jobs[0].name), "Manual Retry"
 			),
 		}
 	if not first_attempt or first_attempt.status != "Completed":
@@ -784,7 +742,6 @@ class MediaProject(Document):
 			"status": self.status,
 			"total_duration_seconds": settings.total_duration_seconds,
 			"delivery_preset": settings.delivery_preset,
-			"continuity_mode": _normalize_generation_mode(settings.generation_mode),
 			"generation_mode": _normalize_generation_mode(settings.generation_mode),
 			"global_instructions": settings.global_instructions or "",
 			**_customer_style_details(settings),
@@ -793,7 +750,7 @@ class MediaProject(Document):
 	@frappe.whitelist()
 	def save_video_settings(
 		self, total_duration_seconds, delivery_preset, video_style=None,
-		continuity_mode=None, global_instructions=None,
+		generation_mode=None, global_instructions=None,
 	):
 		self._require_write_access()
 		try:
@@ -804,7 +761,7 @@ class MediaProject(Document):
 			frappe.throw(_("Duration must be greater than zero."))
 		if delivery_preset not in ("Landscape", "Portrait", "Square", "Custom"):
 			frappe.throw(_("Select Landscape, Portrait, Square, or Custom format."))
-		generation_mode = _normalize_generation_mode(continuity_mode or self.generation_mode or "Multi-shot")
+		generation_mode = _normalize_generation_mode(generation_mode or self.generation_mode or "Multi-shot")
 		if generation_mode not in ("Multi-shot", "Continuous"):
 			frappe.throw(_("Select Continuous or Multi-shot generation mode."))
 		workflow = _get_customer_workflow(video_style or None)
@@ -874,7 +831,7 @@ class MediaProject(Document):
 			return {"run": latest_run.name, "status": latest_run.status}
 		if latest_run and latest_run.status == "Failed":
 			return self.retry_failed_jobs()
-		if not frappe.db.exists("Shot Specification", {"media_project": self.name}):
+		if not frappe.db.exists("Shot", {"media_project": self.name}):
 			from joymedia.services.video_plan_service import apply_video_plan
 			apply_video_plan(self.name, self.generate_video_plan())
 			frappe.db.commit()
@@ -892,14 +849,14 @@ class MediaProject(Document):
 			)
 			if existing:
 				return {"run": existing.name, "status": existing.status}
-			if not frappe.db.exists("Shot Specification", {"media_project": self.name}):
+			if not frappe.db.exists("Shot", {"media_project": self.name}):
 				frappe.throw(_("Generate a storyboard first."))
 			settings = _project_settings(self)
 			if not settings.workflow:
 				frappe.throw(_("This project has no active Generation Workflow."))
 			workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 			shots = frappe.get_all(
-				"Shot Specification", filters={"media_project": self.name},
+				"Shot", filters={"media_project": self.name},
 				fields=["name", "shot_number", "planned_frame_count"], order_by="shot_number asc, name asc",
 			)
 			validate_generation_preflight(self, workflow, shots, check_comfyui=True)
@@ -909,7 +866,7 @@ class MediaProject(Document):
 				"media_project": self.name,
 				"project_snapshot_json": project_snapshot_json,
 				"project_snapshot_hash": project_snapshot_hash,
-				"workflow_version": settings.workflow,
+				"workflow": settings.workflow,
 				"requested_by": frappe.session.user,
 				"status": "Draft",
 			}).insert(ignore_permissions=True)

@@ -43,13 +43,13 @@ def execute():
 			)
 
 		if (
-			frappe.db.table_exists("Shot Specification")
-			and frappe.db.has_column("Shot Specification", "media_project")
-			and frappe.db.has_column("Shot Specification", "media_specification")
+			frappe.db.table_exists("Shot")
+			and frappe.db.has_column("Shot", "media_project")
+			and frappe.db.has_column("Shot", "media_specification")
 		):
 			frappe.db.sql(
 				"""
-				UPDATE `tabShot Specification` shot
+				UPDATE `tabShot` shot
 				INNER JOIN `tabMedia Specification` spec
 				  ON spec.name = shot.media_specification
 				SET shot.media_project = spec.media_project
@@ -68,7 +68,7 @@ def execute():
 				INNER JOIN `tabMedia Specification` spec
 				  ON spec.name = run.media_specification
 				SET run.media_project = spec.media_project,
-				    run.workflow_version = COALESCE(run.workflow_version, spec.workflow)
+				    run.workflow = COALESCE(run.workflow, spec.workflow)
 				WHERE (run.media_project IS NULL OR run.media_project = '')
 				"""
 			)

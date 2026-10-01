@@ -233,8 +233,6 @@ export function useProjectTimeline(projectName) {
   const exportError = computed(() => timeline.value?.export_error || null);
   const isExporting = computed(() => ["Queued", "Running"].includes(exportStatus.value));
   const isOutdated = computed(() => Boolean(timeline.value?.is_outdated));
-  const latestSpecVersion = computed(() => timeline.value?.latest_spec_version || null);
-  const timelineSpecVersion = computed(() => timeline.value?.timeline_spec_version || null);
 
   return {
     timeline,
@@ -248,8 +246,6 @@ export function useProjectTimeline(projectName) {
     exportError,
     isExporting,
     isOutdated,
-    latestSpecVersion,
-    timelineSpecVersion,
 
     applyTimeline,
     loadTimeline,

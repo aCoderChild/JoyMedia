@@ -85,7 +85,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 		result = project.create_storyboard_revision()
 		new_shot = frappe.db.get_value(
-			"Shot Specification", {"media_project": project.name}, ["generation_prompt"], as_dict=True
+			"Shot", {"media_project": project.name}, ["generation_prompt"], as_dict=True
 		)
 		self.assertEqual(result["media_project"], project.name)
 		self.assertEqual(new_shot.generation_prompt, "Original shot prompt.")

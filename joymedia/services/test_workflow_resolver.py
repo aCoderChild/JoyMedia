@@ -74,7 +74,7 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertEqual(["2", 0], workflow["minimax_cond"]["inputs"]["last_frame"])
 
 	def test_invalid_binding_reports_workflow_node_and_input(self):
-		workflow_version = frappe._dict(
+		workflow = frappe._dict(
 			name="WFV-00004",
 			workflow_json='{"minimax_cond":{"inputs":{"length":124}}}',
 			bindings=[
@@ -88,26 +88,26 @@ class TestWorkflowResolver(FrappeTestCase):
 		)
 
 		with self.assertRaises(frappe.ValidationError) as context:
-			validate_workflow_bindings(workflow_version)
+			validate_workflow_bindings(workflow)
 
 		self.assertIn("WFV-00004", str(context.exception))
 		self.assertIn("load_img", str(context.exception))
 		self.assertIn("image", str(context.exception))
 
 	def test_execution_validation_rejects_workflow_without_class_type(self):
-		workflow_version = frappe._dict(
+		workflow = frappe._dict(
 			name="WFV-00005",
 			workflow_json='{"load_img":{"inputs":{"image":""}}}',
 		)
 
 		with self.assertRaises(frappe.ValidationError) as context:
-			validate_workflow_for_execution(workflow_version)
+			validate_workflow_for_execution(workflow)
 
 		self.assertIn("missing class_type", str(context.exception))
 		self.assertIn("load_img", str(context.exception))
 
 	def test_execution_validation_rejects_incomplete_video_combine(self):
-		workflow_version = frappe._dict(
+		workflow = frappe._dict(
 			name="WFV-00006",
 			workflow_json=(
 				'{"save_video":{"class_type":"VHS_VideoCombine",'
@@ -116,7 +116,7 @@ class TestWorkflowResolver(FrappeTestCase):
 		)
 
 		with self.assertRaises(frappe.ValidationError) as context:
-			validate_workflow_for_execution(workflow_version)
+			validate_workflow_for_execution(workflow)
 
 		message = str(context.exception)
 		self.assertIn("VHS_VideoCombine", message)
@@ -124,7 +124,7 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertIn("images", message)
 
 	def test_execution_validation_rejects_reference_to_missing_node(self):
-		workflow_version = frappe._dict(
+		workflow = frappe._dict(
 			name="WFV-00007",
 			workflow_json=(
 				'{"save_video":{"class_type":"VHS_VideoCombine",'
@@ -136,7 +136,7 @@ class TestWorkflowResolver(FrappeTestCase):
 		)
 
 		with self.assertRaises(frappe.ValidationError) as context:
-			validate_workflow_for_execution(workflow_version)
+			validate_workflow_for_execution(workflow)
 
 		message = str(context.exception)
 		self.assertIn("save_video.images", message)

@@ -64,24 +64,24 @@ def get_latest_valid_workflow(workflow_key=None):
 def validate_workflow(version_name: str):
 	"""Validate an existing Generation Workflow on demand."""
 	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
-	workflow_version = frappe.get_doc("Generation Workflow", version_name)
+	workflow = frappe.get_doc("Generation Workflow", version_name)
 	from joymedia.services.workflow_resolver import (
 		validate_workflow_bindings,
 		validate_workflow_for_execution,
 	)
 
-	get_workflow_adapter(workflow_version)
-	validate_workflow_bindings(workflow_version)
-	validate_workflow_for_execution(workflow_version)
-	return {"valid": True, "workflow_version": workflow_version.name}
+	get_workflow_adapter(workflow)
+	validate_workflow_bindings(workflow)
+	validate_workflow_for_execution(workflow)
+	return {"valid": True, "workflow": workflow.name}
 
 
 @frappe.whitelist()
 def get_workflow_nodes(version_name: str):
 	"""Return node keys and available inputs from the stored ComfyUI API workflow."""
 	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
-	workflow_version = frappe.get_doc("Generation Workflow", version_name)
-	workflow = frappe.parse_json(workflow_version.workflow_json)
+	workflow = frappe.get_doc("Generation Workflow", version_name)
+	workflow = frappe.parse_json(workflow.workflow_json)
 	if not isinstance(workflow, dict):
 		frappe.throw(_("Workflow JSON must define a JSON object."))
 
@@ -100,7 +100,7 @@ def get_workflow_nodes(version_name: str):
 			}
 		)
 
-	return {"workflow": workflow_version.name, "nodes": nodes}
+	return {"workflow": workflow.name, "nodes": nodes}
 
 
 @frappe.whitelist()
@@ -108,17 +108,17 @@ def clone_workflow_as_draft(version_name: str):
 	"""Create a new immutable revision of an existing Generation Workflow."""
 	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
 	frappe.has_permission("Generation Workflow", "create", throw=True)
-	workflow_version = frappe.get_doc("Generation Workflow", version_name)
+	workflow = frappe.get_doc("Generation Workflow", version_name)
 
 	clone = frappe.get_doc(
 		{
 			"doctype": "Generation Workflow",
-			"workflow_key": workflow_version.workflow_key,
-			"adapter_key": workflow_version.adapter_key,
-			"workflow_json": workflow_version.workflow_json,
+			"workflow_key": workflow.workflow_key,
+			"adapter_key": workflow.adapter_key,
+			"workflow_json": workflow.workflow_json,
 		}
 	)
-	for binding in workflow_version.bindings:
+	for binding in workflow.bindings:
 		clone.append(
 			"bindings",
 			{

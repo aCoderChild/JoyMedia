@@ -267,7 +267,7 @@
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-ink-primary flex items-center gap-1.5">
               <span class="text-indigo-400">◆</span>
-              <span>{{ selectedTarget === 'keyframe-start' ? 'Start Reference' : (continuityMode === 'Continuous' ? 'Continuity Frame' : 'End Reference') }}</span>
+              <span>{{ selectedTarget === 'keyframe-start' ? 'Start Reference' : (generationMode === 'Continuous' ? 'Continuity Frame' : 'End Reference') }}</span>
             </span>
             <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-indigo-400 font-bold">
               {{ selectedTarget === 'keyframe-start' ? formatShotKeyframeTime(selectedShotIndex, 0) : formatShotKeyframeTime(selectedShotIndex, 1) }}
@@ -314,11 +314,11 @@
               v-if="selectedTarget === 'keyframe-end'"
               type="button"
               class="w-full py-1.5 px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              :class="continuityMode === 'Continuous' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-outline-border bg-surface-card hover:border-indigo-400 text-ink-secondary'"
+              :class="generationMode === 'Continuous' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-outline-border bg-surface-card hover:border-indigo-400 text-ink-secondary'"
               @click="$emit('toggleContinuityMode')"
             >
               <span>🔗</span>
-              <span>{{ continuityMode === 'Continuous' ? (currentLang === 'vi' ? '✓ Đang nối liền với Cảnh sau' : '✓ Chained to Next Shot') : (currentLang === 'vi' ? 'Nối khung này làm Frame đầu Cảnh sau' : 'Bridge to Next Shot In-Frame') }}</span>
+              <span>{{ generationMode === 'Continuous' ? (currentLang === 'vi' ? '✓ Đang nối liền với Cảnh sau' : '✓ Chained to Next Shot') : (currentLang === 'vi' ? 'Nối khung này làm Frame đầu Cảnh sau' : 'Bridge to Next Shot In-Frame') }}</span>
             </button>
 
             <button
@@ -352,8 +352,8 @@
             :title="currentLang === 'vi' ? 'Bấm để xem Frame cuối' : 'Preview End Keyframe'"
             @click="$emit('selectKeyframeTarget', activeSelectedShot, selectedShotIndex, 'end')"
           >
-            <span class="block text-[10px] font-bold text-emerald-400">{{ continuityMode === 'Continuous' ? (currentLang === 'vi' ? 'Continuity Frame' : 'Continuity Frame') : (currentLang === 'vi' ? 'End Reference' : 'End Reference') }}</span>
-            <span class="block text-[9px] text-ink-muted truncate">{{ estimateShotDuration(activeSelectedShot) }}s · {{ continuityMode === 'Continuous' ? (currentLang === 'vi' ? 'Từ cảnh trước' : 'From previous shot') : (currentLang === 'vi' ? 'Tham chiếu kết' : 'End reference') }}</span>
+            <span class="block text-[10px] font-bold text-emerald-400">{{ generationMode === 'Continuous' ? (currentLang === 'vi' ? 'Continuity Frame' : 'Continuity Frame') : (currentLang === 'vi' ? 'End Reference' : 'End Reference') }}</span>
+            <span class="block text-[9px] text-ink-muted truncate">{{ estimateShotDuration(activeSelectedShot) }}s · {{ generationMode === 'Continuous' ? (currentLang === 'vi' ? 'Từ cảnh trước' : 'From previous shot') : (currentLang === 'vi' ? 'Tham chiếu kết' : 'End reference') }}</span>
           </button>
         </div>
 
@@ -634,7 +634,7 @@ const props = defineProps({
   activeSelectedShot: { type: Object, default: null },
   selectedShotFrame: { type: Object, default: null },
   selectedShotIndex: { type: Number, default: 0 },
-  continuityMode: { type: String, default: "Multi-shot" },
+  generationMode: { type: String, default: "Multi-shot" },
   currentLang: { type: String, default: "vi" },
   regeneratingSource: { type: Boolean, default: false },
   isProductionActive: { type: Boolean, default: false },

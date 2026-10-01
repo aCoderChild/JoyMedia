@@ -5,7 +5,7 @@ def execute():
 	if frappe.db.exists("Generation Workflow", {"workflow_key": "product_showcase"}):
 		return
 
-	old_table = frappe.db.sql("SHOW TABLES LIKE 'tabWorkflow Version'")
+	old_table = frappe.db.sql("SHOW TABLES LIKE 'tabWorkflow'")
 	if not old_table:
 		return
 
@@ -13,7 +13,7 @@ def execute():
 		"""
 		SELECT version.name, version.workflow_json, version.version_number,
 			version.status, profile.default_workflow_version
-		FROM `tabWorkflow Version` version
+		FROM `tabWorkflow` version
 		LEFT JOIN `tabWorkflow Profile` profile
 			ON profile.name = version.workflow_profile
 		WHERE profile.workflow_code = 'MINIMAX-H3'
@@ -40,7 +40,7 @@ def execute():
 		SELECT binding_key, node_key, input_name,
 			required_input_role, value_type, required
 		FROM `tabWorkflow Binding`
-		WHERE parent = %s AND parenttype = 'Workflow Version'
+		WHERE parent = %s AND parenttype = 'Workflow'
 		""",
 		old_workflow.name,
 		as_dict=True,

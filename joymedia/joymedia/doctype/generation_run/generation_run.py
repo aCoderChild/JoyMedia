@@ -8,10 +8,10 @@ from frappe.model.document import Document
 class GenerationRun(Document):
 	def validate(self):
 		project = frappe.get_doc("Media Project", self.media_project)
-		if not self.workflow_version:
-			self.workflow_version = project.workflow
+		if not self.workflow:
+			self.workflow = project.workflow
 
-		if self.workflow_version != project.workflow:
+		if self.workflow != project.workflow:
 			frappe.throw(
 				_("Generation Run Workflow must match the Media Project Workflow.")
 			)

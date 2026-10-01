@@ -4,12 +4,12 @@ import frappe
 def execute():
 	if (
 		frappe.db.table_exists("Compiled Prompt")
-		and frappe.db.table_exists("Generation Job")
-		and frappe.db.has_column("Generation Job", "compiled_prompt")
+		and frappe.db.table_exists("Generation Task")
+		and frappe.db.has_column("Generation Task", "compiled_prompt")
 	):
 		frappe.db.sql(
 			"""
-			UPDATE `tabGeneration Job` job
+			UPDATE `tabGeneration Task` job
 			INNER JOIN `tabCompiled Prompt` prompt
 				ON prompt.name = job.compiled_prompt
 			SET

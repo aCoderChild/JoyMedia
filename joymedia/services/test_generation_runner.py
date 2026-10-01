@@ -45,10 +45,10 @@ class TestGenerationRunner(FrappeTestCase):
 		get_base_url,
 		submit_workflow,
 	):
-		attempt = frappe._dict(name="ATT-00001", status="Pending", generation_job="JOB-00001")
+		attempt = frappe._dict(name="ATT-00001", status="Pending", generation_task="JOB-00001")
 		attempt.reload = MagicMock()
 		attempt.save = MagicMock()
-		job = MagicMock(workflow_version="WFV-00001", depends_on_job=None)
+		job = MagicMock(workflow="WFV-00001", depends_on_task=None)
 		get_doc.side_effect = [attempt, job]
 
 		result = submit_attempt(attempt.name)

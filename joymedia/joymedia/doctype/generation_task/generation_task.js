@@ -1,7 +1,7 @@
 // Copyright (c) 2026, JoyMedia and contributors
 // For license information, please see license.txt
 
-frappe.ui.form.on("Generation Job", {
+frappe.ui.form.on("Generation Task", {
 	refresh(frm) {
 		if (frm.is_new() || frm.doc.status !== "Failed") {
 			return;
@@ -22,7 +22,7 @@ frappe.ui.form.on("Generation Job", {
 				],
 				(values) => {
 					frappe.call({
-						method: "joymedia.services.generation_orchestrator.retry_generation_job_from_ui",
+						method: "joymedia.services.generation_orchestrator.retry_generation_task_from_ui",
 						args: { job_name: frm.doc.name, reason: values.reason },
 						freeze: true,
 						freeze_message: "Creating and submitting retry attempts...",

@@ -22,7 +22,7 @@ class TestPromptCompiler(FrappeTestCase):
 		self.assertEqual(
 			{
 				"media_project": "PROJECT-TEST",
-				"shot_specification": "SHOT-TEST",
+				"shot": "SHOT-TEST",
 				"generation_prompt": "A premium bottle reveal with a slow dolly-in.",
 				"global_instructions": "",
 			},

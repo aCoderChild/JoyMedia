@@ -1,4 +1,4 @@
-"""Frame-exact planning for Shot Specifications within a Media Project."""
+"""Frame-exact planning for Shots within a Media Project."""
 
 import frappe
 from frappe import _
@@ -10,23 +10,23 @@ def rebalance_shot_duration(media_project_name: str, shot_name: str, target_dura
 	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
 	settings = _project_settings(project)
 	shots = frappe.get_all(
-		"Shot Specification",
+		"Shot",
 		filters={"media_project": project.name},
 		fields=["name", "shot_number", "duration_seconds"],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
-		frappe.throw(_("The Media Project has no Shot Specifications."))
+		frappe.throw(_("The Media Project has no Shots."))
 	if not settings.workflow:
 		frappe.throw(_("Media Project must have a Workflow."))
-	workflow_version = frappe.get_doc("Generation Workflow", settings.workflow)
-	fps = float(workflow_version.output_fps or 0)
+	workflow = frappe.get_doc("Generation Workflow", settings.workflow)
+	fps = float(workflow.output_fps or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))
 
 	total_frames = round(float(settings.total_duration_seconds or 0) * fps)
 	if total_frames < len(shots):
-		frappe.throw(_("Total Duration must provide at least one frame for each Shot Specification."))
+		frappe.throw(_("Total Duration must provide at least one frame for each Shot."))
 	target = next((index for index, row in enumerate(shots) if row.name == shot_name), None)
 	if target is None:
 		frappe.throw(_("Shot does not belong to this Media Project."))
@@ -54,7 +54,7 @@ def rebalance_shot_duration(media_project_name: str, shot_name: str, target_dura
 
 	for shot, planned_frame_count in zip(shots, planned_frames):
 		frappe.db.set_value(
-			"Shot Specification",
+			"Shot",
 			shot.name,
 			{
 				"planned_frame_count": planned_frame_count,
@@ -79,7 +79,7 @@ def recalculate_shot_durations(media_project_name: str):
 	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
 	settings = _project_settings(project)
 	shots = frappe.get_all(
-		"Shot Specification",
+		"Shot",
 		filters={"media_project": project.name},
 		fields=["name", "shot_number", "duration_seconds"],
 		order_by="shot_number asc, name asc",
@@ -89,18 +89,18 @@ def recalculate_shot_durations(media_project_name: str):
 
 	if not settings.workflow:
 		frappe.throw(_("Media Project must have a Workflow."))
-	workflow_version = frappe.get_doc(
+	workflow = frappe.get_doc(
 		"Generation Workflow",
 		settings.workflow,
 	)
-	fps = float(workflow_version.output_fps or 0)
+	fps = float(workflow.output_fps or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))
 
 	total_frames = round(float(settings.total_duration_seconds or 0) * fps)
 	if total_frames < len(shots):
 		frappe.throw(
-			_("Total Duration must provide at least one frame for each Shot Specification.")
+			_("Total Duration must provide at least one frame for each Shot.")
 		)
 
 	# Preserve an editor-authored timing split when every shot already has a
@@ -136,7 +136,7 @@ def recalculate_shot_durations(media_project_name: str):
 	for index, shot in enumerate(shots):
 		planned_frame_count = planned_frames[index]
 		frappe.db.set_value(
-			"Shot Specification",
+			"Shot",
 			shot.name,
 			{
 				"planned_frame_count": planned_frame_count,

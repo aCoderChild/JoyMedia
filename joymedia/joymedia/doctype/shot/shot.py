@@ -5,7 +5,7 @@ import frappe
 from frappe.model.document import Document
 
 
-class ShotSpecification(Document):
+class Shot(Document):
 	def validate(self):
 		self.validate_required_workflow_input_mappings()
 		self.validate_selected_output_asset_version()
@@ -46,13 +46,13 @@ class ShotSpecification(Document):
 
 	def validate_required_workflow_input_mappings(self):
 		workflow_versions = {
-			job.workflow_version
+			job.workflow
 			for job in frappe.get_all(
-				"Generation Job",
-				filters={"shot_specification": self.name},
-				fields=["workflow_version"],
+				"Generation Task",
+				filters={"shot": self.name},
+				fields=["workflow"],
 			)
-			if job.workflow_version
+			if job.workflow
 		}
 		if not workflow_versions:
 			return
@@ -71,11 +71,11 @@ class ShotSpecification(Document):
 
 		mapping_counts = {}
 		for mapping in self.get("generation_inputs") or []:
-			if mapping.input_role:
-				input_role = frappe.scrub(mapping.input_role)
+			if mapping.reference_role:
+				input_role = frappe.scrub(mapping.reference_role)
 				mapping_counts[input_role] = mapping_counts.get(input_role, 0) + 1
 
-		for workflow_version, input_role in {
+		for workflow, input_role in {
 			(binding.parent, binding.required_input_role)
 			for binding in required_bindings
 			if binding.required_input_role
@@ -84,5 +84,5 @@ class ShotSpecification(Document):
 			mapping_count = mapping_counts.get(input_role, 0)
 			if mapping_count != 1:
 				frappe.throw(
-					f"Workflow {workflow_version} requires exactly one {input_role} mapping; found {mapping_count}."
+					f"Workflow {workflow} requires exactly one {input_role} mapping; found {mapping_count}."
 				)

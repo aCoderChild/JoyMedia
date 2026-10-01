@@ -32,23 +32,23 @@ def sync_attempt_result_from_ui(attempt_name: str):
 def prepare_attempt(attempt_name: str):
 	"""Resolve an attempt without submitting it to ComfyUI."""
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
-	job = frappe.get_doc("Generation Job", attempt.generation_job)
+	job = frappe.get_doc("Generation Task", attempt.generation_task)
 	job.validate_for_execution()
 	return resolve_attempt(attempt_name)
 
 
-def prepare_generation_job(job_name: str):
-	"""Freeze the Shot Input Mapping directly onto its Generation Job."""
-	job = frappe.get_doc("Generation Job", job_name)
+def prepare_generation_task(job_name: str):
+	"""Freeze the Shot Reference directly onto its Generation Task."""
+	job = frappe.get_doc("Generation Task", job_name)
 	if job.status != "Draft":
-		frappe.throw(_("Generation Job {0} must be Draft to prepare it.").format(job.name))
-	if frappe.db.exists("Generation Attempt", {"generation_job": job.name}):
-		frappe.throw(_("Generation Job {0} cannot be prepared after attempts exist.").format(job.name))
+		frappe.throw(_("Generation Task {0} must be Draft to prepare it.").format(job.name))
+	if frappe.db.exists("Generation Attempt", {"generation_task": job.name}):
+		frappe.throw(_("Generation Task {0} cannot be prepared after attempts exist.").format(job.name))
 
 	job.validate()
 	job.set("inputs", [])
 	snapshot = job.get_shot_input_snapshot()
-	if job.depends_on_job:
+	if job.depends_on_task:
 		# Continuation is runtime lineage and is resolved from the upstream Attempt,
 		# rather than persisted as if it were a reusable project asset.
 		snapshot.pop("first_frame", None)
@@ -68,9 +68,9 @@ def prepare_generation_job(job_name: str):
 
 def attach_chained_first_frame(job):
 	"""Return whether a chained task has an upstream Last Frame Artifact available."""
-	if not job.depends_on_job:
+	if not job.depends_on_task:
 		return True
-	previous_attempt = get_effective_attempt(job.depends_on_job)
+	previous_attempt = get_effective_attempt(job.depends_on_task)
 	if not previous_attempt or previous_attempt.status != "Completed":
 		return False
 	return bool(get_attempt_artifact(previous_attempt.name, "Last Frame"))
@@ -82,13 +82,13 @@ def ensure_generation_inputs(job):
 		return False
 	if job.get("inputs"):
 		return True
-	if frappe.db.exists("Generation Attempt", {"generation_job": job.name}):
+	if frappe.db.exists("Generation Attempt", {"generation_task": job.name}):
 		frappe.throw(
-			_("Generation Job {0} has execution history but no frozen input snapshot.").format(job.name)
+			_("Generation Task {0} has execution history but no frozen input snapshot.").format(job.name)
 		)
 
 	snapshot = job.get_shot_input_snapshot()
-	if job.depends_on_job:
+	if job.depends_on_task:
 		snapshot.pop("first_frame", None)
 	for input_role, asset_version in snapshot.items():
 		job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
@@ -101,7 +101,7 @@ def _autosave_prompt_snapshot(job):
 	if not isinstance(job, Document):
 		return
 	if not job.prompt_text:
-		prompt_text = compile_prompt(job.shot_specification)
+		prompt_text = compile_prompt(job.shot)
 		job.db_set("prompt_text", prompt_text, update_modified=False)
 		job.prompt_text = prompt_text
 	if not job.prompt_hash:
@@ -118,9 +118,9 @@ def submit_attempt(attempt_name: str):
 				_("Attempt {0} cannot be submitted from status {1}.").format(attempt.name, attempt.status)
 			)
 
-		job = frappe.get_doc("Generation Job", attempt.generation_job)
-		if job.depends_on_job and not attach_chained_first_frame(job):
-			return {"deferred": True, "dependency": job.depends_on_job}
+		job = frappe.get_doc("Generation Task", attempt.generation_task)
+		if job.depends_on_task and not attach_chained_first_frame(job):
+			return {"deferred": True, "dependency": job.depends_on_task}
 
 		_autosave_prompt_snapshot(job)
 		ensure_generation_inputs(job)
@@ -159,10 +159,10 @@ def _stage_generation_inputs(job, attempt):
 			frappe.throw(_("Generation input role {0} has no file.").format(role))
 		staged[role] = upload_frappe_file(file_url)["server_path"]
 
-	if job.depends_on_job:
-		previous_attempt = get_effective_attempt(job.depends_on_job)
+	if job.depends_on_task:
+		previous_attempt = get_effective_attempt(job.depends_on_task)
 		if not previous_attempt or previous_attempt.status != "Completed":
-			frappe.throw(_("A chained Generation Job requires a completed upstream Attempt."))
+			frappe.throw(_("A chained Generation Task requires a completed upstream Attempt."))
 		last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
 		if not last_frame_artifact or not last_frame_artifact.frappe_file:
 			frappe.throw(_("The upstream Attempt has no usable Last Frame Artifact."))
@@ -173,7 +173,7 @@ def _stage_generation_inputs(job, attempt):
 		}
 
 	if not staged:
-		frappe.throw(_("Generation Job {0} has no resolved inputs.").format(job.name))
+		frappe.throw(_("Generation Task {0} has no resolved inputs.").format(job.name))
 
 	attempt.resolved_inputs_json = json.dumps(resolved_inputs, sort_keys=True)
 	attempt.save(ignore_permissions=True)

@@ -22,7 +22,7 @@ def get_attempt_analytics(filters=None):
 		filters=attempt_filters,
 		fields=[
 			"name",
-			"generation_job",
+			"generation_task",
 			"status",
 			"retry_of",
 			"retry_reason",
@@ -32,16 +32,16 @@ def get_attempt_analytics(filters=None):
 			"started_at",
 		],
 	)
-	job_names = {attempt.generation_job for attempt in attempts if attempt.generation_job}
+	job_names = {attempt.generation_task for attempt in attempts if attempt.generation_task}
 	jobs = frappe.get_all(
-		"Generation Job",
+		"Generation Task",
 		filters={"name": ["in", list(job_names)]} if job_names else {"name": ["in", [""]]},
-		fields=["name", "workflow_version", "shot_specification"],
+		fields=["name", "workflow", "shot"],
 	)
 	jobs_by_name = {job.name: job for job in jobs}
-	shot_names = {job.shot_specification for job in jobs if job.shot_specification}
+	shot_names = {job.shot for job in jobs if job.shot}
 	shots = frappe.get_all(
-		"Shot Specification",
+		"Shot",
 		filters={"name": ["in", list(shot_names)]} if shot_names else {"name": ["in", [""]]},
 		fields=["name", "selected_output_asset_version"],
 	)
@@ -62,16 +62,16 @@ def get_attempt_analytics(filters=None):
 	}
 	enriched_attempts = []
 	for attempt in attempts:
-		job = jobs_by_name.get(attempt.generation_job)
-		attempt.workflow_version = job.workflow_version if job else None
+		job = jobs_by_name.get(attempt.generation_task)
+		attempt.workflow = job.workflow if job else None
 		selected = primary_outputs_by_attempt.get(attempt.name)
 		attempt.review_outcome = {"approved": bool(selected), "reviewed": bool(selected)}
 		attempt.selected_output = bool(
 			job
 			and selected
-			and selected_outputs_by_shot.get(job.shot_specification) == selected
+			and selected_outputs_by_shot.get(job.shot) == selected
 		)
-		if filters.workflow_version and attempt.workflow_version != filters.workflow_version:
+		if filters.workflow and attempt.workflow != filters.workflow:
 			continue
 		enriched_attempts.append(attempt)
 

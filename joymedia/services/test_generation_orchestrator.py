@@ -37,9 +37,9 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		create_retry_attempt.return_value = created_attempt
 		submit_attempt.return_value = {"prompt_id": "comfy-123"}
 
-		result = generation_orchestrator.retry_generation_job_from_ui(job.name, "Execution Failure")
+		result = generation_orchestrator.retry_generation_task_from_ui(job.name, "Execution Failure")
 
-		has_permission.assert_called_once_with("Generation Job", "write", job.name, throw=True)
+		has_permission.assert_called_once_with("Generation Task", "write", job.name, throw=True)
 		create_retry_attempt.assert_called_once_with("ATT-00002", "Execution Failure")
 		submit_attempt.assert_called_once_with("ATT-00003")
 		refresh_state.assert_called_once_with("ATT-00003")
@@ -113,7 +113,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		run.name = "RUN-00001"
 		run.status = "Draft"
 		run.media_project = "PROJ-00001"
-		run.workflow_version = "WF-00001"
+		run.workflow = "WF-00001"
 		project = frappe._dict(name="PROJ-00001", status="Draft", workflow="WF-00001", generation_mode="Multi-shot")
 		project.validate_generation_setup = MagicMock()
 		workflow = frappe._dict(name="WF-00001")
@@ -178,7 +178,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 	def test_ready_job_is_submittable_work(self, pending_attempts, exists):
 		self.assertTrue(generation_orchestrator._has_submittable_work("RUN-00001"))
 		exists.assert_called_once_with(
-			"Generation Job", {"generation_run": "RUN-00001", "status": "Ready"}
+			"Generation Task", {"generation_run": "RUN-00001", "status": "Ready"}
 		)
 
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")

@@ -62,7 +62,7 @@ def _configure_project(project):
 
 def _create_shot(project, number, prompt, output_version):
 	shot = frappe.get_doc({
-		"doctype": "Shot Specification",
+		"doctype": "Shot",
 		"media_project": project.name,
 		"shot_number": number,
 		"shot_name": f"Shot {number}",
@@ -111,7 +111,7 @@ def cleanup_e2e_project(project_name="E2E-STUDIO-TEST-1"):
 	if not frappe.db.exists("Media Project", project_name):
 		return
 	frappe.db.delete("Timeline Clip", {"media_project": project_name})
-	frappe.db.delete("Shot Specification", {"media_project": project_name})
+	frappe.db.delete("Shot", {"media_project": project_name})
 	assets = frappe.get_all("Media Asset", filters={"media_project": project_name}, pluck="name")
 	for asset in assets:
 		frappe.db.delete("Asset Version", {"media_asset": asset})

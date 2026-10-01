@@ -14,22 +14,22 @@ MANUAL_REGENERATION_REASONS = {"Manual Retry", "Reroll"}
 
 class GenerationAttempt(Document):
 	def before_insert(self):
-		job = frappe.get_doc("Generation Job", self.generation_job)
+		job = frappe.get_doc("Generation Task", self.generation_task)
 		if job.status != "Queued":
 			frappe.throw(
-				_("Generation Job {0} must be Queued before a Generation Attempt can be created.").format(
-					self.generation_job
+				_("Generation Task {0} must be Queued before a Generation Attempt can be created.").format(
+					self.generation_task
 				)
 			)
 		if not self.retry_of and frappe.db.exists(
-			"Generation Attempt", {"generation_job": self.generation_job}
+			"Generation Attempt", {"generation_task": self.generation_task}
 		):
-			frappe.throw(_("A Generation Job can have only one initial Generation Attempt."))
+			frappe.throw(_("A Generation Task can have only one initial Generation Attempt."))
 		job.validate_for_execution()
 		self._validate_retry_reference()
 		latest_attempt_number = frappe.db.get_value(
 			"Generation Attempt",
-			{"generation_job": self.generation_job},
+			{"generation_task": self.generation_task},
 			[{"MAX": "attempt_number"}],
 		)
 		self.attempt_number = (latest_attempt_number or 0) + 1
@@ -43,11 +43,11 @@ class GenerationAttempt(Document):
 		previous_attempt = frappe.db.get_value(
 			"Generation Attempt",
 			self.retry_of,
-			["generation_job", "status"],
+			["generation_task", "status"],
 			as_dict=True,
 		)
-		if not previous_attempt or previous_attempt.generation_job != self.generation_job:
-			frappe.throw(_("Retry Of must belong to the same Generation Job."))
+		if not previous_attempt or previous_attempt.generation_task != self.generation_task:
+			frappe.throw(_("Retry Of must belong to the same Generation Task."))
 		if frappe.db.exists(
 			"Generation Attempt",
 			{"retry_of": self.retry_of, "name": ["!=", self.name]},
@@ -79,14 +79,14 @@ def get_effective_attempt_from_history(attempts):
 			frappe.throw(_("Generation Attempt {0} has more than one retry successor.").format(previous_name))
 	leaf_attempts = [attempt for attempt in attempts if attempt.name not in successors]
 	if len(leaf_attempts) != 1:
-		frappe.throw(_("Generation Job has an invalid Generation Attempt lineage."))
+		frappe.throw(_("Generation Task has an invalid Generation Attempt lineage."))
 	return leaf_attempts[0]
 
 
 def get_effective_attempt(job_name):
 	attempts = frappe.get_all(
 		"Generation Attempt",
-		filters={"generation_job": job_name},
+		filters={"generation_task": job_name},
 		fields=["name", "status", "retry_of", "failure_class", "error_summary", "error_details"],
 		order_by="attempt_number asc, creation asc",
 	)
@@ -164,10 +164,10 @@ def _invalidate_manual_regeneration_outputs(job):
 
 
 def _create_successor_attempt(previous_attempt, reason):
-	job = frappe.get_doc("Generation Job", previous_attempt.generation_job)
+	job = frappe.get_doc("Generation Task", previous_attempt.generation_task)
 	if job.status not in ("Ready", "Queued", "Completed", "Failed"):
 		frappe.throw(
-			_("Generation Job {0} cannot be retried from status {1}.").format(job.name, job.status)
+			_("Generation Task {0} cannot be retried from status {1}.").format(job.name, job.status)
 		)
 
 	if reason in MANUAL_REGENERATION_REASONS:
@@ -180,7 +180,7 @@ def _create_successor_attempt(previous_attempt, reason):
 	retry_attempt = frappe.get_doc(
 		{
 			"doctype": "Generation Attempt",
-			"generation_job": job.name,
+			"generation_task": job.name,
 			"seed": (
 				secrets.randbelow(2_147_483_648)
 				if reason in MANUAL_REGENERATION_REASONS

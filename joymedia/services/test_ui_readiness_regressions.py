@@ -7,7 +7,6 @@ from frappe.tests.utils import FrappeTestCase
 from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
 	_invalidate_manual_regeneration_outputs,
 )
-from joymedia.joymedia.doctype.media_specification.media_specification import MediaSpecification
 from joymedia.services.generation_runner import submit_attempt
 
 
@@ -16,11 +15,11 @@ class TestUIReadinessRegressions(FrappeTestCase):
 		attempt = frappe._dict(
 			name="ATT-DOWNSTREAM",
 			status="Pending",
-			generation_job="JOB-DOWNSTREAM",
+			generation_task="JOB-DOWNSTREAM",
 		)
 		job = frappe._dict(
 			name="JOB-DOWNSTREAM",
-			depends_on_job="JOB-UPSTREAM",
+			depends_on_task="JOB-UPSTREAM",
 		)
 
 		with (
@@ -77,67 +76,3 @@ class TestUIReadinessRegressions(FrappeTestCase):
 			update_modified=False,
 		)
 		invalidate_project_output.assert_called_once_with("PROJECT-00001")
-
-	def test_new_storyboard_revision_inherits_generation_context(self):
-		specification = frappe.new_doc("Media Specification")
-		specification.media_project = "PROJECT-00001"
-		specification.version_number = 2
-		specification.continuity_mode = "Multi-shot"
-		specification.workflow = ""
-		specification.video_style = ""
-		specification.total_duration_seconds = 0
-		specification.delivery_preset = ""
-		specification.planning_context_json = ""
-		specification.planning_context_hash = ""
-
-		previous = frappe._dict(
-			name="SPEC-00001",
-			workflow="WORKFLOW-00001",
-			video_style="product_showcase",
-			continuity_mode="Continuous",
-			total_duration_seconds=30,
-			delivery_preset="Portrait",
-			delivery_width=768,
-			delivery_height=1344,
-			generation_instructions="",
-			global_consistency_instructions="",
-			planning_context_json='{"video_idea":"cinematic"}',
-			planning_context_hash="planning-hash",
-			audio_cues=[
-				frappe._dict(
-					role="BGM",
-					asset_version="ASTV-00001",
-					start_seconds=0,
-					end_seconds=30,
-					gain_db=-3,
-					fade_in_seconds=1,
-					fade_out_seconds=1,
-					duck_others=0,
-				)
-			],
-		)
-
-		with (
-			patch(
-				"joymedia.joymedia.doctype.media_specification.media_specification.frappe.get_all",
-				return_value=[frappe._dict(name=previous.name)],
-			),
-			patch(
-				"joymedia.joymedia.doctype.media_specification.media_specification.frappe.get_doc",
-				return_value=previous,
-			),
-		):
-			MediaSpecification._inherit_revision_state(specification)
-
-		self.assertEqual(specification.workflow, "WORKFLOW-00001")
-		self.assertEqual(specification.video_style, "product_showcase")
-		self.assertEqual(specification.continuity_mode, "Continuous")
-		self.assertEqual(specification.total_duration_seconds, 30)
-		self.assertEqual(specification.delivery_preset, "Portrait")
-		self.assertEqual(specification.planning_context_hash, "planning-hash")
-		self.assertEqual(
-			specification.planning_context_json,
-			'{"video_idea":"cinematic"}',
-		)
-		self.assertEqual(len(specification.audio_cues), 1)
-		self.assertEqual(specification.audio_cues[0].role, "BGM")

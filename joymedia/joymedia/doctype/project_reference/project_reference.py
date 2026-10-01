@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class ShotInputMapping(Document):
+class ProjectReference(Document):
 	pass

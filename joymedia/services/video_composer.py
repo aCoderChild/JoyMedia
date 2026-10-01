@@ -8,15 +8,15 @@ from frappe import _
 from frappe.utils.synchronization import filelock
 
 
-def compose_shot_segments(generation_run_name, shot_specification_name):
+def compose_shot_segments(generation_run_name, shot_name):
 	"""Assemble completed generated segments into one selected Shot output."""
-	with filelock(f"joymedia-compose-shot-{generation_run_name}-{shot_specification_name}"):
-		shot = frappe.get_doc("Shot Specification", shot_specification_name)
+	with filelock(f"joymedia-compose-shot-{generation_run_name}-{shot_name}"):
+		shot = frappe.get_doc("Shot", shot_name)
 		jobs = frappe.get_all(
-			"Generation Job",
+			"Generation Task",
 			filters={
 				"generation_run": generation_run_name,
-				"shot_specification": shot.name,
+				"shot": shot.name,
 			},
 			fields=["name", "segment_index", "segment_frame_count", "status"],
 			order_by="segment_index asc",
@@ -29,7 +29,7 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 		for job in jobs:
 			attempt = frappe.db.get_value(
 				"Generation Attempt",
-				{"generation_job": job.name, "status": "Completed"},
+				{"generation_task": job.name, "status": "Completed"},
 				"name",
 				order_by="creation desc",
 			)
@@ -72,7 +72,7 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 					generated_frames = int(job.segment_frame_count or 0)
 					effective_frames = generated_frames if index == 0 else generated_frames - 1
 					if effective_frames <= 0:
-						raise ValueError(f"Generation Job {job.name} has no effective segment frames")
+						raise ValueError(f"Generation Task {job.name} has no effective segment frames")
 					normalized_path = temporary_path / f"{index + 1:04d}-{job.name}.mp4"
 					_normalize_segment(
 						_get_artifact_path(artifact),
@@ -165,17 +165,17 @@ def _get_delivery_profile(project):
 	if not project.workflow:
 		frappe.throw(_("Media Project must have a Workflow before composition."))
 
-	workflow_version = frappe.get_doc(
+	workflow = frappe.get_doc(
 		"Generation Workflow",
 		project.workflow,
 	)
-	if not workflow_version.output_fps:
+	if not workflow.output_fps:
 		frappe.throw(_("Workflow must have output FPS before composition."))
 
 	return {
 		"width": int(project.delivery_width),
 		"height": int(project.delivery_height),
-		"fps": float(workflow_version.output_fps),
+		"fps": float(workflow.output_fps),
 	}
 
 
@@ -194,7 +194,7 @@ def _shot_frame_count(shot, profile):
 
 def _validate_shots(shots, media_project_name):
 	if not shots:
-		frappe.throw(_("Media Project {0} has no Shot Specifications.").format(media_project_name))
+		frappe.throw(_("Media Project {0} has no Shots.").format(media_project_name))
 
 	seen_numbers = set()
 	for shot in shots:

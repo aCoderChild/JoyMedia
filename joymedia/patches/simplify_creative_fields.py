@@ -43,17 +43,17 @@ def _merge_media_specification_instructions():
 
 def _backfill_shot_generation_prompts():
 	"""Preserve old structured shot direction when a canonical prompt is missing."""
-	if not frappe.db.has_column("Shot Specification", "generation_prompt"):
+	if not frappe.db.has_column("Shot", "generation_prompt"):
 		return
 	available = [
 		(fieldname, label)
 		for fieldname, label in LEGACY_SHOT_FIELDS
-		if frappe.db.has_column("Shot Specification", fieldname)
+		if frappe.db.has_column("Shot", fieldname)
 	]
 	if not available:
 		return
 	columns = ", ".join(["name", "generation_prompt"] + [fieldname for fieldname, _ in available])
-	rows = frappe.db.sql(f"SELECT {columns} FROM `tabShot Specification`", as_dict=True)
+	rows = frappe.db.sql(f"SELECT {columns} FROM `tabShot`", as_dict=True)
 	for row in rows:
 		if str(row.generation_prompt or "").strip():
 			continue
@@ -64,5 +64,5 @@ def _backfill_shot_generation_prompts():
 				parts.append(f"{label}: {value}")
 		if parts:
 			frappe.db.set_value(
-				"Shot Specification", row.name, "generation_prompt", "\n".join(parts), update_modified=False
+				"Shot", row.name, "generation_prompt", "\n".join(parts), update_modified=False
 			)

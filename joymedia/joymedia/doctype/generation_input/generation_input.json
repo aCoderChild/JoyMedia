@@ -5,8 +5,7 @@
  "field_order": [
   "input_role",
   "asset_version",
-  "generation_artifact",
-  "generation_job"
+  "generation_artifact"
  ],
  "fields": [
   {
@@ -31,15 +30,6 @@
    "fieldtype": "Link",
    "label": "Generation Artifact",
    "options": "Generation Artifact"
-  },
-  {
-   "description": "Compatibility mirror of the child-table parent. Not part of the domain model.",
-   "fieldname": "generation_job",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Generation Job",
-   "options": "Generation Job",
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,

@@ -1,0 +1,41 @@
+{
+ "actions": [],
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "asset_version",
+  "reference_role",
+  "label"
+ ],
+ "fields": [
+  {
+   "fieldname": "asset_version",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Asset Version",
+   "options": "Asset Version",
+   "reqd": 1
+  },
+  {
+   "default": "General",
+   "fieldname": "reference_role",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Reference Role",
+   "options": "Product\nCharacter\nEnvironment\nStyle\nComposition\nMotion\nAudio\nGeneral",
+   "reqd": 1
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "Label"
+  }
+ ],
+ "istable": 1,
+ "module": "JoyMedia",
+ "name": "Project Reference",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "ASC"
+}

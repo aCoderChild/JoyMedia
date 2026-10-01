@@ -5,8 +5,7 @@ from frappe import _
 
 
 @frappe.whitelist()
-def apply_video_plan_from_ui(media_project_name: str = None, plan_json: str = None, media_specification_name: str = None):
-	media_project_name = media_project_name or media_specification_name
+def apply_video_plan_from_ui(media_project_name: str = None, plan_json: str = None):
 	frappe.has_permission(
 		"Media Project",
 		"write",
@@ -36,12 +35,7 @@ def parse_video_plan(plan_json: str):
 		frappe.throw(_("Invalid video plan JSON."))
 
 
-def apply_video_plan(media_project_name: str = None, plan: dict = None, media_specification_name: str = None):
-	media_project_name = media_project_name or media_specification_name
-	if not frappe.db.exists("Media Project", media_project_name) and frappe.db.exists(
-		"Media Specification", media_project_name
-	):
-		media_project_name = frappe.db.get_value("Media Specification", media_project_name, "media_project")
+def apply_video_plan(media_project_name: str = None, plan: dict = None):
 	project = frappe.get_doc("Media Project", media_project_name)
 	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
 	settings = _project_settings(project)
@@ -80,10 +74,10 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None, media_sp
 		if not settings.workflow:
 			frappe.throw(_("The Media Project requires a Workflow."))
 
-		workflow_version = frappe.get_doc("Generation Workflow", settings.workflow)
+		workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 		required_input_roles = {
 			frappe.scrub(binding.required_input_role)
-			for binding in workflow_version.bindings
+			for binding in workflow.bindings
 			if binding.binding_key in {"first_frame", "last_frame"}
 			and binding.required
 			and binding.required_input_role
@@ -95,7 +89,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None, media_sp
 		required_input_role = next(iter(required_input_roles), None)
 
 	existing_shots = frappe.get_all(
-		"Shot Specification",
+		"Shot",
 		filters={"media_project": project.name},
 		pluck="name",
 	)
@@ -109,7 +103,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None, media_sp
 			)
 
 		for shot_name in existing_shots:
-			frappe.delete_doc("Shot Specification", shot_name, ignore_permissions=True)
+			frappe.delete_doc("Shot", shot_name, ignore_permissions=True)
 
 	created_shots = []
 	resolved_shot_inputs = []
@@ -118,7 +112,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None, media_sp
 	for shot in plan["shots"]:
 		doc = frappe.get_doc(
 			{
-				"doctype": "Shot Specification",
+				"doctype": "Shot",
 				"media_project": project.name,
 				"shot_number": shot["shot_number"],
 				"shot_name": shot.get("shot_name") or f"Shot {shot['shot_number']}",
@@ -158,7 +152,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None, media_sp
 			doc.append(
 				"generation_inputs",
 				{
-					"input_role": required_input_role,
+					"reference_role": required_input_role,
 					"asset_version": first_asset_version,
 				},
 			)
@@ -166,7 +160,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None, media_sp
 			doc.append(
 				"generation_inputs",
 				{
-					"input_role": "last_frame",
+					"reference_role": "last_frame",
 					"asset_version": last_asset_version,
 				},
 			)

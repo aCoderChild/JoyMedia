@@ -149,7 +149,7 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 		{
 			"doctype": "Timeline Clip",
 			"media_project": clip.media_project,
-			"shot_specification": clip.shot_specification,
+			"shot": clip.shot,
 			"clip_order": clip.clip_order + 1,
 			"enabled": clip.enabled,
 			"source_asset_version": clip.source_asset_version,
@@ -181,7 +181,7 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 		{
 			"doctype": "Timeline Clip",
 			"media_project": clip.media_project,
-			"shot_specification": clip.shot_specification,
+			"shot": clip.shot,
 			"clip_order": clip.clip_order + 1,
 			"enabled": clip.enabled,
 			"source_asset_version": clip.source_asset_version,
@@ -346,7 +346,7 @@ def _initialize_timeline(project):
 
 	fps = _project_fps(project.name)
 	shots = frappe.get_all(
-		"Shot Specification",
+		"Shot",
 		filters={"media_project": project.name},
 		fields=[
 			"name",
@@ -369,7 +369,7 @@ def _initialize_timeline(project):
 			{
 				"doctype": "Timeline Clip",
 				"media_project": project.name,
-				"shot_specification": shot.name,
+				"shot": shot.name,
 				"clip_order": order,
 				"enabled": 1,
 				"source_asset_version": shot.selected_output_asset_version,
@@ -398,7 +398,7 @@ def _latest_fully_generated_run(project_name):
 		order_by="creation desc",
 	)
 	shots = frappe.get_all(
-		"Shot Specification",
+		"Shot",
 		filters={"media_project": project_name},
 		fields=["name", "selected_output_asset_version"],
 	)
@@ -414,7 +414,7 @@ def _timeline_clip_rows(project_name):
 		fields=[
 			"name",
 			"media_project",
-			"shot_specification",
+			"shot",
 			"clip_order",
 			"enabled",
 			"source_asset_version",
@@ -471,8 +471,8 @@ def _serialize_timeline(project, clips):
 			else None
 		)
 		shot_number = (
-			frappe.db.get_value("Shot Specification", clip.shot_specification, "shot_number")
-			if clip.shot_specification
+			frappe.db.get_value("Shot", clip.shot, "shot_number")
+			if clip.shot
 			else None
 		)
 		start = cursor
@@ -486,7 +486,7 @@ def _serialize_timeline(project, clips):
 			{
 				"name": clip.name,
 				"clip_order": clip.clip_order,
-				"shot_specification": clip.shot_specification,
+				"shot": clip.shot,
 				"shot_number": shot_number,
 				"source_asset_version": clip.source_asset_version,
 				"source_file": asset.file if asset else None,
@@ -571,7 +571,7 @@ def _invalidate_project_output(project_name):
 
 
 def sync_timeline_source_for_shot(shot_name):
-	shot = frappe.get_doc("Shot Specification", shot_name)
+	shot = frappe.get_doc("Shot", shot_name)
 	new_asset_version = shot.selected_output_asset_version
 	if not new_asset_version:
 		return
@@ -580,7 +580,7 @@ def sync_timeline_source_for_shot(shot_name):
 		"Timeline Clip",
 		filters={
 			"media_project": project_name,
-			"shot_specification": shot.name,
+			"shot": shot.name,
 		},
 		fields=["name", "source_in_frame", "source_out_frame"],
 	)

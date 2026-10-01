@@ -9,7 +9,7 @@
   "media_project",
   "project_snapshot_json",
   "project_snapshot_hash",
-  "workflow_version",
+  "workflow",
   "status",
   "requested_by",
   "execution_summary_section",
@@ -60,7 +60,7 @@
   },
   {
    "description": "Exact Workflow frozen for this project run.",
-   "fieldname": "workflow_version",
+   "fieldname": "workflow",
    "fieldtype": "Link",
    "hidden": 1,
    "in_list_view": 1,

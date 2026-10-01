@@ -8,8 +8,8 @@ def execute():
 	if not workflow_version_name:
 		return
 
-	workflow_version = frappe.get_doc("Generation Workflow", workflow_version_name)
-	workflow = frappe.parse_json(workflow_version.workflow_json)
+	workflow = frappe.get_doc("Generation Workflow", workflow_version_name)
+	workflow = frappe.parse_json(workflow.workflow_json)
 	minimax_conditioning = workflow.get("minimax_cond")
 	if not isinstance(minimax_conditioning, dict):
 		return
@@ -20,10 +20,10 @@ def execute():
 
 	if "last_frame" not in inputs:
 		inputs["last_frame"] = None
-		workflow_version.workflow_json = frappe.as_json(workflow)
+		workflow.workflow_json = frappe.as_json(workflow)
 
-	if not any(binding.binding_key == "last_frame" for binding in workflow_version.bindings):
-		workflow_version.append(
+	if not any(binding.binding_key == "last_frame" for binding in workflow.bindings):
+		workflow.append(
 			"bindings",
 			{
 				"binding_key": "last_frame",
@@ -35,7 +35,7 @@ def execute():
 			},
 		)
 
-	if workflow_version.has_value_changed("workflow_json") or any(
-		binding.binding_key == "last_frame" for binding in workflow_version.bindings
+	if workflow.has_value_changed("workflow_json") or any(
+		binding.binding_key == "last_frame" for binding in workflow.bindings
 	):
-		workflow_version.save(ignore_permissions=True)
+		workflow.save(ignore_permissions=True)

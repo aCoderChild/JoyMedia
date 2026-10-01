@@ -5,13 +5,13 @@ from frappe import _
 def execute():
 	if (
 		frappe.db.table_exists("Compiled Prompt")
-		and frappe.db.table_exists("Generation Job")
-		and frappe.db.has_column("Generation Job", "compiled_prompt")
+		and frappe.db.table_exists("Generation Task")
+		and frappe.db.has_column("Generation Task", "compiled_prompt")
 	):
 		missing = frappe.db.sql(
 			"""
 			SELECT job.name
-			FROM `tabGeneration Job` job
+			FROM `tabGeneration Task` job
 			WHERE
 				job.compiled_prompt IS NOT NULL
 				AND job.compiled_prompt != ''
@@ -28,7 +28,7 @@ def execute():
 		if missing:
 			frappe.throw(
 				_(
-					"Cannot remove Compiled Prompt because Generation Job {0} "
+					"Cannot remove Compiled Prompt because Generation Task {0} "
 					"still lacks a migrated prompt snapshot."
 				).format(missing[0].name)
 			)

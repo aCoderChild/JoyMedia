@@ -39,7 +39,7 @@
    "reqd": 1
   },
   {
-   "description": "JoyMedia input role supplied by Shot Input Mapping / Generation Input, e.g. first_frame, last_frame, mask.",
+   "description": "JoyMedia input role supplied by Shot Reference / Generation Input, e.g. first_frame, last_frame, mask.",
    "fieldname": "required_input_role",
    "fieldtype": "Data",
    "label": "Input Role"

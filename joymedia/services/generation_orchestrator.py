@@ -14,7 +14,7 @@ from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
 from .generation_runner import (
 	attach_chained_first_frame,
 	ensure_generation_inputs,
-	prepare_generation_job,
+	prepare_generation_task,
 	submit_attempt,
 )
 from .generation_segment_planner import plan_generation_segments
@@ -56,16 +56,16 @@ def start_run_internal(run_name: str):
 	from .shot_duration_planner import recalculate_shot_durations
 
 	recalculate_shot_durations(project.name)
-	workflow_version = frappe.get_doc("Generation Workflow", run.workflow_version)
+	workflow = frappe.get_doc("Generation Workflow", run.workflow)
 	shots = frappe.get_all(
-		"Shot Specification",
+		"Shot",
 		filters={"media_project": project.name},
 		fields=["name", "shot_number", "planned_frame_count"],
 		order_by="shot_number asc, name asc",
 	)
 	validate_generation_preflight(
 		project,
-		workflow_version,
+		workflow,
 		shots,
 		check_comfyui=True,
 	)
@@ -87,36 +87,36 @@ def prepare_run(run_name: str):
 		frappe.throw(_("Generation Run {0} cannot be prepared from status {1}.").format(run.name, run.status))
 
 	project = frappe.get_doc("Media Project", run.media_project)
-	workflow_version = frappe.get_doc(
+	workflow = frappe.get_doc(
 		"Generation Workflow",
-		run.workflow_version,
+		run.workflow,
 	)
 	shots = frappe.get_all(
-		"Shot Specification",
+		"Shot",
 		filters={"media_project": project.name},
 		fields=["name", "shot_number", "planned_frame_count"],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
-		_raise_run_error(run, _("Media Project {0} has no Shot Specifications.").format(project.name))
+		_raise_run_error(run, _("Media Project {0} has no Shots.").format(project.name))
 		return _run_summary(run)
 
 	try:
-		validate_generation_preflight(project, workflow_version, shots)
+		validate_generation_preflight(project, workflow, shots)
 		jobs_to_prepare = []
 		previous_shot_tail_job = None
 		for shot in shots:
 			segments = plan_generation_segments(
 				shot.planned_frame_count,
-				max_segment_frames=workflow_version.frame_count,
+				max_segment_frames=workflow.frame_count,
 			)
 			previous_segment_job = None
 			for segment in segments:
 				existing_job = frappe.db.get_value(
-					"Generation Job",
+					"Generation Task",
 					{
 						"generation_run": run.name,
-						"shot_specification": shot.name,
+						"shot": shot.name,
 						"segment_index": segment["segment_index"],
 					},
 					"name",
@@ -135,16 +135,16 @@ def prepare_run(run_name: str):
 				)
 				job = frappe.get_doc(
 					{
-						"doctype": "Generation Job",
+						"doctype": "Generation Task",
 						"generation_run": run.name,
-						"shot_specification": shot.name,
-						"workflow_version": run.workflow_version,
+						"shot": shot.name,
+						"workflow": run.workflow,
 						"prompt_text": prompt_text,
 						"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
 						"status": "Draft",
 						"segment_index": segment["segment_index"],
 						"segment_frame_count": segment["segment_frame_count"],
-						"depends_on_job": dependency,
+						"depends_on_task": dependency,
 					}
 				).insert(ignore_permissions=True)
 				jobs_to_prepare.append(job)
@@ -152,7 +152,7 @@ def prepare_run(run_name: str):
 			previous_shot_tail_job = previous_segment_job
 
 		for job in jobs_to_prepare:
-			prepare_generation_job(job.name)
+			prepare_generation_task(job.name)
 	except Exception as exc:
 		_raise_run_error(run, _exception_message(exc))
 		return _run_summary(run)
@@ -162,7 +162,7 @@ def prepare_run(run_name: str):
 	return _run_summary(run)
 
 
-def validate_generation_preflight(project, workflow_version, shots, *, check_comfyui=False):
+def validate_generation_preflight(project, workflow, shots, *, check_comfyui=False):
 	if not frappe.conf.get("comfyui_base_url"):
 		frappe.throw(_("comfyui_base_url is not configured."))
 	if check_comfyui:
@@ -170,18 +170,18 @@ def validate_generation_preflight(project, workflow_version, shots, *, check_com
 
 		get_system_stats()
 
-	validate_workflow_for_execution(workflow_version)
-	validate_workflow_bindings(workflow_version)
+	validate_workflow_for_execution(workflow)
+	validate_workflow_bindings(workflow)
 	required_roles = {
 		frappe.scrub(binding.required_input_role)
-		for binding in workflow_version.bindings
+		for binding in workflow.bindings
 		if binding.binding_key in {"first_frame", "last_frame"}
 		and binding.required
 		and binding.required_input_role
 	}
 
 	for shot_row in shots:
-		shot = frappe.get_doc("Shot Specification", shot_row.name)
+		shot = frappe.get_doc("Shot", shot_row.name)
 		if not (shot.generation_prompt or "").strip():
 			frappe.throw(
 				_("Shot {0} has no generation prompt. Regenerate or edit the storyboard first.").format(
@@ -211,11 +211,11 @@ def validate_generation_preflight(project, workflow_version, shots, *, check_com
 
 		segments = plan_generation_segments(
 			shot_row.planned_frame_count,
-			max_segment_frames=workflow_version.frame_count,
+			max_segment_frames=workflow.frame_count,
 		)
 		if not segments:
 			frappe.throw(_("Shot {0} has no generation segments.").format(shot.name))
-		if any(segment["segment_frame_count"] > workflow_version.frame_count for segment in segments):
+		if any(segment["segment_frame_count"] > workflow.frame_count for segment in segments):
 			frappe.throw(
 				_("Shot {0} contains a segment larger than Workflow frame capacity.").format(shot.name)
 			)
@@ -236,7 +236,7 @@ def submit_run(run_name: str):
 		run.save(ignore_permissions=True)
 
 		for job_name in _get_run_job_names(run.name):
-			job = frappe.get_doc("Generation Job", job_name)
+			job = frappe.get_doc("Generation Task", job_name)
 			if job.status in ("Completed", "Failed", "Cancelled", "Running"):
 				continue
 
@@ -265,13 +265,13 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 		return _run_summary(run)
 	if run.status in ACTIVE_RUN_STATUSES:
 		try:
-			workflow_version = frappe.get_doc("Generation Workflow", run.workflow_version)
-			validate_workflow_for_execution(workflow_version)
+			workflow = frappe.get_doc("Generation Workflow", run.workflow)
+			validate_workflow_for_execution(workflow)
 		except Exception as exc:
 			message = _exception_message(exc)
 			for job_name in _get_run_job_names(run.name):
 				frappe.db.set_value(
-					"Generation Job",
+					"Generation Task",
 					job_name,
 					{
 						"status": "Failed",
@@ -298,10 +298,10 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 def refresh_generation_state_for_attempt(attempt_name: str):
 	"""Derive the parent Job and Run state after an Attempt state change."""
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
-	job = frappe.get_doc("Generation Job", attempt.generation_job)
+	job = frappe.get_doc("Generation Task", attempt.generation_task)
 	if not job.generation_run:
 		_update_job_summary(job)
-		return {"generation_job": job.name, "job_status": job.status}
+		return {"generation_task": job.name, "job_status": job.status}
 
 	run = frappe.get_doc("Generation Run", job.generation_run)
 	if run.status == "Cancelled":
@@ -311,7 +311,7 @@ def refresh_generation_state_for_attempt(attempt_name: str):
 
 def _advance_run(run, enqueue_finalization=True):
 	"""Advance jobs, retries, chained submissions, and run completion together."""
-	jobs = [frappe.get_doc("Generation Job", job_name) for job_name in _get_run_job_names(run.name)]
+	jobs = [frappe.get_doc("Generation Task", job_name) for job_name in _get_run_job_names(run.name)]
 	for job in jobs:
 		_update_job_summary(job)
 	_finalize_completed_shots(run)
@@ -360,7 +360,7 @@ def retry_failed_jobs_internal(run_name: str):
 			frappe.throw(_("Only Failed runs can be retried."))
 
 		job_names = frappe.get_all(
-			"Generation Job",
+			"Generation Task",
 			filters={
 				"generation_run": run.name,
 				"status": "Failed",
@@ -372,7 +372,7 @@ def retry_failed_jobs_internal(run_name: str):
 
 		results = []
 		for job_name in job_names:
-			job = frappe.get_doc("Generation Job", job_name)
+			job = frappe.get_doc("Generation Task", job_name)
 			results.extend(_retry_and_submit_latest_failed_attempts(job, "Execution Failure"))
 
 		if not results:
@@ -384,47 +384,47 @@ def retry_failed_jobs_internal(run_name: str):
 
 
 @frappe.whitelist()
-def retry_generation_job_from_ui(job_name: str, reason: str = "Execution Failure"):
+def retry_generation_task_from_ui(job_name: str, reason: str = "Execution Failure"):
 	"""Create and immediately submit successor Attempts for a failed Job."""
-	frappe.has_permission("Generation Job", "write", job_name, throw=True)
+	frappe.has_permission("Generation Task", "write", job_name, throw=True)
 	with filelock(f"joymedia-retry-job-{job_name}"):
-		job = frappe.get_doc("Generation Job", job_name)
+		job = frappe.get_doc("Generation Task", job_name)
 		if job.status != "Failed":
-			frappe.throw(_("Only Failed Generation Jobs can be retried."))
+			frappe.throw(_("Only Failed Generation Tasks can be retried."))
 
 		results = _retry_and_submit_latest_failed_attempts(job, reason)
 		if not results:
-			frappe.throw(_("This Generation Job has no failed Attempts to retry."))
+			frappe.throw(_("This Generation Task has no failed Attempts to retry."))
 
 		frappe.db.commit()
-		return {"generation_job": job.name, "attempts": results}
+		return {"generation_task": job.name, "attempts": results}
 
 
 def prepare_chained_regeneration(attempt_name: str):
 	"""Invalidate downstream chained outputs before replacing one completed shot."""
-	generation_job_name = frappe.db.get_value(
-		"Generation Attempt", attempt_name, "generation_job"
+	generation_task_name = frappe.db.get_value(
+		"Generation Attempt", attempt_name, "generation_task"
 	)
-	shot_specification_name = frappe.db.get_value(
-		"Generation Job", generation_job_name, "shot_specification"
+	shot_name = frappe.db.get_value(
+		"Generation Task", generation_task_name, "shot"
 	)
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
-	job = frappe.get_doc("Generation Job", attempt.generation_job)
-	shot = frappe.get_doc("Shot Specification", job.shot_specification)
+	job = frappe.get_doc("Generation Task", attempt.generation_task)
+	shot = frappe.get_doc("Shot", job.shot)
 	project = frappe.get_doc("Media Project", shot.media_project)
 	if not job.generation_run:
 		return []
 
 	jobs = frappe.get_all(
-		"Generation Job",
+		"Generation Task",
 		filters={"generation_run": job.generation_run},
-		fields=["name", "depends_on_job", "status", "shot_specification"],
+		fields=["name", "depends_on_task", "status", "shot"],
 		order_by="creation asc",
 	)
 	children_by_parent = {}
 	for row in jobs:
-		if row.depends_on_job:
-			children_by_parent.setdefault(row.depends_on_job, []).append(row)
+		if row.depends_on_task:
+			children_by_parent.setdefault(row.depends_on_task, []).append(row)
 
 	downstream = []
 	frontier = [job.name]
@@ -432,7 +432,7 @@ def prepare_chained_regeneration(attempt_name: str):
 		parent = frontier.pop(0)
 		for child in children_by_parent.get(parent, []):
 			if (
-				child.shot_specification != shot.shot_specification
+				child.shot != shot.shot
 				and project.generation_mode not in ("Continuous", "Consistency")
 			):
 				continue
@@ -452,7 +452,7 @@ def prepare_chained_regeneration(attempt_name: str):
 		active_attempts = frappe.get_all(
 			"Generation Attempt",
 			filters={
-				"generation_job": downstream_job.name,
+				"generation_task": downstream_job.name,
 				"status": ["in", ["Pending", "Queued", "Running"]],
 			},
 			pluck="name",
@@ -461,14 +461,14 @@ def prepare_chained_regeneration(attempt_name: str):
 			frappe.throw(
 				_(
 					"Shot {0} is already running. Stop the current sequence before regenerating an earlier shot."
-				).format(downstream_job.shot_specification)
+				).format(downstream_job.shot)
 			)
 
 		completed_attempt = get_effective_attempt(downstream_job.name)
 		if not completed_attempt or completed_attempt.status != "Completed":
 			frappe.throw(
 				_("Shot {0} has no completed output to invalidate.").format(
-					downstream_job.shot_specification
+					downstream_job.shot
 				)
 			)
 
@@ -476,16 +476,16 @@ def prepare_chained_regeneration(attempt_name: str):
 			frappe.throw(
 				_(
 					"Shot {0} already has a regeneration successor. Resolve that regeneration before starting another sequence."
-				).format(downstream_job.shot_specification)
+				).format(downstream_job.shot)
 			)
 
-		regeneration_plan.append((downstream_job.shot_specification, completed_attempt.name))
+		regeneration_plan.append((downstream_job.shot, completed_attempt.name))
 
 	prepared = []
-	for shot_specification, completed_attempt in regeneration_plan:
+	for shot, completed_attempt in regeneration_plan:
 		frappe.db.set_value(
-			"Shot Specification",
-			shot_specification,
+			"Shot",
+			shot,
 			"selected_output_asset_version",
 			None,
 			update_modified=False,
@@ -590,7 +590,7 @@ def _create_initial_attempts(job):
 	attempt = frappe.get_doc(
 		{
 			"doctype": "Generation Attempt",
-			"generation_job": job.name,
+			"generation_task": job.name,
 			"seed": _new_seed(),
 			"status": "Pending",
 		}
@@ -624,7 +624,7 @@ def _create_retry_attempt(run, jobs):
 def _retry_and_submit_latest_failed_attempts(job, reason):
 	"""Create and submit exactly one successor for each terminal failed attempt chain."""
 	attempts = _get_job_attempts(job.name)
-	if not frappe.db.exists("Generation Input", {"generation_job": job.name}) and callable(
+	if not job.get("inputs") and callable(
 		getattr(job, "get_shot_input_snapshot", None)
 	):
 		ensure_generation_inputs(job)
@@ -726,7 +726,7 @@ def _update_job_summary(job):
 
 def _refresh_run_counters(run):
 	jobs = frappe.get_all(
-		"Generation Job",
+		"Generation Task",
 		filters={"generation_run": run.name},
 		fields=["status", "failure_class", "error_summary"],
 	)
@@ -797,27 +797,27 @@ def _enqueue_finalization_if_ready(run):
 
 def _run_outputs_are_selected(run_name):
 	for job in frappe.get_all(
-		"Generation Job",
+		"Generation Task",
 		filters={"generation_run": run_name},
-		fields=["shot_specification"],
+		fields=["shot"],
 	):
-		if not frappe.db.get_value("Shot Specification", job.shot_specification, "selected_output_asset_version"):
+		if not frappe.db.get_value("Shot", job.shot, "selected_output_asset_version"):
 			return False
 	return True
 
 
 def _finalize_completed_shots(run):
 	shot_names = frappe.get_all(
-		"Generation Job",
+		"Generation Task",
 		filters={"generation_run": run.name},
-		pluck="shot_specification",
+		pluck="shot",
 	)
 	for shot_name in dict.fromkeys(shot_names):
-		if frappe.db.get_value("Shot Specification", shot_name, "selected_output_asset_version"):
+		if frappe.db.get_value("Shot", shot_name, "selected_output_asset_version"):
 			continue
 		jobs = frappe.get_all(
-			"Generation Job",
-			filters={"generation_run": run.name, "shot_specification": shot_name},
+			"Generation Task",
+			filters={"generation_run": run.name, "shot": shot_name},
 			fields=["status"],
 		)
 		if jobs and all(job.status == "Completed" for job in jobs):
@@ -829,7 +829,7 @@ def _finalize_completed_shots(run):
 
 def _get_run_job_names(run_name):
 	return frappe.get_all(
-		"Generation Job",
+		"Generation Task",
 		filters={"generation_run": run_name},
 		pluck="name",
 		order_by="creation asc",
@@ -839,7 +839,7 @@ def _get_run_job_names(run_name):
 def _get_job_attempts(job_name):
 	return frappe.get_all(
 		"Generation Attempt",
-		filters={"generation_job": job_name},
+		filters={"generation_task": job_name},
 		fields=[
 			"name",
 			"status",
@@ -856,7 +856,7 @@ def _get_job_attempts(job_name):
 def _get_pending_attempt_names(job_name):
 	return frappe.get_all(
 		"Generation Attempt",
-		filters={"generation_job": job_name, "status": "Pending"},
+		filters={"generation_task": job_name, "status": "Pending"},
 		pluck="name",
 		order_by="attempt_number asc, creation asc",
 	)
@@ -868,7 +868,7 @@ def _get_active_attempt_names(run_name):
 		return []
 	return frappe.get_all(
 		"Generation Attempt",
-		filters={"generation_job": ["in", job_names], "status": ["in", ["Queued", "Running"]]},
+		filters={"generation_task": ["in", job_names], "status": ["in", ["Queued", "Running"]]},
 		pluck="name",
 	)
 
@@ -879,7 +879,7 @@ def _get_pending_attempt_names_for_run(run_name):
 		return []
 	return frappe.get_all(
 		"Generation Attempt",
-		filters={"generation_job": ["in", job_names], "status": "Pending"},
+		filters={"generation_task": ["in", job_names], "status": "Pending"},
 		pluck="name",
 	)
 
@@ -889,7 +889,7 @@ def _has_submittable_work(run_name):
 		return True
 	return bool(
 		frappe.db.exists(
-			"Generation Job",
+			"Generation Task",
 			{"generation_run": run_name, "status": "Ready"},
 		)
 	)
@@ -913,14 +913,14 @@ def _enqueue(method_name, run_name):
 def _enqueue_submit_run(run_name):
 	"""Queue the next submission stage with a job-specific deduplication key."""
 	next_job = frappe.db.get_value(
-		"Generation Job",
+		"Generation Task",
 		{"generation_run": run_name, "status": "Ready"},
 		"name",
 		order_by="creation asc",
 	)
 	if not next_job:
 		next_job = frappe.db.get_value(
-			"Generation Job",
+			"Generation Task",
 			{"generation_run": run_name, "status": "Queued"},
 			"name",
 			order_by="creation asc",
