@@ -7,22 +7,19 @@ from frappe.model.document import Document
 from frappe.utils import now
 from frappe.utils.synchronization import filelock
 
-from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file
-from .result_ingestor import sync_attempt_result
 from .artifact_service import get_attempt_artifact
-from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
+from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file
 from .prompt_compiler import compile_prompt
+from .result_ingestor import sync_attempt_result
 from .workflow_resolver import resolve_attempt
+from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
 
 
 @frappe.whitelist()
 def submit_attempt_from_ui(attempt_name: str):
 	result = submit_attempt(attempt_name)
 	frappe.db.commit()
-	return {
-		"prompt_id": result.get("prompt_id"),
-		"result": result,
-	}
+	return {"prompt_id": result.get("prompt_id"), "result": result}
 
 
 @frappe.whitelist()
@@ -41,7 +38,7 @@ def prepare_attempt(attempt_name: str):
 
 
 def prepare_generation_job(job_name: str):
-	"""Create a Generation Input snapshot from a Draft job's Shot Input Mapping and mark it Ready."""
+	"""Freeze the Shot Input Mapping directly onto its Generation Job."""
 	job = frappe.get_doc("Generation Job", job_name)
 	if job.status != "Draft":
 		frappe.throw(_("Generation Job {0} must be Draft to prepare it.").format(job.name))
@@ -49,95 +46,58 @@ def prepare_generation_job(job_name: str):
 		frappe.throw(_("Generation Job {0} cannot be prepared after attempts exist.").format(job.name))
 
 	job.validate()
-	frappe.db.delete("Generation Input", {"generation_job": job.name})
+	job.set("inputs", [])
 	snapshot = job.get_shot_input_snapshot()
 	if job.depends_on_job:
-		# Continuous first frames are attached immediately before submission from the
-		# previous job's generated last-frame Asset Version.
+		# Continuation is runtime lineage and is resolved from the upstream Attempt,
+		# rather than persisted as if it were a reusable project asset.
 		snapshot.pop("first_frame", None)
 	for input_role, asset_version in snapshot.items():
-		frappe.get_doc(
-			{
-				"doctype": "Generation Input",
-				"generation_job": job.name,
-				"asset_version": asset_version,
-				"input_role": input_role,
-			}
-		).insert(ignore_permissions=True)
-
-	if job.depends_on_job:
-		job.db_set("status", "Ready", update_modified=False)
-	else:
-		job.status = "Ready"
-		job.save(ignore_permissions=True)
+		job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
+	job.status = "Ready"
+	job.save(ignore_permissions=True)
 	return {
 		"name": job.name,
 		"status": job.status,
-		"generation_inputs": frappe.get_all(
-			"Generation Input",
-			filters={"generation_job": job.name},
-			fields=["name", "input_role", "asset_version"],
-			order_by="creation asc",
-		),
+		"inputs": [
+			{"input_role": row.input_role, "asset_version": row.asset_version}
+			for row in job.inputs
+		],
 	}
 
 
 def attach_chained_first_frame(job):
-	"""Check that a chained job has an upstream Last Frame Artifact available."""
+	"""Return whether a chained task has an upstream Last Frame Artifact available."""
 	if not job.depends_on_job:
 		return True
-
 	previous_attempt = get_effective_attempt(job.depends_on_job)
 	if not previous_attempt or previous_attempt.status != "Completed":
 		return False
-	last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
-	return bool(last_frame_artifact)
+	return bool(get_attempt_artifact(previous_attempt.name, "Last Frame"))
 
 
 def ensure_generation_inputs(job):
-	"""Materialize the immutable input snapshot required before execution.
-
-	Jobs created by older flows may reach submission without a Generation Input
-	snapshot. Rebuild it from the Shot Specification exactly once; never replace
-	an existing snapshot during a retry.
-	"""
+	"""Ensure the Job owns its frozen static input snapshot."""
 	if not isinstance(job, Document):
 		return False
-
-	rows = frappe.get_all(
-		"Generation Input",
-		filters={"generation_job": job.name},
-		fields=["input_role", "asset_version"],
-	)
-	if not rows:
-		snapshot = job.get_shot_input_snapshot()
-		if job.depends_on_job:
-			# The chained first frame is runtime lineage, not a Shot Input Mapping.
-			snapshot.pop("first_frame", None)
-		for input_role, asset_version in snapshot.items():
-			frappe.get_doc(
-				{
-					"doctype": "Generation Input",
-					"generation_job": job.name,
-					"asset_version": asset_version,
-					"input_role": input_role,
-				}
-			).insert(ignore_permissions=True)
-
-	if job.depends_on_job and not attach_chained_first_frame(job):
+	if job.get("inputs"):
+		return True
+	if frappe.db.exists("Generation Attempt", {"generation_job": job.name}):
 		frappe.throw(
-			_(
-				"Generation Job {0} cannot run until its previous chained shot has a last frame."
-			).format(job.name)
+			_("Generation Job {0} has execution history but no frozen input snapshot.").format(job.name)
 		)
+
+	snapshot = job.get_shot_input_snapshot()
+	if job.depends_on_job:
+		snapshot.pop("first_frame", None)
+	for input_role, asset_version in snapshot.items():
+		job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
+	job.save(ignore_permissions=True)
 	return True
 
 
 def _autosave_prompt_snapshot(job):
-	"""Fill missing prompt snapshot fields from the Shot Specification.
-
-	An existing prompt is authoritative and is never recompiled on retry.
-	"""
+	"""Fill missing prompt snapshot fields once; retries reuse the same Job prompt."""
 	if not isinstance(job, Document):
 		return
 	if not job.prompt_text:
@@ -155,20 +115,12 @@ def submit_attempt(attempt_name: str):
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
 		if attempt.status != "Pending":
 			frappe.throw(
-				_("Attempt {0} cannot be submitted from status {1}.").format(
-					attempt.name, attempt.status
-				)
+				_("Attempt {0} cannot be submitted from status {1}.").format(attempt.name, attempt.status)
 			)
 
 		job = frappe.get_doc("Generation Job", attempt.generation_job)
 		if job.depends_on_job and not attach_chained_first_frame(job):
-			# Manual rerolls can create the whole downstream Attempt chain in one
-			# transaction. A dependent Attempt must remain Pending until the newly
-			# effective upstream Attempt has completed and produced its Last Frame.
-			return {
-				"deferred": True,
-				"dependency": job.depends_on_job,
-			}
+			return {"deferred": True, "dependency": job.depends_on_job}
 
 		_autosave_prompt_snapshot(job)
 		ensure_generation_inputs(job)
@@ -189,58 +141,39 @@ def submit_attempt(attempt_name: str):
 
 
 def _stage_generation_inputs(job, attempt):
-	rows = frappe.get_all(
-		"Generation Input",
-		filters={"generation_job": job.name},
-		fields=["name", "asset_version", "generation_artifact", "input_role"],
-		order_by="creation asc",
-	)
-	if not rows:
-		frappe.throw(_("Generation Job {0} has no Generation Inputs.").format(job.name))
-
+	"""Upload frozen Job inputs and resolve dynamic continuation for this Attempt."""
 	staged = {}
 	resolved_inputs = {}
-	for row in rows:
-		file_url = None
+	for row in job.get("inputs") or []:
+		role = frappe.scrub(row.input_role or "")
 		if row.generation_artifact:
 			file_url = frappe.db.get_value("Generation Artifact", row.generation_artifact, "frappe_file")
 			if not file_url:
 				frappe.throw(_("Generation Artifact {0} has no file.").format(row.generation_artifact))
-			resolved_inputs[frappe.scrub(row.input_role)] = {
-				"source": "Generation Artifact",
-				"artifact": row.generation_artifact,
-			}
+			resolved_inputs[role] = {"source": "Generation Artifact", "artifact": row.generation_artifact}
 		else:
 			asset_version = frappe.get_doc("Asset Version", row.asset_version)
 			file_url = asset_version.file
-			resolved_inputs.setdefault(
-				frappe.scrub(row.input_role),
-				{"source": "Asset Version", "asset_version": row.asset_version},
-			)
+			resolved_inputs[role] = {"source": "Asset Version", "asset_version": row.asset_version}
 		if not file_url:
-			frappe.throw(_("Generation input {0} has no file.").format(row.name))
-		uploaded = upload_frappe_file(
-			file_url,
-		)
-		role = frappe.scrub(row.input_role or "")
-		staged[role] = uploaded["server_path"]
+			frappe.throw(_("Generation input role {0} has no file.").format(role))
+		staged[role] = upload_frappe_file(file_url)["server_path"]
 
 	if job.depends_on_job:
 		previous_attempt = get_effective_attempt(job.depends_on_job)
 		if not previous_attempt or previous_attempt.status != "Completed":
 			frappe.throw(_("A chained Generation Job requires a completed upstream Attempt."))
 		last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
-		if not last_frame_artifact:
-			frappe.throw(_("The upstream Attempt has no Last Frame Artifact."))
-		file_url = last_frame_artifact.frappe_file
-		if not file_url:
-			frappe.throw(_("Last Frame Artifact {0} has no file.").format(last_frame_artifact.name))
-		uploaded = upload_frappe_file(file_url)
-		staged["first_frame"] = uploaded["server_path"]
+		if not last_frame_artifact or not last_frame_artifact.frappe_file:
+			frappe.throw(_("The upstream Attempt has no usable Last Frame Artifact."))
+		staged["first_frame"] = upload_frappe_file(last_frame_artifact.frappe_file)["server_path"]
 		resolved_inputs["first_frame"] = {
 			"source": "Generation Artifact",
 			"artifact": last_frame_artifact.name,
 		}
+
+	if not staged:
+		frappe.throw(_("Generation Job {0} has no resolved inputs.").format(job.name))
 
 	attempt.resolved_inputs_json = json.dumps(resolved_inputs, sort_keys=True)
 	attempt.save(ignore_permissions=True)
