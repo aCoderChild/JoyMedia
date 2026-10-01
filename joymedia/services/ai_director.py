@@ -6,21 +6,9 @@ SHOT_FIELDS = ("generation_prompt",)
 
 
 def _get_editable_shot(project, shot_name):
-	media_specification = frappe.get_all(
-		"Media Specification",
-		filters={"media_project": project.name},
-		fields=["name", "status"],
-		order_by="version_number desc",
-		limit=1,
-	)
-	if not media_specification:
-		frappe.throw(_("This project has no storyboard revision."))
-	specification = media_specification[0]
-	if specification.status != "Draft":
-		frappe.throw(_("Create a storyboard revision before editing a shot."))
 	shot = frappe.get_doc("Shot Specification", shot_name)
-	if shot.media_specification != specification.name:
-		frappe.throw(_("Shot does not belong to the current project revision."))
+	if shot.media_project != project.name:
+		frappe.throw(_("Shot does not belong to this project."))
 	return shot
 
 

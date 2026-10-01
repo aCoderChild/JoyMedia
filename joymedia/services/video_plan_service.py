@@ -5,25 +5,26 @@ from frappe import _
 
 
 @frappe.whitelist()
-def apply_video_plan_from_ui(media_specification_name: str, plan_json: str):
+def apply_video_plan_from_ui(media_project_name: str = None, plan_json: str = None, media_specification_name: str = None):
+	media_project_name = media_project_name or media_specification_name
 	frappe.has_permission(
-		"Media Specification",
+		"Media Project",
 		"write",
-		media_specification_name,
+		media_project_name,
 		throw=True,
 	)
 
 	plan = parse_video_plan(plan_json)
 
 	created_shots = apply_video_plan(
-		media_specification_name=media_specification_name,
+		media_project_name=media_project_name,
 		plan=plan,
 	)
 
 	frappe.db.commit()
 
 	return {
-		"media_specification": media_specification_name,
+		"media_project": media_project_name,
 		"shots": created_shots,
 	}
 
@@ -35,14 +36,18 @@ def parse_video_plan(plan_json: str):
 		frappe.throw(_("Invalid video plan JSON."))
 
 
-def apply_video_plan(media_specification_name: str, plan: dict):
-	media_spec = frappe.get_doc("Media Specification", media_specification_name)
+def apply_video_plan(media_project_name: str = None, plan: dict = None, media_specification_name: str = None):
+	media_project_name = media_project_name or media_specification_name
+	if not frappe.db.exists("Media Project", media_project_name) and frappe.db.exists(
+		"Media Specification", media_project_name
+	):
+		media_project_name = frappe.db.get_value("Media Specification", media_project_name, "media_project")
+	project = frappe.get_doc("Media Project", media_project_name)
+	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
+	settings = _project_settings(project)
 	_validate_plan_shape(plan)
-
-	if media_spec.status != "Draft":
-		frappe.throw(_("Video plans can only be applied to Draft Media Specifications."))
 	mode = {"Independent": "Multi-shot", "Chained": "Continuous", "Consistency": "Continuous"}.get(
-		media_spec.continuity_mode, media_spec.continuity_mode or "Multi-shot"
+		settings.generation_mode, settings.generation_mode or "Multi-shot"
 	)
 	if mode not in ("Multi-shot", "Continuous"):
 		frappe.throw(_("Select Continuous or Multi-shot generation mode."))
@@ -70,12 +75,12 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 	if reference_image_indexes:
 		from joymedia.services.project_image_manifest import get_project_image_manifest
 
-		image_manifest = get_project_image_manifest(media_spec.media_project)
+		image_manifest = get_project_image_manifest(project.name)
 		asset_version_by_index = {image["index"]: image["asset_version"] for image in image_manifest}
-		if not media_spec.workflow:
-			frappe.throw(_("The Media Specification requires a Workflow."))
+		if not settings.workflow:
+			frappe.throw(_("The Media Project requires a Workflow."))
 
-		workflow_version = frappe.get_doc("Generation Workflow", media_spec.workflow)
+		workflow_version = frappe.get_doc("Generation Workflow", settings.workflow)
 		required_input_roles = {
 			frappe.scrub(binding.required_input_role)
 			for binding in workflow_version.bindings
@@ -91,11 +96,11 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 
 	existing_shots = frappe.get_all(
 		"Shot Specification",
-		filters={"media_specification": media_spec.name},
+		filters={"media_project": project.name},
 		pluck="name",
 	)
 	if existing_shots:
-		if frappe.db.exists("Generation Run", {"media_specification": media_spec.name}):
+		if frappe.db.exists("Generation Run", {"media_project": project.name}):
 			frappe.throw(
 				_(
 					"This storyboard cannot be replaced after generation starts. "
@@ -114,7 +119,7 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 		doc = frappe.get_doc(
 			{
 				"doctype": "Shot Specification",
-				"media_specification": media_spec.name,
+				"media_project": project.name,
 				"shot_number": shot["shot_number"],
 				"shot_name": shot.get("shot_name") or f"Shot {shot['shot_number']}",
 				"generation_prompt": shot["generation_prompt"],
@@ -149,7 +154,7 @@ def apply_video_plan(media_specification_name: str, plan: dict):
 
 		if first_asset_version and (mode == "Multi-shot" or shot["shot_number"] == 1):
 			if not required_input_role:
-				frappe.throw(_("The Media Specification workflow has no required Generation Input role."))
+				frappe.throw(_("The Media Project workflow has no required Generation Input role."))
 			doc.append(
 				"generation_inputs",
 				{

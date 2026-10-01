@@ -46,22 +46,24 @@ def _create_output_asset(project, name, file_name):
 	}).insert(ignore_permissions=True)
 
 
-def _create_spec(project, version_number):
-	return frappe.get_doc({
-		"doctype": "Media Specification",
-		"media_project": project.name,
-		"version_number": version_number,
-		"total_duration_seconds": 8,
-		"delivery_preset": "Landscape",
-		"continuity_mode": "Multi-shot",
-		"status": "Ready",
-	}).insert(ignore_permissions=True)
+def _configure_project(project):
+	workflow = frappe.db.get_value("Generation Workflow", {}, "name", order_by="creation desc")
+	if not workflow:
+		frappe.throw("An executable Generation Workflow is required for the E2E setup.")
+	project.total_duration_seconds = 8
+	project.delivery_preset = "Landscape"
+	project.delivery_width = 1920
+	project.delivery_height = 1080
+	project.generation_mode = "Multi-shot"
+	project.workflow = workflow
+	project.save(ignore_permissions=True)
+	return project
 
 
-def _create_shot(specification, number, prompt, output_version):
+def _create_shot(project, number, prompt, output_version):
 	shot = frappe.get_doc({
 		"doctype": "Shot Specification",
-		"media_specification": specification.name,
+		"media_project": project.name,
 		"shot_number": number,
 		"shot_name": f"Shot {number}",
 		"generation_prompt": prompt,
@@ -84,25 +86,24 @@ def setup_e2e_project():
 	})
 	project.name = project_name
 	project.insert(ignore_permissions=True)
+	_configure_project(project)
 	version = _create_output_asset(project, "E2E Shot Output", "e2e-clip.mp4")
-	specification = _create_spec(project, 1)
-	_create_shot(specification, 1, "Opening hero product shot.", version)
-	_create_shot(specification, 2, "Closing hero product shot.", version)
+	_create_shot(project, 1, "Opening hero product shot.", version)
+	_create_shot(project, 2, "Closing hero product shot.", version)
 	from joymedia.services.timeline_editor import get_project_timeline
 	timeline = get_project_timeline(project.name)
 	frappe.db.commit()
-	return {"project_name": project.name, "spec_1": specification.name, "timeline": timeline}
+	return {"project_name": project.name, "timeline": timeline}
 
 
-def create_spec_v2(project_name):
+def create_project_revision_v2(project_name):
 	frappe.set_user("Administrator")
 	project = frappe.get_doc("Media Project", project_name)
 	version = _create_output_asset(project, "E2E Shot Output V2", "e2e-clip-v2.mp4")
-	specification = _create_spec(project, 2)
-	_create_shot(specification, 1, "New version opening product shot.", version)
-	_create_shot(specification, 2, "New version closing product shot.", version)
+	_create_shot(project, 1, "New version opening product shot.", version)
+	_create_shot(project, 2, "New version closing product shot.", version)
 	frappe.db.commit()
-	return specification.name
+	return project.name
 
 
 def cleanup_e2e_project(project_name="E2E-STUDIO-TEST-1"):
@@ -110,10 +111,7 @@ def cleanup_e2e_project(project_name="E2E-STUDIO-TEST-1"):
 	if not frappe.db.exists("Media Project", project_name):
 		return
 	frappe.db.delete("Timeline Clip", {"media_project": project_name})
-	specifications = frappe.get_all("Media Specification", filters={"media_project": project_name}, pluck="name")
-	for specification in specifications:
-		frappe.db.delete("Shot Specification", {"media_specification": specification})
-		frappe.db.delete("Media Specification", {"name": specification})
+	frappe.db.delete("Shot Specification", {"media_project": project_name})
 	assets = frappe.get_all("Media Asset", filters={"media_project": project_name}, pluck="name")
 	for asset in assets:
 		frappe.db.delete("Asset Version", {"media_asset": asset})

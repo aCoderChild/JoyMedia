@@ -49,16 +49,12 @@ class TestUIReadinessRegressions(FrappeTestCase):
 
 	def test_manual_regeneration_invalidates_stale_final_outputs(self):
 		job = frappe._dict(name="JOB-00001", generation_run="RUN-00001")
-		run = frappe._dict(name="RUN-00001", media_specification="SPEC-00001")
+		run = frappe._dict(name="RUN-00001", media_project="PROJECT-00001")
 
 		with (
 			patch(
 				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.get_doc",
 				return_value=run,
-			),
-			patch(
-				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.db.get_value",
-				return_value="PROJECT-00001",
 			),
 			patch(
 				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.db.set_value"

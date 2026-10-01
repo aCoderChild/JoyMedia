@@ -42,10 +42,12 @@ class GenerationJob(Document):
 			frappe.throw(_("Generation Job requires a prompt hash."))
 
 		shot = frappe.get_doc("Shot Specification", self.shot_specification)
-		media_specification = frappe.get_doc("Media Specification", shot.media_specification)
-		self._validate_generation_run(media_specification)
-		if self.workflow_version != media_specification.workflow:
-			frappe.throw(_("Generation Job Workflow must match the Media Specification Workflow."))
+		if not shot.media_project:
+			frappe.throw(_("Shot Specification requires a Media Project."))
+		project = frappe.get_doc("Media Project", shot.media_project)
+		self._validate_generation_run(project)
+		if self.workflow_version != project.workflow:
+			frappe.throw(_("Generation Job Workflow must match the Media Project Workflow."))
 		if self.depends_on_job:
 			dependency = frappe.get_doc("Generation Job", self.depends_on_job)
 			if dependency.generation_run != self.generation_run:
@@ -65,12 +67,12 @@ class GenerationJob(Document):
 			frappe.throw(_("Only one Generation Job may exist for each shot segment in a run."))
 		return frappe.get_doc("Generation Workflow", self.workflow_version)
 
-	def _validate_generation_run(self, media_specification):
+	def _validate_generation_run(self, project):
 		if not self.generation_run:
 			frappe.throw(_("Generation Job requires a Generation Run."))
 		run = frappe.get_doc("Generation Run", self.generation_run)
-		if run.media_specification != media_specification.name:
-			frappe.throw(_("Generation Run Media Specification must match the Generation Job Shot Specification."))
+		if run.media_project != project.name:
+			frappe.throw(_("Generation Run Media Project must match the Generation Job Shot Specification."))
 		if run.workflow_version != self.workflow_version:
 			frappe.throw(_("Generation Run Workflow must match the Generation Job Workflow."))
 

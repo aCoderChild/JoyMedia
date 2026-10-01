@@ -24,7 +24,7 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 		if not jobs or any(job.status != "Completed" for job in jobs):
 			return None
 
-		media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+		project = frappe.get_doc("Media Project", shot.media_project)
 		segments = []
 		for job in jobs:
 			attempt = frappe.db.get_value(
@@ -43,7 +43,7 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 				return None
 			segments.append((job, artifact))
 
-		shot_asset = _get_or_create_shot_output_asset(shot, media_specification.media_project)
+		shot_asset = _get_or_create_shot_output_asset(shot, project.name)
 		if len(segments) == 1:
 			artifact = segments[0][1]
 			promoted_file = _promote_artifact_file(
@@ -62,7 +62,7 @@ def compose_shot_segments(generation_run_name, shot_specification_name):
 			shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
 			return asset_version.name
 
-		profile = _get_delivery_profile(media_specification)
+		profile = _get_delivery_profile(project)
 		try:
 			with tempfile.TemporaryDirectory(prefix=f"joymedia-shot-{shot.name}-") as temp_dir:
 				temporary_path = Path(temp_dir)
@@ -159,22 +159,22 @@ def _get_or_create_shot_output_asset(shot, media_project):
 	).insert(ignore_permissions=True)
 
 
-def _get_delivery_profile(media_specification):
-	if not media_specification.delivery_width or not media_specification.delivery_height:
-		frappe.throw(_("Media Specification must have delivery width and height before composition."))
-	if not media_specification.workflow:
-		frappe.throw(_("Media Specification must have a Workflow before composition."))
+def _get_delivery_profile(project):
+	if not project.delivery_width or not project.delivery_height:
+		frappe.throw(_("Media Project must have delivery width and height before composition."))
+	if not project.workflow:
+		frappe.throw(_("Media Project must have a Workflow before composition."))
 
 	workflow_version = frappe.get_doc(
 		"Generation Workflow",
-		media_specification.workflow,
+		project.workflow,
 	)
 	if not workflow_version.output_fps:
 		frappe.throw(_("Workflow must have output FPS before composition."))
 
 	return {
-		"width": int(media_specification.delivery_width),
-		"height": int(media_specification.delivery_height),
+		"width": int(project.delivery_width),
+		"height": int(project.delivery_height),
 		"fps": float(workflow_version.output_fps),
 	}
 
@@ -192,16 +192,16 @@ def _shot_frame_count(shot, profile):
 	return frames
 
 
-def _validate_shots(shots, media_specification_name):
+def _validate_shots(shots, media_project_name):
 	if not shots:
-		frappe.throw(_("Media Specification {0} has no Shot Specifications.").format(media_specification_name))
+		frappe.throw(_("Media Project {0} has no Shot Specifications.").format(media_project_name))
 
 	seen_numbers = set()
 	for shot in shots:
 		if shot.shot_number < 1:
 			frappe.throw(_("Shot {0} must have a shot number of at least 1.").format(shot.name))
 		if shot.shot_number in seen_numbers:
-			frappe.throw(_("Shot number {0} is duplicated in this Media Specification.").format(shot.shot_number))
+			frappe.throw(_("Shot number {0} is duplicated in this Media Project.").format(shot.shot_number))
 		seen_numbers.add(shot.shot_number)
 		if not shot.selected_output_asset_version:
 			frappe.throw(_("Shot {0} has no selected output asset version.").format(shot.name))
@@ -224,9 +224,9 @@ def _get_shot_output_path(shot):
 	return path
 
 
-def _get_audio_sources(media_specification, video_duration):
+def _get_audio_sources(project, video_duration):
 	sources = []
-	for cue in media_specification.get("audio_cues") or []:
+	for cue in project.get("audio_cues") or []:
 		start_seconds = float(cue.start_seconds or 0)
 		end_seconds = min(float(cue.end_seconds or video_duration), video_duration)
 		if start_seconds >= video_duration:
@@ -564,11 +564,11 @@ def _frame_rate(value):
 		raise ValueError(f"Invalid video frame rate: {value}") from exc
 
 
-def _get_or_create_final_asset(media_specification):
-	asset_name = f"{media_specification.name} Final Video"
+def _get_or_create_final_asset(project):
+	asset_name = f"{project.name} Final Video"
 	asset_id = frappe.db.get_value(
 		"Media Asset",
-		{"asset_name": asset_name, "media_project": media_specification.media_project},
+		{"asset_name": asset_name, "media_project": project.name},
 		"name",
 	)
 	if asset_id:
@@ -578,7 +578,7 @@ def _get_or_create_final_asset(media_specification):
 		{
 			"doctype": "Media Asset",
 			"asset_name": asset_name,
-			"media_project": media_specification.media_project,
+			"media_project": project.name,
 			"media_type": "Video",
 			"asset_category": "Other",
 			"asset_scope": "Project Output",

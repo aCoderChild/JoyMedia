@@ -11,7 +11,10 @@ class TestGenerationRunner(FrappeTestCase):
 	@patch("joymedia.services.generation_runner.frappe.get_doc")
 	@patch("joymedia.services.generation_runner.frappe.get_all")
 	def test_staged_input_roles_are_canonicalized(self, get_all, get_doc, upload_frappe_file):
-		job = frappe._dict(name="JOB-00001")
+		job = frappe._dict(
+			name="JOB-00001",
+			inputs=[frappe._dict(input_role="First Frame", asset_version="ASTV-00001")],
+		)
 		get_all.return_value = [
 			frappe._dict(name="GENIN-00001", asset_version="ASTV-00001", input_role="First Frame")
 		]
@@ -45,7 +48,7 @@ class TestGenerationRunner(FrappeTestCase):
 		attempt = frappe._dict(name="ATT-00001", status="Pending", generation_job="JOB-00001")
 		attempt.reload = MagicMock()
 		attempt.save = MagicMock()
-		job = MagicMock(workflow_version="WFV-00001")
+		job = MagicMock(workflow_version="WFV-00001", depends_on_job=None)
 		get_doc.side_effect = [attempt, job]
 
 		result = submit_attempt(attempt.name)

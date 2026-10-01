@@ -7,7 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "shot_overview_section",
-  "media_specification",
+  "media_project",
   "shot_number",
   "shot_name",
   "planned_frame_count",
@@ -24,12 +24,12 @@
    "label": "Shot"
   },
   {
-   "fieldname": "media_specification",
+   "fieldname": "media_project",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Media Specification",
-   "options": "Media Specification",
+   "label": "Media Project",
+   "options": "Media Project",
    "reqd": 1
   },
   {

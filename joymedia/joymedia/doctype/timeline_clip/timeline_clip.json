@@ -6,7 +6,6 @@
  "field_order": [
   "timeline_section",
   "media_project",
-  "media_specification",
   "shot_specification",
   "clip_order",
   "enabled",
@@ -33,14 +32,6 @@
    "in_standard_filter": 1,
    "label": "Media Project",
    "options": "Media Project",
-   "reqd": 1
-  },
-  {
-   "fieldname": "media_specification",
-   "fieldtype": "Link",
-   "in_standard_filter": 1,
-   "label": "Media Specification",
-   "options": "Media Specification",
    "reqd": 1
   },
   {

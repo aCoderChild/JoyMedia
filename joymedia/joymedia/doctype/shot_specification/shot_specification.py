@@ -15,17 +15,17 @@ class ShotSpecification(Document):
 
 	def on_update(self):
 		previous = self.get_doc_before_save()
-		if previous and previous.media_specification != self.media_specification:
-			self._recalculate_durations(previous.media_specification)
+		if previous and previous.media_project != self.media_project:
+			self._recalculate_durations(previous.media_project)
 			self._recalculate_durations()
 
 	def after_delete(self):
 		self._recalculate_durations()
 
-	def _recalculate_durations(self, media_specification=None):
+	def _recalculate_durations(self, media_project=None):
 		from joymedia.services.shot_duration_planner import recalculate_shot_durations
 
-		recalculate_shot_durations(media_specification or self.media_specification)
+		recalculate_shot_durations(media_project or self.media_project)
 
 	def validate_selected_output_asset_version(self):
 		if not self.selected_output_asset_version:
@@ -33,15 +33,15 @@ class ShotSpecification(Document):
 
 		asset_version = frappe.get_doc("Asset Version", self.selected_output_asset_version)
 		media_asset = frappe.get_doc("Media Asset", asset_version.media_asset)
-		media_specification = frappe.get_doc("Media Specification", self.media_specification)
+		project = frappe.get_doc("Media Project", self.media_project)
 		if (
 			media_asset.media_type != "Video"
 			or media_asset.asset_scope != "Project Output"
-			or media_asset.media_project != media_specification.media_project
+			or media_asset.media_project != project.name
 		):
 			frappe.throw(
 				"Selected Output Asset Version must belong to a project output "
-				"for this Media Specification's Media Project."
+				"for this Media Project."
 			)
 
 	def validate_required_workflow_input_mappings(self):

@@ -112,20 +112,20 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.status = "Draft"
-		run.media_specification = "SPEC-00001"
+		run.media_project = "PROJ-00001"
 		run.workflow_version = "WF-00001"
-		media_specification = frappe._dict(name="SPEC-00001", status="Ready")
-		media_specification.validate_generation_setup = MagicMock()
+		project = frappe._dict(name="PROJ-00001", status="Draft", workflow="WF-00001", generation_mode="Multi-shot")
+		project.validate_generation_setup = MagicMock()
 		workflow = frappe._dict(name="WF-00001")
-		get_doc.side_effect = [run, media_specification, workflow]
+		get_doc.side_effect = [run, project, workflow]
 		get_all.return_value = []
 
 		result = generation_orchestrator.start_run(run.name)
 
 		has_permission.assert_called_once_with("Generation Run", "write", run.name, throw=True)
-		recalculate_shot_durations.assert_called_once_with(media_specification.name)
+		recalculate_shot_durations.assert_called_once_with(project.name)
 		validate_generation_preflight.assert_called_once_with(
-			media_specification,
+			project,
 			workflow,
 			[],
 			check_comfyui=True,
@@ -287,9 +287,10 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.status = "Running"
-		run.media_specification = "SPEC-00001"
+		run.media_project = "PROJ-00001"
 		run.final_asset_version = None
-		get_doc.return_value = run
+		project = frappe._dict(name="PROJ-00001")
+		get_doc.side_effect = [run, project]
 		compose_timeline.return_value = {"final_asset_version": "ASTV-00001"}
 
 		generation_orchestrator.finalize_run(run.name)

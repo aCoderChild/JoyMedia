@@ -7,19 +7,21 @@ from joymedia.workflow_adapters.minimax_h3 import MiniMaxH3WorkflowAdapter
 
 class TestPromptCompiler(FrappeTestCase):
 	def test_source_snapshot_uses_current_media_and_shot_fields(self):
-		media_specification = frappe._dict(
-			name="SPEC-TEST",
+		project = frappe._dict(
+			name="PROJECT-TEST",
+			generation_mode="Multi-shot",
+			global_instructions="",
 		)
 		shot = frappe._dict(
 			name="SHOT-TEST",
 			generation_prompt="A premium bottle reveal with a slow dolly-in.",
 		)
 
-		snapshot = _build_source_snapshot(shot, media_specification)
+		snapshot = _build_source_snapshot(shot, project)
 
 		self.assertEqual(
 			{
-				"media_specification": "SPEC-TEST",
+				"media_project": "PROJECT-TEST",
 				"shot_specification": "SHOT-TEST",
 				"generation_prompt": "A premium bottle reveal with a slow dolly-in.",
 				"global_instructions": "",
@@ -28,6 +30,6 @@ class TestPromptCompiler(FrappeTestCase):
 		)
 		self.assertNotIn("required_elements", snapshot)
 
-		prompt = MiniMaxH3WorkflowAdapter().compile_prompt(shot, media_specification)
+		prompt = MiniMaxH3WorkflowAdapter().compile_prompt(shot, project)
 
 		self.assertEqual(prompt, "A premium bottle reveal with a slow dolly-in.")

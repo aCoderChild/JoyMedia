@@ -49,23 +49,22 @@ def start_run_internal(run_name: str):
 	if run.status != "Draft":
 		frappe.throw(_("Generation Run {0} must be Draft to start.").format(run.name))
 
-	media_specification = frappe.get_doc("Media Specification", run.media_specification)
-	if media_specification.status != "Ready":
-		frappe.throw(_("Media Specification {0} must be Ready to start a Generation Run.").format(media_specification.name))
-	media_specification.validate_generation_setup()
+	project = frappe.get_doc("Media Project", run.media_project)
+	if not project.workflow:
+		frappe.throw(_("Media Project {0} has no Generation Workflow.").format(project.name))
 
 	from .shot_duration_planner import recalculate_shot_durations
 
-	recalculate_shot_durations(media_specification.name)
+	recalculate_shot_durations(project.name)
 	workflow_version = frappe.get_doc("Generation Workflow", run.workflow_version)
 	shots = frappe.get_all(
 		"Shot Specification",
-		filters={"media_specification": media_specification.name},
+		filters={"media_project": project.name},
 		fields=["name", "shot_number", "planned_frame_count"],
 		order_by="shot_number asc, name asc",
 	)
 	validate_generation_preflight(
-		media_specification,
+		project,
 		workflow_version,
 		shots,
 		check_comfyui=True,
@@ -74,14 +73,7 @@ def start_run_internal(run_name: str):
 	run.status = "Queued"
 	run.error_summary = None
 	run.save(ignore_permissions=True)
-	if media_specification.media_project:
-		frappe.db.set_value(
-			"Media Project",
-			media_specification.media_project,
-			"status",
-			"Generating",
-			update_modified=False,
-		)
+	frappe.db.set_value("Media Project", project.name, "status", "Generating", update_modified=False)
 	_enqueue("prepare_run", run.name)
 	return {"name": run.name, "status": run.status}
 
@@ -94,23 +86,23 @@ def prepare_run(run_name: str):
 	if run.status not in ACTIVE_RUN_STATUSES:
 		frappe.throw(_("Generation Run {0} cannot be prepared from status {1}.").format(run.name, run.status))
 
-	media_specification = frappe.get_doc("Media Specification", run.media_specification)
+	project = frappe.get_doc("Media Project", run.media_project)
 	workflow_version = frappe.get_doc(
 		"Generation Workflow",
 		run.workflow_version,
 	)
 	shots = frappe.get_all(
 		"Shot Specification",
-		filters={"media_specification": media_specification.name},
+		filters={"media_project": project.name},
 		fields=["name", "shot_number", "planned_frame_count"],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
-		_raise_run_error(run, _("Media Specification {0} has no Shot Specifications.").format(media_specification.name))
+		_raise_run_error(run, _("Media Project {0} has no Shot Specifications.").format(project.name))
 		return _run_summary(run)
 
 	try:
-		validate_generation_preflight(media_specification, workflow_version, shots)
+		validate_generation_preflight(project, workflow_version, shots)
 		jobs_to_prepare = []
 		previous_shot_tail_job = None
 		for shot in shots:
@@ -134,7 +126,7 @@ def prepare_run(run_name: str):
 					continue
 
 				dependency = previous_segment_job
-				if not dependency and media_specification.continuity_mode in ("Continuous", "Consistency"):
+				if not dependency and project.generation_mode in ("Continuous", "Consistency"):
 					dependency = previous_shot_tail_job
 				prompt_text = compile_segment_prompt(
 					shot.name,
@@ -170,9 +162,7 @@ def prepare_run(run_name: str):
 	return _run_summary(run)
 
 
-def validate_generation_preflight(
-	media_specification, workflow_version, shots, *, check_comfyui=False
-):
+def validate_generation_preflight(project, workflow_version, shots, *, check_comfyui=False):
 	if not frappe.conf.get("comfyui_base_url"):
 		frappe.throw(_("comfyui_base_url is not configured."))
 	if check_comfyui:
@@ -207,7 +197,7 @@ def validate_generation_preflight(
 		for role in required_roles:
 			asset_version = mappings.get(role)
 			if (
-				media_specification.continuity_mode in ("Continuous", "Consistency")
+				project.generation_mode in ("Continuous", "Consistency")
 				and shot_row.shot_number > 1
 				and role == "first_frame"
 			):
@@ -418,13 +408,10 @@ def prepare_chained_regeneration(attempt_name: str):
 	shot_specification_name = frappe.db.get_value(
 		"Generation Job", generation_job_name, "shot_specification"
 	)
-	media_specification_name = frappe.db.get_value(
-		"Shot Specification", shot_specification_name, "media_specification"
-	)
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	job = frappe.get_doc("Generation Job", attempt.generation_job)
 	shot = frappe.get_doc("Shot Specification", job.shot_specification)
-	media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+	project = frappe.get_doc("Media Project", shot.media_project)
 	if not job.generation_run:
 		return []
 
@@ -446,7 +433,7 @@ def prepare_chained_regeneration(attempt_name: str):
 		for child in children_by_parent.get(parent, []):
 			if (
 				child.shot_specification != shot.shot_specification
-				and media_specification.continuity_mode not in ("Continuous", "Consistency")
+				and project.generation_mode not in ("Continuous", "Consistency")
 			):
 				continue
 			downstream.append(child)
@@ -520,14 +507,9 @@ def finalize_run(run_name: str):
 		return _run_summary(run)
 
 	try:
-		media_project = frappe.db.get_value(
-			"Media Specification", run.media_specification, "media_project"
-		)
-		if not media_project:
-			frappe.throw(_("Media Specification has no Media Project."))
-		project = frappe.get_doc("Media Project", media_project)
+		project = frappe.get_doc("Media Project", run.media_project)
 		_initialize_timeline(project)
-		result = compose_project_timeline_internal(media_project)
+		result = compose_project_timeline_internal(project.name)
 	except Exception as exc:
 		_raise_run_error(run, _exception_message(exc))
 		return _run_summary(run)
@@ -536,14 +518,8 @@ def finalize_run(run_name: str):
 	run.status = "Completed"
 	run.completed_at = now()
 	run.save(ignore_permissions=True)
-	if run.media_specification:
-		media_project = frappe.db.get_value(
-			"Media Specification", run.media_specification, "media_project"
-		)
-		if media_project:
-			frappe.db.set_value(
-				"Media Project", media_project, "status", "Completed", update_modified=False
-			)
+	if run.media_project:
+		frappe.db.set_value("Media Project", run.media_project, "status", "Completed", update_modified=False)
 	return _run_summary(run)
 
 
@@ -583,26 +559,14 @@ def refresh_active_runs():
 
 def sync_media_project_status_for_run(run_name: str):
 	"""Derive the customer-facing Campaign status from its generation state."""
-	from joymedia.joymedia.doctype.media_project.media_project import get_latest_media_specification
-
 	run = frappe.get_doc("Generation Run", run_name)
-	media_project = frappe.db.get_value(
-		"Media Specification", run.media_specification, "media_project"
-	)
+	media_project = run.media_project
 	if not media_project:
 		return
-
-	latest_specification = get_latest_media_specification(media_project)
-	if not latest_specification:
-		frappe.db.set_value("Media Project", media_project, "status", "Draft", update_modified=False)
-		return
-
-	runs = (
-		frappe.get_all(
-			"Generation Run",
-			filters={"media_specification": latest_specification.name},
-			fields=["name", "status", "final_asset_version"],
-		)
+	runs = frappe.get_all(
+		"Generation Run",
+		filters={"media_project": media_project},
+		fields=["name", "status", "final_asset_version"],
 	)
 
 	if not runs:

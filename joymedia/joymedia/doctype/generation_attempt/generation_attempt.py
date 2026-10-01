@@ -156,11 +156,7 @@ def _invalidate_manual_regeneration_outputs(job):
 		update_modified=False,
 	)
 
-	media_project = frappe.db.get_value(
-		"Media Specification",
-		run.media_specification,
-		"media_project",
-	)
+	media_project = run.media_project
 	if media_project:
 		from joymedia.services.timeline_editor import _invalidate_project_output
 

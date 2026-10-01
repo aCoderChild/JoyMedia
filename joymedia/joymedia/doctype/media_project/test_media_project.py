@@ -40,11 +40,11 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		from joymedia.joymedia.doctype.media_project.media_project import get_project_workspace
 		from joymedia.services.video_plan_service import apply_video_plan
 
-		project, specification = _create_project("Workspace", self.workflow)
+		project, _ = _create_project("Workspace", self.workflow)
 		asset, version = _create_asset_version(project, "Image", "png")
 		project.append("selected_media", {"asset_version": version.name})
 		project.save(ignore_permissions=True)
-		apply_video_plan(specification.name, {
+		apply_video_plan(project.name, {
 			"shots": [{
 				"shot_number": 1,
 				"duration_seconds": 5,
@@ -60,39 +60,35 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 	def test_planning_context_tracks_prompt_assets_settings_and_global_instructions(self):
 		from joymedia.joymedia.doctype.media_project.media_project import _build_planning_context
 
-		project, specification = _create_project("Planning Context", self.workflow)
-		context, first_hash = _build_planning_context(project, specification)
+		project, _ = _create_project("Planning Context", self.workflow)
+		context, first_hash = _build_planning_context(project)
 		self.assertEqual(context["video_idea"], project.video_idea)
 		self.assertEqual(context["global_instructions"], "Keep the product identity consistent.")
 
 		project.video_idea = "A brighter revised campaign."
 		project.save(ignore_permissions=True)
-		_, changed_hash = _build_planning_context(project, specification)
+		_, changed_hash = _build_planning_context(project)
 		self.assertNotEqual(first_hash, changed_hash)
 
 	def test_storyboard_revision_preserves_prompt_and_supersedes_previous_spec(self):
 		from joymedia.services.video_plan_service import apply_video_plan
 
-		project, specification = _create_project("Storyboard Revision", self.workflow)
-		apply_video_plan(specification.name, {
+		project, _ = _create_project("Storyboard Revision", self.workflow)
+		apply_video_plan(project.name, {
 			"shots": [{
 				"shot_number": 1,
 				"duration_seconds": 5,
 				"generation_prompt": "Original shot prompt.",
 			}]
 		})
-		specification.status = "Ready"
-		specification.save(ignore_permissions=True)
 		project.db_set("status", "Completed", update_modified=False)
 
 		result = project.create_storyboard_revision()
-		revision = frappe.get_doc("Media Specification", result["media_specification"])
 		new_shot = frappe.db.get_value(
-			"Shot Specification", {"media_specification": revision.name}, ["generation_prompt"], as_dict=True
+			"Shot Specification", {"media_project": project.name}, ["generation_prompt"], as_dict=True
 		)
-		self.assertEqual(revision.global_instructions, specification.global_instructions)
+		self.assertEqual(result["media_project"], project.name)
 		self.assertEqual(new_shot.generation_prompt, "Original shot prompt.")
-		self.assertEqual(frappe.db.get_value("Media Specification", specification.name, "status"), "Superseded")
 
 	def test_generation_workflow_owns_adapter_without_model_profile_doctype(self):
 		workflow = frappe.get_doc("Generation Workflow", self.workflow)
@@ -106,20 +102,15 @@ def _create_project(label, workflow):
 		"project_name": label,
 		"product_name": "Test Product",
 		"video_idea": "Create a premium product showcase.",
-	}).insert(ignore_permissions=True)
-	specification = frappe.get_doc({
-		"doctype": "Media Specification",
-		"media_project": project.name,
-		"version_number": 1,
-		"status": "Draft",
-		"workflow": workflow,
-		"video_style": "product_showcase",
-		"continuity_mode": "Continuous",
-		"global_instructions": "Keep the product identity consistent.",
 		"total_duration_seconds": 5,
 		"delivery_preset": "Landscape",
+		"delivery_width": 1344,
+		"delivery_height": 768,
+		"generation_mode": "Continuous",
+		"global_instructions": "Keep the product identity consistent.",
+		"workflow": workflow,
 	}).insert(ignore_permissions=True)
-	return project, specification
+	return project, None
 
 
 def _create_asset_version(project, media_type, extension):

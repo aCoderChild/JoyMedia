@@ -6,7 +6,9 @@
  "engine": "InnoDB",
  "field_order": [
   "run_overview_section",
-  "media_specification",
+  "media_project",
+  "project_snapshot_json",
+  "project_snapshot_hash",
   "workflow_version",
   "status",
   "requested_by",
@@ -30,18 +32,34 @@
    "label": "Run Overview"
   },
   {
-   "description": "Media Specification whose shots are executed by this run.",
-   "fieldname": "media_specification",
+   "description": "Media Project whose shots are executed by this run.",
+   "fieldname": "media_project",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Media Specification",
-   "options": "Media Specification",
+   "label": "Media Project",
+   "options": "Media Project",
    "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
   },
   {
-   "description": "Exact Workflow inherited from the Media Specification.",
+   "description": "Frozen project settings and selected media used by this run.",
+   "fieldname": "project_snapshot_json",
+   "fieldtype": "Code",
+   "hidden": 1,
+   "label": "Project Snapshot JSON",
+   "read_only": 1
+  },
+  {
+   "description": "SHA-256 hash of the frozen project snapshot.",
+   "fieldname": "project_snapshot_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Project Snapshot Hash",
+   "read_only": 1
+  },
+  {
+   "description": "Exact Workflow frozen for this project run.",
    "fieldname": "workflow_version",
    "fieldtype": "Link",
    "hidden": 1,

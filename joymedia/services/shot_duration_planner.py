@@ -1,33 +1,35 @@
-"""Frame-exact planning for Shot Specifications within a Media Specification."""
+"""Frame-exact planning for Shot Specifications within a Media Project."""
 
 import frappe
 from frappe import _
 
 
-def rebalance_shot_duration(media_specification_name: str, shot_name: str, target_duration_seconds: float):
-	"""Change one shot while keeping the specification's canonical duration fixed."""
-	media_specification = frappe.get_doc("Media Specification", media_specification_name)
+def rebalance_shot_duration(media_project_name: str, shot_name: str, target_duration_seconds: float):
+	"""Change one shot while keeping the project's canonical duration fixed."""
+	project = frappe.get_doc("Media Project", media_project_name)
+	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
+	settings = _project_settings(project)
 	shots = frappe.get_all(
 		"Shot Specification",
-		filters={"media_specification": media_specification.name},
+		filters={"media_project": project.name},
 		fields=["name", "shot_number", "duration_seconds"],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
-		frappe.throw(_("The Media Specification has no Shot Specifications."))
-	if not media_specification.workflow:
-		frappe.throw(_("Media Specification must have a Workflow."))
-	workflow_version = frappe.get_doc("Generation Workflow", media_specification.workflow)
+		frappe.throw(_("The Media Project has no Shot Specifications."))
+	if not settings.workflow:
+		frappe.throw(_("Media Project must have a Workflow."))
+	workflow_version = frappe.get_doc("Generation Workflow", settings.workflow)
 	fps = float(workflow_version.output_fps or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))
 
-	total_frames = round(float(media_specification.total_duration_seconds or 0) * fps)
+	total_frames = round(float(settings.total_duration_seconds or 0) * fps)
 	if total_frames < len(shots):
 		frappe.throw(_("Total Duration must provide at least one frame for each Shot Specification."))
 	target = next((index for index, row in enumerate(shots) if row.name == shot_name), None)
 	if target is None:
-		frappe.throw(_("Shot does not belong to this Media Specification."))
+		frappe.throw(_("Shot does not belong to this Media Project."))
 	target_frames = max(1, min(round(float(target_duration_seconds) * fps), total_frames - len(shots) + 1))
 	remaining_frames = total_frames - target_frames
 	other_indexes = [index for index in range(len(shots)) if index != target]
@@ -67,33 +69,35 @@ def rebalance_shot_duration(media_specification_name: str, shot_name: str, targe
 	}
 
 
-def recalculate_shot_durations(media_specification_name: str):
-	"""Distribute a specification's intended duration across its shots in whole frames.
+def recalculate_shot_durations(media_project_name: str):
+	"""Distribute a project's intended duration across its shots in whole frames.
 
 	The earliest shots receive any remainder frames so the planned shot timeline always
-	sums exactly to the Media Specification's total frame count.
+	sums exactly to the Media Project's total frame count.
 	"""
-	media_specification = frappe.get_doc("Media Specification", media_specification_name)
+	project = frappe.get_doc("Media Project", media_project_name)
+	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
+	settings = _project_settings(project)
 	shots = frappe.get_all(
 		"Shot Specification",
-		filters={"media_specification": media_specification.name},
+		filters={"media_project": project.name},
 		fields=["name", "shot_number", "duration_seconds"],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
 		return {"total_frames": 0, "shots": 0}
 
-	if not media_specification.workflow:
-		frappe.throw(_("Media Specification must have a Workflow."))
+	if not settings.workflow:
+		frappe.throw(_("Media Project must have a Workflow."))
 	workflow_version = frappe.get_doc(
 		"Generation Workflow",
-		media_specification.workflow,
+		settings.workflow,
 	)
 	fps = float(workflow_version.output_fps or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))
 
-	total_frames = round(float(media_specification.total_duration_seconds or 0) * fps)
+	total_frames = round(float(settings.total_duration_seconds or 0) * fps)
 	if total_frames < len(shots):
 		frappe.throw(
 			_("Total Duration must provide at least one frame for each Shot Specification.")

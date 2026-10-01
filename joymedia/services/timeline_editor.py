@@ -91,10 +91,10 @@ def trim_timeline_clip(project_name: str, clip_name: str, source_in_frame, sourc
 	if start < 0 or end <= start:
 		frappe.throw(_("Source out frame must be after source in frame."))
 
-	max_frames = _source_max_frames(clip.source_asset_version, _project_fps(clip.media_specification))
+	max_frames = _source_max_frames(clip.source_asset_version, _project_fps(project.name))
 	if max_frames and end > max_frames:
 		frappe.throw(_("The requested trim exceeds the source clip duration ({0} frames).").format(max_frames))
-	min_frames = _minimum_clip_frames(_project_fps(clip.media_specification))
+	min_frames = _minimum_clip_frames(_project_fps(project.name))
 	if end - start < min_frames:
 		frappe.throw(_("A timeline clip must be at least {0} frames long.").format(min_frames))
 
@@ -149,7 +149,6 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 		{
 			"doctype": "Timeline Clip",
 			"media_project": clip.media_project,
-			"media_specification": clip.media_specification,
 			"shot_specification": clip.shot_specification,
 			"clip_order": clip.clip_order + 1,
 			"enabled": clip.enabled,
@@ -182,7 +181,6 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 		{
 			"doctype": "Timeline Clip",
 			"media_project": clip.media_project,
-			"media_specification": clip.media_specification,
 			"shot_specification": clip.shot_specification,
 			"clip_order": clip.clip_order + 1,
 			"enabled": clip.enabled,
@@ -336,26 +334,20 @@ def compose_project_timeline(project_name: str):
 
 
 def _initialize_timeline(project):
-	media_specification = _latest_fully_generated_specification(project.name)
-	if not media_specification:
+	if not _latest_fully_generated_run(project.name):
 		return
 	existing_clips = frappe.get_all(
 		"Timeline Clip",
 		filters={"media_project": project.name},
-		fields=["name", "media_specification"],
+		fields=["name"],
 	)
-	if existing_clips and all(
-		clip.media_specification == media_specification.name for clip in existing_clips
-	):
-		return
 	if existing_clips:
-		for clip in existing_clips:
-			frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
+		return
 
-	fps = _project_fps(media_specification.name)
+	fps = _project_fps(project.name)
 	shots = frappe.get_all(
 		"Shot Specification",
-		filters={"media_specification": media_specification.name},
+		filters={"media_project": project.name},
 		fields=[
 			"name",
 			"shot_number",
@@ -377,7 +369,6 @@ def _initialize_timeline(project):
 			{
 				"doctype": "Timeline Clip",
 				"media_project": project.name,
-				"media_specification": media_specification.name,
 				"shot_specification": shot.name,
 				"clip_order": order,
 				"enabled": 1,
@@ -393,27 +384,26 @@ def _initialize_timeline(project):
 	frappe.db.commit()
 
 
-def _latest_fully_generated_specification(project_name):
-	"""Pick the newest spec only when every storyboard shot has a selected video.
+def _latest_fully_generated_run(project_name):
+	"""Pick the newest run only when every project shot has a selected video.
 
 	Generation results arrive shot-by-shot. Creating the edit timeline after the
 	first completed shot would permanently omit later shots, so initialization is
 	deferred until the entire shot set is ready.
 	"""
-	specifications = frappe.get_all(
-		"Media Specification",
+	runs = frappe.get_all(
+		"Generation Run",
 		filters={"media_project": project_name},
-		fields=["name", "version_number"],
-		order_by="version_number desc, creation desc",
+		fields=["name", "creation"],
+		order_by="creation desc",
 	)
-	for specification in specifications:
-		shots = frappe.get_all(
-			"Shot Specification",
-			filters={"media_specification": specification.name},
-			fields=["name", "selected_output_asset_version"],
-		)
-		if shots and all(row.selected_output_asset_version for row in shots):
-			return frappe.get_doc("Media Specification", specification.name)
+	shots = frappe.get_all(
+		"Shot Specification",
+		filters={"media_project": project_name},
+		fields=["name", "selected_output_asset_version"],
+	)
+	if shots and all(row.selected_output_asset_version for row in shots):
+		return runs[0] if runs else None
 	return None
 
 
@@ -424,7 +414,6 @@ def _timeline_clip_rows(project_name):
 		fields=[
 			"name",
 			"media_project",
-			"media_specification",
 			"shot_specification",
 			"clip_order",
 			"enabled",
@@ -445,16 +434,14 @@ def _enabled_clips(clips):
 
 
 def _serialize_timeline(project, clips):
-	latest_spec = _latest_fully_generated_specification(project.name)
+	latest_run = _latest_fully_generated_run(project.name)
 	enabled_clips = _enabled_clips(clips)
 	if not enabled_clips:
 		return {
 			"ready": False,
 			"project": project.name,
-			"media_specification": None,
-			"latest_generated_media_specification": latest_spec.name if latest_spec else None,
-			"latest_spec_version": latest_spec.version_number if latest_spec else None,
-			"timeline_spec_version": None,
+			"media_project": project.name,
+			"latest_generation_run": latest_run.name if latest_run else None,
 			"is_outdated": False,
 			"clips": [],
 			"fps": 0,
@@ -465,8 +452,7 @@ def _serialize_timeline(project, clips):
 			"message": _("Generate every shot before opening the edit timeline."),
 		}
 
-	specification_name = enabled_clips[0].media_specification
-	fps = _project_fps(specification_name)
+	fps = _project_fps(project.name)
 	cursor = 0
 	serialized = []
 	for index, clip in enumerate(enabled_clips):
@@ -526,25 +512,13 @@ def _serialize_timeline(project, clips):
 		)
 		cursor = end - transition_frames
 
-	final_video = _final_video(project.name, specification_name)
-	is_outdated = bool(
-		latest_spec
-		and specification_name
-		and latest_spec.name != specification_name
-	)
-	timeline_spec_version = (
-		frappe.db.get_value("Media Specification", specification_name, "version_number")
-		if specification_name
-		else None
-	)
+	final_video = _final_video(project.name)
 	return {
 		"ready": bool(serialized),
 		"project": project.name,
-		"media_specification": specification_name,
-		"latest_generated_media_specification": latest_spec.name if latest_spec else None,
-		"latest_spec_version": latest_spec.version_number if latest_spec else None,
-		"timeline_spec_version": timeline_spec_version,
-		"is_outdated": is_outdated,
+		"media_project": project.name,
+		"latest_generation_run": latest_run.name if latest_run else None,
+		"is_outdated": False,
 		"fps": fps,
 		"total_frames": max(0, cursor),
 		"total_seconds": max(0, cursor) / fps,
@@ -555,7 +529,7 @@ def _serialize_timeline(project, clips):
 	}
 
 
-def _final_video(project_name, specification_name):
+def _final_video(project_name):
 	asset_version_name = frappe.db.get_value(
 		"Media Project",
 		project_name,
@@ -564,7 +538,7 @@ def _final_video(project_name, specification_name):
 	if not asset_version_name:
 		asset_version_name = frappe.db.get_value(
 			"Generation Run",
-			{"media_specification": specification_name},
+			{"media_project": project_name},
 			"final_asset_version",
 			order_by="creation desc",
 		)
@@ -601,9 +575,7 @@ def sync_timeline_source_for_shot(shot_name):
 	new_asset_version = shot.selected_output_asset_version
 	if not new_asset_version:
 		return
-	project_name = frappe.db.get_value(
-		"Media Specification", shot.media_specification, "media_project"
-	)
+	project_name = shot.media_project
 	clips = frappe.get_all(
 		"Timeline Clip",
 		filters={
@@ -614,7 +586,7 @@ def sync_timeline_source_for_shot(shot_name):
 	)
 	if not clips:
 		return
-	fps = _project_fps(shot.media_specification)
+	fps = _project_fps(project_name)
 	max_frames = _source_max_frames(new_asset_version, fps)
 	min_frames = _minimum_clip_frames(fps)
 
@@ -645,10 +617,10 @@ def _project_clip(project_name, clip_name):
 	return project, clip
 
 
-def _project_fps(media_specification_name):
-	workflow_name = frappe.db.get_value("Media Specification", media_specification_name, "workflow")
+def _project_fps(project_name):
+	workflow_name = frappe.db.get_value("Media Project", project_name, "workflow")
 	if not workflow_name:
-		frappe.throw(_("Media Specification has no Workflow."))
+		frappe.throw(_("Media Project has no Workflow."))
 	fps = float(frappe.db.get_value("Generation Workflow", workflow_name, "output_fps") or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))

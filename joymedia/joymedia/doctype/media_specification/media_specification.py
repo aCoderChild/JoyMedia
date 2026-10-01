@@ -149,9 +149,9 @@ class MediaSpecification(Document):
 		validate_workflow_bindings(workflow_version)
 
 	def on_update(self):
-		if self.has_value_changed("total_duration_seconds"):
+		if self.has_value_changed("total_duration_seconds") and self.media_project:
 			from joymedia.services.shot_duration_planner import recalculate_shot_durations
-			recalculate_shot_durations(self.name)
+			recalculate_shot_durations(self.media_project)
 
 	def _validate_timeline(self):
 		if (self.total_duration_seconds or 0) <= 0:
@@ -167,24 +167,24 @@ class MediaSpecification(Document):
 		previous = self.get_doc_before_save()
 		if not previous:
 			return
-		for fieldname in self.IDENTITY_FIELDS:
+		for fieldname in MediaSpecification.IDENTITY_FIELDS:
 			if self.get(fieldname) != previous.get(fieldname):
 				frappe.throw(_("Media Specification {0} cannot be changed after creation.").format(fieldname))
 		if previous.status != "Draft" and self.status == "Draft":
 			frappe.throw(_("A Ready, Superseded, or Archived Media Specification cannot return to Draft."))
-		if not self._execution_has_started():
+		if not MediaSpecification._execution_has_started(self):
 			return
-		for fieldname in self.EXECUTION_CONTRACT_FIELDS:
+		for fieldname in MediaSpecification.EXECUTION_CONTRACT_FIELDS:
 			if self.get(fieldname) != previous.get(fieldname):
 				frappe.throw(
 					_("Execution contract field {0} cannot change after Generation Jobs or Runs exist.").format(fieldname)
 				)
 
 	def _execution_has_started(self):
-		if frappe.db.exists("Generation Run", {"media_specification": self.name}):
+		if frappe.db.exists("Generation Run", {"media_project": self.media_project}):
 			return True
 		shot_names = frappe.get_all(
-			"Shot Specification", filters={"media_specification": self.name}, pluck="name"
+			"Shot Specification", filters={"media_project": self.media_project}, pluck="name"
 		)
 		return bool(
 			shot_names

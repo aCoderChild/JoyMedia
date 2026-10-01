@@ -37,20 +37,17 @@ class TestTimelineEditor(FrappeTestCase):
 			"project_name": "Test Timeline Project",
 			"product_name": "Test Product",
 			"video_idea": "Create a product timeline test.",
-		}).insert(ignore_permissions=True)
-		self.spec = frappe.get_doc({
-			"doctype": "Media Specification",
-			"media_project": self.project.name,
-			"version_number": 1,
-			"workflow": workflow,
-			"continuity_mode": "Multi-shot",
 			"total_duration_seconds": 10,
 			"delivery_preset": "Landscape",
+			"delivery_width": 1920,
+			"delivery_height": 1080,
+			"generation_mode": "Multi-shot",
+			"workflow": workflow,
 		}).insert(ignore_permissions=True)
 		self.asset, self.version_1 = _create_output_version(self.project, "test-v1.mp4", 4)
 		self.shot = frappe.get_doc({
 			"doctype": "Shot Specification",
-			"media_specification": self.spec.name,
+			"media_project": self.project.name,
 			"shot_number": 1,
 			"shot_name": "Product Hero",
 			"generation_prompt": "Close-up cinematic product rotation.",
@@ -60,7 +57,6 @@ class TestTimelineEditor(FrappeTestCase):
 		self.clip_1 = frappe.get_doc({
 			"doctype": "Timeline Clip",
 			"media_project": self.project.name,
-			"media_specification": self.spec.name,
 			"shot_specification": self.shot.name,
 			"clip_order": 1,
 			"enabled": 1,
@@ -126,32 +122,11 @@ class TestTimelineEditor(FrappeTestCase):
 		self.assertEqual(self.clip_1.source_out_frame, 72)
 		self.assertIsNone(frappe.db.get_value("Media Project", self.project.name, "current_output_asset_version"))
 
-	def test_timeline_detects_newer_generated_specification(self):
-		from joymedia.services.timeline_editor import get_project_timeline, reset_project_timeline
-		self.assertFalse(get_project_timeline(self.project.name)["is_outdated"])
-		spec_2 = frappe.get_doc({
-			"doctype": "Media Specification",
-			"media_project": self.project.name,
-			"version_number": 2,
-			"workflow": self.spec.workflow,
-			"continuity_mode": "Multi-shot",
-			"total_duration_seconds": 10,
-			"delivery_preset": "Landscape",
-		}).insert(ignore_permissions=True)
-		shot_2 = frappe.get_doc({
-			"doctype": "Shot Specification",
-			"media_specification": spec_2.name,
-			"shot_number": 1,
-			"shot_name": "Product Hero V2",
-			"generation_prompt": "Revised close-up cinematic product rotation.",
-			"duration_seconds": 4.0,
-		}).insert(ignore_permissions=True)
-		shot_2.db_set("selected_output_asset_version", self.version_1.name, update_modified=False)
+	def test_timeline_is_owned_by_the_project(self):
+		from joymedia.services.timeline_editor import get_project_timeline
 		data = get_project_timeline(self.project.name)
-		self.assertTrue(data["is_outdated"])
-		self.assertEqual(data["latest_generated_media_specification"], spec_2.name)
-		reset_project_timeline(self.project.name)
-		self.assertEqual(get_project_timeline(self.project.name)["media_specification"], spec_2.name)
+		self.assertEqual(data["project"], self.project.name)
+		self.assertEqual(data["media_project"], self.project.name)
 
 
 def _create_output_version(project, file_name, seconds, asset=None):

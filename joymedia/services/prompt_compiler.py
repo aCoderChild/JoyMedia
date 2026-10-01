@@ -15,8 +15,8 @@ def compile_prompt_from_ui(shot_specification: str):
 
 def compile_prompt(shot_specification: str):
 	shot = frappe.get_doc("Shot Specification", shot_specification)
-	media_spec = frappe.get_doc("Media Specification", shot.media_specification)
-	return compile_prompt_for_documents(shot, media_spec)
+	project = frappe.get_doc("Media Project", shot.media_project)
+	return compile_prompt_for_documents(shot, project)
 
 
 def compile_segment_prompt(shot_specification: str, segment_index: int, segment_count: int):
@@ -35,14 +35,14 @@ def compile_segment_prompt(shot_specification: str, segment_index: int, segment_
 	).strip()
 
 
-def compile_prompt_for_documents(shot, media_spec):
+def compile_prompt_for_documents(shot, project):
 	prompt = (shot.generation_prompt or "").strip()
 	if not prompt:
 		frappe.throw(
 			_("Shot Specification {0} has no Qwen-generated generation_prompt.").format(shot.name)
 		)
 
-	global_instructions = str(media_spec.get("global_instructions") or "").strip()
+	global_instructions = str(project.get("global_instructions") or "").strip()
 	if global_instructions:
 		prompt = (
 			f"{prompt}\n\n"
@@ -50,7 +50,8 @@ def compile_prompt_for_documents(shot, media_spec):
 			f"{global_instructions}"
 		)
 
-	if media_spec.continuity_mode in ("Continuous", "Consistency") and int(shot.shot_number or 0) > 1:
+	generation_mode = project.get("generation_mode") or project.get("continuity_mode")
+	if generation_mode in ("Continuous", "Consistency") and int(shot.shot_number or 0) > 1:
 		prompt = (
 			f"{prompt}\n\n"
 			"Continuity: Continue naturally from the previous shot's generated last frame. "
@@ -61,10 +62,10 @@ def compile_prompt_for_documents(shot, media_spec):
 	return prompt.strip()
 
 
-def _build_source_snapshot(shot, media_spec):
+def _build_source_snapshot(shot, project):
 	return {
-		"media_specification": media_spec.name,
+		"media_project": project.name,
 		"shot_specification": shot.name,
 		"generation_prompt": shot.generation_prompt or "",
-		"global_instructions": media_spec.get("global_instructions") or "",
+		"global_instructions": project.get("global_instructions") or "",
 	}

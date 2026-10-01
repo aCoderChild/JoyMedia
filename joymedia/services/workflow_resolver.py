@@ -34,13 +34,13 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		node["inputs"][binding.input_name] = value
 
 	shot = frappe.get_doc("Shot Specification", job.shot_specification)
-	media_specification = frappe.get_doc("Media Specification", shot.media_specification)
+	project = frappe.get_doc("Media Project", shot.media_project)
 	adapter = get_workflow_adapter(workflow_version)
 	adapter.prepare_execution(
 		workflow,
 		seed=int(attempt.seed),
-		width=int(media_specification.delivery_width),
-		height=int(media_specification.delivery_height),
+		width=int(project.delivery_width),
+		height=int(project.delivery_height),
 		frame_count=int(job.segment_frame_count),
 		output_prefix=f"{job.name}_{attempt.name}",
 		last_frame_index=int(job.segment_frame_count) - 1,

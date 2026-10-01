@@ -28,3 +28,4 @@ joymedia.patches.simplify_creative_fields
 joymedia.patches.simplify_generation_domain
 joymedia.patches.simplify_project_references
 joymedia.patches.make_generation_inputs_job_children
+joymedia.patches.migrate_media_specification_to_project

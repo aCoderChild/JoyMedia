@@ -29,7 +29,6 @@ def compose_project_timeline_internal(project_name: str):
 		filters={"media_project": project.name, "enabled": 1},
 		fields=[
 			"name",
-			"media_specification",
 			"clip_order",
 			"source_asset_version",
 			"source_in_frame",
@@ -42,11 +41,7 @@ def compose_project_timeline_internal(project_name: str):
 	if not clips:
 		frappe.throw(_("The project timeline has no enabled clips."))
 
-	media_specification = frappe.get_doc("Media Specification", clips[0].media_specification)
-	if any(clip.media_specification != media_specification.name for clip in clips):
-		frappe.throw(_("Timeline clips from different Media Specifications cannot be composed together."))
-
-	profile = _delivery_profile(media_specification)
+	profile = _delivery_profile(project)
 	clip_frames = [int(clip.source_out_frame) - int(clip.source_in_frame) for clip in clips]
 	if any(frames <= 0 for frames in clip_frames):
 		frappe.throw(_("Every timeline clip must contain at least one frame."))
@@ -83,7 +78,7 @@ def compose_project_timeline_internal(project_name: str):
 			_validate_normalized_video(silent_master, profile, expected_frames=expected_frames)
 
 			delivery_path = silent_master
-			audio_sources = _get_audio_sources(media_specification, _get_video_duration(silent_master))
+			audio_sources = _get_audio_sources(project, _get_video_duration(silent_master))
 			if audio_sources:
 				delivery_path = temp_path / f"{project.name}-timeline.mp4"
 				_mix_audio(silent_master, audio_sources, delivery_path)
@@ -99,7 +94,7 @@ def compose_project_timeline_internal(project_name: str):
 		stderr = getattr(exc, "stderr", None)
 		frappe.throw(_("Unable to render timeline: {0}").format((stderr or str(exc)).strip()))
 
-	output_asset = _get_or_create_final_asset(media_specification)
+	output_asset = _get_or_create_final_asset(project)
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",
@@ -139,18 +134,18 @@ def compose_project_timeline_internal(project_name: str):
 	}
 
 
-def _delivery_profile(media_specification):
-	if not media_specification.workflow:
-		frappe.throw(_("Media Specification must have a Workflow."))
-	workflow = frappe.get_doc("Generation Workflow", media_specification.workflow)
+def _delivery_profile(project):
+	if not project.workflow:
+		frappe.throw(_("Media Project must have a Workflow."))
+	workflow = frappe.get_doc("Generation Workflow", project.workflow)
 	fps = float(workflow.output_fps or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))
-	if not media_specification.delivery_width or not media_specification.delivery_height:
-		frappe.throw(_("Media Specification must have delivery width and height."))
+	if not project.delivery_width or not project.delivery_height:
+		frappe.throw(_("Media Project must have delivery width and height."))
 	return {
-		"width": int(media_specification.delivery_width),
-		"height": int(media_specification.delivery_height),
+		"width": int(project.delivery_width),
+		"height": int(project.delivery_height),
 		"fps": fps,
 	}
 

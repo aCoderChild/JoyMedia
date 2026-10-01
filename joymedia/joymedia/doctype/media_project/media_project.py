@@ -64,14 +64,11 @@ def _get_latest_project_storyboard_specification(media_project, specification_na
 
 
 def _get_latest_project_generation_run(media_project, specification_names=None):
-	specification_names = specification_names or _get_project_specification_names(media_project)
-	if not specification_names:
-		return None
 	rows = frappe.get_all(
 		"Generation Run",
-		filters={"media_specification": ["in", specification_names]},
+		filters={"media_project": media_project},
 		fields=[
-			"name", "media_specification", "status", "started_at", "completed_at",
+			"name", "media_project", "status", "started_at", "completed_at",
 			"progress", "completed_jobs", "total_jobs", "failed_jobs", "running_jobs",
 			"error_summary", "final_asset_version",
 		],
@@ -81,18 +78,19 @@ def _get_latest_project_generation_run(media_project, specification_names=None):
 	return rows[0] if rows else None
 
 
-def _build_planning_context(project, media_specification):
+def _build_planning_context(project, media_specification=None):
+	settings = media_specification or project
 	context = {
 		"video_idea": project.video_idea or "",
 		"product_name": project.product_name or "",
 		"selected_asset_versions": sorted(
 			row.asset_version for row in project.selected_media or [] if row.asset_version
 		),
-		"workflow": media_specification.workflow or "",
-		"continuity_mode": media_specification.continuity_mode or "",
-		"total_duration_seconds": float(media_specification.total_duration_seconds or 0),
-		"delivery_preset": media_specification.delivery_preset or "",
-		"global_instructions": media_specification.global_instructions or "",
+		"workflow": settings.workflow or "",
+		"generation_mode": getattr(settings, "generation_mode", None) or getattr(settings, "continuity_mode", None) or "",
+		"total_duration_seconds": float(settings.total_duration_seconds or 0),
+		"delivery_preset": settings.delivery_preset or "",
+		"global_instructions": settings.global_instructions or "",
 	}
 	serialized = json.dumps(context, sort_keys=True, separators=(",", ":"))
 	return context, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
@@ -107,9 +105,52 @@ def _customer_style_details(media_specification):
 	)
 	workflow_name = " ".join(part.capitalize() for part in workflow.workflow_key.split("_")) if workflow else None
 	return {
-		"video_style": media_specification.video_style or (workflow.workflow_key if workflow else None),
+		"video_style": getattr(media_specification, "video_style", None) or (workflow.workflow_key if workflow else None),
 		"video_style_name": workflow_name,
 	}
+
+
+def _project_settings(project):
+	"""Return project-owned settings, falling back to legacy data during migration."""
+	if project.workflow and project.total_duration_seconds:
+		return project
+	legacy = get_latest_media_specification(project.name)
+	if legacy:
+		return frappe._dict(
+			workflow=legacy.workflow,
+			total_duration_seconds=legacy.total_duration_seconds,
+			delivery_preset=legacy.delivery_preset,
+			delivery_width=legacy.delivery_width,
+			delivery_height=legacy.delivery_height,
+			generation_mode=_normalize_generation_mode(legacy.continuity_mode),
+			global_instructions=legacy.global_instructions,
+			video_style=legacy.video_style,
+		)
+	return project
+
+
+def build_project_snapshot(project):
+	settings = _project_settings(project)
+	snapshot = {
+		"media_project": project.name,
+		"project_name": project.project_name or "",
+		"product_name": project.product_name or "",
+		"video_idea": project.video_idea or "",
+		"total_duration_seconds": float(settings.total_duration_seconds or 0),
+		"delivery_preset": settings.delivery_preset or "",
+		"delivery_width": int(settings.delivery_width or 0),
+		"delivery_height": int(settings.delivery_height or 0),
+		"generation_mode": settings.generation_mode or "Multi-shot",
+		"global_instructions": settings.global_instructions or "",
+		"workflow": settings.workflow or "",
+		"selected_media": [
+			{"asset_version": row.asset_version}
+			for row in project.selected_media or []
+			if row.asset_version
+		],
+	}
+	serialized = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
+	return serialized, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _get_project_selected_assets(project):
@@ -174,18 +215,18 @@ def _get_project_reference_contexts(project):
 
 
 def _copy_storyboard_shots(source_specification, target_specification):
-	if frappe.db.exists("Shot Specification", {"media_specification": target_specification.name}):
+	if frappe.db.exists("Shot Specification", {"media_project": target_specification.name}):
 		return
 	for shot_name in frappe.get_all(
 		"Shot Specification",
-		filters={"media_specification": source_specification.name},
+		filters={"media_project": source_specification.name},
 		pluck="name",
 		order_by="shot_number asc, name asc",
 	):
 		source = frappe.get_doc("Shot Specification", shot_name)
 		copy = frappe.get_doc({
 			"doctype": "Shot Specification",
-			"media_specification": target_specification.name,
+			"media_project": target_specification.name,
 			"shot_number": source.shot_number,
 			"shot_name": source.shot_name,
 			"duration_seconds": source.duration_seconds,
@@ -244,7 +285,7 @@ def _storyboard_payload(specification):
 		return []
 	shots = frappe.get_all(
 		"Shot Specification",
-		filters={"media_specification": specification.name},
+		filters={"media_project": specification.name},
 		fields=["name", "shot_number", "shot_name", "generation_prompt", "duration_seconds", "selected_output_asset_version"],
 		order_by="shot_number asc, name asc",
 	)
@@ -268,10 +309,8 @@ def _storyboard_payload(specification):
 def get_project_workspace(name):
 	project = frappe.get_doc("Media Project", name)
 	project._require_read_access()
-	specification_names = _get_project_specification_names(project.name)
-	media_specification = get_latest_media_specification(project.name)
-	storyboard_specification = _get_latest_project_storyboard_specification(project.name, specification_names)
-	production = _get_latest_project_generation_run(project.name, [media_specification.name]) if media_specification else None
+	settings = _project_settings(project)
+	production = _get_latest_project_generation_run(project.name)
 	final_asset_version = project.current_output_asset_version or (production.final_asset_version if production else None)
 	return {
 		"project": {
@@ -284,16 +323,15 @@ def get_project_workspace(name):
 		},
 		"assets": _get_project_selected_assets(project),
 		"video_settings": ({
-			"name": media_specification.name,
-			"version_number": media_specification.version_number,
-			"status": media_specification.status,
-			"duration": media_specification.total_duration_seconds,
-			"delivery_preset": media_specification.delivery_preset,
-			"continuity_mode": _normalize_generation_mode(media_specification.continuity_mode),
-			"global_instructions": media_specification.global_instructions or "",
-			**_customer_style_details(media_specification),
-		} if media_specification else None),
-		"storyboard": _storyboard_payload(storyboard_specification),
+			"name": project.name,
+			"duration": settings.total_duration_seconds,
+			"delivery_preset": settings.delivery_preset,
+			"continuity_mode": _normalize_generation_mode(settings.generation_mode),
+			"generation_mode": _normalize_generation_mode(settings.generation_mode),
+			"global_instructions": settings.global_instructions or "",
+			**_customer_style_details(settings),
+		} if settings.workflow else None),
+		"storyboard": _storyboard_payload(project),
 		"production": production,
 		"final_video": ({
 			"asset_version": final_asset_version,
@@ -348,10 +386,7 @@ def _aggregate_shot_progress(run_name):
 def get_project_production(name):
 	project = frappe.get_doc("Media Project", name)
 	project._require_read_access()
-	media_specification = get_latest_media_specification(project.name)
-	if not media_specification:
-		return None
-	production = _get_latest_project_generation_run(project.name, [media_specification.name])
+	production = _get_latest_project_generation_run(project.name)
 	if not production:
 		return None
 	production["shots"] = _aggregate_shot_progress(production.name)
@@ -367,10 +402,7 @@ def get_project_production(name):
 def refresh_project_production(name):
 	project = frappe.get_doc("Media Project", name)
 	project._require_write_access()
-	media_specification = get_latest_media_specification(project.name)
-	if not media_specification:
-		return None
-	production = _get_latest_project_generation_run(project.name, [media_specification.name])
+	production = _get_latest_project_generation_run(project.name)
 	if production and production.status in ("Queued", "Running"):
 		from joymedia.services.generation_orchestrator import refresh_run
 		refresh_run(production.name)
@@ -583,20 +615,9 @@ def generate_project_video_from_storyboard(project_name):
 def update_project_shot(project_name, shot_name, values):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
-	media_specification = get_latest_media_specification(project.name)
-	if not media_specification:
-		frappe.throw(_("This project has no editable video specification."))
 	shot = frappe.get_doc("Shot Specification", shot_name)
-	if media_specification.status == "Draft" and shot.media_specification != media_specification.name:
-		_copy_storyboard_shots(_get_latest_project_storyboard_specification(project.name), media_specification)
-		matching = frappe.db.get_value(
-			"Shot Specification",
-			{"media_specification": media_specification.name, "shot_number": shot.shot_number}, "name",
-		)
-		if matching:
-			shot = frappe.get_doc("Shot Specification", matching)
-	if shot.media_specification != media_specification.name or media_specification.status != "Draft":
-		frappe.throw(_("Create an editable storyboard revision before changing this shot."))
+	if shot.media_project != project.name:
+		frappe.throw(_("Shot does not belong to this project."))
 	if isinstance(values, str):
 		values = frappe.parse_json(values)
 	if "generation_prompt" in values:
@@ -618,19 +639,9 @@ def set_project_shot_keyframe(project_name, shot_name, frame_role, asset_version
 	project._require_write_access()
 	if frame_role not in ("first_frame", "last_frame"):
 		frappe.throw(_("Keyframe role must be first_frame or last_frame."))
-	media_specification = get_latest_media_specification(project.name)
-	if not media_specification:
-		frappe.throw(_("This project has no editable video specification."))
 	shot = frappe.get_doc("Shot Specification", shot_name)
-	if media_specification.status == "Draft" and shot.media_specification != media_specification.name:
-		_copy_storyboard_shots(_get_latest_project_storyboard_specification(project.name), media_specification)
-		matching = frappe.db.get_value(
-			"Shot Specification", {"media_specification": media_specification.name, "shot_number": shot.shot_number}, "name"
-		)
-		if matching:
-			shot = frappe.get_doc("Shot Specification", matching)
-	if shot.media_specification != media_specification.name or media_specification.status != "Draft":
-		frappe.throw(_("Create an editable storyboard revision before changing keyframes."))
+	if shot.media_project != project.name:
+		frappe.throw(_("Shot does not belong to this project."))
 	asset = frappe.db.get_value("Asset Version", asset_version, ["name", "media_asset"], as_dict=True)
 	if not asset or frappe.db.get_value("Media Asset", asset.media_asset, "media_type") != "Image":
 		frappe.throw(_("Keyframes must use an Image Asset Version."))
@@ -655,19 +666,11 @@ def update_project_shot_timing(project_name, shot_name, duration_seconds):
 		frappe.throw(_("Shot duration must be a positive number."))
 	if duration_seconds < 1:
 		frappe.throw(_("Each shot must be at least 1 second long."))
-	media_specification = get_latest_media_specification(project.name)
-	if not media_specification or media_specification.status != "Draft":
-		frappe.throw(_("Create an editable storyboard revision before changing shot timing."))
 	shot = frappe.get_doc("Shot Specification", shot_name)
-	if shot.media_specification != media_specification.name:
-		_copy_storyboard_shots(_get_latest_project_storyboard_specification(project.name), media_specification)
-		matching = frappe.db.get_value(
-			"Shot Specification", {"media_specification": media_specification.name, "shot_number": shot.shot_number}, "name"
-		)
-		if matching:
-			shot = frappe.get_doc("Shot Specification", matching)
+	if shot.media_project != project.name:
+		frappe.throw(_("Shot does not belong to this project."))
 	from joymedia.services.shot_duration_planner import rebalance_shot_duration
-	result = rebalance_shot_duration(media_specification.name, shot.name, duration_seconds)
+	result = rebalance_shot_duration(project.name, shot.name, duration_seconds)
 	frappe.db.commit()
 	return {"shot_name": shot.name, "shot_number": shot.shot_number, **result}
 
@@ -680,19 +683,11 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 		target_shot_number = int(target_shot_number)
 	except (TypeError, ValueError):
 		frappe.throw(_("Invalid shot position."))
-	media_specification = get_latest_media_specification(project.name)
-	if not media_specification or media_specification.status != "Draft":
-		frappe.throw(_("Create an editable storyboard revision before reordering shots."))
 	shot = frappe.get_doc("Shot Specification", shot_name)
-	if shot.media_specification != media_specification.name:
-		_copy_storyboard_shots(_get_latest_project_storyboard_specification(project.name), media_specification)
-		matching = frappe.db.get_value(
-			"Shot Specification", {"media_specification": media_specification.name, "shot_number": shot.shot_number}, "name"
-		)
-		if matching:
-			shot = frappe.get_doc("Shot Specification", matching)
+	if shot.media_project != project.name:
+		frappe.throw(_("Shot does not belong to this project."))
 	shots = frappe.get_all(
-		"Shot Specification", filters={"media_specification": media_specification.name},
+		"Shot Specification", filters={"media_project": project.name},
 		fields=["name", "shot_number"], order_by="shot_number asc, name asc",
 	)
 	if not shots or target_shot_number < 1 or target_shot_number > len(shots):
@@ -780,18 +775,19 @@ class MediaProject(Document):
 	@frappe.whitelist()
 	def get_video_settings(self):
 		self._require_read_access()
-		specification = get_latest_media_specification(self.name)
-		if not specification:
+		settings = _project_settings(self)
+		if not settings.workflow:
 			return None
 		return {
-			"name": specification.name,
-			"version_number": specification.version_number,
-			"status": specification.status,
-			"total_duration_seconds": specification.total_duration_seconds,
-			"delivery_preset": specification.delivery_preset,
-			"continuity_mode": _normalize_generation_mode(specification.continuity_mode),
-			"global_instructions": specification.global_instructions or "",
-			**_customer_style_details(specification),
+			"name": self.name,
+			"version_number": None,
+			"status": self.status,
+			"total_duration_seconds": settings.total_duration_seconds,
+			"delivery_preset": settings.delivery_preset,
+			"continuity_mode": _normalize_generation_mode(settings.generation_mode),
+			"generation_mode": _normalize_generation_mode(settings.generation_mode),
+			"global_instructions": settings.global_instructions or "",
+			**_customer_style_details(settings),
 		}
 
 	@frappe.whitelist()
@@ -806,72 +802,25 @@ class MediaProject(Document):
 			frappe.throw(_("Duration must be greater than zero."))
 		if total_duration_seconds <= 0:
 			frappe.throw(_("Duration must be greater than zero."))
-		if delivery_preset not in ("Landscape", "Portrait", "Square"):
-			frappe.throw(_("Select Landscape, Portrait, or Square format."))
-		if continuity_mode is not None:
-			continuity_mode = _normalize_generation_mode(continuity_mode)
-			if continuity_mode not in ("Multi-shot", "Continuous"):
-				frappe.throw(_("Select Continuous or Multi-shot generation mode."))
-
-		with filelock(f"joymedia-video-settings-{self.name}"):
-			latest = get_latest_media_specification(self.name)
-			if latest and latest.status != "Draft":
-				active_status = frappe.db.get_value(
-					"Generation Run", {"media_specification": latest.name}, "status", order_by="creation desc"
-				)
-				if active_status in ("Queued", "Running"):
-					frappe.throw(_("Video Settings cannot change while generation is active."))
-				revision = frappe.get_doc({
-					"doctype": "Media Specification",
-					"media_project": self.name,
-					"version_number": (latest.version_number or 0) + 1,
-					"status": "Draft",
-					"workflow": latest.workflow,
-					"video_style": latest.video_style,
-					"continuity_mode": latest.continuity_mode,
-					"global_instructions": latest.global_instructions,
-					"total_duration_seconds": latest.total_duration_seconds,
-					"delivery_preset": latest.delivery_preset,
-				}).insert(ignore_permissions=True)
-				# Settings changes require a fresh planning snapshot/storyboard.
-				revision.db_set("planning_context_json", None, update_modified=False)
-				revision.db_set("planning_context_hash", None, update_modified=False)
-				latest.status = "Superseded"
-				latest.save(ignore_permissions=True)
-				latest = revision
-
-			if video_style is None and latest:
-				video_style = latest.video_style
-			if continuity_mode is None and latest:
-				continuity_mode = latest.continuity_mode
-			continuity_mode = continuity_mode or "Multi-shot"
-			workflow = _get_customer_workflow(video_style)
-
-			if latest:
-				latest.total_duration_seconds = total_duration_seconds
-				latest.delivery_preset = delivery_preset
-				latest.workflow = workflow.name
-				latest.video_style = workflow.workflow_key
-				latest.continuity_mode = continuity_mode
-				if global_instructions is not None:
-					latest.global_instructions = global_instructions
-				latest.save(ignore_permissions=True)
-				specification = latest
-			else:
-				specification = frappe.get_doc({
-					"doctype": "Media Specification",
-					"media_project": self.name,
-					"version_number": 1,
-					"status": "Draft",
-					"workflow": workflow.name,
-					"video_style": workflow.workflow_key,
-					"continuity_mode": continuity_mode,
-					"global_instructions": global_instructions,
-					"total_duration_seconds": total_duration_seconds,
-					"delivery_preset": delivery_preset,
-				}).insert(ignore_permissions=True)
-
-		frappe.db.set_value("Media Project", self.name, "status", "Draft", update_modified=False)
+		if delivery_preset not in ("Landscape", "Portrait", "Square", "Custom"):
+			frappe.throw(_("Select Landscape, Portrait, Square, or Custom format."))
+		generation_mode = _normalize_generation_mode(continuity_mode or self.generation_mode or "Multi-shot")
+		if generation_mode not in ("Multi-shot", "Continuous"):
+			frappe.throw(_("Select Continuous or Multi-shot generation mode."))
+		workflow = _get_customer_workflow(video_style or None)
+		self.total_duration_seconds = total_duration_seconds
+		self.delivery_preset = delivery_preset
+		self.generation_mode = generation_mode
+		self.global_instructions = global_instructions or ""
+		self.workflow = workflow.name
+		if delivery_preset == "Landscape":
+			self.delivery_width, self.delivery_height = 1920, 1080
+		elif delivery_preset == "Portrait":
+			self.delivery_width, self.delivery_height = 1080, 1920
+		elif delivery_preset == "Square":
+			self.delivery_width, self.delivery_height = 1080, 1080
+		self.status = "Draft"
+		self.save(ignore_permissions=True)
 		frappe.db.commit()
 		return self.get_video_settings()
 
@@ -882,112 +831,52 @@ class MediaProject(Document):
 	def generate_video_plan(self):
 		self._require_read_access()
 		from joymedia.services.qwen_client import generate_video_plan
-		specification = get_latest_media_specification(self.name)
-		if not specification or specification.status != "Draft":
-			frappe.throw(_("Create or revise Video Settings before generating a storyboard."))
-		if not specification.workflow:
-			frappe.throw(_("Media Specification must have a Workflow."))
+		settings = _project_settings(self)
+		if not settings.workflow:
+			frappe.throw(_("Configure Video Settings before generating a storyboard."))
 		image_inputs = self._get_project_image_inputs()
 		if not image_inputs:
 			frappe.throw(_("Add at least one image reference before creating a storyboard."))
-		workflow = frappe.get_doc("Generation Workflow", specification.workflow)
+		workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 		return generate_video_plan(
 			product_name=_meaningful_project_value(self.product_name, "The supplied product"),
 			video_idea=_meaningful_project_value(self.video_idea, "Create a premium cinematic product showcase."),
-			total_video_duration=specification.total_duration_seconds,
+			total_video_duration=settings.total_duration_seconds,
 			target_fps=workflow.output_fps,
 			shot_count=None,
 			reference_images=image_inputs,
 			reference_media=_get_project_reference_contexts(self),
-			video_style=specification.video_style or workflow.workflow_key,
-			generation_mode=specification.continuity_mode,
-			global_instructions=specification.global_instructions,
-			format_preset=specification.delivery_preset,
+			video_style=workflow.workflow_key,
+			generation_mode=settings.generation_mode,
+			global_instructions=settings.global_instructions,
+			format_preset=settings.delivery_preset,
 		)
 
 	def _ensure_default_video_specification(self):
-		existing = get_latest_media_specification(self.name)
-		if existing:
-			return existing
-		workflow = _get_customer_workflow("product_showcase")
-		return frappe.get_doc({
-			"doctype": "Media Specification",
-			"media_project": self.name,
-			"version_number": 1,
-			"status": "Draft",
-			"workflow": workflow.name,
-			"video_style": workflow.workflow_key,
-			"continuity_mode": "Continuous",
-			"total_duration_seconds": 5,
-			"delivery_preset": "Landscape",
-		}).insert(ignore_permissions=True)
+		"""Compatibility accessor; new projects store settings on Media Project."""
+		return _project_settings(self)
 
 	def _ensure_current_planning_specification(self, specification):
-		context, context_hash = _build_planning_context(self, specification)
-		if specification.planning_context_hash == context_hash:
-			return specification
-		has_shots = frappe.db.exists("Shot Specification", {"media_specification": specification.name})
-		if specification.status == "Draft" and not has_shots and not specification.planning_context_hash:
-			specification.planning_context_json = json.dumps(context, sort_keys=True, indent=2)
-			specification.planning_context_hash = context_hash
-			specification.save(ignore_permissions=True)
-			return specification
-		previous = specification
-		revision = frappe.get_doc({
-			"doctype": "Media Specification",
-			"media_project": self.name,
-			"version_number": (previous.version_number or 0) + 1,
-			"status": "Draft",
-			"workflow": previous.workflow,
-			"video_style": previous.video_style,
-			"continuity_mode": previous.continuity_mode,
-			"global_instructions": previous.global_instructions,
-			"total_duration_seconds": previous.total_duration_seconds,
-			"delivery_preset": previous.delivery_preset,
-			"audio_cues": [
-				{
-					"role": row.role,
-					"asset_version": row.asset_version,
-					"start_seconds": row.start_seconds,
-					"end_seconds": row.end_seconds,
-					"gain_db": row.gain_db,
-					"fade_in_seconds": row.fade_in_seconds,
-					"fade_out_seconds": row.fade_out_seconds,
-					"duck_others": row.duck_others,
-				}
-				for row in (previous.audio_cues or [])
-			],
-			"planning_context_json": json.dumps(context, sort_keys=True, indent=2),
-			"planning_context_hash": context_hash,
-		}).insert(ignore_permissions=True)
-		if previous.status != "Superseded":
-			previous.status = "Superseded"
-			previous.save(ignore_permissions=True)
-		frappe.db.commit()
-		return revision
+		return _project_settings(self)
 
 	@frappe.whitelist()
 	def generate_end_to_end(self):
 		self._require_write_access()
 		if not self._get_project_image_inputs():
 			frappe.throw(_("The active generation workflow requires at least one image reference."))
-		specification = self._ensure_default_video_specification()
-		specification.reload()
-		specification = self._ensure_current_planning_specification(specification)
-		specification.reload()
-		if specification.status != "Draft":
-			latest_run = frappe.db.get_value(
-				"Generation Run", {"media_specification": specification.name}, ["name", "status"],
-				as_dict=True, order_by="creation desc",
-			)
-			if latest_run and latest_run.status in ("Queued", "Running", "Completed"):
-				return {"run": latest_run.name, "status": latest_run.status}
-			if latest_run and latest_run.status == "Failed":
-				return self.retry_failed_jobs()
-			frappe.throw(_("This project revision has already been submitted."))
-		if not frappe.db.exists("Shot Specification", {"media_specification": specification.name}):
+		if not self.workflow:
+			frappe.throw(_("Configure Video Settings before generating a storyboard."))
+		latest_run = frappe.db.get_value(
+			"Generation Run", {"media_project": self.name}, ["name", "status"],
+			as_dict=True, order_by="creation desc",
+		)
+		if latest_run and latest_run.status in ("Queued", "Running", "Completed"):
+			return {"run": latest_run.name, "status": latest_run.status}
+		if latest_run and latest_run.status == "Failed":
+			return self.retry_failed_jobs()
+		if not frappe.db.exists("Shot Specification", {"media_project": self.name}):
 			from joymedia.services.video_plan_service import apply_video_plan
-			apply_video_plan(specification.name, self.generate_video_plan())
+			apply_video_plan(self.name, self.generate_video_plan())
 			frappe.db.commit()
 		return self.generate_video()
 
@@ -996,31 +885,31 @@ class MediaProject(Document):
 		self._require_write_access()
 		from joymedia.services.generation_orchestrator import start_run_internal, validate_generation_preflight
 		with filelock(f"joymedia-generate-video-{self.name}"):
-			specification = get_latest_media_specification(self.name)
-			if not specification:
-				frappe.throw(_("This project has no Video Settings."))
 			existing = frappe.db.get_value(
 				"Generation Run",
-				{"media_specification": specification.name, "status": ["not in", ["Completed", "Failed", "Cancelled"]]},
+				{"media_project": self.name, "status": ["not in", ["Completed", "Failed", "Cancelled"]]},
 				["name", "status"], as_dict=True,
 			)
 			if existing:
 				return {"run": existing.name, "status": existing.status}
-			if specification.status != "Draft":
-				frappe.throw(_("This project revision has already been submitted."))
-			if not frappe.db.exists("Shot Specification", {"media_specification": specification.name}):
+			if not frappe.db.exists("Shot Specification", {"media_project": self.name}):
 				frappe.throw(_("Generate a storyboard first."))
-			workflow = frappe.get_doc("Generation Workflow", specification.workflow)
+			settings = _project_settings(self)
+			if not settings.workflow:
+				frappe.throw(_("This project has no active Generation Workflow."))
+			workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 			shots = frappe.get_all(
-				"Shot Specification", filters={"media_specification": specification.name},
+				"Shot Specification", filters={"media_project": self.name},
 				fields=["name", "shot_number", "planned_frame_count"], order_by="shot_number asc, name asc",
 			)
-			validate_generation_preflight(specification, workflow, shots, check_comfyui=True)
-			specification.status = "Ready"
-			specification.save(ignore_permissions=True)
+			validate_generation_preflight(self, workflow, shots, check_comfyui=True)
+			project_snapshot_json, project_snapshot_hash = build_project_snapshot(self)
 			run = frappe.get_doc({
 				"doctype": "Generation Run",
-				"media_specification": specification.name,
+				"media_project": self.name,
+				"project_snapshot_json": project_snapshot_json,
+				"project_snapshot_hash": project_snapshot_hash,
+				"workflow_version": settings.workflow,
 				"requested_by": frappe.session.user,
 				"status": "Draft",
 			}).insert(ignore_permissions=True)
@@ -1032,11 +921,8 @@ class MediaProject(Document):
 	def retry_failed_jobs(self):
 		self._require_write_access()
 		from joymedia.services.generation_orchestrator import retry_failed_jobs_internal
-		specification = get_latest_media_specification(self.name)
-		if not specification:
-			frappe.throw(_("This project has no Video Settings."))
 		run_name = frappe.db.get_value(
-			"Generation Run", {"media_specification": specification.name, "status": "Failed"},
+			"Generation Run", {"media_project": self.name, "status": "Failed"},
 			"name", order_by="creation desc",
 		)
 		if not run_name:
@@ -1047,51 +933,17 @@ class MediaProject(Document):
 	def apply_video_plan(self, plan_json):
 		self._require_write_access()
 		from joymedia.services.video_plan_service import apply_video_plan, parse_video_plan
-		specification = get_latest_media_specification(self.name)
-		if not specification:
-			frappe.throw(_("Create Video Settings before applying a storyboard."))
-		created = apply_video_plan(specification.name, parse_video_plan(plan_json))
+		if not _project_settings(self).workflow:
+			frappe.throw(_("Configure Video Settings before applying a storyboard."))
+		created = apply_video_plan(self.name, parse_video_plan(plan_json))
 		frappe.db.commit()
-		return {"media_specification": specification.name, "shots": created}
+		return {"media_project": self.name, "shots": created}
 
 	@frappe.whitelist()
 	def create_storyboard_revision(self, use_current_workflow_defaults=False):
 		self._require_write_access()
-		with filelock(f"joymedia-storyboard-revision-{self.name}"):
-			latest = get_latest_media_specification(self.name)
-			if not latest:
-				frappe.throw(_("This project has no Video Settings to revise."))
-			if latest.status == "Draft":
-				storyboard_source = _get_latest_project_storyboard_specification(self.name)
-				if storyboard_source and storyboard_source.name != latest.name:
-					_copy_storyboard_shots(storyboard_source, latest)
-				return {"media_specification": latest.name, "version_number": latest.version_number}
-			if isinstance(use_current_workflow_defaults, str):
-				use_current_workflow_defaults = frappe.parse_json(use_current_workflow_defaults)
-			workflow = latest.workflow
-			if use_current_workflow_defaults:
-				current = get_latest_valid_workflow(latest.video_style)
-				if not current:
-					frappe.throw(_("No executable workflow is configured."))
-				workflow = current.name
-			revision = frappe.get_doc({
-				"doctype": "Media Specification",
-				"media_project": self.name,
-				"version_number": (latest.version_number or 0) + 1,
-				"status": "Draft",
-				"workflow": workflow,
-				"video_style": latest.video_style or frappe.db.get_value("Generation Workflow", workflow, "workflow_key"),
-				"continuity_mode": latest.continuity_mode,
-				"global_instructions": latest.global_instructions,
-				"total_duration_seconds": latest.total_duration_seconds,
-				"delivery_preset": latest.delivery_preset,
-			}).insert(ignore_permissions=True)
-			_copy_storyboard_shots(latest, revision)
-			context, context_hash = _build_planning_context(self, revision)
-			revision.db_set("planning_context_json", json.dumps(context, sort_keys=True, indent=2), update_modified=False)
-			revision.db_set("planning_context_hash", context_hash, update_modified=False)
-			latest.status = "Superseded"
-			latest.save(ignore_permissions=True)
+		if not self.workflow:
+			frappe.throw(_("Configure Video Settings before revising the storyboard."))
 		frappe.db.set_value("Media Project", self.name, "status", "Draft", update_modified=False)
 		frappe.db.commit()
-		return {"media_specification": revision.name, "version_number": revision.version_number}
+		return {"media_project": self.name, "version_number": None}
