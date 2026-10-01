@@ -7,9 +7,21 @@ from frappe.model.document import Document
 
 
 class GenerationTask(Document):
+	EXECUTION_IMMUTABLE_FIELDS = (
+		"generation_run",
+		"shot",
+		"workflow",
+		"prompt_text",
+		"prompt_hash",
+		"segment_index",
+		"segment_frame_count",
+		"depends_on_task",
+	)
+
 	def validate(self):
 		workflow = self._validate_execution_references()
 		self._validate_segment_frame_count(workflow)
+		self._validate_execution_immutability()
 		self._validate_input_immutability()
 		if self.status != "Draft":
 			self._validate_generation_input_snapshot(workflow)
@@ -144,22 +156,50 @@ class GenerationTask(Document):
 					)
 				)
 
-	def _validate_input_immutability(self):
-		if self.is_new() or not frappe.db.exists("Generation Attempt", {"generation_task": self.name}):
+	def _validate_execution_immutability(self):
+		if self.is_new():
 			return
 		previous = self.get_doc_before_save()
 		if not previous:
 			return
+		prepared = previous.status != "Draft" or frappe.db.exists(
+			"Generation Attempt", {"generation_task": self.name}
+		)
+		if not prepared:
+			return
+		changed_fields = [
+			fieldname
+			for fieldname in self.EXECUTION_IMMUTABLE_FIELDS
+			if getattr(self, fieldname, None) != getattr(previous, fieldname, None)
+		]
+		if changed_fields:
+			frappe.throw(
+				_("Generation Task execution fields are immutable after preparation: {0}.").format(
+					", ".join(changed_fields)
+				)
+			)
+
+	def _validate_input_immutability(self):
+		if self.is_new():
+			return
+		previous = self.get_doc_before_save()
+		if not previous:
+			return
+		prepared = previous.status != "Draft" or frappe.db.exists(
+			"Generation Attempt", {"generation_task": self.name}
+		)
+		if not prepared:
+			return
 		if self._normalized_inputs(self.get("inputs")) != self._normalized_inputs(previous.get("inputs")):
-			frappe.throw(_("Generation Task inputs are immutable after execution begins."))
+			frappe.throw(_("Generation Task inputs are immutable after preparation."))
 
 	@staticmethod
 	def _normalized_inputs(rows):
-		return sorted(
+		return [
 			(
 				frappe.scrub(row.input_role or ""),
 				row.asset_version or "",
 				row.generation_artifact or "",
 			)
 			for row in (rows or [])
-		)
+		]
