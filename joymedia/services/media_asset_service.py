@@ -78,6 +78,13 @@ def create_media_asset(asset_name, asset_category, file_url):
 			"status": "Active",
 		}
 	).insert(ignore_permissions=True)
+	file_doc.db_set(
+		{
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": asset.name,
+		},
+		update_modified=False,
+	)
 	version = frappe.get_doc(
 		{
 			"doctype": "Asset Version",

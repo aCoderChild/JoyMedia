@@ -38,3 +38,5 @@ joymedia.patches.backfill_project_reference_keys
 joymedia.patches.repair_asset_version_derived_reference_keys
 joymedia.patches.migrate_timeline_clip_tracks
 joymedia.patches.migrate_audio_cues_to_timeline
+joymedia.patches.repair_media_library_file_attachments
+joymedia.patches.repair_media_library_file_permissions
