@@ -33,6 +33,11 @@ def compose_project_timeline_internal(project_name: str):
 			"track_type",
 			"track_index",
 			"timeline_start_frame",
+			"audio_role",
+			"gain_db",
+			"fade_in_frames",
+			"fade_out_frames",
+			"duck_others",
 			"source_asset_version",
 			"source_in_frame",
 			"source_out_frame",
@@ -45,6 +50,9 @@ def compose_project_timeline_internal(project_name: str):
 	audio_clips = [clip for clip in clips if clip.track_type == "Audio"]
 	if not video_clips:
 		frappe.throw(_("The project timeline has no enabled clips."))
+	if any(int(clip.track_index or 0) != 0 for clip in video_clips):
+		frappe.throw(_("Timeline export currently supports one video track (Video 0)."))
+	video_clips.sort(key=lambda clip: (int(clip.timeline_start_frame or 0), int(clip.clip_order or 0)))
 
 	profile = _delivery_profile(project)
 	clip_frames = [int(clip.source_out_frame) - int(clip.source_in_frame) for clip in video_clips]
@@ -52,7 +60,18 @@ def compose_project_timeline_internal(project_name: str):
 		frappe.throw(_("Every timeline clip must contain at least one frame."))
 
 	transition_frames = _validated_transition_frames(video_clips, clip_frames)
-	expected_frames = sum(clip_frames) - sum(transition_frames)
+	positioned = _has_persisted_positions(video_clips) and _requires_positioned_render(video_clips, clip_frames)
+	if positioned:
+		for previous, current, previous_frames in zip(video_clips, video_clips[1:], clip_frames):
+			previous_end = int(previous.timeline_start_frame or 0) + previous_frames
+			if int(current.timeline_start_frame or 0) < previous_end:
+				frappe.throw(_("Video clips may not overlap on the single video track."))
+		expected_frames = max(
+			int(clip.timeline_start_frame or 0) + frames
+			for clip, frames in zip(video_clips, clip_frames)
+		)
+	else:
+		expected_frames = sum(clip_frames) - sum(transition_frames)
 
 	try:
 		with tempfile.TemporaryDirectory(prefix="joymedia-timeline-") as temp_dir:
@@ -74,11 +93,12 @@ def compose_project_timeline_internal(project_name: str):
 			silent_master = temp_path / f"{project.name}-timeline-silent.mp4"
 			_render_sequence(
 				normalized_paths,
-				clips,
+				video_clips,
 				clip_frames,
 				transition_frames,
 				silent_master,
 				profile,
+				positioned=positioned,
 			)
 			_validate_normalized_video(silent_master, profile, expected_frames=expected_frames)
 
@@ -139,6 +159,19 @@ def compose_project_timeline_internal(project_name: str):
 		"timeline_frames": expected_frames,
 		"fps": profile["fps"],
 	}
+
+
+def _has_persisted_positions(clips):
+	return all(getattr(clip, "timeline_start_frame", None) is not None for clip in clips)
+
+
+def _requires_positioned_render(clips, clip_frames):
+	cursor = 0
+	for clip, frame_count in zip(clips, clip_frames):
+		if int(clip.timeline_start_frame or 0) != cursor:
+			return True
+		cursor += frame_count
+	return False
 
 
 def _delivery_profile(project):
@@ -229,7 +262,9 @@ def _validated_transition_frames(clips, clip_frames):
 	return values
 
 
-def _render_sequence(paths, clips, clip_frames, transition_frames, output_path, profile):
+def _render_sequence(paths, clips, clip_frames, transition_frames, output_path, profile, positioned=False):
+	if positioned:
+		return _render_positioned_sequence(paths, clips, clip_frames, output_path, profile)
 	if len(paths) == 1:
 		_run_ffmpeg(
 			[
@@ -290,6 +325,56 @@ def _render_sequence(paths, clips, clip_frames, transition_frames, output_path, 
 			";".join(filter_parts),
 			"-map",
 			f"[{current_label}]",
+			"-an",
+			"-c:v",
+			"libx264",
+			"-profile:v",
+			"high",
+			"-pix_fmt",
+			"yuv420p",
+			"-r",
+			f"{profile['fps']:g}",
+			"-movflags",
+			"+faststart",
+			str(output_path),
+		]
+	)
+	_run_ffmpeg(command)
+
+
+def _render_positioned_sequence(paths, clips, clip_frames, output_path, profile):
+	"""Render one persisted video track, including gaps before placed clips."""
+	command = ["ffmpeg", "-y"]
+	for path in paths:
+		command.extend(["-i", str(path)])
+
+	filter_parts = []
+	labels = []
+	previous_end = 0
+	for index, (path, clip, frame_count) in enumerate(zip(paths, clips, clip_frames)):
+		start = int(clip.timeline_start_frame or 0)
+		if start > previous_end:
+			gap = start - previous_end
+			gap_label = f"gap{index}"
+			filter_parts.append(
+				f"color=c=black:s={profile['width']}x{profile['height']}:r={profile['fps']:g}:"
+				f"d={gap / profile['fps']:.6f}[{gap_label}]"
+			)
+			labels.append(f"[{gap_label}]")
+		clip_label = f"clip{index}"
+		filter_parts.append(f"[{index}:v]settb=AVTB,setpts=PTS-STARTPTS[{clip_label}]")
+		labels.append(f"[{clip_label}]")
+		previous_end = start + frame_count
+
+	filter_parts.append(
+		f"{''.join(labels)}concat=n={len(labels)}:v=1:a=0[video]"
+	)
+	command.extend(
+		[
+			"-filter_complex",
+			";".join(filter_parts),
+			"-map",
+			"[video]",
 			"-an",
 			"-c:v",
 			"libx264",

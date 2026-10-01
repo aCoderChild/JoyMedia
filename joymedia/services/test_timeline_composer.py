@@ -49,6 +49,33 @@ class TestTimelineComposer(FrappeTestCase):
 			_validate_normalized_video(output, profile, expected_frames=42)
 			self.assertAlmostEqual(_get_video_duration(output), 42 / 24, delta=0.06)
 
+	def test_render_sequence_honors_persisted_video_position(self):
+		with tempfile.TemporaryDirectory(prefix="joymedia-timeline-position-test-") as temp_dir:
+			temp_path = Path(temp_dir)
+			first = temp_path / "first.mp4"
+			second = temp_path / "second.mp4"
+			output = temp_path / "master.mp4"
+			_make_video(first, 1, color="red")
+			_make_video(second, 1, color="blue")
+			profile = {"width": 320, "height": 240, "fps": 24.0}
+			clips = [
+				frappe._dict(name="A", timeline_start_frame=0, transition_to_next="Cut"),
+				frappe._dict(name="B", timeline_start_frame=48, transition_to_next="Cut"),
+			]
+
+			_render_sequence(
+				[first, second],
+				clips,
+				[24, 24],
+				[0, 0],
+				output,
+				profile,
+				positioned=True,
+			)
+
+			_validate_normalized_video(output, profile, expected_frames=72)
+			self.assertAlmostEqual(_get_video_duration(output), 72 / 24, delta=0.06)
+
 
 def _make_video(path, seconds, color="black"):
 	subprocess.run(
