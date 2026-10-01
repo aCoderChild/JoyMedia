@@ -1,6 +1,7 @@
 import subprocess
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -11,10 +12,23 @@ from joymedia.services.video_composer import (
 	_normalize_shot,
 	_validate_normalized_video,
 	_validate_shots,
+	_get_delivery_profile,
 )
 
 
 class TestVideoComposer(FrappeTestCase):
+	def test_delivery_profile_uses_generation_run_snapshot_dimensions(self):
+		project = frappe._dict(delivery_width=1080, delivery_height=1920, workflow="LIVE-WORKFLOW")
+		run = frappe._dict(
+		name="RUN-00001",
+		project_snapshot_json='{"delivery_width": 1920, "delivery_height": 1080, "workflow": "SNAPSHOT-WORKFLOW"}',
+		workflow="SNAPSHOT-WORKFLOW",
+		)
+		workflow = frappe._dict(output_fps=24)
+		with patch("joymedia.services.video_composer.frappe.get_doc", side_effect=[run, workflow]):
+			profile = _get_delivery_profile(project, "RUN-00001")
+		self.assertEqual({"width": 1920, "height": 1080, "fps": 24.0}, profile)
+
 	def test_composition_requires_a_selected_output_for_every_shot(self):
 		with self.assertRaises(frappe.ValidationError):
 			_validate_shots(

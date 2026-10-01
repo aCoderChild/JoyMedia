@@ -186,8 +186,8 @@ def _get_delivery_profile(project, generation_run_name=None):
 		frappe.throw(_("Workflow must have output FPS before composition."))
 
 	return {
-		"width": int(project.delivery_width),
-		"height": int(project.delivery_height),
+		"width": int(width),
+		"height": int(height),
 		"fps": float(workflow.output_fps),
 	}
 
