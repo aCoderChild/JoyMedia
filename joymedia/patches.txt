@@ -26,3 +26,4 @@ joymedia.patches.migrate_asset_scope
 joymedia.patches.remove_generation_backend
 joymedia.patches.simplify_creative_fields
 joymedia.patches.simplify_generation_domain
+joymedia.patches.simplify_project_references
