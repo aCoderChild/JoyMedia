@@ -10,6 +10,8 @@ class GenerationInput(Document):
 	"""One frozen input row owned by a Generation Job."""
 
 	def validate(self):
+		if self.parenttype == "Generation Job" and self.parent:
+			self.generation_job = self.parent
 		if not self.input_role:
 			frappe.throw(_("Generation Input requires an Input Role."))
 		if bool(self.asset_version) == bool(self.generation_artifact):
