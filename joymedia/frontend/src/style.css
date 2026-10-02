@@ -2612,6 +2612,125 @@ h2 {
   background: #4f46e5;
 }
 
+.audio-timeline-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.audio-timeline-label {
+  color: var(--ink-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.audio-timeline-lane {
+  position: relative;
+  min-height: 40px;
+  overflow: hidden;
+  border: 1px solid var(--outline-border);
+  border-radius: 10px;
+  background: var(--surface-card);
+}
+
+.audio-timeline-clip,
+.audio-timeline-empty-segment {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  min-width: 34px;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--ink-primary);
+  font-size: 10px;
+  text-align: left;
+}
+
+.audio-timeline-clip {
+  cursor: pointer;
+}
+
+.audio-timeline-source-clip {
+  background: rgb(14 116 144 / 22%);
+  border-color: rgb(14 165 233 / 35%);
+}
+
+.audio-timeline-user-clip {
+  background: rgb(79 70 229 / 22%);
+  border-color: rgb(129 140 248 / 35%);
+}
+
+.audio-timeline-clip.selected {
+  border-color: rgb(129 140 248 / 90%);
+  box-shadow: 0 0 0 1px rgb(129 140 248 / 35%);
+}
+
+.audio-timeline-empty-segment {
+  color: var(--ink-muted);
+  background: var(--surface-muted);
+  border-style: dashed;
+}
+
+.audio-timeline-empty-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--ink-muted);
+  font-size: 10px;
+}
+
+.audio-waveform {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 18px;
+  opacity: 0.7;
+}
+
+.audio-waveform i {
+  display: block;
+  width: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.audio-role-badge {
+  flex: 0 0 auto;
+  padding: 1px 4px;
+  border: 1px solid rgb(165 180 252 / 35%);
+  border-radius: 4px;
+  color: var(--ink-secondary);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.audio-add-track {
+  margin-left: 120px;
+  padding: 5px 8px;
+  border: 1px dashed var(--outline-border);
+  border-radius: 8px;
+  color: var(--indigo-400, #818cf8);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.audio-add-track:hover {
+  border-color: rgb(129 140 248 / 70%);
+  background: var(--surface-muted);
+}
+
 .studio-mode-switch button {
   padding: 4px 12px;
   font-size: 11px;

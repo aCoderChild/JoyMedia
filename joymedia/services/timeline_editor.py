@@ -8,6 +8,7 @@ jobs or pretending that a UI-only change affected the final render.
 
 import frappe
 from frappe import _
+from joymedia.services.video_composer import _get_asset_version_path, _has_audio_stream
 
 
 TRANSITIONS = {"Cut", "Dissolve", "Fade"}
@@ -508,6 +509,12 @@ def _serialize_timeline(project, clips):
 		)
 		start = int(clip.timeline_start_frame or 0)
 		end = start + length
+		source_has_audio = False
+		if (clip.track_type or "Video") == "Video" and asset and asset.file:
+			try:
+				source_has_audio = _has_audio_stream(_get_asset_version_path(clip.source_asset_version))
+			except Exception:
+				source_has_audio = False
 		transition = clip.transition_to_next or "Cut"
 		transition_frames = int(clip.transition_frames or 0) if transition != "Cut" else 0
 		if index == len(enabled_clips) - 1:
@@ -523,6 +530,7 @@ def _serialize_timeline(project, clips):
 				"shot_number": shot_number,
 				"source_asset_version": clip.source_asset_version,
 				"source_file": asset.file if asset else None,
+				"source_has_audio": source_has_audio,
 				"source_asset_name": media_asset.asset_name if media_asset else None,
 				"source_asset_category": media_asset.asset_category if media_asset else None,
 				"source_in_frame": int(clip.source_in_frame),
@@ -736,6 +744,12 @@ def add_timeline_audio_clip(
 	source_out = max(1, round(duration * fps)) if duration > 0 else max(1, round(10.0 * fps))
 	start_frame = max(0, _int_value(timeline_start_frame, _("Start frame must be an integer.")))
 
+	existing_audio_indexes = frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project.name, "track_type": "Audio"},
+		pluck="track_index",
+	)
+	next_audio_track_index = max([int(index or 0) for index in existing_audio_indexes] or [0]) + 1
 	order = (frappe.db.count("Timeline Clip", {"media_project": project.name}) or 0) + 1
 	new_clip = frappe.get_doc(
 		{
@@ -743,7 +757,7 @@ def add_timeline_audio_clip(
 			"media_project": project.name,
 			"clip_order": order,
 			"track_type": "Audio",
-			"track_index": 0,
+			"track_index": next_audio_track_index,
 			"timeline_start_frame": start_frame,
 			"enabled": 1,
 			"source_asset_version": asset_version.name,
