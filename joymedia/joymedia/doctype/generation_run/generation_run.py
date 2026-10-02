@@ -15,6 +15,7 @@ class GenerationRun(Document):
 		"workflow",
 		"project_snapshot_json",
 		"project_snapshot_hash",
+		"execution_scope_json",
 		"requested_by",
 	)
 
@@ -60,3 +61,10 @@ class GenerationRun(Document):
 			frappe.throw(_("Generation Run project snapshot belongs to another Media Project."))
 		if snapshot.get("workflow") != self.workflow:
 			frappe.throw(_("Generation Run project snapshot workflow does not match the Run workflow."))
+		if self.execution_scope_json:
+			try:
+				scope = frappe.parse_json(self.execution_scope_json)
+			except (TypeError, ValueError):
+				frappe.throw(_("Generation Run {0} has invalid execution scope JSON.").format(self.name or "new"))
+			if not isinstance(scope, dict):
+				frappe.throw(_("Generation Run execution scope must be a JSON object."))

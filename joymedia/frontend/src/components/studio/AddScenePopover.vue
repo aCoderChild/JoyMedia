@@ -28,12 +28,14 @@
       </div>
 
       <div>
-        <label class="block text-[11px] font-semibold text-ink-secondary mb-1">{{ currentLang === 'vi' ? 'Mô tả diễn biến tiếp theo' : 'Describe what happens next' }}</label>
+        <label class="block text-[11px] font-semibold text-ink-secondary mb-1">
+          {{ currentLang === 'vi' ? 'Mô tả diễn biến tiếp theo' : 'Describe what happens next' }}
+          <span class="text-ink-muted">({{ currentLang === 'vi' ? 'tùy chọn' : 'optional' }})</span>
+        </label>
         <textarea
           v-model="instruction"
           rows="3"
-          required
-          :placeholder="currentLang === 'vi' ? 'VD: Người mẫu thoa son và nhìn vào máy quay...' : 'e.g. Model applies lipstick and turns to camera...'"
+          :placeholder="currentLang === 'vi' ? 'Để trống để AI Director tự tiếp tục câu chuyện...' : 'Leave blank and AI Director will continue naturally...'"
           class="w-full resize-none rounded-xl border border-outline-border bg-surface-muted px-2.5 py-2 text-xs text-ink-primary placeholder:text-ink-muted focus:border-indigo-500 focus:outline-none"
         />
       </div>
@@ -48,7 +50,13 @@
 
       <div class="flex justify-end gap-2 pt-1">
         <button type="button" class="rounded-lg px-3 py-1.5 text-xs text-ink-secondary hover:bg-surface-hover cursor-pointer" @click="$emit('close')">{{ currentLang === 'vi' ? 'Hủy' : 'Cancel' }}</button>
-        <button type="submit" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 cursor-pointer">{{ currentLang === 'vi' ? 'Tạo' : 'Generate' }}</button>
+        <button
+          type="submit"
+          class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 cursor-pointer disabled:opacity-50"
+          :disabled="busy"
+        >
+          {{ busy ? (currentLang === 'vi' ? 'Đang lập kế hoạch…' : 'Planning…') : (currentLang === 'vi' ? 'Tạo' : 'Generate') }}
+        </button>
       </div>
     </form>
   </div>
@@ -61,6 +69,7 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   afterShot: { type: Object, default: null },
   currentLang: { type: String, default: "en" },
+  busy: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["close", "submit"]);
@@ -77,7 +86,6 @@ watch(() => props.open, (open) => {
 });
 
 function submit() {
-  if (!instruction.value.trim()) return;
   emit("submit", {
     afterShot: props.afterShot,
     durationSeconds: durationSeconds.value,

@@ -54,18 +54,26 @@ def start_run_internal(run_name: str):
 		frappe.throw(_("Media Project {0} has no Generation Workflow.").format(project.name))
 
 	workflow = frappe.get_doc("Generation Workflow", run.workflow)
+	try:
+		execution_scope = frappe.parse_json(run.execution_scope_json or "{}")
+		execution_scope = execution_scope if isinstance(execution_scope, dict) else {}
+	except (TypeError, ValueError):
+		frappe.throw(_("Generation Run {0} has invalid execution scope JSON.").format(run.name))
 	shots = frappe.get_all(
 		"Shot",
 		filters={"media_project": project.name},
 		fields=["name", "shot_number", "planned_frame_count"],
 		order_by="shot_number asc, name asc",
 	)
-	validate_generation_preflight(
-		project,
-		workflow,
-		shots,
-		check_comfyui=True,
-	)
+	shot_names = set(execution_scope.get("shot_names") or [])
+	if shot_names:
+		shots = [shot for shot in shots if shot.name in shot_names]
+	if shot_names and not shots:
+		frappe.throw(_("Generation Run {0} has no Shots in its execution scope.").format(run.name))
+	preflight_kwargs = {"check_comfyui": True}
+	if execution_scope:
+		preflight_kwargs["execution_scope"] = execution_scope
+	validate_generation_preflight(project, workflow, shots, **preflight_kwargs)
 
 	run.status = "Queued"
 	run.error_summary = None
@@ -97,6 +105,15 @@ def prepare_run(run_name: str):
 		run.workflow,
 	)
 	shots = snapshot.get("shots") or []
+	try:
+		execution_scope = frappe.parse_json(run.execution_scope_json or "{}")
+		execution_scope = execution_scope if isinstance(execution_scope, dict) else {}
+	except (TypeError, ValueError):
+		_raise_run_error(run, _("Generation Run {0} has invalid execution scope JSON.").format(run.name))
+		return _run_summary(run)
+	shot_names = set(execution_scope.get("shot_names") or [])
+	if shot_names:
+		shots = [shot for shot in shots if shot.get("shot") in shot_names]
 	if not shots:
 		_raise_run_error(run, _("Media Project {0} has no Shots.").format(project.name))
 		return _run_summary(run)
@@ -105,7 +122,7 @@ def prepare_run(run_name: str):
 		validate_workflow_for_execution(workflow)
 		validate_workflow_bindings(workflow)
 		jobs_to_prepare = []
-		previous_shot_tail_job = None
+		previous_shot_tail_job = execution_scope.get("continuation_from_task") if execution_scope.get("continuity") else None
 		for shot in shots:
 			shot_name = shot.get("shot")
 			segments = plan_generation_segments(
@@ -128,7 +145,10 @@ def prepare_run(run_name: str):
 					continue
 
 				dependency = previous_segment_job
-				if not dependency and snapshot.get("generation_mode") in ("Continuous", "Consistency"):
+				if not dependency and (
+					snapshot.get("generation_mode") in ("Continuous", "Consistency")
+					or execution_scope.get("continuity")
+				):
 					dependency = previous_shot_tail_job
 				prompt_text = compile_segment_prompt_from_snapshot(
 					frappe._dict(
@@ -182,7 +202,7 @@ def prepare_run(run_name: str):
 	return _run_summary(run)
 
 
-def validate_generation_preflight(project, workflow, shots, *, check_comfyui=False):
+def validate_generation_preflight(project, workflow, shots, *, check_comfyui=False, execution_scope=None):
 	if not frappe.conf.get("comfyui_base_url"):
 		frappe.throw(_("comfyui_base_url is not configured."))
 	if check_comfyui:
@@ -214,9 +234,12 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 				mappings.setdefault(frappe.scrub(mapping.reference_role), []).append(mapping.asset_version)
 		for role in required_roles:
 			if (
-				project.generation_mode in ("Continuous", "Consistency")
+				role == "first_frame"
 				and shot_row.shot_number > 1
-				and role == "first_frame"
+				and (
+					project.generation_mode in ("Continuous", "Consistency")
+					or (execution_scope or {}).get("continuity")
+				)
 			):
 				continue
 			asset_versions = mappings.get(role, [])

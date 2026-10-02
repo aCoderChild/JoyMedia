@@ -9,6 +9,7 @@
   "media_project",
   "project_snapshot_json",
   "project_snapshot_hash",
+  "execution_scope_json",
   "workflow",
   "status",
   "requested_by",
@@ -56,6 +57,14 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Project Snapshot Hash",
+   "read_only": 1
+  },
+  {
+   "description": "Optional immutable scope for runs that execute only selected Shots.",
+   "fieldname": "execution_scope_json",
+   "fieldtype": "Code",
+   "hidden": 1,
+   "label": "Execution Scope JSON",
    "read_only": 1
   },
   {

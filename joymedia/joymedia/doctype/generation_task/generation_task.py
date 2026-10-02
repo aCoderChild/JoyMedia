@@ -61,7 +61,17 @@ class GenerationTask(Document):
 		if self.depends_on_task:
 			dependency = frappe.get_doc("Generation Task", self.depends_on_task)
 			if dependency.generation_run != self.generation_run:
-				frappe.throw(_("A chained Generation Task dependency must belong to the same Generation Run."))
+				run = frappe.get_doc("Generation Run", self.generation_run)
+				try:
+					scope = frappe.parse_json(run.execution_scope_json or "{}")
+				except (TypeError, ValueError):
+					scope = {}
+				if not (
+					isinstance(scope, dict)
+					and scope.get("continuity")
+					and scope.get("continuation_from_task") == dependency.name
+				):
+					frappe.throw(_("A chained Generation Task dependency must belong to the same Generation Run."))
 			if dependency.name == self.name:
 				frappe.throw(_("A Generation Task cannot depend on itself."))
 		duplicate = frappe.db.exists(

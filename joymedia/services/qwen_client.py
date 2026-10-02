@@ -177,6 +177,7 @@ def generate_video_plan(
 	global_instructions: str | None = None,
 	format_preset: str | None = None,
 	workflow_input_contract: list[dict] | None = None,
+	continuation_context: dict | None = None,
 ) -> dict:
 	"""Create one structured storyboard from the project prompt and selected references.
 
@@ -223,6 +224,19 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		instruction += (
 			"\n\nGENERATION MODE: MULTI-SHOT\n"
 			"Shots are generated from explicitly resolved keyframes/references. Keep boundaries coherent."
+		)
+	if continuation_context:
+		previous_prompt = str(continuation_context.get("previous_prompt") or "").strip()
+		requested_instruction = str(continuation_context.get("instruction") or "").strip()
+		instruction += (
+			"\n\nAPPEND EXISTING VIDEO\n"
+			f"The existing video ends with this previous shot prompt:\n{previous_prompt}\n\n"
+			f"Plan ONLY the next {total_video_duration} seconds. Do not restart the advertisement.\n"
+			"The first new shot begins from the previous generated shot's exact last frame.\n"
+			"Preserve product identity, product appearance and proportions, environment, lighting logic, spatial state, "
+			"subject position, movement direction and camera continuity.\n\n"
+			"USER NEXT-SCENE INSTRUCTION:\n"
+			f"{requested_instruction or 'No explicit instruction. Choose the most natural commercially compelling continuation yourself.'}"
 		)
 
 	example_role = _example_reference_role(workflow_input_contract)

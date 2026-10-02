@@ -434,6 +434,7 @@ def _initialize_timeline(project):
 		fields=["name"],
 	)
 	if existing_clips:
+		_sync_missing_generated_shots_to_timeline(project)
 		return
 
 	fps = _project_fps(project.name)
@@ -451,55 +452,91 @@ def _initialize_timeline(project):
 	)
 	timeline_cursor = 0
 	for order, shot in enumerate(shots, start=1):
-		planned_frames = int(shot.planned_frame_count or round(float(shot.duration_seconds or 0) * fps))
-		if planned_frames <= 0:
-			continue
-		max_frames = _source_max_frames(shot.selected_output_asset_version, fps)
-		source_out = min(planned_frames, max_frames) if max_frames else planned_frames
-		if source_out <= 0:
-			continue
-		video_clip = frappe.get_doc(
-			{
-				"doctype": "Timeline Clip",
-				"media_project": project.name,
-				"shot": shot.name,
-				"clip_order": order,
-				"track_type": "Video",
-				"track_index": 0,
-				"timeline_start_frame": timeline_cursor,
-				"enabled": 1,
-				"source_asset_version": shot.selected_output_asset_version,
-				"source_in_frame": 0,
-				"source_out_frame": source_out,
-				"initial_source_in_frame": 0,
-				"initial_source_out_frame": source_out,
-				"transition_to_next": "Cut",
-				"transition_frames": 0,
-			}
-		).insert(ignore_permissions=True)
-		frappe.get_doc(
-			{
-				"doctype": "Timeline Clip",
-				"media_project": project.name,
-				"shot": shot.name,
-				"clip_order": order,
-				"track_type": "Audio",
-				"track_index": 0,
-				"linked_video_clip": video_clip.name,
-				"timeline_start_frame": timeline_cursor,
-				"enabled": 1,
-				"source_asset_version": shot.selected_output_asset_version,
-				"source_in_frame": 0,
-				"source_out_frame": source_out,
-				"initial_source_in_frame": 0,
-				"initial_source_out_frame": source_out,
-				"audio_role": "Source",
-				"transition_to_next": "Cut",
-				"transition_frames": 0,
-			}
-		).insert(ignore_permissions=True)
-		timeline_cursor += source_out
+		timeline_cursor = _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps)
 	frappe.db.commit()
+
+
+def _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps):
+	planned_frames = int(shot.planned_frame_count or round(float(shot.duration_seconds or 0) * fps))
+	if planned_frames <= 0:
+		return timeline_cursor
+	max_frames = _source_max_frames(shot.selected_output_asset_version, fps)
+	source_out = min(planned_frames, max_frames) if max_frames else planned_frames
+	if source_out <= 0:
+		return timeline_cursor
+	video_clip = frappe.get_doc(
+		{
+			"doctype": "Timeline Clip",
+			"media_project": project.name,
+			"shot": shot.name,
+			"clip_order": order,
+			"track_type": "Video",
+			"track_index": 0,
+			"timeline_start_frame": timeline_cursor,
+			"enabled": 1,
+			"source_asset_version": shot.selected_output_asset_version,
+			"source_in_frame": 0,
+			"source_out_frame": source_out,
+			"initial_source_in_frame": 0,
+			"initial_source_out_frame": source_out,
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}
+	).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Timeline Clip",
+			"media_project": project.name,
+			"shot": shot.name,
+			"clip_order": order,
+			"track_type": "Audio",
+			"track_index": 0,
+			"linked_video_clip": video_clip.name,
+			"timeline_start_frame": timeline_cursor,
+			"enabled": 1,
+			"source_asset_version": shot.selected_output_asset_version,
+			"source_in_frame": 0,
+			"source_out_frame": source_out,
+			"initial_source_in_frame": 0,
+			"initial_source_out_frame": source_out,
+			"audio_role": "Source",
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}
+	).insert(ignore_permissions=True)
+	return timeline_cursor + source_out
+
+
+def _sync_missing_generated_shots_to_timeline(project):
+	fps = _project_fps(project.name)
+	existing = frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project.name, "track_type": "Video"},
+		fields=["shot", "clip_order", "timeline_start_frame", "source_in_frame", "source_out_frame"],
+	)
+	existing_shots = {row.shot for row in existing if row.shot}
+	if not existing:
+		return
+	next_order = max(int(row.clip_order or 0) for row in existing) + 1
+	timeline_cursor = max(
+		int(row.timeline_start_frame or 0) + max(0, int(row.source_out_frame or 0) - int(row.source_in_frame or 0))
+		for row in existing
+	)
+	shots = frappe.get_all(
+		"Shot",
+		filters={"media_project": project.name},
+		fields=["name", "shot_number", "planned_frame_count", "duration_seconds", "selected_output_asset_version"],
+		order_by="shot_number asc, name asc",
+	)
+	created = False
+	for shot in shots:
+		if shot.name in existing_shots or not shot.selected_output_asset_version:
+			continue
+		timeline_cursor = _create_timeline_clip_pair(project, shot, next_order, timeline_cursor, fps)
+		next_order += 1
+		created = True
+	if created:
+		frappe.db.commit()
 
 
 def _ensure_source_audio_clips(project, clips):

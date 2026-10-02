@@ -633,6 +633,22 @@ def generate_project_video(project_name):
 
 
 @frappe.whitelist()
+def append_project_scenes(
+	project_name,
+	after_shot_name,
+	duration_seconds,
+	instruction="",
+	continuity=True,
+):
+	return frappe.get_doc("Media Project", project_name).append_scenes(
+		after_shot_name=after_shot_name,
+		duration_seconds=duration_seconds,
+		instruction=instruction,
+		continuity=continuity,
+	)
+
+
+@frappe.whitelist()
 def retry_project_failed_jobs(project_name):
 	return frappe.get_doc("Media Project", project_name).retry_failed_jobs()
 
@@ -997,6 +1013,128 @@ class MediaProject(Document):
 			result = start_run_internal(run.name)
 			frappe.db.commit()
 			return {"run": run.name, "status": result["status"]}
+
+	@frappe.whitelist()
+	def append_scenes(self, after_shot_name, duration_seconds, instruction="", continuity=True):
+		self._require_write_access()
+		try:
+			duration_seconds = float(duration_seconds)
+		except (TypeError, ValueError):
+			frappe.throw(_("Append duration must be a positive number."))
+		if duration_seconds <= 0:
+			frappe.throw(_("Append duration must be a positive number."))
+		continuity = str(continuity).lower() in ("1", "true", "yes", "on")
+
+		from joymedia.services.generation_orchestrator import start_run_internal, validate_generation_preflight
+		from joymedia.services.qwen_client import generate_video_plan
+		from joymedia.services.shot_duration_planner import recalculate_shot_durations
+		from joymedia.services.video_plan_service import append_video_plan
+		from joymedia.services.artifact_service import get_attempt_artifact
+		from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
+		from joymedia.services.workflow_resolver import get_workflow_input_contract
+
+		with filelock(f"joymedia-append-scenes-{self.name}"):
+			active = frappe.db.get_value(
+				"Generation Run",
+				{"media_project": self.name, "status": ["in", ["Queued", "Running"]]},
+				["name", "status"],
+				as_dict=True,
+			)
+			if active:
+				frappe.throw(_("Generation is already active in run {0}.").format(active.name))
+			shots = frappe.get_all(
+				"Shot",
+				filters={"media_project": self.name},
+				fields=["name", "shot_number", "generation_prompt"],
+				order_by="shot_number asc, name asc",
+			)
+			if not shots:
+				frappe.throw(_("Create the first storyboard before appending scenes."))
+			last_shot = shots[-1]
+			if after_shot_name != last_shot.name:
+				frappe.throw(_("Scenes can only be appended after the final Shot."))
+
+			previous_task = frappe.get_all(
+				"Generation Task",
+				filters={"shot": last_shot.name, "status": "Completed"},
+				fields=["name", "generation_run", "segment_index"],
+				order_by="segment_index desc, modified desc",
+				limit=1,
+			)
+			continuation_from_task = previous_task[0].name if previous_task else None
+			if continuity:
+				if not continuation_from_task:
+					frappe.throw(_("The previous shot has no completed generation task."))
+				previous_attempt = get_effective_attempt(continuation_from_task)
+				last_frame_artifact = (
+					get_attempt_artifact(previous_attempt.name, "Last Frame")
+					if previous_attempt and previous_attempt.status == "Completed"
+					else None
+				)
+				if not last_frame_artifact or not last_frame_artifact.frappe_file:
+					frappe.throw(_("The previous shot has no usable continuation frame."))
+
+			if not self.workflow:
+				frappe.throw(_("Configure Video Settings before appending scenes."))
+			workflow = frappe.get_doc("Generation Workflow", self.workflow)
+			image_inputs = self._get_project_image_inputs()
+			if not image_inputs:
+				frappe.throw(_("The active generation workflow requires at least one image reference."))
+			plan = generate_video_plan(
+				product_name=_meaningful_project_value(self.product_name, "The supplied product"),
+				video_idea=_meaningful_project_value(self.video_idea, "Create a premium cinematic product showcase."),
+				total_video_duration=duration_seconds,
+				target_fps=workflow.output_fps,
+				shot_count=_planning_shot_count(duration_seconds),
+				reference_images=image_inputs,
+				reference_media=_get_project_reference_contexts(self),
+				video_style=workflow.workflow_key,
+				generation_mode="Continuous" if continuity else self.generation_mode,
+				global_instructions=self.global_instructions,
+				format_preset=self.delivery_preset,
+				workflow_input_contract=get_workflow_input_contract(workflow),
+				continuation_context={
+					"previous_prompt": last_shot.generation_prompt,
+					"instruction": str(instruction or "").strip(),
+				},
+			)
+			new_shot_names = append_video_plan(self.name, plan)
+			self.total_duration_seconds = float(self.total_duration_seconds or 0) + duration_seconds
+			self.save(ignore_permissions=True)
+			recalculate_shot_durations(self.name)
+			project_snapshot_json, project_snapshot_hash = build_project_snapshot(self)
+			scope = {
+				"shot_names": new_shot_names,
+				"continuity": continuity,
+				"continuation_from_task": continuation_from_task if continuity else None,
+			}
+			run = frappe.get_doc(
+				{
+					"doctype": "Generation Run",
+					"media_project": self.name,
+					"project_snapshot_json": project_snapshot_json,
+					"project_snapshot_hash": project_snapshot_hash,
+					"execution_scope_json": json.dumps(scope, sort_keys=True),
+					"workflow": self.workflow,
+					"requested_by": frappe.session.user,
+					"status": "Draft",
+				}
+			).insert(ignore_permissions=True)
+			new_shots = frappe.get_all(
+				"Shot",
+				filters={"name": ["in", new_shot_names]},
+				fields=["name", "shot_number", "planned_frame_count"],
+			)
+			validate_generation_preflight(
+				self,
+				workflow,
+				new_shots,
+				check_comfyui=True,
+				execution_scope=scope,
+			)
+			result = start_run_internal(run.name)
+			frappe.db.commit()
+			return {"run": run.name, "status": result["status"], "shots": new_shot_names}
 
 	@frappe.whitelist()
 	def retry_failed_jobs(self):

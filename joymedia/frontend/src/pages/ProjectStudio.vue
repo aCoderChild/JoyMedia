@@ -287,6 +287,7 @@
         :open="addScenePopoverOpen"
         :after-shot="addSceneAfterShot"
         :current-lang="currentLang"
+        :busy="isGenerating"
         @close="addScenePopoverOpen = false"
         @submit="handleAddSceneRequest"
       />
@@ -415,6 +416,7 @@ const {
   isProductionActive,
   resumeProduction,
   generateVideo,
+  appendScenes,
   retryFailedScenes,
   reviseStoryboard,
   reviseShotWithAi,
@@ -794,14 +796,20 @@ function openAddScenePopover(afterShot = null) {
   addScenePopoverOpen.value = true;
 }
 
-function handleAddSceneRequest(request) {
-  addScenePopoverOpen.value = false;
-  toast({
-    title: "Add Scene is ready",
-    text: "Appending scenes requires the dedicated generation operation; the existing full-project generator was not called.",
-    type: "info",
-  });
-  return request;
+async function handleAddSceneRequest(request) {
+  try {
+    await appendScenes(request);
+    addScenePopoverOpen.value = false;
+    toast({
+      title: "Scenes queued",
+      text: request.instruction
+        ? "Generating your continuation."
+        : "AI Director planned the continuation and started generation.",
+      type: "success",
+    });
+  } catch (_) {
+    // Keep the popover open so the user can correct or retry the request.
+  }
 }
 
 async function previewStoryboardShot(shot, index) {

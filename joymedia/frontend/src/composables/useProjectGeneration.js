@@ -141,6 +141,32 @@ export function useProjectGeneration(projectName, onRefresh) {
     }
   }
 
+  async function appendScenes({ afterShot, durationSeconds, instruction, continuity }) {
+    if (isGenerating.value) return;
+    isGenerating.value = true;
+    productionError.value = "";
+    try {
+      const res = await call(
+        "joymedia.joymedia.doctype.media_project.media_project.append_project_scenes",
+        {
+          project_name: project(),
+          after_shot_name: afterShot?.name,
+          duration_seconds: durationSeconds,
+          instruction: instruction || "",
+          continuity: Boolean(continuity),
+        }
+      );
+      currentRun.value = { name: res?.run, status: res?.status || "Queued" };
+      startPolling();
+      if (onRefresh) await onRefresh();
+      return res;
+    } catch (err) {
+      isGenerating.value = false;
+      productionError.value = getFrappeErrorMessage(err, "Unable to append scenes.");
+      throw err;
+    }
+  }
+
   async function retryFailedScenes() {
     try {
       isGenerating.value = true;
@@ -271,6 +297,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     resumeProduction,
 
     generateVideo,
+    appendScenes,
     retryFailedScenes,
     handleGenerationRetry,
     reviseStoryboard,
