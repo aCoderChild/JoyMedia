@@ -10,6 +10,7 @@
   "media_project",
   "shot_number",
   "shot_name",
+  "is_removed",
   "planned_frame_count",
   "duration_seconds",
   "generation_prompt",
@@ -44,6 +45,14 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Shot Name"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_removed",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Removed From Storyboard",
+   "read_only": 1
   },
   {
    "default": "0",

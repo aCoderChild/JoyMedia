@@ -74,7 +74,7 @@
       <template v-for="(shot, index) in shots" :key="shot.name || shot.shot_number || index">
         <!-- Simplified Shot Card Item -->
         <div
-          class="capcut-clip flex-1 shrink-0 rounded-2xl border p-2.5 transition-all cursor-pointer bg-surface-muted select-none flex flex-col justify-between"
+          class="capcut-clip relative flex-1 shrink-0 rounded-2xl border p-2.5 transition-all cursor-pointer bg-surface-muted select-none flex flex-col justify-between"
           :class="[
             selectedShotIndex === index && selectedTarget !== 'asset'
               ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/30'
@@ -139,20 +139,43 @@
             {{ shot.generation_prompt || (currentLang === 'vi' ? 'Cảnh giới thiệu sản phẩm' : 'Product showcase') }}
           </p>
 
-          <!-- Bottom: Role Badge & Edit Scene action button -->
+          <!-- Bottom: Role Badge & Scene action menu -->
           <div class="flex items-center justify-between pt-1.5 border-t border-outline-border/60 text-xs">
             <span class="text-[10px] text-ink-muted truncate font-medium max-w-[110px]">
               {{ shot.reference_role ? `@ ${shot.reference_role}` : 'Product · Studio' }}
             </span>
-            <button
-              type="button"
-              class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-surface-hover flex items-center gap-1 cursor-pointer transition-colors"
-              :title="currentLang === 'vi' ? 'Chỉnh sửa cảnh' : 'Edit Scene'"
-              @click.stop="$emit('editShot', shot, index)"
-            >
-              <span>⋯</span>
-              <span>{{ currentLang === 'vi' ? 'Sửa' : 'Edit' }}</span>
-            </button>
+            <div class="relative">
+              <button
+                type="button"
+                class="px-2 py-0.5 rounded-lg text-sm font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-surface-hover cursor-pointer transition-colors"
+                :title="currentLang === 'vi' ? 'Tùy chọn cảnh' : 'Scene options'"
+                :aria-expanded="menuOpenIndex === index"
+                @click.stop="toggleSceneMenu(index)"
+              >
+                ⋯
+              </button>
+              <div
+                v-if="menuOpenIndex === index"
+                class="absolute right-0 bottom-8 z-30 w-36 rounded-xl border border-outline-border bg-surface-card p-1.5 shadow-xl"
+                @click.stop
+              >
+                <button
+                  type="button"
+                  class="w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-ink-primary hover:bg-surface-hover cursor-pointer"
+                  @click="emit('editShot', shot, index); menuOpenIndex = null"
+                >
+                  {{ currentLang === 'vi' ? 'Sửa cảnh' : 'Edit Scene' }}
+                </button>
+                <button
+                  type="button"
+                  class="w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-rose-400 hover:bg-rose-500/10 cursor-pointer disabled:opacity-50"
+                  :disabled="isGenerating"
+                  @click="emit('deleteShot', shot, index); menuOpenIndex = null"
+                >
+                  {{ currentLang === 'vi' ? 'Xóa cảnh' : 'Delete Scene' }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -206,6 +229,7 @@ const emit = defineEmits([
   "selectShot",
   "previewShot",
   "editShot",
+  "deleteShot",
   "addScene",
   "selectKeyframe",
   "changeShotDuration",
@@ -215,6 +239,11 @@ const emit = defineEmits([
 ]);
 
 const aiRevisionInput = ref("");
+const menuOpenIndex = ref(null);
+
+function toggleSceneMenu(index) {
+  menuOpenIndex.value = menuOpenIndex.value === index ? null : index;
+}
 
 function submitAiRevision() {
   if (!aiRevisionInput.value?.trim()) {

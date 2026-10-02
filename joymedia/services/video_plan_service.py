@@ -124,7 +124,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 
 	existing_shots = frappe.get_all(
 		"Shot",
-		filters={"media_project": project.name},
+		filters={"media_project": project.name, "is_removed": 0},
 		pluck="name",
 	)
 	if existing_shots:

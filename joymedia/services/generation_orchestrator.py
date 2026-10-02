@@ -61,7 +61,7 @@ def start_run_internal(run_name: str):
 		frappe.throw(_("Generation Run {0} has invalid execution scope JSON.").format(run.name))
 	shots = frappe.get_all(
 		"Shot",
-		filters={"media_project": project.name},
+		filters={"media_project": project.name, "is_removed": 0},
 		fields=["name", "shot_number", "planned_frame_count"],
 		order_by="shot_number asc, name asc",
 	)

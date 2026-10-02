@@ -202,6 +202,7 @@
             @select-shot="onSelectShot"
             @preview-shot="previewStoryboardShot"
             @edit-shot="editStoryboardShot"
+            @delete-shot="removeStoryboardShot"
             @select-keyframe="onSelectKeyframe"
             @change-shot-duration="changeShotDuration"
             @toggle-continuity-mode="toggleContinuityMode"
@@ -821,6 +822,42 @@ async function handleAddSceneRequest(request) {
     });
   } catch (err) {
     appendSceneError.value = getFrappeErrorMessage(err, "Unable to add scenes.");
+  }
+}
+
+async function removeStoryboardShot(shot) {
+  const request = {
+    project_name: projectName.value,
+    shot_name: shot.name,
+    confirm_continuation: false,
+  };
+  try {
+    let result = await call(
+      "joymedia.joymedia.doctype.media_project.media_project.remove_project_scene",
+      request,
+    );
+    if (result?.requires_confirmation) {
+      const confirmed = window.confirm(
+        `${result.message}\n\n${currentLang.value === 'vi' ? 'Bạn vẫn muốn xóa cảnh này?' : 'Remove this scene anyway?'}`
+      );
+      if (!confirmed) return;
+      result = await call(
+        "joymedia.joymedia.doctype.media_project.media_project.remove_project_scene",
+        { ...request, confirm_continuation: true },
+      );
+    }
+    if (!result?.removed) return;
+    inspectorOpen.value = false;
+    selectedShotIndex.value = 0;
+    await fetchWorkspace();
+    await loadTimeline(true);
+    toast({
+      title: currentLang.value === 'vi' ? 'Đã xóa cảnh' : 'Scene removed',
+      text: currentLang.value === 'vi' ? 'Cảnh đã được gỡ khỏi storyboard và timeline.' : 'The scene was removed from the storyboard and timeline.',
+      type: "success",
+    });
+  } catch (err) {
+    toast({ title: "Unable to remove scene", text: getFrappeErrorMessage(err, "Unable to remove scene."), type: "error" });
   }
 }
 

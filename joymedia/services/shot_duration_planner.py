@@ -20,7 +20,7 @@ def rebalance_shot_duration(media_project_name: str, shot_name: str, target_dura
 	settings = _project_settings(project)
 	shots = frappe.get_all(
 		"Shot",
-		filters={"media_project": project.name},
+		filters={"media_project": project.name, "is_removed": 0},
 		fields=["name", "shot_number", "duration_seconds"],
 		order_by="shot_number asc, name asc",
 	)
@@ -89,7 +89,7 @@ def recalculate_shot_durations(media_project_name: str):
 	settings = _project_settings(project)
 	shots = frappe.get_all(
 		"Shot",
-		filters={"media_project": project.name},
+		filters={"media_project": project.name, "is_removed": 0},
 		fields=["name", "shot_number", "duration_seconds"],
 		order_by="shot_number asc, name asc",
 	)

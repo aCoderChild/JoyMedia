@@ -132,7 +132,7 @@ def build_project_snapshot(project):
 	snapshot["shots"] = []
 	for shot in frappe.get_all(
 		"Shot",
-		filters={"media_project": project.name},
+		filters={"media_project": project.name, "is_removed": 0},
 		fields=["name", "shot_number", "duration_seconds", "planned_frame_count", "generation_prompt"],
 		order_by="shot_number asc, name asc",
 	):
@@ -289,7 +289,7 @@ def _storyboard_payload(specification):
 		return []
 	shots = frappe.get_all(
 		"Shot",
-		filters={"media_project": specification.name},
+		filters={"media_project": specification.name, "is_removed": 0},
 		fields=["name", "shot_number", "shot_name", "generation_prompt", "duration_seconds", "selected_output_asset_version"],
 		order_by="shot_number asc, name asc",
 	)
@@ -762,6 +762,76 @@ def update_project_shot_timing(project_name, shot_name, duration_seconds):
 	return {"shot_name": shot.name, "shot_number": shot.shot_number, **result}
 
 
+def _renumber_active_shots(project_name):
+	shots = frappe.get_all(
+		"Shot",
+		filters={"media_project": project_name, "is_removed": 0},
+		fields=["name"],
+		order_by="shot_number asc, name asc",
+	)
+	for index, shot in enumerate(shots, start=1):
+		frappe.db.set_value("Shot", shot.name, "shot_number", -index, update_modified=False)
+	for index, shot in enumerate(shots, start=1):
+		frappe.db.set_value("Shot", shot.name, "shot_number", index, update_modified=False)
+
+
+def _update_project_duration_from_active_shots(project):
+	shots = frappe.get_all(
+		"Shot",
+		filters={"media_project": project.name, "is_removed": 0},
+		fields=["planned_frame_count", "duration_seconds"],
+	)
+	fps = 24.0
+	if project.workflow:
+		workflow = frappe.get_doc("Generation Workflow", project.workflow)
+		fps = float(workflow.output_fps or 24)
+	total_frames = sum(
+		int(row.planned_frame_count or round(float(row.duration_seconds or 0) * fps))
+		for row in shots
+	)
+	project.db_set("total_duration_seconds", total_frames / fps, update_modified=False)
+
+
+@frappe.whitelist()
+def remove_project_scene(project_name, shot_name, confirm_continuation=False):
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	if frappe.db.exists(
+		"Generation Run",
+		{"media_project": project.name, "status": ["in", ["Queued", "Running"]]},
+	):
+		frappe.throw(_("Scenes cannot be removed while generation is active."))
+	shot = frappe.get_doc("Shot", shot_name)
+	if shot.media_project != project.name:
+		frappe.throw(_("Scene does not belong to this project."))
+	if shot.is_removed:
+		return {"removed": True}
+
+	shot_tasks = frappe.get_all("Generation Task", filters={"shot": shot.name}, pluck="name")
+	confirmed = str(confirm_continuation).lower() in ("1", "true", "yes", "on")
+	if shot_tasks and not confirmed:
+		dependent_task = frappe.db.exists(
+			"Generation Task",
+			{"depends_on_task": ["in", shot_tasks]},
+		)
+		if dependent_task:
+			return {
+				"removed": False,
+				"requires_confirmation": True,
+				"message": _(
+					"This scene has generated continuation scenes. Removing it may create a visible jump."
+				),
+			}
+
+	from joymedia.services.timeline_editor import _remove_shot_timeline_clips
+	_remove_shot_timeline_clips(project.name, shot.name)
+	frappe.db.set_value("Shot", shot.name, "is_removed", 1, update_modified=False)
+	_renumber_active_shots(project.name)
+	_update_project_duration_from_active_shots(project)
+	frappe.db.commit()
+	return {"removed": True}
+
+
 @frappe.whitelist()
 def reorder_project_shot(project_name, shot_name, target_shot_number):
 	project = frappe.get_doc("Media Project", project_name)
@@ -776,7 +846,7 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
 	shots = frappe.get_all(
-		"Shot", filters={"media_project": project.name},
+		"Shot", filters={"media_project": project.name, "is_removed": 0},
 		fields=["name", "shot_number"], order_by="shot_number asc, name asc",
 	)
 	if not shots or target_shot_number < 1 or target_shot_number > len(shots):
@@ -983,7 +1053,7 @@ class MediaProject(Document):
 			latest_hash = frappe.db.get_value("Generation Run", latest_run.name, "project_snapshot_hash")
 			if latest_hash == current_snapshot_hash:
 				return self.retry_failed_jobs()
-		if not frappe.db.exists("Shot", {"media_project": self.name}):
+		if not frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}):
 			from joymedia.services.video_plan_service import apply_video_plan
 			apply_video_plan(self.name, self.generate_video_plan())
 			frappe.db.commit()
@@ -1002,7 +1072,7 @@ class MediaProject(Document):
 			)
 			if existing:
 				return {"run": existing.name, "status": existing.status}
-			if not frappe.db.exists("Shot", {"media_project": self.name}):
+			if not frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}):
 				frappe.throw(_("Generate a storyboard first."))
 			settings = _project_settings(self)
 			if not settings.workflow:
@@ -1010,7 +1080,7 @@ class MediaProject(Document):
 			workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 			recalculate_shot_durations(self.name)
 			shots = frappe.get_all(
-				"Shot", filters={"media_project": self.name},
+				"Shot", filters={"media_project": self.name, "is_removed": 0},
 				fields=["name", "shot_number", "planned_frame_count"], order_by="shot_number asc, name asc",
 			)
 			validate_generation_preflight(self, workflow, shots, check_comfyui=True)
@@ -1060,7 +1130,7 @@ class MediaProject(Document):
 				frappe.throw(_("Generation is already active in run {0}.").format(active.name))
 			shots = frappe.get_all(
 				"Shot",
-				filters={"media_project": self.name},
+				filters={"media_project": self.name, "is_removed": 0},
 				fields=["name", "shot_number", "generation_prompt"],
 				order_by="shot_number asc, name asc",
 			)

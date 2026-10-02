@@ -307,11 +307,68 @@ def delete_timeline_clip(project_name: str, clip_name: str):
 		if linked_audio:
 			frappe.delete_doc("Timeline Clip", linked_audio.name, ignore_permissions=True, force=True)
 	frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
-	_set_clip_order(_timeline_clip_rows(project.name))
+	_reflow_video_track(project.name)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
+def _remove_shot_timeline_clips(project_name, shot_name):
+	"""Remove the current editorial representation of a Shot and close gaps."""
+	clips = frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project_name, "shot": shot_name},
+		fields=["name"],
+	)
+	for clip in clips:
+		if frappe.db.exists("Timeline Clip", clip.name):
+			frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
+	_reflow_video_track(project_name)
+	_normalize_transitions(project_name)
+	_invalidate_project_output(project_name)
+
+
+def _reflow_video_track(project_name):
+	"""Rebuild the single visual track's order and frame positions without resizing clips."""
+	video_clips = frappe.get_all(
+		"Timeline Clip",
+		filters={
+			"media_project": project_name,
+			"track_type": "Video",
+			"enabled": 1,
+		},
+		fields=["name", "source_in_frame", "source_out_frame"],
+		order_by="clip_order asc, creation asc",
+	)
+	cursor = 0
+	for index, clip in enumerate(video_clips, start=1):
+		frappe.db.set_value(
+			"Timeline Clip",
+			clip.name,
+			{
+				"clip_order": index,
+				"timeline_start_frame": cursor,
+			},
+			update_modified=False,
+		)
+		linked_audio = frappe.db.get_value(
+			"Timeline Clip",
+			{"linked_video_clip": clip.name},
+			["name", "clip_order"],
+			as_dict=True,
+		)
+		if linked_audio:
+			frappe.db.set_value(
+				"Timeline Clip",
+				linked_audio.name,
+				{
+					"clip_order": index,
+					"timeline_start_frame": cursor,
+				},
+				update_modified=False,
+			)
+		cursor += max(0, int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0))
 
 
 @frappe.whitelist()
@@ -445,7 +502,7 @@ def _initialize_timeline(project):
 	fps = _project_fps(project.name)
 	shots = frappe.get_all(
 		"Shot",
-		filters={"media_project": project.name},
+		filters={"media_project": project.name, "is_removed": 0},
 		fields=[
 			"name",
 			"shot_number",
@@ -531,7 +588,7 @@ def _sync_missing_generated_shots_to_timeline(project):
 	)
 	shots = frappe.get_all(
 		"Shot",
-		filters={"media_project": project.name},
+		filters={"media_project": project.name, "is_removed": 0},
 		fields=["name", "shot_number", "planned_frame_count", "duration_seconds", "selected_output_asset_version"],
 		order_by="shot_number asc, name asc",
 	)
@@ -677,7 +734,7 @@ def _latest_fully_generated_run(project_name):
 	)
 	shots = frappe.get_all(
 		"Shot",
-		filters={"media_project": project_name},
+		filters={"media_project": project_name, "is_removed": 0},
 		fields=["name", "selected_output_asset_version"],
 	)
 	if shots and all(row.selected_output_asset_version for row in shots):
