@@ -64,6 +64,20 @@ class TestWorkflowResolver(FrappeTestCase):
 			),
 		)
 
+	def test_r2v_reference_binding_requires_second_reference_when_configured(self):
+		binding = frappe._dict(
+			binding_key="reference_image_2",
+			required_input_role="product_reference",
+			required=1,
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			_resolve_semantic_binding(
+				binding,
+				frappe._dict(name="JOB-00001"),
+				{"product_reference": ["one.png"]},
+			)
+
 	def test_optional_last_frame_is_skipped_when_not_staged(self):
 		job = frappe._dict(name="JOB-00001")
 

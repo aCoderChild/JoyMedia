@@ -12,6 +12,7 @@ from joymedia.services.video_composer import (
 	_get_video_duration,
 	_mix_audio,
 	_run_ffmpeg,
+	_has_audio_stream,
 	_validate_normalized_video,
 )
 
@@ -103,8 +104,19 @@ def compose_project_timeline_internal(project_name: str):
 			_validate_normalized_video(silent_master, profile, expected_frames=expected_frames)
 
 			delivery_path = silent_master
+			video_duration = _get_video_duration(silent_master)
 			audio_sources = _get_audio_sources(
-				project, _get_video_duration(silent_master), audio_clips, profile["fps"]
+				project, video_duration, audio_clips, profile["fps"]
+			)
+			audio_sources.extend(
+				_get_generated_audio_sources(
+					video_clips,
+					clip_frames,
+					video_duration,
+					profile["fps"],
+					positioned=positioned,
+					transition_frames=transition_frames,
+				)
 			)
 			if audio_sources:
 				delivery_path = temp_path / f"{project.name}-timeline.mp4"
@@ -202,6 +214,46 @@ def _asset_version_path(asset_version_name):
 	if not path.exists():
 		frappe.throw(_("Timeline source file does not exist: {0}").format(path))
 	return path
+
+
+def _get_generated_audio_sources(
+	video_clips,
+	clip_frames,
+	video_duration,
+	fps,
+	*,
+	positioned,
+	transition_frames,
+):
+	sources = []
+	cursor = 0
+	for index, (clip, frame_count) in enumerate(zip(video_clips, clip_frames)):
+		path = _asset_version_path(clip.source_asset_version)
+		start_frame = int(clip.timeline_start_frame or 0) if positioned else cursor
+		start_seconds = start_frame / fps
+		if start_seconds >= video_duration or not _has_audio_stream(path):
+			cursor += frame_count - int(transition_frames[index] or 0)
+			continue
+		source_in_frame = int(clip.source_in_frame or 0)
+		source_out_frame = int(clip.source_out_frame or 0)
+		sources.append(
+			{
+				"path": path,
+				"start_seconds": start_seconds,
+				"source_start_seconds": source_in_frame / fps,
+				"duration_seconds": min(
+					(source_out_frame - source_in_frame) / fps,
+					video_duration - start_seconds,
+				),
+				"gain_db": 0,
+				"fade_in_seconds": 0,
+				"fade_out_seconds": 0,
+				"duck_others": False,
+				"loop": False,
+			}
+		)
+		cursor += frame_count - int(transition_frames[index] or 0)
+	return sources
 
 
 def _normalize_clip(source_path, output_path, profile, source_in_frame, source_out_frame):

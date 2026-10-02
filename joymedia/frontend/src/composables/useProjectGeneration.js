@@ -8,7 +8,8 @@ export function useProjectGeneration(projectName, onRefresh) {
   const productionError = ref("");
   const videoIdeaPrompt = ref("");
   const currentRun = ref(null);
-  let pollInterval = null;
+  let pollTimeout = null;
+  let polling = false;
 
   function getFrappeErrorMessage(err, fallback = "Failed to start video generation.") {
     const data = err?.response?.data || err || {};
@@ -43,16 +44,19 @@ export function useProjectGeneration(projectName, onRefresh) {
   }
 
   function stopPolling() {
-    if (pollInterval) {
-      clearInterval(pollInterval);
-      pollInterval = null;
+    polling = false;
+    if (pollTimeout) {
+      clearTimeout(pollTimeout);
+      pollTimeout = null;
     }
   }
 
   async function pollRun() {
+    if (!polling) return;
+    let refreshedProduction = null;
     try {
       if (currentRun.value?.name) {
-        await call(
+        refreshedProduction = await call(
           "joymedia.joymedia.doctype.media_project.media_project.refresh_project_production",
           { name: project() }
         );
@@ -63,8 +67,8 @@ export function useProjectGeneration(projectName, onRefresh) {
         { name: project() }
       );
       if (snap?.production) {
-        currentRun.value = snap.production;
-        const status = snap.production.status;
+        currentRun.value = refreshedProduction || snap.production;
+        const status = currentRun.value.status;
         if (status === "Completed") {
           stopPolling();
           isGenerating.value = false;
@@ -73,7 +77,7 @@ export function useProjectGeneration(projectName, onRefresh) {
         } else if (status === "Failed") {
           stopPolling();
           isGenerating.value = false;
-          productionError.value = snap.production.error_summary || "Generation encountered an issue.";
+          productionError.value = currentRun.value.error_summary || "Generation encountered an issue.";
           if (onRefresh) await onRefresh();
         } else {
           // Still generating
@@ -82,12 +86,28 @@ export function useProjectGeneration(projectName, onRefresh) {
       }
     } catch (_) {
       // Keep polling or stop if error persists
+    } finally {
+      if (polling && ["Queued", "Running"].includes(currentRun.value?.status)) {
+        pollTimeout = setTimeout(pollRun, 3000);
+      }
     }
   }
 
   function startPolling() {
     stopPolling();
-    pollInterval = setInterval(pollRun, 3000);
+    polling = true;
+    pollRun();
+  }
+
+  function resumeProduction(production) {
+    currentRun.value = production || null;
+    const active = ["Queued", "Running"].includes(production?.status);
+    isGenerating.value = active;
+    if (active) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
   }
 
   async function generateVideo() {
@@ -248,6 +268,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     videoIdeaPrompt,
     currentRun,
     isProductionActive,
+    resumeProduction,
 
     generateVideo,
     retryFailedScenes,

@@ -5,6 +5,7 @@ import tempfile
 
 import frappe
 from frappe import _
+from frappe.utils.synchronization import filelock
 from frappe.utils import get_datetime, now
 
 from .comfyui_client import download_output, get_history
@@ -35,6 +36,11 @@ def sync_active_attempts():
 
 
 def sync_attempt_result(attempt_name):
+	with filelock(f"joymedia-sync-attempt-{attempt_name}"):
+		return _sync_attempt_result(attempt_name)
+
+
+def _sync_attempt_result(attempt_name):
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	primary = get_attempt_artifact(attempt.name, "Primary Video")
 	if attempt.status == "Completed" and primary:

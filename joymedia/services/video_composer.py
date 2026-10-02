@@ -430,7 +430,15 @@ def _mix_audio(silent_master_path, audio_sources, delivery_path):
 			command.extend(["-stream_loop", "-1"])
 		command.extend(["-i", str(source["path"])])
 
-		filter = f"[{index}:a]atrim=duration={source['duration_seconds']:.6f},asetpts=PTS-STARTPTS"
+		source_start = source.get("source_start_seconds", 0)
+		if source_start:
+			trim = (
+				f"atrim=start={source_start:.6f}:"
+				f"duration={source['duration_seconds']:.6f}"
+			)
+		else:
+			trim = f"atrim=duration={source['duration_seconds']:.6f}"
+		filter = f"[{index}:a]{trim},asetpts=PTS-STARTPTS"
 		filter += f",volume={source['gain_db']:.6f}dB"
 		if source["fade_in_seconds"]:
 			filter += f",afade=t=in:st=0:d={source['fade_in_seconds']:.6f}"

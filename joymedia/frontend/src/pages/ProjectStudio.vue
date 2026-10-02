@@ -401,6 +401,7 @@ const {
   videoIdeaPrompt,
   currentRun,
   isProductionActive,
+  resumeProduction,
   generateVideo,
   retryFailedScenes,
   reviseStoryboard,
@@ -953,6 +954,7 @@ function onReorderShots(fromIdx, toIdx) {
 // Lifecycle Hooks
 onMounted(async () => {
   await fetchWorkspace();
+  resumeProduction(workspace.value?.production);
   await fetchVideoStyles();
   await loadTimeline(true);
   if (finalVideo.value?.file && clips.value?.length) {
