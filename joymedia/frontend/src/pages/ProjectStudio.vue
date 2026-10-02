@@ -797,8 +797,8 @@ function onSelectShot(shot, index) {
   }
 }
 
-function openAddScenePopover(afterShot = null) {
-  addSceneAfterShot.value = afterShot || activeSelectedShot.value || storyboardShots.value.at(-1) || null;
+function openAddScenePopover() {
+  addSceneAfterShot.value = storyboardShots.value.at(-1) || null;
   appendSceneError.value = "";
   addScenePopoverOpen.value = true;
 }

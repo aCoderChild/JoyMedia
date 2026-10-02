@@ -141,7 +141,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     }
   }
 
-  async function appendScenes({ afterShot, durationSeconds, instruction, continuity }) {
+  async function appendScenes({ durationSeconds, instruction, continuity }) {
     if (isGenerating.value) return;
     isGenerating.value = true;
     try {
@@ -149,7 +149,6 @@ export function useProjectGeneration(projectName, onRefresh) {
         "joymedia.joymedia.doctype.media_project.media_project.append_project_scenes",
         {
           project_name: project(),
-          after_shot_name: afterShot?.name,
           duration_seconds: durationSeconds,
           instruction: instruction || "",
           continuity: Boolean(continuity),

@@ -104,6 +104,24 @@ def _project_settings(project):
 	return project
 
 
+def _active_project_shots(project_name, fields=None):
+	return frappe.get_all(
+		"Shot",
+		filters={"media_project": project_name, "is_removed": 0},
+		fields=fields
+			or [
+				"name",
+				"shot_number",
+				"shot_name",
+				"duration_seconds",
+				"planned_frame_count",
+				"generation_prompt",
+				"selected_output_asset_version",
+			],
+		order_by="shot_number asc, name asc",
+	)
+
+
 def build_project_snapshot(project):
 	settings = _project_settings(project)
 	snapshot = {
@@ -130,11 +148,9 @@ def build_project_snapshot(project):
 		],
 	}
 	snapshot["shots"] = []
-	for shot in frappe.get_all(
-		"Shot",
-		filters={"media_project": project.name, "is_removed": 0},
+	for shot in _active_project_shots(
+		project.name,
 		fields=["name", "shot_number", "duration_seconds", "planned_frame_count", "generation_prompt"],
-		order_by="shot_number asc, name asc",
 	):
 		shot_doc = frappe.get_doc("Shot", shot.name)
 		snapshot["shots"].append(
@@ -287,11 +303,9 @@ def get_video_styles():
 def _storyboard_payload(specification):
 	if not specification:
 		return []
-	shots = frappe.get_all(
-		"Shot",
-		filters={"media_project": specification.name, "is_removed": 0},
+	shots = _active_project_shots(
+		specification.name,
 		fields=["name", "shot_number", "shot_name", "generation_prompt", "duration_seconds", "selected_output_asset_version"],
-		order_by="shot_number asc, name asc",
 	)
 	for shot in shots:
 		if shot.selected_output_asset_version:
@@ -647,10 +661,10 @@ def generate_project_video(project_name):
 @frappe.whitelist()
 def append_project_scenes(
 	project_name,
-	after_shot_name,
 	duration_seconds,
 	instruction="",
 	continuity=True,
+	after_shot_name=None,
 ):
 	return frappe.get_doc("Media Project", project_name).append_scenes(
 		after_shot_name=after_shot_name,
@@ -763,12 +777,7 @@ def update_project_shot_timing(project_name, shot_name, duration_seconds):
 
 
 def _renumber_active_shots(project_name):
-	shots = frappe.get_all(
-		"Shot",
-		filters={"media_project": project_name, "is_removed": 0},
-		fields=["name"],
-		order_by="shot_number asc, name asc",
-	)
+	shots = _active_project_shots(project_name, fields=["name"])
 	for index, shot in enumerate(shots, start=1):
 		frappe.db.set_value("Shot", shot.name, "shot_number", -index, update_modified=False)
 	for index, shot in enumerate(shots, start=1):
@@ -776,20 +785,9 @@ def _renumber_active_shots(project_name):
 
 
 def _update_project_duration_from_active_shots(project):
-	shots = frappe.get_all(
-		"Shot",
-		filters={"media_project": project.name, "is_removed": 0},
-		fields=["planned_frame_count", "duration_seconds"],
-	)
-	fps = 24.0
-	if project.workflow:
-		workflow = frappe.get_doc("Generation Workflow", project.workflow)
-		fps = float(workflow.output_fps or 24)
-	total_frames = sum(
-		int(row.planned_frame_count or round(float(row.duration_seconds or 0) * fps))
-		for row in shots
-	)
-	project.db_set("total_duration_seconds", total_frames / fps, update_modified=False)
+	shots = _active_project_shots(project.name, fields=["duration_seconds"])
+	new_duration = sum(float(row.duration_seconds or 0) for row in shots)
+	project.db_set("total_duration_seconds", new_duration, update_modified=False)
 
 
 @frappe.whitelist()
@@ -845,10 +843,7 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
-	shots = frappe.get_all(
-		"Shot", filters={"media_project": project.name, "is_removed": 0},
-		fields=["name", "shot_number"], order_by="shot_number asc, name asc",
-	)
+	shots = _active_project_shots(project.name, fields=["name", "shot_number"])
 	if not shots or target_shot_number < 1 or target_shot_number > len(shots):
 		frappe.throw(_("Invalid shot position."))
 	ordered = [row for row in shots if row.name != shot.name]
@@ -1079,9 +1074,9 @@ class MediaProject(Document):
 				frappe.throw(_("This project has no active Generation Workflow."))
 			workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 			recalculate_shot_durations(self.name)
-			shots = frappe.get_all(
-				"Shot", filters={"media_project": self.name, "is_removed": 0},
-				fields=["name", "shot_number", "planned_frame_count"], order_by="shot_number asc, name asc",
+			shots = _active_project_shots(
+				self.name,
+				fields=["name", "shot_number", "planned_frame_count"],
 			)
 			validate_generation_preflight(self, workflow, shots, check_comfyui=True)
 			project_snapshot_json, project_snapshot_hash = build_project_snapshot(self)
@@ -1099,7 +1094,7 @@ class MediaProject(Document):
 			return {"run": run.name, "status": result["status"]}
 
 	@frappe.whitelist()
-	def append_scenes(self, after_shot_name, duration_seconds, instruction="", continuity=True):
+	def append_scenes(self, duration_seconds, instruction="", continuity=True, after_shot_name=None):
 		self._require_write_access()
 		try:
 			duration_seconds = float(duration_seconds)
@@ -1128,17 +1123,20 @@ class MediaProject(Document):
 			)
 			if active:
 				frappe.throw(_("Generation is already active in run {0}.").format(active.name))
-			shots = frappe.get_all(
-				"Shot",
-				filters={"media_project": self.name, "is_removed": 0},
+			shots = _active_project_shots(
+				self.name,
 				fields=["name", "shot_number", "generation_prompt"],
-				order_by="shot_number asc, name asc",
 			)
 			if not shots:
 				frappe.throw(_("Create the first storyboard before appending scenes."))
 			last_shot = shots[-1]
-			if after_shot_name != last_shot.name:
-				frappe.throw(_("Scenes can only be appended after the final Shot."))
+			if after_shot_name and after_shot_name != last_shot.name:
+				frappe.logger("joymedia.storyboard").warning(
+					"Append scene mismatch: requested after %s, current final active shot is %s",
+					after_shot_name,
+					last_shot.name,
+				)
+				frappe.throw(_("The storyboard changed since Add Scene was opened. Please reopen Add Scene and try again."))
 
 			previous_task = frappe.get_all(
 				"Generation Task",
