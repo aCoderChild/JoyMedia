@@ -7,12 +7,14 @@ export function useProjectReferences(projectName, onRefresh) {
   const candidatesLoading = ref(false);
   const savingReference = ref(false);
   const uploadingMedia = ref(false);
+  const uploadError = ref("");
+  const lastUploadedAssetVersion = ref("");
 
   function project() {
     return unref(projectName);
   }
 
-  async function fetchCandidates() {
+  async function fetchCandidates({ throwOnError = false } = {}) {
     candidatesLoading.value = true;
     try {
       const candidates = await call(
@@ -20,8 +22,11 @@ export function useProjectReferences(projectName, onRefresh) {
         { media_project: project() }
       );
       mediaCandidates.value = candidates || [];
+      return mediaCandidates.value;
     } catch (err) {
       mediaCandidates.value = [];
+      if (throwOnError) throw err;
+      return [];
     } finally {
       candidatesLoading.value = false;
     }
@@ -98,32 +103,30 @@ export function useProjectReferences(projectName, onRefresh) {
     }
   }
 
-  async function uploadAndAddFiles(files, defaultRole = "Product") {
+  async function uploadFilesToLibrary(files) {
     if (!files?.length || uploadingMedia.value) return;
     uploadingMedia.value = true;
+    uploadError.value = "";
     try {
+      let newestAssetVersion = "";
       for (const file of files) {
         const uploaded = await uploadFile(file, { private: true });
         if (!uploaded?.file_url) throw new Error("Upload failed");
         const isAudio = file.type.startsWith("audio");
-        const isVideo = file.type.startsWith("video");
-        const category = isAudio ? "Audio" : defaultRole;
+        const category = isAudio ? "Audio" : "Reference";
         const created = await call("joymedia.services.media_asset_service.create_media_asset", {
           asset_name: file.name.replace(/\.[^/.]+$/, ""),
           asset_category: category,
           file_url: uploaded.file_url,
         });
-        await call("joymedia.joymedia.doctype.media_project.media_project.select_project_reference", {
-          media_project: project(),
-          asset_name: created.media_asset,
-          reference_role: isAudio ? "Audio" : defaultRole,
-        });
+        newestAssetVersion = created?.asset_version || newestAssetVersion;
       }
-      showMediaPicker.value = false;
-      if (onRefresh) await onRefresh();
-      toast({ title: "Uploaded", text: `Added ${files.length} file(s) to project.`, type: "success" });
+      lastUploadedAssetVersion.value = newestAssetVersion;
+      await fetchCandidates({ throwOnError: true });
+      toast({ title: "Uploaded", text: `${files.length} file(s) added to the media library.`, type: "success" });
     } catch (err) {
-      toast({ title: "Upload error", text: err?.message || "Failed to upload file.", type: "error" });
+      uploadError.value = err?.message || "Failed to upload file.";
+      toast({ title: "Upload error", text: uploadError.value, type: "error" });
     } finally {
       uploadingMedia.value = false;
     }
@@ -135,6 +138,8 @@ export function useProjectReferences(projectName, onRefresh) {
     candidatesLoading,
     savingReference,
     uploadingMedia,
+    uploadError,
+    lastUploadedAssetVersion,
 
     fetchCandidates,
     openPicker,
@@ -142,6 +147,6 @@ export function useProjectReferences(projectName, onRefresh) {
     updateReferenceRole,
     removeReference,
     setShotKeyframe,
-    uploadAndAddFiles,
+    uploadFilesToLibrary,
   };
 }

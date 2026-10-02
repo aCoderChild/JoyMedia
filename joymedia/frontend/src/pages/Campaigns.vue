@@ -12,8 +12,7 @@
       </div>
 
       <!-- New Project Action -->
-        <!-- New Project Action -->
-        <div class="flex items-center gap-2">
+        <div v-if="projectsList.length" class="flex items-center gap-2">
           <button
             type="button"
             class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all cursor-pointer"

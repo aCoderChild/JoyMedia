@@ -289,13 +289,15 @@
       :loading="candidatesLoading"
       :saving="savingReference"
       :uploading="uploadingMedia"
+      :upload-error="uploadError"
+      :last-uploaded-asset-version="lastUploadedAssetVersion"
       :initial-type-filter="mediaPickerFilter"
       :is-keyframe-target="selectedTarget === 'keyframe-start' || selectedTarget === 'keyframe-end'"
       :current-lang="currentLang"
       @close="showMediaPicker = false"
       @select-reference="handleSelectReference"
       @set-keyframe="onSetKeyframeFromPicker"
-      @upload-files="uploadAndAddFiles"
+      @upload-files="uploadFilesToLibrary"
     />
 
     <!-- Modal: Secondary Video Settings (Format, duration, style, instructions) -->
@@ -376,12 +378,14 @@ const {
   candidatesLoading,
   savingReference,
   uploadingMedia,
+  uploadError,
+  lastUploadedAssetVersion,
   openPicker,
   addReference,
   updateReferenceRole,
   removeReference,
   setShotKeyframe,
-  uploadAndAddFiles,
+  uploadFilesToLibrary,
 } = useProjectReferences(projectName, fetchWorkspace);
 
 // 3. Generation composable

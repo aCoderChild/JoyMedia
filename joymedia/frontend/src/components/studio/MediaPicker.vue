@@ -67,6 +67,10 @@
         </label>
       </div>
 
+      <div v-if="uploadError" class="mx-4 mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        {{ uploadError }}
+      </div>
+
       <!-- Main Body: Clean Responsive Grid -->
       <div class="flex-1 overflow-y-auto p-4">
         <div v-if="loading" class="py-20 text-center text-xs text-ink-muted">
@@ -209,6 +213,8 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   saving: { type: Boolean, default: false },
   uploading: { type: Boolean, default: false },
+  uploadError: { type: String, default: "" },
+  lastUploadedAssetVersion: { type: String, default: "" },
   isKeyframeTarget: { type: Boolean, default: false },
   initialTypeFilter: { type: String, default: "All" },
   currentLang: { type: String, default: "en" },
@@ -299,12 +305,14 @@ const filteredCandidates = computed(() => {
 watch(
   () => props.candidates,
   (cands) => {
-    if (cands?.length && !selectedCandidate.value && !props.isKeyframeTarget) {
-      const unselected = cands.find((c) => !c.selected) || cands[0];
-      if (unselected) {
-        selectedCandidate.value = unselected;
-        selectedRole.value = unselected.reference_role || suggestRole(unselected);
-      }
+    if (!cands?.length || props.isKeyframeTarget) return;
+    const uploaded = props.lastUploadedAssetVersion
+      ? cands.find((c) => c.asset_version === props.lastUploadedAssetVersion)
+      : null;
+    const candidate = uploaded || (!selectedCandidate.value ? (cands.find((c) => !c.selected) || cands[0]) : null);
+    if (candidate) {
+      selectedCandidate.value = candidate;
+      selectedRole.value = candidate.reference_role || suggestRole(candidate);
     }
   },
   { immediate: true }
