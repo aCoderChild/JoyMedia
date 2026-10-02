@@ -134,11 +134,8 @@
       :current-timeline-position-label="currentTimelinePositionLabel"
       :is-playing="isPlaying"
       :is-muted="isMuted"
-      :playhead-frame="playheadFrame"
-      :total-frames="totalFrames"
       :timeline-total-seconds="timelineTotalSeconds"
       @fullscreen="requestFullscreen"
-      @seek-frame="$emit('seekFrame', $event)"
       @step-frame="$emit('stepFrame', $event)"
       @toggle-mute="toggleMute"
       @toggle-play-pause="$emit('togglePlayPause')"
@@ -166,8 +163,6 @@ const props = defineProps({
   selectedClip: { type: Object, default: null },
   selectedShotFrame: { type: Object, default: null },
   previewSelection: { type: String, default: "master" },
-  playheadFrame: { type: Number, default: 0 },
-  totalFrames: { type: Number, default: 0 },
   timelineTotalSeconds: { type: Number, default: 0 },
   currentTimelinePositionLabel: { type: String, default: "00:00" },
   isPlaying: { type: Boolean, default: false },
@@ -201,7 +196,6 @@ const emit = defineEmits([
   "retryFailedScenes",
   "refresh",
   "openMediaPicker",
-  "seekFrame",
   "stepFrame",
 ]);
 

@@ -2568,14 +2568,15 @@ h2 {
 }
 
 .playback-transport {
-  width: 100%;
-  max-width: 880px;
-  margin-top: 6px;
-  padding: 7px 10px;
+  width: fit-content;
+  min-width: 420px;
+  max-width: calc(100% - 32px);
+  margin-top: 8px;
+  padding: 6px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 24px;
   color: var(--ink-secondary);
   background: var(--surface-card);
   border: 1px solid var(--outline-border);
