@@ -48,8 +48,9 @@
             @split="$emit('split', $event)"
             @duplicate="$emit('duplicate', $event)"
             @delete="$emit('delete', $event)"
-            @reorder="$emit('reorder', $event)"
-            @select-transition="$emit('selectTransition', $event)"
+          @reorder="$emit('reorder', $event)"
+          @select-transition="$emit('selectTransition', $event)"
+          @open-inspector="forwardOpenInspector"
           />
         </div>
 
@@ -62,6 +63,7 @@
         :timeline-canvas-width="sharedTimelineCanvasWidth"
         :current-lang="currentLang"
         @select-clip="forwardSelectClip"
+        @open-inspector="forwardOpenInspector"
         @open-audio-picker="$emit('openAudioPicker')"
       />
 
@@ -107,6 +109,7 @@ const emit = defineEmits([
   "delete",
   "reorder",
   "selectTransition",
+  "openInspector",
   "openAudioPicker",
 ]);
 
@@ -127,5 +130,9 @@ const sharedTimelineCanvasWidth = computed(() => Number(visualTrack.value?.timel
 
 function forwardSelectClip(...args) {
   emit("selectClip", ...args);
+}
+
+function forwardOpenInspector(clip) {
+  emit("openInspector", clip);
 }
 </script>

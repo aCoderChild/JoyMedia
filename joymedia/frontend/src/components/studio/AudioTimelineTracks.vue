@@ -32,6 +32,7 @@
                 :style="clipStyle(clip)"
                 :title="clip.source_asset_name || clipLabel(clip)"
                 @click="$emit('selectClip', clip)"
+                @dblclick.stop="$emit('openInspector', clip)"
               >
                 <span class="truncate">{{ clip.source_asset_name || clipLabel(clip) }}</span>
                 <AudioWaveform :src="clip.source_file" />
@@ -73,7 +74,7 @@ const props = defineProps({
   currentLang: { type: String, default: "en" },
 });
 
-defineEmits(["selectClip", "openAudioPicker"]);
+defineEmits(["selectClip", "openInspector", "openAudioPicker"]);
 
 const audioTracks = computed(() => {
   const groups = new Map();

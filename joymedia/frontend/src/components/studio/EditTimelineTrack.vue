@@ -40,6 +40,15 @@
         <button
           type="button"
           class="tool-btn"
+          :disabled="!selectedClip"
+          :title="currentLang === 'vi' ? 'Mở thuộc tính clip' : 'Open clip properties'"
+          @click="emit('open-inspector', selectedClip)"
+        >
+          ⋯ {{ currentLang === 'vi' ? 'Thuộc tính' : 'Properties' }}
+        </button>
+        <button
+          type="button"
+          class="tool-btn"
           :class="{ active: snapping }"
           :title="currentLang === 'vi' ? 'Bật/tắt hít vào điểm mốc' : 'Toggle snapping'"
           @click="snapping = !snapping"
@@ -89,6 +98,7 @@
             @dragover.prevent
             @drop.prevent="onDrop(index)"
             @click="seekInsideClip(clip, $event)"
+            @dblclick.stop="emit('open-inspector', clip)"
           >
             <button
               type="button"
@@ -170,6 +180,7 @@ const emit = defineEmits([
   "delete",
   "reorder",
   "select-transition",
+  "open-inspector",
 ]);
 
 const { currentLang } = useI18n();

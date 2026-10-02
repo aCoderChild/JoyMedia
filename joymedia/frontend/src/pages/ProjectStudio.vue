@@ -232,6 +232,7 @@
             @delete="deleteClip"
             @reorder="reorderClip"
             @select-transition="setTransition"
+            @open-inspector="openClipInspector"
             @open-audio-picker="openAudioPicker"
             @add-scene="openAddScenePopover"
           />
@@ -239,7 +240,7 @@
       </div>
     </div>
 
-    <!-- Right Side: Selection-driven Contextual Inspector -->
+    <!-- Contextual Inspector Drawer -->
     <StudioInspector
       v-if="inspectorOpen && hasInspectorSelection"
       v-model:open="inspectorOpen"
@@ -901,7 +902,7 @@ function onSelectAssetTarget(asset) {
 
 function onSelectClip(clip, sourceFrame = null) {
   selectedClipName.value = clip.name;
-  inspectorOpen.value = true;
+  selectedTarget.value = "clip";
 
 	if (finalVideo.value?.file) {
 		previewSelection.value = "master";
@@ -915,6 +916,13 @@ function onSelectClip(clip, sourceFrame = null) {
 	} else {
 		previewSelection.value = "clip-source";
 	}
+}
+
+function openClipInspector(clip) {
+  if (!clip) return;
+  selectedClipName.value = clip.name;
+  selectedTarget.value = "clip";
+  inspectorOpen.value = true;
 }
 
 function onSetKeyframeFromPicker(asset) {

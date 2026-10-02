@@ -1,7 +1,6 @@
 <template>
   <aside
-    class="studio-inspector shrink-0 overflow-hidden border-t xl:border-t-0 xl:border-l border-outline-border flex flex-col bg-surface-card transition-[width] duration-200 select-none z-10"
-    :class="open ? 'w-full xl:w-[320px]' : 'w-0 border-0'"
+    class="studio-inspector overflow-hidden border-l border-outline-border flex flex-col bg-surface-card select-none z-30"
   >
     <!-- Contextual Inspector Top Header (Derived from Selection) -->
     <div class="p-3 border-b border-outline-border flex items-center justify-between gap-2 bg-surface-muted/60">
@@ -182,36 +181,6 @@
             </div>
           </div>
 
-          <!-- Actions: Split, Duplicate, Delete -->
-          <div class="grid grid-cols-3 gap-1.5 pt-2 border-t border-outline-border">
-            <button
-              type="button"
-              class="py-1.5 px-2 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
-              :disabled="timelineBusy"
-              @click="$emit('splitClip')"
-            >
-              <span>✂</span>
-              <span>{{ currentLang === 'vi' ? 'Tách' : 'Split' }}</span>
-            </button>
-            <button
-              type="button"
-              class="py-1.5 px-2 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
-              :disabled="timelineBusy"
-              @click="$emit('duplicateClip', selectedClip)"
-            >
-              <span>⧉</span>
-              <span>{{ currentLang === 'vi' ? 'Nhân đôi' : 'Duplicate' }}</span>
-            </button>
-            <button
-              type="button"
-              class="py-1.5 px-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
-              :disabled="timelineBusy"
-              @click="$emit('deleteClip', selectedClip)"
-            >
-              <span>⌫</span>
-              <span>{{ currentLang === 'vi' ? 'Xóa' : 'Delete' }}</span>
-            </button>
-          </div>
         </div>
 
         <!-- Source Shot Info & Outdated Sync -->
