@@ -36,6 +36,17 @@ def _get_customer_workflow(video_style=None):
 	return workflow
 
 
+def _get_continuation_workflow(workflow):
+	from joymedia.services.workflow_resolver import workflow_supports_continuation
+
+	if workflow_supports_continuation(workflow):
+		return workflow
+	continuation_workflow = get_latest_valid_workflow("h3_i2v_production")
+	if not continuation_workflow:
+		frappe.throw(_("Continuous generation requires a workflow that supports first-frame continuation."))
+	return continuation_workflow
+
+
 def _meaningful_project_value(value, fallback):
 	value = (value or "").strip()
 	return value if value and value.lower() != "untitled" else fallback
@@ -906,6 +917,8 @@ class MediaProject(Document):
 		if generation_mode not in ("Multi-shot", "Continuous"):
 			frappe.throw(_("Select Continuous or Multi-shot generation mode."))
 		workflow = _get_customer_workflow(video_style or None)
+		if generation_mode == "Continuous":
+			workflow = _get_continuation_workflow(workflow)
 		self.total_duration_seconds = total_duration_seconds
 		self.delivery_preset = delivery_preset
 		self.generation_mode = generation_mode
@@ -1080,6 +1093,12 @@ class MediaProject(Document):
 			if not self.workflow:
 				frappe.throw(_("Configure Video Settings before appending scenes."))
 			workflow = frappe.get_doc("Generation Workflow", self.workflow)
+			if continuity:
+				continuation_workflow = _get_continuation_workflow(workflow)
+				if continuation_workflow.name != workflow.name:
+					workflow = continuation_workflow
+					self.workflow = workflow.name
+					self.save(ignore_permissions=True)
 			image_inputs = self._get_project_image_inputs()
 			if not image_inputs:
 				frappe.throw(_("The active generation workflow requires at least one image reference."))

@@ -13,6 +13,15 @@ _SKIP_BINDING = object()
 PROMPT_BINDING_KEY = "generation_prompt"
 
 
+def workflow_supports_continuation(workflow):
+	"""Return whether a workflow has a required first-frame input binding."""
+	return any(
+		frappe.scrub(binding.required_input_role or "") == "first_frame"
+		and bool(binding.required)
+		for binding in workflow.bindings
+	)
+
+
 def get_workflow_input_contract(workflow):
 	"""Return the selected workflow's staged-input contract by semantic role."""
 	contract = {}

@@ -1,4 +1,5 @@
 import json
+import math
 import time
 
 import frappe
@@ -332,6 +333,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		shot_count=shot_count,
 		generation_mode=generation_mode,
 		workflow_input_contract=workflow_input_contract,
+		total_video_duration=total_video_duration,
 	)
 	return result
 
@@ -384,6 +386,7 @@ def _validate_video_plan(
 	shot_count=None,
 	generation_mode="Multi-shot",
 	workflow_input_contract=None,
+	total_video_duration=None,
 ):
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		frappe.throw(_("Qwen video plan must contain a shots list."))
@@ -409,7 +412,7 @@ def _validate_video_plan(
 			duration_seconds = float(shot["duration_seconds"])
 		except (KeyError, TypeError, ValueError):
 			frappe.throw(_("Every Qwen shot must contain a numeric duration_seconds."))
-		if duration_seconds <= 0:
+		if not math.isfinite(duration_seconds) or duration_seconds <= 0:
 			frappe.throw(_("Shot duration must be greater than zero."))
 		normalized = {
 			"shot_number": shot["shot_number"],
@@ -449,6 +452,21 @@ def _validate_video_plan(
 					frappe.throw(_("Invalid reference image index."))
 				normalized[fieldname] = image_index
 		normalized_shots.append(normalized)
+	if total_video_duration is not None:
+		target_duration = float(total_video_duration)
+		plan_duration = sum(shot["duration_seconds"] for shot in normalized_shots)
+		if not math.isfinite(target_duration) or target_duration <= 0 or plan_duration <= 0:
+			frappe.throw(_("Video plan duration must be a positive finite number."))
+		scale = target_duration / plan_duration
+		for shot in normalized_shots[:-1]:
+			shot["duration_seconds"] *= scale
+		if normalized_shots:
+			shot_duration = target_duration - sum(
+				shot["duration_seconds"] for shot in normalized_shots[:-1]
+			)
+			if shot_duration <= 0 or not math.isfinite(shot_duration):
+				frappe.throw(_("Video plan durations must sum to the requested duration."))
+			normalized_shots[-1]["duration_seconds"] = shot_duration
 
 	if generation_mode == "Multi-shot" and reference_image_count and all(
 		"first_frame_reference_image_index" in shot and "last_frame_reference_image_index" in shot

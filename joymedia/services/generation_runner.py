@@ -63,6 +63,7 @@ def prepare_generation_task(job_name: str, input_snapshot=None):
 	for input_role, asset_versions in snapshot.items():
 		for asset_version in asset_versions if isinstance(asset_versions, list) else [asset_versions]:
 			job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
+	job.inputs_frozen = 1
 	job.status = "Ready"
 	job.save(ignore_permissions=True)
 	return {
@@ -89,7 +90,17 @@ def ensure_generation_inputs(job):
 	"""Ensure the Job owns its frozen static input snapshot."""
 	if not isinstance(job, Document):
 		return False
+	if job.inputs_frozen:
+		return True
 	if job.get("inputs"):
+		job.inputs_frozen = 1
+		job.save(ignore_permissions=True)
+		return True
+	if job.depends_on_task:
+		# A continuation task may intentionally have no static inputs; its first
+		# frame is resolved from the dependency at attempt submission time.
+		job.inputs_frozen = 1
+		job.save(ignore_permissions=True)
 		return True
 	if frappe.db.exists("Generation Attempt", {"generation_task": job.name}):
 		frappe.throw(
@@ -102,6 +113,7 @@ def ensure_generation_inputs(job):
 	for input_role, asset_versions in snapshot.items():
 		for asset_version in asset_versions if isinstance(asset_versions, list) else [asset_versions]:
 			job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
+	job.inputs_frozen = 1
 	job.save(ignore_permissions=True)
 	return True
 

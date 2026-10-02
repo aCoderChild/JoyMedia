@@ -45,3 +45,4 @@ joymedia.patches.repair_legacy_generated_assets
 joymedia.patches.register_minimax_h3_workflows
 joymedia.patches.register_corrected_minimax_h3_r2v
 joymedia.patches.register_minimax_h3_ref2va_v2
+joymedia.patches.register_minimax_h3_ref2va_v3
