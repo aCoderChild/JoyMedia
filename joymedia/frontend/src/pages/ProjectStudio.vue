@@ -69,6 +69,8 @@
             :preview-selection="previewSelection"
             :timeline-total-seconds="playerTotalSeconds"
             :current-timeline-position-label="currentTimelinePositionLabel"
+            :playhead-frame="playheadFrame"
+            :total-frames="timeline?.total_frames || 0"
             :is-playing="isPlaying"
             :is-production-active="isProductionActive"
             :production="currentRun"
@@ -86,10 +88,8 @@
             @pause="isPlaying = false"
             @loadedmetadata="onPreviewLoadedMetadata"
             @timeupdate="onVideoTimeUpdate"
-            @jump-to-next-keyframe="jumpToNextShot"
-            @jump-to-prev-keyframe="jumpToPrevShot"
-            @select-full-video="previewSelection = 'full'"
-            @select-clip="previewSelection = 'clip'"
+            @seek-frame="onSeekPlayhead"
+            @step-frame="stepPlayhead"
             @select-shot-target="onSelectShot"
             @retry-failed-scenes="handleGenerationRetry"
             @refresh="fetchWorkspace"
@@ -441,7 +441,7 @@ const {
 const studioPreviewRef = ref(null);
 const mediaDrawerOpen = ref(false);
 const isPlaying = ref(false);
-const previewSelection = ref("shot"); // "shot" | "full" | "clip"
+const previewSelection = ref("shot"); // "master" | "shot" | "clip-source"
 const mediaPickerFilter = ref("All");
 
 // Automatically transition to Edit mode only when an active generation run finishes
@@ -780,15 +780,20 @@ function onVideoTimeUpdate(payload) {
 }
 
 function onSeekPlayhead(frame) {
-  playheadFrame.value = frame;
-  const currentFps = fps.value || 24;
-  const seekTime = frame / currentFps;
+	const totalFrames = Number(timeline.value?.total_frames || 0);
+	playheadFrame.value = Math.max(0, Math.min(totalFrames || frame, Math.round(frame)));
+	const currentFps = fps.value || 24;
+	const seekTime = playheadFrame.value / currentFps;
 
   if (finalVideo.value?.file && studioPreview.value?.type === "master") {
     seekPreview(seekTime);
   }
 
-  syncActiveSceneFromFrame(frame);
+	syncActiveSceneFromFrame(playheadFrame.value);
+}
+
+function stepPlayhead(delta) {
+	onSeekPlayhead(playheadFrame.value + Number(delta || 0));
 }
 
 function jumpToNextShot() {
@@ -817,16 +822,12 @@ function onSelectAssetTarget(asset) {
   inspectorOpen.value = true;
 }
 
-function onSelectClip(clip) {
+function onSelectClip(clip, sourceFrame = null) {
   selectedClipName.value = clip.name;
   inspectorOpen.value = true;
 
-  if (finalVideo.value?.file) {
-    previewSelection.value = "master";
-    const clipStartFrame = clip.timeline_start_frame || 0;
-    const currentFps = fps.value || 24;
-    playheadFrame.value = clipStartFrame;
-    seekPreview(clipStartFrame / currentFps);
+	if (finalVideo.value?.file) {
+		previewSelection.value = "master";
 
     if (clip.shot_number) {
       const idx = storyboardShots.value.findIndex(
@@ -834,9 +835,9 @@ function onSelectClip(clip) {
       );
       if (idx >= 0) selectedShotIndex.value = idx;
     }
-  } else {
-    previewSelection.value = "clip";
-  }
+	} else {
+		previewSelection.value = "clip-source";
+	}
 }
 
 function onSetKeyframeFromPicker(asset) {

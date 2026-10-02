@@ -88,7 +88,7 @@
             @dragstart="onDragStart(clip, $event)"
             @dragover.prevent
             @drop.prevent="onDrop(index)"
-            @click="onSelectClip(clip)"
+            @click="seekInsideClip(clip, $event)"
           >
             <button
               type="button"
@@ -267,7 +267,19 @@ function transitionTitle(clip) {
 }
 
 function onSelectClip(clip, sourceFrame = null) {
-  emit("select-clip", clip, sourceFrame);
+	emit("select-clip", clip, sourceFrame);
+}
+
+function seekInsideClip(clip, event) {
+	const rect = event.currentTarget.getBoundingClientRect();
+	const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+	const localFrame = Math.min(
+		Math.max(0, clip.duration_frames - 1),
+		Math.floor(ratio * clip.duration_frames)
+	);
+	const timelineFrame = clip.timeline_start_frame + localFrame;
+	emit("update:playhead-frame", timelineFrame);
+	onSelectClip(clip, clip.source_in_frame + localFrame);
 }
 
 function onSelectTransition(clip) {

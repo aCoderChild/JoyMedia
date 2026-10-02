@@ -2,6 +2,7 @@
   <div class="flex flex-col items-center w-full">
     <!-- Viewport Container with CapCut dark canvas border -->
     <div
+      ref="viewport"
       class="gflow-viewport w-full max-w-[760px] max-h-[41vh] bg-black/90 rounded-2xl overflow-hidden relative flex items-center justify-center border border-outline-border shadow-2xl transition-all"
       :class="{
         'ratio-landscape': settingsFormat === 'Landscape',
@@ -24,7 +25,7 @@
         <span v-else-if="selectedTarget === 'keyframe-end' && activeSelectedShot">
           ◆ {{ currentLang === 'vi' ? 'Khung cuối (Out)' : 'End Frame' }} · {{ t('shot_n', { n: activeSelectedShot.shot_number }) }}
         </span>
-        <span v-else-if="previewSelection === 'full'">
+        <span v-else-if="previewSelection === 'master'">
           🎬 {{ currentLang === 'vi' ? 'Toàn bộ video' : 'Full Video' }} · 00:00–{{ formatSecondsLabel(timelineTotalSeconds) }}
         </span>
         <span v-else-if="activeSelectedShot">
@@ -63,6 +64,7 @@
         ref="previewVideo"
         :key="studioPreview.type === 'clip' ? `${studioPreview.clip?.name}-${studioPreview.url}` : studioPreview.url"
         :src="studioPreview.url"
+        :muted="isMuted"
         class="w-full h-full object-contain"
         preload="metadata"
         playsinline
@@ -130,16 +132,14 @@
       :active-selected-shot="activeSelectedShot"
       :current-lang="currentLang"
       :current-timeline-position-label="currentTimelinePositionLabel"
-      :final-video="finalVideo"
       :is-playing="isPlaying"
-      :preview-selection="previewSelection"
-      :selected-shot-index="selectedShotIndex"
+      :is-muted="isMuted"
+      :playhead-frame="playheadFrame"
+      :total-frames="totalFrames"
       :timeline-total-seconds="timelineTotalSeconds"
       @fullscreen="requestFullscreen"
-      @next-shot="$emit('jumpToNextKeyframe')"
-      @previous-shot="$emit('jumpToPrevKeyframe')"
-      @select-full-video="$emit('selectFullVideo')"
-      @select-shot-target="$emit('selectShotTarget', activeSelectedShot, selectedShotIndex)"
+      @seek-frame="$emit('seekFrame', $event)"
+      @step-frame="$emit('stepFrame', $event)"
       @toggle-mute="toggleMute"
       @toggle-play-pause="$emit('togglePlayPause')"
     />
@@ -154,6 +154,8 @@ import PlaybackTransport from "./PlaybackTransport.vue";
 const { t } = useI18n();
 
 const previewVideo = ref(null);
+const viewport = ref(null);
+const isMuted = ref(false);
 
 const props = defineProps({
   studioMode: { type: String, default: "scene" },
@@ -163,7 +165,9 @@ const props = defineProps({
   activeSelectedShot: { type: Object, default: null },
   selectedClip: { type: Object, default: null },
   selectedShotFrame: { type: Object, default: null },
-  previewSelection: { type: String, default: "full" },
+  previewSelection: { type: String, default: "master" },
+  playheadFrame: { type: Number, default: 0 },
+  totalFrames: { type: Number, default: 0 },
   timelineTotalSeconds: { type: Number, default: 0 },
   currentTimelinePositionLabel: { type: String, default: "00:00" },
   isPlaying: { type: Boolean, default: false },
@@ -197,6 +201,8 @@ const emit = defineEmits([
   "retryFailedScenes",
   "refresh",
   "openMediaPicker",
+  "seekFrame",
+  "stepFrame",
 ]);
 
 watch(
@@ -263,11 +269,12 @@ function completedShotCount(production) {
 }
 
 function toggleMute() {
-  if (previewVideo.value) previewVideo.value.muted = !previewVideo.value.muted;
+	isMuted.value = !isMuted.value;
+	if (previewVideo.value) previewVideo.value.muted = isMuted.value;
 }
 
 function requestFullscreen() {
-  previewVideo.value?.requestFullscreen?.();
+	viewport.value?.requestFullscreen?.();
 }
 
 defineExpose({

@@ -8,7 +8,7 @@
           <span>{{ currentLang === 'vi' ? 'Trình dựng Video (Edit Timeline)' : 'Edit Timeline' }}</span>
         </span>
         <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-indigo-400 border border-outline-border font-bold">
-          {{ activeVideoClips.length }} {{ currentLang === 'vi' ? 'Video Clips' : 'Video Clips' }} · {{ activeAudioClips.length }} {{ currentLang === 'vi' ? 'Audio' : 'Audio' }} · {{ totalSeconds?.toFixed(1) || 0 }}s
+          {{ activeVideoClips.length }} {{ currentLang === 'vi' ? 'Video Clips' : 'Video Clips' }} · {{ activeAudioClips.length }} {{ currentLang === 'vi' ? 'Audio clips đã thêm' : 'added audio clips' }} · {{ totalSeconds?.toFixed(1) || 0 }}s
         </span>
       </div>
 
@@ -43,7 +43,7 @@
           :total-frames="totalFrames"
           :total-seconds="totalSeconds"
           :current-lang="currentLang"
-          @select-clip="$emit('selectClip', $event)"
+          @select-clip="forwardSelectClip"
           @update:playhead-frame="$emit('update:playheadFrame', $event)"
           @trim="$emit('trim', $event)"
           @split="$emit('split', $event)"
@@ -293,4 +293,8 @@ const sfxClips = computed(() => {
 const musicClips = computed(() => {
   return activeAudioClips.value.filter((clip) => clip.audio_role !== "Voiceover" && clip.audio_role !== "SFX");
 });
+
+function forwardSelectClip(...args) {
+  emit("selectClip", ...args);
+}
 </script>
