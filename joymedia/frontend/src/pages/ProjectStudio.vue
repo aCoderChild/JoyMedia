@@ -193,6 +193,8 @@
             :total-duration-seconds="videoSettings.duration || 15"
             :has-storyboard="Boolean(storyboardShots.length)"
             :is-generating="isGenerating || isProductionActive"
+            :generation-phase="generationPhase"
+            :sync-error="syncError"
             :is-revising="isRevising"
             :expected-shot-count="storyboardShots.length || currentRun?.total_tasks || 0"
             :production="currentRun"
@@ -479,7 +481,7 @@ async function refreshStudioGenerationState(snapshot = null) {
 const studioPreviewRef = ref(null);
 const mediaDrawerOpen = ref(false);
 const isPlaying = ref(false);
-const previewSelection = ref("shot"); // "master" | "shot" | "clip-source"
+const previewSelection = ref("master"); // "master" | "shot" | "clip-source"
 const mediaPickerFilter = ref("All");
 const addScenePopoverOpen = ref(false);
 const addSceneAfterShot = ref(null);
@@ -645,19 +647,6 @@ const studioPreview = computed(() => {
       isVideo: true,
       title: `Source: Clip ${selectedClip.value.clip_order || 1}`,
     };
-  }
-
-  // Explicit shot preview from the Storyboard play button.
-  if (previewSelection.value === "shot" && activeSelectedShot.value) {
-    const vid = getShotVideoFile(activeSelectedShot.value);
-    if (vid) {
-      return {
-        type: "shot",
-        url: vid,
-        isVideo: true,
-        title: `Shot ${activeSelectedShot.value.shot_number}`,
-      };
-    }
   }
 
   // 3. PERSISTENT MASTER/FINAL VIDEO (OpenSlop unified player model)
