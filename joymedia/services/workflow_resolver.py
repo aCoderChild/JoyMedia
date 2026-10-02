@@ -67,7 +67,7 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 			continue
 		node["inputs"][binding.input_name] = value
 
-	adapter = get_workflow_adapter(workflow)
+	adapter = get_workflow_adapter(workflow_version)
 	width = run_snapshot.get("delivery_width")
 	height = run_snapshot.get("delivery_height")
 	if not width or not height:
@@ -85,7 +85,7 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 
 	if any(
 		binding.binding_key == "last_frame" and not staged_inputs.get("last_frame")
-		for binding in workflow.bindings
+		for binding in workflow_version.bindings
 	):
 		adapter_inputs = {
 			role: values[0] if isinstance(values, list) and len(values) == 1 else values
