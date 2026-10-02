@@ -203,6 +203,8 @@
             :get-shot-video-file="getShotVideoFile"
             :get-shot-first-frame="getShotFirstFrame"
             @select-shot="onSelectShot"
+            @preview-shot="previewStoryboardShot"
+            @edit-shot="editStoryboardShot"
             @select-keyframe="onSelectKeyframe"
             @change-shot-duration="changeShotDuration"
             @toggle-continuity-mode="toggleContinuityMode"
@@ -316,7 +318,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { call, toast } from "frappe-ui";
 import { useSession } from "../stores/session";
@@ -595,6 +597,19 @@ const studioPreview = computed(() => {
     };
   }
 
+  // Explicit shot preview from the Storyboard play button.
+  if (previewSelection.value === "shot" && activeSelectedShot.value) {
+    const vid = getShotVideoFile(activeSelectedShot.value);
+    if (vid) {
+      return {
+        type: "shot",
+        url: vid,
+        isVideo: true,
+        title: `Shot ${activeSelectedShot.value.shot_number}`,
+      };
+    }
+  }
+
   // 3. PERSISTENT MASTER/FINAL VIDEO (OpenSlop unified player model)
   // When final/master video exists, IT IS THE PERSISTENT PLAYER
   if (finalVideo.value?.file) {
@@ -744,7 +759,7 @@ function syncActiveSceneFromFrame(frame) {
 function onSelectShot(shot, index) {
   selectedShotIndex.value = index;
   selectedTarget.value = "shot";
-  inspectorOpen.value = true;
+  inspectorOpen.value = false;
 
   const currentFps = fps.value || 24;
 
@@ -760,6 +775,22 @@ function onSelectShot(shot, index) {
     playheadFrame.value = 0;
     studioPreviewRef.value?.seek(0);
   }
+}
+
+async function previewStoryboardShot(shot, index) {
+  onSelectShot(shot, index);
+  previewSelection.value = "shot";
+  playheadFrame.value = 0;
+  isPlaying.value = false;
+  await nextTick();
+  seekPreview(0);
+  isPlaying.value = true;
+}
+
+function editStoryboardShot(shot, index) {
+  selectedShotIndex.value = index;
+  selectedTarget.value = "shot";
+  inspectorOpen.value = true;
 }
 
 function onVideoTimeUpdate(payload) {

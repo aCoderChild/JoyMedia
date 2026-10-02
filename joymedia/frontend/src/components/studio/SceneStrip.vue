@@ -94,9 +94,23 @@
               :media-type="getShotVideoFile(shot) ? 'Video' : 'Image'"
               :poster="getShotFirstFrame(shot)?.file || shot.last_frame_image"
               :alt="`Shot ${shot.shot_number}`"
-              :duration="estimateShotDuration(shot)"
+              :show-play-overlay="false"
               aspect="aspect-video"
             />
+
+            <button
+              v-if="getShotVideoFile(shot)"
+              type="button"
+              class="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
+              :aria-label="currentLang === 'vi' ? `Phát cảnh ${shot.shot_number}` : `Preview Scene ${shot.shot_number}`"
+              @click.stop="$emit('previewShot', shot, index)"
+            >
+              <span class="size-9 rounded-full bg-white/90 flex items-center justify-center text-indigo-600 shadow-md hover:scale-110 transition-transform">
+                <svg class="size-4 fill-current ml-0.5" viewBox="0 0 24 24" aria-hidden="true">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+              </span>
+            </button>
 
             <!-- In-progress state overlay -->
             <div
@@ -134,7 +148,7 @@
               type="button"
               class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-surface-hover flex items-center gap-1 cursor-pointer transition-colors"
               :title="currentLang === 'vi' ? 'Chỉnh sửa cảnh' : 'Edit Scene'"
-              @click.stop="$emit('selectShot', shot, index)"
+              @click.stop="$emit('editShot', shot, index)"
             >
               <span>⋯</span>
               <span>{{ currentLang === 'vi' ? 'Sửa' : 'Edit' }}</span>
@@ -180,6 +194,8 @@ const props = defineProps({
 
 const emit = defineEmits([
   "selectShot",
+  "previewShot",
+  "editShot",
   "selectKeyframe",
   "changeShotDuration",
   "toggleContinuityMode",

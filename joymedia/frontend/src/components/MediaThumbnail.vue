@@ -25,7 +25,7 @@
       />
       <!-- Play overlay icon -->
       <div class="absolute inset-0 z-10 flex items-center justify-center bg-black/25 group-hover:bg-black/35 transition-colors pointer-events-none">
-        <div class="size-8 sm:size-9 rounded-full bg-white/90 dark:bg-zinc-900/90 flex items-center justify-center text-indigo-600 shadow-md group-hover:scale-110 transition-transform">
+        <div v-if="showPlayOverlay" class="size-8 sm:size-9 rounded-full bg-white/90 dark:bg-zinc-900/90 flex items-center justify-center text-indigo-600 shadow-md group-hover:scale-110 transition-transform">
           <svg class="size-4 fill-current ml-0.5" viewBox="0 0 24 24">
             <polygon points="5 3 19 12 5 21 5 3" />
           </svg>
@@ -96,6 +96,7 @@ const props = defineProps({
   badge: { type: String, default: "" },
   contain: { type: Boolean, default: false },
   selected: { type: Boolean, default: false },
+  showPlayOverlay: { type: Boolean, default: true },
   customClass: { type: String, default: "" },
 });
 
