@@ -14,14 +14,13 @@
           :key="asset.asset_version || asset.name"
           type="button"
           class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface-muted hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer shrink-0 text-ink-primary group"
-          :title="currentLang === 'vi' ? `Chèn @${getCleanKey(asset)} vào prompt` : `Insert @${getCleanKey(asset)} into prompt`"
+          :title="currentLang === 'vi' ? `Chèn @${asset.asset_name} vào mô tả` : `Insert @${asset.asset_name} into prompt`"
           @click="insertReferenceTag(asset)"
         >
           <span class="text-xs">{{ getRoleIcon(asset.reference_role || asset.asset_category) }}</span>
-          <span class="font-bold truncate max-w-[120px]">{{ asset.asset_name }}</span>
-          <span class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-surface-card text-indigo-400 font-bold border border-outline-border">
-            @{{ getCleanKey(asset) }}
-          </span>
+          <span class="text-[11px] text-indigo-400 font-bold">@</span>
+          <span class="font-semibold truncate max-w-[130px]">{{ asset.asset_name }}</span>
+          <span class="text-[10px] text-ink-muted capitalize">· {{ asset.reference_role || asset.asset_category || 'Reference' }}</span>
         </button>
       </template>
 

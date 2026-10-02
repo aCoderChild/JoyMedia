@@ -1978,17 +1978,22 @@ h2 {
 }
 
 .studio-media-drawer {
-  position: absolute;
-  z-index: 30;
-  top: 0;
-  bottom: 0;
-  left: 56px;
-  width: 260px;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface-ground);
-  border-right: 1px solid var(--outline-border);
-  box-shadow: 12px 0 30px rgba(0, 0, 0, 0.18);
+  position: relative;
+  flex: 0 0 270px;
+  width: 270px;
+  height: 100%;
+  min-width: 270px;
+}
+
+@media (max-width: 900px) {
+  .studio-media-drawer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 40;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.18);
+  }
 }
 
 .icon-button {

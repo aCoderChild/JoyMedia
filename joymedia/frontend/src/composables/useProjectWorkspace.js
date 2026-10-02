@@ -64,9 +64,11 @@ export function useProjectWorkspace(projectName) {
   async function saveVideoSettings(settingsPayload) {
     savingSettings.value = true;
     try {
+      const totalDurationSeconds =
+        settingsPayload.total_duration_seconds ?? settingsPayload.duration;
       await call("joymedia.joymedia.doctype.media_project.media_project.save_project_video_settings", {
         project_name: project(),
-        total_duration_seconds: settingsPayload.total_duration_seconds,
+        total_duration_seconds: totalDurationSeconds,
         delivery_preset: settingsPayload.delivery_preset,
         video_style: settingsPayload.video_style || null,
         generation_mode: settingsPayload.generation_mode || "Multi-shot",

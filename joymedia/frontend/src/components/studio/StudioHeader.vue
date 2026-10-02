@@ -48,39 +48,7 @@
       </div>
     </div>
 
-    <!-- Center: Studio Mode Switch (Scenes | Edit) -->
-    <div class="flex items-center p-0.5 rounded-xl bg-surface-muted border border-outline-border text-xs">
-      <button
-        type="button"
-        class="px-3.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
-        :class="studioMode === 'scene'
-          ? 'bg-indigo-600 text-white shadow-xs'
-          : 'text-ink-secondary hover:text-ink-primary'"
-        @click="$emit('update:studioMode', 'scene')"
-      >
-        <span>▤</span>
-        <span>Scenes</span>
-      </button>
-
-      <button
-        type="button"
-        class="px-3.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
-        :class="[
-          studioMode === 'edit'
-            ? 'bg-indigo-600 text-white shadow-xs'
-            : 'text-ink-secondary hover:text-ink-primary',
-          { 'opacity-50 cursor-not-allowed': !timelineReady }
-        ]"
-        :disabled="!timelineReady"
-        :title="!timelineReady ? (currentLang === 'vi' ? 'Cần tạo video xong để mở trình chỉnh sửa Edit' : 'Generate video to enable Edit mode') : ''"
-        @click="$emit('update:studioMode', 'edit')"
-      >
-        <span>✂</span>
-        <span>Edit</span>
-      </button>
-    </div>
-
-    <!-- Right: Media Drawer Toggle + Export Button (in Edit mode) + Language + User Avatar -->
+    <!-- Right: Media Drawer Toggle + Export Button + Language + User Avatar -->
     <div class="flex items-center gap-2">
       <!-- Media Drawer Quick Toggle -->
       <button
@@ -100,26 +68,25 @@
         </span>
       </button>
 
-      <!-- In Edit Mode: Export Button -->
-      <template v-if="studioMode === 'edit'">
-        <button
-          type="button"
-          class="jm-btn-primary !py-1 !px-3 text-xs flex items-center gap-1.5 shadow-sm transition-all"
-          :class="{
-            '!bg-emerald-600 hover:!bg-emerald-500': !hasUnexportedEdits && !isExporting && currentOutputAssetVersion
-          }"
-          :disabled="isExporting"
-          @click="$emit('exportTimeline')"
-        >
-          <span v-if="isExporting" class="lucide-refresh-cw size-3 animate-spin" />
-          <span v-else>💾</span>
-          <span>
-            {{ isExporting
-              ? (currentLang === 'vi' ? 'Đang xuất video...' : 'Exporting...')
-              : (currentLang === 'vi' ? 'Xuất video' : 'Export video') }}
-          </span>
-        </button>
-      </template>
+      <!-- Export Button (when timeline / video is ready) -->
+      <button
+        v-if="timelineReady"
+        type="button"
+        class="jm-btn-primary !py-1 !px-3 text-xs flex items-center gap-1.5 shadow-sm transition-all"
+        :class="{
+          '!bg-emerald-600 hover:!bg-emerald-500': !hasUnexportedEdits && !isExporting && currentOutputAssetVersion
+        }"
+        :disabled="isExporting"
+        @click="$emit('exportTimeline')"
+      >
+        <span v-if="isExporting" class="lucide-refresh-cw size-3 animate-spin" />
+        <span v-else>💾</span>
+        <span>
+          {{ isExporting
+            ? (currentLang === 'vi' ? 'Đang xuất video...' : 'Exporting...')
+            : (currentLang === 'vi' ? 'Xuất video' : 'Export') }}
+        </span>
+      </button>
 
       <!-- Language Switcher -->
       <button

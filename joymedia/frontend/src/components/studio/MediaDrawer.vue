@@ -1,91 +1,94 @@
 <template>
   <aside class="studio-media-drawer flex flex-col h-full bg-surface-card border-r border-outline-border w-[270px] shrink-0 select-none z-20">
     <!-- Drawer Header -->
-    <div class="flex items-center justify-between border-b border-outline-border px-4 py-3 bg-surface-muted/60">
+    <div class="flex items-center justify-between border-b border-outline-border px-3.5 py-2.5 bg-surface-muted/60">
       <div class="min-w-0">
         <h2 class="text-xs font-bold text-ink-primary uppercase tracking-wider flex items-center gap-1.5">
           <span>▧</span>
-          <span>{{ currentLang === 'vi' ? 'Tư liệu Dự án' : 'Project Media' }}</span>
+          <span>{{ currentLang === 'vi' ? 'Tư liệu' : 'Project Media' }}</span>
         </h2>
-        <p class="text-[11px] text-ink-muted mt-0.5 truncate">
-          {{ projectAssets.length }} {{ currentLang === 'vi' ? 'tư liệu được chọn' : 'selected ingredients' }}
+        <p class="text-[10px] text-ink-muted mt-0.5 truncate">
+          {{ projectAssets.length }} {{ currentLang === 'vi' ? 'tư liệu' : 'ingredients' }}
         </p>
       </div>
-      <button
-        type="button"
-        class="text-ink-muted hover:text-ink-primary p-1 rounded-lg hover:bg-surface-hover cursor-pointer transition-colors"
-        @click="$emit('close')"
-      >
-        ✕
-      </button>
+
+      <div class="flex items-center gap-1">
+        <!-- Compact + Button in Header -->
+        <button
+          type="button"
+          class="p-1 rounded-lg text-ink-secondary hover:text-indigo-400 hover:bg-surface-hover cursor-pointer transition-colors"
+          :title="currentLang === 'vi' ? 'Thêm tư liệu' : 'Add reference'"
+          @click="$emit('openMediaPicker')"
+        >
+          <span class="text-base font-bold leading-none">+</span>
+        </button>
+
+        <button
+          type="button"
+          class="text-ink-muted hover:text-ink-primary p-1 rounded-lg hover:bg-surface-hover cursor-pointer transition-colors"
+          :title="currentLang === 'vi' ? 'Đóng' : 'Close'"
+          @click="$emit('close')"
+        >
+          ✕
+        </button>
+      </div>
     </div>
 
-    <!-- Assets List -->
-    <div class="flex-1 overflow-y-auto p-3 space-y-2">
-      <div v-if="projectAssets.length" class="grid grid-cols-2 gap-2">
+    <!-- Assets List: Compact Horizontal Ingredient Rows -->
+    <div class="flex-1 overflow-y-auto p-2.5 space-y-1.5">
+      <div v-if="projectAssets.length" class="space-y-1.5">
         <div
           v-for="asset in projectAssets"
           :key="asset.asset_version || asset.name"
-          class="group relative rounded-xl border text-left transition-all overflow-hidden cursor-pointer"
+          class="group relative flex items-center gap-2.5 p-1.5 rounded-xl border transition-all cursor-pointer"
           :class="[
             selectedAsset?.asset_version === asset.asset_version
-              ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/30'
-              : 'border-outline-border bg-surface-muted hover:border-indigo-400'
+              ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500/30'
+              : 'border-outline-border bg-surface-muted/60 hover:bg-surface-hover hover:border-indigo-400/50'
           ]"
           @click="$emit('selectAsset', asset)"
         >
-          <!-- Media Thumbnail -->
-          <MediaThumbnail
-            :src="asset.file"
-            :media-type="asset.media_type"
-            :alt="asset.asset_name"
-            :duration="asset.duration_seconds"
-            :badge="asset.reference_role || asset.asset_category"
-            aspect="aspect-square"
-          />
+          <!-- Thumbnail: 44px square -->
+          <div class="size-11 rounded-lg overflow-hidden shrink-0 bg-surface-base border border-outline-border relative">
+            <MediaThumbnail
+              :src="asset.file"
+              :media-type="asset.media_type"
+              :alt="asset.asset_name"
+              :duration="asset.duration_seconds"
+              aspect="aspect-square"
+            />
+          </div>
 
-          <!-- Asset Info -->
-          <div class="p-2">
-            <span class="block truncate text-[11px] font-semibold text-ink-primary" :title="asset.asset_name">
+          <!-- Name & Role -->
+          <div class="min-w-0 flex-1">
+            <span class="block truncate text-xs font-semibold text-ink-primary" :title="asset.asset_name">
               {{ asset.asset_name }}
             </span>
-            <div class="flex items-center justify-between text-[10px] text-ink-muted mt-0.5">
-              <span class="truncate font-medium text-indigo-400">
-                {{ formatRole(asset.reference_role || asset.asset_category) }}
-              </span>
-              <button
-                type="button"
-                class="opacity-0 group-hover:opacity-100 text-rose-400 hover:text-rose-300 p-0.5 rounded cursor-pointer transition-opacity"
-                :title="currentLang === 'vi' ? 'Bỏ tư liệu này' : 'Remove reference'"
-                @click.stop="$emit('removeAsset', asset)"
-              >
-                ✕
-              </button>
-            </div>
+            <span class="block text-[10px] text-ink-muted capitalize">
+              {{ formatRole(asset.reference_role || asset.asset_category) }}
+            </span>
           </div>
+
+          <!-- Remove hover button -->
+          <button
+            type="button"
+            class="opacity-0 group-hover:opacity-100 text-ink-muted hover:text-rose-400 p-1 rounded-md hover:bg-surface-card cursor-pointer transition-all shrink-0"
+            :title="currentLang === 'vi' ? 'Bỏ tư liệu này' : 'Remove reference'"
+            @click.stop="$emit('removeAsset', asset)"
+          >
+            ✕
+          </button>
         </div>
       </div>
 
       <!-- Empty State -->
-      <div v-else class="py-12 text-center text-xs text-ink-muted px-3">
-        <span class="text-3xl block mb-2 opacity-50">📂</span>
+      <div v-else class="py-10 text-center text-xs text-ink-muted px-3">
+        <span class="text-2xl block mb-1.5 opacity-50">📂</span>
         <p class="font-semibold text-ink-primary">{{ currentLang === 'vi' ? 'Chưa có tư liệu nào' : 'No references added yet' }}</p>
         <p class="mt-1 text-[11px]">
-          {{ currentLang === 'vi' ? 'Thêm hình ảnh sản phẩm, nhân vật hoặc phong cách để AI sử dụng.' : 'Add product, character, or style media to guide video generation.' }}
+          {{ currentLang === 'vi' ? 'Bấm nút + ở trên để thêm hình ảnh hoặc video tham chiếu.' : 'Click + above to add reference media.' }}
         </p>
       </div>
-    </div>
-
-    <!-- Drawer Footer Actions -->
-    <div class="border-t border-outline-border p-3 bg-surface-muted/40 space-y-2">
-      <button
-        type="button"
-        class="jm-btn-primary w-full text-xs !py-2 flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-        @click="$emit('openMediaPicker')"
-      >
-        <span>+</span>
-        <span>{{ currentLang === 'vi' ? 'Thêm tư liệu tham chiếu' : 'Add Reference Media' }}</span>
-      </button>
     </div>
   </aside>
 </template>

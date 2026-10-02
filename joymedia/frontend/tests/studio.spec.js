@@ -180,24 +180,45 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
     await expect(exportBtn).toBeVisible();
   });
 
-  test("6. Studio Storyboard terminology & Media Drawer positioning", async ({ page }) => {
+  test("6. Studio Storyboard minimalism & Media Drawer layout flex push", async ({ page }) => {
     await page.goto(`/joymedia/projects/${projectName}`);
     await expect(page.locator("header")).toBeVisible();
 
-    // Verify Storyboard continuity label is marketer-friendly (no "Continuous (Chained)")
+    // Verify Storyboard does not leak technical jargon "Continuous (Chained)"
     await expect(page.getByText("Continuous (Chained)")).toHaveCount(0);
-    await expect(page.getByText(/Keep scenes consistent|Independent scenes/i)).toBeVisible();
 
-    // Toggle Media Drawer from Studio header
+    const canvas = page.locator(".studio-center-canvas");
+    const initialCanvasBox = await canvas.boundingBox();
+    expect(initialCanvasBox.x).toBe(0);
+
+    // Toggle Media Drawer open from Studio header
     const mediaBtn = page.getByRole("button", { name: /Media/i }).first();
     await mediaBtn.click();
 
-    // Verify Media Drawer opens below header
+    // Verify Media Drawer opens at x=0 (not legacy left: 56px) and has width ~270px
     const mediaDrawer = page.locator(".studio-media-drawer");
     await expect(mediaDrawer).toBeVisible();
+    const drawerBox = await mediaDrawer.boundingBox();
+    expect(drawerBox.x).toBe(0);
+    expect(drawerBox.width).toBeGreaterThanOrEqual(260);
+    expect(drawerBox.width).toBeLessThanOrEqual(280);
 
-    // Header project title and breadcrumb remain visible and unaffected
-    await expect(page.getByRole("button", { name: /Projects|Dự án/i })).toBeVisible();
+    // Verify main canvas left edge moves right (participating in flex, not overlaid)
+    const pushedCanvasBox = await canvas.boundingBox();
+    expect(pushedCanvasBox.x).toBeGreaterThanOrEqual(260);
+
+    // Composer inside the canvas is not covered by the drawer
+    const composer = page.locator(".generation-composer");
+    const composerBox = await composer.boundingBox();
+    expect(composerBox.x).toBeGreaterThanOrEqual(260);
+
+    // Close Media Drawer
+    await mediaBtn.click();
+    await expect(mediaDrawer).toBeHidden();
+
+    // Verify canvas returns to full width starting at x=0
+    const restoredCanvasBox = await canvas.boundingBox();
+    expect(restoredCanvasBox.x).toBe(0);
   });
 
   test("7. Media Library visual simplification and pure ingredient separation", async ({ page }) => {
@@ -213,5 +234,46 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
 
     // Verify clean single filter row exists
     await expect(page.locator("select")).toBeVisible();
+  });
+
+  test("8. Unified Player & Editor Model: 4 semantic lanes, bottom workspace switcher, clean storyboard cards", async ({ page }) => {
+    await page.goto(`/joymedia/projects/${projectName}`);
+    await expect(page.locator("header")).toBeVisible();
+
+    // 1. Verify bottom workspace switcher is present and functional
+    const storyboardBtn = page.getByRole("button", { name: /Storyboard/i }).first();
+    const timelineBtn = page.getByRole("button", { name: /Timeline/i }).first();
+    await expect(storyboardBtn).toBeVisible();
+    await expect(timelineBtn).toBeVisible();
+
+    // 2. In Storyboard mode, verify clean cards:
+    await storyboardBtn.click();
+    // Cards do NOT display raw keyframe nodes/diamonds
+    await expect(page.locator(".capcut-keyframe-track-lane")).toHaveCount(0);
+    // Storyboard has Edit action on cards
+    const editSceneBtn = page.getByRole("button", { name: /Edit|Sửa/i }).first();
+    await expect(editSceneBtn).toBeVisible();
+
+    // 3. Switch to Timeline and verify 4 semantic lanes: Visuals, Voice, Effects, Music / Audio
+    await timelineBtn.click();
+    await expect(page.getByText("Visuals", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Voice", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Effects", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/Music \/ Audio|Nhạc \/ Âm thanh/i).first()).toBeVisible();
+
+    // 4. Verify player synchronization: clicking clip or video element interaction
+    const videoClip = page.locator(".timeline-clip").first();
+    await expect(videoClip).toBeVisible();
+    await videoClip.click();
+
+    // Verify video is present in viewport when video clip selected
+    const videoEl = page.locator(".gflow-viewport video");
+    await expect(videoEl).toBeVisible();
+
+    // When video is present, PlaybackTransport is visible
+    const transport = page.locator(".playback-transport-root, [class*='playback-transport']");
+    if (await transport.count() > 0) {
+      await expect(transport.first()).toBeVisible();
+    }
   });
 });

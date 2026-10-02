@@ -19,14 +19,15 @@
       </div>
     </div>
 
-    <!-- Editorial Track Component -->
+    <!-- Editorial Track Component with 4 Semantic Lanes -->
     <div class="w-full overflow-hidden rounded-xl border border-outline-border bg-surface-muted/40 p-2 space-y-3">
-      <!-- 1. Video Track -->
+      <!-- 1. Visuals / Video Track -->
       <div>
         <div class="flex items-center gap-2 mb-1 px-1">
-          <span class="text-[10px] font-mono font-bold text-ink-muted uppercase tracking-wider bg-surface-card px-2 py-0.5 rounded border border-outline-border flex items-center gap-1">
+          <span class="text-[10px] font-mono font-bold text-ink-muted uppercase tracking-wider bg-surface-card px-2 py-0.5 rounded border border-outline-border flex items-center gap-1.5">
             <span>🎬</span>
-            <span>Video</span>
+            <span>Visuals</span>
+            <span class="text-ink-secondary text-[9px] font-semibold border-l border-outline-border pl-1">Video</span>
           </span>
           <span class="text-[11px] text-ink-secondary">
             {{ activeVideoClips.length }} {{ currentLang === 'vi' ? 'phân đoạn hình ảnh' : 'video scenes' }}
@@ -53,7 +54,115 @@
         />
       </div>
 
-      <!-- 2. Music / Audio Track Lane -->
+      <!-- 2. Voice Track (Voiceover) -->
+      <div class="pt-2 border-t border-outline-border/60">
+        <div class="flex items-center justify-between px-1 mb-1.5">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-mono font-bold text-sky-400 uppercase tracking-wider bg-surface-card px-2 py-0.5 rounded border border-outline-border flex items-center gap-1">
+              <span>🎙️</span>
+              <span>Voice</span>
+            </span>
+            <span class="text-[11px] text-ink-secondary">
+              {{ voiceClips.length ? `${voiceClips.length} ${currentLang === 'vi' ? 'giọng đọc' : 'voiceover clips'}` : (currentLang === 'vi' ? 'Chưa có lời bình' : 'No voiceover') }}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-semibold text-sky-400 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 transition-colors cursor-pointer"
+            @click="$emit('openAudioPicker', 'Voiceover')"
+          >
+            <span>+</span>
+            <span>{{ currentLang === 'vi' ? 'Thêm Voice' : 'Add Voice' }}</span>
+          </button>
+        </div>
+
+        <!-- Voice Clips Container -->
+        <div v-if="voiceClips.length" class="min-h-[40px] rounded-xl bg-surface-card border border-outline-border/80 p-1.5 flex items-center gap-2 overflow-x-auto">
+          <div
+            v-for="audioClip in voiceClips"
+            :key="audioClip.name"
+            class="timeline-audio-clip flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer shrink-0 min-w-[180px]"
+            :class="[
+              selectedClipName === audioClip.name
+                ? 'border-sky-500 bg-sky-500/20 ring-1 ring-sky-500'
+                : 'border-outline-border bg-surface-muted hover:border-sky-400/60'
+            ]"
+            @click="$emit('selectClip', audioClip)"
+          >
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-sm">🎙️</span>
+              <div class="min-w-0">
+                <span class="block truncate text-xs font-semibold text-ink-primary">
+                  {{ audioClip.source_asset_name || 'Voiceover' }}
+                </span>
+                <span class="block text-[10px] text-sky-400 font-mono">
+                  Voice · {{ audioClip.duration_seconds?.toFixed(1) || 0 }}s
+                </span>
+              </div>
+            </div>
+            <span v-if="audioClip.gain_db !== 0" class="text-[9px] font-mono px-1 py-0.2 rounded bg-surface-card border border-outline-border text-ink-muted">
+              {{ audioClip.gain_db > 0 ? '+' : '' }}{{ audioClip.gain_db }}dB
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Effects Track (SFX) -->
+      <div class="pt-2 border-t border-outline-border/60">
+        <div class="flex items-center justify-between px-1 mb-1.5">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-wider bg-surface-card px-2 py-0.5 rounded border border-outline-border flex items-center gap-1">
+              <span>⚡</span>
+              <span>Effects</span>
+            </span>
+            <span class="text-[11px] text-ink-secondary">
+              {{ sfxClips.length ? `${sfxClips.length} ${currentLang === 'vi' ? 'hiệu ứng âm thanh' : 'sound effects'}` : (currentLang === 'vi' ? 'Chưa có SFX' : 'No sound effects') }}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-semibold text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors cursor-pointer"
+            @click="$emit('openAudioPicker', 'SFX')"
+          >
+            <span>+</span>
+            <span>{{ currentLang === 'vi' ? 'Thêm SFX' : 'Add SFX' }}</span>
+          </button>
+        </div>
+
+        <!-- SFX Clips Container -->
+        <div v-if="sfxClips.length" class="min-h-[40px] rounded-xl bg-surface-card border border-outline-border/80 p-1.5 flex items-center gap-2 overflow-x-auto">
+          <div
+            v-for="audioClip in sfxClips"
+            :key="audioClip.name"
+            class="timeline-audio-clip flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer shrink-0 min-w-[180px]"
+            :class="[
+              selectedClipName === audioClip.name
+                ? 'border-amber-500 bg-amber-500/20 ring-1 ring-amber-500'
+                : 'border-outline-border bg-surface-muted hover:border-amber-400/60'
+            ]"
+            @click="$emit('selectClip', audioClip)"
+          >
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-sm">⚡</span>
+              <div class="min-w-0">
+                <span class="block truncate text-xs font-semibold text-ink-primary">
+                  {{ audioClip.source_asset_name || 'SFX' }}
+                </span>
+                <span class="block text-[10px] text-amber-400 font-mono">
+                  SFX · {{ audioClip.duration_seconds?.toFixed(1) || 0 }}s
+                </span>
+              </div>
+            </div>
+            <span v-if="audioClip.gain_db !== 0" class="text-[9px] font-mono px-1 py-0.2 rounded bg-surface-card border border-outline-border text-ink-muted">
+              {{ audioClip.gain_db > 0 ? '+' : '' }}{{ audioClip.gain_db }}dB
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Music Track (Music / Audio BGM) -->
       <div class="pt-2 border-t border-outline-border/60">
         <div class="flex items-center justify-between px-1 mb-1.5">
           <div class="flex items-center gap-2">
@@ -62,24 +171,24 @@
               <span>Music / Audio</span>
             </span>
             <span class="text-[11px] text-ink-secondary">
-              {{ activeAudioClips.length ? `${activeAudioClips.length} ${currentLang === 'vi' ? 'bản âm thanh' : 'audio clips'}` : (currentLang === 'vi' ? 'Chưa có nhạc nền' : 'No music added') }}
+              {{ musicClips.length ? `${musicClips.length} ${currentLang === 'vi' ? 'bản nhạc nền' : 'music tracks'}` : (currentLang === 'vi' ? 'Chưa có nhạc nền' : 'No music added') }}
             </span>
           </div>
 
           <button
             type="button"
             class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
-            @click="$emit('openAudioPicker')"
+            @click="$emit('openAudioPicker', 'BGM')"
           >
             <span>+</span>
             <span>{{ currentLang === 'vi' ? 'Thêm Nhạc / Audio' : 'Add Music / Audio' }}</span>
           </button>
         </div>
 
-        <!-- Real Audio Clips Container -->
-        <div v-if="activeAudioClips.length" class="min-h-[44px] rounded-xl bg-surface-card border border-outline-border/80 p-1.5 flex items-center gap-2 overflow-x-auto">
+        <!-- Music Clips Container -->
+        <div v-if="musicClips.length" class="min-h-[44px] rounded-xl bg-surface-card border border-outline-border/80 p-1.5 flex items-center gap-2 overflow-x-auto">
           <div
-            v-for="audioClip in activeAudioClips"
+            v-for="audioClip in musicClips"
             :key="audioClip.name"
             class="timeline-audio-clip flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer shrink-0 min-w-[200px]"
             :class="[
@@ -93,10 +202,10 @@
               <span class="text-sm">🎵</span>
               <div class="min-w-0">
                 <span class="block truncate text-xs font-semibold text-ink-primary">
-                  {{ audioClip.source_asset_name || audioClip.audio_role || 'Audio Track' }}
+                  {{ audioClip.source_asset_name || audioClip.audio_role || 'Background Music' }}
                 </span>
                 <span class="block text-[10px] text-indigo-400 font-mono">
-                  {{ audioClip.audio_role || 'BGM' }} · {{ audioClip.duration_seconds?.toFixed(1) || 0 }}s
+                  Music · {{ audioClip.duration_seconds?.toFixed(1) || 0 }}s
                 </span>
               </div>
             </div>
@@ -112,16 +221,16 @@
           </div>
         </div>
 
-        <!-- Empty Audio Track Placeholder with Add Action -->
+        <!-- Empty Music Track Placeholder with Add Action -->
         <div
           v-else
           class="h-10 rounded-xl bg-surface-card/60 border border-dashed border-outline-border flex items-center justify-between px-3 text-xs text-ink-muted cursor-pointer hover:border-indigo-500/50 hover:bg-surface-card transition-all"
-          @click="$emit('openAudioPicker')"
+          @click="$emit('openAudioPicker', 'BGM')"
         >
           <div class="flex items-center gap-2">
             <span class="text-sm opacity-60">🎵</span>
             <span class="text-[11px]">
-              {{ currentLang === 'vi' ? 'Kéo thả file âm thanh hoặc bấm để chọn Nhạc nền / Voiceover' : 'Add background music or voiceover to the timeline' }}
+              {{ currentLang === 'vi' ? 'Kéo thả file âm thanh hoặc bấm để chọn Nhạc nền' : 'Add background music to the timeline' }}
             </span>
           </div>
           <span class="text-[11px] font-semibold text-indigo-400 hover:underline">
@@ -171,5 +280,17 @@ const activeVideoClips = computed(() => {
 const activeAudioClips = computed(() => {
   if (props.audioClips?.length) return props.audioClips;
   return (props.clips || []).filter((clip) => clip.track_type === "Audio");
+});
+
+const voiceClips = computed(() => {
+  return activeAudioClips.value.filter((clip) => clip.audio_role === "Voiceover");
+});
+
+const sfxClips = computed(() => {
+  return activeAudioClips.value.filter((clip) => clip.audio_role === "SFX");
+});
+
+const musicClips = computed(() => {
+  return activeAudioClips.value.filter((clip) => clip.audio_role !== "Voiceover" && clip.audio_role !== "SFX");
 });
 </script>

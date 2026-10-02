@@ -39,7 +39,7 @@
       />
 
       <!-- Center Stage Canvas: Viewport + Timeline -->
-      <div class="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-surface-base">
+      <div class="studio-center-canvas flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-surface-base">
         <!-- Scrollable Studio Canvas -->
         <div class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
         <!-- Error Alert Banner -->
@@ -58,8 +58,9 @@
         </div>
 
         <!-- Cinema Viewport Hero (StudioPreview) -->
-        <div class="flex flex-col items-center justify-center w-full" :class="studioMode === 'scene' ? 'max-h-[46vh] shrink-0' : 'min-h-[340px]'">
+        <div class="flex flex-col items-center justify-center w-full" :class="studioMode === 'scene' ? 'max-h-[42vh] shrink-0' : 'min-h-[340px]'">
           <StudioPreview
+            ref="studioPreviewRef"
             :studio-mode="studioMode"
             :studio-preview="studioPreview"
             :selected-target="selectedTarget"
@@ -85,6 +86,9 @@
             @toggle-play-pause="isPlaying = !isPlaying"
             @play="isPlaying = true"
             @pause="isPlaying = false"
+            @timeupdate="onVideoTimeUpdate"
+            @jump-to-next-keyframe="jumpToNextShot"
+            @jump-to-prev-keyframe="jumpToPrevShot"
             @select-full-video="previewSelection = 'full'"
             @select-clip="previewSelection = 'clip'"
             @select-shot-target="onSelectShot"
@@ -92,6 +96,53 @@
             @refresh="fetchWorkspace"
             @open-media-picker="openPicker"
           />
+        </div>
+
+        <!-- Bottom Workspace Mode Switcher (Storyboard | Timeline) -->
+        <div class="flex items-center justify-between px-1 pt-1 pb-0.5">
+          <div class="inline-flex items-center p-0.5 rounded-xl bg-surface-card border border-outline-border text-xs shadow-xs">
+            <button
+              type="button"
+              class="px-3.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+              :class="studioMode === 'scene'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-ink-secondary hover:text-ink-primary'"
+              aria-label="Storyboard / Scenes"
+              @click="studioMode = 'scene'"
+            >
+              <span>🎞️</span>
+              <span>{{ currentLang === 'vi' ? 'Storyboard' : 'Storyboard' }}</span>
+              <span class="text-[10px] opacity-75 font-normal">({{ currentLang === 'vi' ? 'Phân cảnh' : 'Scenes' }})</span>
+            </button>
+
+            <button
+              type="button"
+              class="px-3.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+              :class="[
+                studioMode === 'edit'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-ink-secondary hover:text-ink-primary',
+                { 'opacity-50 cursor-not-allowed': !timelineReady }
+              ]"
+              :disabled="!timelineReady"
+              aria-label="Timeline / Edit"
+              :title="!timelineReady ? (currentLang === 'vi' ? 'Cần tạo video xong để mở Timeline' : 'Generate video to enable Timeline') : ''"
+              @click="studioMode = 'edit'"
+            >
+              <span>✂</span>
+              <span>{{ currentLang === 'vi' ? 'Dòng thời gian' : 'Timeline' }}</span>
+              <span class="text-[10px] opacity-75 font-normal">({{ currentLang === 'vi' ? 'Biên tập' : 'Edit' }})</span>
+            </button>
+          </div>
+
+          <div class="text-[11px] text-ink-muted">
+            <span v-if="studioMode === 'scene'">
+              {{ storyboardShots.length }} {{ currentLang === 'vi' ? 'cảnh trong kịch bản' : 'scenes in storyboard' }}
+            </span>
+            <span v-else>
+              {{ clips.length }} {{ currentLang === 'vi' ? 'phân đoạn trên timeline' : 'clips on timeline' }}
+            </span>
+          </div>
         </div>
 
         <!-- 3. SCENE MODE: Simple Generation Composer + Scene Filmstrip -->
@@ -152,7 +203,7 @@
             :total-seconds="timeline?.total_seconds || 0"
             :current-lang="currentLang"
             @select-clip="onSelectClip"
-            @update:playhead-frame="playheadFrame = $event"
+            @update:playhead-frame="onSeekPlayhead"
             @trim="trimClip"
             @split="splitClip"
             @duplicate="duplicateClip"
@@ -356,12 +407,22 @@ const {
 } = useProjectTimeline(projectName);
 
 // Studio Local State
+const studioPreviewRef = ref(null);
 const mediaDrawerOpen = ref(false);
 const isPlaying = ref(false);
 const previewSelection = ref("shot"); // "shot" | "full" | "clip"
 const mediaPickerFilter = ref("All");
 
-function openAudioPicker() {
+watch(
+  () => finalVideo.value?.file,
+  (videoUrl) => {
+    if (videoUrl && studioMode.value === "scene" && clips.value?.length) {
+      studioMode.value = "edit";
+    }
+  }
+);
+
+function openAudioPicker(role = "BGM") {
   mediaPickerFilter.value = "Audio";
   openPicker();
 }
@@ -543,11 +604,82 @@ function getShotTimestampRange(shot) {
 }
 
 // User Actions
+function getShotStartTime(index) {
+  let elapsed = 0;
+  for (let i = 0; i < index && i < storyboardShots.value.length; i++) {
+    elapsed += estimateShotDuration(storyboardShots.value[i]);
+  }
+  return elapsed;
+}
+
 function onSelectShot(shot, index) {
   selectedShotIndex.value = index;
   selectedTarget.value = "shot";
   previewSelection.value = "shot";
   inspectorOpen.value = true;
+
+  // Synchronize player and timeline playhead to shot start time
+  const startTime = getShotStartTime(index);
+  const currentFps = fps.value || 24;
+  playheadFrame.value = Math.round(startTime * currentFps);
+  studioPreviewRef.value?.seek(startTime);
+}
+
+function onVideoTimeUpdate(payload) {
+  const currentTime = payload?.currentTime ?? payload?.target?.currentTime ?? 0;
+  const currentFps = fps.value || 24;
+  playheadFrame.value = Math.round(currentTime * currentFps);
+
+  // Synchronize active scene based on current playback time
+  if (storyboardShots.value.length) {
+    let accum = 0;
+    for (let i = 0; i < storyboardShots.value.length; i++) {
+      const dur = estimateShotDuration(storyboardShots.value[i]);
+      if (currentTime >= accum && currentTime < accum + dur) {
+        if (selectedShotIndex.value !== i) {
+          selectedShotIndex.value = i;
+        }
+        break;
+      }
+      accum += dur;
+    }
+  }
+}
+
+function onSeekPlayhead(frame) {
+  playheadFrame.value = frame;
+  const currentFps = fps.value || 24;
+  const seekTime = frame / currentFps;
+  studioPreviewRef.value?.seek(seekTime);
+
+  // Synchronize active scene based on seek time
+  if (storyboardShots.value.length) {
+    let accum = 0;
+    for (let i = 0; i < storyboardShots.value.length; i++) {
+      const dur = estimateShotDuration(storyboardShots.value[i]);
+      if (seekTime >= accum && seekTime < accum + dur) {
+        if (selectedShotIndex.value !== i) {
+          selectedShotIndex.value = i;
+        }
+        break;
+      }
+      accum += dur;
+    }
+  }
+}
+
+function jumpToNextShot() {
+  if (selectedShotIndex.value < storyboardShots.value.length - 1) {
+    const nextIdx = selectedShotIndex.value + 1;
+    onSelectShot(storyboardShots.value[nextIdx], nextIdx);
+  }
+}
+
+function jumpToPrevShot() {
+  if (selectedShotIndex.value > 0) {
+    const prevIdx = selectedShotIndex.value - 1;
+    onSelectShot(storyboardShots.value[prevIdx], prevIdx);
+  }
 }
 
 function onSelectKeyframe(shot, index, targetRole) {

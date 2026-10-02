@@ -1,40 +1,39 @@
 <template>
   <div class="scene-strip-container rounded-2xl bg-surface-card border border-outline-border p-3 shadow-md select-none">
     <!-- Storyboard Header -->
-    <div class="flex items-center justify-between mb-2.5 px-1">
+    <div class="flex items-center justify-between mb-2.5 px-1 flex-wrap gap-2">
       <div class="flex items-center gap-2">
         <span class="text-xs font-bold uppercase tracking-wider text-ink-primary flex items-center gap-1.5">
           <span>🎞️</span>
           <span>{{ currentLang === 'vi' ? 'Storyboard Phân cảnh' : 'Storyboard' }}</span>
         </span>
         <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-indigo-400 border border-outline-border font-bold">
-          {{ shots.length }} {{ currentLang === 'vi' ? 'Cảnh' : 'Shots' }} · {{ totalDurationSeconds }}s
+          {{ totalDurationSeconds }}s
         </span>
-        <button
-          type="button"
-          class="hidden sm:inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-md font-semibold bg-surface-muted text-ink-secondary border border-outline-border cursor-pointer hover:border-indigo-400 transition-colors"
-          :title="currentLang === 'vi' ? 'Bấm để đổi chế độ nối cảnh' : 'Click to toggle scene continuity'"
-          @click="$emit('toggleContinuityMode')"
-        >
-          <span class="size-1.5 rounded-full" :class="generationMode === 'Continuous' ? 'bg-indigo-500' : 'bg-ink-muted'" />
-          <span>{{ generationMode === 'Continuous' ? (currentLang === 'vi' ? 'Giữ cảnh liền mạch' : 'Keep scenes consistent') : (currentLang === 'vi' ? 'Cảnh độc lập' : 'Independent scenes') }}</span>
-        </button>
       </div>
 
-      <!-- Right Actions: AI Storyboard Revision & New Version -->
-      <div class="flex items-center gap-2">
-        <button
-          v-if="hasStoryboard"
-          type="button"
-          class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 px-2.5 py-1 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
-          :disabled="isRevising || isGenerating"
-          :title="currentLang === 'vi' ? 'AI viết lại cấu trúc kịch bản' : 'Revise storyboard with AI'"
-          @click="$emit('reviseStoryboard')"
-        >
-          <span v-if="isRevising" class="lucide-refresh-cw size-3 animate-spin" />
-          <span v-else>✨</span>
-          <span>{{ currentLang === 'vi' ? 'Cập nhật kịch bản ✦' : 'Revise with AI ✦' }}</span>
-        </button>
+      <!-- Right Actions: Lightweight AI Director revision prompt -->
+      <div v-if="hasStoryboard" class="flex items-center gap-2">
+        <form class="flex items-center gap-1.5" @submit.prevent="submitAiRevision">
+          <div class="relative flex items-center">
+            <span class="absolute left-2.5 text-xs text-indigo-400">✨</span>
+            <input
+              v-model="aiRevisionInput"
+              type="text"
+              :placeholder="currentLang === 'vi' ? 'Hỏi AI Director sửa kịch bản... (vd: sang trọng hơn)' : 'Ask AI Director... (e.g. Make it more luxurious)'"
+              class="bg-surface-muted border border-outline-border focus:border-indigo-500 rounded-xl pl-7 pr-3 py-1 text-xs text-ink-primary placeholder:text-ink-muted w-48 sm:w-72 focus:outline-none transition-all"
+              :disabled="isRevising || isGenerating"
+            />
+          </div>
+          <button
+            type="submit"
+            class="px-3 py-1 rounded-xl text-xs font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+            :disabled="isRevising || isGenerating"
+          >
+            <span v-if="isRevising" class="lucide-refresh-cw size-3 animate-spin inline-block" />
+            <span v-else>{{ currentLang === 'vi' ? 'Áp dụng' : 'Apply' }}</span>
+          </button>
+        </form>
       </div>
     </div>
 
@@ -67,52 +66,26 @@
       </div>
     </div>
 
-    <!-- CapCut / Flow Filmstrip Shots Track -->
-    <div v-if="shots.length" class="capcut-track flex items-stretch gap-2 overflow-x-auto pb-2">
+    <!-- Simplified Flow / OpenSlop Storyboard Shots Track -->
+    <div v-if="shots.length" class="capcut-track flex items-stretch gap-2.5 overflow-x-auto pb-2">
       <template v-for="(shot, index) in shots" :key="shot.name || shot.shot_number || index">
-        <!-- Shot Card Item -->
+        <!-- Simplified Shot Card Item -->
         <div
-          class="capcut-clip flex-1 shrink-0 rounded-xl border p-2 transition-all cursor-pointer bg-surface-muted select-none flex flex-col justify-between"
+          class="capcut-clip flex-1 shrink-0 rounded-2xl border p-2.5 transition-all cursor-pointer bg-surface-muted select-none flex flex-col justify-between"
           :class="[
             selectedShotIndex === index && selectedTarget !== 'asset'
               ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/30'
               : 'border-outline-border hover:border-indigo-400'
           ]"
-          :style="{ minWidth: '150px', maxWidth: '240px' }"
+          :style="{ minWidth: '175px', maxWidth: '240px' }"
           draggable="true"
           @dragstart="onDragStart(shot, index, $event)"
           @dragover.prevent
           @drop.prevent="onDrop(shot, index)"
           @click="$emit('selectShot', shot, index)"
         >
-          <!-- Clip Header (Scene # & Duration Trim) -->
-          <div class="flex items-center justify-between text-[11px] font-bold text-ink-primary mb-1.5">
-            <span class="truncate">Cảnh {{ shot.shot_number }}</span>
-            <div class="flex items-center gap-1">
-              <button
-                type="button"
-                class="capcut-trim-button"
-                :title="currentLang === 'vi' ? 'Giảm 0,5s' : 'Trim 0.5s'"
-                @click.stop="$emit('changeShotDuration', shot, -0.5)"
-              >
-                −
-              </button>
-              <span class="text-ink-muted font-mono text-[10px] min-w-[30px] text-center">
-                {{ estimateShotDuration(shot) }}s
-              </span>
-              <button
-                type="button"
-                class="capcut-trim-button"
-                :title="currentLang === 'vi' ? 'Tăng 0,5s' : 'Extend 0.5s'"
-                @click.stop="$emit('changeShotDuration', shot, 0.5)"
-              >
-                +
-              </button>
-            </div>
-          </div>
-
-          <!-- Thumbnail Visual Body -->
-          <div class="relative w-full aspect-video rounded-lg overflow-hidden bg-black flex items-center justify-center">
+          <!-- Top: Thumbnail / Video Preview -->
+          <div class="relative w-full aspect-video rounded-xl overflow-hidden bg-black flex items-center justify-center mb-2">
             <MediaThumbnail
               :src="getShotVideoFile(shot) || getShotFirstFrame(shot)?.file || shot.reference_image"
               :media-type="getShotVideoFile(shot) ? 'Video' : 'Image'"
@@ -136,56 +109,39 @@
             </div>
           </div>
 
-          <!-- Keyframe Track Nodes (Start & End) -->
-          <div class="capcut-keyframe-track-lane mt-2 pt-1 border-t border-outline-border/60 relative flex items-center justify-between px-1">
-            <!-- Connecting Line -->
-            <div class="absolute left-2 right-2 h-[2px] bg-outline-border rounded-full" />
+          <!-- Middle: Scene Title & Clean Duration -->
+          <div class="flex items-center justify-between text-xs font-bold text-ink-primary mb-1">
+            <span class="truncate">{{ currentLang === 'vi' ? `Cảnh ${shot.shot_number}` : `Scene ${shot.shot_number}` }}</span>
+            <span class="text-ink-secondary font-mono text-[11px] font-semibold bg-surface-card px-1.5 py-0.5 rounded border border-outline-border/60">
+              {{ estimateShotDuration(shot) }}s
+            </span>
+          </div>
 
-            <!-- Start Keyframe Reference Node -->
+          <!-- Creative summary snippet -->
+          <p class="text-[11px] text-ink-secondary line-clamp-2 leading-relaxed mb-2 min-h-[30px]">
+            {{ shot.generation_prompt || (currentLang === 'vi' ? 'Cảnh giới thiệu sản phẩm' : 'Product showcase') }}
+          </p>
+
+          <!-- Bottom: Role Badge & Edit Scene action button -->
+          <div class="flex items-center justify-between pt-1.5 border-t border-outline-border/60 text-xs">
+            <span class="text-[10px] text-ink-muted truncate font-medium max-w-[110px]">
+              {{ shot.reference_role ? `@ ${shot.reference_role}` : 'Product · Studio' }}
+            </span>
             <button
               type="button"
-              class="capcut-kf-node relative z-10 cursor-pointer transition-transform hover:scale-125"
-              :class="{
-                'is-active': selectedTarget === 'keyframe-start' && selectedShotIndex === index,
-                'is-shot-active': selectedShotIndex === index
-              }"
-              :title="`Start Reference: ${formatShotKeyframeTime(index, 0)}`"
-              @click.stop="$emit('selectKeyframe', shot, index, 'start')"
+              class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-surface-hover flex items-center gap-1 cursor-pointer transition-colors"
+              :title="currentLang === 'vi' ? 'Chỉnh sửa cảnh' : 'Edit Scene'"
+              @click.stop="$emit('selectShot', shot, index)"
             >
-              <span class="capcut-kf-diamond capcut-kf-in" />
-              <span class="capcut-kf-time-badge">Start</span>
-            </button>
-
-            <!-- End Keyframe Reference Node -->
-            <button
-              type="button"
-              class="capcut-kf-node relative z-10 cursor-pointer transition-transform hover:scale-125"
-              :class="{
-                'is-active': selectedTarget === 'keyframe-end' && selectedShotIndex === index,
-                'is-shot-active': selectedShotIndex === index
-              }"
-              :title="`End Reference: ${formatShotKeyframeTime(index, 1)}`"
-              @click.stop="$emit('selectKeyframe', shot, index, 'end')"
-            >
-              <span
-                class="capcut-kf-diamond"
-                :class="shot.last_frame_image || generationMode === 'Continuous' ? 'capcut-kf-out-set' : 'capcut-kf-out-empty'"
-              />
-              <span class="capcut-kf-time-badge">{{ generationMode === 'Continuous' ? 'Continuity' : 'End' }}</span>
+              <span>⋯</span>
+              <span>{{ currentLang === 'vi' ? 'Sửa' : 'Edit' }}</span>
             </button>
           </div>
         </div>
 
-        <!-- Transition Node Between Shots -->
-        <div v-if="index < shots.length - 1" class="capcut-transition-node self-center shrink-0">
-          <button
-            type="button"
-            class="capcut-transition-pill"
-            :title="generationMode === 'Continuous' ? 'Continuous chained cut' : 'Multi-shot independent cut'"
-            @click="$emit('toggleContinuityMode')"
-          >
-            <span>{{ generationMode === 'Continuous' ? '⫸' : '⧉' }}</span>
-          </button>
+        <!-- Clean Cut indicator between shots -->
+        <div v-if="index < shots.length - 1" class="self-center shrink-0 text-ink-muted text-xs opacity-60">
+          |
         </div>
       </template>
     </div>
@@ -227,6 +183,17 @@ const emit = defineEmits([
   "reviseStoryboard",
   "reorderShots",
 ]);
+
+const aiRevisionInput = ref("");
+
+function submitAiRevision() {
+  if (!aiRevisionInput.value?.trim()) {
+    emit("reviseStoryboard");
+    return;
+  }
+  emit("reviseStoryboard", aiRevisionInput.value.trim());
+  aiRevisionInput.value = "";
+}
 
 const draggedIndex = ref(null);
 

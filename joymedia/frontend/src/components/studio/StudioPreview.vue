@@ -2,7 +2,7 @@
   <div class="flex flex-col items-center w-full">
     <!-- Viewport Container with CapCut dark canvas border -->
     <div
-      class="gflow-viewport w-full max-w-[800px] max-h-[44vh] bg-black/90 rounded-2xl overflow-hidden relative flex items-center justify-center border border-outline-border shadow-2xl transition-all"
+      class="gflow-viewport w-full max-w-[760px] max-h-[41vh] bg-black/90 rounded-2xl overflow-hidden relative flex items-center justify-center border border-outline-border shadow-2xl transition-all"
       :class="{
         'ratio-landscape': settingsFormat === 'Landscape',
         'ratio-portrait': settingsFormat === 'Portrait',
@@ -62,11 +62,12 @@
         class="w-full h-full object-contain"
         preload="metadata"
         playsinline
-        @loadedmetadata="$emit('loadedmetadata', $event)"
-        @timeupdate="$emit('timeupdate', $event)"
+        @loadedmetadata="onLoadedMetadata"
+        @timeupdate="onTimeUpdate"
         @play="$emit('play', $event)"
         @pause="$emit('pause', $event)"
-        @ended="$emit('ended', $event)"
+        @ended="onEnded"
+        @error="onError"
       />
 
       <!-- Image Preview: Selected Shot Frame or Asset -->
@@ -114,7 +115,9 @@
       </div>
     </div>
 
+    <!-- Playback Transport: Render ONLY when previewing real video -->
     <PlaybackTransport
+      v-if="studioPreview?.isVideo && studioPreview?.url"
       :active-selected-shot="activeSelectedShot"
       :current-lang="currentLang"
       :current-timeline-position-label="currentTimelinePositionLabel"
@@ -223,7 +226,7 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { useI18n } from "../../stores/i18n";
 import PlaybackTransport from "./PlaybackTransport.vue";
 
@@ -231,7 +234,7 @@ const { t } = useI18n();
 
 const previewVideo = ref(null);
 
-defineProps({
+const props = defineProps({
   studioMode: { type: String, default: "scene" },
   studioPreview: { type: Object, default: null },
   selectedTarget: { type: String, default: "scene" },
@@ -256,13 +259,14 @@ defineProps({
   getShotTimestampRange: { type: Function, default: () => "00:00-00:04" },
 });
 
-defineEmits([
+const emit = defineEmits([
   "togglePlayPause",
   "loadedmetadata",
   "timeupdate",
   "play",
   "pause",
   "ended",
+  "error",
   "selectFullVideo",
   "selectClip",
   "selectShotTarget",
@@ -273,6 +277,58 @@ defineEmits([
   "refresh",
   "openMediaPicker",
 ]);
+
+watch(
+  () => props.isPlaying,
+  async (playing) => {
+    if (!previewVideo.value) return;
+    if (playing) {
+      try {
+        await previewVideo.value.play();
+      } catch (err) {
+        console.warn("Video play interrupted/failed:", err);
+      }
+    } else {
+      previewVideo.value.pause();
+    }
+  }
+);
+
+function onLoadedMetadata(event) {
+  emit("loadedmetadata", {
+    duration: event.target.duration,
+    videoWidth: event.target.videoWidth,
+    videoHeight: event.target.videoHeight,
+    event,
+  });
+  if (props.isPlaying) {
+    previewVideo.value?.play()?.catch(() => {});
+  }
+}
+
+function onTimeUpdate(event) {
+  emit("timeupdate", {
+    currentTime: event.target.currentTime,
+    duration: event.target.duration,
+    event,
+  });
+}
+
+function onEnded(event) {
+  emit("ended", event);
+  emit("pause", event);
+}
+
+function onError(event) {
+  console.warn("Video playback element encountered error:", event);
+  emit("error", event);
+}
+
+function seek(timeInSeconds) {
+  if (previewVideo.value && Number.isFinite(timeInSeconds)) {
+    previewVideo.value.currentTime = Math.max(0, timeInSeconds);
+  }
+}
 
 function formatSecondsLabel(totalSeconds) {
   const safeSeconds = Math.max(0, Number(totalSeconds || 0));
@@ -295,6 +351,7 @@ function requestFullscreen() {
 
 defineExpose({
   previewVideo,
+  seek,
 });
 </script>
 
