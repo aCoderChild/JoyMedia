@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import math
 
 import frappe
 from frappe import _
@@ -1021,8 +1022,10 @@ class MediaProject(Document):
 			duration_seconds = float(duration_seconds)
 		except (TypeError, ValueError):
 			frappe.throw(_("Append duration must be a positive number."))
-		if duration_seconds <= 0:
+		if not math.isfinite(duration_seconds) or duration_seconds <= 0:
 			frappe.throw(_("Append duration must be a positive number."))
+		if duration_seconds > 120:
+			frappe.throw(_("Add Scene currently supports up to 120 seconds at a time."))
 		continuity = str(continuity).lower() in ("1", "true", "yes", "on")
 
 		from joymedia.services.generation_orchestrator import start_run_internal, validate_generation_preflight
@@ -1098,7 +1101,11 @@ class MediaProject(Document):
 					"instruction": str(instruction or "").strip(),
 				},
 			)
-			new_shot_names = append_video_plan(self.name, plan)
+			new_shot_names = append_video_plan(
+				self.name,
+				plan,
+				start_after_shot_number=int(last_shot.shot_number),
+			)
 			self.total_duration_seconds = float(self.total_duration_seconds or 0) + duration_seconds
 			self.save(ignore_permissions=True)
 			recalculate_shot_durations(self.name)

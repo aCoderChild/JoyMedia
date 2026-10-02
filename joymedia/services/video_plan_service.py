@@ -238,7 +238,11 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 	return created_shots
 
 
-def append_video_plan(media_project_name: str = None, plan: dict = None):
+def append_video_plan(
+	media_project_name: str = None,
+	plan: dict = None,
+	start_after_shot_number: int = 0,
+):
 	"""Append only new Shot documents without replacing the existing storyboard."""
 	project = frappe.get_doc("Media Project", media_project_name)
 	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
@@ -260,9 +264,7 @@ def append_video_plan(media_project_name: str = None, plan: dict = None):
 		for row in project.selected_media or []
 		if getattr(row, "reference_key", None)
 	}
-	existing_max = frappe.db.get_value(
-		"Shot", {"media_project": project.name}, "max(shot_number)"
-	) or 0
+	base_shot_number = int(start_after_shot_number or 0)
 
 	created_shots = []
 	for offset, shot in enumerate(plan["shots"], start=1):
@@ -292,8 +294,8 @@ def append_video_plan(media_project_name: str = None, plan: dict = None):
 			{
 				"doctype": "Shot",
 				"media_project": project.name,
-				"shot_number": int(existing_max) + offset,
-				"shot_name": shot.get("shot_name") or f"Shot {int(existing_max) + offset}",
+				"shot_number": base_shot_number + offset,
+				"shot_name": shot.get("shot_name") or f"Shot {base_shot_number + offset}",
 				"generation_prompt": shot["generation_prompt"],
 				"duration_seconds": float(shot["duration_seconds"]),
 			}

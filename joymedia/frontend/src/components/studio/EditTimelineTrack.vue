@@ -420,7 +420,7 @@ defineExpose({ pixelsPerFrame, timelineCanvasWidth });
   border: 1px solid var(--outline-border, #e4e7ec);
   border-radius: 14px;
   box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
-  overflow-x: auto;
+  overflow: visible;
 }
 .timeline-heading {
   display: flex;

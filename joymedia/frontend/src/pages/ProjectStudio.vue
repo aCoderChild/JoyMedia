@@ -288,7 +288,8 @@
         :after-shot="addSceneAfterShot"
         :current-lang="currentLang"
         :busy="isGenerating"
-        @close="addScenePopoverOpen = false"
+        :error="appendSceneError"
+        @close="closeAddScenePopover"
         @submit="handleAddSceneRequest"
       />
     </div>
@@ -411,6 +412,7 @@ const {
   improvingIdea,
   aiRevisionLoading,
   productionError,
+  getFrappeErrorMessage,
   videoIdeaPrompt,
   currentRun,
   isProductionActive,
@@ -423,6 +425,8 @@ const {
   improveVideoIdea,
   stopPolling,
 } = useProjectGeneration(projectName, fetchWorkspace);
+
+const appendSceneError = ref("");
 
 // 4. Timeline composable
 const {
@@ -793,10 +797,17 @@ function onSelectShot(shot, index) {
 
 function openAddScenePopover(afterShot = null) {
   addSceneAfterShot.value = afterShot || activeSelectedShot.value || storyboardShots.value.at(-1) || null;
+  appendSceneError.value = "";
   addScenePopoverOpen.value = true;
 }
 
+function closeAddScenePopover() {
+  addScenePopoverOpen.value = false;
+  appendSceneError.value = "";
+}
+
 async function handleAddSceneRequest(request) {
+  appendSceneError.value = "";
   try {
     await appendScenes(request);
     addScenePopoverOpen.value = false;
@@ -807,8 +818,8 @@ async function handleAddSceneRequest(request) {
         : "AI Director planned the continuation and started generation.",
       type: "success",
     });
-  } catch (_) {
-    // Keep the popover open so the user can correct or retry the request.
+  } catch (err) {
+    appendSceneError.value = getFrappeErrorMessage(err, "Unable to add scenes.");
   }
 }
 

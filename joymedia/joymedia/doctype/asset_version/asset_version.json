@@ -30,7 +30,7 @@
   {"fieldname":"version_number","fieldtype":"Int","in_list_view":1,"label":"Version","reqd":1},
   {"description":"Immutable source file represented by this version.","fieldname":"file","fieldtype":"Attach","label":"File","reqd":1},
   {"description":"SHA-256 hash of the immutable file represented by this version.","fieldname":"content_hash","fieldtype":"Data","hidden":1,"label":"Content Hash","length":64,"read_only":1},
-  {"default":"Uploaded","description":"How this version was created.","fieldname":"source","fieldtype":"Select","in_list_view":1,"in_standard_filter":1,"label":"Source","options":"Uploaded\nImported\nEdited\nPreprocessed\nGenerated\nEnhanced\nComposed","reqd":1},
+  {"default":"Uploaded","description":"How this version was created.","fieldname":"source","fieldtype":"Select","in_list_view":1,"in_standard_filter":1,"label":"Source","options":"Uploaded\nImported\nEdited\nPreprocessed\nGenerated\nDerived\nEnhanced\nComposed","reqd":1},
   {"fieldname":"technical_metadata_section","fieldtype":"Section Break","label":"Technical Metadata"},
   {"fieldname":"width","fieldtype":"Int","label":"Width","read_only":1},
   {"fieldname":"height","fieldtype":"Int","label":"Height","read_only":1},

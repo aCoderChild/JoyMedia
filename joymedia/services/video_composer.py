@@ -290,8 +290,6 @@ def _get_audio_asset_path(asset_version_name):
 
 
 def _get_timeline_audio_path(clip):
-	if clip.audio_role == "Source":
-		return _get_asset_version_path(clip.source_asset_version)
 	return _get_audio_asset_path(clip.source_asset_version)
 
 

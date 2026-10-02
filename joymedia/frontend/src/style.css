@@ -2613,14 +2613,7 @@ h2 {
 }
 
 .audio-timeline-row {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-
-.audio-timeline-scroll {
-  overflow-x: auto;
+  display: block;
 }
 
 .audio-timeline-canvas {
@@ -2640,6 +2633,9 @@ h2 {
 }
 
 .audio-timeline-label {
+  height: 18px;
+  display: flex;
+  align-items: center;
   color: var(--ink-secondary);
   font-size: 10px;
   font-weight: 700;
@@ -2654,6 +2650,16 @@ h2 {
   border: 1px solid var(--outline-border);
   border-radius: 10px;
   background: var(--surface-card);
+}
+
+.timeline-shared-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.timeline-shared-canvas {
+  min-width: 700px;
 }
 
 .audio-timeline-clip,

@@ -7,8 +7,7 @@
       </span>
     </div>
 
-    <div class="audio-timeline-scroll">
-      <div class="audio-timeline-canvas" :style="{ width: `${timelineCanvasWidth}px` }">
+    <div class="audio-timeline-canvas" :style="{ width: `${timelineCanvasWidth}px` }">
         <div
           v-for="track in audioTracks"
           :key="track.trackIndex"
@@ -18,6 +17,9 @@
             Audio {{ track.trackIndex + 1 }}<span v-if="track.trackIndex === 0"> · {{ currentLang === 'vi' ? 'Nguồn' : 'Source' }}</span>
           </div>
           <div class="audio-timeline-lane">
+            <div v-if="!track.clips.length" class="audio-timeline-empty-label">
+              {{ currentLang === 'vi' ? 'Không có audio nguồn' : 'No source audio' }}
+            </div>
             <template v-for="clip in track.clips" :key="clip.name">
               <button
                 v-if="clip.audio_role !== 'Source' || clip.source_has_audio"
@@ -32,9 +34,7 @@
                 @click="$emit('selectClip', clip)"
               >
                 <span class="truncate">{{ clip.source_asset_name || clipLabel(clip) }}</span>
-                <span class="audio-waveform" aria-hidden="true">
-                  <i v-for="bar in 16" :key="bar" :style="{ height: `${((bar * 5) % 9) + 3}px` }" />
-                </span>
+                <AudioWaveform :src="clip.source_file" />
                 <span v-if="clip.audio_role !== 'Source'" class="audio-role-badge">{{ audioRoleLabel(clip.audio_role) }}</span>
               </button>
               <div v-else class="audio-timeline-empty-segment" :style="clipStyle(clip)">
@@ -51,10 +51,6 @@
           aria-hidden="true"
         />
 
-        <div v-if="!audioTracks.length" class="audio-timeline-empty-label">
-          {{ currentLang === 'vi' ? 'Chưa có track âm thanh' : 'No audio tracks' }}
-        </div>
-      </div>
     </div>
 
     <button type="button" class="audio-add-track" @click="$emit('openAudioPicker')">
@@ -65,6 +61,7 @@
 
 <script setup>
 import { computed } from "vue";
+import AudioWaveform from "./AudioWaveform.vue";
 
 const props = defineProps({
   audioClips: { type: Array, default: () => [] },
@@ -85,9 +82,11 @@ const audioTracks = computed(() => {
     if (!groups.has(trackIndex)) groups.set(trackIndex, []);
     groups.get(trackIndex).push(clip);
   }
-  return [...groups.entries()]
+  const tracks = [...groups.entries()]
     .sort(([a], [b]) => a - b)
     .map(([trackIndex, clips]) => ({ trackIndex, clips }));
+  if (!tracks.length) tracks.push({ trackIndex: 0, clips: [] });
+  return tracks;
 });
 
 function clipStyle(clip) {

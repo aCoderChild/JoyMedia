@@ -25,6 +25,9 @@ TRANSITION_FILTERS = {
 
 def compose_project_timeline_internal(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
+	from joymedia.services.timeline_editor import _ensure_source_audio_clips, _timeline_clip_rows
+	_timeline_rows = _timeline_clip_rows(project.name)
+	_ensure_source_audio_clips(project, _timeline_rows)
 	clips = frappe.get_all(
 		"Timeline Clip",
 		filters={"media_project": project.name, "enabled": 1},

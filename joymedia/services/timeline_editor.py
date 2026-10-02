@@ -6,8 +6,13 @@ Studio trim, split, reorder and duplicate clips without mutating completed gener
 jobs or pretending that a UI-only change affected the final render.
 """
 
+import subprocess
+import tempfile
+from pathlib import Path
+
 import frappe
 from frappe import _
+from frappe.utils.synchronization import filelock
 from joymedia.services.video_composer import _get_asset_version_path, _has_audio_stream
 
 
@@ -483,27 +488,29 @@ def _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps):
 			"transition_frames": 0,
 		}
 	).insert(ignore_permissions=True)
-	frappe.get_doc(
-		{
-			"doctype": "Timeline Clip",
-			"media_project": project.name,
-			"shot": shot.name,
-			"clip_order": order,
-			"track_type": "Audio",
-			"track_index": 0,
-			"linked_video_clip": video_clip.name,
-			"timeline_start_frame": timeline_cursor,
-			"enabled": 1,
-			"source_asset_version": shot.selected_output_asset_version,
-			"source_in_frame": 0,
-			"source_out_frame": source_out,
-			"initial_source_in_frame": 0,
-			"initial_source_out_frame": source_out,
-			"audio_role": "Source",
-			"transition_to_next": "Cut",
-			"transition_frames": 0,
-		}
-	).insert(ignore_permissions=True)
+	audio_version = _get_or_create_source_audio_version(shot.selected_output_asset_version)
+	if audio_version:
+		frappe.get_doc(
+			{
+				"doctype": "Timeline Clip",
+				"media_project": project.name,
+				"shot": shot.name,
+				"clip_order": order,
+				"track_type": "Audio",
+				"track_index": 0,
+				"linked_video_clip": video_clip.name,
+				"timeline_start_frame": timeline_cursor,
+				"enabled": 1,
+				"source_asset_version": audio_version,
+				"source_in_frame": 0,
+				"source_out_frame": source_out,
+				"initial_source_in_frame": 0,
+				"initial_source_out_frame": source_out,
+				"audio_role": "Source",
+				"transition_to_next": "Cut",
+				"transition_frames": 0,
+			}
+		).insert(ignore_permissions=True)
 	return timeline_cursor + source_out
 
 
@@ -539,12 +546,96 @@ def _sync_missing_generated_shots_to_timeline(project):
 		frappe.db.commit()
 
 
+def _get_or_create_source_audio_version(video_asset_version_name):
+	"""Extract and persist the first audio stream for a generated video once."""
+	video_version = frappe.get_doc("Asset Version", video_asset_version_name)
+	video_asset = frappe.get_doc("Media Asset", video_version.media_asset)
+	if video_asset.media_type != "Video":
+		frappe.throw(_("Source audio extraction requires a Video Asset Version."))
+	existing = frappe.db.get_value(
+		"Asset Version",
+		{"derived_from": video_version.name},
+		["name", "media_asset"],
+		as_dict=True,
+	)
+	if existing and frappe.db.get_value("Media Asset", existing.media_asset, "media_type") == "Audio":
+		return existing.name
+	existing = None
+
+	with filelock(f"joymedia-source-audio-{video_version.name}"):
+		existing = frappe.db.get_value(
+			"Asset Version",
+			{"derived_from": video_version.name},
+			"name",
+		)
+		if existing and frappe.db.get_value("Media Asset", existing.media_asset, "media_type") == "Audio":
+			return existing
+		source_path = _get_asset_version_path(video_version.name)
+		if not _has_audio_stream(source_path):
+			return None
+		with tempfile.TemporaryDirectory(prefix=f"joymedia-audio-{video_version.name}-") as temp_dir:
+			output_path = Path(temp_dir) / f"{video_version.name}-audio.flac"
+			try:
+				subprocess.run(
+					[
+						"ffmpeg", "-v", "error", "-y", "-i", str(source_path),
+						"-map", "0:a:0", "-vn", "-c:a", "flac", str(output_path),
+					],
+					capture_output=True,
+					text=True,
+					check=True,
+				)
+			except (OSError, subprocess.CalledProcessError) as exc:
+				message = getattr(exc, "stderr", None) or str(exc)
+				frappe.throw(_("Unable to extract source audio: {0}").format(message.strip()))
+			audio_asset = frappe.get_doc(
+				{
+					"doctype": "Media Asset",
+					"asset_name": f"{video_asset.asset_name} Derived Audio",
+					"media_type": "Audio",
+					"asset_category": "Derived Audio",
+					"asset_scope": "Project Output",
+					"media_project": video_asset.media_project,
+					"status": "Active",
+				}
+			).insert(ignore_permissions=True)
+			file_doc = frappe.get_doc(
+				{
+					"doctype": "File",
+					"file_name": output_path.name,
+					"content": output_path.read_bytes(),
+					"is_private": 1,
+					"attached_to_doctype": "Media Asset",
+					"attached_to_name": audio_asset.name,
+				}
+			).insert(ignore_permissions=True)
+			audio_version = frappe.get_doc(
+				{
+					"doctype": "Asset Version",
+					"media_asset": audio_asset.name,
+					"file": file_doc.file_url,
+					"source": "Derived",
+					"derived_from": video_version.name,
+				}
+			).insert(ignore_permissions=True)
+			return audio_version.name
+
+
 def _ensure_source_audio_clips(project, clips):
 	"""Backfill linked source-audio clips for timelines created before the split model."""
 	video_clips = [clip for clip in clips if (clip.track_type or "Video") == "Video"]
-	linked_video_names = {clip.linked_video_clip for clip in clips if clip.linked_video_clip}
 	for video_clip in video_clips:
-		if video_clip.name in linked_video_names:
+		linked_audio = _linked_audio_clip(video_clip)
+		audio_version = _get_or_create_source_audio_version(video_clip.source_asset_version)
+		if linked_audio and not audio_version:
+			frappe.delete_doc("Timeline Clip", linked_audio.name, ignore_permissions=True, force=True)
+			continue
+		if linked_audio:
+			if linked_audio.source_asset_version != audio_version:
+				linked_audio.source_asset_version = audio_version
+				linked_audio.save(ignore_permissions=True)
+			continue
+		if not audio_version:
 			continue
 		frappe.get_doc(
 			{
@@ -557,7 +648,7 @@ def _ensure_source_audio_clips(project, clips):
 				"linked_video_clip": video_clip.name,
 				"timeline_start_frame": video_clip.timeline_start_frame,
 				"enabled": video_clip.enabled,
-				"source_asset_version": video_clip.source_asset_version,
+				"source_asset_version": audio_version,
 				"source_in_frame": video_clip.source_in_frame,
 				"source_out_frame": video_clip.source_out_frame,
 				"initial_source_in_frame": video_clip.initial_source_in_frame,
@@ -980,12 +1071,16 @@ def _sync_linked_audio_clip(video_clip):
 	linked_audio = _linked_audio_clip(video_clip)
 	if not linked_audio:
 		return
+	audio_version = _get_or_create_source_audio_version(video_clip.source_asset_version)
+	if not audio_version:
+		frappe.delete_doc("Timeline Clip", linked_audio.name, ignore_permissions=True, force=True)
+		return
 	linked_audio.timeline_start_frame = video_clip.timeline_start_frame
 	linked_audio.source_in_frame = video_clip.source_in_frame
 	linked_audio.source_out_frame = video_clip.source_out_frame
 	linked_audio.initial_source_in_frame = video_clip.initial_source_in_frame
 	linked_audio.initial_source_out_frame = video_clip.initial_source_out_frame
-	linked_audio.source_asset_version = video_clip.source_asset_version
+	linked_audio.source_asset_version = audio_version
 	linked_audio.enabled = video_clip.enabled
 	linked_audio.save(ignore_permissions=True)
 

@@ -46,7 +46,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Asset Category",
-   "options": "Product\nCharacter\nBackground\nBrand\nStyle\nReference\nAudio\nOther",
+   "options": "Product\nCharacter\nBackground\nBrand\nStyle\nReference\nAudio\nDerived Audio\nOther",
    "reqd": 1
   },
   {

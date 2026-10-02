@@ -18,39 +18,40 @@
       </div>
     </div>
 
-    <div class="w-full overflow-hidden rounded-xl border border-outline-border bg-surface-muted/40 p-2 space-y-3">
-      <div>
-        <div class="flex items-center gap-2 mb-1 px-1">
-          <span class="text-[10px] font-mono font-bold text-ink-muted uppercase tracking-wider bg-surface-card px-2 py-0.5 rounded border border-outline-border flex items-center gap-1.5">
-            <span>🎬</span>
-            <span>Visuals</span>
-            <span class="text-ink-secondary text-[9px] font-semibold border-l border-outline-border pl-1">Video</span>
-          </span>
-          <span class="text-[11px] text-ink-secondary">
-            {{ activeVideoClips.length }} {{ currentLang === 'vi' ? 'phân đoạn hình ảnh' : 'video scenes' }}
-          </span>
-        </div>
+    <div class="timeline-shared-scroll rounded-xl border border-outline-border bg-surface-muted/40 p-2">
+      <div class="timeline-shared-canvas space-y-3" :style="{ width: `${sharedTimelineCanvasWidth}px` }">
+        <div>
+          <div class="flex items-center gap-2 mb-1 px-1">
+            <span class="text-[10px] font-mono font-bold text-ink-muted uppercase tracking-wider bg-surface-card px-2 py-0.5 rounded border border-outline-border flex items-center gap-1.5">
+              <span>🎬</span>
+              <span>Visuals</span>
+              <span class="text-ink-secondary text-[9px] font-semibold border-l border-outline-border pl-1">Video</span>
+            </span>
+            <span class="text-[11px] text-ink-secondary">
+              {{ activeVideoClips.length }} {{ currentLang === 'vi' ? 'phân đoạn hình ảnh' : 'video scenes' }}
+            </span>
+          </div>
 
-        <EditTimelineTrack
-          ref="visualTrack"
-          :clips="activeVideoClips"
-          :fps="fps"
-          :selected-clip-name="selectedClipName"
-          :playhead-frame="playheadFrame"
-          :busy="busy"
-          :total-frames="totalFrames"
-          :total-seconds="totalSeconds"
-          :current-lang="currentLang"
-          @select-clip="forwardSelectClip"
-          @update:playhead-frame="$emit('update:playheadFrame', $event)"
-          @trim="$emit('trim', $event)"
-          @split="$emit('split', $event)"
-          @duplicate="$emit('duplicate', $event)"
-          @delete="$emit('delete', $event)"
-          @reorder="$emit('reorder', $event)"
-          @select-transition="$emit('selectTransition', $event)"
-        />
-      </div>
+          <EditTimelineTrack
+            ref="visualTrack"
+            :clips="activeVideoClips"
+            :fps="fps"
+            :selected-clip-name="selectedClipName"
+            :playhead-frame="playheadFrame"
+            :busy="busy"
+            :total-frames="totalFrames"
+            :total-seconds="totalSeconds"
+            :current-lang="currentLang"
+            @select-clip="forwardSelectClip"
+            @update:playhead-frame="$emit('update:playheadFrame', $event)"
+            @trim="$emit('trim', $event)"
+            @split="$emit('split', $event)"
+            @duplicate="$emit('duplicate', $event)"
+            @delete="$emit('delete', $event)"
+            @reorder="$emit('reorder', $event)"
+            @select-transition="$emit('selectTransition', $event)"
+          />
+        </div>
 
       <AudioTimelineTracks
         :audio-clips="activeAudioClips"
@@ -64,14 +65,15 @@
         @open-audio-picker="$emit('openAudioPicker')"
       />
 
-      <div class="flex justify-end pt-1">
-        <button
-          type="button"
-          class="rounded-xl border border-dashed border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-400 hover:bg-indigo-500/20 cursor-pointer"
-          @click="$emit('addScene')"
-        >
-          + {{ currentLang === 'vi' ? 'Thêm cảnh' : 'Add Scene' }}
-        </button>
+        <div class="flex justify-end pt-1">
+          <button
+            type="button"
+            class="rounded-xl border border-dashed border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-400 hover:bg-indigo-500/20 cursor-pointer"
+            @click="$emit('addScene')"
+          >
+            + {{ currentLang === 'vi' ? 'Thêm cảnh' : 'Add Scene' }}
+          </button>
+        </div>
       </div>
     </div>
   </div>

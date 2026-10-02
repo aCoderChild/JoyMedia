@@ -144,7 +144,6 @@ export function useProjectGeneration(projectName, onRefresh) {
   async function appendScenes({ afterShot, durationSeconds, instruction, continuity }) {
     if (isGenerating.value) return;
     isGenerating.value = true;
-    productionError.value = "";
     try {
       const res = await call(
         "joymedia.joymedia.doctype.media_project.media_project.append_project_scenes",
@@ -162,7 +161,6 @@ export function useProjectGeneration(projectName, onRefresh) {
       return res;
     } catch (err) {
       isGenerating.value = false;
-      productionError.value = getFrappeErrorMessage(err, "Unable to append scenes.");
       throw err;
     }
   }
@@ -185,7 +183,7 @@ export function useProjectGeneration(projectName, onRefresh) {
   }
 
   function handleGenerationRetry() {
-    if (currentRun.value?.name) {
+    if (currentRun.value?.status === "Failed") {
       return retryFailedScenes();
     }
     return generateVideo();
@@ -291,6 +289,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     aiRevisionLoading,
     improvingIdea,
     productionError,
+    getFrappeErrorMessage,
     videoIdeaPrompt,
     currentRun,
     isProductionActive,
