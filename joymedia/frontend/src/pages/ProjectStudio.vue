@@ -143,7 +143,7 @@
 
         <!-- Legacy or Orphaned Project Output (Final video exists but 0 scenes) -->
         <div
-          v-if="finalVideo?.file && storyboardShots.length === 0"
+          v-if="finalVideo?.file && finalVideo?.is_current && storyboardShots.length === 0"
           class="p-3.5 mb-2 rounded-2xl bg-surface-card border border-amber-500/40 text-xs flex flex-wrap items-center justify-between gap-3 shadow-xs"
         >
           <div class="space-y-0.5">
@@ -171,6 +171,8 @@
             v-model:prompt="videoIdeaPrompt"
             :project-assets="projectAssets"
             :is-generating="isGenerating || isProductionActive"
+            :generation-phase="generationPhase"
+            :sync-error="syncError"
             :is-improving-prompt="improvingIdea"
             :has-storyboard="Boolean(storyboardShots.length)"
             :duration-seconds="videoSettings.duration || 15"
@@ -384,6 +386,7 @@ const {
   isOutdated: generationOutputOutdated,
   videoSettings,
   fetchWorkspace,
+  applyWorkspaceSnapshot,
   fetchVideoStyles,
   updateProjectName,
   saveVideoSettings,
@@ -418,6 +421,8 @@ const {
   videoIdeaPrompt,
   currentRun,
   isProductionActive,
+  generationPhase,
+  syncError,
   resumeProduction,
   generateVideo,
   appendScenes,
@@ -426,7 +431,7 @@ const {
   reviseShotWithAi,
   improveVideoIdea,
   stopPolling,
-} = useProjectGeneration(projectName, fetchWorkspace);
+} = useProjectGeneration(projectName, refreshStudioGenerationState);
 
 const appendSceneError = ref("");
 
@@ -457,6 +462,19 @@ const {
   exportTimeline,
 } = useProjectTimeline(projectName);
 
+async function refreshStudioGenerationState(snapshot = null) {
+  if (snapshot) {
+    applyWorkspaceSnapshot(snapshot);
+  } else {
+    await fetchWorkspace();
+  }
+  const totalTasks = Number(currentRun.value?.total_tasks || 0);
+  const completedTasks = Number(currentRun.value?.completed_tasks || 0);
+  if (studioMode.value === "edit" || (totalTasks > 0 && completedTasks === totalTasks)) {
+    await loadTimeline(true);
+  }
+}
+
 // Studio Local State
 const studioPreviewRef = ref(null);
 const mediaDrawerOpen = ref(false);
@@ -470,12 +488,17 @@ const addSceneAfterShot = ref(null);
 watch(
   () => isProductionActive.value,
   async (active, prev) => {
-    if (prev && !active) {
-      await fetchWorkspace();
-      await loadTimeline(true);
-      if (finalVideo.value?.file && clips.value?.length) {
-        studioMode.value = "edit";
-      }
+    if (!prev || active) return;
+    await fetchWorkspace();
+    await loadTimeline(true);
+    if (hasCurrentMaster.value) {
+      previewSelection.value = "master";
+      selectedTarget.value = "scene";
+      playheadFrame.value = 0;
+      previewDuration.value = 0;
+      isPlaying.value = false;
+      await nextTick();
+      seekPreview(0);
     }
   }
 );
@@ -569,6 +592,9 @@ const selectedClipSourceShot = computed(() => {
 });
 
 const previewDuration = ref(0);
+const mediaCurrentSeconds = ref(0);
+
+const hasCurrentMaster = computed(() => Boolean(finalVideo.value?.file && finalVideo.value?.is_current !== false));
 
 function onPreviewLoadedMetadata({ duration }) {
   if (duration && Number.isFinite(duration) && duration > 0) {
@@ -578,6 +604,9 @@ function onPreviewLoadedMetadata({ duration }) {
 
 // Player displayed media total duration (Strictly distinct from project target duration setting)
 const playerTotalSeconds = computed(() => {
+  if (studioPreview.value?.type === "master") {
+    return Number(timeline.value?.total_seconds || 0);
+  }
   if (previewDuration.value > 0) {
     return previewDuration.value;
   }
@@ -585,9 +614,10 @@ const playerTotalSeconds = computed(() => {
 });
 
 const currentTimelinePositionLabel = computed(() => {
-  const f = playheadFrame.value || 0;
   const currentFps = fps.value || 24;
-  const totalSec = Math.max(0, f / currentFps);
+  const totalSec = studioPreview.value?.type === "master"
+    ? Math.max(0, (playheadFrame.value || 0) / currentFps)
+    : Math.max(0, mediaCurrentSeconds.value || 0);
   const m = String(Math.floor(totalSec / 60)).padStart(2, "0");
   const s = String(Math.floor(totalSec % 60)).padStart(2, "0");
   return `${m}:${s}`;
@@ -632,7 +662,7 @@ const studioPreview = computed(() => {
 
   // 3. PERSISTENT MASTER/FINAL VIDEO (OpenSlop unified player model)
   // When final/master video exists, IT IS THE PERSISTENT PLAYER
-  if (finalVideo.value?.file) {
+  if (hasCurrentMaster.value) {
     return {
       type: "master",
       url: finalVideo.value.file,
@@ -678,9 +708,11 @@ const studioPreview = computed(() => {
 });
 
 watch(
-  () => studioPreview.value?.url,
+  () => [studioPreview.value?.type, studioPreview.value?.url],
   () => {
     previewDuration.value = 0;
+    mediaCurrentSeconds.value = 0;
+    isPlaying.value = false;
   }
 );
 
@@ -697,6 +729,9 @@ function getShotFirstFrame(shot) {
 }
 
 function estimateShotDuration(shot) {
+  if (shot?.planned_frame_count && fps.value) {
+    return Number(shot.planned_frame_count) / Number(fps.value);
+  }
   return Number(shot?.duration_seconds) || 5;
 }
 
@@ -783,7 +818,7 @@ function onSelectShot(shot, index) {
 
   const currentFps = fps.value || 24;
 
-  if (finalVideo.value?.file) {
+  if (hasCurrentMaster.value) {
     // Persistent master player: seek master to shot start time
     previewSelection.value = "master";
     const startTime = getShotStartTime(index);
@@ -863,11 +898,18 @@ async function removeStoryboardShot(shot) {
 
 async function previewStoryboardShot(shot, index) {
   onSelectShot(shot, index);
-  previewSelection.value = "shot";
-  playheadFrame.value = 0;
   isPlaying.value = false;
   await nextTick();
-  seekPreview(0);
+  if (hasCurrentMaster.value) {
+    previewSelection.value = "master";
+    const startTime = getShotStartTime(index);
+    playheadFrame.value = Math.round(startTime * (fps.value || 24));
+    seekPreview(startTime);
+  } else {
+    previewSelection.value = "shot";
+    playheadFrame.value = 0;
+    seekPreview(0);
+  }
   isPlaying.value = true;
 }
 
@@ -881,7 +923,8 @@ function onVideoTimeUpdate(payload) {
   const currentTime = payload?.currentTime ?? payload?.target?.currentTime ?? 0;
   const currentFps = fps.value || 24;
 
-  if (finalVideo.value?.file && studioPreview.value?.type === "master") {
+  mediaCurrentSeconds.value = currentTime;
+  if (hasCurrentMaster.value && studioPreview.value?.type === "master") {
     // Persistent master player: currentTime IS global timeline time!
     playheadFrame.value = Math.round(currentTime * currentFps);
     syncActiveSceneFromFrame(playheadFrame.value);
@@ -900,7 +943,7 @@ function onSeekPlayhead(frame) {
 	const currentFps = fps.value || 24;
 	const seekTime = playheadFrame.value / currentFps;
 
-  if (finalVideo.value?.file && studioPreview.value?.type === "master") {
+  if (hasCurrentMaster.value && studioPreview.value?.type === "master") {
     seekPreview(seekTime);
   }
 
@@ -941,7 +984,7 @@ function onSelectClip(clip, sourceFrame = null) {
   selectedClipName.value = clip.name;
   selectedTarget.value = "clip";
 
-	if (finalVideo.value?.file) {
+	if (hasCurrentMaster.value) {
 		previewSelection.value = "master";
 
     if (clip.shot_number) {
@@ -1080,9 +1123,6 @@ onMounted(async () => {
   resumeProduction(workspace.value?.production);
   await fetchVideoStyles();
   await loadTimeline(true);
-  if (finalVideo.value?.file && clips.value?.length) {
-    studioMode.value = "edit";
-  }
   // sync video idea prompt if present in project
   if (workspace.value?.project?.video_idea) {
     videoIdeaPrompt.value = workspace.value.project.video_idea;

@@ -154,6 +154,8 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 			}
 		)
 		doc.duration_seconds = shot["duration_seconds"]
+		if shot.get("planned_frame_count"):
+			doc.planned_frame_count = int(shot["planned_frame_count"])
 		for reference in shot.get("references") or []:
 			if not isinstance(reference, dict) or not reference.get("reference_key"):
 				frappe.throw(_("Every Shot Reference must contain a reference_key."))
@@ -298,6 +300,7 @@ def append_video_plan(
 				"shot_name": shot.get("shot_name") or f"Shot {base_shot_number + offset}",
 				"generation_prompt": shot["generation_prompt"],
 				"duration_seconds": float(shot["duration_seconds"]),
+				"planned_frame_count": int(shot.get("planned_frame_count") or 0),
 			}
 		)
 		for reference in shot.get("references") or []:

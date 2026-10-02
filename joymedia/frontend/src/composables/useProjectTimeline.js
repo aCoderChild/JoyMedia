@@ -20,18 +20,23 @@ export function useProjectTimeline(projectName) {
     return unref(projectName);
   }
 
-  function applyTimeline(next, preferredClip = null) {
+  function applyTimeline(next, preferredClip = null, { preserveSelection = true, preservePlayhead = true } = {}) {
+    const previousTimeline = timeline.value;
+    const previousSelection = selectedClipName.value;
+    const previousPlayhead = playheadFrame.value;
     timeline.value = next;
 
     const candidate =
       next?.clips?.find((clip) => clip.name === preferredClip) ||
-      next?.clips?.find((clip) => clip.name === selectedClipName.value) ||
+      (preserveSelection && next?.clips?.find((clip) => clip.name === previousSelection)) ||
       next?.clips?.[0] ||
       null;
 
     selectedClipName.value = candidate?.name || null;
 
-    if (candidate) {
+    if (preservePlayhead && previousTimeline && next) {
+      playheadFrame.value = Math.min(previousPlayhead, Number(next.total_frames || previousPlayhead));
+    } else if (candidate) {
       playheadFrame.value = candidate.timeline_start_frame;
     } else {
       playheadFrame.value = 0;
@@ -73,7 +78,7 @@ export function useProjectTimeline(projectName) {
         }
       );
 
-      applyTimeline(result, preferredClip);
+      applyTimeline(result, preferredClip, { preserveSelection: true, preservePlayhead: true });
       return result;
     } catch (error) {
       toast({

@@ -7,6 +7,9 @@
           <span>🎞️</span>
           <span>{{ currentLang === 'vi' ? 'Storyboard Phân cảnh' : 'Storyboard' }}</span>
         </span>
+        <span v-if="syncError" class="text-rose-400 truncate">
+          {{ syncError }}
+        </span>
         <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-indigo-400 border border-outline-border font-bold">
           {{ totalDurationSeconds }}s
         </span>
@@ -45,18 +48,23 @@
       <div class="flex items-center gap-2 min-w-0">
         <span class="lucide-refresh-cw size-3.5 text-indigo-400 animate-spin shrink-0" />
         <span class="font-bold text-ink-primary">
-          {{ currentLang === 'vi' ? 'Đang tạo video:' : 'Generating video:' }}
+          <template v-if="isFinalizing">
+            {{ currentLang === 'vi' ? 'Đang ghép video cuối…' : 'Composing final video…' }}
+          </template>
+          <template v-else>
+            {{ currentLang === 'vi' ? 'Đang tạo video:' : 'Generating video:' }}
+          </template>
         </span>
-        <span v-if="shots.length || expectedShotCount" class="text-indigo-400 font-mono font-semibold">
+        <span v-if="!isFinalizing && (shots.length || expectedShotCount)" class="text-indigo-400 font-mono font-semibold">
           {{ completedShotsCount }} / {{ shots.length || expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes ready' }}
         </span>
-        <span v-else class="text-indigo-400 font-mono font-semibold">
+        <span v-else-if="!isFinalizing" class="text-indigo-400 font-mono font-semibold">
           {{ currentLang === 'vi' ? 'Đang lập storyboard…' : 'Planning storyboard…' }}
         </span>
       </div>
 
       <!-- Shot Progress Indicators -->
-      <div v-if="shots.length || expectedShotCount" class="flex items-center gap-1.5 overflow-x-auto">
+      <div v-if="!isFinalizing && (shots.length || expectedShotCount)" class="flex items-center gap-1.5 overflow-x-auto">
         <span
           v-for="(shot, idx) in (shots.length ? shots : expectedShotCount)"
           :key="idx"
@@ -218,6 +226,8 @@ const props = defineProps({
   isRevising: { type: Boolean, default: false },
   expectedShotCount: { type: Number, default: 0 },
   production: { type: Object, default: null },
+  generationPhase: { type: String, default: "idle" },
+  syncError: { type: String, default: "" },
   currentLang: { type: String, default: "en" },
   estimateShotDuration: { type: Function, default: (s) => s?.duration_seconds || 5 },
   formatShotKeyframeTime: { type: Function, default: () => "0.0s" },
@@ -271,6 +281,12 @@ function onDrop(shot, index) {
 const completedShotsCount = computed(() => {
   if (!props.shots?.length) return 0;
   return props.shots.filter((s) => Boolean(props.getShotVideoFile(s))).length;
+});
+
+const isFinalizing = computed(() => {
+  return (
+    props.generationPhase === "composing"
+  );
 });
 
 function getShotState(shot) {

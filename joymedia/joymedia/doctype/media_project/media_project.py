@@ -21,6 +21,20 @@ def _planning_shot_count(total_duration_seconds):
 	return 1 if float(total_duration_seconds or 0) <= 5 else None
 
 
+def _plan_append_scene_frames(duration_seconds, fps):
+	total_frames = round(float(duration_seconds) * float(fps))
+	max_scene_frames = round(5 * float(fps))
+	if total_frames < 1 or max_scene_frames < 1:
+		frappe.throw(_("Append duration and workflow FPS must be positive."))
+	frames = []
+	remaining = total_frames
+	while remaining > 0:
+		current = min(max_scene_frames, remaining)
+		frames.append(current)
+		remaining -= current
+	return frames
+
+
 def _normalize_generation_mode(value):
 	return {"Independent": "Multi-shot", "Chained": "Continuous", "Consistency": "Continuous"}.get(
 		value, value or "Multi-shot"
@@ -305,7 +319,15 @@ def _storyboard_payload(specification):
 		return []
 	shots = _active_project_shots(
 		specification.name,
-		fields=["name", "shot_number", "shot_name", "generation_prompt", "duration_seconds", "selected_output_asset_version"],
+		fields=[
+			"name",
+			"shot_number",
+			"shot_name",
+			"generation_prompt",
+			"duration_seconds",
+			"planned_frame_count",
+			"selected_output_asset_version",
+		],
 	)
 	for shot in shots:
 		if shot.selected_output_asset_version:
@@ -335,11 +357,14 @@ def get_project_workspace(name):
 		production["is_outdated"] = bool(
 			production.get("project_snapshot_hash") and production.get("project_snapshot_hash") != current_snapshot_hash
 		)
+	active_run = bool(production and production.status in ("Queued", "Running"))
 	final_asset_version = project.current_output_asset_version or (production.final_asset_version if production else None)
 	final_video = ({
 		"asset_version": final_asset_version,
 		"file": frappe.db.get_value("Asset Version", final_asset_version, "file"),
 		"is_outdated": bool(production and production.get("is_outdated")),
+		"is_current": not active_run or bool(production and production.final_asset_version == final_asset_version),
+		"is_previous_version": active_run and not bool(production and production.final_asset_version == final_asset_version),
 		"legacy_non_editable": bool(final_asset_version and not storyboard),
 	} if final_asset_version else None)
 	return {
@@ -364,6 +389,18 @@ def get_project_workspace(name):
 		"production": production,
 		"final_video": final_video,
 	}
+
+
+@frappe.whitelist()
+def refresh_project_studio(name):
+	project = frappe.get_doc("Media Project", name)
+	project._require_read_access()
+	production = _get_latest_project_generation_run(project.name)
+	if production and production.status in ("Queued", "Running"):
+		from joymedia.services.generation_orchestrator import refresh_run
+		refresh_run(production.name)
+		frappe.db.commit()
+	return get_project_workspace(project.name)
 
 
 def _aggregate_shot_progress(run_name):
@@ -1108,7 +1145,6 @@ class MediaProject(Document):
 
 		from joymedia.services.generation_orchestrator import start_run_internal, validate_generation_preflight
 		from joymedia.services.qwen_client import generate_video_plan
-		from joymedia.services.shot_duration_planner import recalculate_shot_durations
 		from joymedia.services.video_plan_service import append_video_plan
 		from joymedia.services.artifact_service import get_attempt_artifact
 		from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
@@ -1167,6 +1203,7 @@ class MediaProject(Document):
 					workflow = continuation_workflow
 					self.workflow = workflow.name
 					self.save(ignore_permissions=True)
+			target_frames = _plan_append_scene_frames(duration_seconds, workflow.output_fps)
 			image_inputs = self._get_project_image_inputs()
 			if not image_inputs:
 				frappe.throw(_("The active generation workflow requires at least one image reference."))
@@ -1175,7 +1212,7 @@ class MediaProject(Document):
 				video_idea=_meaningful_project_value(self.video_idea, "Create a premium cinematic product showcase."),
 				total_video_duration=duration_seconds,
 				target_fps=workflow.output_fps,
-				shot_count=_planning_shot_count(duration_seconds),
+				shot_count=len(target_frames),
 				reference_images=image_inputs,
 				reference_media=_get_project_reference_contexts(self),
 				video_style=workflow.workflow_key,
@@ -1188,6 +1225,12 @@ class MediaProject(Document):
 					"instruction": str(instruction or "").strip(),
 				},
 			)
+			if len(plan.get("shots") or []) != len(target_frames):
+				frappe.throw(_("AI Director returned an unexpected number of scenes."))
+			fps = float(workflow.output_fps)
+			for shot, frame_count in zip(plan["shots"], target_frames):
+				shot["planned_frame_count"] = int(frame_count)
+				shot["duration_seconds"] = frame_count / fps
 			new_shot_names = append_video_plan(
 				self.name,
 				plan,
@@ -1195,7 +1238,6 @@ class MediaProject(Document):
 			)
 			self.total_duration_seconds = float(self.total_duration_seconds or 0) + duration_seconds
 			self.save(ignore_permissions=True)
-			recalculate_shot_durations(self.name)
 			project_snapshot_json, project_snapshot_hash = build_project_snapshot(self)
 			scope = {
 				"shot_names": new_shot_names,

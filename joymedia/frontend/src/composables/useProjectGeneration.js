@@ -10,6 +10,8 @@ export function useProjectGeneration(projectName, onRefresh) {
   const currentRun = ref(null);
   let pollTimeout = null;
   let polling = false;
+  let consecutivePollFailures = 0;
+  const syncError = ref("");
 
   function getFrappeErrorMessage(err, fallback = "Failed to start video generation.") {
     const data = err?.response?.data || err || {};
@@ -53,39 +55,39 @@ export function useProjectGeneration(projectName, onRefresh) {
 
   async function pollRun() {
     if (!polling) return;
-    let refreshedProduction = null;
     try {
-      if (currentRun.value?.name) {
-        refreshedProduction = await call(
-          "joymedia.joymedia.doctype.media_project.media_project.refresh_project_production",
-          { name: project() }
-        );
-      }
-
       const snap = await call(
-        "joymedia.joymedia.doctype.media_project.media_project.get_project_workspace",
+        "joymedia.joymedia.doctype.media_project.media_project.refresh_project_studio",
         { name: project() }
       );
+      consecutivePollFailures = 0;
+      syncError.value = "";
+      if (snap) {
+        currentRun.value = snap.production || null;
+      }
       if (snap?.production) {
-        currentRun.value = refreshedProduction || snap.production;
         const status = currentRun.value.status;
         if (status === "Completed") {
           stopPolling();
           isGenerating.value = false;
-          if (onRefresh) await onRefresh();
+          if (onRefresh) await onRefresh(snap);
           toast({ title: "Generation complete", text: "All video scenes are ready!", type: "success" });
         } else if (status === "Failed") {
           stopPolling();
           isGenerating.value = false;
           productionError.value = currentRun.value.error_summary || "Generation encountered an issue.";
-          if (onRefresh) await onRefresh();
+          if (onRefresh) await onRefresh(snap);
         } else {
           // Still generating
-          if (onRefresh) await onRefresh();
+          if (onRefresh) await onRefresh(snap);
         }
       }
-    } catch (_) {
-      // Keep polling or stop if error persists
+    } catch (err) {
+      consecutivePollFailures += 1;
+      if (consecutivePollFailures >= 3) {
+        syncError.value = "Connection lost while checking generation. Generation may still be running.";
+        toast({ title: "Generation sync", text: syncError.value, type: "error" });
+      }
     } finally {
       if (polling && ["Queued", "Running"].includes(currentRun.value?.status)) {
         pollTimeout = setTimeout(pollRun, 3000);
@@ -282,6 +284,20 @@ export function useProjectGeneration(projectName, onRefresh) {
     return isGenerating.value || ["Queued", "Running"].includes(currentRun.value?.status);
   });
 
+  const generationPhase = computed(() => {
+    const run = currentRun.value;
+    if (isGenerating.value && !run) return "starting";
+    if (!run) return "idle";
+    if (run.status === "Failed") return "failed";
+    if (run.status === "Completed") return "completed";
+    if (!run.total_tasks) return "planning";
+    if (Number(run.completed_tasks || 0) < Number(run.total_tasks || 0)) return "rendering";
+    if (!run.final_asset_version && Number(run.completed_tasks || 0) === Number(run.total_tasks || 0)) {
+      return "composing";
+    }
+    return "running";
+  });
+
   return {
     isGenerating,
     isRevising,
@@ -292,6 +308,8 @@ export function useProjectGeneration(projectName, onRefresh) {
     videoIdeaPrompt,
     currentRun,
     isProductionActive,
+    generationPhase,
+    syncError,
     resumeProduction,
 
     generateVideo,

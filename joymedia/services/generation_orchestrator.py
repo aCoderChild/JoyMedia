@@ -560,29 +560,30 @@ def prepare_chained_regeneration(attempt_name: str):
 
 def finalize_run(run_name: str):
 	"""Compose a running execution into its final Asset Version."""
-	run = frappe.get_doc("Generation Run", run_name)
-	refresh_run(run.name, enqueue_finalization=False)
-	run.reload()
-	if run.status != "Running":
-		frappe.throw(_("Generation Run {0} must be Running before composition.").format(run.name))
-	if run.final_asset_version:
-		return _run_summary(run)
+	with filelock(f"joymedia-finalize-run-{run_name}"):
+		run = frappe.get_doc("Generation Run", run_name)
+		refresh_run(run.name, enqueue_finalization=False)
+		run.reload()
+		if run.final_asset_version:
+			return _run_summary(run)
+		if run.status != "Running":
+			frappe.throw(_("Generation Run {0} must be Running before composition.").format(run.name))
 
-	try:
-		project = frappe.get_doc("Media Project", run.media_project)
-		_initialize_timeline(project)
-		result = compose_project_timeline_internal(project.name)
-	except Exception as exc:
-		_raise_run_error(run, _exception_message(exc))
-		return _run_summary(run)
+		try:
+			project = frappe.get_doc("Media Project", run.media_project)
+			_initialize_timeline(project)
+			result = compose_project_timeline_internal(project.name)
+		except Exception as exc:
+			_raise_run_error(run, _exception_message(exc))
+			return _run_summary(run)
 
-	run.final_asset_version = result["final_asset_version"]
-	run.status = "Completed"
-	run.completed_at = now()
-	run.save(ignore_permissions=True)
-	if run.media_project:
-		frappe.db.set_value("Media Project", run.media_project, "status", "Completed", update_modified=False)
-	return _run_summary(run)
+		run.final_asset_version = result["final_asset_version"]
+		run.status = "Completed"
+		run.completed_at = now()
+		run.save(ignore_permissions=True)
+		if run.media_project:
+			frappe.db.set_value("Media Project", run.media_project, "status", "Completed", update_modified=False)
+		return _run_summary(run)
 
 
 def cancel_run(run_name: str):

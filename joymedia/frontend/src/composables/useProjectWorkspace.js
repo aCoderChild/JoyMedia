@@ -36,6 +36,11 @@ export function useProjectWorkspace(projectName) {
     }
   }
 
+  function applyWorkspaceSnapshot(data) {
+    workspace.value = data || null;
+    return workspace.value;
+  }
+
   async function fetchVideoStyles() {
     try {
       const styles = await call("joymedia.joymedia.doctype.media_project.media_project.get_video_styles");
@@ -133,6 +138,7 @@ export function useProjectWorkspace(projectName) {
     videoSettings,
 
     fetchWorkspace,
+    applyWorkspaceSnapshot,
     fetchVideoStyles,
     updateProjectName,
     saveVideoSettings,

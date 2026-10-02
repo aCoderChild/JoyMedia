@@ -45,18 +45,41 @@ def compose_shot_segments(generation_run_name, shot_name):
 
 		shot_asset = _get_or_create_shot_output_asset(shot, project.name)
 		if len(segments) == 1:
-			artifact = segments[0][1]
-			promoted_file = _promote_artifact_file(
-				artifact,
-				shot_asset,
-				f"{shot.name}.mp4",
-			)
+			profile = _get_delivery_profile(project, generation_run_name)
+			expected_frames = _shot_frame_count(shot, profile)
+			try:
+				with tempfile.TemporaryDirectory(prefix=f"joymedia-shot-{shot.name}-") as temp_dir:
+					normalized_path = Path(temp_dir) / f"{shot.name}.mp4"
+					_normalize_segment(
+						_get_artifact_path(segments[0][1]),
+						normalized_path,
+						profile,
+						int(segments[0][0].segment_frame_count or 0),
+						drop_first=False,
+					)
+					_validate_normalized_video(normalized_path, profile, expected_frames=expected_frames)
+					video_bytes = normalized_path.read_bytes()
+					video_duration = _get_video_duration(normalized_path)
+			except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+				frappe.throw(_("Unable to normalize Shot output: {0}").format(_command_error(exc)))
+			file_doc = frappe.get_doc(
+				{
+					"doctype": "File",
+					"file_name": f"{shot.name}.mp4",
+					"content": video_bytes,
+					"is_private": 1,
+					"attached_to_doctype": "Media Asset",
+					"attached_to_name": shot_asset.name,
+				}
+			).insert(ignore_permissions=True)
 			asset_version = frappe.get_doc(
 				{
 					"doctype": "Asset Version",
 					"media_asset": shot_asset.name,
-					"file": promoted_file.file_url,
-					"source": "Generated",
+					"file": file_doc.file_url,
+					"source": "Composed",
+					"duration_seconds": video_duration,
+					"fps": profile["fps"],
 				}
 			).insert(ignore_permissions=True)
 			shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
