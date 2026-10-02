@@ -10,6 +10,34 @@ export function useProjectGeneration(projectName, onRefresh) {
   const currentRun = ref(null);
   let pollInterval = null;
 
+  function getFrappeErrorMessage(err, fallback = "Failed to start video generation.") {
+    const data = err?.response?.data || err || {};
+
+    if (Array.isArray(data.messages) && data.messages.length) {
+      return data.messages
+        .map((item) => item?.message || item)
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    for (const raw of [data._server_messages, err?._server_messages]) {
+      if (!raw) continue;
+      try {
+        const outer = typeof raw === "string" ? JSON.parse(raw) : raw;
+        for (const entry of Array.isArray(outer) ? outer : [outer]) {
+          try {
+            const parsed = typeof entry === "string" ? JSON.parse(entry) : entry;
+            if (parsed?.message) return parsed.message;
+          } catch (_) {
+            if (typeof entry === "string" && entry.trim()) return entry;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return data.exception || data.message || err?.message || fallback;
+  }
+
   function project() {
     return unref(projectName);
   }
@@ -81,7 +109,7 @@ export function useProjectGeneration(projectName, onRefresh) {
       toast({ title: "Generation started", text: "Creating storyboard and rendering scenes...", type: "success" });
     } catch (err) {
       isGenerating.value = false;
-      productionError.value = err?.message || "Failed to start video generation.";
+      productionError.value = getFrappeErrorMessage(err);
       toast({ title: "Generation error", text: productionError.value, type: "error" });
     }
   }
@@ -98,8 +126,16 @@ export function useProjectGeneration(projectName, onRefresh) {
       toast({ title: "Retrying", text: "Retrying generation for failed scenes.", type: "success" });
     } catch (err) {
       isGenerating.value = false;
-      toast({ title: "Retry failed", text: err?.message || "Unable to retry.", type: "error" });
+      productionError.value = getFrappeErrorMessage(err, "Unable to retry.");
+      toast({ title: "Retry failed", text: productionError.value, type: "error" });
     }
+  }
+
+  function handleGenerationRetry() {
+    if (currentRun.value?.name) {
+      return retryFailedScenes();
+    }
+    return generateVideo();
   }
 
   async function reviseStoryboard() {
@@ -208,6 +244,7 @@ export function useProjectGeneration(projectName, onRefresh) {
 
     generateVideo,
     retryFailedScenes,
+    handleGenerationRetry,
     reviseStoryboard,
     reviseShotWithAi,
     improveVideoIdea,

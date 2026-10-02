@@ -155,6 +155,14 @@ def _build_fallback_improved_idea(current_idea, product_name, references):
 	return f"{base.rstrip('.')}. Enhanced with dynamic atmospheric depth, photorealistic textures{ref_str}, and fluid camera choreography."
 
 
+def _example_reference_role(workflow_input_contract):
+	for item in workflow_input_contract or []:
+		role = str(item.get("role") or "").strip()
+		if role:
+			return role
+	return "reference"
+
+
 def generate_video_plan(
 	*,
 	product_name: str,
@@ -217,10 +225,11 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 			"Shots are generated from explicitly resolved keyframes/references. Keep boundaries coherent."
 		)
 
+	example_role = _example_reference_role(workflow_input_contract)
 	response_shape = (
 		'{"shots":[{"shot_number":1,"shot_name":"...",'
 		'"duration_seconds":5,"generation_prompt":"...",'
-		'"references":[{"reference_key":"hero_product","usage_role":"product_reference"}]}]}'
+		f'"references":[{{"reference_key":"hero_product","usage_role":"{example_role}"}}]}}]}}'
 	)
 	user_prompt = (
 		f"{instruction}\n\n"

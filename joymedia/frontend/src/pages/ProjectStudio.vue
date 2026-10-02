@@ -49,7 +49,7 @@
           <button
             type="button"
             class="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shrink-0 cursor-pointer"
-            @click="retryFailedScenes"
+            @click="handleGenerationRetry"
           >
             {{ currentLang === 'vi' ? 'Thử lại' : 'Retry' }}
           </button>
@@ -91,7 +91,7 @@
             @select-full-video="previewSelection = 'full'"
             @select-clip="previewSelection = 'clip'"
             @select-shot-target="onSelectShot"
-            @retry-failed-scenes="retryFailedScenes"
+            @retry-failed-scenes="handleGenerationRetry"
             @refresh="fetchWorkspace"
             @open-media-picker="openPicker"
           />
@@ -195,7 +195,7 @@
             :has-storyboard="Boolean(storyboardShots.length)"
             :is-generating="isGenerating || isProductionActive"
             :is-revising="isRevising"
-            :expected-shot-count="storyboardShots.length || 4"
+            :expected-shot-count="storyboardShots.length || currentRun?.total_tasks || 0"
             :production="currentRun"
             :current-lang="currentLang"
             :estimate-shot-duration="estimateShotDuration"

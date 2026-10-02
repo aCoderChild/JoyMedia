@@ -47,13 +47,16 @@
         <span class="font-bold text-ink-primary">
           {{ currentLang === 'vi' ? 'Đang tạo video:' : 'Generating video:' }}
         </span>
-        <span class="text-indigo-400 font-mono font-semibold">
+        <span v-if="shots.length || expectedShotCount" class="text-indigo-400 font-mono font-semibold">
           {{ completedShotsCount }} / {{ shots.length || expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes ready' }}
+        </span>
+        <span v-else class="text-indigo-400 font-mono font-semibold">
+          {{ currentLang === 'vi' ? 'Đang lập storyboard…' : 'Planning storyboard…' }}
         </span>
       </div>
 
       <!-- Shot Progress Indicators -->
-      <div class="flex items-center gap-1.5 overflow-x-auto">
+      <div v-if="shots.length || expectedShotCount" class="flex items-center gap-1.5 overflow-x-auto">
         <span
           v-for="(shot, idx) in (shots.length ? shots : expectedShotCount)"
           :key="idx"
@@ -166,7 +169,7 @@ const props = defineProps({
   hasStoryboard: { type: Boolean, default: false },
   isGenerating: { type: Boolean, default: false },
   isRevising: { type: Boolean, default: false },
-  expectedShotCount: { type: Number, default: 4 },
+  expectedShotCount: { type: Number, default: 0 },
   production: { type: Object, default: null },
   currentLang: { type: String, default: "en" },
   estimateShotDuration: { type: Function, default: (s) => s?.duration_seconds || 5 },

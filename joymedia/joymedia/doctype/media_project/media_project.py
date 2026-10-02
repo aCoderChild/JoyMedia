@@ -16,6 +16,10 @@ ALLOWED_STATUSES = {"Draft", "Generating", "Completed", "Needs Attention", "Canc
 SUPPORTED_PROJECT_MEDIA_TYPES = {"Image", "Video", "Audio"}
 
 
+def _planning_shot_count(total_duration_seconds):
+	return 1 if float(total_duration_seconds or 0) <= 5 else None
+
+
 def _normalize_generation_mode(value):
 	return {"Independent": "Multi-shot", "Chained": "Continuous", "Consistency": "Continuous"}.get(
 		value, value or "Multi-shot"
@@ -921,7 +925,7 @@ class MediaProject(Document):
 			video_idea=_meaningful_project_value(self.video_idea, "Create a premium cinematic product showcase."),
 			total_video_duration=settings.total_duration_seconds,
 			target_fps=workflow.output_fps,
-			shot_count=None,
+			shot_count=_planning_shot_count(settings.total_duration_seconds),
 			reference_images=image_inputs,
 			reference_media=_get_project_reference_contexts(self),
 			video_style=workflow.workflow_key,

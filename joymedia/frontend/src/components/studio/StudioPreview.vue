@@ -101,7 +101,12 @@
           {{ currentLang === 'vi' ? 'Đang kết xuất video quảng cáo...' : 'Rendering video ad...' }}
         </h3>
         <p class="text-xs text-ink-muted mt-1">
-          {{ completedShotCount(production) }} / {{ production?.shots?.length || (production?.total_tasks || 4) }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes completed' }}
+          <template v-if="production?.shots?.length || production?.total_tasks">
+            {{ completedShotCount(production) }} / {{ production?.shots?.length || production?.total_tasks }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes completed' }}
+          </template>
+          <template v-else>
+            {{ currentLang === 'vi' ? 'Đang lập storyboard…' : 'Planning storyboard…' }}
+          </template>
         </p>
       </div>
 
