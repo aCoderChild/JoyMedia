@@ -163,6 +163,16 @@
       </template>
     </div>
 
+    <div v-if="shots.length" class="relative flex justify-end pt-1">
+      <button
+        type="button"
+        class="rounded-xl border border-dashed border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-400 hover:bg-indigo-500/20 cursor-pointer"
+        @click="$emit('addScene', shots[shots.length - 1])"
+      >
+        + {{ currentLang === 'vi' ? 'Thêm cảnh' : 'Add Scene' }}
+      </button>
+    </div>
+
     <!-- Empty Storyboard State -->
     <div v-else class="text-center py-6 text-xs text-ink-muted">
       {{ currentLang === 'vi' ? 'Nhập ý tưởng video bên trên và bấm Tạo Video để sinh phân cảnh tự động.' : 'Enter your video idea above and click Generate Video to create storyboard scenes.' }}
@@ -196,6 +206,7 @@ const emit = defineEmits([
   "selectShot",
   "previewShot",
   "editShot",
+  "addScene",
   "selectKeyframe",
   "changeShotDuration",
   "toggleContinuityMode",

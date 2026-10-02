@@ -60,6 +60,16 @@
         @select-clip="forwardSelectClip"
         @open-audio-picker="$emit('openAudioPicker')"
       />
+
+      <div class="flex justify-end pt-1">
+        <button
+          type="button"
+          class="rounded-xl border border-dashed border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-400 hover:bg-indigo-500/20 cursor-pointer"
+          @click="$emit('addScene')"
+        >
+          + {{ currentLang === 'vi' ? 'Thêm cảnh' : 'Add Scene' }}
+        </button>
+      </div>
     </div>
   </div>
 </template>

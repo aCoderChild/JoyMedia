@@ -207,6 +207,7 @@
             @toggle-continuity-mode="toggleContinuityMode"
             @revise-storyboard="reviseStoryboard"
             @reorder-shots="onReorderShots"
+            @add-scene="openAddScenePopover"
           />
         </template>
 
@@ -232,6 +233,7 @@
             @reorder="reorderClip"
             @select-transition="setTransition"
             @open-audio-picker="openAudioPicker"
+            @add-scene="openAddScenePopover"
           />
         </template>
       </div>
@@ -279,6 +281,16 @@
       @open-settings="showSettings = true"
       @open-media-picker="openPicker"
     />
+
+    <div v-if="addScenePopoverOpen" class="absolute right-4 top-14 z-40">
+      <AddScenePopover
+        :open="addScenePopoverOpen"
+        :after-shot="addSceneAfterShot"
+        :current-lang="currentLang"
+        @close="addScenePopoverOpen = false"
+        @submit="handleAddSceneRequest"
+      />
+    </div>
   </div>
 
   <!-- Modal: Explicit Role Reference Picker -->
@@ -337,6 +349,7 @@ import EditTimeline from "../components/studio/EditTimeline.vue";
 import StudioInspector from "../components/studio/StudioInspector.vue";
 import MediaPicker from "../components/studio/MediaPicker.vue";
 import ProjectSettingsModal from "../components/studio/ProjectSettingsModal.vue";
+import AddScenePopover from "../components/studio/AddScenePopover.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -442,6 +455,8 @@ const mediaDrawerOpen = ref(false);
 const isPlaying = ref(false);
 const previewSelection = ref("shot"); // "master" | "shot" | "clip-source"
 const mediaPickerFilter = ref("All");
+const addScenePopoverOpen = ref(false);
+const addSceneAfterShot = ref(null);
 
 // Automatically transition to Edit mode only when an active generation run finishes
 watch(
@@ -772,6 +787,21 @@ function onSelectShot(shot, index) {
     playheadFrame.value = 0;
     studioPreviewRef.value?.seek(0);
   }
+}
+
+function openAddScenePopover(afterShot = null) {
+  addSceneAfterShot.value = afterShot || activeSelectedShot.value || storyboardShots.value.at(-1) || null;
+  addScenePopoverOpen.value = true;
+}
+
+function handleAddSceneRequest(request) {
+  addScenePopoverOpen.value = false;
+  toast({
+    title: "Add Scene is ready",
+    text: "Appending scenes requires the dedicated generation operation; the existing full-project generator was not called.",
+    type: "info",
+  });
+  return request;
 }
 
 async function previewStoryboardShot(shot, index) {
