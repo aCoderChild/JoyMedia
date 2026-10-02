@@ -50,6 +50,8 @@ def get_project_timeline(project_name: str, create_if_possible=True):
 		_require_project_write(project)
 		_initialize_timeline(project)
 		clips = _timeline_clip_rows(project.name)
+	_ensure_source_audio_clips(project, clips)
+	clips = _timeline_clip_rows(project.name)
 
 	return _serialize_timeline(project, clips)
 
@@ -71,6 +73,7 @@ def reset_project_timeline(project_name: str):
 def reset_timeline_clip(project_name: str, clip_name: str):
 	"""Restore one clip to the source range captured when it was created."""
 	project, clip = _project_clip(project_name, clip_name)
+	_ensure_editable_clip(clip)
 	initial_in = int(clip.initial_source_in_frame or 0)
 	initial_out = int(clip.initial_source_out_frame or 0)
 	if initial_out <= initial_in:
@@ -87,6 +90,7 @@ def reset_timeline_clip(project_name: str, clip_name: str):
 @frappe.whitelist()
 def trim_timeline_clip(project_name: str, clip_name: str, source_in_frame, source_out_frame):
 	project, clip = _project_clip(project_name, clip_name)
+	_ensure_editable_clip(clip)
 	start = _int_value(source_in_frame, _("Source in frame must be an integer."))
 	end = _int_value(source_out_frame, _("Source out frame must be an integer."))
 	if start < 0 or end <= start:
@@ -102,6 +106,7 @@ def trim_timeline_clip(project_name: str, clip_name: str, source_in_frame, sourc
 	clip.source_in_frame = start
 	clip.source_out_frame = end
 	clip.save(ignore_permissions=True)
+	_sync_linked_audio_clip(clip)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
@@ -111,14 +116,26 @@ def trim_timeline_clip(project_name: str, clip_name: str, source_in_frame, sourc
 @frappe.whitelist()
 def reorder_timeline_clip(project_name: str, clip_name: str, target_order):
 	project, clip = _project_clip(project_name, clip_name)
+	_ensure_editable_clip(clip)
 	target = _int_value(target_order, _("Invalid clip position."))
 	clips = _timeline_clip_rows(project.name)
-	if target < 1 or target > len(clips):
-		frappe.throw(_("Invalid clip position."))
-
-	ordered = [row for row in clips if row.name != clip.name]
-	ordered.insert(target - 1, next(row for row in clips if row.name == clip.name))
-	_set_clip_order(ordered)
+	video_clips = [row for row in clips if (row.track_type or "Video") == "Video"]
+	if clip.track_type == "Video":
+		if target < 1 or target > len(video_clips):
+			frappe.throw(_("Invalid video clip position."))
+		ordered = [row for row in video_clips if row.name != clip.name]
+		ordered.insert(target - 1, next(row for row in video_clips if row.name == clip.name))
+		for index, row in enumerate(ordered, start=1):
+			frappe.db.set_value("Timeline Clip", row.name, "clip_order", index, update_modified=False)
+			linked_audio = _linked_audio_clip(row)
+			if linked_audio:
+				frappe.db.set_value("Timeline Clip", linked_audio.name, "clip_order", index, update_modified=False)
+	else:
+		if target < 1 or target > len(clips):
+			frappe.throw(_("Invalid clip position."))
+		ordered = [row for row in clips if row.name != clip.name]
+		ordered.insert(target - 1, next(row for row in clips if row.name == clip.name))
+		_set_clip_order(ordered)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
@@ -129,6 +146,7 @@ def reorder_timeline_clip(project_name: str, clip_name: str, target_order):
 def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 	"""Split one clip at an absolute source frame and keep source lineage intact."""
 	project, clip = _project_clip(project_name, clip_name)
+	_ensure_editable_clip(clip)
 	split_frame = _int_value(source_split_frame, _("Split frame must be an integer."))
 	if split_frame <= int(clip.source_in_frame) or split_frame >= int(clip.source_out_frame):
 		frappe.throw(_("Split frame must be inside the clip source range."))
@@ -145,6 +163,10 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 	clip.transition_to_next = "Cut"
 	clip.transition_frames = 0
 	clip.save(ignore_permissions=True)
+	linked_audio = _linked_audio_clip(clip)
+	if clip.track_type == "Video" and linked_audio:
+		linked_audio.source_out_frame = split_frame
+		linked_audio.save(ignore_permissions=True)
 
 	new_clip = frappe.get_doc(
 		{
@@ -171,6 +193,28 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 			"is_outdated": clip.is_outdated,
 		}
 	).insert(ignore_permissions=True)
+	if clip.track_type == "Video" and linked_audio:
+		frappe.get_doc(
+			{
+				"doctype": "Timeline Clip",
+				"media_project": clip.media_project,
+				"shot": clip.shot,
+				"clip_order": new_clip.clip_order,
+				"track_type": "Audio",
+				"track_index": linked_audio.track_index,
+				"linked_video_clip": new_clip.name,
+				"timeline_start_frame": new_clip.timeline_start_frame,
+				"enabled": new_clip.enabled,
+				"source_asset_version": linked_audio.source_asset_version,
+				"source_in_frame": split_frame,
+				"source_out_frame": old_out,
+				"initial_source_in_frame": split_frame,
+				"initial_source_out_frame": old_out,
+				"audio_role": "Source",
+				"transition_to_next": "Cut",
+				"transition_frames": 0,
+			}
+		).insert(ignore_permissions=True)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
@@ -182,6 +226,7 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 @frappe.whitelist()
 def duplicate_timeline_clip(project_name: str, clip_name: str):
 	project, clip = _project_clip(project_name, clip_name)
+	_ensure_editable_clip(clip)
 	clips = _timeline_clip_rows(project.name)
 	for row in reversed(clips):
 		if row.clip_order > clip.clip_order:
@@ -212,6 +257,29 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 			"is_outdated": clip.is_outdated,
 		}
 	).insert(ignore_permissions=True)
+	if clip.track_type == "Video" and _linked_audio_clip(clip):
+		linked_audio = _linked_audio_clip(clip)
+		frappe.get_doc(
+			{
+				"doctype": "Timeline Clip",
+				"media_project": clip.media_project,
+				"shot": clip.shot,
+				"clip_order": new_clip.clip_order,
+				"track_type": "Audio",
+				"track_index": linked_audio.track_index,
+				"linked_video_clip": new_clip.name,
+				"timeline_start_frame": new_clip.timeline_start_frame,
+				"enabled": new_clip.enabled,
+				"source_asset_version": linked_audio.source_asset_version,
+				"source_in_frame": new_clip.source_in_frame,
+				"source_out_frame": new_clip.source_out_frame,
+				"initial_source_in_frame": new_clip.initial_source_in_frame,
+				"initial_source_out_frame": new_clip.initial_source_out_frame,
+				"audio_role": "Source",
+				"transition_to_next": "Cut",
+				"transition_frames": 0,
+			}
+		).insert(ignore_permissions=True)
 	# A duplicate is an independent edit instance. The original becomes a cut
 	# into the duplicate; the duplicate inherits the former outgoing transition.
 	clip.transition_to_next = "Cut"
@@ -228,6 +296,11 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 @frappe.whitelist()
 def delete_timeline_clip(project_name: str, clip_name: str):
 	project, clip = _project_clip(project_name, clip_name)
+	_ensure_editable_clip(clip)
+	if clip.track_type == "Video":
+		linked_audio = _linked_audio_clip(clip)
+		if linked_audio:
+			frappe.delete_doc("Timeline Clip", linked_audio.name, ignore_permissions=True, force=True)
 	frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
 	_set_clip_order(_timeline_clip_rows(project.name))
 	_normalize_transitions(project.name)
@@ -385,7 +458,7 @@ def _initialize_timeline(project):
 		source_out = min(planned_frames, max_frames) if max_frames else planned_frames
 		if source_out <= 0:
 			continue
-		frappe.get_doc(
+		video_clip = frappe.get_doc(
 			{
 				"doctype": "Timeline Clip",
 				"media_project": project.name,
@@ -404,8 +477,61 @@ def _initialize_timeline(project):
 				"transition_frames": 0,
 			}
 		).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Timeline Clip",
+				"media_project": project.name,
+				"shot": shot.name,
+				"clip_order": order,
+				"track_type": "Audio",
+				"track_index": 0,
+				"linked_video_clip": video_clip.name,
+				"timeline_start_frame": timeline_cursor,
+				"enabled": 1,
+				"source_asset_version": shot.selected_output_asset_version,
+				"source_in_frame": 0,
+				"source_out_frame": source_out,
+				"initial_source_in_frame": 0,
+				"initial_source_out_frame": source_out,
+				"audio_role": "Source",
+				"transition_to_next": "Cut",
+				"transition_frames": 0,
+			}
+		).insert(ignore_permissions=True)
 		timeline_cursor += source_out
 	frappe.db.commit()
+
+
+def _ensure_source_audio_clips(project, clips):
+	"""Backfill linked source-audio clips for timelines created before the split model."""
+	video_clips = [clip for clip in clips if (clip.track_type or "Video") == "Video"]
+	linked_video_names = {clip.linked_video_clip for clip in clips if clip.linked_video_clip}
+	for video_clip in video_clips:
+		if video_clip.name in linked_video_names:
+			continue
+		frappe.get_doc(
+			{
+				"doctype": "Timeline Clip",
+				"media_project": project.name,
+				"shot": video_clip.shot,
+				"clip_order": video_clip.clip_order,
+				"track_type": "Audio",
+				"track_index": 0,
+				"linked_video_clip": video_clip.name,
+				"timeline_start_frame": video_clip.timeline_start_frame,
+				"enabled": video_clip.enabled,
+				"source_asset_version": video_clip.source_asset_version,
+				"source_in_frame": video_clip.source_in_frame,
+				"source_out_frame": video_clip.source_out_frame,
+				"initial_source_in_frame": video_clip.initial_source_in_frame,
+				"initial_source_out_frame": video_clip.initial_source_out_frame,
+				"audio_role": "Source",
+				"transition_to_next": "Cut",
+				"transition_frames": 0,
+			}
+		).insert(ignore_permissions=True)
+	if video_clips:
+		frappe.db.commit()
 
 
 def _latest_fully_generated_run(project_name):
@@ -442,6 +568,7 @@ def _timeline_clip_rows(project_name):
 			"clip_order",
 			"track_type",
 			"track_index",
+			"linked_video_clip",
 			"timeline_start_frame",
 			"enabled",
 			"source_asset_version",
@@ -510,7 +637,7 @@ def _serialize_timeline(project, clips):
 		start = int(clip.timeline_start_frame or 0)
 		end = start + length
 		source_has_audio = False
-		if (clip.track_type or "Video") == "Video" and asset and asset.file:
+		if (clip.track_type or "Video") == "Video" or clip.audio_role == "Source":
 			try:
 				source_has_audio = _has_audio_stream(_get_asset_version_path(clip.source_asset_version))
 			except Exception:
@@ -526,6 +653,7 @@ def _serialize_timeline(project, clips):
 				"clip_order": clip.clip_order,
 				"track_type": clip.track_type or "Video",
 				"track_index": int(clip.track_index or 0),
+				"linked_video_clip": clip.linked_video_clip,
 				"shot": clip.shot,
 				"shot_number": shot_number,
 				"source_asset_version": clip.source_asset_version,
@@ -670,6 +798,7 @@ def update_timeline_source_for_shot(project_name: str, shot_name: str):
 			)
 			clip.is_outdated = 0
 			clip.save(ignore_permissions=True)
+			_sync_linked_audio_clip(clip)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
@@ -679,6 +808,7 @@ def update_timeline_source_for_shot(project_name: str, shot_name: str):
 @frappe.whitelist()
 def move_timeline_clip(project_name: str, clip_name: str, timeline_start_frame, track_type=None, track_index=None):
 	project, clip = _project_clip(project_name, clip_name)
+	_ensure_editable_clip(clip)
 	start = _int_value(timeline_start_frame, _("Timeline start frame must be an integer."))
 	if start < 0:
 		frappe.throw(_("Timeline start frame cannot be negative."))
@@ -692,6 +822,8 @@ def move_timeline_clip(project_name: str, clip_name: str, timeline_start_frame, 
 		if clip.track_index < 0:
 			frappe.throw(_("Track index cannot be negative."))
 	clip.save(ignore_permissions=True)
+	if clip.track_type == "Video":
+		_sync_linked_audio_clip(clip)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
@@ -719,7 +851,7 @@ def update_timeline_clip_audio(
 		clip.fade_out_frames = max(0, _int_value(fade_out_frames, _("Fade out frames must be an integer.")))
 	if duck_others is not None:
 		clip.duck_others = 1 if _as_bool(duck_others) else 0
-	if audio_role is not None:
+	if audio_role is not None and clip.audio_role != "Source":
 		role = str(audio_role).strip()
 		if role in ("BGM", "Voiceover", "SFX"):
 			clip.audio_role = role
@@ -791,6 +923,36 @@ def _project_clip(project_name, clip_name):
 	return project, clip
 
 
+def _linked_audio_clip(video_clip):
+	if video_clip.track_type != "Video":
+		return None
+	linked_name = video_clip.linked_video_clip or frappe.db.get_value(
+		"Timeline Clip",
+		{"linked_video_clip": video_clip.name, "track_type": "Audio"},
+		"name",
+	)
+	return frappe.get_doc("Timeline Clip", linked_name) if linked_name else None
+
+
+def _ensure_editable_clip(clip):
+	if clip.track_type == "Audio" and clip.audio_role == "Source":
+		frappe.throw(_("Source audio follows its linked video clip."))
+
+
+def _sync_linked_audio_clip(video_clip):
+	linked_audio = _linked_audio_clip(video_clip)
+	if not linked_audio:
+		return
+	linked_audio.timeline_start_frame = video_clip.timeline_start_frame
+	linked_audio.source_in_frame = video_clip.source_in_frame
+	linked_audio.source_out_frame = video_clip.source_out_frame
+	linked_audio.initial_source_in_frame = video_clip.initial_source_in_frame
+	linked_audio.initial_source_out_frame = video_clip.initial_source_out_frame
+	linked_audio.source_asset_version = video_clip.source_asset_version
+	linked_audio.enabled = video_clip.enabled
+	linked_audio.save(ignore_permissions=True)
+
+
 def _project_fps(project_name):
 	workflow_name = frappe.db.get_value("Media Project", project_name, "workflow")
 	if not workflow_name:
@@ -827,7 +989,10 @@ def _set_clip_order(clips):
 
 
 def _normalize_transitions(project_name):
-	clips = _enabled_clips(_timeline_clip_rows(project_name))
+	clips = [
+		clip for clip in _enabled_clips(_timeline_clip_rows(project_name))
+		if (clip.track_type or "Video") == "Video"
+	]
 	for index, clip in enumerate(clips):
 		transition = clip.transition_to_next or "Cut"
 		frames = int(clip.transition_frames or 0)

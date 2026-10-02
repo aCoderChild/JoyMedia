@@ -3,66 +3,61 @@
     <div class="flex items-center justify-between px-1">
       <span class="text-[10px] font-mono font-bold text-ink-muted uppercase tracking-wider">Audio</span>
       <span class="text-[11px] text-ink-secondary">
-        {{ userAudioTracks.length }} {{ currentLang === 'vi' ? 'track âm thanh' : 'audio tracks' }}
+        {{ audioTracks.length }} {{ currentLang === 'vi' ? 'track âm thanh' : 'audio tracks' }}
       </span>
     </div>
 
-    <div class="audio-timeline-row">
-      <div class="audio-timeline-label">Audio 1 · {{ currentLang === 'vi' ? 'Nguồn' : 'Source' }}</div>
-      <div class="audio-timeline-lane">
-        <template v-for="clip in sourceVideoClips" :key="clip.name">
-          <button
-            v-if="clip.source_has_audio"
-            type="button"
-            class="audio-timeline-clip audio-timeline-source-clip"
-            :class="{ selected: selectedClipName === clip.name }"
-            :style="clipStyle(clip)"
-            :title="clipLabel(clip)"
-            @click="$emit('selectClip', clip)"
-          >
-            <span class="truncate">{{ clipLabel(clip) }}</span>
-            <span class="audio-waveform" aria-hidden="true">
-              <i v-for="bar in 12" :key="bar" :style="{ height: `${((bar * 5) % 9) + 3}px` }" />
-            </span>
-          </button>
-          <div v-else class="audio-timeline-empty-segment" :style="clipStyle(clip)">
-            <span v-if="sourceVideoClips.length === 1">{{ currentLang === 'vi' ? 'Không có audio nguồn' : 'No source audio' }}</span>
-          </div>
-        </template>
-        <span v-if="!sourceVideoClips.length" class="audio-timeline-empty-label">
-          {{ currentLang === 'vi' ? 'Chưa có audio nguồn' : 'No source audio' }}
-        </span>
-      </div>
-    </div>
-
-    <div
-      v-for="track in userAudioTracks"
-      :key="track.trackIndex"
-      class="audio-timeline-row"
-    >
-      <div class="audio-timeline-label">Audio {{ track.trackIndex + 1 }}</div>
-      <div class="audio-timeline-lane">
-        <button
-          v-for="clip in track.clips"
-          :key="clip.name"
-          type="button"
-          class="audio-timeline-clip audio-timeline-user-clip"
-          :class="{ selected: selectedClipName === clip.name }"
-          :style="clipStyle(clip)"
-          :title="clip.source_asset_name || clipLabel(clip)"
-          @click="$emit('selectClip', clip)"
+    <div class="audio-timeline-scroll">
+      <div class="audio-timeline-canvas" :style="{ width: `${timelineCanvasWidth}px` }">
+        <div
+          v-for="track in audioTracks"
+          :key="track.trackIndex"
+          class="audio-timeline-row"
         >
-          <span class="truncate">{{ clip.source_asset_name || clipLabel(clip) }}</span>
-          <span class="audio-role-badge">{{ audioRoleLabel(clip.audio_role) }}</span>
-        </button>
+          <div class="audio-timeline-label">
+            Audio {{ track.trackIndex + 1 }}<span v-if="track.trackIndex === 0"> · {{ currentLang === 'vi' ? 'Nguồn' : 'Source' }}</span>
+          </div>
+          <div class="audio-timeline-lane">
+            <template v-for="clip in track.clips" :key="clip.name">
+              <button
+                v-if="clip.audio_role !== 'Source' || clip.source_has_audio"
+                type="button"
+                class="audio-timeline-clip"
+                :class="[
+                  clip.audio_role === 'Source' ? 'audio-timeline-source-clip' : 'audio-timeline-user-clip',
+                  { selected: selectedClipName === clip.name }
+                ]"
+                :style="clipStyle(clip)"
+                :title="clip.source_asset_name || clipLabel(clip)"
+                @click="$emit('selectClip', clip)"
+              >
+                <span class="truncate">{{ clip.source_asset_name || clipLabel(clip) }}</span>
+                <span class="audio-waveform" aria-hidden="true">
+                  <i v-for="bar in 16" :key="bar" :style="{ height: `${((bar * 5) % 9) + 3}px` }" />
+                </span>
+                <span v-if="clip.audio_role !== 'Source'" class="audio-role-badge">{{ audioRoleLabel(clip.audio_role) }}</span>
+              </button>
+              <div v-else class="audio-timeline-empty-segment" :style="clipStyle(clip)">
+                <span>{{ currentLang === 'vi' ? 'Không có audio nguồn' : 'No source audio' }}</span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div
+          v-if="audioTracks.length"
+          class="audio-timeline-playhead"
+          :style="{ left: `${playheadFrame * pixelsPerFrame}px` }"
+          aria-hidden="true"
+        />
+
+        <div v-if="!audioTracks.length" class="audio-timeline-empty-label">
+          {{ currentLang === 'vi' ? 'Chưa có track âm thanh' : 'No audio tracks' }}
+        </div>
       </div>
     </div>
 
-    <button
-      type="button"
-      class="audio-add-track"
-      @click="$emit('openAudioPicker')"
-    >
+    <button type="button" class="audio-add-track" @click="$emit('openAudioPicker')">
       + {{ currentLang === 'vi' ? 'Thêm track âm thanh' : 'Add audio track' }}
     </button>
   </div>
@@ -72,19 +67,21 @@
 import { computed } from "vue";
 
 const props = defineProps({
-  sourceVideoClips: { type: Array, default: () => [] },
   audioClips: { type: Array, default: () => [] },
   selectedClipName: { type: String, default: null },
   totalFrames: { type: Number, default: 0 },
+  playheadFrame: { type: Number, default: 0 },
+  pixelsPerFrame: { type: Number, default: 2 },
+  timelineCanvasWidth: { type: Number, default: 700 },
   currentLang: { type: String, default: "en" },
 });
 
 defineEmits(["selectClip", "openAudioPicker"]);
 
-const userAudioTracks = computed(() => {
+const audioTracks = computed(() => {
   const groups = new Map();
   for (const clip of props.audioClips) {
-    const trackIndex = Math.max(1, Number(clip.track_index || 1));
+    const trackIndex = Math.max(0, Number(clip.track_index || 0));
     if (!groups.has(trackIndex)) groups.set(trackIndex, []);
     groups.get(trackIndex).push(clip);
   }
@@ -94,12 +91,9 @@ const userAudioTracks = computed(() => {
 });
 
 function clipStyle(clip) {
-  const total = Math.max(1, Number(props.totalFrames || 0));
-  const start = Math.max(0, Number(clip.timeline_start_frame || 0));
-  const duration = Math.max(1, Number(clip.duration_frames || 0));
   return {
-    left: `${(start / total) * 100}%`,
-    width: `${Math.max(2, (duration / total) * 100)}%`,
+    left: `${Number(clip.timeline_start_frame || 0) * props.pixelsPerFrame}px`,
+    width: `${Math.max(48, Number(clip.duration_frames || 0) * props.pixelsPerFrame)}px`,
   };
 }
 

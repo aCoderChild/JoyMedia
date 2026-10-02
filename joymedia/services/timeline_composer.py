@@ -108,16 +108,6 @@ def compose_project_timeline_internal(project_name: str):
 			audio_sources = _get_audio_sources(
 				project, video_duration, audio_clips, profile["fps"]
 			)
-			audio_sources.extend(
-				_get_generated_audio_sources(
-					video_clips,
-					clip_frames,
-					video_duration,
-					profile["fps"],
-					positioned=positioned,
-					transition_frames=transition_frames,
-				)
-			)
 			if audio_sources:
 				delivery_path = temp_path / f"{project.name}-timeline.mp4"
 				_mix_audio(silent_master, audio_sources, delivery_path)

@@ -32,3 +32,5 @@ class TimelineClip(Document):
 			self.audio_role = None
 		if self.track_type == "Audio" and not self.audio_role:
 			self.audio_role = "SFX"
+		if self.track_type == "Video" and self.linked_video_clip:
+			self.linked_video_clip = None

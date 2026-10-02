@@ -134,10 +134,16 @@
    "label": "Audio"
   },
   {
+   "fieldname": "linked_video_clip",
+   "fieldtype": "Link",
+   "label": "Linked Video Clip",
+   "options": "Timeline Clip"
+  },
+  {
    "fieldname": "audio_role",
    "fieldtype": "Select",
    "label": "Audio Role",
-   "options": "BGM\nVoiceover\nSFX"
+   "options": "Source\nBGM\nVoiceover\nSFX"
   },
   {
    "default": "0",

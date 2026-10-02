@@ -408,6 +408,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("pointermove", handleTrimMove);
   window.removeEventListener("pointerup", finishTrim);
 });
+
+defineExpose({ pixelsPerFrame, timelineCanvasWidth });
 </script>
 
 <style scoped>

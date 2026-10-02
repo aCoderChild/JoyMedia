@@ -32,6 +32,7 @@
         </div>
 
         <EditTimelineTrack
+          ref="visualTrack"
           :clips="activeVideoClips"
           :fps="fps"
           :selected-clip-name="selectedClipName"
@@ -52,10 +53,12 @@
       </div>
 
       <AudioTimelineTracks
-        :source-video-clips="activeVideoClips"
         :audio-clips="activeAudioClips"
         :selected-clip-name="selectedClipName"
         :total-frames="totalFrames"
+        :playhead-frame="playheadFrame"
+        :pixels-per-frame="sharedPixelsPerFrame"
+        :timeline-canvas-width="sharedTimelineCanvasWidth"
         :current-lang="currentLang"
         @select-clip="forwardSelectClip"
         @open-audio-picker="$emit('openAudioPicker')"
@@ -75,7 +78,7 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import AudioTimelineTracks from "./AudioTimelineTracks.vue";
 import EditTimelineTrack from "./EditTimelineTrack.vue";
 
@@ -105,6 +108,8 @@ const emit = defineEmits([
   "openAudioPicker",
 ]);
 
+const visualTrack = ref(null);
+
 const activeVideoClips = computed(() => {
   if (props.videoClips?.length) return props.videoClips;
   return (props.clips || []).filter((clip) => (clip.track_type || "Video") === "Video");
@@ -114,6 +119,9 @@ const activeAudioClips = computed(() => {
   if (props.audioClips?.length) return props.audioClips;
   return (props.clips || []).filter((clip) => clip.track_type === "Audio");
 });
+
+const sharedPixelsPerFrame = computed(() => Number(visualTrack.value?.pixelsPerFrame || (36 / Math.max(1, props.fps || 24))));
+const sharedTimelineCanvasWidth = computed(() => Number(visualTrack.value?.timelineCanvasWidth || Math.max(700, (props.totalFrames || 0) * sharedPixelsPerFrame.value)));
 
 function forwardSelectClip(...args) {
   emit("selectClip", ...args);

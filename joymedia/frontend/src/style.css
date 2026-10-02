@@ -2619,6 +2619,26 @@ h2 {
   gap: 8px;
 }
 
+.audio-timeline-scroll {
+  overflow-x: auto;
+}
+
+.audio-timeline-canvas {
+  position: relative;
+  min-width: 700px;
+}
+
+.audio-timeline-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgb(129 140 248 / 0.95);
+  box-shadow: 0 0 0 1px rgb(129 140 248 / 0.15);
+  pointer-events: none;
+  z-index: 3;
+}
+
 .audio-timeline-label {
   color: var(--ink-secondary);
   font-size: 10px;

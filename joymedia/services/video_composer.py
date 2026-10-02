@@ -259,7 +259,7 @@ def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
 			frappe.throw(_("Audio clip {0} fades exceed its timeline duration.").format(clip.name))
 		sources.append(
 			{
-				"path": _get_audio_asset_path(clip.source_asset_version),
+				"path": _get_timeline_audio_path(clip),
 				"start_seconds": start_seconds,
 				"duration_seconds": cue_duration,
 				"gain_db": float(clip.gain_db or 0),
@@ -287,6 +287,12 @@ def _get_audio_asset_path(asset_version_name):
 	if not _has_audio_stream(path):
 		frappe.throw(_("Asset Version {0} has no audio stream.").format(asset_version.name))
 	return path
+
+
+def _get_timeline_audio_path(clip):
+	if clip.audio_role == "Source":
+		return _get_asset_version_path(clip.source_asset_version)
+	return _get_audio_asset_path(clip.source_asset_version)
 
 
 def _normalize_shot(source_path, normalized_path, profile, planned_frames):

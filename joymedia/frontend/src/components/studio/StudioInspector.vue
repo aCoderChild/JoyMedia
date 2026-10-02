@@ -65,9 +65,10 @@
             <select
               :value="selectedClip.audio_role || 'BGM'"
               class="w-full px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary cursor-pointer"
-              :disabled="timelineBusy"
+              :disabled="timelineBusy || selectedClip.audio_role === 'Source'"
               @change="$emit('updateAudioClip', selectedClip, { audio_role: $event.target.value })"
             >
+              <option value="Source">Source audio</option>
               <option value="BGM">BGM (Nhạc nền)</option>
               <option value="Voiceover">Voiceover (Lời thoại)</option>
               <option value="SFX">SFX (Hiệu ứng âm thanh)</option>
