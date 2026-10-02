@@ -86,6 +86,30 @@ export function useProjectReferences(projectName, onRefresh) {
     }
   }
 
+  async function archiveMediaAsset(asset) {
+    if (!asset?.name) return;
+    try {
+      const result = await call("joymedia.services.media_asset_service.archive_media_asset", {
+        media_asset: asset.name,
+      });
+      if (result?.in_use) {
+        const confirmed = window.confirm(
+          `${asset.asset_name} is used by ${result.projects?.length || 0} project(s). Archive it and remove it from those projects?`
+        );
+        if (!confirmed) return;
+        await call("joymedia.services.media_asset_service.archive_media_asset", {
+          media_asset: asset.name,
+          detach_projects: 1,
+        });
+      }
+      await fetchCandidates();
+      if (onRefresh) await onRefresh();
+      toast({ title: "Asset archived", text: `${asset.asset_name} was removed from the library.`, type: "success" });
+    } catch (err) {
+      toast({ title: "Error", text: err?.message || "Failed to archive asset.", type: "error" });
+    }
+  }
+
   async function setShotKeyframe({ shot, frameRole, asset }) {
     if (!shot?.name || !asset?.asset_version) return;
     try {
@@ -146,6 +170,7 @@ export function useProjectReferences(projectName, onRefresh) {
     addReference,
     updateReferenceRole,
     removeReference,
+    archiveMediaAsset,
     setShotKeyframe,
     uploadFilesToLibrary,
   };

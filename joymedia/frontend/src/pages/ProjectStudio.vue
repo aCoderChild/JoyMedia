@@ -298,6 +298,8 @@
       @select-reference="handleSelectReference"
       @set-keyframe="onSetKeyframeFromPicker"
       @upload-files="uploadFilesToLibrary"
+      @remove-reference="removeReference"
+      @archive-asset="archiveMediaAsset"
     />
 
     <!-- Modal: Secondary Video Settings (Format, duration, style, instructions) -->
@@ -384,6 +386,7 @@ const {
   addReference,
   updateReferenceRole,
   removeReference,
+  archiveMediaAsset,
   setShotKeyframe,
   uploadFilesToLibrary,
 } = useProjectReferences(projectName, fetchWorkspace);

@@ -5,9 +5,32 @@ import mimetypes
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 
 INPUT_ASSET_CATEGORIES = {"Product", "Character", "Background", "Brand", "Style", "Reference", "Audio", "Other"}
+
+
+def _require_asset_action_access(asset):
+	if frappe.session.user == "Guest":
+		frappe.throw(_("You must be signed in to manage media assets."))
+	asset.check_permission("write")
+
+
+def _get_asset_project_usage(media_asset):
+	return frappe.db.sql(
+		"""
+		SELECT DISTINCT
+			pr.parent AS project_name,
+			av.name AS asset_version
+		FROM `tabProject Reference` pr
+		INNER JOIN `tabAsset Version` av ON av.name = pr.asset_version
+		WHERE pr.parenttype = 'Media Project'
+			AND av.media_asset = %s
+		""",
+		(media_asset,),
+		as_dict=True,
+	)
 
 
 def detect_media_type(file_doc):
@@ -116,3 +139,50 @@ def create_media_asset(asset_name, asset_category, file_url):
 		"asset_version": version.name,
 		"reused": False,
 	}
+
+
+@frappe.whitelist()
+def archive_media_asset(media_asset, detach_projects=False):
+	asset = frappe.get_doc("Media Asset", media_asset)
+	_require_asset_action_access(asset)
+	if asset.asset_scope != "Library":
+		frappe.throw(_("Only library assets can be archived from the Media Library."))
+	if asset.status == "Archived":
+		return {"archived": True, "already_archived": True, "projects": []}
+
+	projects = _get_asset_project_usage(asset.name)
+	if projects and not cint(detach_projects):
+		return {
+			"archived": False,
+			"in_use": True,
+			"projects": sorted({row.project_name for row in projects}),
+		}
+
+	if projects:
+		for project_name in sorted({row.project_name for row in projects}):
+			project = frappe.get_doc("Media Project", project_name)
+			project._require_write_access()
+			project.set(
+				"selected_media",
+				[
+					row
+					for row in project.selected_media or []
+					if frappe.db.get_value("Asset Version", row.asset_version, "media_asset") != asset.name
+				],
+			)
+			project.save(ignore_permissions=True)
+
+	asset.db_set("status", "Archived", update_modified=True)
+	frappe.db.commit()
+	return {"archived": True, "in_use": bool(projects), "projects": sorted({row.project_name for row in projects})}
+
+
+@frappe.whitelist()
+def restore_media_asset(media_asset):
+	asset = frappe.get_doc("Media Asset", media_asset)
+	_require_asset_action_access(asset)
+	if asset.asset_scope != "Library":
+		frappe.throw(_("Only library assets can be restored."))
+	asset.db_set("status", "Active", update_modified=True)
+	frappe.db.commit()
+	return {"restored": True, "media_asset": asset.name}

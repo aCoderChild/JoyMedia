@@ -12,7 +12,7 @@ from frappe.utils.synchronization import filelock
 from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
 
 
-ALLOWED_STATUSES = {"Draft", "Generating", "Completed", "Needs Attention", "Cancelled"}
+ALLOWED_STATUSES = {"Draft", "Generating", "Completed", "Needs Attention", "Cancelled", "Archived"}
 SUPPORTED_PROJECT_MEDIA_TYPES = {"Image", "Video", "Audio"}
 
 
@@ -213,7 +213,7 @@ def _get_project_reference_contexts(project):
 
 @frappe.whitelist()
 def get_project_cards():
-	filters = {}
+	filters = {"status": ["!=", "Archived"]}
 	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles():
 		filters["owner"] = frappe.session.user
 	projects = frappe.get_list(
@@ -235,6 +235,23 @@ def get_project_cards():
 			"asset_categories": sorted({a.asset_category for a in assets if a.asset_category}),
 		})
 	return projects
+
+
+@frappe.whitelist()
+def archive_project(project_name):
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	if frappe.db.exists(
+		"Generation Run",
+		{"media_project": project.name, "status": ["in", ["Queued", "Running"]]},
+	):
+		frappe.throw(_("Stop the active generation before archiving this project."))
+	if project.status == "Archived":
+		return {"archived": True, "already_archived": True, "project": project.name}
+	project.status = "Archived"
+	project.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {"archived": True, "project": project.name}
 
 
 @frappe.whitelist()

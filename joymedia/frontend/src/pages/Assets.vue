@@ -88,9 +88,30 @@
       <article
         v-for="asset in filteredAssets"
         :key="asset.name"
-        class="group p-2 rounded-2xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-indigo-500/50 shadow-xs hover:shadow-md transition-all cursor-pointer select-none flex flex-col gap-2"
+        class="group relative p-2 rounded-2xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-indigo-500/50 shadow-xs hover:shadow-md transition-all cursor-pointer select-none flex flex-col gap-2"
         @click="openAssetModal(asset)"
       >
+        <button
+          type="button"
+          class="absolute top-2 right-2 z-20 size-7 rounded-lg bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
+          :aria-label="`Actions for ${asset.asset_name}`"
+          @click.stop="toggleAssetMenu(asset.name)"
+        >
+          ⋯
+        </button>
+        <div
+          v-if="assetMenuName === asset.name"
+          class="absolute top-10 right-2 z-30 w-44 rounded-xl bg-surface-card border border-outline-border shadow-xl p-1.5"
+          @click.stop
+        >
+          <button
+            type="button"
+            class="w-full text-left px-2.5 py-2 rounded-lg text-xs text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+            @click="archiveAsset(asset)"
+          >
+            Archive from library
+          </button>
+        </div>
         <MediaThumbnail
           :src="asset.file"
           :media-type="asset.media_type"
@@ -291,6 +312,7 @@ const search = ref("");
 const activeType = ref("All");
 const activeCategory = ref(route.query?.category || "All");
 const selectedAsset = ref(null);
+const assetMenuName = ref("");
 
 const showUploadModal = ref(false);
 const isUploading = ref(false);
@@ -347,6 +369,36 @@ const filteredAssets = computed(() => {
 
 function openAssetModal(asset) {
   selectedAsset.value = asset;
+  assetMenuName.value = "";
+}
+
+function toggleAssetMenu(assetName) {
+  assetMenuName.value = assetMenuName.value === assetName ? "" : assetName;
+}
+
+async function archiveAsset(asset) {
+  assetMenuName.value = "";
+  try {
+    const result = await call("joymedia.services.media_asset_service.archive_media_asset", {
+      media_asset: asset.name,
+    });
+    if (result?.in_use) {
+      const projectCount = result.projects?.length || 0;
+      const confirmed = window.confirm(
+        `${asset.asset_name} is used by ${projectCount} project(s). Archive it and remove it from those projects?`
+      );
+      if (!confirmed) return;
+      await call("joymedia.services.media_asset_service.archive_media_asset", {
+        media_asset: asset.name,
+        detach_projects: 1,
+      });
+    }
+    toast({ title: "Asset archived", text: `${asset.asset_name} was removed from the library.`, type: "success" });
+    if (selectedAsset.value?.name === asset.name) selectedAsset.value = null;
+    await assetsResource.reload();
+  } catch (err) {
+    toast({ title: "Error", text: err?.message || "Failed to archive asset.", type: "error" });
+  }
 }
 
 function isVideoUrl(url) {

@@ -41,11 +41,6 @@
         <span class="truncate">{{ currentLang === 'vi' ? 'Kết quả phiên bản trước: Tư liệu hoặc cài đặt đã thay đổi. Tạo video mới để cập nhật.' : 'Previous result: References or settings have changed. Generate to update this video.' }}</span>
       </div>
 
-      <!-- 62% Zoom Badge -->
-      <div class="absolute top-3.5 right-3.5 z-10 text-[11px] font-mono text-ink-secondary bg-surface-card/90 backdrop-blur-md px-2 py-0.5 rounded-md border border-outline-border shadow-xs">
-        62%
-      </div>
-
       <!-- Keep generation errors inside the canvas -->
       <div v-if="productionError" class="flex flex-col items-center justify-center text-center p-6 space-y-2">
         <span class="size-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center text-xl mb-1 border border-rose-500/30">✕</span>

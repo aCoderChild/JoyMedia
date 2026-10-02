@@ -116,9 +116,17 @@
       <article
         v-for="project in filteredProjects"
         :key="project.name"
-        class="group rounded-2xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-indigo-500/50 shadow-xs hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col justify-between overflow-hidden"
+        class="group relative rounded-2xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-indigo-500/50 shadow-xs hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col justify-between overflow-hidden"
         @click="openStudio(project.name)"
       >
+        <button
+          type="button"
+          class="absolute top-2.5 right-2.5 z-20 size-7 rounded-lg bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
+          :aria-label="`Archive ${project.project_name}`"
+          @click.stop="archiveProject(project)"
+        >
+          ⋯
+        </button>
         <div>
           <!-- Thumbnail via MediaThumbnail Component -->
           <div class="relative aspect-video overflow-hidden bg-surface-muted border-b border-outline-border">
@@ -268,6 +276,22 @@ async function handleNewProject() {
     });
   } finally {
     creatingProject.value = false;
+  }
+}
+
+async function archiveProject(project) {
+  const confirmed = window.confirm(
+    `Archive “${project.project_name}”? Its storyboard, timeline, and generated outputs will no longer appear in Projects.`
+  );
+  if (!confirmed) return;
+  try {
+    await call("joymedia.joymedia.doctype.media_project.media_project.archive_project", {
+      project_name: project.name,
+    });
+    toast({ title: "Project archived", text: `${project.project_name} was archived.`, type: "success" });
+    await projectsResource.reload();
+  } catch (err) {
+    toast({ title: "Error", text: err?.message || "Failed to archive project.", type: "error" });
   }
 }
 

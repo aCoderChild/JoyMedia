@@ -79,38 +79,78 @@
         </div>
 
         <div v-else-if="filteredCandidates.length" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          <button
+          <div
             v-for="asset in filteredCandidates"
             :key="asset.name"
-            type="button"
-            class="media-candidate-card text-left p-2 rounded-xl border transition-all cursor-pointer relative group flex flex-col justify-between"
-            :class="[
-              selectedCandidate?.name === asset.name
-                ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/40 shadow-sm'
-                : asset.selected && !isKeyframeTarget
-                  ? 'border-emerald-500/50 bg-emerald-500/5 hover:border-emerald-500'
-                  : 'border-outline-border bg-surface-muted hover:border-indigo-400'
-            ]"
-            @click="onCandidateClick(asset)"
-            @dblclick="confirmAddReference"
+            class="relative"
           >
-            <MediaThumbnail
-              :src="asset.file"
-              :media-type="asset.media_type"
-              :alt="asset.asset_name"
-              :duration="asset.duration_seconds"
-              aspect="aspect-video"
-            />
+            <button
+              type="button"
+              class="media-candidate-card w-full text-left p-2 rounded-xl border transition-all cursor-pointer relative group flex flex-col justify-between"
+              :class="[
+                selectedCandidate?.name === asset.name
+                  ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/40 shadow-sm'
+                  : asset.selected && !isKeyframeTarget
+                    ? 'border-emerald-500/50 bg-emerald-500/5 hover:border-emerald-500'
+                    : 'border-outline-border bg-surface-muted hover:border-indigo-400'
+              ]"
+              @click="onCandidateClick(asset)"
+              @dblclick="confirmAddReference"
+            >
+              <MediaThumbnail
+                :src="asset.file"
+                :media-type="asset.media_type"
+                :alt="asset.asset_name"
+                :duration="asset.duration_seconds"
+                aspect="aspect-video"
+              />
 
-            <div class="mt-2 min-w-0 w-full">
-              <span class="block truncate text-xs font-semibold text-ink-primary">{{ asset.asset_name }}</span>
-              <div class="flex items-center justify-between text-[10px] text-ink-muted mt-0.5">
-                <span class="capitalize">{{ asset.asset_category || asset.media_type }}</span>
-                <span v-if="asset.selected && !isKeyframeTarget" class="text-emerald-400 font-bold">✓ {{ currentLang === 'vi' ? 'Đã thêm' : 'In project' }}</span>
-                <span v-else-if="selectedCandidate?.name === asset.name" class="text-indigo-400 font-medium">{{ suggestRole(asset) }}</span>
+              <div class="mt-2 min-w-0 w-full">
+                <span class="block truncate text-xs font-semibold text-ink-primary">{{ asset.asset_name }}</span>
+                <div class="flex items-center justify-between text-[10px] text-ink-muted mt-0.5">
+                  <span class="capitalize">{{ asset.asset_category || asset.media_type }}</span>
+                  <span v-if="asset.selected && !isKeyframeTarget" class="text-emerald-400 font-bold">✓ {{ currentLang === 'vi' ? 'Đã thêm' : 'In project' }}</span>
+                  <span v-else-if="selectedCandidate?.name === asset.name" class="text-indigo-400 font-medium">{{ suggestRole(asset) }}</span>
+                </div>
               </div>
+            </button>
+            <button
+              type="button"
+              class="absolute top-2 right-2 z-10 size-7 rounded-lg bg-black/60 text-white hover:bg-black/80 cursor-pointer"
+              :aria-label="`Actions for ${asset.asset_name}`"
+              @click.stop="toggleAssetMenu(asset.name)"
+            >
+              ⋯
+            </button>
+            <div
+              v-if="assetMenuName === asset.name"
+              class="absolute top-10 right-2 z-20 w-44 rounded-xl bg-surface-card border border-outline-border shadow-xl p-1.5"
+              @click.stop
+            >
+              <button
+                type="button"
+                class="w-full text-left px-2.5 py-2 rounded-lg text-xs text-ink-primary hover:bg-surface-hover cursor-pointer"
+                @click="selectFromMenu(asset)"
+              >
+                {{ asset.selected ? (currentLang === 'vi' ? 'Đổi vai trò' : 'Change role') : (currentLang === 'vi' ? 'Thêm vào dự án' : 'Add to project') }}
+              </button>
+              <button
+                v-if="asset.selected"
+                type="button"
+                class="w-full text-left px-2.5 py-2 rounded-lg text-xs text-ink-primary hover:bg-surface-hover cursor-pointer"
+                @click="emitRemoveFromProject(asset)"
+              >
+                {{ currentLang === 'vi' ? 'Gỡ khỏi dự án' : 'Remove from project' }}
+              </button>
+              <button
+                type="button"
+                class="w-full text-left px-2.5 py-2 rounded-lg text-xs text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+                @click="emitArchiveAsset(asset)"
+              >
+                {{ currentLang === 'vi' ? 'Lưu trữ khỏi thư viện' : 'Archive from library' }}
+              </button>
             </div>
-          </button>
+          </div>
         </div>
 
         <div v-else class="py-20 text-center text-xs text-ink-muted">
@@ -220,13 +260,14 @@ const props = defineProps({
   currentLang: { type: String, default: "en" },
 });
 
-const emit = defineEmits(["close", "selectReference", "setKeyframe", "uploadFiles"]);
+const emit = defineEmits(["close", "selectReference", "setKeyframe", "uploadFiles", "removeReference", "archiveAsset"]);
 
 const searchQuery = ref("");
 const activeTypeFilter = ref(props.initialTypeFilter || "All");
 const selectedCandidate = ref(null);
 const selectedRole = ref("Product");
 const showRoleDropdown = ref(false);
+const assetMenuName = ref("");
 
 watch(
   () => props.initialTypeFilter,
@@ -270,6 +311,26 @@ function onCandidateClick(asset) {
   selectedCandidate.value = asset;
   selectedRole.value = asset.reference_role || suggestRole(asset);
   showRoleDropdown.value = false;
+  assetMenuName.value = "";
+}
+
+function toggleAssetMenu(assetName) {
+  assetMenuName.value = assetMenuName.value === assetName ? "" : assetName;
+}
+
+function selectFromMenu(asset) {
+  onCandidateClick(asset);
+  assetMenuName.value = "";
+}
+
+function emitRemoveFromProject(asset) {
+  assetMenuName.value = "";
+  emit("removeReference", asset);
+}
+
+function emitArchiveAsset(asset) {
+  assetMenuName.value = "";
+  emit("archiveAsset", asset);
 }
 
 function confirmAddReference() {
@@ -303,17 +364,30 @@ const filteredCandidates = computed(() => {
 });
 
 watch(
-  () => props.candidates,
-  (cands) => {
-    if (!cands?.length || props.isKeyframeTarget) return;
-    const uploaded = props.lastUploadedAssetVersion
-      ? cands.find((c) => c.asset_version === props.lastUploadedAssetVersion)
-      : null;
-    const candidate = uploaded || (!selectedCandidate.value ? (cands.find((c) => !c.selected) || cands[0]) : null);
-    if (candidate) {
-      selectedCandidate.value = candidate;
-      selectedRole.value = candidate.reference_role || suggestRole(candidate);
+  [filteredCandidates, activeTypeFilter],
+  () => {
+    if (props.isKeyframeTarget) return;
+
+    const visible = filteredCandidates.value;
+    if (!visible.length) {
+      selectedCandidate.value = null;
+      showRoleDropdown.value = false;
+      return;
     }
+
+    const uploaded = props.lastUploadedAssetVersion
+      ? visible.find((item) => item.asset_version === props.lastUploadedAssetVersion)
+      : null;
+    const selectedIsVisible = visible.some(
+      (item) => item.name === selectedCandidate.value?.name
+    );
+    const next = uploaded
+      || (selectedIsVisible ? selectedCandidate.value : null)
+      || visible.find((item) => !item.selected)
+      || visible[0];
+
+    selectedCandidate.value = next;
+    selectedRole.value = next.reference_role || suggestRole(next);
   },
   { immediate: true }
 );
