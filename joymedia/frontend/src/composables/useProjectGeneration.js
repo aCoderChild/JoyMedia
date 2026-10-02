@@ -51,6 +51,13 @@ export function useProjectGeneration(projectName, onRefresh) {
 
   async function pollRun() {
     try {
+      if (currentRun.value?.name) {
+        await call(
+          "joymedia.joymedia.doctype.media_project.media_project.refresh_project_production",
+          { name: project() }
+        );
+      }
+
       const snap = await call(
         "joymedia.joymedia.doctype.media_project.media_project.get_project_workspace",
         { name: project() }

@@ -7,6 +7,12 @@ from . import result_ingestor
 
 
 class IntegrationTestResultIngestor(IntegrationTestCase):
+	def test_find_primary_mp4_accepts_comfyui_save_video_image_output(self):
+		output = {"filename": "TASK-00001_ATT-00018_00001_.mp4", "type": "output"}
+		history = {"outputs": {"92": {"images": [output], "animated": [True]}}}
+
+		self.assertEqual(output, result_ingestor._find_primary_mp4(history))
+
 	@patch("joymedia.services.result_ingestor.download_output", return_value=b"video-bytes")
 	@patch("joymedia.services.result_ingestor.frappe.get_doc")
 	def test_completed_artifact_is_copied_to_a_private_frappe_file(self, get_doc, download_output):

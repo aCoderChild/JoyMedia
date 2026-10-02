@@ -265,7 +265,11 @@ def _execution_timestamp(history, message_name):
 
 def _find_primary_mp4(history):
 	for node_outputs in (history.get("outputs") or {}).values():
-		for output in node_outputs.get("gifs", []) + node_outputs.get("videos", []):
+		for output in (
+			node_outputs.get("gifs", [])
+			+ node_outputs.get("videos", [])
+			+ node_outputs.get("images", [])
+		):
 			if str(output.get("filename", "")).lower().endswith(".mp4"):
 				return output
 	return None

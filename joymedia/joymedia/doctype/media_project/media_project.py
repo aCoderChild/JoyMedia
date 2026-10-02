@@ -405,7 +405,7 @@ def get_project_production(name):
 @frappe.whitelist()
 def refresh_project_production(name):
 	project = frappe.get_doc("Media Project", name)
-	project._require_write_access()
+	project._require_read_access()
 	production = _get_latest_project_generation_run(project.name)
 	if production and production.status in ("Queued", "Running"):
 		from joymedia.services.generation_orchestrator import refresh_run
