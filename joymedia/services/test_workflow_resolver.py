@@ -254,8 +254,8 @@ class TestWorkflowResolver(FrappeTestCase):
 		)
 
 		self.assertEqual(94821731, workflow["105:15"]["inputs"]["noise_seed"])
-		self.assertEqual(1280, workflow["105:104"]["inputs"]["width"])
-		self.assertEqual(720, workflow["105:104"]["inputs"]["height"])
+		self.assertEqual(["115", 0], workflow["105:104"]["inputs"]["width"])
+		self.assertEqual(["115", 1], workflow["105:104"]["inputs"]["height"])
 		self.assertEqual("JOB-1_ATT-1", workflow["92"]["inputs"]["filename_prefix"])
 
 	def test_h3_r2v_api_profile_patches_exported_node_keys(self):
@@ -278,6 +278,6 @@ class TestWorkflowResolver(FrappeTestCase):
 		)
 
 		self.assertEqual(94821731, workflow["129"]["inputs"]["noise_seed"])
-		self.assertEqual(1280, workflow["136"]["inputs"]["width"])
-		self.assertEqual(720, workflow["136"]["inputs"]["height"])
+		self.assertEqual(["115", 0], workflow["136"]["inputs"]["width"])
+		self.assertEqual(["115", 1], workflow["136"]["inputs"]["height"])
 		self.assertEqual("JOB-1_ATT-1", workflow["92"]["inputs"]["filename_prefix"])

@@ -29,8 +29,6 @@ class MiniMaxH3ImageToVideoAdapter(GenericWorkflowAdapter):
 	):
 		_set_input(workflow, "105:15", "noise_seed", seed)
 		_set_input(workflow, "105:111", "value", max(5, frame_count / 24))
-		_set_input(workflow, "105:104", "width", width)
-		_set_input(workflow, "105:104", "height", height)
 		_set_input(workflow, "92", "filename_prefix", output_prefix)
 		return workflow
 
@@ -55,8 +53,6 @@ class MiniMaxH3ReferenceToVideoAdapter(GenericWorkflowAdapter):
 	):
 		_set_input(workflow, "129", "noise_seed", seed)
 		_set_input(workflow, "132", "value", max(5, frame_count / 24))
-		_set_input(workflow, "136", "width", width)
-		_set_input(workflow, "136", "height", height)
 		_set_input(workflow, "92", "filename_prefix", output_prefix)
 		return workflow
 
