@@ -32,6 +32,15 @@
         </span>
       </div>
 
+      <!-- Outdated result notice banner -->
+      <div
+        v-if="isOutdated && finalVideo?.file"
+        class="absolute top-12 left-3 right-3 z-20 px-3 py-1.5 rounded-xl bg-amber-500/95 text-amber-950 backdrop-blur-md text-[11px] font-semibold flex items-center gap-2 shadow-lg"
+      >
+        <span>⚠️</span>
+        <span class="truncate">{{ currentLang === 'vi' ? 'Kết quả phiên bản trước: Tư liệu hoặc cài đặt đã thay đổi. Tạo video mới để cập nhật.' : 'Previous result: References or settings have changed. Generate to update this video.' }}</span>
+      </div>
+
       <!-- 62% Zoom Badge -->
       <div class="absolute top-3.5 right-3.5 z-10 text-[11px] font-mono text-ink-secondary bg-surface-card/90 backdrop-blur-md px-2 py-0.5 rounded-md border border-outline-border shadow-xs">
         62%
@@ -134,94 +143,6 @@
       @toggle-mute="toggleMute"
       @toggle-play-pause="$emit('togglePlayPause')"
     />
-
-    <!-- Legacy transport retained as a non-rendered fallback during migration. -->
-    <div v-if="false" class="flex items-center justify-between w-full max-w-[880px] mt-1.5 px-3 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-secondary shadow-xs">
-      <div class="flex items-center gap-2.5">
-        <button
-          type="button"
-          class="size-6 rounded-lg bg-surface-muted hover:bg-surface-hover flex items-center justify-center font-bold text-ink-primary transition-colors cursor-pointer"
-          :title="isPlaying ? (currentLang === 'vi' ? 'Tạm dừng' : 'Pause') : (currentLang === 'vi' ? 'Phát' : 'Play')"
-          @click="$emit('togglePlayPause')"
-        >
-          <span>{{ isPlaying ? '⏸' : '▶' }}</span>
-        </button>
-        <span class="font-mono text-[11px] font-semibold text-ink-primary">
-          {{ currentTimelinePositionLabel }} / {{ formatSecondsLabel(timelineTotalSeconds) }}
-        </span>
-        <span class="text-ink-muted text-[10px]">·</span>
-        <span v-if="studioMode === 'edit' && selectedClip" class="text-[11px] text-ink-secondary truncate max-w-[180px]">
-          Clip {{ selectedClip.clip_order || 1 }} ({{ selectedClip.duration_seconds?.toFixed(1) }}s)
-        </span>
-        <span v-else-if="activeSelectedShot" class="text-[11px] text-ink-secondary truncate max-w-[180px]">
-          {{ t('shot_n', { n: activeSelectedShot.shot_number }) }} ({{ getShotTimestampRange(activeSelectedShot) }})
-        </span>
-      </div>
-
-      <!-- Keyframe Quick Navigation & Toggle (Only in Scenes Mode) -->
-      <div v-if="studioMode === 'scene'" class="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-muted border border-outline-border text-xs">
-        <button
-          type="button"
-          class="size-5 rounded flex items-center justify-center text-[10px] text-ink-muted hover:text-ink-primary hover:bg-surface-hover transition-colors cursor-pointer"
-          :title="currentLang === 'vi' ? 'Đến Keyframe trước' : 'Previous Keyframe'"
-          @click="$emit('jumpToPrevKeyframe')"
-        >
-          ◀
-        </button>
-        <button
-          type="button"
-          class="size-5 rounded flex items-center justify-center transition-all cursor-pointer"
-          :class="isPlayheadAtKeyframe ? 'text-indigo-400 font-bold scale-110' : 'text-ink-muted hover:text-ink-primary'"
-          :title="isPlayheadAtKeyframe ? (currentLang === 'vi' ? 'Keyframe đang kích hoạt (Click để xem cảnh)' : 'Active Keyframe at playhead') : (currentLang === 'vi' ? 'Thêm / Đặt Keyframe tại playhead' : 'Add Keyframe at playhead')"
-          @click="$emit('toggleKeyframeAtPlayhead')"
-        >
-          <span class="text-xs leading-none">{{ isPlayheadAtKeyframe ? '◆' : '◇' }}</span>
-        </button>
-        <button
-          type="button"
-          class="size-5 rounded flex items-center justify-center text-[10px] text-ink-muted hover:text-ink-primary hover:bg-surface-hover transition-colors cursor-pointer"
-          :title="currentLang === 'vi' ? 'Đến Keyframe tiếp theo' : 'Next Keyframe'"
-          @click="$emit('jumpToNextKeyframe')"
-        >
-          ▶
-        </button>
-      </div>
-
-      <!-- Outdated/Unsaved Indicator in Edit Mode -->
-      <div v-else-if="studioMode === 'edit' && isOutdated" class="text-[10.5px] text-amber-400 font-semibold px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
-        ⚠️ {{ currentLang === 'vi' ? 'Có bản tạo mới hơn' : 'New version available' }}
-      </div>
-
-      <div class="flex items-center gap-1.5">
-        <button
-          v-if="finalVideo?.file"
-          type="button"
-          class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-colors cursor-pointer"
-          :class="previewSelection === 'full' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-surface-muted hover:bg-surface-hover text-ink-secondary'"
-          @click="$emit('selectFullVideo')"
-        >
-          {{ currentLang === 'vi' ? 'Toàn bộ video' : 'Full Video' }}
-        </button>
-        <button
-          v-if="studioMode === 'edit' && selectedClip"
-          type="button"
-          class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-colors cursor-pointer"
-          :class="previewSelection === 'clip' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-surface-muted hover:bg-surface-hover text-ink-secondary'"
-          @click="$emit('selectClip')"
-        >
-          Clip {{ selectedClip.clip_order || 1 }}
-        </button>
-        <button
-          v-else-if="activeSelectedShot"
-          type="button"
-          class="px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-colors cursor-pointer"
-          :class="previewSelection === 'shot' && selectedTarget !== 'asset' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-surface-muted hover:bg-surface-hover text-ink-secondary'"
-          @click="$emit('selectShotTarget', activeSelectedShot, selectedShotIndex)"
-        >
-          {{ currentLang === 'vi' ? `Cảnh ${activeSelectedShot.shot_number}` : `Shot ${activeSelectedShot.shot_number}` }}
-        </button>
-      </div>
-    </div>
   </div>
 </template>
 

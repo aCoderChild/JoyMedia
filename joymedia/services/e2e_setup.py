@@ -1,19 +1,22 @@
 import os
 import subprocess
+from math import ceil
 
 import frappe
 from frappe.utils import get_site_path
 
 
-def _generate_video_bytes(duration_seconds: int = 2) -> bytes:
+def _generate_video_bytes(duration_seconds: int = 2, color: str = "blue", unique_tag: str = "") -> bytes:
 	output_path = get_site_path("private", "files", f"tmp_e2e_{frappe.generate_hash(length=8)}.mp4")
 	os.makedirs(os.path.dirname(output_path), exist_ok=True)
 	cmd = [
 		"ffmpeg", "-y",
-		"-f", "lavfi", "-i", f"color=c=blue:s=320x240:d={duration_seconds}:r=24",
+		"-f", "lavfi", "-i", f"color=c={color}:s=320x240:d={duration_seconds}:r=24",
 		"-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
 		"-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", output_path,
 	]
+	if unique_tag:
+		cmd[-1:-1] = ["-metadata", f"comment={unique_tag}"]
 	subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 	with open(output_path, "rb") as file_handle:
 		data = file_handle.read()
@@ -21,7 +24,16 @@ def _generate_video_bytes(duration_seconds: int = 2) -> bytes:
 	return data
 
 
-def _create_output_asset(project, name, file_name):
+def _generate_image_bytes() -> bytes:
+	import io
+	from PIL import Image
+	img = Image.new("RGB", (320, 240), color=(200, 50, 80))
+	buf = io.BytesIO()
+	img.save(buf, format="PNG")
+	return buf.getvalue()
+
+
+def _create_output_asset(project, name, file_name, duration_seconds: int = 4, color: str = "blue"):
 	asset = frappe.get_doc({
 		"doctype": "Media Asset",
 		"asset_name": name,
@@ -32,9 +44,9 @@ def _create_output_asset(project, name, file_name):
 	}).insert(ignore_permissions=True)
 	file_doc = frappe.get_doc({
 		"doctype": "File",
-		"file_name": file_name,
-		"content": _generate_video_bytes(4),
-		"is_private": 0,
+		"file_name": f"{project.name}-{file_name}",
+		"content": _generate_video_bytes(duration_seconds, color=color, unique_tag=project.name),
+		"is_private": 1,
 		"attached_to_doctype": "Media Asset",
 		"attached_to_name": asset.name,
 	}).insert(ignore_permissions=True)
@@ -46,11 +58,11 @@ def _create_output_asset(project, name, file_name):
 	}).insert(ignore_permissions=True)
 
 
-def _configure_project(project):
+def _configure_project(project, total_duration_seconds=8):
 	workflow = frappe.db.get_value("Generation Workflow", {}, "name", order_by="creation desc")
 	if not workflow:
 		frappe.throw("An executable Generation Workflow is required for the E2E setup.")
-	project.total_duration_seconds = 8
+	project.total_duration_seconds = total_duration_seconds
 	project.delivery_preset = "Landscape"
 	project.delivery_width = 1920
 	project.delivery_height = 1080
@@ -60,22 +72,21 @@ def _configure_project(project):
 	return project
 
 
-def _create_shot(project, number, prompt, output_version):
+def _create_shot(project, number, prompt, output_version, duration_seconds=4.0):
 	shot = frappe.get_doc({
 		"doctype": "Shot",
 		"media_project": project.name,
 		"shot_number": number,
 		"shot_name": f"Shot {number}",
 		"generation_prompt": prompt,
-		"duration_seconds": 4.0,
+		"duration_seconds": duration_seconds,
 	}).insert(ignore_permissions=True)
 	shot.db_set("selected_output_asset_version", output_version.name, update_modified=False)
 	return shot
 
 
-def setup_e2e_project():
+def setup_e2e_project(project_name="E2E-STUDIO-TEST-1", duration_seconds=8):
 	frappe.set_user("Administrator")
-	project_name = "E2E-STUDIO-TEST-1"
 	cleanup_e2e_project(project_name)
 	project = frappe.get_doc({
 		"doctype": "Media Project",
@@ -86,10 +97,19 @@ def setup_e2e_project():
 	})
 	project.name = project_name
 	project.insert(ignore_permissions=True)
-	_configure_project(project)
-	version = _create_output_asset(project, "E2E Shot Output", "e2e-clip.mp4")
-	_create_shot(project, 1, "Opening hero product shot.", version)
-	_create_shot(project, 2, "Closing hero product shot.", version)
+	_configure_project(project, total_duration_seconds=duration_seconds)
+	shot_duration = float(duration_seconds) / 2
+	version = _create_output_asset(
+		project, "E2E Shot Output", "e2e-clip.mp4", duration_seconds=max(1, ceil(shot_duration))
+	)
+	_create_shot(project, 1, "Opening hero product shot.", version, duration_seconds=shot_duration)
+	_create_shot(project, 2, "Closing hero product shot.", version, duration_seconds=shot_duration)
+	final_version = _create_output_asset(
+		project, "E2E Final Master Output", "e2e-final.mp4", duration_seconds=duration_seconds, color="green"
+	)
+	project.current_output_asset_version = final_version.name
+	project.selected_output_asset_version = final_version.name
+	project.save(ignore_permissions=True)
 	audio_asset = frappe.get_doc({
 		"doctype": "Media Asset",
 		"asset_name": "Upbeat Cinematic Music",
@@ -124,12 +144,54 @@ def setup_e2e_project():
 		"workflow": project.workflow,
 		"requested_by": "Administrator",
 		"status": "Completed",
+		"final_asset_version": final_version.name,
 	}).insert(ignore_permissions=True)
 	from joymedia.services.timeline_editor import get_project_timeline, add_timeline_audio_clip
 	get_project_timeline(project.name)
 	timeline = add_timeline_audio_clip(project.name, audio_version.name, timeline_start_frame=0, audio_role="BGM")
+	project.db_set("current_output_asset_version", final_version.name, update_modified=False)
 	frappe.db.commit()
 	return {"project_name": project.name, "timeline": timeline}
+
+
+def setup_fresh_empty_project(project_name="E2E-FRESH-EMPTY-1"):
+	frappe.set_user("Administrator")
+	cleanup_e2e_project(project_name)
+	project = frappe.get_doc({
+		"doctype": "Media Project",
+		"project_name": "Fresh Lipstick Project",
+		"product_name": "Luxury Lipstick",
+		"video_idea": "",
+		"status": "Draft",
+	})
+	project.name = project_name
+	project.insert(ignore_permissions=True)
+	_configure_project(project)
+	img_asset = frappe.get_doc({
+		"doctype": "Media Asset",
+		"asset_name": "Lipstick Product Photo",
+		"media_type": "Image",
+		"asset_category": "Product",
+		"asset_scope": "Library",
+	}).insert(ignore_permissions=True)
+	img_file = frappe.get_doc({
+		"doctype": "File",
+		"file_name": "lipstick.png",
+		"content": _generate_image_bytes(),
+		"is_private": 0,
+		"attached_to_doctype": "Media Asset",
+		"attached_to_name": img_asset.name,
+	}).insert(ignore_permissions=True)
+	frappe.get_doc({
+		"doctype": "Asset Version",
+		"media_asset": img_asset.name,
+		"file": img_file.file_url,
+		"source": "Uploaded",
+	}).insert(ignore_permissions=True)
+	from joymedia.joymedia.doctype.media_project.media_project import select_project_reference
+	select_project_reference(project.name, img_asset.name, reference_role="Product")
+	frappe.db.commit()
+	return {"project_name": project.name}
 
 
 def create_project_revision_v2(project_name):

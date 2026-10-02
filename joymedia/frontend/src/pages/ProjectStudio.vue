@@ -1,11 +1,10 @@
 <template>
   <div class="project-studio-root relative flex flex-col w-screen h-screen overflow-hidden bg-surface-base text-ink-primary">
-    <!-- 1. Single Studio Header (Full width across top: Projects | Title | Scenes/Edit | Media) -->
+    <!-- 1. Single Studio Header (Full width across top: Projects | Title | Media | Export) -->
     <StudioHeader
       :project-name="projectName"
       :project-title="projectTitle"
       :project-status="projectStatus"
-      :studio-mode="studioMode"
       :timeline-ready="timelineReady"
       :has-unexported-edits="hasUnexportedEdits"
       :is-exporting="isExporting"
@@ -17,7 +16,6 @@
       :user="user"
       @go-back="router.push('/campaigns')"
       @save-project-name="updateProjectName"
-      @update:studio-mode="studioMode = $event"
       @toggle-media-drawer="mediaDrawerOpen = !mediaDrawerOpen"
       @toggle-lang="toggleLang"
       @open-settings="showSettings = true"
@@ -69,7 +67,7 @@
             :selected-clip="selectedClip"
             :selected-shot-frame="selectedShotFrame"
             :preview-selection="previewSelection"
-            :timeline-total-seconds="timelineTotalSeconds"
+            :timeline-total-seconds="playerTotalSeconds"
             :current-timeline-position-label="currentTimelinePositionLabel"
             :is-playing="isPlaying"
             :is-production-active="isProductionActive"
@@ -86,6 +84,7 @@
             @toggle-play-pause="isPlaying = !isPlaying"
             @play="isPlaying = true"
             @pause="isPlaying = false"
+            @loadedmetadata="onPreviewLoadedMetadata"
             @timeupdate="onVideoTimeUpdate"
             @jump-to-next-keyframe="jumpToNextShot"
             @jump-to-prev-keyframe="jumpToPrevShot"
@@ -143,6 +142,29 @@
               {{ clips.length }} {{ currentLang === 'vi' ? 'phân đoạn trên timeline' : 'clips on timeline' }}
             </span>
           </div>
+        </div>
+
+        <!-- Legacy or Orphaned Project Output (Final video exists but 0 scenes) -->
+        <div
+          v-if="finalVideo?.file && storyboardShots.length === 0"
+          class="p-3.5 mb-2 rounded-2xl bg-surface-card border border-amber-500/40 text-xs flex flex-wrap items-center justify-between gap-3 shadow-xs"
+        >
+          <div class="space-y-0.5">
+            <div class="font-bold text-amber-400 flex items-center gap-1.5">
+              <span>🎞️</span>
+              <span>{{ currentLang === 'vi' ? 'Video phiên bản trước' : 'Previous generated video' }}</span>
+            </div>
+            <p class="text-[11px] text-ink-muted">
+              {{ currentLang === 'vi' ? 'Kết quả cũ này không có dữ liệu phân cảnh để chỉnh sửa.' : 'This older result has no editable scene data.' }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="jm-btn-primary !py-1.5 !px-3 text-xs"
+            @click="generateVideo"
+          >
+            {{ currentLang === 'vi' ? 'Tạo phiên bản mới' : 'Create new version' }}
+          </button>
         </div>
 
         <!-- 3. SCENE MODE: Simple Generation Composer + Scene Filmstrip -->
@@ -339,6 +361,7 @@ const {
   storyboardShots,
   currentOutputAssetVersion,
   finalVideo,
+  isOutdated: generationOutputOutdated,
   videoSettings,
   fetchWorkspace,
   fetchVideoStyles,
@@ -392,7 +415,7 @@ const {
   playheadFrame,
   exportStatus,
   isExporting,
-  isOutdated,
+  isOutdated: timelineOutdated,
   loadTimeline,
   trimClip,
   reorderClip,
@@ -413,16 +436,24 @@ const isPlaying = ref(false);
 const previewSelection = ref("shot"); // "shot" | "full" | "clip"
 const mediaPickerFilter = ref("All");
 
+// Automatically transition to Edit mode only when an active generation run finishes
 watch(
-  () => finalVideo.value?.file,
-  (videoUrl) => {
-    if (videoUrl && studioMode.value === "scene" && clips.value?.length) {
-      studioMode.value = "edit";
+  () => isProductionActive.value,
+  async (active, prev) => {
+    if (prev && !active) {
+      await fetchWorkspace();
+      await loadTimeline(true);
+      if (finalVideo.value?.file && clips.value?.length) {
+        studioMode.value = "edit";
+      }
     }
   }
 );
 
+const pendingAudioRole = ref(null);
+
 function openAudioPicker(role = "BGM") {
+  pendingAudioRole.value = role;
   mediaPickerFilter.value = "Audio";
   openPicker();
 }
@@ -432,13 +463,26 @@ async function onUpdateAudioClip(clip, settings) {
 }
 
 async function handleSelectReference({ asset, role }) {
-  await addReference({ asset, role });
-  // If in Edit mode or if this is an Audio asset, add an audio clip record to the timeline
-  if (studioMode.value === "edit" || role === "Audio" || asset.media_type === "Audio") {
-    if (asset.asset_version || asset.name) {
-      await addAudioClip(asset.asset_version || asset.name, playheadFrame.value || 0, role === "Audio" ? "BGM" : role);
+  // If user opened picker specifically to add an audio clip to a timeline track:
+  if (pendingAudioRole.value) {
+    const chosenRole = pendingAudioRole.value;
+    pendingAudioRole.value = null;
+    const assetVersion = asset.asset_version || asset.name;
+    if (assetVersion) {
+      await addAudioClip(assetVersion, playheadFrame.value || 0, chosenRole);
+      toast({
+        title: "Audio added",
+        text: `Added ${asset.asset_name || "audio"} to ${chosenRole} track.`,
+        type: "success",
+      });
     }
+    showMediaPicker.value = false;
+    return;
   }
+
+  // Otherwise, user is adding project generation references
+  await addReference({ asset, role });
+
   // If product name is "Untitled Product" and user selected a Product reference, initialize product name automatically
   if (
     workspace.value?.project?.product_name === "Untitled Product" &&
@@ -460,6 +504,7 @@ async function handleSelectReference({ asset, role }) {
 }
 
 const timelineReady = computed(() => Boolean(clips.value?.length));
+const isOutdated = computed(() => Boolean(generationOutputOutdated.value || timelineOutdated.value));
 const hasUnexportedEdits = computed(() => isOutdated.value);
 
 const hasInspectorSelection = computed(() => {
@@ -493,38 +538,34 @@ const selectedClipSourceShot = computed(() => {
   );
 });
 
-const timelineTotalSeconds = computed(() => {
-  return Number(timeline.value?.total_seconds || videoSettings.value.duration || 15);
+const previewDuration = ref(0);
+
+function onPreviewLoadedMetadata({ duration }) {
+  if (duration && Number.isFinite(duration) && duration > 0) {
+    previewDuration.value = duration;
+  }
+}
+
+// Player displayed media total duration (Strictly distinct from project target duration setting)
+const playerTotalSeconds = computed(() => {
+  if (previewDuration.value > 0) {
+    return previewDuration.value;
+  }
+  return 0;
 });
 
 const currentTimelinePositionLabel = computed(() => {
   const f = playheadFrame.value || 0;
   const currentFps = fps.value || 24;
-  const sec = (f / currentFps).toFixed(1);
-  return `${sec}s`;
+  const totalSec = Math.max(0, f / currentFps);
+  const m = String(Math.floor(totalSec / 60)).padStart(2, "0");
+  const s = String(Math.floor(totalSec % 60)).padStart(2, "0");
+  return `${m}:${s}`;
 });
 
-// Viewport Media computation
+// Viewport Media computation (Unified persistent player model)
 const studioPreview = computed(() => {
-  if (studioMode.value === "edit" && selectedClip.value?.source_file) {
-    return {
-      type: "clip",
-      url: selectedClip.value.source_file,
-      clip: selectedClip.value,
-      isVideo: true,
-      title: `Clip ${selectedClip.value.clip_order || 1}`,
-    };
-  }
-
-  if (previewSelection.value === "full" && finalVideo.value?.file) {
-    return {
-      type: "master",
-      url: finalVideo.value.file,
-      isVideo: true,
-      title: "Final Output",
-    };
-  }
-
+  // 1. Explicit asset preview (e.g. user selected an ingredient in Media Drawer to inspect)
   if (selectedTarget.value === "asset" && selectedAsset.value?.file) {
     const isVid = selectedAsset.value.media_type === "Video";
     return {
@@ -535,6 +576,29 @@ const studioPreview = computed(() => {
     };
   }
 
+  // 2. Explicit clip source preview request
+  if (previewSelection.value === "clip-source" && selectedClip.value?.source_file) {
+    return {
+      type: "clip",
+      url: selectedClip.value.source_file,
+      clip: selectedClip.value,
+      isVideo: true,
+      title: `Source: Clip ${selectedClip.value.clip_order || 1}`,
+    };
+  }
+
+  // 3. PERSISTENT MASTER/FINAL VIDEO (OpenSlop unified player model)
+  // When final/master video exists, IT IS THE PERSISTENT PLAYER
+  if (finalVideo.value?.file) {
+    return {
+      type: "master",
+      url: finalVideo.value.file,
+      isVideo: true,
+      title: "Master Video",
+    };
+  }
+
+  // 4. BEFORE MASTER VIDEO EXISTS: individual shot video or first frame
   if (activeSelectedShot.value) {
     const vid = getShotVideoFile(activeSelectedShot.value);
     if (vid) {
@@ -556,17 +620,26 @@ const studioPreview = computed(() => {
     }
   }
 
-  if (finalVideo.value?.file) {
+  // 5. If selected clip has a source file before final video exists
+  if (selectedClip.value?.source_file) {
     return {
-      type: "master",
-      url: finalVideo.value.file,
+      type: "clip",
+      url: selectedClip.value.source_file,
+      clip: selectedClip.value,
       isVideo: true,
-      title: "Master Output",
+      title: `Clip ${selectedClip.value.clip_order || 1}`,
     };
   }
 
   return null;
 });
+
+watch(
+  () => studioPreview.value?.url,
+  () => {
+    previewDuration.value = 0;
+  }
+);
 
 // Helper Functions
 function getShotVideoFile(shot) {
@@ -605,44 +678,96 @@ function getShotTimestampRange(shot) {
 
 // User Actions
 function getShotStartTime(index) {
-  let elapsed = 0;
+  const shot = storyboardShots.value[index];
+  const timelineClip = timeline.value?.clips?.find(
+    (clip) => clip.track_type === "Video" && (clip.shot === shot?.name || clip.shot_number === shot?.shot_number)
+  );
+  if (timelineClip && fps.value > 0) {
+    return Number(timelineClip.timeline_start_frame || 0) / fps.value;
+  }
+	let elapsed = 0;
   for (let i = 0; i < index && i < storyboardShots.value.length; i++) {
     elapsed += estimateShotDuration(storyboardShots.value[i]);
   }
   return elapsed;
 }
 
+function seekPreview(timeInSeconds) {
+  const safeTime = Math.max(0, Number(timeInSeconds) || 0);
+  const preview = studioPreviewRef.value;
+  preview?.seek?.(safeTime);
+  const video = preview?.previewVideo?.value || preview?.previewVideo;
+  if (video && Number.isFinite(safeTime)) {
+    video.currentTime = safeTime;
+  }
+}
+
+function syncActiveSceneFromFrame(frame) {
+  const currentFrame = Math.max(0, Math.round(Number(frame) || 0));
+  const videoClips = (timeline.value?.clips || [])
+    .filter((clip) => (clip.track_type || "Video") === "Video")
+    .sort((a, b) => (a.timeline_start_frame || 0) - (b.timeline_start_frame || 0));
+  if (videoClips.length) {
+    const clip = videoClips.find(
+      (item) => currentFrame >= Number(item.timeline_start_frame || 0) && currentFrame < Number(item.timeline_end_frame || 0)
+    );
+    if (clip) {
+      const index = storyboardShots.value.findIndex(
+        (shot) => shot.name === clip.shot || shot.shot_number === clip.shot_number
+      );
+      if (index >= 0) selectedShotIndex.value = index;
+      return;
+    }
+  }
+
+  const currentFps = fps.value || 24;
+  const seekTime = currentFrame / currentFps;
+  let elapsed = 0;
+  for (let i = 0; i < storyboardShots.value.length; i++) {
+    const duration = estimateShotDuration(storyboardShots.value[i]);
+    if (seekTime >= elapsed && seekTime < elapsed + duration) {
+      selectedShotIndex.value = i;
+      return;
+    }
+    elapsed += duration;
+  }
+}
+
 function onSelectShot(shot, index) {
   selectedShotIndex.value = index;
   selectedTarget.value = "shot";
-  previewSelection.value = "shot";
   inspectorOpen.value = true;
 
-  // Synchronize player and timeline playhead to shot start time
-  const startTime = getShotStartTime(index);
   const currentFps = fps.value || 24;
-  playheadFrame.value = Math.round(startTime * currentFps);
-  studioPreviewRef.value?.seek(startTime);
+
+  if (finalVideo.value?.file) {
+    // Persistent master player: seek master to shot start time
+    previewSelection.value = "master";
+    const startTime = getShotStartTime(index);
+    playheadFrame.value = Math.round(startTime * currentFps);
+    seekPreview(startTime);
+  } else {
+    // Pre-master stage: preview individual shot video starting from 0s
+    previewSelection.value = "shot";
+    playheadFrame.value = 0;
+    studioPreviewRef.value?.seek(0);
+  }
 }
 
 function onVideoTimeUpdate(payload) {
   const currentTime = payload?.currentTime ?? payload?.target?.currentTime ?? 0;
   const currentFps = fps.value || 24;
-  playheadFrame.value = Math.round(currentTime * currentFps);
 
-  // Synchronize active scene based on current playback time
-  if (storyboardShots.value.length) {
-    let accum = 0;
-    for (let i = 0; i < storyboardShots.value.length; i++) {
-      const dur = estimateShotDuration(storyboardShots.value[i]);
-      if (currentTime >= accum && currentTime < accum + dur) {
-        if (selectedShotIndex.value !== i) {
-          selectedShotIndex.value = i;
-        }
-        break;
-      }
-      accum += dur;
-    }
+  if (finalVideo.value?.file && studioPreview.value?.type === "master") {
+    // Persistent master player: currentTime IS global timeline time!
+    playheadFrame.value = Math.round(currentTime * currentFps);
+    syncActiveSceneFromFrame(playheadFrame.value);
+  } else if (studioPreview.value?.type === "shot") {
+    // Pre-master: local time (0..dur) within individual shot
+    const shotStart = getShotStartTime(selectedShotIndex.value);
+    playheadFrame.value = Math.round((shotStart + currentTime) * currentFps);
+  } else {
+    playheadFrame.value = Math.round(currentTime * currentFps);
   }
 }
 
@@ -650,22 +775,12 @@ function onSeekPlayhead(frame) {
   playheadFrame.value = frame;
   const currentFps = fps.value || 24;
   const seekTime = frame / currentFps;
-  studioPreviewRef.value?.seek(seekTime);
 
-  // Synchronize active scene based on seek time
-  if (storyboardShots.value.length) {
-    let accum = 0;
-    for (let i = 0; i < storyboardShots.value.length; i++) {
-      const dur = estimateShotDuration(storyboardShots.value[i]);
-      if (seekTime >= accum && seekTime < accum + dur) {
-        if (selectedShotIndex.value !== i) {
-          selectedShotIndex.value = i;
-        }
-        break;
-      }
-      accum += dur;
-    }
+  if (finalVideo.value?.file && studioPreview.value?.type === "master") {
+    seekPreview(seekTime);
   }
+
+  syncActiveSceneFromFrame(frame);
 }
 
 function jumpToNextShot() {
@@ -696,8 +811,24 @@ function onSelectAssetTarget(asset) {
 
 function onSelectClip(clip) {
   selectedClipName.value = clip.name;
-  previewSelection.value = "clip";
   inspectorOpen.value = true;
+
+  if (finalVideo.value?.file) {
+    previewSelection.value = "master";
+    const clipStartFrame = clip.timeline_start_frame || 0;
+    const currentFps = fps.value || 24;
+    playheadFrame.value = clipStartFrame;
+    seekPreview(clipStartFrame / currentFps);
+
+    if (clip.shot_number) {
+      const idx = storyboardShots.value.findIndex(
+        (s) => s.shot_number === clip.shot_number || s.name === clip.shot
+      );
+      if (idx >= 0) selectedShotIndex.value = idx;
+    }
+  } else {
+    previewSelection.value = "clip";
+  }
 }
 
 function onSetKeyframeFromPicker(asset) {
@@ -816,7 +947,10 @@ function onReorderShots(fromIdx, toIdx) {
 onMounted(async () => {
   await fetchWorkspace();
   await fetchVideoStyles();
-  await loadTimeline(false);
+  await loadTimeline(true);
+  if (finalVideo.value?.file && clips.value?.length) {
+    studioMode.value = "edit";
+  }
   // sync video idea prompt if present in project
   if (workspace.value?.project?.video_idea) {
     videoIdeaPrompt.value = workspace.value.project.video_idea;

@@ -79,7 +79,7 @@
             v-for="asset in filteredCandidates"
             :key="asset.name"
             type="button"
-            class="text-left p-2 rounded-xl border transition-all cursor-pointer relative group flex flex-col justify-between"
+            class="media-candidate-card text-left p-2 rounded-xl border transition-all cursor-pointer relative group flex flex-col justify-between"
             :class="[
               selectedCandidate?.name === asset.name
                 ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/40 shadow-sm'
@@ -181,6 +181,7 @@
           <!-- Add / Update Action Button -->
           <button
             type="button"
+            data-testid="confirm-add-reference"
             class="jm-btn-primary !py-1.5 !px-4 text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer"
             :disabled="saving"
             @click="confirmAddReference"

@@ -88,7 +88,12 @@ export function useProjectWorkspace(projectName) {
   const projectStatus = computed(() => workspace.value?.project?.status || "Draft");
   const projectAssets = computed(() => workspace.value?.assets || []);
   const storyboard = computed(() => workspace.value?.storyboard || null);
-  const storyboardShots = computed(() => storyboard.value?.shots || []);
+  const storyboardShots = computed(() => {
+    if (Array.isArray(storyboard.value)) {
+      return storyboard.value;
+    }
+    return storyboard.value?.shots || [];
+  });
   const currentOutputAssetVersion = computed(() => workspace.value?.project?.current_output_asset_version || "");
   const finalVideo = computed(() => workspace.value?.final_video || null);
 
@@ -101,6 +106,8 @@ export function useProjectWorkspace(projectName) {
       global_instructions: "",
     };
   });
+
+  const isOutdated = computed(() => Boolean(workspace.value?.production?.is_outdated));
 
   return {
     workspace,
@@ -122,6 +129,7 @@ export function useProjectWorkspace(projectName) {
     storyboardShots,
     currentOutputAssetVersion,
     finalVideo,
+    isOutdated,
     videoSettings,
 
     fetchWorkspace,

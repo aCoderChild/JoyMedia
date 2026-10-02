@@ -2,11 +2,18 @@ import { test, expect } from "@playwright/test";
 import { execSync } from "child_process";
 
 function runBench(command) {
-  const dockerCmd = `docker exec -w /workspace/development/frappe-bench frappe_docker_devcontainer-frappe-1 ${command}`;
-  return execSync(dockerCmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+  const useDocker = process.env.JOYMEDIA_BENCH_DOCKER === "1";
+  if (useDocker) {
+    const dockerCmd = `docker exec -w /workspace/development/frappe-bench frappe_docker_devcontainer-frappe-1 ${command}`;
+    return execSync(dockerCmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+  }
+  return execSync(command, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
 }
 
 let projectName = "";
+let freshProjectName = "";
+let fiveSecondProjectName = "";
+let fifteenSecondProjectName = "";
 
 test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
   test.beforeAll(async () => {
@@ -16,6 +23,18 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
     );
     const parsed = JSON.parse(output.trim());
     projectName = parsed.project_name;
+    fiveSecondProjectName = JSON.parse(
+      runBench(
+        "bench --site joymedia.localhost execute joymedia.services.e2e_setup.setup_e2e_project " +
+        "--kwargs '{\"project_name\":\"E2E-STUDIO-5S\",\"duration_seconds\":5}'"
+      ).trim()
+    ).project_name;
+    fifteenSecondProjectName = JSON.parse(
+      runBench(
+        "bench --site joymedia.localhost execute joymedia.services.e2e_setup.setup_e2e_project " +
+        "--kwargs '{\"project_name\":\"E2E-STUDIO-15S\",\"duration_seconds\":15}'"
+      ).trim()
+    ).project_name;
   });
 
   test.afterAll(async () => {
@@ -23,6 +42,21 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
       try {
         runBench(
           `bench --site joymedia.localhost execute joymedia.services.e2e_setup.cleanup_e2e_project --args "['${projectName}']"`
+        );
+      } catch (_) {}
+    }
+    if (freshProjectName) {
+      try {
+        runBench(
+          `bench --site joymedia.localhost execute joymedia.services.e2e_setup.cleanup_e2e_project --args "['${freshProjectName}']"`
+        );
+      } catch (_) {}
+    }
+    for (const name of [fiveSecondProjectName, fifteenSecondProjectName]) {
+      if (!name) continue;
+      try {
+        runBench(
+          `bench --site joymedia.localhost execute joymedia.services.e2e_setup.cleanup_e2e_project --args "['${name}']"`
         );
       } catch (_) {}
     }
@@ -106,7 +140,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
     await expect(page.getByText(/Add Project Reference|Thêm tư liệu vào Dự án/i)).toBeVisible();
 
     // Verify candidates are listed
-    const candidateItem = page.locator(".group.relative.rounded-xl").first();
+    const candidateItem = page.locator(".media-candidate-card").first();
     await expect(candidateItem).toBeVisible({ timeout: 10000 });
 
     // Click candidate and verify the simplified bottom docked action bar appears
@@ -236,7 +270,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
     await expect(page.locator("select")).toBeVisible();
   });
 
-  test("8. Unified Player & Editor Model: 4 semantic lanes, bottom workspace switcher, clean storyboard cards", async ({ page }) => {
+  test("8. Unified Player & Editor Model: Persistent master player, 4 semantic lanes, clean storyboard cards", async ({ page }) => {
     await page.goto(`/joymedia/projects/${projectName}`);
     await expect(page.locator("header")).toBeVisible();
 
@@ -254,26 +288,120 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
     const editSceneBtn = page.getByRole("button", { name: /Edit|Sửa/i }).first();
     await expect(editSceneBtn).toBeVisible();
 
-    // 3. Switch to Timeline and verify 4 semantic lanes: Visuals, Voice, Effects, Music / Audio
+    // 3. Persistent Master Player: verify video element source is master output and clicking Scene 2 seeks without swapping source
+    const videoEl = page.locator(".gflow-viewport video");
+    await expect(videoEl).toBeVisible();
+    const initialSrc = await videoEl.getAttribute("src");
+    expect(initialSrc).toContain("e2e-final.mp4");
+
+    // Click Scene 2 card
+    const scene2Card = page.locator(".capcut-clip").nth(1);
+    await scene2Card.click();
+
+    // Master video src remains persistent (does NOT swap to shot2.mp4)
+    const afterClickSrc = await videoEl.getAttribute("src");
+    expect(afterClickSrc).toBe(initialSrc);
+
+    // 4. Switch to Timeline and verify 4 semantic lanes: Visuals, Voice, Effects, Music / Audio
     await timelineBtn.click();
     await expect(page.getByText("Visuals", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Voice", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Effects", { exact: true }).first()).toBeVisible();
     await expect(page.getByText(/Music \/ Audio|Nhạc \/ Âm thanh/i).first()).toBeVisible();
+  });
 
-    // 4. Verify player synchronization: clicking clip or video element interaction
-    const videoClip = page.locator(".timeline-clip").first();
-    await expect(videoClip).toBeVisible();
-    await videoClip.click();
-
-    // Verify video is present in viewport when video clip selected
-    const videoEl = page.locator(".gflow-viewport video");
-    await expect(videoEl).toBeVisible();
-
-    // When video is present, PlaybackTransport is visible
-    const transport = page.locator(".playback-transport-root, [class*='playback-transport']");
-    if (await transport.count() > 0) {
-      await expect(transport.first()).toBeVisible();
+  test("9. Media clock and storyboard/timeline synchronization", async ({ page }) => {
+    for (const [name, expected] of [[fiveSecondProjectName, 5], [fifteenSecondProjectName, 15]]) {
+      await page.goto(`/joymedia/projects/${name}`);
+      const video = page.locator(".gflow-viewport video");
+      await expect(video).toBeVisible();
+      await expect.poll(() => video.evaluate((element) => element.duration), { timeout: 10000 }).toBeCloseTo(expected, 0);
+      await expect(page.locator(".playback-transport")).toContainText(`00:${String(expected).padStart(2, "0")}`);
     }
+
+    await page.goto(`/joymedia/projects/${projectName}`);
+    await expect(page.locator(".timeline-clip").first()).toBeVisible();
+
+    const storyboardButton = page.getByRole("button", { name: /Storyboard/i }).first();
+    await storyboardButton.click();
+    const video = page.locator(".gflow-viewport video");
+    await expect.poll(() => video.evaluate((element) => element.duration), { timeout: 10000 }).toBeGreaterThan(0);
+    const sceneTwo = page.locator(".capcut-clip").nth(1);
+    await sceneTwo.click();
+    await expect.poll(() => video.evaluate((element) => element.currentTime), { timeout: 3000 }).toBeGreaterThan(3.5);
+    await expect.poll(() => page.locator(".capcut-clip").nth(1).getAttribute("class"))
+      .toContain("border-indigo-500");
+
+    await video.evaluate((element) => {
+      element.currentTime = 4.1;
+      element.dispatchEvent(new Event("timeupdate"));
+    });
+    await expect.poll(() => page.locator(".capcut-clip").nth(1).getAttribute("class"))
+      .toContain("border-indigo-500");
+  });
+
+  test("10. Audio Lanes & Role Routing: adding Voice lands in Voice, SFX in Effects, BGM in Music without polluting references", async ({ page }) => {
+    await page.goto(`/joymedia/projects/${projectName}`);
+    await expect(page.locator("header")).toBeVisible();
+
+    // Switch to Timeline
+    const timelineBtn = page.getByRole("button", { name: /Timeline/i }).first();
+    await timelineBtn.click();
+
+    // Click "+ Add Voice" in Voice track
+    const addVoiceBtn = page.getByRole("button", { name: /\+ (Thêm Voice|Add Voice)/i }).first();
+    await expect(addVoiceBtn).toBeVisible();
+    await addVoiceBtn.click();
+
+    // Verify Media Picker opens in Audio filter
+    await expect(page.getByText(/Add Project Reference|Thêm tư liệu vào Dự án/i)).toBeVisible();
+    const audioCandidate = page.locator(".media-candidate-card").first();
+    await expect(audioCandidate).toBeVisible({ timeout: 10000 });
+    await audioCandidate.click();
+
+    // Click Add
+    const confirmAddBtn = page.locator('[data-testid="confirm-add-reference"]');
+    await confirmAddBtn.click();
+
+    // Verify audio clip appears in Voice lane
+    await expect(page.locator(".timeline-audio-clip").filter({ hasText: /Voice/i }).first()).toBeVisible({ timeout: 10000 });
+  });
+
+  test("11. Golden Path Fresh Marketer Flow: empty prompt + 1 image reference -> Generate -> plan & retry", async ({ page }) => {
+    // 1. Setup fresh project with 1 image reference and empty prompt
+    const output = runBench(
+      'bench --site joymedia.localhost execute joymedia.services.e2e_setup.setup_fresh_empty_project'
+    );
+    const parsed = JSON.parse(output.trim());
+    freshProjectName = parsed.project_name;
+
+    await page.goto(`/joymedia/projects/${freshProjectName}`);
+    await expect(page.locator("header")).toBeVisible();
+
+    // 2. Verify prompt is empty
+    const textarea = page.locator("textarea");
+    await expect(textarea).toBeVisible();
+    await expect(textarea).toHaveValue("");
+
+    // 3. Verify product reference image is present
+    await expect(page.getByRole("button", { name: /@/ }).first()).toBeVisible();
+
+    // 4. Before generation: verify NO playback transport is rendered (only product preview)
+    await expect(page.locator(".playback-transport-root, [class*='playback-transport']")).toHaveCount(0);
+    await expect(page.getByText(/Sẵn sàng sản xuất video|Ready to create video/i)).toBeVisible();
+
+    // 5. Click Generate button with empty prompt
+    const generateBtn = page.getByRole("button", { name: /Generate|Tạo/i }).first();
+    await expect(generateBtn).toBeVisible();
+
+    const [response] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes("generate_project_video")),
+      generateBtn.click(),
+    ]);
+    expect([200, 417, 500]).toContain(response.status());
+
+    // 6. Verify that if generation preflight encounters ComfyUI check or starts, error banner or radar appears cleanly
+    const inProgressOrError = page.locator(".lucide-refresh-cw, button:has-text('Retry'), button:has-text('Thử lại')");
+    await expect(inProgressOrError.first()).toBeVisible({ timeout: 10000 });
   });
 });

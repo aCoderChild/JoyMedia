@@ -116,7 +116,6 @@ const props = defineProps({
   projectName: { type: String, default: "" },
   projectTitle: { type: String, default: "" },
   projectStatus: { type: String, default: "Draft" },
-  studioMode: { type: String, default: "scene" },
   timelineReady: { type: Boolean, default: false },
   hasUnexportedEdits: { type: Boolean, default: false },
   isExporting: { type: Boolean, default: false },
@@ -131,7 +130,6 @@ const props = defineProps({
 const emit = defineEmits([
   "goBack",
   "saveProjectName",
-  "update:studioMode",
   "toggleMediaDrawer",
   "toggleLang",
   "openSettings",
