@@ -1,10 +1,16 @@
 import frappe
 
 from .minimax_h3 import MiniMaxH3WorkflowAdapter
+from .minimax_h3_profiles import (
+	MiniMaxH3ImageToVideoAdapter,
+	MiniMaxH3ReferenceToVideoAdapter,
+)
 
 
 ADAPTERS = {
 	"minimax_h3": MiniMaxH3WorkflowAdapter,
+	"minimax_h3_i2v": MiniMaxH3ImageToVideoAdapter,
+	"minimax_h3_r2v": MiniMaxH3ReferenceToVideoAdapter,
 }
 
 

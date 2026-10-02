@@ -5,11 +5,17 @@ from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.workflow_resolver import (
 	_SKIP_BINDING,
+	_resolve_semantic_binding,
 	_resolve_generation_input,
+	get_workflow_input_contract,
 	validate_workflow_bindings,
 	validate_workflow_for_execution,
 )
 from joymedia.workflow_adapters.minimax_h3 import MiniMaxH3WorkflowAdapter
+from joymedia.workflow_adapters.minimax_h3_profiles import (
+	MiniMaxH3ImageToVideoAdapter,
+	MiniMaxH3ReferenceToVideoAdapter,
+)
 
 
 class TestWorkflowResolver(FrappeTestCase):
@@ -23,6 +29,40 @@ class TestWorkflowResolver(FrappeTestCase):
 		)
 
 		self.assertEqual("first.png", value)
+
+	def test_ordered_r2v_reference_bindings_use_product_reference_order(self):
+		workflow = frappe._dict(
+			bindings=[
+				frappe._dict(
+					binding_key="reference_image_1",
+					required_input_role="product_reference",
+					value_type="File Path",
+					required=1,
+				),
+				frappe._dict(
+					binding_key="reference_image_2",
+					required_input_role="product_reference",
+					value_type="File Path",
+					required=0,
+				),
+			]
+		)
+
+		contract = get_workflow_input_contract(workflow)
+		self.assertTrue(contract[0]["allow_multiple"])
+		job = frappe._dict(name="JOB-00001", prompt_text="prompt")
+		self.assertEqual(
+			"one.png",
+			_resolve_semantic_binding(
+				workflow.bindings[0], job, {"product_reference": ["one.png", "two.png"]}
+			),
+		)
+		self.assertEqual(
+			"two.png",
+			_resolve_semantic_binding(
+				workflow.bindings[1], job, {"product_reference": ["one.png", "two.png"]}
+			),
+		)
 
 	def test_optional_last_frame_is_skipped_when_not_staged(self):
 		job = frappe._dict(name="JOB-00001")
@@ -193,3 +233,51 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertEqual(720, workflow["scale_img"]["inputs"]["height"])
 		self.assertEqual("JOB-1_ATT-1", workflow["save_video"]["inputs"]["filename_prefix"])
 		self.assertEqual(119, workflow["last_frame"]["inputs"]["batch_index"])
+
+	def test_h3_i2v_api_profile_patches_exported_node_keys(self):
+		workflow = {
+			"105:15": {"inputs": {"noise_seed": 0}},
+			"105:111": {"inputs": {"value": 5}},
+			"105:104": {"inputs": {"width": ["115", 0], "height": ["115", 1]}},
+			"92": {"inputs": {"filename_prefix": "old"}},
+		}
+
+		MiniMaxH3ImageToVideoAdapter().prepare_execution(
+			workflow,
+			seed=94821731,
+			width=1280,
+			height=720,
+			frame_count=120,
+			output_prefix="JOB-1_ATT-1",
+			last_frame_index=119,
+			last_frame_prefix="unused",
+		)
+
+		self.assertEqual(94821731, workflow["105:15"]["inputs"]["noise_seed"])
+		self.assertEqual(1280, workflow["105:104"]["inputs"]["width"])
+		self.assertEqual(720, workflow["105:104"]["inputs"]["height"])
+		self.assertEqual("JOB-1_ATT-1", workflow["92"]["inputs"]["filename_prefix"])
+
+	def test_h3_r2v_api_profile_patches_exported_node_keys(self):
+		workflow = {
+			"129": {"inputs": {"noise_seed": 0}},
+			"132": {"inputs": {"value": 5}},
+			"136": {"inputs": {"width": ["115", 0], "height": ["115", 1]}},
+			"92": {"inputs": {"filename_prefix": "old"}},
+		}
+
+		MiniMaxH3ReferenceToVideoAdapter().prepare_execution(
+			workflow,
+			seed=94821731,
+			width=1280,
+			height=720,
+			frame_count=120,
+			output_prefix="JOB-1_ATT-1",
+			last_frame_index=119,
+			last_frame_prefix="unused",
+		)
+
+		self.assertEqual(94821731, workflow["129"]["inputs"]["noise_seed"])
+		self.assertEqual(1280, workflow["136"]["inputs"]["width"])
+		self.assertEqual(720, workflow["136"]["inputs"]["height"])
+		self.assertEqual("JOB-1_ATT-1", workflow["92"]["inputs"]["filename_prefix"])

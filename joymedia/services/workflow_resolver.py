@@ -20,12 +20,14 @@ def get_workflow_input_contract(workflow):
 		role = frappe.scrub(binding.required_input_role or "")
 		if not role:
 			continue
+		binding_key = frappe.scrub(binding.binding_key or "")
 		entry = {
 			"role": role,
 			"value_type": getattr(binding, "value_type", None) or "File Path",
 			"required": bool(binding.required),
 			"accepted_media_type": getattr(binding, "accepted_media_type", None) or "Any",
-			"allow_multiple": bool(getattr(binding, "allow_multiple", 0)),
+			"allow_multiple": bool(getattr(binding, "allow_multiple", 0))
+			or binding_key.startswith("reference_image_"),
 		}
 		previous = contract.get(role)
 		if previous and any(
@@ -241,12 +243,35 @@ def _validate_workflow_bindings(workflow_version, workflow):
 def _resolve_semantic_binding(binding, job, staged_inputs):
 	if frappe.scrub(binding.binding_key or "") == PROMPT_BINDING_KEY:
 		return job.prompt_text
+	if frappe.scrub(binding.binding_key or "").startswith("reference_image_"):
+		return _resolve_reference_image_binding(binding, staged_inputs)
 	return _resolve_generation_input(
 		job,
 		binding.required_input_role,
 		staged_inputs,
 		value_type=binding.value_type,
 		required=bool(binding.required),
+	)
+
+
+def _resolve_reference_image_binding(binding, staged_inputs):
+	"""Resolve ordered R2V reference_image_1/reference_image_2 bindings."""
+	try:
+		index = int(str(binding.binding_key).rsplit("_", 1)[1]) - 1
+	except (ValueError, IndexError):
+		frappe.throw(_("Invalid reference image binding key: {0}").format(binding.binding_key))
+
+	values = staged_inputs.get(frappe.scrub(binding.required_input_role)) or []
+	if not isinstance(values, list):
+		values = [values]
+	if index < len(values) and values[index]:
+		return values[index]
+	if not binding.required:
+		return _SKIP_BINDING
+	frappe.throw(
+		_("No staged reference image {0} found for Generation Task {1}.").format(
+			index + 1, getattr(binding, "generation_task", "") or "the current task"
+		)
 	)
 
 
