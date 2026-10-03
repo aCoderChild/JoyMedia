@@ -567,7 +567,8 @@ async function handleSelectReference({ asset, role }) {
     pendingAudioRole.value = null;
     const assetVersion = asset.asset_version || asset.name;
     if (assetVersion) {
-      await addAudioClip(assetVersion, playheadFrame.value || 0, chosenRole);
+      const startFrame = chosenRole === "BGM" ? 0 : playheadFrame.value || 0;
+      await addAudioClip(assetVersion, startFrame, chosenRole);
       toast({
         title: "Audio added",
         text: `Added ${asset.asset_name || "audio"} to ${chosenRole} track.`,

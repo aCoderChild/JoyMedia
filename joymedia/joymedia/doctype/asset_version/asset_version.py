@@ -66,7 +66,7 @@ class AssetVersion(Document):
 		self.width = None
 		self.height = None
 		self.duration_seconds = None
-		self.fps = None
+		self.fps = 0
 
 		if not self.file:
 			return
@@ -147,7 +147,7 @@ class AssetVersion(Document):
 				raise ValueError("audio duration must be positive")
 
 			self.duration_seconds = duration
-			self.fps = None
+			self.fps = 0
 		except (
 			KeyError,
 			OSError,

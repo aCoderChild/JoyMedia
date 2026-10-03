@@ -26,7 +26,7 @@ def execute():
 			version.name,
 			{
 				"duration_seconds": asset_version.duration_seconds,
-				"fps": None,
+				"fps": 0,
 			},
 			update_modified=False,
 		)
