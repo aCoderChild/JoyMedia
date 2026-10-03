@@ -199,7 +199,7 @@ export function useTimelinePreviewEngine({
       const currentVideo = getVideoElement(getVideo);
       if (!currentVideo || getRefValue(studioMode) !== "edit" || currentVideo.readyState < 1) return;
 
-      const currentFrame = clampToRenderFrame(getRefValue(playheadFrame));
+      const currentFrame = clampToRenderFrame(targetFrame);
       const currentClip = activeVideoClipAtFrame(currentFrame);
       if (!currentClip) return;
 
@@ -232,7 +232,7 @@ export function useTimelinePreviewEngine({
       0,
       Number(getRefValue(renderTotalFrames) || getRefValue(timelineTotalFrames) || 0),
     );
-    const elapsedFrames = Math.round(((now - timelineStartedAt) / 1000) * currentFps);
+    const elapsedFrames = Math.floor(((now - timelineStartedAt) / 1000) * currentFps);
     const frame = Math.min(totalFrames, timelineStartFrame + elapsedFrames);
     syncAtFrame(frame);
     syncTimelineVideo(frame);

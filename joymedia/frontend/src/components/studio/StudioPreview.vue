@@ -237,7 +237,9 @@ function onTimeUpdate(event) {
 
 function onEnded(event) {
   emit("ended", event);
-  emit("pause", event);
+  if (props.studioMode !== "edit") {
+    emit("pause", event);
+  }
 }
 
 function onError(event) {
