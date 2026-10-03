@@ -10,7 +10,6 @@
       :is-exporting="isExporting"
       :export-status="exportStatus"
       :current-output-asset-version="currentOutputAssetVersion"
-      :final-video-url="finalVideo?.file || ''"
       :media-drawer-open="mediaDrawerOpen"
       :project-assets-count="projectAssets.length"
       :production="currentRun"
@@ -498,15 +497,26 @@ const {
   exportTimeline,
 } = useProjectTimeline(projectName);
 
+function downloadFile(url) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 async function exportAndRefresh() {
   try {
     const result = await exportTimeline();
     if (!result) return;
     // The export replaces the project's final video, which only the workspace reports.
     await fetchWorkspace();
+    if (!finalVideo.value?.file) return;
+    downloadFile(finalVideo.value.file);
     notify({
       title: currentLang.value === "vi" ? "Đã xuất video" : "Video exported",
-      text: currentLang.value === "vi" ? "Bấm Tải xuống để lưu video." : "Click Download to save the video.",
+      text: currentLang.value === "vi" ? "Video đang được tải xuống." : "The video is downloading.",
       type: "success",
     });
   } catch (err) {
