@@ -45,6 +45,12 @@ export function useTimelinePreviewEngine({
     return clip?.source_file || clip?.source_url || "";
   }
 
+  function clampToRenderFrame(frame) {
+    const value = Math.max(0, Number(frame || 0));
+    const renderFrames = Math.max(0, Number(getRefValue(renderTotalFrames) || 0));
+    return renderFrames > 0 ? Math.min(value, renderFrames) : value;
+  }
+
   function ensureAudioElement(clip) {
     const source = sourceFor(clip);
     if (!source) return null;
@@ -76,7 +82,7 @@ export function useTimelinePreviewEngine({
     }
 
     const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
-    const currentFrame = Math.max(0, Number(frame || 0));
+    const currentFrame = clampToRenderFrame(frame);
     const clips = getRefValue(audioClips) || [];
     const activeNames = new Set();
 
@@ -144,7 +150,7 @@ export function useTimelinePreviewEngine({
     if (getRefValue(studioMode) !== "edit" || getRefValue(isMuted)) return;
 
     const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
-    const currentFrame = Math.max(0, Number(frame || 0));
+    const currentFrame = clampToRenderFrame(frame);
 
     for (const clip of activeAudioClipsAtFrame(currentFrame)) {
       const audio = ensureAudioElement(clip);
@@ -163,7 +169,7 @@ export function useTimelinePreviewEngine({
       });
     }
     if (getRefValue(studioMode) === "edit") {
-      timelineStartFrame = Math.max(0, Math.round(Number(frame || 0)));
+      timelineStartFrame = Math.round(currentFrame);
       timelineStartedAt = performance.now();
     }
   }
@@ -172,8 +178,7 @@ export function useTimelinePreviewEngine({
     const video = getVideoElement(getVideo);
     if (!video || getRefValue(studioMode) !== "edit" || video.readyState < 1) return;
     const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
-    const renderFrames = Math.max(0, Number(getRefValue(renderTotalFrames) || 0));
-    const targetFrame = Math.min(Math.max(0, Number(frame || 0)), renderFrames);
+    const targetFrame = clampToRenderFrame(frame);
     const targetTime = targetFrame / currentFps;
     if (Number.isFinite(targetTime) && Math.abs(Number(video.currentTime || 0) - targetTime) > 0.08) {
       video.currentTime = targetTime;
@@ -186,7 +191,7 @@ export function useTimelinePreviewEngine({
     const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
     const totalFrames = Math.max(
       0,
-      Number(getRefValue(timelineTotalFrames) || getRefValue(renderTotalFrames) || 0),
+      Number(getRefValue(renderTotalFrames) || getRefValue(timelineTotalFrames) || 0),
     );
     const elapsedFrames = Math.round(((now - timelineStartedAt) / 1000) * currentFps);
     const frame = Math.min(totalFrames, timelineStartFrame + elapsedFrames);
@@ -215,7 +220,7 @@ export function useTimelinePreviewEngine({
   function start() {
     if (animationFrame != null) return;
     if (getRefValue(studioMode) === "edit") {
-      timelineStartFrame = Math.max(0, Number(getRefValue(playheadFrame) || 0));
+      timelineStartFrame = Math.round(clampToRenderFrame(getRefValue(playheadFrame)));
       timelineStartedAt = performance.now();
       animationFrame = requestAnimationFrame(tickTimeline);
     } else {
