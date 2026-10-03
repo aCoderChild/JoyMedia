@@ -116,6 +116,11 @@ def trim_timeline_clip(project_name: str, clip_name: str, source_in_frame, sourc
 	min_frames = _minimum_clip_frames(_project_fps(project.name))
 	if end - start < min_frames:
 		frappe.throw(_("A timeline clip must be at least {0} frames long.").format(min_frames))
+	if clip.track_type == "Audio" and start != int(clip.source_in_frame or 0):
+		new_timeline_start = int(clip.timeline_start_frame or 0) + start - int(clip.source_in_frame or 0)
+		if new_timeline_start < 0:
+			frappe.throw(_("Audio trim cannot move the clip before the start of the timeline."))
+		clip.timeline_start_frame = new_timeline_start
 
 	clip.source_in_frame = start
 	clip.source_out_frame = end
@@ -335,6 +340,7 @@ def fit_audio_clip_to_video(project_name: str, clip_name: str):
 	project, clip = _project_clip(project_name, clip_name)
 	if clip.track_type != "Audio":
 		frappe.throw(_("This is not an audio clip."))
+	_ensure_editable_clip(clip)
 	fps = _project_fps(project.name)
 	source_total_frames = _source_max_frames(clip.source_asset_version, fps)
 	if not source_total_frames:

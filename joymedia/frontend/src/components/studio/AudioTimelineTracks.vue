@@ -170,6 +170,7 @@ function startTrim(clip, edge, event) {
     startX: event.clientX,
     originalIn: Number(clip.source_in_frame || 0),
     originalOut: Number(clip.source_out_frame || 0),
+    originalTimelineStart: Number(clip.timeline_start_frame || 0),
   };
   window.addEventListener("pointermove", handleTrim);
   window.addEventListener("pointerup", finishTrim);
@@ -181,7 +182,8 @@ function handleTrim(event) {
   const delta = Math.round((event.clientX - drag.startX) / props.pixelsPerFrame);
   const minimum = 1;
   if (drag.edge === "left") {
-    drag.nextIn = Math.max(0, Math.min(drag.originalOut - minimum, drag.originalIn + delta));
+    const earliestIn = Math.max(0, drag.originalIn - drag.originalTimelineStart);
+    drag.nextIn = Math.max(earliestIn, Math.min(drag.originalOut - minimum, drag.originalIn + delta));
     drag.nextOut = drag.originalOut;
   } else {
     drag.nextIn = drag.originalIn;

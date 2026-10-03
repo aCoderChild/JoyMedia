@@ -7,6 +7,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.timeline_editor import (
 	duplicate_timeline_clip,
+	fit_audio_clip_to_video,
 	reorder_timeline_clip,
 	set_timeline_transition,
 	split_timeline_clip,
@@ -81,6 +82,53 @@ class TestTimelineEditor(FrappeTestCase):
 		self.clip_1.reload()
 		self.assertEqual((self.clip_1.source_in_frame, self.clip_1.source_out_frame), (10, 80))
 		self.assertIsNone(frappe.db.get_value("Media Project", self.project.name, "current_output_asset_version"))
+
+	def test_audio_left_trim_moves_timeline_start_but_right_trim_does_not(self):
+		audio_clip = frappe.get_doc({
+			"doctype": "Timeline Clip",
+			"media_project": self.project.name,
+			"clip_order": 2,
+			"track_type": "Audio",
+			"timeline_start_frame": 24,
+			"enabled": 1,
+			"source_asset_version": self.version_1.name,
+			"source_in_frame": 0,
+			"source_out_frame": 96,
+			"initial_source_in_frame": 0,
+			"initial_source_out_frame": 96,
+			"audio_role": "BGM",
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}).insert(ignore_permissions=True)
+
+		trim_timeline_clip(self.project.name, audio_clip.name, 12, 96)
+		audio_clip.reload()
+		self.assertEqual(audio_clip.timeline_start_frame, 36)
+
+		trim_timeline_clip(self.project.name, audio_clip.name, 12, 72)
+		audio_clip.reload()
+		self.assertEqual(audio_clip.timeline_start_frame, 36)
+
+	def test_source_audio_cannot_be_fit_to_video(self):
+		audio_clip = frappe.get_doc({
+			"doctype": "Timeline Clip",
+			"media_project": self.project.name,
+			"clip_order": 2,
+			"track_type": "Audio",
+			"timeline_start_frame": 0,
+			"enabled": 1,
+			"source_asset_version": self.version_1.name,
+			"source_in_frame": 0,
+			"source_out_frame": 96,
+			"initial_source_in_frame": 0,
+			"initial_source_out_frame": 96,
+			"audio_role": "Source",
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}).insert(ignore_permissions=True)
+
+		with self.assertRaises(frappe.ValidationError):
+			fit_audio_clip_to_video(self.project.name, audio_clip.name)
 
 	def test_split_and_duplicate_keep_source_asset(self):
 		split_timeline_clip(self.project.name, self.clip_1.name, 48)
