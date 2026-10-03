@@ -80,13 +80,13 @@ def _get_duplicate_version(
 
 
 @frappe.whitelist()
-def create_media_asset(asset_name, asset_category, file_url):
+def create_media_asset(asset_name, asset_category, file_url=None, file_name=None):
 	if frappe.session.user == "Guest":
 		frappe.throw(_("You must be signed in to upload media."))
 	if asset_category not in INPUT_ASSET_CATEGORIES:
 		frappe.throw(_("Uploaded assets must be reference inputs."))
 
-	file_doc = frappe.get_doc("File", {"file_url": file_url})
+	file_doc = frappe.get_doc("File", file_name) if file_name else frappe.get_doc("File", {"file_url": file_url})
 	if file_doc.owner != frappe.session.user and frappe.session.user != "Administrator":
 		frappe.throw(_("You can only attach files uploaded by your account."))
 	media_type = detect_media_type(file_doc)
@@ -133,7 +133,6 @@ def create_media_asset(asset_name, asset_category, file_url):
 			"reused": True,
 		}
 
-	frappe.db.commit()
 	return {
 		"media_asset": asset.name,
 		"asset_version": version.name,
@@ -173,7 +172,6 @@ def archive_media_asset(media_asset, detach_projects=False):
 			project.save(ignore_permissions=True)
 
 	asset.db_set("status", "Archived", update_modified=True)
-	frappe.db.commit()
 	return {"archived": True, "in_use": bool(projects), "projects": sorted({row.project_name for row in projects})}
 
 
@@ -184,5 +182,4 @@ def restore_media_asset(media_asset):
 	if asset.asset_scope != "Library":
 		frappe.throw(_("Only library assets can be restored."))
 	asset.db_set("status", "Active", update_modified=True)
-	frappe.db.commit()
 	return {"restored": True, "media_asset": asset.name}

@@ -107,6 +107,35 @@ def get_queue(*, base_url: str | None = None) -> dict:
 	return response.json()
 
 
+def delete_queue_prompts(prompt_ids: list[str], *, base_url: str | None = None) -> dict:
+	if not prompt_ids:
+		return {}
+	try:
+		response = requests.post(
+			f"{get_base_url(base_url)}/queue",
+			json={"delete": prompt_ids},
+			auth=get_request_auth(),
+			timeout=DEFAULT_TIMEOUT,
+		)
+	except requests.ConnectionError as exc:
+		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
+	_raise_for_comfyui_error(response)
+	return response.json() if response.content else {}
+
+
+def interrupt(*, base_url: str | None = None) -> dict:
+	try:
+		response = requests.post(
+			f"{get_base_url(base_url)}/interrupt",
+			auth=get_request_auth(),
+			timeout=DEFAULT_TIMEOUT,
+		)
+	except requests.ConnectionError as exc:
+		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
+	_raise_for_comfyui_error(response)
+	return response.json() if response.content else {}
+
+
 def get_queue_state(prompt_id: str, *, base_url: str | None = None) -> str | None:
 	"""Return "running", "pending", or None when the prompt is not in the ComfyUI queue."""
 	queue = get_queue(base_url=base_url)

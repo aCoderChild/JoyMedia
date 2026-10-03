@@ -22,6 +22,10 @@ export function useSession() {
   return {
     user,
     isLoggedIn: computed(() => Boolean(user.value)),
+    refreshSession: () => {
+      user.value = sessionUser();
+      return user.value;
+    },
     logout,
   };
 }

@@ -1,5 +1,7 @@
 import { computed, ref, unref } from "vue";
-import { call, toast } from "frappe-ui";
+import { call } from "frappe-ui";
+import { notify } from "../utils/notify";
+import { errorMessage } from "../utils/errors";
 
 export function useProjectGeneration(projectName, onRefresh) {
   const isGenerating = ref(false);
@@ -13,33 +15,7 @@ export function useProjectGeneration(projectName, onRefresh) {
   let consecutivePollFailures = 0;
   const syncError = ref("");
 
-  function getFrappeErrorMessage(err, fallback = "Failed to start video generation.") {
-    const data = err?.response?.data || err || {};
-
-    if (Array.isArray(data.messages) && data.messages.length) {
-      return data.messages
-        .map((item) => item?.message || item)
-        .filter(Boolean)
-        .join("\n");
-    }
-
-    for (const raw of [data._server_messages, err?._server_messages]) {
-      if (!raw) continue;
-      try {
-        const outer = typeof raw === "string" ? JSON.parse(raw) : raw;
-        for (const entry of Array.isArray(outer) ? outer : [outer]) {
-          try {
-            const parsed = typeof entry === "string" ? JSON.parse(entry) : entry;
-            if (parsed?.message) return parsed.message;
-          } catch (_) {
-            if (typeof entry === "string" && entry.trim()) return entry;
-          }
-        }
-      } catch (_) {}
-    }
-
-    return data.exception || data.message || err?.message || fallback;
-  }
+  const getFrappeErrorMessage = errorMessage;
 
   function project() {
     return unref(projectName);
@@ -71,7 +47,7 @@ export function useProjectGeneration(projectName, onRefresh) {
           stopPolling();
           isGenerating.value = false;
           if (onRefresh) await onRefresh(snap);
-          toast({ title: "Generation complete", text: "All video scenes are ready!", type: "success" });
+          notify({ title: "Generation complete", text: "All video scenes are ready!", type: "success" });
         } else if (status === "Failed") {
           stopPolling();
           isGenerating.value = false;
@@ -86,7 +62,7 @@ export function useProjectGeneration(projectName, onRefresh) {
       consecutivePollFailures += 1;
       if (consecutivePollFailures >= 3) {
         syncError.value = "Connection lost while checking generation. Generation may still be running.";
-        toast({ title: "Generation sync", text: syncError.value, type: "error" });
+        notify({ title: "Generation sync", text: syncError.value, type: "error" });
       }
     } finally {
       if (polling && ["Queued", "Running"].includes(currentRun.value?.status)) {
@@ -120,11 +96,9 @@ export function useProjectGeneration(projectName, onRefresh) {
       // If there is an idea prompt, we can save it to the project before generating
       if (videoIdeaPrompt.value?.trim()) {
         try {
-          await call("frappe.client.set_value", {
-            doctype: "Media Project",
-            name: project(),
-            fieldname: "video_idea",
-            value: videoIdeaPrompt.value.trim(),
+          await call("joymedia.joymedia.doctype.media_project.media_project.update_project_brief", {
+            project_name: project(),
+            video_idea: videoIdeaPrompt.value.trim(),
           });
         } catch (_) {}
       }
@@ -135,11 +109,11 @@ export function useProjectGeneration(projectName, onRefresh) {
       currentRun.value = { name: res?.run, status: res?.status || "Queued" };
       startPolling();
       if (onRefresh) await onRefresh();
-      toast({ title: "Generation started", text: "Creating storyboard and rendering scenes...", type: "success" });
+      notify({ title: "Generation started", text: "Creating storyboard and rendering scenes...", type: "success" });
     } catch (err) {
       isGenerating.value = false;
       productionError.value = getFrappeErrorMessage(err);
-      toast({ title: "Generation error", text: productionError.value, type: "error" });
+      notify({ title: "Generation error", text: productionError.value, type: "error" });
     }
   }
 
@@ -175,11 +149,26 @@ export function useProjectGeneration(projectName, onRefresh) {
       });
       startPolling();
       if (onRefresh) await onRefresh();
-      toast({ title: "Retrying", text: "Retrying generation for failed scenes.", type: "success" });
+      notify({ title: "Retrying", text: "Retrying generation for failed scenes.", type: "success" });
     } catch (err) {
       isGenerating.value = false;
       productionError.value = getFrappeErrorMessage(err, "Unable to retry.");
-      toast({ title: "Retry failed", text: productionError.value, type: "error" });
+      notify({ title: "Retry failed", text: productionError.value, type: "error" });
+    }
+  }
+
+  async function cancelGeneration() {
+    try {
+      await call("joymedia.joymedia.doctype.media_project.media_project.cancel_project_generation", {
+        project_name: project(),
+      });
+      stopPolling();
+      isGenerating.value = false;
+      currentRun.value = { ...(currentRun.value || {}), status: "Cancelled" };
+      if (onRefresh) await onRefresh();
+      notify({ title: "Generation stopped", text: "The video generation was stopped.", type: "success" });
+    } catch (err) {
+      notify({ title: "Unable to stop generation", text: errorMessage(err, "Please try again."), type: "error" });
     }
   }
 
@@ -190,17 +179,18 @@ export function useProjectGeneration(projectName, onRefresh) {
     return generateVideo();
   }
 
-  async function reviseStoryboard() {
+  async function reviseStoryboard(instruction = "") {
     isRevising.value = true;
     try {
       await call("joymedia.joymedia.doctype.media_project.media_project.revise_project_storyboard", {
         project_name: project(),
+        instruction,
         use_current_workflow_defaults: true,
       });
       if (onRefresh) await onRefresh();
-      toast({ title: "Storyboard revised", text: "AI updated the storyboard scenes.", type: "success" });
+      notify({ title: "Storyboard revised", text: "AI updated the storyboard scenes.", type: "success" });
     } catch (err) {
-      toast({ title: "Error", text: err?.message || "Failed to revise storyboard.", type: "error" });
+      notify({ title: "Error", text: errorMessage(err, "Failed to revise storyboard."), type: "error" });
     } finally {
       isRevising.value = false;
     }
@@ -224,10 +214,10 @@ export function useProjectGeneration(projectName, onRefresh) {
           regenerate: false,
         });
         if (onRefresh) await onRefresh();
-        toast({ title: "Shot revised", text: "AI updated the shot prompt.", type: "success" });
+        notify({ title: "Shot revised", text: "AI updated the shot prompt.", type: "success" });
       }
     } catch (err) {
-      toast({ title: "AI revision failed", text: err?.message || "Could not revise shot.", type: "error" });
+      notify({ title: "AI revision failed", text: errorMessage(err, "Could not revise shot."), type: "error" });
     } finally {
       aiRevisionLoading.value = false;
     }
@@ -240,7 +230,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     if (!textToImprove || improvingIdea.value) return;
     improvingIdea.value = true;
     try {
-      toast({
+      notify({
         title: "Qwen AI Creative Planner",
         text: "Analyzing product & ingredients to craft cinematic video concept...",
         type: "info",
@@ -255,14 +245,12 @@ export function useProjectGeneration(projectName, onRefresh) {
       if (res?.improved_idea) {
         videoIdeaPrompt.value = res.improved_idea;
         try {
-          await call("frappe.client.set_value", {
-            doctype: "Media Project",
-            name: project(),
-            fieldname: "video_idea",
-            value: res.improved_idea,
+          await call("joymedia.joymedia.doctype.media_project.media_project.update_project_brief", {
+            project_name: project(),
+            video_idea: res.improved_idea,
           });
         } catch (_) {}
-        toast({
+        notify({
           title: "Idea elevated ✨",
           text: "Qwen enhanced your concept with cinematic directions and ingredient references.",
           type: "success",
@@ -270,9 +258,9 @@ export function useProjectGeneration(projectName, onRefresh) {
         return res.improved_idea;
       }
     } catch (err) {
-      toast({
+      notify({
         title: "AI idea improvement",
-        text: err?.message || "Could not reach Qwen planner.",
+        text: errorMessage(err, "Could not reach Qwen planner."),
         type: "error",
       });
     } finally {
@@ -312,6 +300,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     generateVideo,
     appendScenes,
     retryFailedScenes,
+    cancelGeneration,
     handleGenerationRetry,
     reviseStoryboard,
     reviseShotWithAi,

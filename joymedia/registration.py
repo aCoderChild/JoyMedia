@@ -10,6 +10,8 @@ def get_signup_template():
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=10, seconds=60 * 60, methods="POST")
 def register_user(email, full_name, password=None, redirect_to=None):
+	if not frappe.conf.get("joymedia_allow_signup"):
+		frappe.throw(_("Self-registration is disabled. Ask an administrator to invite you."), frappe.PermissionError)
 	password = password or ""
 	if len(password) < 8:
 		frappe.throw(_("Password must be at least 8 characters long."))
@@ -38,7 +40,6 @@ def register_user(email, full_name, password=None, redirect_to=None):
 		user.append("roles", {"role": "JoyMedia User"})
 		user.save(ignore_permissions=True)
 
-	frappe.db.commit()
 	frappe.local.login_manager.login_as(user_name)
 
 	return {

@@ -1,5 +1,7 @@
 import { computed, ref, unref } from "vue";
-import { call, toast } from "frappe-ui";
+import { call } from "frappe-ui";
+import { notify } from "../utils/notify";
+import { errorMessage } from "../utils/errors";
 
 export function useProjectWorkspace(projectName) {
   const workspace = ref(null);
@@ -29,7 +31,7 @@ export function useProjectWorkspace(projectName) {
       workspace.value = data;
       return data;
     } catch (err) {
-      error.value = err?.message || "Failed to load project workspace";
+      error.value = errorMessage(err, "Failed to load project workspace");
       return null;
     } finally {
       loading.value = false;
@@ -60,9 +62,9 @@ export function useProjectWorkspace(projectName) {
       if (workspace.value?.project) {
         workspace.value.project.project_name = res.project_name;
       }
-      toast({ title: "Updated", text: "Project name updated.", type: "success" });
+      notify({ title: "Updated", text: "Project name updated.", type: "success" });
     } catch (err) {
-      toast({ title: "Error", text: err?.message || "Failed to rename project.", type: "error" });
+      notify({ title: "Error", text: errorMessage(err, "Failed to rename project."), type: "error" });
     }
   }
 
@@ -81,9 +83,9 @@ export function useProjectWorkspace(projectName) {
       });
       await fetchWorkspace();
       showSettings.value = false;
-      toast({ title: "Saved", text: "Video settings saved.", type: "success" });
+      notify({ title: "Saved", text: "Video settings saved.", type: "success" });
     } catch (err) {
-      toast({ title: "Error", text: err?.message || "Failed to save settings.", type: "error" });
+      notify({ title: "Error", text: errorMessage(err, "Failed to save settings."), type: "error" });
     } finally {
       savingSettings.value = false;
     }

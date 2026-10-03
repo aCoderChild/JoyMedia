@@ -138,6 +138,15 @@
 
       <!-- Export Button (when timeline / video is ready) -->
       <button
+        v-if="production && ['Queued', 'Running'].includes(production.status)"
+        type="button"
+        class="rounded-xl bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 text-xs font-semibold cursor-pointer"
+        @click="$emit('stopGeneration')"
+      >
+        {{ currentLang === 'vi' ? 'Dừng' : 'Stop' }}
+      </button>
+
+      <button
         v-if="timelineReady"
         type="button"
         class="jm-btn-primary !py-1 !px-3 text-xs flex items-center gap-1.5 shadow-sm transition-all"
@@ -204,6 +213,7 @@ const emit = defineEmits([
   "openSettings",
   "exportTimeline",
   "retryGeneration",
+  "stopGeneration",
 ]);
 
 const isEditingName = ref(false);

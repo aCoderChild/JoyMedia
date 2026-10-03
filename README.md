@@ -38,3 +38,9 @@ This app can use GitHub Actions for CI. The following workflows are configured:
 ### License
 
 mit
+# JoyMedia
+
+JoyMedia is an internal product-video workspace. Administrators invite staff
+accounts and grant the `JoyMedia User` role; self-registration is disabled by
+default. To enable the custom signup flow intentionally, set
+`joymedia_allow_signup = 1` in the site configuration.

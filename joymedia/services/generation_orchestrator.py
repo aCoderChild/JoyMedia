@@ -395,10 +395,7 @@ def enqueue_finalization_if_ready(run_name: str):
 
 @frappe.whitelist()
 def finalize_run_from_ui(run_name: str):
-	frappe.has_permission("Generation Run", "write", run_name, throw=True)
-	result = finalize_run(run_name)
-	frappe.db.commit()
-	return result
+	frappe.throw(_("Generation runs are exported from the editor."))
 
 
 @frappe.whitelist()
@@ -565,16 +562,34 @@ def finalize_run(run_name: str):
 
 
 def cancel_run(run_name: str):
-	"""Stop orchestration and cancel only attempts that have not reached ComfyUI."""
+	"""Stop orchestration and cancel every task and attempt in a run idempotently."""
+	from .comfyui_client import delete_queue_prompts, interrupt
 	run = frappe.get_doc("Generation Run", run_name)
 	if run.status in ("Completed", "Failed", "Cancelled"):
 		return _run_summary(run)
 
+	for attempt_name in frappe.get_all(
+		"Generation Attempt", filters={"generation_task": ["in", _get_run_job_names(run.name)]}, pluck="name"
+	):
+		attempt = frappe.get_doc("Generation Attempt", attempt_name)
+		if attempt.external_job_id and attempt.status == "Queued":
+			delete_queue_prompts([attempt.external_job_id], base_url=attempt.comfyui_endpoint_url)
+		elif attempt.external_job_id and attempt.status == "Running":
+			interrupt(base_url=attempt.comfyui_endpoint_url)
 	for attempt_name in _get_pending_attempt_names_for_run(run.name):
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
-		if not attempt.external_job_id:
-			attempt.status = "Cancelled"
-			attempt.save(ignore_permissions=True)
+		attempt.status = "Cancelled"
+		attempt.completed_at = now()
+		attempt.failure_class = "Cancelled"
+		attempt.error_summary = "Generation was stopped by the user."
+		attempt.save(ignore_permissions=True)
+	for job_name in _get_run_job_names(run.name):
+		job = frappe.get_doc("Generation Task", job_name)
+		if job.status not in ("Completed", "Failed", "Cancelled"):
+			job.status = "Cancelled"
+			job.failure_class = "Cancelled"
+			job.error_summary = "Generation was stopped by the user."
+			job.save(ignore_permissions=True)
 
 	run.status = "Cancelled"
 	run.completed_at = now()
@@ -607,20 +622,20 @@ def sync_media_project_status_for_run(run_name: str):
 	media_project = run.media_project
 	if not media_project:
 		return
-	runs = frappe.get_all(
-		"Generation Run",
-		filters={"media_project": media_project},
-		fields=["name", "status"],
+	latest = frappe.get_all(
+		"Generation Run", filters={"media_project": media_project}, fields=["name", "status"],
+		order_by="creation desc", limit_page_length=1,
 	)
-
-	if not runs:
+	if not latest:
 		status = "Draft"
-	elif any(item.status in ACTIVE_RUN_STATUSES for item in runs):
+	elif latest[0].status in ACTIVE_RUN_STATUSES:
 		status = "Generating"
-	elif any(item.status == "Completed" for item in runs):
+	elif latest[0].status == "Completed":
 		status = "Completed"
-	elif any(item.status == "Failed" for item in runs):
+	elif latest[0].status == "Failed":
 		status = "Needs Attention"
+	elif latest[0].status == "Cancelled":
+		status = "Cancelled"
 	else:
 		status = "Draft"
 

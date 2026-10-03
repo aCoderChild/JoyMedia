@@ -4,7 +4,6 @@ import frappe
 from frappe import _
 
 
-@frappe.whitelist()
 def compile_prompt_from_ui(shot: str):
 	prompt_text = compile_prompt(shot=shot)
 	return {

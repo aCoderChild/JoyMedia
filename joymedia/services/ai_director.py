@@ -59,6 +59,7 @@ def improve_project_video_idea(project_name, current_idea=""):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
 	from joymedia.joymedia.doctype.media_project.media_project import _get_project_selected_assets
+	from joymedia.joymedia.doctype.media_project.media_project import _meaningful_project_value
 	from joymedia.services.qwen_client import improve_video_idea
 
 	references = _get_project_selected_assets(project)
@@ -66,7 +67,7 @@ def improve_project_video_idea(project_name, current_idea=""):
 
 	result = improve_video_idea(
 		current_idea=idea_text,
-		product_name=project.product_name or "",
+		product_name=_meaningful_project_value(project.product_name, "the product"),
 		references=references,
 		duration=float(project.total_duration_seconds or 15),
 		delivery_preset=project.delivery_preset or "Landscape",

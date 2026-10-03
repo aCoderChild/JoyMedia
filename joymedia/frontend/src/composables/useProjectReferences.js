@@ -1,5 +1,7 @@
 import { ref, unref } from "vue";
-import { call, toast, upload as uploadFile } from "frappe-ui";
+import { call, upload as uploadFile } from "frappe-ui";
+import { notify } from "../utils/notify";
+import { errorMessage } from "../utils/errors";
 
 export function useProjectReferences(projectName, onRefresh) {
   const showMediaPicker = ref(false);
@@ -48,9 +50,9 @@ export function useProjectReferences(projectName, onRefresh) {
       });
       showMediaPicker.value = false;
       if (onRefresh) await onRefresh();
-      toast({ title: "Reference added", text: `Added ${asset.asset_name} as ${role}.`, type: "success" });
+      notify({ title: "Reference added", text: `Added ${asset.asset_name} as ${role}.`, type: "success" });
     } catch (err) {
-      toast({ title: "Error", text: err?.message || "Failed to add reference.", type: "error" });
+      notify({ title: "Error", text: errorMessage(err, "Failed to add reference."), type: "error" });
     } finally {
       savingReference.value = false;
     }
@@ -65,9 +67,9 @@ export function useProjectReferences(projectName, onRefresh) {
         reference_role: newRole,
       });
       if (onRefresh) await onRefresh();
-      toast({ title: "Role updated", text: `Reference role updated to ${newRole}.`, type: "success" });
+      notify({ title: "Role updated", text: `Reference role updated to ${newRole}.`, type: "success" });
     } catch (err) {
-      toast({ title: "Error", text: err?.message || "Failed to update role.", type: "error" });
+      notify({ title: "Error", text: errorMessage(err, "Failed to update role."), type: "error" });
     }
   }
 
@@ -80,9 +82,9 @@ export function useProjectReferences(projectName, onRefresh) {
         asset_version: version,
       });
       if (onRefresh) await onRefresh();
-      toast({ title: "Removed", text: "Reference removed from project.", type: "success" });
+      notify({ title: "Removed", text: "Reference removed from project.", type: "success" });
     } catch (err) {
-      toast({ title: "Error", text: err?.message || "Failed to remove reference.", type: "error" });
+      notify({ title: "Error", text: errorMessage(err, "Failed to remove reference."), type: "error" });
     }
   }
 
@@ -104,9 +106,9 @@ export function useProjectReferences(projectName, onRefresh) {
       }
       await fetchCandidates();
       if (onRefresh) await onRefresh();
-      toast({ title: "Asset archived", text: `${asset.asset_name} was removed from the library.`, type: "success" });
+      notify({ title: "Asset archived", text: `${asset.asset_name} was removed from the library.`, type: "success" });
     } catch (err) {
-      toast({ title: "Error", text: err?.message || "Failed to archive asset.", type: "error" });
+      notify({ title: "Error", text: errorMessage(err, "Failed to archive asset."), type: "error" });
     }
   }
 
@@ -121,9 +123,9 @@ export function useProjectReferences(projectName, onRefresh) {
       });
       showMediaPicker.value = false;
       if (onRefresh) await onRefresh();
-      toast({ title: "Keyframe set", text: `Assigned keyframe reference to Shot ${shot.shot_number}.`, type: "success" });
+      notify({ title: "Keyframe set", text: `Assigned keyframe reference to Shot ${shot.shot_number}.`, type: "success" });
     } catch (err) {
-      toast({ title: "Error", text: err?.message || "Failed to set keyframe.", type: "error" });
+      notify({ title: "Error", text: errorMessage(err, "Failed to set keyframe."), type: "error" });
     }
   }
 
@@ -135,22 +137,23 @@ export function useProjectReferences(projectName, onRefresh) {
       let newestAssetVersion = "";
       for (const file of files) {
         const uploaded = await uploadFile(file, { private: true });
-        if (!uploaded?.file_url) throw new Error("Upload failed");
+        if (!uploaded?.file_url || !uploaded?.name) throw new Error("Upload failed");
         const isAudio = file.type.startsWith("audio");
         const category = isAudio ? "Audio" : "Reference";
         const created = await call("joymedia.services.media_asset_service.create_media_asset", {
           asset_name: file.name.replace(/\.[^/.]+$/, ""),
           asset_category: category,
           file_url: uploaded.file_url,
+          file_name: uploaded.name,
         });
         newestAssetVersion = created?.asset_version || newestAssetVersion;
       }
       lastUploadedAssetVersion.value = newestAssetVersion;
       await fetchCandidates({ throwOnError: true });
-      toast({ title: "Uploaded", text: `${files.length} file(s) added to the media library.`, type: "success" });
+      notify({ title: "Uploaded", text: `${files.length} file(s) added to the media library.`, type: "success" });
     } catch (err) {
-      uploadError.value = err?.message || "Failed to upload file.";
-      toast({ title: "Upload error", text: uploadError.value, type: "error" });
+      uploadError.value = errorMessage(err, "Failed to upload file.");
+      notify({ title: "Upload error", text: uploadError.value, type: "error" });
     } finally {
       uploadingMedia.value = false;
     }

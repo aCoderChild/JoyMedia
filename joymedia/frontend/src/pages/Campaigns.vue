@@ -40,7 +40,22 @@
         >
           <span>{{ currentLang === 'vi' ? 'Tất cả' : 'All' }}</span>
           <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold" :class="statusFilter === 'all' ? 'bg-indigo-700 text-white' : 'bg-surface-card text-ink-muted'">
-            {{ projectsList.length }}
+            {{ projectTotal }}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5"
+          :class="statusFilter === 'Needs Attention'
+            ? 'bg-indigo-600 text-white shadow-xs'
+            : 'text-ink-secondary hover:text-ink-primary'"
+          @click="statusFilter = 'Needs Attention'"
+        >
+          <span class="size-1.5 rounded-full bg-rose-400 inline-block" />
+          <span>{{ currentLang === 'vi' ? 'Cần chú ý' : 'Needs attention' }}</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold" :class="statusFilter === 'Needs Attention' ? 'bg-indigo-700 text-white' : 'bg-surface-card text-ink-muted'">
+            {{ countByStatus('Needs Attention') }}
           </span>
         </button>
 
@@ -209,9 +224,11 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { call, createResource, toast } from "frappe-ui";
+import { call, createResource } from "frappe-ui";
+import { notify } from "../utils/notify";
+import { errorMessage } from "../utils/errors";
 import { useI18n } from "../stores/i18n";
 import MediaThumbnail from "../components/MediaThumbnail.vue";
 
@@ -227,25 +244,21 @@ const projectsResource = createResource({
   auto: true,
 });
 
-const projectsList = computed(() => projectsResource.data || []);
+const projectsList = computed(() => projectsResource.data?.items || []);
+const projectTotal = computed(() => projectsResource.data?.total || 0);
+const projectCounts = computed(() => projectsResource.data?.counts_by_status || {});
 
 function countByStatus(status) {
-  return projectsList.value.filter((p) => p.status === status).length;
+  return projectCounts.value[status] || 0;
 }
 
-const filteredProjects = computed(() => {
-  return projectsList.value.filter((p) => {
-    if (statusFilter.value !== "all" && p.status !== statusFilter.value) {
-      return false;
-    }
-    if (searchQuery.value) {
-      const q = searchQuery.value.toLowerCase();
-      const title = (p.project_name || "").toLowerCase();
-      const product = (p.product_name || "").toLowerCase();
-      const idea = (p.video_idea || "").toLowerCase();
-      if (!title.includes(q) && !product.includes(q) && !idea.includes(q)) return false;
-    }
-    return true;
+const filteredProjects = computed(() => projectsList.value);
+watch([searchQuery, statusFilter], () => {
+  projectsResource.fetch({
+    search: searchQuery.value,
+    status: statusFilter.value === "all" ? null : statusFilter.value,
+    start: 0,
+    page_length: 24,
   });
 });
 
@@ -259,7 +272,7 @@ async function handleNewProject() {
   try {
     const created = await call("joymedia.joymedia.doctype.media_project.media_project.create_project", {
       project_name: currentLang.value === "vi" ? "Dự án mới" : "Untitled Project",
-      product_name: currentLang.value === "vi" ? "Sản phẩm mới" : "Untitled Product",
+      product_name: "",
       video_idea: null,
     });
     const targetName = created?.name || created?.project;
@@ -269,9 +282,9 @@ async function handleNewProject() {
       await projectsResource.fetch();
     }
   } catch (err) {
-    toast({
+    notify({
       title: "Error",
-      text: err?.message || "Failed to create project.",
+      text: errorMessage(err, "Failed to create project."),
       type: "error",
     });
   } finally {
@@ -288,10 +301,10 @@ async function archiveProject(project) {
     await call("joymedia.joymedia.doctype.media_project.media_project.archive_project", {
       project_name: project.name,
     });
-    toast({ title: "Project archived", text: `${project.project_name} was archived.`, type: "success" });
+    notify({ title: "Project archived", text: `${project.project_name} was archived.`, type: "success" });
     await projectsResource.reload();
   } catch (err) {
-    toast({ title: "Error", text: err?.message || "Failed to archive project.", type: "error" });
+    notify({ title: "Error", text: errorMessage(err, "Failed to archive project."), type: "error" });
   }
 }
 

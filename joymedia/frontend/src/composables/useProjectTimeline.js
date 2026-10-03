@@ -1,5 +1,7 @@
 import { computed, ref, unref } from "vue";
-import { call, toast } from "frappe-ui";
+import { call } from "frappe-ui";
+import { notify } from "../utils/notify";
+import { errorMessage } from "../utils/errors";
 
 export function useProjectTimeline(projectName) {
   const timeline = ref(null);
@@ -130,7 +132,7 @@ export function useProjectTimeline(projectName) {
       applyTimeline(result, preferredClip, { preserveSelection: true, preservePlayhead: true });
       return result;
     } catch (error) {
-      toast({
+      notify({
         title: "Timeline edit failed",
         text:
           error?.messages?.join(" ") ||
@@ -164,7 +166,7 @@ export function useProjectTimeline(projectName) {
       return result;
     } catch (error) {
       undoStack.value.push(previous);
-      toast({ title: "Undo failed", text: error?.message || "Please try again.", type: "error" });
+      notify({ title: "Undo failed", text: errorMessage(error, "Please try again."), type: "error" });
       return null;
     } finally {
       busy.value = false;
@@ -183,7 +185,7 @@ export function useProjectTimeline(projectName) {
       return result;
     } catch (error) {
       redoStack.value.push(next);
-      toast({ title: "Redo failed", text: error?.message || "Please try again.", type: "error" });
+      notify({ title: "Redo failed", text: errorMessage(error, "Please try again."), type: "error" });
       return null;
     } finally {
       busy.value = false;
@@ -293,7 +295,7 @@ export function useProjectTimeline(projectName) {
           if (onSuccess) onSuccess(res);
         } else if (res.export_status === "Failed") {
           stopExportPolling();
-          toast({
+          notify({
             title: "Timeline export failed",
             text: res.export_error || "Export failed.",
             type: "error",
@@ -326,7 +328,7 @@ export function useProjectTimeline(projectName) {
         startExportPolling(resolve, reject);
       });
     } catch (error) {
-      toast({
+      notify({
         title: "Timeline export failed",
         text:
           error?.messages?.join(" ") ||

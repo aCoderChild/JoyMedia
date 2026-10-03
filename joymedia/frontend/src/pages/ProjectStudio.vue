@@ -22,6 +22,7 @@
       @open-settings="showSettings = true"
       @export-timeline="exportTimeline"
       @retry-generation="handleGenerationRetry"
+      @stop-generation="cancelGeneration"
     />
 
     <!-- 2. Studio Workspace Body: Media Drawer + Canvas + Contextual Inspector -->
@@ -354,7 +355,9 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { call, toast } from "frappe-ui";
+import { call } from "frappe-ui";
+import { notify } from "../utils/notify";
+import { errorMessage } from "../utils/errors";
 import { useSession } from "../stores/session";
 import { useI18n } from "../stores/i18n";
 
@@ -448,6 +451,7 @@ const {
   appendScenes,
   retryFailedScenes,
   handleGenerationRetry,
+  cancelGeneration,
   reviseStoryboard,
   reviseShotWithAi,
   improveVideoIdea,
@@ -626,7 +630,7 @@ async function handleSelectReference({ asset, role }) {
     if (assetVersion) {
       const startFrame = chosenRole === "BGM" ? 0 : playheadFrame.value || 0;
       await addAudioClip(assetVersion, startFrame, chosenRole);
-      toast({
+      notify({
         title: "Audio added",
         text: `Added ${asset.asset_name || "audio"} to ${chosenRole} track.`,
         type: "success",
@@ -639,18 +643,16 @@ async function handleSelectReference({ asset, role }) {
   // Otherwise, user is adding project generation references
   await addReference({ asset, role });
 
-  // If product name is "Untitled Product" and user selected a Product reference, initialize product name automatically
+  // Help complete a blank brief when the user chooses a product reference.
   if (
-    workspace.value?.project?.product_name === "Untitled Product" &&
+    !workspace.value?.project?.product_name &&
     (role === "Product" || asset.asset_category === "Product") &&
     asset.asset_name
   ) {
     try {
-      await call("frappe.client.set_value", {
-        doctype: "Media Project",
-        name: projectName.value,
-        fieldname: "product_name",
-        value: asset.asset_name,
+      await call("joymedia.joymedia.doctype.media_project.media_project.update_project_brief", {
+        project_name: projectName.value,
+        product_name: asset.asset_name,
       });
       if (workspace.value?.project) {
         workspace.value.project.product_name = asset.asset_name;
@@ -963,7 +965,7 @@ async function handleAddSceneRequest(request) {
   try {
     await appendScenes(request);
     addScenePopoverOpen.value = false;
-    toast({
+    notify({
       title: "Scenes queued",
       text: request.instruction
         ? "Generating your continuation."
@@ -1001,13 +1003,13 @@ async function removeStoryboardShot(shot) {
     selectedShotIndex.value = 0;
     await fetchWorkspace();
     await loadTimeline(true);
-    toast({
+    notify({
       title: currentLang.value === 'vi' ? 'Đã xóa cảnh' : 'Scene removed',
       text: currentLang.value === 'vi' ? 'Cảnh đã được gỡ khỏi storyboard và timeline.' : 'The scene was removed from the storyboard and timeline.',
       type: "success",
     });
   } catch (err) {
-    toast({ title: "Unable to remove scene", text: getFrappeErrorMessage(err, "Unable to remove scene."), type: "error" });
+    notify({ title: "Unable to remove scene", text: errorMessage(err, "Unable to remove scene."), type: "error" });
   }
 }
 
@@ -1136,14 +1138,22 @@ async function changeShotDuration(shot, delta) {
   const current = estimateShotDuration(shot);
   const next = Math.max(1, Math.min(20, current + delta));
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.update_project_shot", {
+    const result = await call("joymedia.joymedia.doctype.media_project.media_project.update_project_shot_timing", {
       project_name: projectName.value,
       shot_name: shot.name,
       duration_seconds: next,
     });
-    shot.duration_seconds = next;
+    const shots = result?.shots || [];
+    if (shots.length) {
+      shots.forEach((updated) => {
+        const target = storyboardShots.value.find((item) => item.name === updated.name);
+        if (target) Object.assign(target, updated);
+      });
+    } else {
+      shot.duration_seconds = next;
+    }
   } catch (err) {
-    toast({ title: "Error", text: err?.message || "Failed to update duration.", type: "error" });
+    notify({ title: "Error", text: errorMessage(err, "Failed to update duration."), type: "error" });
   }
 }
 
@@ -1162,9 +1172,11 @@ async function saveActiveShot() {
     await call("joymedia.joymedia.doctype.media_project.media_project.update_project_shot", {
       project_name: projectName.value,
       shot_name: shot.name,
-      generation_prompt: shot.generation_prompt,
+      values: { generation_prompt: shot.generation_prompt },
     });
-  } catch (_) {}
+  } catch (err) {
+    notify({ title: "Error", text: errorMessage(err, "Failed to save scene."), type: "error" });
+  }
 }
 
 async function regenerateCurrentShot() {
@@ -1176,9 +1188,9 @@ async function regenerateCurrentShot() {
       shot_name: shot.name,
     });
     await fetchWorkspace();
-    toast({ title: "Shot regenerating", text: `Generating new video for Shot ${shot.shot_number}.`, type: "success" });
+    notify({ title: "Shot regenerating", text: `Generating new video for Shot ${shot.shot_number}.`, type: "success" });
   } catch (err) {
-    toast({ title: "Error", text: err?.message || "Failed to regenerate shot.", type: "error" });
+    notify({ title: "Error", text: errorMessage(err, "Failed to regenerate shot."), type: "error" });
   }
 }
 

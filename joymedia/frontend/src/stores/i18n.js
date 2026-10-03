@@ -94,7 +94,7 @@ export const messages = {
     btn_start_studio: "Bắt đầu Studio",
     creating_project: "Đang tạo dự án...",
 
-    // Studio (ProjectDetail)
+    // Studio
     back_to_campaigns: "Chiến dịch",
     scene_builder: "Dòng thời gian các cảnh (Scene Builder)",
     scene_builder_sub: "Kéo thanh phân cảnh hoặc chỉnh sửa từng cảnh quay bằng AI Director.",
@@ -284,7 +284,7 @@ export const messages = {
     btn_start_studio: "Launch Studio",
     creating_project: "Creating project...",
 
-    // Studio (ProjectDetail)
+    // Studio
     back_to_campaigns: "Campaigns",
     scene_builder: "Timeline & Scene Builder",
     scene_builder_sub: "Drag scenes or edit individual shots using the AI Director.",

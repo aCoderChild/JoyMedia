@@ -17,6 +17,7 @@ export default {
         zinc: colors.zinc,
         slate: colors.slate,
         amber: colors.amber,
+        rose: colors.rose,
         surface: {
           base: "var(--surface-base)",
           card: "var(--surface-card)",

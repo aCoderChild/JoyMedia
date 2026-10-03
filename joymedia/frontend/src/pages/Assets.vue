@@ -13,7 +13,7 @@
           </template>
           {{ t('btn_add_media') }}
         </Button>
-        <Button appearance="subtle" @click="openCampaigns">
+        <Button variant="subtle" @click="openCampaigns">
           <template #prefix>
             <span class="lucide-clapperboard size-4" />
           </template>
@@ -221,7 +221,7 @@
             <!-- Open in Campaign / Project button -->
             <Button
               v-if="selectedAsset.media_project"
-              appearance="subtle"
+              variant="subtle"
               class="text-xs"
               @click="openProject(selectedAsset.media_project)"
             >
@@ -243,7 +243,7 @@
               <span>{{ t('asset_download') }}</span>
             </a>
 
-            <Button appearance="subtle" @click="selectedAsset = null">{{ t('asset_close') }}</Button>
+          <Button variant="subtle" @click="selectedAsset = null">{{ t('asset_close') }}</Button>
           </div>
         </div>
       </div>
@@ -291,7 +291,7 @@
         </div>
 
         <div class="flex items-center justify-end gap-2 pt-3 border-t border-outline-border">
-          <Button appearance="subtle" @click="showUploadModal = false">{{ t('btn_cancel') }}</Button>
+          <Button variant="subtle" @click="showUploadModal = false">{{ t('btn_cancel') }}</Button>
           <Button variant="solid" :loading="isUploading" @click="handleUploadAsset">{{ t('btn_upload') }}</Button>
         </div>
       </div>
@@ -302,7 +302,9 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { Button, FormControl, call, createResource, toast, upload as uploadFile } from "frappe-ui";
+import { Button, FormControl, call, createResource, upload as uploadFile } from "frappe-ui";
+import { notify } from "../utils/notify";
+import { errorMessage } from "../utils/errors";
 import { useI18n } from "../stores/i18n";
 import MediaThumbnail from "../components/MediaThumbnail.vue";
 
@@ -393,11 +395,11 @@ async function archiveAsset(asset) {
         detach_projects: 1,
       });
     }
-    toast({ title: "Asset archived", text: `${asset.asset_name} was removed from the library.`, type: "success" });
+    notify({ title: "Asset archived", text: `${asset.asset_name} was removed from the library.`, type: "success" });
     if (selectedAsset.value?.name === asset.name) selectedAsset.value = null;
     await assetsResource.reload();
   } catch (err) {
-    toast({ title: "Error", text: err?.message || "Failed to archive asset.", type: "error" });
+    notify({ title: "Error", text: errorMessage(err, "Failed to archive asset."), type: "error" });
   }
 }
 
@@ -429,26 +431,27 @@ function onFileChange(e) {
 
 async function handleUploadAsset() {
   if (!selectedFile.value) {
-    toast({ title: "Chưa chọn file", text: "Vui lòng chọn một file ảnh.", type: "error" });
+    notify({ title: "Chưa chọn file", text: "Vui lòng chọn một file ảnh.", type: "error" });
     return;
   }
   isUploading.value = true;
   try {
     const uploaded = await uploadFile(selectedFile.value, { private: true });
-    if (!uploaded?.file_url) throw new Error("Không thể tải lên file.");
+    if (!uploaded?.file_url || !uploaded?.name) throw new Error("Không thể tải lên file.");
 
     await call("joymedia.services.media_asset_service.create_media_asset", {
       asset_name: selectedFile.value.name.replace(/\.[^/.]+$/, ""),
       asset_category: uploadCategory.value,
       file_url: uploaded.file_url,
+      file_name: uploaded.name,
     });
 
-    toast({ title: "Đã tải lên tư liệu", text: "Đã thêm vào thư viện Media.", type: "success" });
+    notify({ title: "Đã tải lên tư liệu", text: "Đã thêm vào thư viện Media.", type: "success" });
     showUploadModal.value = false;
     selectedFile.value = null;
     await assetsResource.reload();
   } catch (err) {
-    toast({ title: "Lỗi tải tư liệu", text: err.message || "Vui lòng thử lại.", type: "error" });
+    notify({ title: "Lỗi tải tư liệu", text: errorMessage(err, "Vui lòng thử lại."), type: "error" });
   } finally {
     isUploading.value = false;
   }

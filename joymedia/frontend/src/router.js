@@ -7,15 +7,19 @@ import { useSession } from "./stores/session";
 const router = createRouter({
   history: createWebHistory("/joymedia"),
   routes: [
-    { path: "/", redirect: "/campaigns" },
-    { path: "/campaigns", component: Campaigns },
+    { path: "/", redirect: "/projects" },
+    { path: "/campaigns", redirect: "/projects" },
+    { path: "/projects", component: Campaigns },
     { path: "/projects/:name", component: ProjectStudio },
-    { path: "/assets", component: Assets },
+    { path: "/assets", redirect: "/library" },
+    { path: "/library", component: Assets },
+    { path: "/:pathMatch(.*)*", redirect: "/projects" },
   ],
 });
 
 router.beforeEach((to) => {
-  const { isLoggedIn } = useSession();
+  const { isLoggedIn, refreshSession } = useSession();
+  refreshSession();
   if (!isLoggedIn.value) {
     const portalPath = `/joymedia${to.fullPath}`;
     window.location.href = `/login?redirect-to=${encodeURIComponent(portalPath)}`;

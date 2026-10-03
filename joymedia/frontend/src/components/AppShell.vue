@@ -46,7 +46,7 @@
         <!-- Projects -->
         <Tooltip :text="currentLang === 'vi' ? 'Dự án Video' : 'Projects'" side="right" :disabled="!isCollapsed">
           <RouterLink
-            to="/campaigns"
+            to="/projects"
             class="nav-link"
             :class="{ 'justify-center p-2.5': isCollapsed }"
           >
@@ -64,7 +64,7 @@
         <!-- Media Library -->
         <Tooltip :text="t('sidebar_images')" side="right" :disabled="!isCollapsed">
           <RouterLink
-            to="/assets"
+            to="/library"
             class="nav-link"
             :class="{ 'justify-center p-2.5': isCollapsed }"
           >
@@ -163,7 +163,7 @@
 
           <!-- Log out -->
           <Button
-            appearance="subtle"
+            variant="subtle"
             class="!px-2"
             :loading="logout.loading"
             @click="logout.submit()"
@@ -209,8 +209,8 @@ function toggleSidebar() {
   localStorage.setItem("joymedia_sidebar_collapsed", String(isCollapsed.value));
 }
 
-// Theme management (Google Flow obsidian dark)
-const isDark = ref(true);
+// Theme management
+const isDark = ref(false);
 
 function applyTheme(dark) {
   isDark.value = dark;
@@ -238,19 +238,13 @@ onMounted(() => {
 });
 
 // Dynamic Resource Counts
-const campaignsResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_project_cards",
+const sidebarCountsResource = createResource({
+  url: "joymedia.joymedia.doctype.media_project.media_project.get_sidebar_counts",
   auto: true,
 });
 
-const libraryAssetsResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_library_assets",
-  params: { asset_type: "All" },
-  auto: true,
-});
-
-const campaignsCount = computed(() => campaignsResource.data?.length || 0);
-const assetsCount = computed(() => libraryAssetsResource.data?.length || 0);
+const campaignsCount = computed(() => sidebarCountsResource.data?.projects || 0);
+const assetsCount = computed(() => sidebarCountsResource.data?.assets || 0);
 
 const currentPageTitle = computed(() => {
   const path = route.path;

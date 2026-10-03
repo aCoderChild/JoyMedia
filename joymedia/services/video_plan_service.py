@@ -20,8 +20,6 @@ def apply_video_plan_from_ui(media_project_name: str = None, plan_json: str = No
 		plan=plan,
 	)
 
-	frappe.db.commit()
-
 	return {
 		"media_project": media_project_name,
 		"shots": created_shots,

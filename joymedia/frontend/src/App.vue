@@ -1,7 +1,7 @@
 <template>
   <FrappeUIProvider>
     <AppShell>
-      <RouterView />
+      <RouterView :key="$route.fullPath" />
     </AppShell>
   </FrappeUIProvider>
 </template>

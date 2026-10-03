@@ -15,14 +15,12 @@ from .workflow_resolver import resolve_attempt
 from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
 
 
-@frappe.whitelist()
 def submit_attempt_from_ui(attempt_name: str):
 	result = submit_attempt(attempt_name)
 	frappe.db.commit()
 	return {"prompt_id": result.get("prompt_id"), "result": result}
 
 
-@frappe.whitelist()
 def sync_attempt_result_from_ui(attempt_name: str):
 	result = sync_attempt_result(attempt_name)
 	frappe.db.commit()
