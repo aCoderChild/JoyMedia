@@ -46,7 +46,7 @@ class TestUIReadinessRegressions(FrappeTestCase):
 		submit_workflow.assert_not_called()
 		self.assertEqual(attempt.status, "Pending")
 
-	def test_manual_regeneration_invalidates_stale_final_outputs(self):
+	def test_manual_regeneration_invalidates_explicit_project_export(self):
 		job = frappe._dict(name="JOB-00001", generation_run="RUN-00001")
 		run = frappe._dict(name="RUN-00001", media_project="PROJECT-00001")
 
@@ -68,7 +68,6 @@ class TestUIReadinessRegressions(FrappeTestCase):
 			"Generation Run",
 			"RUN-00001",
 			{
-				"final_asset_version": None,
 				"completed_at": None,
 				"failure_class": None,
 				"error_summary": None,
