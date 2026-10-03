@@ -336,11 +336,19 @@ def delete_timeline_clip(project_name: str, clip_name: str):
 		frappe.db.commit()
 		return _serialize_timeline(project, _timeline_clip_rows(project.name))
 	_ensure_editable_clip(clip)
-	if clip.track_type == "Video":
+	if clip.track_type == "Video" and clip.shot:
+		clip.enabled = 0
+		clip.save(ignore_permissions=True)
 		linked_audio = _linked_audio_clip(clip)
 		if linked_audio:
-			frappe.delete_doc("Timeline Clip", linked_audio.name, ignore_permissions=True, force=True)
-	frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
+			linked_audio.enabled = 0
+			linked_audio.save(ignore_permissions=True)
+	else:
+		if clip.track_type == "Video":
+			linked_audio = _linked_audio_clip(clip)
+			if linked_audio:
+				frappe.delete_doc("Timeline Clip", linked_audio.name, ignore_permissions=True, force=True)
+		frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
 	_reflow_video_track(project.name)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
@@ -1072,13 +1080,6 @@ def _final_video(project_name):
 		project_name,
 		"current_output_asset_version",
 	)
-	if not asset_version_name:
-		asset_version_name = frappe.db.get_value(
-			"Generation Run",
-			{"media_project": project_name},
-			"final_asset_version",
-			order_by="creation desc",
-		)
 	if not asset_version_name:
 		return None
 	return frappe.db.get_value(

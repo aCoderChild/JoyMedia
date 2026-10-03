@@ -73,7 +73,7 @@ def _get_latest_project_generation_run(media_project):
 		fields=[
 			"name", "media_project", "status", "started_at", "completed_at",
 			"progress", "completed_tasks", "total_tasks", "failed_tasks", "running_tasks",
-			"error_summary", "final_asset_version", "project_snapshot_hash",
+			"error_summary", "project_snapshot_hash",
 		],
 		order_by="creation desc",
 		limit_page_length=1,
@@ -359,15 +359,15 @@ def get_project_workspace(name):
 			production.get("project_snapshot_hash") and production.get("project_snapshot_hash") != current_snapshot_hash
 		)
 	active_run = bool(production and production.status in ("Queued", "Running"))
-	final_asset_version = project.current_output_asset_version
+	current_output_asset_version = project.current_output_asset_version
 	final_video = ({
-		"asset_version": final_asset_version,
-		"file": _get_asset_version_file_url(final_asset_version),
+		"asset_version": current_output_asset_version,
+		"file": _get_asset_version_file_url(current_output_asset_version),
 		"is_outdated": bool(production and production.get("is_outdated")),
-		"is_current": not active_run or bool(final_asset_version),
+		"is_current": not active_run or bool(current_output_asset_version),
 		"is_previous_version": False,
-		"legacy_non_editable": bool(final_asset_version and not storyboard),
-	} if final_asset_version else None)
+		"legacy_non_editable": bool(current_output_asset_version and not storyboard),
+	} if current_output_asset_version else None)
 	return {
 		"project": {
 			"name": project.name,
@@ -465,11 +465,11 @@ def get_project_production(name):
 		production.get("project_snapshot_hash") and production.get("project_snapshot_hash") != current_snapshot_hash
 	)
 	production["shots"] = _aggregate_shot_progress(production.name)
-	final_asset_version = project.current_output_asset_version
+	current_output_asset_version = project.current_output_asset_version
 	production["final_video"] = ({
-		"asset_version": final_asset_version,
-		"file": _get_asset_version_file_url(final_asset_version),
-	} if final_asset_version else None)
+		"asset_version": current_output_asset_version,
+		"file": _get_asset_version_file_url(current_output_asset_version),
+	} if current_output_asset_version else None)
 	return production
 
 

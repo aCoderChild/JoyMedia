@@ -10,6 +10,7 @@ from frappe.tests.utils import FrappeTestCase
 from joymedia.services.timeline_editor import (
 	duplicate_timeline_clip,
 	add_timeline_audio_clip,
+	delete_timeline_clip,
 	fit_audio_clip_to_full_video,
 	fit_audio_clip_to_video,
 	reorder_timeline_clip,
@@ -248,6 +249,40 @@ class TestTimelineEditor(FrappeTestCase):
 		set_source_audio_enabled(self.project.name, self.clip_1.name, True)
 		source_audio.reload()
 		self.assertTrue(source_audio.enabled)
+
+	def test_generated_shot_clip_is_disabled_instead_of_deleted(self):
+		source_audio = frappe.get_doc({
+			"doctype": "Timeline Clip",
+			"media_project": self.project.name,
+			"shot": self.shot.name,
+			"clip_order": 1,
+			"track_type": "Audio",
+			"track_index": 0,
+			"linked_video_clip": self.clip_1.name,
+			"timeline_start_frame": 0,
+			"enabled": 1,
+			"source_asset_version": self.version_1.name,
+			"source_in_frame": 0,
+			"source_out_frame": 96,
+			"initial_source_in_frame": 0,
+			"initial_source_out_frame": 96,
+			"audio_role": "Source",
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}).insert(ignore_permissions=True)
+
+		delete_timeline_clip(self.project.name, self.clip_1.name)
+		self.clip_1.reload()
+		source_audio.reload()
+		self.assertFalse(self.clip_1.enabled)
+		self.assertFalse(source_audio.enabled)
+		self.assertTrue(frappe.db.exists("Timeline Clip", self.clip_1.name))
+
+		sync_timeline_source_for_shot(self.shot.name)
+		self.assertEqual(
+			frappe.db.count("Timeline Clip", {"media_project": self.project.name, "track_type": "Video"}),
+			1,
+		)
 
 	def test_disabled_source_audio_stays_disabled_when_video_is_split(self):
 		source_audio = frappe.get_doc({

@@ -158,7 +158,7 @@ def compose_project_timeline_internal(project_name: str):
 	)
 
 	return {
-		"final_asset_version": asset_version.name,
+		"current_output_asset_version": asset_version.name,
 		"file": file_doc.file_url,
 		"duration_seconds": video_duration,
 		"timeline_frames": expected_frames,

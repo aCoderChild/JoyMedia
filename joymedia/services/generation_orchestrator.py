@@ -610,7 +610,7 @@ def sync_media_project_status_for_run(run_name: str):
 	runs = frappe.get_all(
 		"Generation Run",
 		filters={"media_project": media_project},
-		fields=["name", "status", "final_asset_version"],
+		fields=["name", "status"],
 	)
 
 	if not runs:
@@ -997,7 +997,6 @@ def _run_summary(run):
 		"failed_tasks": run.failed_tasks,
 		"running_tasks": run.running_tasks,
 		"progress": run.progress,
-		"final_asset_version": run.final_asset_version,
 	}
 
 

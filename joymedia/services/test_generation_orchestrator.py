@@ -187,7 +187,6 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.completed_at = None
-		run.final_asset_version = None
 		get_all.return_value = [frappe._dict(status="Completed"), frappe._dict(status="Completed")]
 
 		generation_orchestrator._refresh_run_counters(run)
@@ -201,7 +200,6 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.completed_at = None
-		run.final_asset_version = None
 		get_all.return_value = [frappe._dict(status="Completed")]
 
 		generation_orchestrator._refresh_run_counters(run)
