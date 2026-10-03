@@ -142,6 +142,27 @@
             {{ shot.generation_prompt || (currentLang === 'vi' ? 'Cảnh giới thiệu sản phẩm' : 'Product showcase') }}
           </p>
 
+          <div
+            v-if="shot.reference_image || shot.last_frame_image"
+            class="flex items-center gap-1.5 mb-2 text-[10px] text-ink-muted"
+          >
+            <span class="font-semibold text-ink-secondary">
+              {{ currentLang === 'vi' ? 'Ảnh tham chiếu:' : 'Reference:' }}
+            </span>
+            <span
+              v-if="shot.reference_image_reference_key"
+              class="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-1.5 py-0.5 text-indigo-400 truncate"
+            >
+              @{{ shot.reference_image_reference_key }}
+            </span>
+            <span
+              v-if="shot.last_frame_image_reference_key"
+              class="rounded-full bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 text-amber-400 truncate"
+            >
+              @{{ shot.last_frame_image_reference_key }}
+            </span>
+          </div>
+
           <!-- Bottom: Role Badge & Scene action menu -->
           <div class="flex items-center justify-between pt-1.5 border-t border-outline-border/60 text-xs">
             <span class="text-[10px] text-ink-muted truncate font-medium max-w-[110px]">

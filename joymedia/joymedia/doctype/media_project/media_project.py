@@ -344,6 +344,15 @@ def _storyboard_payload(specification):
 			row = next((r for r in input_rows if frappe.scrub(r.reference_role or "") == role), None)
 			if row:
 				shot[output_key] = _get_asset_version_file_url(row.asset_version)
+				project_reference = next(
+					(
+						selection for selection in specification.selected_media or []
+						if selection.asset_version == row.asset_version
+					),
+					None,
+				)
+				if project_reference and getattr(project_reference, "reference_key", None):
+					shot[f"{output_key}_reference_key"] = project_reference.reference_key
 	return shots
 
 

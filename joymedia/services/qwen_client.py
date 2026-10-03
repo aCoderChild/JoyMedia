@@ -326,6 +326,8 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		result,
 		reference_image_count=len(reference_images or []),
 		generation_mode=generation_mode,
+		reference_images=reference_images,
+		workflow_input_contract=workflow_input_contract,
 	)
 	_validate_video_plan(
 		result,
@@ -338,7 +340,13 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	return result
 
 
-def _normalize_qwen_plan(result, reference_image_count=0, generation_mode="Multi-shot"):
+def _normalize_qwen_plan(
+	result,
+	reference_image_count=0,
+	generation_mode="Multi-shot",
+	reference_images=None,
+	workflow_input_contract=None,
+):
 	"""Normalize model output without inventing semantic reference assignments."""
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
 		return result
@@ -369,6 +377,30 @@ def _normalize_qwen_plan(result, reference_image_count=0, generation_mode="Multi
 			if fieldname in shot:
 				normalized[fieldname] = shot[fieldname]
 		normalized_shots.append(normalized)
+	if (
+		generation_mode == "Multi-shot"
+		and reference_images
+		and len(normalized_shots) == len(reference_images)
+		and all(item.get("reference_key") for item in reference_images)
+	):
+		single_image_role = next(
+			(
+				item["role"]
+				for item in workflow_input_contract or []
+				if item.get("min_count") == 1
+				and item.get("max_count") == 1
+				and item.get("accepted_media_type") in ("Image", "Any")
+			),
+			None,
+		)
+		if single_image_role:
+			for shot, image in zip(normalized_shots, reference_images):
+				shot["references"] = [
+					{
+						"reference_key": image["reference_key"],
+						"usage_role": single_image_role,
+					}
+				]
 	return {"shots": normalized_shots}
 
 
@@ -461,8 +493,12 @@ def _validate_video_plan(
 			count = role_counts.get(contract["role"], 0)
 			if count < contract.get("min_count", 0):
 				frappe.throw(
-					_("Qwen Shot {0} requires at least {1} references for role '{2}'.").format(
-						normalized["shot_number"], contract["min_count"], contract["role"]
+					_(
+						"Shot {0} needs {1} reference image(s) for the selected workflow. "
+						"Choose H3 I2V Production for one image per shot, or add the required "
+						"additional references."
+					).format(
+						normalized["shot_number"], contract["min_count"]
 					)
 				)
 		normalized_shots.append(normalized)

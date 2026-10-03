@@ -28,6 +28,7 @@ def get_project_image_manifest(media_project: str, *, include_data_url: bool = F
 			"asset_name": asset["asset_name"],
 			"asset_category": asset["asset_category"],
 			"asset_version": asset["asset_version"],
+			"reference_key": asset.get("reference_key") or "",
 		}
 		if include_data_url:
 			if not asset_version.file:

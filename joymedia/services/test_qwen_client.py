@@ -5,6 +5,43 @@ from joymedia.services.qwen_client import _normalize_qwen_plan, _validate_video_
 
 
 class TestQwenClient(FrappeTestCase):
+	def test_equal_image_and_shot_counts_assign_images_in_order_for_single_image_workflows(self):
+		contract = [{
+			"role": "first_frame",
+			"min_count": 1,
+			"max_count": 1,
+			"accepted_media_type": "Image",
+			"allow_multiple": False,
+		}]
+		plan = _normalize_qwen_plan(
+			{
+				"shots": [
+					{"generation_prompt": "Exterior.", "duration_seconds": 5},
+					{"generation_prompt": "Pool.", "duration_seconds": 5},
+				]
+			},
+			reference_image_count=2,
+			generation_mode="Multi-shot",
+			reference_images=[
+				{"reference_key": "property_1"},
+				{"reference_key": "property_2"},
+			],
+			workflow_input_contract=contract,
+		)
+
+		self.assertEqual(
+			[
+				{"reference_key": "property_1", "usage_role": "first_frame"},
+			],
+			plan["shots"][0]["references"],
+		)
+		self.assertEqual(
+			[
+				{"reference_key": "property_2", "usage_role": "first_frame"},
+			],
+			plan["shots"][1]["references"],
+		)
+
 	def test_text_model_prompt_only_output_does_not_invent_reference_assignments(self):
 		plan = _normalize_qwen_plan(
 			{

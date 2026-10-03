@@ -94,8 +94,12 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 			count = role_counts.get(contract["role"], 0)
 			if count < contract.get("min_count", 0):
 				frappe.throw(
-					_("Shot {0} requires at least {1} references for role '{2}'.").format(
-						shot.get("shot_number"), contract["min_count"], contract["role"]
+					_(
+						"Shot {0} needs {1} reference image(s) for the selected workflow. "
+						"Choose H3 I2V Production for one image per shot, or add the required "
+						"additional references."
+					).format(
+						shot.get("shot_number"), contract["min_count"]
 					)
 				)
 
