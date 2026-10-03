@@ -8,7 +8,7 @@ function getVideoElement(getVideo) {
   return getVideo?.() || null;
 }
 
-export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, studioMode, getVideo }) {
+export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, isMuted, studioMode, getVideo }) {
   const audioElements = new Map();
   let animationFrame = null;
 
@@ -24,11 +24,12 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, studioMod
     if (!audio) {
       audio = new Audio();
       audio.preload = "auto";
-      audio.crossOrigin = "anonymous";
       audioElements.set(clip.name, audio);
     }
-    if (audio.src !== source) {
+    if (audio.dataset.joymediaSource !== source) {
+      audio.pause();
       audio.src = source;
+      audio.dataset.joymediaSource = source;
       audio.load();
     }
     return audio;
@@ -40,7 +41,7 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, studioMod
   }
 
   function syncAtFrame(frame) {
-    if (getRefValue(studioMode) !== "edit") {
+    if (getRefValue(studioMode) !== "edit" || getRefValue(isMuted)) {
       pauseAll();
       return;
     }
@@ -73,8 +74,14 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, studioMod
           console.warn("Unable to seek timeline audio:", error);
         }
       }
-      if (getRefValue(isPlaying)) {
-        audio.play().catch(() => {});
+      if (getRefValue(isPlaying) && audio.paused) {
+        audio.play().catch((error) => {
+          console.warn("Timeline audio playback failed", {
+            clip: clip.name,
+            source: sourceFor(clip),
+            error,
+          });
+        });
       } else {
         audio.pause();
       }
@@ -90,6 +97,37 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, studioMod
 
   function pauseAll() {
     for (const audio of audioElements.values()) audio.pause();
+  }
+
+  function activeAudioClipsAtFrame(frame) {
+    return (getRefValue(audioClips) || []).filter((clip) => {
+      const startFrame = Number(clip.timeline_start_frame || 0);
+      const endFrame = Number(clip.timeline_end_frame || startFrame);
+      return frame >= startFrame && frame < endFrame;
+    });
+  }
+
+  function playAtFrame(frame) {
+    if (getRefValue(studioMode) !== "edit" || getRefValue(isMuted)) return;
+
+    const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
+    const currentFrame = Math.max(0, Number(frame || 0));
+
+    for (const clip of activeAudioClipsAtFrame(currentFrame)) {
+      const audio = ensureAudioElement(clip);
+      if (!audio) continue;
+
+      const sourceFrame =
+        Number(clip.source_in_frame || 0) +
+        currentFrame -
+        Number(clip.timeline_start_frame || 0);
+
+      audio.currentTime = Math.max(0, sourceFrame / currentFps);
+      audio.volume = gainFor(clip);
+      audio.play().catch((error) => {
+        console.warn("Unable to start timeline audio", clip.name, error);
+      });
+    }
   }
 
   function tick() {
@@ -113,8 +151,8 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, studioMod
     pauseAll();
   }
 
-  watch([isPlaying, studioMode], ([playing, mode]) => {
-    if (playing && mode === "edit") start();
+  watch([isPlaying, isMuted, studioMode], ([playing, muted, mode]) => {
+    if (playing && !muted && mode === "edit") start();
     else stop();
   }, { immediate: true });
 
@@ -135,5 +173,5 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, studioMod
     audioElements.clear();
   });
 
-  return { syncAtFrame, pauseAll };
+  return { syncAtFrame, playAtFrame, pauseAll };
 }

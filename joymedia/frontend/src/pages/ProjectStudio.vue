@@ -70,6 +70,7 @@
             :timeline-total-seconds="playerTotalSeconds"
             :current-timeline-position-label="currentTimelinePositionLabel"
             :is-playing="isPlaying"
+            :is-muted="isMuted"
             :is-production-active="isProductionActive"
             :production="currentRun"
             :production-error="productionError"
@@ -81,7 +82,8 @@
             :current-lang="currentLang"
             :is-outdated="isOutdated"
             :get-shot-timestamp-range="getShotTimestampRange"
-            @toggle-play-pause="isPlaying = !isPlaying"
+            @toggle-play-pause="handleTogglePlayback"
+            @toggle-mute="handleToggleMute"
             @play="isPlaying = true"
             @pause="isPlaying = false"
             @loadedmetadata="onPreviewLoadedMetadata"
@@ -484,21 +486,48 @@ async function refreshStudioGenerationState(snapshot = null) {
 const studioPreviewRef = ref(null);
 const mediaDrawerOpen = ref(false);
 const isPlaying = ref(false);
+const isMuted = ref(false);
 const previewSelection = ref("master"); // "master" | "shot" | "clip-source"
 const mediaPickerFilter = ref("All");
 const addScenePopoverOpen = ref(false);
 const addSceneAfterShot = ref(null);
 
-const { syncAtFrame: syncTimelineAudio } = useTimelinePreviewEngine({
+const {
+  syncAtFrame: syncTimelineAudio,
+  playAtFrame: playTimelineAudio,
+  pauseAll: pauseTimelineAudio,
+} = useTimelinePreviewEngine({
   audioClips,
   fps,
   isPlaying,
+  isMuted,
   studioMode,
   getVideo: () => {
     const preview = studioPreviewRef.value;
     return preview?.previewVideo?.value || preview?.previewVideo || null;
   },
 });
+
+function handleTogglePlayback() {
+  const willPlay = !isPlaying.value;
+
+  if (!willPlay) {
+    isPlaying.value = false;
+    pauseTimelineAudio();
+    return;
+  }
+
+  if (studioMode.value === "edit") {
+    playTimelineAudio(playheadFrame.value);
+  }
+
+  isPlaying.value = true;
+}
+
+function handleToggleMute() {
+  isMuted.value = !isMuted.value;
+  if (isMuted.value) pauseTimelineAudio();
+}
 
 // Automatically transition to Edit mode only when an active generation run finishes
 watch(

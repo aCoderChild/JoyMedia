@@ -64,7 +64,7 @@
         ref="previewVideo"
         :key="studioPreview.type === 'clip' ? `${studioPreview.clip?.name}-${studioPreview.url}` : studioPreview.url"
         :src="studioPreview.url"
-        :muted="isMuted || studioMode === 'edit'"
+        :muted="props.isMuted || studioMode === 'edit'"
         class="w-full h-full object-contain"
         preload="metadata"
         playsinline
@@ -133,7 +133,7 @@
       :current-lang="currentLang"
       :current-timeline-position-label="currentTimelinePositionLabel"
       :is-playing="isPlaying"
-      :is-muted="isMuted"
+      :is-muted="props.isMuted"
       :timeline-total-seconds="timelineTotalSeconds"
       @fullscreen="requestFullscreen"
       @step-frame="$emit('stepFrame', $event)"
@@ -152,8 +152,6 @@ const { t } = useI18n();
 
 const previewVideo = ref(null);
 const viewport = ref(null);
-const isMuted = ref(false);
-
 const props = defineProps({
   studioMode: { type: String, default: "scene" },
   studioPreview: { type: Object, default: null },
@@ -166,6 +164,7 @@ const props = defineProps({
   timelineTotalSeconds: { type: Number, default: 0 },
   currentTimelinePositionLabel: { type: String, default: "00:00" },
   isPlaying: { type: Boolean, default: false },
+  isMuted: { type: Boolean, default: false },
   isProductionActive: { type: Boolean, default: false },
   production: { type: Object, default: null },
   productionError: { type: String, default: "" },
@@ -181,6 +180,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   "togglePlayPause",
+  "toggleMute",
   "loadedmetadata",
   "timeupdate",
   "play",
@@ -263,8 +263,7 @@ function completedShotCount(production) {
 }
 
 function toggleMute() {
-	isMuted.value = !isMuted.value;
-	if (previewVideo.value) previewVideo.value.muted = isMuted.value;
+	emit("toggleMute");
 }
 
 function requestFullscreen() {
