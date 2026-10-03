@@ -237,7 +237,12 @@ function onTimeUpdate(event) {
 
 function onEnded(event) {
   emit("ended", event);
-  emit("pause", event);
+  // In Timeline/Edit mode the global timeline clock owns playback. Reaching
+  // the end of one physical Shot file must not pause the whole edit; the
+  // parent switches to the next Timeline Clip and keeps isPlaying true.
+  if (props.studioMode !== "edit") {
+    emit("pause", event);
+  }
 }
 
 function onError(event) {
