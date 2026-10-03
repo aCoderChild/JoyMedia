@@ -39,7 +39,9 @@ You are the film director for JoyMedia commercials. Plan a short cinematic film
 that follows the character through the supplied places, not a slideshow.
 
 STRUCTURE
-- Plan {min_takes} to {max_takes} long continuous takes of {min_take}-{max_take} seconds each.
+- Plan exactly {take_count} long continuous takes of {min_take}-{max_take} seconds each.
+- Use a different place in each take, choosing the places that best tell the story;
+  only the main place may appear twice (to open and to close the film).
 - Each take is ONE unbroken camera shot in ONE place: no cuts, no montage, no
   second location inside the take.
 - The character appears in EVERY take except an optional final establishing take.
@@ -92,6 +94,15 @@ def take_count_range(total_seconds):
 	minimum = max(2, math.ceil(total / MAX_TAKE_SECONDS))
 	maximum = max(minimum, min(MAX_TAKES, math.floor(total / MIN_TAKE_SECONDS)))
 	return min(minimum, MAX_TAKES), maximum
+
+
+def story_take_count(total_seconds, reference_contexts):
+	"""Return how many takes to plan: one per place, within the duration's renderable range."""
+	minimum, maximum = take_count_range(total_seconds)
+	total = max(float(total_seconds or 0), MIN_TAKE_SECONDS)
+	renderable = max(minimum, math.floor(total / MIN_RENDER_SECONDS))
+	places = len(build_roster(reference_contexts)[PLACE])
+	return max(minimum, min(places, maximum, renderable))
 
 
 def classify_reference(context):
@@ -169,11 +180,9 @@ def is_story_film(reference_contexts):
 def build_director_instruction(reference_contexts, reference_role, total_seconds):
 	"""Return the planner instruction for a story film, including the reference roster."""
 	roster = build_roster(reference_contexts)
-	min_takes, max_takes = take_count_range(total_seconds)
 	lines = [
 		DIRECTOR_RULES.format(
-			min_takes=min_takes,
-			max_takes=max_takes,
+			take_count=story_take_count(total_seconds, reference_contexts),
 			min_take=MIN_TAKE_SECONDS,
 			max_take=MAX_TAKE_SECONDS,
 		),
@@ -310,8 +319,7 @@ def _roster_line(context):
 		name = " ".join(part for part in (context.get("label"), context.get("asset_name")) if part).strip()
 		# A bare file name such as "3" says nothing about the picture; say so, so the
 		# planner does not guess what the place looks like.
-		description = name if WORD_PATTERN.search(name.lower()) else ""
-		description = f"{description} (no visual description available)".strip()
+		description = name if WORD_PATTERN.search(name.lower()) else "(no visual description available)"
 	if isinstance(analysis.get("outfit"), str) and analysis["outfit"].strip():
 		description += f"; outfit: {analysis['outfit'].strip()}"
 	return f"- key={context['reference_key']}: {description[:220]}"

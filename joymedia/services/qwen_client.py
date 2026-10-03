@@ -10,7 +10,7 @@ from .film_director import (
 	balance_take_durations,
 	build_director_instruction,
 	normalize_story_references,
-	take_count_range,
+	story_take_count,
 )
 
 
@@ -283,7 +283,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		f"SHOT COUNT GUIDANCE: {shot_count if shot_count is not None else 'Choose the appropriate number of creative shots; do not use model frame capacity to choose it.'}\n\n"
 		+ (
 			f"Return exactly {shot_count} shots. " if shot_count is not None
-			else "Return {0} to {1} takes as shots. ".format(*take_count_range(total_video_duration)) if story_film
+			else f"Return exactly {story_take_count(total_video_duration, reference_media)} takes as shots. " if story_film
 			else "Choose a coherent storyboard structure, normally between 1 and 8 shots. "
 		)
 		+ "Organize the shots into a coherent narrative progression.\n\n"

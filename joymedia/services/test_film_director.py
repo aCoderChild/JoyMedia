@@ -97,7 +97,7 @@ class TestFilmDirector(FrappeTestCase):
 		]
 
 		self.assertEqual("- key=3: (no visual description available)", film_director._roster_line(references[0]))
-		self.assertEqual("- key=lobby: lobby (no visual description available)", film_director._roster_line(references[1]))
+		self.assertEqual("- key=lobby: lobby", film_director._roster_line(references[1]))
 
 	def test_director_instruction_lists_roster_and_role(self):
 		instruction = film_director.build_director_instruction(REFERENCES, "product_reference", 25)
@@ -107,7 +107,7 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertIn("key=tower: Cream high-rise tower at golden hour", instruction)
 		self.assertNotIn("key=logo", instruction)
 		self.assertIn("<Picture 1>", instruction)
-		self.assertIn("Plan 3 to 5 long continuous takes", instruction)
+		self.assertIn("Plan exactly 3 long continuous takes", instruction)
 		fixed_text = (film_director.DIRECTOR_RULES + film_director.FEW_SHOT_EXAMPLE).lower()
 		for genre_specific in ("real-estate", "property", "golden hour", "teal", "ao dai", "luxury"):
 			self.assertNotIn(genre_specific, fixed_text)
@@ -117,6 +117,15 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertEqual((3, 5), film_director.take_count_range(25))
 		self.assertEqual((6, 6), film_director.take_count_range(60))
 		self.assertEqual((2, 2), film_director.take_count_range(5))
+
+	def test_story_plans_one_take_per_place_within_the_renderable_range(self):
+		places = [{"reference_key": f"p{n}", "media_type": "Image", "asset_category": "Background"} for n in range(6)]
+
+		# Six places in 30 s: every take must still be >= 124 frames, so five fit.
+		self.assertEqual(5, film_director.story_take_count(30, places))
+		self.assertEqual(3, film_director.story_take_count(30, places[:2]))
+		self.assertEqual(2, film_director.story_take_count(15, places))
+		self.assertEqual(6, film_director.story_take_count(60, places))
 
 	def test_take_durations_are_renderable_and_keep_the_total(self):
 		shots = [{"duration_seconds": value, "shot_number": index} for index, value in enumerate((12.33, 3.42, 5.08, 4.17), 1)]
@@ -180,7 +189,7 @@ class TestFilmDirector(FrappeTestCase):
 
 		prompt = sent["payload"]["messages"][1]["content"]
 		self.assertIn("film director", prompt)
-		self.assertIn("Return 2 to 3 takes as shots.", prompt)
+		self.assertIn("Return exactly 2 takes as shots.", prompt)
 		self.assertNotIn("AVAILABLE INPUT ROLES", prompt)
 		self.assertNotIn("GENERATION IMAGE REFERENCES", prompt)
 		self.assertEqual(3000, sent["payload"]["max_tokens"])
