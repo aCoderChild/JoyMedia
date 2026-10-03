@@ -7,6 +7,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.timeline_composer import (
+	_apply_end_card,
 	_get_generated_audio_sources,
 	_normalize_clip,
 	_render_sequence,
@@ -59,6 +60,21 @@ class TestTimelineComposer(FrappeTestCase):
 
 			_validate_normalized_video(output, profile, expected_frames=24)
 			self.assertAlmostEqual(_get_video_duration(output), 1.0, delta=0.05)
+
+	def test_end_card_fades_in_over_the_last_seconds_only(self):
+		with tempfile.TemporaryDirectory(prefix="joymedia-end-card-") as temp_dir:
+			temp_path = Path(temp_dir)
+			source = temp_path / "source.mp4"
+			output = temp_path / "card.mp4"
+			_make_video(source, 4, color="black")
+			profile = {"width": 320, "height": 240, "fps": 24.0}
+
+			_apply_end_card(source, output, profile, 'Tòa tháp "Riviera": Point', "Phong cách sống", temp_path)
+
+			_validate_normalized_video(output, profile, expected_frames=96)
+			before, after = _mean_luma(output, 1.0), _mean_luma(output, 3.9)
+			self.assertEqual(0, before)
+			self.assertGreater(after, before + 2)
 
 	def test_render_sequence_honors_dissolve_overlap(self):
 		with tempfile.TemporaryDirectory(prefix="joymedia-timeline-xfade-") as temp_dir:
@@ -136,3 +152,12 @@ def _make_video(path, seconds, color="black"):
 		],
 		check=True,
 	)
+
+
+def _mean_luma(path, seconds):
+	output = subprocess.run(
+		["ffmpeg", "-v", "error", "-ss", str(seconds), "-i", str(path), "-frames:v", "1",
+		 "-vf", "format=gray,crop=iw:ih/3,scale=1:1:flags=area", "-f", "rawvideo", "-"],
+		capture_output=True, check=True,
+	).stdout
+	return output[0]

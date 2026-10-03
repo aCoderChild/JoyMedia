@@ -491,6 +491,8 @@ def get_project_workspace(name):
 			"reference_mode": getattr(settings, "reference_mode", None) or "Single Image",
 			"quality_mode": getattr(settings, "quality_mode", None) or "Production",
 			"global_instructions": settings.global_instructions or "",
+			"end_card_title": settings.end_card_title or "",
+			"end_card_tagline": settings.end_card_tagline or "",
 			**_customer_style_details(settings),
 		} if settings.workflow else None),
 		"storyboard": storyboard,
@@ -828,7 +830,7 @@ def update_project_name(media_project, project_name):
 def save_project_video_settings(
 	project_name, total_duration_seconds, delivery_preset, video_style=None,
 	generation_mode=None, global_instructions=None, reference_mode=None,
-	quality_mode=None,
+	quality_mode=None, end_card_title=None, end_card_tagline=None,
 ):
 	project = frappe.get_doc("Media Project", project_name)
 	return project.save_video_settings(
@@ -839,6 +841,8 @@ def save_project_video_settings(
 		global_instructions,
 		reference_mode,
 		quality_mode,
+		end_card_title,
+		end_card_tagline,
 	)
 
 
@@ -1222,6 +1226,8 @@ class MediaProject(Document):
 			"delivery_preset": settings.delivery_preset,
 			"generation_mode": _normalize_generation_mode(settings.generation_mode),
 			"global_instructions": settings.global_instructions or "",
+			"end_card_title": settings.end_card_title or "",
+			"end_card_tagline": settings.end_card_tagline or "",
 			**_customer_style_details(settings),
 		}
 
@@ -1229,7 +1235,7 @@ class MediaProject(Document):
 	def save_video_settings(
 		self, total_duration_seconds, delivery_preset, video_style=None,
 		generation_mode=None, global_instructions=None, reference_mode=None,
-		quality_mode=None,
+		quality_mode=None, end_card_title=None, end_card_tagline=None,
 	):
 		self._require_write_access()
 		try:
@@ -1264,6 +1270,10 @@ class MediaProject(Document):
 		self.quality_mode = quality_mode
 		if global_instructions is not None:
 			self.global_instructions = global_instructions
+		if end_card_title is not None:
+			self.end_card_title = str(end_card_title).strip()
+		if end_card_tagline is not None:
+			self.end_card_tagline = str(end_card_tagline).strip()
 		self.workflow = workflow.name
 		if delivery_preset == "Landscape":
 			self.delivery_width, self.delivery_height = 1920, 1080

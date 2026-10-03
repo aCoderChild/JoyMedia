@@ -193,6 +193,32 @@
                 class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 resize-none"
               />
             </div>
+
+            <!-- End card -->
+            <div class="space-y-1.5">
+              <label class="block font-semibold text-ink-primary">
+                {{ currentLang === 'vi' ? 'Chữ kết thúc video (End card):' : 'End card:' }}
+              </label>
+              <input
+                v-model="form.end_card_title"
+                type="text"
+                maxlength="60"
+                :placeholder="currentLang === 'vi' ? 'Tiêu đề, vd: The Riviera Point' : 'Title, e.g. The Riviera Point'"
+                class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500"
+              />
+              <input
+                v-model="form.end_card_tagline"
+                type="text"
+                maxlength="80"
+                :placeholder="currentLang === 'vi' ? 'Khẩu hiệu, vd: Phong cách sống đẳng cấp' : 'Tagline, e.g. A new way of living'"
+                class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500"
+              />
+              <p class="text-[10.5px] text-ink-muted">
+                {{ currentLang === 'vi'
+                  ? 'Hiện mờ dần ở 3,5 giây cuối khi xuất video. Để trống nếu không cần.'
+                  : 'Fades in over the last 3.5 seconds of the export. Leave empty for none.' }}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -256,6 +282,8 @@ const form = reactive({
   reference_mode: "Single Image",
   quality_mode: "Production",
   global_instructions: "",
+  end_card_title: "",
+  end_card_tagline: "",
 });
 
 watch(
@@ -271,6 +299,8 @@ watch(
         form.quality_mode = "Production";
       }
       form.global_instructions = s.global_instructions || "";
+      form.end_card_title = s.end_card_title || "";
+      form.end_card_tagline = s.end_card_tagline || "";
     }
   },
   { immediate: true }

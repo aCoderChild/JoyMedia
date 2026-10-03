@@ -81,6 +81,8 @@ export function useProjectWorkspace(projectName) {
         quality_mode: settingsPayload.quality_mode || "Production",
         generation_mode: settingsPayload.generation_mode || "Multi-shot",
         global_instructions: settingsPayload.global_instructions || "",
+        end_card_title: settingsPayload.end_card_title || "",
+        end_card_tagline: settingsPayload.end_card_tagline || "",
       });
       await fetchWorkspace();
       showSettings.value = false;

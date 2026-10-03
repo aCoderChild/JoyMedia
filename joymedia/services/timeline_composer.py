@@ -17,6 +17,11 @@ from joymedia.services.video_composer import (
 )
 
 
+FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
+END_CARD_SECONDS = 3.5
+TITLE_FONT = "PlayfairDisplay.ttf"
+TAGLINE_FONT = "GreatVibes-Regular.ttf"
+
 TRANSITION_FILTERS = {
 	"Dissolve": "fade",
 	"Fade": "fadeblack",
@@ -105,6 +110,13 @@ def compose_project_timeline_internal(project_name: str):
 				positioned=positioned,
 			)
 			_validate_normalized_video(silent_master, profile, expected_frames=expected_frames)
+			title = (project.get("end_card_title") or "").strip()
+			tagline = (project.get("end_card_tagline") or "").strip()
+			if title or tagline:
+				carded_master = temp_path / f"{project.name}-timeline-card.mp4"
+				_apply_end_card(silent_master, carded_master, profile, title, tagline, temp_path)
+				_validate_normalized_video(carded_master, profile, expected_frames=expected_frames)
+				silent_master = carded_master
 
 			delivery_path = silent_master
 			video_duration = _get_video_duration(silent_master)
@@ -164,6 +176,54 @@ def compose_project_timeline_internal(project_name: str):
 		"timeline_frames": expected_frames,
 		"fps": profile["fps"],
 	}
+
+
+def _apply_end_card(source_path, output_path, profile, title, tagline, temp_path):
+	"""Fade a title and tagline in over the last seconds of the film."""
+	duration = _get_video_duration(source_path)
+	start = max(0.0, duration - min(END_CARD_SECONDS, duration * 0.4))
+	height = profile["height"]
+	filters = []
+	# Text goes through files so quotes, colons and accents need no escaping.
+	for index, (text, font, size, delay, offset) in enumerate((
+		(title, TITLE_FONT, round(height * 0.1), 0.0, -0.06 if tagline else 0.0),
+		(tagline, TAGLINE_FONT, round(height * 0.072), 0.5, 0.07 if title else 0.0),
+	)):
+		if not text:
+			continue
+		text_file = temp_path / f"end-card-{index}.txt"
+		text_file.write_text(text, encoding="utf-8")
+		appear = start + delay
+		filters.append(
+			f"drawtext=fontfile='{FONT_DIR / font}':textfile='{text_file}':fontsize={size}:fontcolor=white:"
+			f"shadowcolor=black@0.45:shadowx=0:shadowy={max(2, height // 360)}:"
+			f"x=(w-text_w)/2:y=(h-text_h)/2+h*{offset}:"
+			f"alpha='if(lt(t,{appear:.3f}),0,min(1,(t-{appear:.3f})/0.8))'"
+		)
+	_run_ffmpeg(
+		[
+			"ffmpeg",
+			"-y",
+			"-i",
+			str(source_path),
+			"-vf",
+			",".join(filters),
+			"-an",
+			"-c:v",
+			"libx264",
+			"-profile:v",
+			"high",
+			"-pix_fmt",
+			"yuv420p",
+			"-crf",
+			"16",
+			"-r",
+			f"{profile['fps']:g}",
+			"-movflags",
+			"+faststart",
+			str(output_path),
+		]
+	)
 
 
 def _has_persisted_positions(clips):
@@ -261,7 +321,7 @@ def _normalize_clip(source_path, output_path, profile, source_in_frame, source_o
 		f"tpad=stop_mode=clone:stop_duration={pad_duration:.6f},"
 		f"trim=start_frame={source_in_frame}:end_frame={source_out_frame},"
 		f"setpts=PTS-STARTPTS,"
-		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=increase,"
+		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=increase:flags=lanczos,"
 		f"crop={profile['width']}:{profile['height']}"
 	)
 	_run_ffmpeg(
