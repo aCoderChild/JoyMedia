@@ -56,6 +56,27 @@
             </div>
           </div>
 
+          <div class="grid grid-cols-2 gap-1.5 text-xs">
+            <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
+              <span class="block text-[10px] text-ink-muted font-semibold">SOURCE</span>
+              <span class="font-mono font-bold text-ink-primary text-xs">{{ Number(selectedClip.source_duration_seconds || 0).toFixed(1) }}s</span>
+            </div>
+            <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
+              <span class="block text-[10px] text-ink-muted font-semibold">USED</span>
+              <span class="font-mono font-bold text-indigo-400 text-xs">{{ ((selectedClip.source_out_frame - selectedClip.source_in_frame) / (fps || 24)).toFixed(1) }}s</span>
+            </div>
+          </div>
+
+          <button
+            v-if="selectedClip.audio_role !== 'Source'"
+            type="button"
+            class="w-full py-1.5 px-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 text-xs font-semibold cursor-pointer"
+            :disabled="timelineBusy"
+            @click="$emit('fitAudioClipToVideo', selectedClip)"
+          >
+            {{ currentLang === 'vi' ? 'Khớp audio với video' : 'Fit Audio to Video' }}
+          </button>
+
           <!-- Audio Role -->
           <div class="space-y-1.5 pt-1">
             <label class="block text-[11px] font-semibold text-ink-secondary">
@@ -511,6 +532,7 @@ const emit = defineEmits([
   "duplicateClip",
   "deleteClip",
   "updateAudioClip",
+  "fitAudioClipToVideo",
   "updateSourceForSelectedClip",
   "regenerateSourceForSelectedClip",
   "applyAssetToShot",

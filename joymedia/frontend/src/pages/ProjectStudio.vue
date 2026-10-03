@@ -276,6 +276,7 @@
       @duplicate-clip="duplicateClip(selectedClip)"
       @delete-clip="deleteClip(selectedClip)"
       @update-audio-clip="onUpdateAudioClip"
+      @fit-audio-clip-to-video="onFitAudioClipToVideo"
       @update-source-for-selected-clip="onUpdateSourceForClip"
       @regenerate-source-for-selected-clip="onRegenerateSourceForClip"
       @apply-asset-to-shot="applyAssetToShot"
@@ -464,6 +465,7 @@ const {
   setTransition,
   updateSourceForShot,
   updateAudioClip,
+  fitAudioClipToVideo,
   moveClip,
   addAudioClip,
   exportTimeline,
@@ -558,6 +560,10 @@ function openAudioPicker(role = "BGM") {
 
 async function onUpdateAudioClip(clip, settings) {
   await updateAudioClip(clip, settings);
+}
+
+async function onFitAudioClipToVideo(clip) {
+  await fitAudioClipToVideo(clip);
 }
 
 async function handleSelectReference({ asset, role }) {

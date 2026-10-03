@@ -36,7 +36,24 @@
                 @dblclick.stop="$emit('openInspector', clip)"
               >
                 <span class="truncate">{{ clip.source_asset_name || clipLabel(clip) }}</span>
-                <AudioWaveform :src="clip.source_file" />
+                <span
+                  v-if="clip.audio_role !== 'Source'"
+                  class="audio-trim-handle audio-trim-handle-left"
+                  title="Trim start"
+                  @pointerdown.stop="startTrim(clip, 'left', $event)"
+                />
+                <AudioWaveform
+                  :src="clip.source_file"
+                  :source-in-frame="clip.source_in_frame"
+                  :source-out-frame="clip.source_out_frame"
+                  :fps="fps"
+                />
+                <span
+                  v-if="clip.audio_role !== 'Source'"
+                  class="audio-trim-handle audio-trim-handle-right"
+                  title="Trim end"
+                  @pointerdown.stop="startTrim(clip, 'right', $event)"
+                />
                 <span v-if="clip.audio_role !== 'Source'" class="audio-role-badge">{{ audioRoleLabel(clip.audio_role) }}</span>
               </button>
               <div v-else class="audio-timeline-empty-segment" :style="clipStyle(clip)">
@@ -69,15 +86,17 @@ const props = defineProps({
   audioClips: { type: Array, default: () => [] },
   selectedClipName: { type: String, default: null },
   totalFrames: { type: Number, default: 0 },
+  fps: { type: Number, default: 24 },
   playheadFrame: { type: Number, default: 0 },
   pixelsPerFrame: { type: Number, default: 2 },
   timelineCanvasWidth: { type: Number, default: 700 },
   currentLang: { type: String, default: "en" },
 });
 
-const emit = defineEmits(["selectClip", "openInspector", "openAudioPicker", "move"]);
+const emit = defineEmits(["selectClip", "openInspector", "openAudioPicker", "move", "trim"]);
 
 const moveDrag = ref(null);
+const trimDrag = ref(null);
 
 const audioTracks = computed(() => {
   const groups = new Map();
@@ -143,8 +162,54 @@ function finishMove() {
   }
 }
 
+function startTrim(clip, edge, event) {
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  trimDrag.value = {
+    clip,
+    edge,
+    startX: event.clientX,
+    originalIn: Number(clip.source_in_frame || 0),
+    originalOut: Number(clip.source_out_frame || 0),
+  };
+  window.addEventListener("pointermove", handleTrim);
+  window.addEventListener("pointerup", finishTrim);
+}
+
+function handleTrim(event) {
+  const drag = trimDrag.value;
+  if (!drag) return;
+  const delta = Math.round((event.clientX - drag.startX) / props.pixelsPerFrame);
+  const minimum = 1;
+  if (drag.edge === "left") {
+    drag.nextIn = Math.max(0, Math.min(drag.originalOut - minimum, drag.originalIn + delta));
+    drag.nextOut = drag.originalOut;
+  } else {
+    drag.nextIn = drag.originalIn;
+    drag.nextOut = Math.max(
+      drag.originalIn + minimum,
+      Math.min(Number(drag.clip.source_total_frames || drag.originalOut), drag.originalOut + delta),
+    );
+  }
+}
+
+function finishTrim() {
+  const drag = trimDrag.value;
+  trimDrag.value = null;
+  window.removeEventListener("pointermove", handleTrim);
+  window.removeEventListener("pointerup", finishTrim);
+  if (!drag || drag.nextIn == null || drag.nextOut == null) return;
+  if (drag.nextIn === drag.originalIn && drag.nextOut === drag.originalOut) return;
+  emit("trim", {
+    clip: drag.clip,
+    sourceInFrame: drag.nextIn,
+    sourceOutFrame: drag.nextOut,
+  });
+}
+
 onBeforeUnmount(() => {
   window.removeEventListener("pointermove", handleMove);
   window.removeEventListener("pointerup", finishMove);
+  window.removeEventListener("pointermove", handleTrim);
+  window.removeEventListener("pointerup", finishTrim);
 });
 </script>

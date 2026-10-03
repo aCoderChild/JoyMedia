@@ -2721,6 +2721,26 @@ h2 {
   cursor: pointer;
 }
 
+.audio-trim-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  z-index: 3;
+  cursor: col-resize;
+  background: rgb(199 210 254 / 75%);
+}
+
+.audio-trim-handle-left {
+  left: 0;
+  border-radius: 6px 0 0 6px;
+}
+
+.audio-trim-handle-right {
+  right: 0;
+  border-radius: 0 6px 6px 0;
+}
+
 .audio-timeline-source-clip {
   background: rgb(14 116 144 / 22%);
   border-color: rgb(14 165 233 / 35%);

@@ -14,6 +14,9 @@ import { onBeforeUnmount, ref, watch } from "vue";
 const props = defineProps({
   src: { type: String, default: "" },
   barCount: { type: Number, default: 96 },
+  sourceInFrame: { type: Number, default: 0 },
+  sourceOutFrame: { type: Number, default: 0 },
+  fps: { type: Number, default: 24 },
 });
 
 const peaks = ref([]);
@@ -29,16 +32,27 @@ async function loadWaveform() {
     audioContext ||= new AudioContext();
     const buffer = await audioContext.decodeAudioData(bytes);
     const samples = buffer.getChannelData(0);
-    const count = Math.max(16, Math.min(props.barCount, samples.length));
-    const step = Math.max(1, Math.floor(samples.length / count));
+    const sampleRate = buffer.sampleRate;
+    const fpsValue = Math.max(1, Number(props.fps || 24));
+    const startSample = Math.min(
+      samples.length,
+      Math.max(0, Math.floor((Number(props.sourceInFrame || 0) / fpsValue) * sampleRate)),
+    );
+    const sourceOutFrame = Number(props.sourceOutFrame || 0);
+    const endSample = sourceOutFrame > 0
+      ? Math.min(samples.length, Math.ceil((sourceOutFrame / fpsValue) * sampleRate))
+      : samples.length;
+    const visibleSamples = samples.subarray(startSample, Math.max(startSample, endSample));
+    const count = Math.max(16, Math.min(props.barCount, visibleSamples.length));
+    const step = Math.max(1, Math.floor(visibleSamples.length / count));
     const values = [];
     let maximum = 0;
     for (let index = 0; index < count; index += 1) {
       const start = index * step;
-      const end = Math.min(samples.length, start + step);
+      const end = Math.min(visibleSamples.length, start + step);
       let peak = 0;
       for (let sample = start; sample < end; sample += 1) {
-        peak = Math.max(peak, Math.abs(samples[sample]));
+        peak = Math.max(peak, Math.abs(visibleSamples[sample]));
       }
       values.push(peak);
       maximum = Math.max(maximum, peak);
@@ -49,7 +63,11 @@ async function loadWaveform() {
   }
 }
 
-watch(() => props.src, loadWaveform, { immediate: true });
+watch(
+  () => [props.src, props.sourceInFrame, props.sourceOutFrame, props.fps, props.barCount],
+  loadWaveform,
+  { immediate: true },
+);
 
 onBeforeUnmount(() => {
   audioContext?.close();

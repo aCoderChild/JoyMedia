@@ -255,6 +255,14 @@ export function useProjectTimeline(projectName) {
     );
   }
 
+  function fitAudioClipToVideo(clip) {
+    return mutate(
+      "fit_audio_clip_to_video",
+      { clip_name: clip.name },
+      clip.name
+    );
+  }
+
   function moveClip(clip, timelineStartFrame, trackIndex = null) {
     return mutate(
       "move_timeline_clip",
@@ -310,6 +318,7 @@ export function useProjectTimeline(projectName) {
     resetClip,
     updateSourceForShot,
     updateAudioClip,
+    fitAudioClipToVideo,
     moveClip,
     addAudioClip,
     exportTimeline,

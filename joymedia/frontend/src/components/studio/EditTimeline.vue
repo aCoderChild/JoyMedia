@@ -55,14 +55,15 @@
             @split="$emit('split', $event)"
             @duplicate="$emit('duplicate', $event)"
             @delete="$emit('delete', $event)"
-          @reorder="$emit('reorder', $event)"
-          @select-transition="$emit('selectTransition', $event)"
-          @open-inspector="forwardOpenInspector"
+            @reorder="$emit('reorder', $event)"
+            @select-transition="$emit('selectTransition', $event)"
+            @open-inspector="forwardOpenInspector"
           />
         </div>
 
       <AudioTimelineTracks
         :audio-clips="activeAudioClips"
+        :fps="fps"
         :selected-clip-name="selectedClipName"
         :total-frames="totalFrames"
         :playhead-frame="playheadFrame"
@@ -71,6 +72,7 @@
         :current-lang="currentLang"
         @select-clip="forwardSelectClip"
         @open-inspector="forwardOpenInspector"
+        @trim="$emit('trim', $event)"
         @move="$emit('move', $event)"
         @open-audio-picker="$emit('openAudioPicker')"
       />
