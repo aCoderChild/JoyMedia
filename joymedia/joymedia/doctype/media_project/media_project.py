@@ -481,6 +481,9 @@ def get_project_workspace(name):
 			"video_idea": project.video_idea,
 			"status": project.status,
 			"current_output_asset_version": project.current_output_asset_version,
+			"post_production_status": project.post_production_status or "Idle",
+			"post_production_step": project.post_production_step or "",
+			"post_production_error": project.post_production_error or "",
 		},
 		"assets": _get_project_selected_assets(project),
 		"video_settings": ({
@@ -493,6 +496,7 @@ def get_project_workspace(name):
 			"global_instructions": settings.global_instructions or "",
 			"end_card_title": settings.end_card_title or "",
 			"end_card_tagline": settings.end_card_tagline or "",
+			"soundtrack_prompt": settings.soundtrack_prompt or "",
 			**_customer_style_details(settings),
 		} if settings.workflow else None),
 		"storyboard": storyboard,
@@ -830,7 +834,7 @@ def update_project_name(media_project, project_name):
 def save_project_video_settings(
 	project_name, total_duration_seconds, delivery_preset, video_style=None,
 	generation_mode=None, global_instructions=None, reference_mode=None,
-	quality_mode=None, end_card_title=None, end_card_tagline=None,
+	quality_mode=None, end_card_title=None, end_card_tagline=None, soundtrack_prompt=None,
 ):
 	project = frappe.get_doc("Media Project", project_name)
 	return project.save_video_settings(
@@ -843,6 +847,7 @@ def save_project_video_settings(
 		quality_mode,
 		end_card_title,
 		end_card_tagline,
+		soundtrack_prompt,
 	)
 
 
@@ -1228,6 +1233,7 @@ class MediaProject(Document):
 			"global_instructions": settings.global_instructions or "",
 			"end_card_title": settings.end_card_title or "",
 			"end_card_tagline": settings.end_card_tagline or "",
+			"soundtrack_prompt": settings.soundtrack_prompt or "",
 			**_customer_style_details(settings),
 		}
 
@@ -1235,7 +1241,7 @@ class MediaProject(Document):
 	def save_video_settings(
 		self, total_duration_seconds, delivery_preset, video_style=None,
 		generation_mode=None, global_instructions=None, reference_mode=None,
-		quality_mode=None, end_card_title=None, end_card_tagline=None,
+		quality_mode=None, end_card_title=None, end_card_tagline=None, soundtrack_prompt=None,
 	):
 		self._require_write_access()
 		try:
@@ -1274,6 +1280,8 @@ class MediaProject(Document):
 			self.end_card_title = str(end_card_title).strip()
 		if end_card_tagline is not None:
 			self.end_card_tagline = str(end_card_tagline).strip()
+		if soundtrack_prompt is not None:
+			self.soundtrack_prompt = str(soundtrack_prompt).strip()
 		self.workflow = workflow.name
 		if delivery_preset == "Landscape":
 			self.delivery_width, self.delivery_height = 1920, 1080

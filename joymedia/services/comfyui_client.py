@@ -30,7 +30,10 @@ def upload_frappe_file(file_url: str, *, base_url: str | None = None, input_dir:
 		frappe.throw(_("File URL is required."))
 
 	file_doc = frappe.get_doc("File", {"file_url": file_url})
-	local_path = file_doc.get_full_path()
+	return upload_local_file(file_doc.get_full_path(), base_url=base_url)
+
+
+def upload_local_file(local_path, *, base_url: str | None = None) -> dict:
 	if not Path(local_path).exists():
 		frappe.throw(_("Local file does not exist: {0}").format(local_path))
 

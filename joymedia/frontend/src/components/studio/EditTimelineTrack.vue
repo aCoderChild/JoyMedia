@@ -264,6 +264,7 @@ function frameTime(frameCount) {
 function clipLabel(clip) {
   if (!clip) return "Clip";
   if (clip.shot_number) return currentLang.value === "vi" ? `Cảnh ${clip.shot_number}` : `Shot ${clip.shot_number}`;
+  if (!clip.shot) return currentLang.value === "vi" ? "Chuyển cảnh" : "Transition";
   return `Clip ${clip.clip_order}`;
 }
 

@@ -8,6 +8,8 @@
       :timeline-ready="timelineReady"
       :has-unexported-edits="hasUnexportedEdits"
       :is-exporting="isExporting"
+      :is-finishing="isFinishing"
+      :post-production-step="postProduction.step"
       :export-status="exportStatus"
       :current-output-asset-version="currentOutputAssetVersion"
       :media-drawer-open="mediaDrawerOpen"
@@ -21,6 +23,7 @@
       @toggle-lang="toggleLang"
       @open-settings="showSettings = true"
       @export-timeline="exportAndRefresh"
+      @finish-film="finishFilm"
       @retry-generation="handleGenerationRetry"
       @stop-generation="cancelGeneration"
     />
@@ -406,6 +409,7 @@ const {
   storyboard,
   storyboardShots,
   currentOutputAssetVersion,
+  postProduction,
   finalVideo,
   isOutdated: generationOutputOutdated,
   videoSettings,
@@ -512,6 +516,50 @@ function downloadFile(url) {
   link.click();
   link.remove();
 }
+
+const isFinishing = computed(() => ["Queued", "Running"].includes(postProduction.value.status));
+let finishPollTimer = null;
+
+async function finishFilm() {
+  try {
+    await call("joymedia.services.post_production.queue_post_production", { project_name: projectName.value });
+    await fetchWorkspace();
+  } catch (err) {
+    notify({ title: currentLang.value === "vi" ? "Không thể hoàn thiện phim" : "Could not finish the film", text: errorMessage(err, ""), type: "error" });
+  }
+}
+
+async function pollFinishing() {
+  finishPollTimer = null;
+  const previous = postProduction.value.status;
+  await fetchWorkspace();
+  const { status, error } = postProduction.value;
+  if (["Queued", "Running"].includes(status)) {
+    finishPollTimer = setTimeout(pollFinishing, 10000);
+    return;
+  }
+  if (!["Queued", "Running"].includes(previous)) return;
+  await loadTimeline(true);
+  if (status === "Completed") {
+    notify({
+      title: currentLang.value === "vi" ? "Đã hoàn thiện phim" : "Film finished",
+      text: currentLang.value === "vi"
+        ? "Đã thêm chuyển cảnh và nhạc nền. Bấm Xuất & tải xuống."
+        : "Transitions and soundtrack added. Click Export & download.",
+      type: "success",
+    });
+  } else if (status === "Failed") {
+    notify({ title: currentLang.value === "vi" ? "Hoàn thiện phim thất bại" : "Finishing failed", text: error, type: "error" });
+  }
+}
+
+watch(isFinishing, (finishing) => {
+  if (finishing && !finishPollTimer) finishPollTimer = setTimeout(pollFinishing, 10000);
+}, { immediate: true });
+
+onUnmounted(() => {
+  if (finishPollTimer) clearTimeout(finishPollTimer);
+});
 
 async function exportAndRefresh() {
   try {

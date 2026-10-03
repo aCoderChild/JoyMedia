@@ -194,6 +194,26 @@
               />
             </div>
 
+            <!-- AI soundtrack -->
+            <div class="space-y-1.5">
+              <label class="block font-semibold text-ink-primary">
+                {{ currentLang === 'vi' ? 'Nhạc nền AI (tuỳ chọn):' : 'AI soundtrack (optional):' }}
+              </label>
+              <textarea
+                v-model="form.soundtrack_prompt"
+                rows="2"
+                :placeholder="currentLang === 'vi'
+                  ? 'Mô tả bằng tiếng Anh, vd: uplifting acoustic guitar and soft drums'
+                  : 'e.g. uplifting acoustic guitar and soft drums'"
+                class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 resize-none"
+              />
+              <p class="text-[10.5px] text-ink-muted">
+                {{ currentLang === 'vi'
+                  ? 'Dùng khi bấm “Hoàn thiện phim”. Để trống: nhạc piano và dây điện ảnh nhẹ nhàng.'
+                  : 'Used by “Finish film”. Empty: a gentle cinematic piano and strings score.' }}
+              </p>
+            </div>
+
             <!-- End card -->
             <div class="space-y-1.5">
               <label class="block font-semibold text-ink-primary">
@@ -284,6 +304,7 @@ const form = reactive({
   global_instructions: "",
   end_card_title: "",
   end_card_tagline: "",
+  soundtrack_prompt: "",
 });
 
 watch(
@@ -301,6 +322,7 @@ watch(
       form.global_instructions = s.global_instructions || "";
       form.end_card_title = s.end_card_title || "";
       form.end_card_tagline = s.end_card_tagline || "";
+      form.soundtrack_prompt = s.soundtrack_prompt || "";
     }
   },
   { immediate: true }

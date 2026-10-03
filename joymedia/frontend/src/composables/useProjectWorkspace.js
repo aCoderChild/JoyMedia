@@ -83,6 +83,7 @@ export function useProjectWorkspace(projectName) {
         global_instructions: settingsPayload.global_instructions || "",
         end_card_title: settingsPayload.end_card_title || "",
         end_card_tagline: settingsPayload.end_card_tagline || "",
+        soundtrack_prompt: settingsPayload.soundtrack_prompt || "",
       });
       await fetchWorkspace();
       showSettings.value = false;
@@ -105,6 +106,11 @@ export function useProjectWorkspace(projectName) {
     return storyboard.value?.shots || [];
   });
   const currentOutputAssetVersion = computed(() => workspace.value?.project?.current_output_asset_version || "");
+  const postProduction = computed(() => ({
+    status: workspace.value?.project?.post_production_status || "Idle",
+    step: workspace.value?.project?.post_production_step || "",
+    error: workspace.value?.project?.post_production_error || "",
+  }));
   const finalVideo = computed(() => workspace.value?.final_video || null);
 
   const videoSettings = computed(() => {
@@ -140,6 +146,7 @@ export function useProjectWorkspace(projectName) {
     storyboard,
     storyboardShots,
     currentOutputAssetVersion,
+    postProduction,
     finalVideo,
     isOutdated,
     videoSettings,

@@ -14,7 +14,7 @@
       <div class="viewport-hud-chip">
         <span class="size-2 rounded-full bg-indigo-500 animate-pulse" />
         <span v-if="studioMode === 'edit' && selectedClip">
-          ✂️ {{ selectedClip.shot_number ? t('shot_n', { n: selectedClip.shot_number }) : `Clip ${selectedClip.clip_order || 1}` }} · {{ selectedClip.duration_seconds?.toFixed(2) }}s ({{ selectedClip.source_in_frame }}f–{{ selectedClip.source_out_frame }}f)
+          ✂️ {{ selectedClip.shot_number ? t('shot_n', { n: selectedClip.shot_number }) : !selectedClip.shot ? (currentLang === 'vi' ? 'Chuyển cảnh' : 'Transition') : `Clip ${selectedClip.clip_order || 1}` }} · {{ selectedClip.duration_seconds?.toFixed(2) }}s ({{ selectedClip.source_in_frame }}f–{{ selectedClip.source_out_frame }}f)
         </span>
         <span v-else-if="selectedTarget === 'asset' && selectedAsset">
           🖼️ {{ selectedAsset.asset_name }} · {{ selectedAsset.asset_category }}

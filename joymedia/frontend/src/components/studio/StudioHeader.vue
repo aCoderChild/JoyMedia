@@ -149,6 +149,25 @@
       <button
         v-if="timelineReady"
         type="button"
+        class="jm-btn-secondary !py-1 !px-3 text-xs flex items-center gap-1.5 shadow-sm"
+        :disabled="isFinishing || isExporting"
+        :title="currentLang === 'vi'
+          ? 'Tạo chuyển cảnh giữa các cảnh và một bản nhạc nền liền mạch (dựng lại timeline)'
+          : 'Generate transitions between scenes and one continuous soundtrack (rebuilds the timeline)'"
+        @click="$emit('finishFilm')"
+      >
+        <span v-if="isFinishing" class="lucide-refresh-cw size-3 animate-spin" />
+        <span v-else>✨</span>
+        <span>
+          {{ isFinishing
+            ? `${currentLang === 'vi' ? 'Đang hoàn thiện' : 'Finishing'}${postProductionStep ? ` · ${postProductionStep}` : '...'}`
+            : (currentLang === 'vi' ? 'Hoàn thiện phim' : 'Finish film') }}
+        </span>
+      </button>
+
+      <button
+        v-if="timelineReady"
+        type="button"
         class="jm-btn-primary !py-1 !px-3 text-xs flex items-center gap-1.5 shadow-sm transition-all"
         :class="{
           '!bg-emerald-600 hover:!bg-emerald-500': !hasUnexportedEdits && !isExporting && currentOutputAssetVersion
@@ -196,6 +215,8 @@ const props = defineProps({
   timelineReady: { type: Boolean, default: false },
   hasUnexportedEdits: { type: Boolean, default: false },
   isExporting: { type: Boolean, default: false },
+  isFinishing: { type: Boolean, default: false },
+  postProductionStep: { type: String, default: "" },
   exportStatus: { type: String, default: "Idle" },
   currentOutputAssetVersion: { type: String, default: "" },
   mediaDrawerOpen: { type: Boolean, default: false },
@@ -212,6 +233,7 @@ const emit = defineEmits([
   "toggleLang",
   "openSettings",
   "exportTimeline",
+  "finishFilm",
   "retryGeneration",
   "stopGeneration",
 ]);
