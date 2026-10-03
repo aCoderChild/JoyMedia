@@ -132,24 +132,47 @@
           </button>
 
           <div v-if="showAdvanced" class="space-y-3 pt-2">
-            <!-- Video Style / Workflow Selection -->
-            <div v-if="videoStyles.length" class="space-y-1.5">
+            <!-- User-facing profile controls; backend workflows remain internal. -->
+            <div class="space-y-1.5">
               <label class="block font-semibold text-ink-primary">
-                {{ currentLang === 'vi' ? 'Phong cách Video (Style):' : 'Video Style / Workflow:' }}
+                {{ currentLang === 'vi' ? 'Ảnh tham chiếu mỗi cảnh:' : 'References per shot:' }}
               </label>
-              <select
-                v-model="form.video_style"
-                class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary cursor-pointer focus:outline-none focus:border-indigo-500"
-              >
-                <option :value="null">{{ currentLang === 'vi' ? 'Đề xuất — H3 I2V Production' : 'Recommended — H3 I2V Production' }}</option>
-                <option
-                  v-for="s in videoStyles"
-                  :key="s.workflow_key"
-                  :value="s.workflow_key"
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  v-for="mode in referenceModes"
+                  :key="mode.value"
+                  type="button"
+                  class="p-2.5 rounded-xl border text-left transition-all cursor-pointer"
+                  :class="form.reference_mode === mode.value
+                    ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
+                    : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
+                  @click="form.reference_mode = mode.value"
                 >
-                  {{ s.client_name || s.workflow_key }}
-                </option>
-              </select>
+                  <span class="text-xs font-semibold">{{ mode.label }}</span>
+                  <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">{{ mode.sub }}</p>
+                </button>
+              </div>
+            </div>
+
+            <div class="space-y-1.5">
+              <label class="block font-semibold text-ink-primary">
+                {{ currentLang === 'vi' ? 'Chất lượng:' : 'Quality:' }}
+              </label>
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  v-for="quality in qualityModes"
+                  :key="quality.value"
+                  type="button"
+                  class="p-2.5 rounded-xl border text-left transition-all cursor-pointer"
+                  :class="form.quality_mode === quality.value
+                    ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
+                    : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
+                  @click="form.quality_mode = quality.value"
+                >
+                  <span class="text-xs font-semibold">{{ quality.label }}</span>
+                  <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">{{ quality.sub }}</p>
+                </button>
+              </div>
             </div>
 
             <!-- Global Instructions -->
@@ -212,11 +235,22 @@ const formatPresets = [
   { value: "Square", label: "Square", sub: "1:1 · 1080x1080", icon: "⏹️" },
 ];
 
+const referenceModes = [
+  { value: "Single Image", label: "Single image", sub: "One starting image per Shot." },
+  { value: "Multi-reference", label: "Multi-reference", sub: "Two ordered reference images per Shot." },
+];
+
+const qualityModes = [
+  { value: "Draft", label: "Draft", sub: "Faster multi-reference previews." },
+  { value: "Production", label: "Production", sub: "Production-quality rendering." },
+];
+
 const form = reactive({
   delivery_preset: "Landscape",
   total_duration_seconds: 15,
   generation_mode: "Multi-shot",
-  video_style: null,
+  reference_mode: "Single Image",
+  quality_mode: "Production",
   global_instructions: "",
 });
 
@@ -227,7 +261,8 @@ watch(
       form.delivery_preset = s.delivery_preset || "Landscape";
       form.total_duration_seconds = Number(s.duration || s.total_duration_seconds) || 15;
       form.generation_mode = s.generation_mode || "Multi-shot";
-      form.video_style = s.video_style || s.workflow_key || null;
+      form.reference_mode = s.reference_mode || "Single Image";
+      form.quality_mode = s.quality_mode || "Production";
       form.global_instructions = s.global_instructions || "";
     }
   },

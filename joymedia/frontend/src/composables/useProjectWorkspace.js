@@ -77,7 +77,8 @@ export function useProjectWorkspace(projectName) {
         project_name: project(),
         total_duration_seconds: totalDurationSeconds,
         delivery_preset: settingsPayload.delivery_preset,
-        video_style: settingsPayload.video_style || null,
+        reference_mode: settingsPayload.reference_mode || "Single Image",
+        quality_mode: settingsPayload.quality_mode || "Production",
         generation_mode: settingsPayload.generation_mode || "Multi-shot",
         global_instructions: settingsPayload.global_instructions || "",
       });
@@ -110,6 +111,8 @@ export function useProjectWorkspace(projectName) {
       duration: 15,
       total_duration_seconds: 15,
       generation_mode: "Multi-shot",
+      reference_mode: "Single Image",
+      quality_mode: "Production",
       global_instructions: "",
     };
   });

@@ -109,7 +109,15 @@ class GenerationTask(Document):
 			frappe.throw(_("Generation Run Media Project must match the Generation Task Shot."))
 		if run.workflow != self.workflow and frappe.db.get_value(
 			"Generation Workflow", run.workflow, "continuation_workflow"
-		) != self.workflow:
+		) != self.workflow and frappe.db.get_value(
+			"Generation Workflow", self.workflow, "workflow_key"
+		) not in {
+			"h3_i2v_production",
+			"h3_r2v_production",
+			"h3_r2v_turbo",
+			"h3_sato_generation",
+			"h3_sato_continuation",
+		}:
 			frappe.throw(_("Generation Run Workflow must match the Generation Task Workflow."))
 
 	def get_shot_input_snapshot(self):

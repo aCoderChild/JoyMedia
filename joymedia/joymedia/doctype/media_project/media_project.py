@@ -115,14 +115,16 @@ def _build_planning_context(project, settings=None):
 def _customer_style_details(settings):
 	if not settings:
 		return {}
-	workflow = (
-		frappe.db.get_value("Generation Workflow", settings.workflow, ["workflow_key"], as_dict=True)
-		if settings.workflow else None
-	)
-	workflow_name = " ".join(part.capitalize() for part in workflow.workflow_key.split("_")) if workflow else None
+	reference_mode = getattr(settings, "reference_mode", None) or "Single Image"
+	quality_mode = getattr(settings, "quality_mode", None) or "Production"
 	return {
-		"video_style": getattr(settings, "video_style", None) or (workflow.workflow_key if workflow else None),
-		"video_style_name": workflow_name,
+		"reference_mode": reference_mode,
+		"quality_mode": quality_mode,
+		# Keep these legacy response keys product-facing; never return a backend
+		# workflow key to the client.
+		"video_style": "multi_reference" if reference_mode == "Multi-reference" else "single_image",
+		"video_style_name": reference_mode,
+		"workflow_key": "multi_reference" if reference_mode == "Multi-reference" else "single_image",
 	}
 
 
@@ -162,6 +164,8 @@ def build_project_snapshot(project):
 		"delivery_width": int(settings.delivery_width or 0),
 		"delivery_height": int(settings.delivery_height or 0),
 		"output_fps": float(workflow_fps or 24),
+		"reference_mode": getattr(settings, "reference_mode", None) or "Single Image",
+		"quality_mode": getattr(settings, "quality_mode", None) or "Production",
 		"generation_mode": settings.generation_mode or "Multi-shot",
 		"global_instructions": settings.global_instructions or "",
 		"workflow": settings.workflow or "",
@@ -353,16 +357,10 @@ def archive_project(project_name):
 
 @frappe.whitelist()
 def get_video_styles():
-	styles = []
-	for row in frappe.get_all("Generation Workflow", fields=["workflow_key"], distinct=True):
-		workflow = get_latest_valid_workflow(row.workflow_key)
-		if workflow:
-			styles.append(frappe._dict(
-				workflow_key=workflow.workflow_key,
-				client_name=" ".join(part.capitalize() for part in workflow.workflow_key.split("_")),
-				client_description="",
-			))
-	return sorted(styles, key=lambda style: style.client_name)
+	return [
+		frappe._dict(workflow_key="single_image", client_name="Single Image", client_description=""),
+		frappe._dict(workflow_key="multi_reference", client_name="Multi-reference", client_description=""),
+	]
 
 
 def _storyboard_payload(specification):
@@ -459,6 +457,8 @@ def get_project_workspace(name):
 			"duration": settings.total_duration_seconds,
 			"delivery_preset": settings.delivery_preset,
 			"generation_mode": _normalize_generation_mode(settings.generation_mode),
+			"reference_mode": getattr(settings, "reference_mode", None) or "Single Image",
+			"quality_mode": getattr(settings, "quality_mode", None) or "Production",
 			"global_instructions": settings.global_instructions or "",
 			**_customer_style_details(settings),
 		} if settings.workflow else None),
@@ -795,7 +795,8 @@ def update_project_name(media_project, project_name):
 @frappe.whitelist()
 def save_project_video_settings(
 	project_name, total_duration_seconds, delivery_preset, video_style=None,
-	generation_mode=None, global_instructions=None,
+	generation_mode=None, global_instructions=None, reference_mode=None,
+	quality_mode=None,
 ):
 	project = frappe.get_doc("Media Project", project_name)
 	return project.save_video_settings(
@@ -804,6 +805,8 @@ def save_project_video_settings(
 		video_style,
 		generation_mode,
 		global_instructions,
+		reference_mode,
+		quality_mode,
 	)
 
 
@@ -1132,7 +1135,7 @@ class MediaProject(Document):
 		):
 			return
 		fields = (
-			"workflow", "generation_mode", "delivery_preset", "delivery_width",
+			"workflow", "reference_mode", "quality_mode", "generation_mode", "delivery_preset", "delivery_width",
 			"delivery_height", "total_duration_seconds", "global_instructions", "selected_media",
 		)
 		before = self.get_doc_before_save()
@@ -1173,7 +1176,8 @@ class MediaProject(Document):
 	@frappe.whitelist()
 	def save_video_settings(
 		self, total_duration_seconds, delivery_preset, video_style=None,
-		generation_mode=None, global_instructions=None,
+		generation_mode=None, global_instructions=None, reference_mode=None,
+		quality_mode=None,
 	):
 		self._require_write_access()
 		try:
@@ -1187,12 +1191,23 @@ class MediaProject(Document):
 		generation_mode = _normalize_generation_mode(generation_mode or self.generation_mode or "Multi-shot")
 		if generation_mode not in ("Multi-shot", "Continuous"):
 			frappe.throw(_("Select Continuous or Multi-shot generation mode."))
-		workflow = _get_customer_workflow(video_style or self._customer_workflow_key())
-		if generation_mode == "Continuous":
-			workflow = _get_continuation_workflow(workflow)
+		reference_mode = reference_mode or getattr(self, "reference_mode", None) or "Single Image"
+		if reference_mode not in ("Single Image", "Multi-reference"):
+			frappe.throw(_("Select Single Image or Multi-reference."))
+		quality_mode = quality_mode or getattr(self, "quality_mode", None) or "Production"
+		if quality_mode not in ("Draft", "Production"):
+			frappe.throw(_("Select Draft or Production quality."))
+		workflow_key = (
+			"h3_r2v_turbo" if reference_mode == "Multi-reference" and quality_mode == "Draft"
+			else "h3_r2v_production" if reference_mode == "Multi-reference"
+			else "h3_i2v_production"
+		)
+		workflow = _get_customer_workflow(workflow_key)
 		self.total_duration_seconds = total_duration_seconds
 		self.delivery_preset = delivery_preset
 		self.generation_mode = generation_mode
+		self.reference_mode = reference_mode
+		self.quality_mode = quality_mode
 		if global_instructions is not None:
 			self.global_instructions = global_instructions
 		self.workflow = workflow.name

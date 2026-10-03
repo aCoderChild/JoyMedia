@@ -21,6 +21,7 @@ from .generation_segment_planner import plan_generation_segments
 from .prompt_compiler import compile_segment_prompt_from_snapshot
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_shot_segments
+from .workflow_profiles import choose_shot_workflow, input_role_for_workflow
 from joymedia.workflow_adapters import get_workflow_adapter
 from .workflow_resolver import (
 	validate_workflow_bindings,
@@ -155,11 +156,25 @@ def prepare_run(run_name: str):
 		previous_shot_tail_job = (
 			execution_scope.get("continuation_from_task") if cross_shot_continuity else None
 		)
+		previous_shot_cumulative = False
 		for shot in shots:
 			shot_name = shot.get("shot")
+			shot_workflow = choose_shot_workflow(snapshot, shot)
+			shot_adapter = get_workflow_adapter(shot_workflow)
+			shot_continuation_workflow = (
+				frappe.get_doc("Generation Workflow", shot_workflow.continuation_workflow)
+				if shot_workflow.continuation_workflow
+				else _get_continuation_workflow_from_adapter(shot_adapter)
+			)
+			shot_cumulative = bool(shot_adapter.cumulative_segment_output)
+			validate_workflow_for_execution(shot_workflow)
+			validate_workflow_bindings(shot_workflow)
+			if shot_continuation_workflow:
+				validate_workflow_for_execution(shot_continuation_workflow)
+				validate_workflow_bindings(shot_continuation_workflow)
 			segments = plan_generation_segments(
 				shot.get("planned_frame_count"),
-				max_segment_frames=workflow.frame_count,
+				max_segment_frames=shot_workflow.frame_count,
 			)
 			previous_segment_job = None
 			for segment in segments:
@@ -177,7 +192,12 @@ def prepare_run(run_name: str):
 					continue
 
 				dependency = previous_segment_job
-				if not dependency and cross_shot_continuity:
+				if (
+					not dependency
+					and cross_shot_continuity
+					and previous_shot_tail_job
+					and (not shot_cumulative or previous_shot_cumulative)
+				):
 					dependency = previous_shot_tail_job
 				prompt_text = compile_segment_prompt_from_snapshot(
 					frappe._dict(
@@ -190,13 +210,13 @@ def prepare_run(run_name: str):
 					len(segments),
 				)
 				segment_workflow = (
-					continuation_workflow
-					if continuation_workflow
+					shot_continuation_workflow
+					if shot_continuation_workflow
 					and (
 						segment["segment_index"] > 1
 						or (dependency and dependency == previous_shot_tail_job)
 					)
-					else workflow
+					else shot_workflow
 				)
 				job = frappe.get_doc(
 					{
@@ -215,7 +235,7 @@ def prepare_run(run_name: str):
 				job.set(
 					"inputs",
 					[
-						{"input_role": reference.get("reference_role"), "asset_version": reference.get("asset_version")}
+						{"input_role": input_role_for_workflow(shot_workflow), "asset_version": reference.get("asset_version")}
 						for reference in shot.get("references") or []
 						if reference.get("reference_role") and reference.get("asset_version")
 					],
@@ -224,13 +244,23 @@ def prepare_run(run_name: str):
 				jobs_to_prepare.append(job)
 				previous_segment_job = job.name
 			previous_shot_tail_job = previous_segment_job if cross_shot_continuity else None
+			previous_shot_cumulative = shot_cumulative
 
 		for job in jobs_to_prepare:
 			shot_snapshot = next(
 				(item for item in shots if item.get("shot") == job.shot),
 				{"references": []},
 			)
-			prepare_generation_task(job.name, shot_snapshot.get("references"))
+			prepare_snapshot = [
+				{
+					**reference,
+					"reference_role": input_role_for_workflow(
+						frappe.get_doc("Generation Workflow", job.workflow)
+					),
+				}
+				for reference in shot_snapshot.get("references") or []
+			]
+			prepare_generation_task(job.name, prepare_snapshot)
 	except Exception as exc:
 		_raise_run_error(run, _exception_message(exc))
 		return _run_summary(run)
