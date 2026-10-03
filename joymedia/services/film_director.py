@@ -26,6 +26,7 @@ PERSON_PATTERN = re.compile(
 	re.I,
 )
 WORD_PATTERN = re.compile(r"[a-z]+")
+PICTURE_TAG_PATTERN = re.compile(r"<Picture\s*(\d+)>", re.I)
 
 MIN_TAKE_SECONDS = 5
 MAX_TAKE_SECONDS = 10
@@ -39,41 +40,49 @@ that follows the character through the supplied places, not a slideshow.
 
 STRUCTURE
 - Plan {min_takes} to {max_takes} long continuous takes of {min_take}-{max_take} seconds each.
+- Each take is ONE unbroken camera shot in ONE place: no cuts, no montage, no
+  second location inside the take.
 - The character appears in EVERY take except an optional final establishing take.
 - Order the places so the film has a clear progression (for example outside to inside,
   public to private, or day to night). End on a wide establishing view of the main place.
-- Every take except the last ends with a transition move that hides the cut to the
-  next take: the camera pushes through a window or doorway, light sweeps across the
-  frame, or a whip pan.
-- Vary wardrobe, performance and camera move between takes; never repeat an action.
+- Every take except the last ends with a camera move that hides the cut to the next
+  take, inside the same place: a push toward a window or doorway, light sweeping
+  across the frame, or a whip pan.
+- The character keeps the outfit shown in <Picture 1> in every take unless the
+  VIDEO IDEA asks for a change. Vary performance and camera move between takes;
+  never repeat an action.
 - Match the look (light, colour grade, mood) to the VIDEO IDEA and GLOBAL INSTRUCTIONS.
   If none is given, use soft natural cinematic light and a gentle filmic grade. Keep
   the same look in every take.
 
 EVERY generation_prompt (English, 60-110 words) states, in this order:
-1. The person from <Picture 1>: wardrobe for this take and their performance.
+1. The person from <Picture 1>: their outfit and their performance in this take.
    Keep their face, hair and body identical to <Picture 1>.
 2. The place from <Picture 2>: keep its exact layout, architecture, furniture and
-   materials.
+   materials. Describe only what its roster line says; if the roster has no
+   description, write just "the place from <Picture 2>" and do not invent its contents.
 3. One clear camera move: slow push-in, rack focus, gentle orbit, dolly, tracking
    shot, crane or drone move.
 4. Light, grade and depth of field.
-5. The transition, if any, then the constraints: photorealistic, smooth stabilized
-   motion, no text, no logos, no extra people, no face or structure deformation.
+5. The transition, if any, then the constraints: one continuous shot with no cuts,
+   photorealistic, smooth stabilized motion, no text, no logos, no extra people, no
+   face or structure deformation.
 
 REFERENCES
 - Every take lists exactly two references: first the character key, then one place
   key. A take without the character lists two place keys that appear in it.
-- Use only the supplied keys.
+- Use only the supplied keys. Keys are names, not picture numbers: in the prompt the
+  character is always <Picture 1> and the place is always <Picture 2>.
 """.strip()
 
 FEW_SHOT_EXAMPLE = (
-	"EXAMPLE generation_prompt: The person from <Picture 1>, wearing a light linen shirt, walks "
+	"EXAMPLE generation_prompt: The person from <Picture 1>, in the outfit from <Picture 1>, walks "
 	"slowly through the place from <Picture 2>, pauses by the window and looks out with a quiet "
 	"smile. Keep their face and hair identical to <Picture 1> and the exact layout and materials "
 	"of <Picture 2>. Slow dolly-in at eye level. Soft morning light, natural filmic grade, shallow "
 	"depth of field. The take ends as the camera pushes through the window into bright light. "
-	"Photorealistic, smooth stabilized motion, no text, no logos, no deformation."
+	"One continuous shot with no cuts, photorealistic, smooth stabilized motion, no text, no "
+	"logos, no deformation."
 )
 
 
@@ -213,7 +222,15 @@ def normalize_story_references(shots, reference_contexts, reference_role):
 				if len(places) > 1 else character_key
 			ordered = [others[0] if others else fallback, best_place]
 		shot["references"] = [{"reference_key": key, "usage_role": reference_role} for key in ordered]
+		shot["generation_prompt"] = _clamp_picture_tags(prompt, len(ordered))
 	return shots
+
+
+def _clamp_picture_tags(prompt, reference_count):
+	"""Point tags beyond the images actually sent (e.g. a planner's <Picture 4>) at the last one."""
+	return PICTURE_TAG_PATTERN.sub(
+		lambda match: f"<Picture {min(max(int(match.group(1)), 1), reference_count)}>", prompt
+	)
 
 
 def _best_matching_place(prompt, places):
@@ -259,6 +276,11 @@ def reference_preamble(shot_reference_versions, project_references):
 	return " ".join(parts)
 
 
+def describe_reference_tags(prompt):
+	"""Replace <Picture N> tags for continuation workflows, which see only the earlier frames."""
+	return PICTURE_TAG_PATTERN.sub("the earlier frames", prompt)
+
+
 def _asset_version_context(asset_version, project_reference):
 	"""Build the classify_reference input for an Asset Version from the database."""
 	version = frappe.db.get_value(
@@ -285,9 +307,11 @@ def _roster_line(context):
 	analysis = context.get("analysis") if isinstance(context.get("analysis"), dict) else {}
 	description = str(analysis.get("description") or "").strip()
 	if not description:
-		description = " ".join(
-			part for part in (context.get("label"), context.get("asset_name")) if part
-		).strip()
+		name = " ".join(part for part in (context.get("label"), context.get("asset_name")) if part).strip()
+		# A bare file name such as "3" says nothing about the picture; say so, so the
+		# planner does not guess what the place looks like.
+		description = name if WORD_PATTERN.search(name.lower()) else ""
+		description = f"{description} (no visual description available)".strip()
 	if isinstance(analysis.get("outfit"), str) and analysis["outfit"].strip():
 		description += f"; outfit: {analysis['outfit'].strip()}"
 	return f"- key={context['reference_key']}: {description[:220]}"

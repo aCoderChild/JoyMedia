@@ -4,7 +4,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services import film_director, qwen_client, vision_analysis
-from joymedia.services.prompt_compiler import _reference_preamble_from_snapshot
+from joymedia.services.prompt_compiler import compile_segment_prompt_from_snapshot
 
 
 R2V_CONTRACT = [{
@@ -77,6 +77,27 @@ class TestFilmDirector(FrappeTestCase):
 		film_director.normalize_story_references(shots, REFERENCES, "product_reference")
 
 		self.assertEqual(["bedroom", "tower"], [ref["reference_key"] for ref in shots[0]["references"]])
+
+	def test_tags_beyond_the_sent_images_point_at_the_place(self):
+		# Planners confuse place keys named "3"/"4" with picture numbers.
+		shots = [{"generation_prompt": "The person from <Picture 1> walks through the place from <Picture 4>.",
+		          "references": [{"reference_key": "model"}, {"reference_key": "bedroom"}]}]
+
+		film_director.normalize_story_references(shots, REFERENCES, "product_reference")
+
+		self.assertEqual(
+			"The person from <Picture 1> walks through the place from <Picture 2>.",
+			shots[0]["generation_prompt"],
+		)
+
+	def test_roster_flags_images_without_a_description(self):
+		references = [
+			{"reference_key": "3", "media_type": "Image", "asset_category": "Background", "asset_name": "3"},
+			{"reference_key": "lobby", "media_type": "Image", "asset_category": "Background", "asset_name": "lobby"},
+		]
+
+		self.assertEqual("- key=3: (no visual description available)", film_director._roster_line(references[0]))
+		self.assertEqual("- key=lobby: lobby (no visual description available)", film_director._roster_line(references[1]))
 
 	def test_director_instruction_lists_roster_and_role(self):
 		instruction = film_director.build_director_instruction(REFERENCES, "product_reference", 25)
@@ -188,9 +209,10 @@ class TestFilmDirector(FrappeTestCase):
 		):
 			self.assertEqual(3000, qwen_client._completion_budget("http://qwen/v1", payload))
 
-	def test_reference_preamble_names_pictures_in_binding_order(self):
-		snapshot = {
-			"reference_mode": "Multi-reference",
+	def _snapshot(self, reference_mode="Multi-reference"):
+		return frappe._dict({
+			"reference_mode": reference_mode,
+			"global_instructions": "Tour the tower, the pool and the lobby.",
 			"references": [
 				{"asset_version": "AV-MODEL", "reference_role": "Character", "label": ""},
 				{"asset_version": "AV-ROOM", "reference_role": "Environment", "label": "bedroom"},
@@ -199,8 +221,11 @@ class TestFilmDirector(FrappeTestCase):
 				{"reference_role": "product_reference", "asset_version": "AV-MODEL"},
 				{"reference_role": "product_reference", "asset_version": "AV-ROOM"},
 			]}],
-		}
+		})
 
+	def _compile(self, snapshot, segment_index=1, segment_count=1):
+		shot = frappe._dict(name="SHOT-1", shot_number=1,
+		                    generation_prompt="The person from <Picture 1> rests in the place from <Picture 2>.")
 		with patch.object(
 			film_director,
 			"_asset_version_context",
@@ -208,11 +233,29 @@ class TestFilmDirector(FrappeTestCase):
 				"media_type": "Image", "reference_role": reference.get("reference_role"), "analysis": {},
 			},
 		):
-			preamble = _reference_preamble_from_snapshot(frappe._dict(name="SHOT-1"), snapshot)
+			return compile_segment_prompt_from_snapshot(shot, snapshot, segment_index, segment_count)
 
-		self.assertTrue(preamble.startswith("<Picture 1> is the main character"))
-		self.assertIn("<Picture 2> is the location (bedroom)", preamble)
+	def test_reference_take_prompt_names_pictures_and_skips_the_film_brief(self):
+		prompt = self._compile(self._snapshot())
 
+		self.assertTrue(prompt.startswith("<Picture 1> is the main character"))
+		self.assertIn("<Picture 2> is the location (bedroom)", prompt)
+		# The planner already used the brief; repeating it turns one take into a montage.
+		self.assertNotIn("Tour the tower", prompt)
+
+	def test_continuation_prompt_has_no_picture_tags(self):
+		prompt = self._compile(self._snapshot(), segment_index=2, segment_count=2)
+
+		self.assertNotIn("<Picture", prompt)
+		self.assertIn("The person from the earlier frames rests in the place from the earlier frames.", prompt)
+
+	def test_single_image_prompt_keeps_global_instructions(self):
+		prompt = self._compile(self._snapshot("Single Image"))
+
+		self.assertNotIn("is the main character", prompt)
+		self.assertIn("Tour the tower", prompt)
+
+	def test_product_reference_preamble(self):
 		with patch.object(
 			film_director,
 			"_asset_version_context",
@@ -222,10 +265,14 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertEqual(
 			"<Picture 1> is a reference subject: keep its shape, colours and details exactly.", product_preamble
 		)
-		self.assertIn("<Picture 2> is the location (bedroom)", preamble)
-		self.assertEqual("", _reference_preamble_from_snapshot(
-			frappe._dict(name="SHOT-1"), {**snapshot, "reference_mode": "Single Image"}
-		))
+
+	def test_reference_to_video_renders_a_ten_second_take_in_one_pass(self):
+		from joymedia.workflow_adapters.minimax_h3_profiles import MiniMaxH3ReferenceToVideoAdapter
+
+		metadata = MiniMaxH3ReferenceToVideoAdapter.__new__(MiniMaxH3ReferenceToVideoAdapter).extract_execution_metadata({})
+		self.assertGreaterEqual(metadata["frame_count"], film_director.MAX_TAKE_SECONDS * 24)
+		self.assertLessEqual(metadata["frame_count"], 362)
+		self.assertEqual(5, metadata["frame_count"] % 17)
 
 
 class TestRoleInputCount(FrappeTestCase):

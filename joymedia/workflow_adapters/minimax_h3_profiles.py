@@ -7,6 +7,8 @@ H3_PROFILE_DEFAULTS = {
 	"produces_video": 1,
 	"produces_audio": 1,
 }
+# 10 s at 24 fps, snapped up to the model's 17k+5 frame grid.
+R2V_MAX_FRAMES = 243
 
 
 class MiniMaxH3ImageToVideoAdapter(GenericWorkflowAdapter):
@@ -44,7 +46,9 @@ class MiniMaxH3ReferenceToVideoAdapter(GenericWorkflowAdapter):
 	continuation_overlap_frames = 22
 
 	def extract_execution_metadata(self, workflow_data):
-		return dict(H3_PROFILE_DEFAULTS)
+		# Reference-to-Video is trained on ~124-362 frames. Rendering a whole 10 s
+		# take in one pass keeps both references; continuations see neither.
+		return {**H3_PROFILE_DEFAULTS, "frame_count": R2V_MAX_FRAMES}
 
 	def prepare_execution(
 		self,
