@@ -5,6 +5,7 @@ import frappe
 
 from joymedia.joymedia.doctype.timeline_clip.timeline_clip import (
 	_restore_pristine_generated_shot_order,
+	_validate_video_transition,
 )
 
 
@@ -100,3 +101,76 @@ class TestGeneratedTimelineOrdering(TestCase):
 			_restore_pristine_generated_shot_order("PRJ-00001")
 
 		set_value.assert_not_called()
+
+
+class TestVideoTransitionValidation(TestCase):
+	def test_last_video_clip_forces_cut(self):
+		clip = frappe._dict(
+			name="TLCLIP-3",
+			media_project="PRJ-00001",
+			track_type="Video",
+			enabled=1,
+			clip_order=3,
+			source_in_frame=0,
+			source_out_frame=120,
+			transition_to_next="Dissolve",
+			transition_frames=12,
+		)
+		with patch(
+			"joymedia.joymedia.doctype.timeline_clip.timeline_clip.frappe.db.get_value",
+			return_value=None,
+		):
+			_validate_video_transition(clip)
+
+		self.assertEqual(clip.transition_to_next, "Cut")
+		self.assertEqual(clip.transition_frames, 0)
+
+	def test_transition_length_uses_next_video_clip(self):
+		clip = frappe._dict(
+			name="TLCLIP-1",
+			media_project="PRJ-00001",
+			track_type="Video",
+			enabled=1,
+			clip_order=1,
+			source_in_frame=0,
+			source_out_frame=120,
+			transition_to_next="Dissolve",
+			transition_frames=30,
+		)
+		next_video = frappe._dict(source_in_frame=0, source_out_frame=24)
+		with (
+			patch(
+				"joymedia.joymedia.doctype.timeline_clip.timeline_clip.frappe.db.get_value",
+				return_value=next_video,
+			),
+			patch(
+				"joymedia.joymedia.doctype.timeline_clip.timeline_clip.frappe.throw",
+				side_effect=ValueError("invalid transition"),
+			) as throw,
+			self.assertRaises(ValueError),
+		):
+			_validate_video_transition(clip)
+
+		throw.assert_called_once()
+
+	def test_valid_transition_is_preserved(self):
+		clip = frappe._dict(
+			name="TLCLIP-1",
+			media_project="PRJ-00001",
+			track_type="Video",
+			enabled=1,
+			clip_order=1,
+			source_in_frame=0,
+			source_out_frame=120,
+			transition_to_next="Fade",
+			transition_frames=20,
+		)
+		next_video = frappe._dict(source_in_frame=0, source_out_frame=60)
+		with patch(
+			"joymedia.joymedia.doctype.timeline_clip.timeline_clip.frappe.db.get_value",
+			return_value=next_video,
+		):
+			_validate_video_transition(clip)
+
+		self.assertEqual(clip.transition_to_next, "Fade")
+		self.assertEqual(clip.transition_frames, 20)
