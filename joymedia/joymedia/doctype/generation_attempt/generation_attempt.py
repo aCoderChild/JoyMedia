@@ -134,11 +134,11 @@ def create_manual_regeneration_attempt_internal(
 
 
 def _invalidate_manual_regeneration_outputs(job):
-	"""Invalidate composed outputs before a completed Job is regenerated.
+	"""Invalidate generation completion and any explicit project export before rerolling.
 
-	A manual reroll replaces part of the effective execution lineage. The old
-	Run-level final video and project export are therefore stale even though
-	their immutable Asset Versions remain available as history.
+	A manual reroll replaces part of the effective execution lineage. Generated
+	Shot outputs are re-materialized by the run, while a previously exported
+	project video becomes stale until the user exports the edited timeline again.
 	"""
 	if not job.generation_run:
 		return
@@ -148,7 +148,6 @@ def _invalidate_manual_regeneration_outputs(job):
 		"Generation Run",
 		run.name,
 		{
-			"final_asset_version": None,
 			"completed_at": None,
 			"failure_class": None,
 			"error_summary": None,
