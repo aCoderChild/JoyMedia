@@ -20,12 +20,14 @@ DEFAULT_TIMEOUT = 120
 VALID_KINDS = {"person", "place", "product", "other"}
 
 ANALYSIS_PROMPT = """
-Describe this reference image for a video director. Return only JSON:
+Describe this reference image for a video director who cannot see it. Return only JSON:
 {"kind": "person|place|product|other",
  "scene_type": "exterior|interior|amenity|landscape|portrait|product|other",
- "description": "one sentence, at most 30 words, of what is visible",
- "outfit": "for a person: clothing and hair, otherwise empty",
+ "description": "at most 45 words of concrete visible details: layout, architecture, materials, furniture, colours, and what is seen through any windows",
+ "outfit": "for a person: the exact garment type (name traditional dress such as a Vietnamese ao dai), colour, hair; otherwise empty",
  "lighting": "a few words"}
+Rules: describe only what is visible, never guess. kind is "person" when a person is the main subject,
+"place" for buildings, rooms and outdoor areas even if small people appear.
 """.strip()
 
 
@@ -100,7 +102,7 @@ def describe_image(data_url):
 		],
 		"response_format": {"type": "json_object"},
 		"temperature": 0.1,
-		"max_tokens": 300,
+		"max_tokens": 400,
 	}
 	timeout = float(frappe.conf.get("qwen_vl_timeout") or DEFAULT_TIMEOUT)
 	response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
@@ -116,7 +118,7 @@ def normalize_analysis(result):
 	return {
 		"kind": kind if kind in VALID_KINDS else "other",
 		"scene_type": str(result.get("scene_type") or "").strip().lower()[:40],
-		"description": str(result.get("description") or "").strip()[:300],
+		"description": str(result.get("description") or "").strip()[:400],
 		"outfit": str(result.get("outfit") or "").strip()[:200],
 		"lighting": str(result.get("lighting") or "").strip()[:100],
 	}

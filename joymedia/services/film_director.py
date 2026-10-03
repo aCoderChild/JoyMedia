@@ -384,5 +384,5 @@ def _roster_line(context):
 		description = name if WORD_PATTERN.search(name.lower()) else "(no visual description available)"
 	if isinstance(analysis.get("outfit"), str) and analysis["outfit"].strip():
 		description += f"; outfit: {analysis['outfit'].strip()}"
-	return f"- key={context['reference_key']}: {description[:220]}"
+	return f"- key={context['reference_key']}: {description[:320]}"
 
