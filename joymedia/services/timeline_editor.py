@@ -330,6 +330,34 @@ def delete_timeline_clip(project_name: str, clip_name: str):
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
 
 
+@frappe.whitelist()
+def fit_audio_clip_to_video(project_name: str, clip_name: str):
+	project, clip = _project_clip(project_name, clip_name)
+	if clip.track_type != "Audio":
+		frappe.throw(_("This is not an audio clip."))
+	fps = _project_fps(project.name)
+	source_total_frames = _source_max_frames(clip.source_asset_version, fps)
+	if not source_total_frames:
+		frappe.throw(_("Unable to determine source audio duration."))
+
+	start_frame = int(clip.timeline_start_frame or 0)
+	source_in_frame = int(clip.source_in_frame or 0)
+	video_end_frame = _visual_timeline_end_frame(project.name)
+	available_frames = video_end_frame - start_frame
+	if available_frames <= 0:
+		frappe.throw(_("Audio must start before the video ends."))
+	if source_in_frame >= source_total_frames:
+		frappe.throw(_("The audio source start is beyond the source duration."))
+
+	clip.source_out_frame = min(source_total_frames, source_in_frame + available_frames)
+	if clip.source_out_frame <= source_in_frame:
+		frappe.throw(_("The audio clip has no usable duration."))
+	clip.save(ignore_permissions=True)
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
 def _remove_shot_timeline_clips(project_name, shot_name):
 	"""Remove the current editorial representation of a Shot and close gaps."""
 	clips = frappe.get_all(
