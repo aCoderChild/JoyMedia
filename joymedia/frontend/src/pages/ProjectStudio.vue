@@ -231,11 +231,12 @@
             :current-lang="currentLang"
             @select-clip="onSelectClip"
             @update:playhead-frame="onSeekPlayhead"
-            @trim="trimClip"
-            @split="splitClip"
+            @trim="handleTrimClip"
+            @split="handleSplitClip"
             @duplicate="duplicateClip"
             @delete="deleteClip"
-            @reorder="reorderClip"
+            @reorder="handleReorderClip"
+            @move="handleMoveClip"
             @select-transition="setTransition"
             @open-inspector="openClipInspector"
             @open-audio-picker="openAudioPicker"
@@ -460,6 +461,7 @@ const {
   setTransition,
   updateSourceForShot,
   updateAudioClip,
+  moveClip,
   addAudioClip,
   exportTimeline,
 } = useProjectTimeline(projectName);
@@ -1081,6 +1083,26 @@ function onClipTransitionFramesChange(frames) {
 function splitClipAtPlayhead() {
   if (!selectedClip.value) return;
   splitClip(selectedClip.value, playheadFrame.value);
+}
+
+function handleSplitClip({ clip, sourceSplitFrame }) {
+  if (!clip || sourceSplitFrame == null) return;
+  return splitClip(clip, sourceSplitFrame);
+}
+
+function handleTrimClip({ clip, sourceInFrame, sourceOutFrame }) {
+  if (!clip || sourceInFrame == null || sourceOutFrame == null) return;
+  return trimClip(clip, sourceInFrame, sourceOutFrame);
+}
+
+function handleReorderClip({ clip, targetOrder }) {
+  if (!clip || targetOrder == null) return;
+  return reorderClip(clip, targetOrder);
+}
+
+function handleMoveClip({ clip, timelineStartFrame, trackIndex = null }) {
+  if (!clip || timelineStartFrame == null) return;
+  return moveClip(clip, timelineStartFrame, trackIndex);
 }
 
 function onUpdateSourceForClip() {

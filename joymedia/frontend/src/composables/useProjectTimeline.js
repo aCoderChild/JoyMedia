@@ -255,6 +255,18 @@ export function useProjectTimeline(projectName) {
     );
   }
 
+  function moveClip(clip, timelineStartFrame, trackIndex = null) {
+    return mutate(
+      "move_timeline_clip",
+      {
+        clip_name: clip.name,
+        timeline_start_frame: timelineStartFrame,
+        track_index: trackIndex,
+      },
+      clip.name,
+    );
+  }
+
   function addAudioClip(assetVersionName, timelineStartFrame = 0, audioRole = "BGM") {
     return mutate(
       "add_timeline_audio_clip",
@@ -298,6 +310,7 @@ export function useProjectTimeline(projectName) {
     resetClip,
     updateSourceForShot,
     updateAudioClip,
+    moveClip,
     addAudioClip,
     exportTimeline,
     stopExportPolling,

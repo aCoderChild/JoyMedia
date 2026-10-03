@@ -35,6 +35,7 @@
           <EditTimelineTrack
             ref="visualTrack"
             :clips="activeVideoClips"
+            :all-clips="clips"
             :fps="fps"
             :selected-clip-name="selectedClipName"
             :playhead-frame="playheadFrame"
@@ -64,6 +65,7 @@
         :current-lang="currentLang"
         @select-clip="forwardSelectClip"
         @open-inspector="forwardOpenInspector"
+        @move="$emit('move', $event)"
         @open-audio-picker="$emit('openAudioPicker')"
       />
 
@@ -108,6 +110,7 @@ const emit = defineEmits([
   "duplicate",
   "delete",
   "reorder",
+  "move",
   "selectTransition",
   "openInspector",
   "openAudioPicker",

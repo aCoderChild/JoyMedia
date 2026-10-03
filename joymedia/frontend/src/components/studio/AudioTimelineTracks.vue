@@ -31,6 +31,7 @@
                 ]"
                 :style="clipStyle(clip)"
                 :title="clip.source_asset_name || clipLabel(clip)"
+                @pointerdown="startMove(clip, $event)"
                 @click="$emit('selectClip', clip)"
                 @dblclick.stop="$emit('openInspector', clip)"
               >
@@ -61,7 +62,7 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import AudioWaveform from "./AudioWaveform.vue";
 
 const props = defineProps({
@@ -74,7 +75,9 @@ const props = defineProps({
   currentLang: { type: String, default: "en" },
 });
 
-defineEmits(["selectClip", "openInspector", "openAudioPicker"]);
+const emit = defineEmits(["selectClip", "openInspector", "openAudioPicker", "move"]);
+
+const moveDrag = ref(null);
 
 const audioTracks = computed(() => {
   const groups = new Map();
@@ -107,4 +110,41 @@ function audioRoleLabel(role) {
   if (role === "SFX") return props.currentLang === "vi" ? "HIỆU ỨNG" : "SFX";
   return props.currentLang === "vi" ? "NHẠC" : "MUSIC";
 }
+
+function startMove(clip, event) {
+  if (clip.audio_role === "Source") return;
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  moveDrag.value = {
+    clip,
+    startX: event.clientX,
+    originalStart: Number(clip.timeline_start_frame || 0),
+  };
+  window.addEventListener("pointermove", handleMove);
+  window.addEventListener("pointerup", finishMove);
+}
+
+function handleMove(event) {
+  if (!moveDrag.value) return;
+  const delta = Math.round((event.clientX - moveDrag.value.startX) / props.pixelsPerFrame);
+  moveDrag.value.nextStart = Math.max(0, moveDrag.value.originalStart + delta);
+}
+
+function finishMove() {
+  const drag = moveDrag.value;
+  moveDrag.value = null;
+  window.removeEventListener("pointermove", handleMove);
+  window.removeEventListener("pointerup", finishMove);
+  if (drag && drag.nextStart != null && drag.nextStart !== drag.originalStart) {
+    emit("move", {
+      clip: drag.clip,
+      timelineStartFrame: drag.nextStart,
+      trackIndex: drag.clip.track_index,
+    });
+  }
+}
+
+onBeforeUnmount(() => {
+  window.removeEventListener("pointermove", handleMove);
+  window.removeEventListener("pointerup", finishMove);
+});
 </script>

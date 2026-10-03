@@ -163,6 +163,7 @@ import { useI18n } from "../../stores/i18n";
 
 const props = defineProps({
   clips: { type: Array, default: () => [] },
+  allClips: { type: Array, default: () => [] },
   fps: { type: Number, default: 24 },
   selectedClipName: { type: String, default: null },
   playheadFrame: { type: Number, default: 0 },
@@ -192,11 +193,11 @@ const trimDrag = ref(null);
 
 const activeFps = computed(() => Number(props.fps || 24));
 const selectedClip = computed(() =>
-  props.clips.find((clip) => clip.name === props.selectedClipName) || props.clips[0] || null
+  props.allClips.find((clip) => clip.name === props.selectedClipName) || null
 );
 
 const activeClip = computed(() =>
-  props.clips.find(
+  props.allClips.find(
     (clip) =>
       props.playheadFrame > clip.timeline_start_frame &&
       props.playheadFrame < clip.timeline_end_frame
@@ -310,7 +311,7 @@ function onDrop(targetIndex) {
   if (!name) return;
   const clip = props.clips.find((item) => item.name === name);
   if (!clip) return;
-  emit("reorder", clip, targetIndex + 1);
+  emit("reorder", { clip, targetOrder: targetIndex + 1 });
 }
 
 function splitAtPlayhead() {
@@ -318,7 +319,7 @@ function splitAtPlayhead() {
   if (!clip) return;
   const local = Math.max(1, Math.min(clip.duration_frames - 1, props.playheadFrame - clip.timeline_start_frame));
   const splitSourceFrame = clip.source_in_frame + local;
-  emit("split", clip, splitSourceFrame);
+  emit("split", { clip, sourceSplitFrame: splitSourceFrame });
 }
 
 function duplicateSelected() {
@@ -412,7 +413,11 @@ function finishTrim() {
   if (drag.currentIn === drag.originalIn && drag.currentOut === drag.originalOut) {
     return;
   }
-  emit("trim", clip, drag.currentIn, drag.currentOut);
+  emit("trim", {
+    clip,
+    sourceInFrame: drag.currentIn,
+    sourceOutFrame: drag.currentOut,
+  });
 }
 
 onBeforeUnmount(() => {

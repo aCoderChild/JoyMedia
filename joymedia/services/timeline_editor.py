@@ -112,6 +112,8 @@ def trim_timeline_clip(project_name: str, clip_name: str, source_in_frame, sourc
 	clip.source_out_frame = end
 	clip.save(ignore_permissions=True)
 	_sync_linked_audio_clip(clip)
+	if clip.track_type == "Video":
+		_reflow_video_track(project.name)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
@@ -141,6 +143,8 @@ def reorder_timeline_clip(project_name: str, clip_name: str, target_order):
 		ordered = [row for row in clips if row.name != clip.name]
 		ordered.insert(target - 1, next(row for row in clips if row.name == clip.name))
 		_set_clip_order(ordered)
+	if clip.track_type == "Video":
+		_reflow_video_track(project.name)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
@@ -220,6 +224,7 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 				"transition_frames": 0,
 			}
 		).insert(ignore_permissions=True)
+	_reflow_video_track(project.name)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
@@ -290,6 +295,8 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 	clip.transition_to_next = "Cut"
 	clip.transition_frames = 0
 	clip.save(ignore_permissions=True)
+	if clip.track_type == "Video":
+		_reflow_video_track(project.name)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
@@ -1056,6 +1063,9 @@ def add_timeline_audio_clip(
 	project = frappe.get_doc("Media Project", project_name)
 	_require_project_write(project)
 	asset_version = frappe.get_doc("Asset Version", asset_version_name)
+	media_asset = frappe.get_doc("Media Asset", asset_version.media_asset)
+	if media_asset.media_type != "Audio":
+		frappe.throw(_("Only Audio assets can be added to an audio track."))
 	fps = _project_fps(project.name)
 	duration = float(asset_version.duration_seconds or 0)
 	source_out = max(1, round(duration * fps)) if duration > 0 else max(1, round(10.0 * fps))
