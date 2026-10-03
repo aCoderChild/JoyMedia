@@ -249,6 +249,7 @@
             @add-scene="openAddScenePopover"
             @undo="undo"
             @redo="redo"
+            @set-audio-clip-enabled="onSetAudioClipEnabled"
           />
         </template>
       </div>
@@ -285,6 +286,8 @@
       @fit-audio-clip-to-video="onFitAudioClipToVideo"
       @fit-audio-clip-to-full-video="onFitAudioClipToFullVideo"
       @set-source-audio-enabled="onSetSourceAudioEnabled"
+      @use-full-audio-source="onUseFullAudioSource"
+      @set-audio-clip-enabled="onSetAudioClipEnabled"
       @update-source-for-selected-clip="onUpdateSourceForClip"
       @regenerate-source-for-selected-clip="onRegenerateSourceForClip"
       @apply-asset-to-shot="applyAssetToShot"
@@ -475,6 +478,8 @@ const {
   updateAudioClip,
   fitAudioClipToVideo,
   fitAudioClipToFullVideo,
+  useFullAudioSource,
+  setAudioClipEnabled,
   setSourceAudioEnabled,
   canUndo,
   canRedo,
@@ -597,6 +602,14 @@ async function onFitAudioClipToFullVideo(clip) {
 async function onSetSourceAudioEnabled(clip, enabled) {
   const videoClip = videoClips.value.find((item) => item.name === clip.linked_video_clip);
   if (videoClip) await setSourceAudioEnabled(videoClip, enabled);
+}
+
+async function onUseFullAudioSource(clip) {
+  await useFullAudioSource(clip);
+}
+
+async function onSetAudioClipEnabled(clip, enabled) {
+  await setAudioClipEnabled(clip, enabled);
 }
 
 async function handleSelectReference({ asset, role }) {

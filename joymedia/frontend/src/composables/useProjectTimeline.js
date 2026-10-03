@@ -356,6 +356,22 @@ export function useProjectTimeline(projectName) {
     );
   }
 
+  function useFullAudioSource(clip) {
+    return mutate(
+      "use_full_audio_source",
+      { clip_name: clip.name },
+      clip.name,
+    );
+  }
+
+  function setAudioClipEnabled(clip, enabled) {
+    return mutate(
+      "set_audio_clip_enabled",
+      { clip_name: clip.name, enabled },
+      clip.name,
+    );
+  }
+
   function setSourceAudioEnabled(videoClip, enabled) {
     return mutate(
       "set_source_audio_enabled",
@@ -425,6 +441,8 @@ export function useProjectTimeline(projectName) {
     updateAudioClip,
     fitAudioClipToVideo,
     fitAudioClipToFullVideo,
+    useFullAudioSource,
+    setAudioClipEnabled,
     setSourceAudioEnabled,
     undo,
     redo,

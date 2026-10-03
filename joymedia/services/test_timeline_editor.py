@@ -16,7 +16,9 @@ from joymedia.services.timeline_editor import (
 	reset_timeline_clip,
 	set_timeline_transition,
 	set_source_audio_enabled,
+	set_audio_clip_enabled,
 	restore_timeline_state,
+	use_full_audio_source,
 	split_timeline_clip,
 	sync_timeline_source_for_shot,
 	trim_timeline_clip,
@@ -176,6 +178,14 @@ class TestTimelineEditor(FrappeTestCase):
 		audio_clip.reload()
 		self.assertEqual(audio_clip.timeline_start_frame, 0)
 		self.assertEqual(audio_clip.source_out_frame, 96)
+
+		result = set_audio_clip_enabled(self.project.name, audio_clip.name, False)
+		added = next(clip for clip in result["clips"] if clip["name"] == audio_clip.name)
+		self.assertFalse(added["enabled"])
+		use_full_audio_source(self.project.name, audio_clip.name)
+		audio_clip.reload()
+		self.assertEqual((audio_clip.source_in_frame, audio_clip.source_out_frame), (0, 96))
+		self.assertFalse(audio_clip.enabled)
 
 	def test_new_audio_clip_keeps_source_duration_beyond_video_end(self):
 		audio_asset = frappe.get_doc({

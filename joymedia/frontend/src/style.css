@@ -2761,6 +2761,35 @@ h2 {
   text-align: left;
 }
 
+.audio-timeline-clip.disabled {
+  opacity: .45;
+  filter: grayscale(.5);
+}
+
+.audio-disabled-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgb(15 23 42 / 22%);
+  color: var(--ink-primary);
+  font-size: 9px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.audio-enable-action {
+  padding: 2px 5px;
+  border: 1px solid var(--outline-border);
+  border-radius: 5px;
+  background: var(--surface-card);
+  color: var(--indigo-500, #6366f1);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
 .audio-timeline-clip {
   cursor: pointer;
 }

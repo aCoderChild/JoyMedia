@@ -22,12 +22,12 @@
             </div>
             <template v-for="clip in track.clips" :key="clip.name">
               <button
-                v-if="clip.enabled && !clip.is_silent_source && (clip.audio_role !== 'Source' || clip.source_has_audio)"
+                v-if="!clip.is_silent_source && (clip.audio_role !== 'Source' || clip.source_has_audio)"
                 type="button"
                 class="audio-timeline-clip"
                 :class="[
                   clip.audio_role === 'Source' ? 'audio-timeline-source-clip' : 'audio-timeline-user-clip',
-                  { selected: selectedClipName === clip.name }
+                  { selected: selectedClipName === clip.name, disabled: !clip.enabled }
                 ]"
                 :style="clipStyle(clip)"
                 :title="clip.source_asset_name || clipLabel(clip)"
@@ -55,9 +55,21 @@
                   @pointerdown.stop="startTrim(clip, 'right', $event)"
                 />
                 <span v-if="clip.audio_role !== 'Source'" class="audio-role-badge">{{ audioRoleLabel(clip.audio_role) }}</span>
+                <span v-if="!clip.enabled" class="audio-disabled-overlay">
+                  <span>{{ clip.audio_role === 'Source' ? (currentLang === 'vi' ? 'Đã xóa audio nguồn' : 'Source audio removed') : (currentLang === 'vi' ? 'Đã tắt' : 'Disabled') }}</span>
+                  <span
+                    class="audio-enable-action"
+                    role="button"
+                    tabindex="0"
+                    @click.stop="$emit('setAudioClipEnabled', clip, true)"
+                    @keydown.enter.stop="$emit('setAudioClipEnabled', clip, true)"
+                  >
+                    {{ currentLang === 'vi' ? 'Bật lại' : 'Enable' }}
+                  </span>
+                </span>
               </button>
               <div
-                v-else
+                v-else-if="clip.is_silent_source || (clip.audio_role === 'Source' && !clip.source_has_audio)"
                 class="audio-timeline-empty-segment"
                 :style="clipStyle(clip)"
                 @click="$emit('selectClip', clip)"
@@ -99,7 +111,14 @@ const props = defineProps({
   currentLang: { type: String, default: "en" },
 });
 
-const emit = defineEmits(["selectClip", "openInspector", "openAudioPicker", "move", "trim"]);
+const emit = defineEmits([
+  "selectClip",
+  "openInspector",
+  "openAudioPicker",
+  "move",
+  "trim",
+  "setAudioClipEnabled",
+]);
 
 const moveDrag = ref(null);
 const trimDrag = ref(null);
@@ -149,7 +168,7 @@ function audioRoleLabel(role) {
 }
 
 function startMove(clip, event) {
-  if (clip.audio_role === "Source") return;
+  if (clip.audio_role === "Source" || !clip.enabled) return;
   event.currentTarget.setPointerCapture?.(event.pointerId);
   moveDrag.value = {
     clip,
@@ -181,6 +200,7 @@ function finishMove() {
 }
 
 function startTrim(clip, edge, event) {
+  if (!clip.enabled) return;
   event.currentTarget.setPointerCapture?.(event.pointerId);
   trimDrag.value = {
     clip,

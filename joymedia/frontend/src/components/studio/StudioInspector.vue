@@ -77,6 +77,16 @@
             {{ currentLang === 'vi' ? (selectedClip.audio_role === 'BGM' ? 'Khớp nhạc với toàn bộ video' : 'Khớp audio với video') : (selectedClip.audio_role === 'BGM' ? 'Fit BGM to Full Video' : 'Fit Audio to Remaining Video') }}
           </button>
 
+          <button
+            v-if="selectedClip.audio_role !== 'Source'"
+            type="button"
+            class="w-full py-1.5 px-2 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-secondary border border-outline-border text-xs font-semibold cursor-pointer"
+            :disabled="timelineBusy"
+            @click="$emit('useFullAudioSource', selectedClip)"
+          >
+            {{ currentLang === 'vi' ? 'Dùng toàn bộ audio nguồn' : 'Use Full Source' }}
+          </button>
+
           <!-- Audio Role -->
           <div class="space-y-1.5 pt-1">
             <label class="block text-[11px] font-semibold text-ink-secondary">
@@ -142,6 +152,14 @@
           <!-- Delete Audio Clip -->
           <div class="pt-2 border-t border-outline-border">
             <template v-if="selectedClip.audio_role !== 'Source'">
+            <button
+              type="button"
+              class="w-full mb-1.5 py-1.5 px-2 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-secondary border border-outline-border text-xs font-semibold cursor-pointer"
+              :disabled="timelineBusy"
+              @click="$emit('setAudioClipEnabled', selectedClip, !selectedClip.enabled)"
+            >
+              {{ selectedClip.enabled ? (currentLang === 'vi' ? 'Tắt audio clip' : 'Disable Audio Clip') : (currentLang === 'vi' ? 'Bật audio clip' : 'Enable Audio Clip') }}
+            </button>
             <button
               type="button"
               class="w-full py-1.5 px-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
@@ -548,6 +566,8 @@ const emit = defineEmits([
   "updateAudioClip",
   "fitAudioClipToVideo",
   "fitAudioClipToFullVideo",
+  "useFullAudioSource",
+  "setAudioClipEnabled",
   "setSourceAudioEnabled",
   "updateSourceForSelectedClip",
   "regenerateSourceForSelectedClip",

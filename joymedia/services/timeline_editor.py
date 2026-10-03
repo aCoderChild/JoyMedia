@@ -364,6 +364,18 @@ def set_source_audio_enabled(project_name: str, video_clip_name: str, enabled):
 
 
 @frappe.whitelist()
+def set_audio_clip_enabled(project_name: str, clip_name: str, enabled):
+	project, clip = _project_clip(project_name, clip_name)
+	if clip.track_type != "Audio":
+		frappe.throw(_("This is not an audio clip."))
+	clip.enabled = 1 if _as_bool(enabled) else 0
+	clip.save(ignore_permissions=True)
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
+@frappe.whitelist()
 def restore_timeline_state(project_name: str, state_json):
 	project = frappe.get_doc("Media Project", project_name)
 	_require_project_write(project)
@@ -459,6 +471,26 @@ def fit_audio_clip_to_full_video(project_name: str, clip_name: str):
 
 	clip.timeline_start_frame = 0
 	clip.source_out_frame = source_in_frame + usable_frames
+	clip.save(ignore_permissions=True)
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
+@frappe.whitelist()
+def use_full_audio_source(project_name: str, clip_name: str):
+	project, clip = _project_clip(project_name, clip_name)
+	if clip.track_type != "Audio":
+		frappe.throw(_("This is not an audio clip."))
+	_ensure_editable_clip(clip)
+	fps = _project_fps(project.name)
+	source_total_frames = _source_max_frames(clip.source_asset_version, fps)
+	if not source_total_frames:
+		frappe.throw(_("Unable to determine source audio duration."))
+
+	clip.timeline_start_frame = 0
+	clip.source_in_frame = 0
+	clip.source_out_frame = source_total_frames
 	clip.save(ignore_permissions=True)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
@@ -937,7 +969,7 @@ def _serialize_timeline(project, clips):
 	enabled_clips = _enabled_clips(clips)
 	visible_clips = enabled_clips + [
 		clip for clip in clips
-		if not clip.enabled and clip.track_type == "Audio" and clip.audio_role == "Source"
+		if not clip.enabled and clip.track_type == "Audio"
 	]
 	if not enabled_clips:
 		return {
@@ -996,6 +1028,7 @@ def _serialize_timeline(project, clips):
 				"clip_order": clip.clip_order,
 				"track_type": clip.track_type or "Video",
 				"track_index": int(clip.track_index or 0),
+				"enabled": bool(clip.enabled),
 				"linked_video_clip": clip.linked_video_clip,
 				"shot": clip.shot,
 				"shot_number": shot_number,
@@ -1034,7 +1067,7 @@ def _serialize_timeline(project, clips):
 	render_total_frames = _visual_timeline_end_frame(project.name)
 	audio_end_frames = [
 		int(clip.timeline_start_frame or 0) + _clip_length(clip)
-		for clip in enabled_clips
+		for clip in clips
 		if clip.track_type == "Audio"
 	]
 	canvas_total_frames = max([render_total_frames, *audio_end_frames])

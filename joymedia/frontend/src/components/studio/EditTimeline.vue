@@ -76,6 +76,7 @@
         @open-inspector="forwardOpenInspector"
         @trim="$emit('trim', $event)"
         @move="$emit('move', $event)"
+        @set-audio-clip-enabled="forwardSetAudioClipEnabled"
         @open-audio-picker="$emit('openAudioPicker')"
       />
 
@@ -144,6 +145,7 @@ const emit = defineEmits([
   "selectTransition",
   "openInspector",
   "openAudioPicker",
+  "setAudioClipEnabled",
   "undo",
   "redo",
 ]);
@@ -188,5 +190,9 @@ function forwardSelectClip(...args) {
 
 function forwardOpenInspector(clip) {
   emit("openInspector", clip);
+}
+
+function forwardSetAudioClipEnabled(...args) {
+  emit("setAudioClipEnabled", ...args);
 }
 </script>
