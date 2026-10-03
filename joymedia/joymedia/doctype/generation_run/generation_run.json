@@ -156,9 +156,11 @@
    "read_only": 1
   },
   {
+   "description": "Legacy compatibility only. New generation runs do not create project exports; explicit timeline export is stored on Media Project.current_output_asset_version.",
    "fieldname": "final_asset_version",
    "fieldtype": "Link",
-   "label": "Final Asset Version",
+   "hidden": 1,
+   "label": "Legacy Final Asset Version",
    "options": "Asset Version",
    "read_only": 1
   },
