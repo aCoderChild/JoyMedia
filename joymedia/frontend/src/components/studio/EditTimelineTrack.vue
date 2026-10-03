@@ -55,11 +55,6 @@
         >
           ⌁ {{ currentLang === 'vi' ? 'Hút' : 'Snap' }}
         </button>
-        <label class="zoom-control">
-          <span>－</span>
-          <input v-model.number="zoom" type="range" min="0.6" max="3" step="0.1" />
-          <span>＋</span>
-        </label>
       </div>
     </div>
 
@@ -78,9 +73,6 @@
         >
           {{ tick.label }}
         </span>
-      </div>
-      <div class="playhead" :style="{ left: `${playheadFrame * pixelsPerFrame}px` }">
-        <span class="playhead-head" />
       </div>
     </div>
 
@@ -170,6 +162,8 @@ const props = defineProps({
   busy: { type: Boolean, default: false },
   totalFrames: { type: Number, default: 0 },
   totalSeconds: { type: Number, default: 0 },
+  pixelsPerFrame: { type: Number, default: 2 },
+  timelineCanvasWidth: { type: Number, default: 700 },
 });
 
 const emit = defineEmits([
@@ -186,7 +180,6 @@ const emit = defineEmits([
 
 const { currentLang } = useI18n();
 const ruler = ref(null);
-const zoom = ref(1);
 const snapping = ref(true);
 const draggedClipName = ref(null);
 const trimDrag = ref(null);
@@ -218,8 +211,8 @@ const durationLabel = computed(() => {
   return `${Number(secondsVal || 0).toFixed(2)}s`;
 });
 
-const pixelsPerFrame = computed(() => Math.max(2, (36 * zoom.value) / Math.max(1, activeFps.value)));
-const timelineCanvasWidth = computed(() => Math.max(700, Number(effectiveTotalFrames.value || 0) * pixelsPerFrame.value));
+const pixelsPerFrame = computed(() => Number(props.pixelsPerFrame || 2));
+const timelineCanvasWidth = computed(() => Number(props.timelineCanvasWidth || 700));
 
 const rulerTicks = computed(() => {
   const total = Number(effectiveTotalFrames.value || 0);
@@ -425,17 +418,16 @@ onBeforeUnmount(() => {
   window.removeEventListener("pointerup", finishTrim);
 });
 
-defineExpose({ pixelsPerFrame, timelineCanvasWidth });
 </script>
 
 <style scoped>
 .edit-timeline-track-shell {
   width: 100%;
-  padding: 10px;
-  background: var(--surface-card, #fff);
-  border: 1px solid var(--outline-border, #e4e7ec);
-  border-radius: 14px;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   overflow: visible;
 }
 .timeline-heading {
@@ -517,24 +509,6 @@ defineExpose({ pixelsPerFrame, timelineCanvasWidth });
   height: 8px;
   background: var(--outline-border, #d7dce5);
   margin: 2px auto 0;
-}
-.playhead {
-  position: absolute;
-  top: 0;
-  bottom: -122px;
-  width: 1.5px;
-  background: #6366f1;
-  z-index: 10;
-  pointer-events: none;
-}
-.playhead-head {
-  position: absolute;
-  top: -1px;
-  left: -4px;
-  width: 9px;
-  height: 9px;
-  border-radius: 2px 2px 5px 5px;
-  background: #6366f1;
 }
 .clip-track {
   min-height: 112px;

@@ -2621,17 +2621,6 @@ h2 {
   min-width: 700px;
 }
 
-.audio-timeline-playhead {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: rgb(129 140 248 / 0.95);
-  box-shadow: 0 0 0 1px rgb(129 140 248 / 0.15);
-  pointer-events: none;
-  z-index: 3;
-}
-
 .audio-timeline-label {
   height: 18px;
   display: flex;
@@ -2659,7 +2648,44 @@ h2 {
 }
 
 .timeline-shared-canvas {
+  position: relative;
   min-width: 700px;
+}
+
+.timeline-zoom-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--outline-border);
+  border-radius: 7px;
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+.timeline-zoom-control input {
+  width: 58px;
+  accent-color: #6366f1;
+}
+
+.timeline-global-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: #6366f1;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.timeline-global-playhead-head {
+  position: absolute;
+  top: -1px;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px 2px 5px 5px;
+  background: #6366f1;
 }
 
 .studio-inspector {

@@ -347,6 +347,7 @@ import { useProjectWorkspace } from "../composables/useProjectWorkspace";
 import { useProjectReferences } from "../composables/useProjectReferences";
 import { useProjectGeneration } from "../composables/useProjectGeneration";
 import { useProjectTimeline } from "../composables/useProjectTimeline";
+import { useTimelinePreviewEngine } from "../composables/useTimelinePreviewEngine";
 
 // Studio Components
 import StudioHeader from "../components/studio/StudioHeader.vue";
@@ -487,6 +488,17 @@ const previewSelection = ref("master"); // "master" | "shot" | "clip-source"
 const mediaPickerFilter = ref("All");
 const addScenePopoverOpen = ref(false);
 const addSceneAfterShot = ref(null);
+
+const { syncAtFrame: syncTimelineAudio } = useTimelinePreviewEngine({
+  audioClips,
+  fps,
+  isPlaying,
+  studioMode,
+  getVideo: () => {
+    const preview = studioPreviewRef.value;
+    return preview?.previewVideo?.value || preview?.previewVideo || null;
+  },
+});
 
 // Automatically transition to Edit mode only when an active generation run finishes
 watch(
@@ -926,6 +938,7 @@ function onVideoTimeUpdate(payload) {
   } else {
     playheadFrame.value = Math.round(currentTime * currentFps);
   }
+  if (studioMode.value === "edit") syncTimelineAudio(playheadFrame.value);
 }
 
 function onSeekPlayhead(frame) {
@@ -934,11 +947,12 @@ function onSeekPlayhead(frame) {
 	const currentFps = fps.value || 24;
 	const seekTime = playheadFrame.value / currentFps;
 
-  if (hasCurrentMaster.value && studioPreview.value?.type === "master") {
+	if (hasCurrentMaster.value && studioPreview.value?.type === "master") {
     seekPreview(seekTime);
   }
 
 	syncActiveSceneFromFrame(playheadFrame.value);
+  if (studioMode.value === "edit") syncTimelineAudio(playheadFrame.value);
 }
 
 function stepPlayhead(delta) {

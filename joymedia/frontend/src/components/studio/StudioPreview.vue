@@ -64,7 +64,7 @@
         ref="previewVideo"
         :key="studioPreview.type === 'clip' ? `${studioPreview.clip?.name}-${studioPreview.url}` : studioPreview.url"
         :src="studioPreview.url"
-        :muted="isMuted"
+        :muted="isMuted || studioMode === 'edit'"
         class="w-full h-full object-contain"
         preload="metadata"
         playsinline

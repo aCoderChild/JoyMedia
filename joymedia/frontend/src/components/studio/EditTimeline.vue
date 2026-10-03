@@ -15,11 +15,16 @@
         <span class="text-[11px] text-ink-muted">
           {{ currentLang === 'vi' ? 'Bấm clip để chỉnh sửa In/Out, tách hoặc chuyển cảnh trong Inspector.' : 'Click clip to adjust In/Out, split, or transitions in Inspector.' }}
         </span>
+        <label class="timeline-zoom-control">
+          <span>－</span>
+          <input v-model.number="zoom" type="range" min="0.6" max="3" step="0.1" />
+          <span>＋</span>
+        </label>
       </div>
     </div>
 
     <div class="timeline-shared-scroll rounded-xl border border-outline-border bg-surface-muted/40 p-2">
-      <div class="timeline-shared-canvas space-y-3" :style="{ width: `${sharedTimelineCanvasWidth}px` }">
+      <div class="timeline-shared-canvas space-y-3" :style="{ width: `${timelineCanvasWidth}px` }">
         <div>
           <div class="flex items-center gap-2 mb-1 px-1">
             <span class="text-[10px] font-mono font-bold text-ink-muted uppercase tracking-wider bg-surface-card px-2 py-0.5 rounded border border-outline-border flex items-center gap-1.5">
@@ -33,10 +38,11 @@
           </div>
 
           <EditTimelineTrack
-            ref="visualTrack"
             :clips="activeVideoClips"
             :all-clips="clips"
             :fps="fps"
+            :pixels-per-frame="pixelsPerFrame"
+            :timeline-canvas-width="timelineCanvasWidth"
             :selected-clip-name="selectedClipName"
             :playhead-frame="playheadFrame"
             :busy="busy"
@@ -60,8 +66,8 @@
         :selected-clip-name="selectedClipName"
         :total-frames="totalFrames"
         :playhead-frame="playheadFrame"
-        :pixels-per-frame="sharedPixelsPerFrame"
-        :timeline-canvas-width="sharedTimelineCanvasWidth"
+        :pixels-per-frame="pixelsPerFrame"
+        :timeline-canvas-width="timelineCanvasWidth"
         :current-lang="currentLang"
         @select-clip="forwardSelectClip"
         @open-inspector="forwardOpenInspector"
@@ -77,6 +83,14 @@
           >
             + {{ currentLang === 'vi' ? 'Thêm cảnh' : 'Add Scene' }}
           </button>
+        </div>
+
+        <div
+          class="timeline-global-playhead"
+          :style="{ left: `${playheadFrame * pixelsPerFrame}px` }"
+          aria-hidden="true"
+        >
+          <span class="timeline-global-playhead-head" />
         </div>
       </div>
     </div>
@@ -116,7 +130,7 @@ const emit = defineEmits([
   "openAudioPicker",
 ]);
 
-const visualTrack = ref(null);
+const zoom = ref(1);
 
 const activeVideoClips = computed(() => {
   if (props.videoClips?.length) return props.videoClips;
@@ -128,8 +142,8 @@ const activeAudioClips = computed(() => {
   return (props.clips || []).filter((clip) => clip.track_type === "Audio");
 });
 
-const sharedPixelsPerFrame = computed(() => Number(visualTrack.value?.pixelsPerFrame || (36 / Math.max(1, props.fps || 24))));
-const sharedTimelineCanvasWidth = computed(() => Number(visualTrack.value?.timelineCanvasWidth || Math.max(700, (props.totalFrames || 0) * sharedPixelsPerFrame.value)));
+const pixelsPerFrame = computed(() => Math.max(2, (36 * zoom.value) / Math.max(1, props.fps || 24)));
+const timelineCanvasWidth = computed(() => Math.max(700, Number(props.totalFrames || 0) * pixelsPerFrame.value));
 
 function forwardSelectClip(...args) {
   emit("selectClip", ...args);
