@@ -94,6 +94,29 @@ def get_history(prompt_id: str, *, base_url: str | None = None) -> dict:
 	return response.json()
 
 
+def get_queue(*, base_url: str | None = None) -> dict:
+	try:
+		response = requests.get(
+			f"{get_base_url(base_url)}/queue",
+			auth=get_request_auth(),
+			timeout=DEFAULT_TIMEOUT,
+		)
+	except requests.ConnectionError as exc:
+		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
+	_raise_for_comfyui_error(response)
+	return response.json()
+
+
+def get_queue_state(prompt_id: str, *, base_url: str | None = None) -> str | None:
+	"""Return "running", "pending", or None when the prompt is not in the ComfyUI queue."""
+	queue = get_queue(base_url=base_url)
+	for state, key in (("running", "queue_running"), ("pending", "queue_pending")):
+		# ComfyUI queue items are [number, prompt_id, prompt, extra_data, outputs_to_execute].
+		if any(len(item) > 1 and item[1] == prompt_id for item in queue.get(key) or []):
+			return state
+	return None
+
+
 def get_system_stats(*, base_url: str | None = None) -> dict:
 	try:
 		response = requests.get(

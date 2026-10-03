@@ -5,6 +5,7 @@ from frappe.tests.utils import FrappeTestCase
 from joymedia.services.comfyui_client import (
 	download_output,
 	get_history,
+	get_queue_state,
 	get_request_auth,
 	get_system_stats,
 	submit_workflow,
@@ -50,3 +51,18 @@ class TestComfyUIClient(FrappeTestCase):
 		self.assertEqual(3, get.call_count)
 		for call in get.call_args_list:
 			self.assertEqual(("comfy-user", "comfy-pass"), call.kwargs["auth"])
+
+	@patch("joymedia.services.comfyui_client.frappe.conf", {})
+	@patch("joymedia.services.comfyui_client.requests.get")
+	def test_queue_state_finds_running_and_pending_prompts(self, get):
+		response = Mock(ok=True)
+		response.json.return_value = {
+			"queue_running": [[1, "prompt-running", {}, {}, []]],
+			"queue_pending": [[2, "prompt-pending", {}, {}, []]],
+		}
+		get.return_value = response
+
+		self.assertEqual("running", get_queue_state("prompt-running", base_url="http://comfyui"))
+		self.assertEqual("pending", get_queue_state("prompt-pending", base_url="http://comfyui"))
+		self.assertIsNone(get_queue_state("prompt-gone", base_url="http://comfyui"))
+		self.assertEqual("http://comfyui/queue", get.call_args.args[0])

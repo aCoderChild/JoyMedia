@@ -6,10 +6,17 @@ import tempfile
 import frappe
 from frappe import _
 from frappe.utils.synchronization import filelock
-from frappe.utils import get_datetime, now
+from frappe.utils import get_datetime, now, time_diff_in_seconds
 
-from .comfyui_client import download_output, get_history
+from .comfyui_client import download_output, get_history, get_queue_state
 from .artifact_service import get_attempt_artifact
+
+# ComfyUI may not list a just-submitted prompt in /queue or /history yet.
+MISSING_JOB_GRACE_SECONDS = 15
+
+
+class UnusableComfyUIOutput(frappe.ValidationError):
+	"""ComfyUI finished, but its output cannot be ingested; retrying the sync will not help."""
 
 
 def sync_active_attempts():
@@ -56,17 +63,15 @@ def _sync_attempt_result(attempt_name):
 
 	history = get_history(attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
 	history = history.get(attempt.external_job_id, history)
+	if not history:
+		return _sync_attempt_without_history(attempt)
+
 	status = history.get("status", {})
 	status_string = status.get("status_str")
 
 	if status_string in ("error", "failed"):
 		messages = status.get("messages") or []
-		attempt.status = "Failed"
-		attempt.error_summary = _("ComfyUI execution failed.")
-		attempt.error_details = str(messages)
-		attempt.save(ignore_permissions=True)
-		_refresh_parent_execution_state(attempt.name)
-		return {"status": attempt.status}
+		return _fail_attempt(attempt, _("ComfyUI execution failed."), str(messages), "Generation")
 
 	if not status.get("completed"):
 		if status_string == "executing":
@@ -81,8 +86,65 @@ def _sync_attempt_result(attempt_name):
 
 	output = _find_primary_mp4(history)
 	if not output:
-		frappe.throw(_("ComfyUI completed without a primary MP4 output."))
+		_log_sync_failure(attempt, "returned no MP4 output: %s", history.get("outputs"))
+		return _fail_attempt(
+			attempt, _("ComfyUI completed but returned no usable MP4 output."), None, "Generation"
+		)
 
+	try:
+		artifact, last_frame_artifact = _ingest_completed_output(attempt, history, output)
+	except UnusableComfyUIOutput as exc:
+		return _fail_attempt(
+			attempt, _("ComfyUI completed but its output could not be processed."), str(exc), "Generation"
+		)
+	return _complete_attempt(attempt, history, artifact, last_frame_artifact)
+
+
+def _sync_attempt_without_history(attempt):
+	"""Resolve an Attempt whose prompt has no ComfyUI history entry yet."""
+	queue_state = get_queue_state(attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
+	if queue_state == "running":
+		attempt.status = "Running"
+		if not attempt.started_at:
+			attempt.started_at = now()
+	elif queue_state == "pending" or _within_missing_job_grace_period(attempt):
+		attempt.status = "Queued"
+	else:
+		_log_sync_failure(attempt, "is missing from ComfyUI /history and /queue")
+		return _fail_attempt(
+			attempt,
+			_("ComfyUI job is no longer present in the queue or execution history."),
+			None,
+			"Infrastructure",
+		)
+	attempt.save(ignore_permissions=True)
+	_refresh_parent_execution_state(attempt.name)
+	return {"status": attempt.status}
+
+
+def _within_missing_job_grace_period(attempt):
+	if not attempt.queued_at:
+		return False
+	return time_diff_in_seconds(now(), attempt.queued_at) < MISSING_JOB_GRACE_SECONDS
+
+
+def _log_sync_failure(attempt, message, *args):
+	frappe.logger("joymedia.result_sync").warning(
+		"Generation Attempt %s (prompt %s) " + message, attempt.name, attempt.external_job_id, *args
+	)
+
+
+def _fail_attempt(attempt, error_summary, error_details, failure_class):
+	attempt.status = "Failed"
+	attempt.error_summary = error_summary
+	attempt.error_details = error_details
+	attempt.failure_class = failure_class
+	attempt.save(ignore_permissions=True)
+	_refresh_parent_execution_state(attempt.name)
+	return {"status": attempt.status}
+
+
+def _ingest_completed_output(attempt, history, output):
 	artifact = _create_primary_artifact(attempt)
 	_store_artifact_file_in_frappe(artifact, attempt, output)
 	last_frame = _find_last_frame_image(history)
@@ -100,7 +162,10 @@ def _sync_attempt_result(attempt_name):
 			_extract_last_frame(video_bytes, output["filename"]),
 			f"{Path(output['filename']).stem}_last_frame.png",
 		)
-	last_frame_artifact = get_attempt_artifact(attempt.name, "Last Frame")
+	return artifact, get_attempt_artifact(attempt.name, "Last Frame")
+
+
+def _complete_attempt(attempt, history, artifact, last_frame_artifact):
 	attempt.status = "Completed"
 	if not attempt.started_at:
 		attempt.started_at = _execution_timestamp(history, "execution_start") or now()
@@ -198,7 +263,10 @@ def _extract_last_frame(video_bytes, source_name):
 			)
 			return frame_path.read_bytes()
 	except (OSError, subprocess.CalledProcessError) as exc:
-		frappe.throw(_("Unable to extract the last frame from ComfyUI output: {0}").format(exc))
+		frappe.throw(
+			_("Unable to extract the last frame from ComfyUI output: {0}").format(exc),
+			exc=UnusableComfyUIOutput,
+		)
 
 
 def _create_primary_artifact(attempt):
