@@ -98,7 +98,7 @@
                 {{ currentLang === 'vi' ? 'Hoạt động tạo video' : 'Generation activity' }}
               </div>
               <div class="text-[10px] text-ink-muted">
-                {{ production.completed_tasks || 0 }}/{{ production.total_tasks || 0 }} shots complete
+                {{ completedShotCount }}/{{ totalShotCount }} shots complete
               </div>
             </div>
             <span class="text-[10px] font-semibold" :class="activityStatusClass">{{ production.status }}</span>
@@ -257,6 +257,12 @@ const statusBadgeClass = computed(() => {
 
 const activeJobCount = computed(() => {
   return (props.production?.shots || []).filter((shot) => ["Generating", "Pending"].includes(shot.status)).length;
+});
+
+const totalShotCount = computed(() => (props.production?.shots || []).length);
+
+const completedShotCount = computed(() => {
+  return (props.production?.shots || []).filter((shot) => shot.status === "Completed").length;
 });
 
 const activityStatusClass = computed(() => {

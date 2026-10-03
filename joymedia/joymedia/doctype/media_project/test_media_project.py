@@ -231,8 +231,8 @@ def _create_asset_version(project, media_type, extension):
 		"file": file_doc.file_url,
 		"source": "Uploaded",
 	})
-	if media_type == "Video":
-		# Avoid ffprobe in this relation-only fixture.
+	if media_type in ("Video", "Audio"):
+		# Avoid media probing in this relation-only fixture.
 		with patch.object(version, "set_file_metadata"):
 			version.insert(ignore_permissions=True)
 	else:

@@ -408,7 +408,7 @@ def _aggregate_shot_progress(run_name):
 	jobs = frappe.get_all(
 		"Generation Task",
 		filters={"generation_run": run_name},
-		fields=["shot", "status", "progress", "error_summary"],
+		fields=["shot", "status", "progress", "error_summary", "segment_frame_count"],
 		order_by="creation asc",
 	)
 	groups = {}
@@ -431,7 +431,14 @@ def _aggregate_shot_progress(run_name):
 			status = "Cancelled"
 		else:
 			status = "Pending"
-		progress = sum(float(row.progress or 0) for row in shot_jobs) / max(len(shot_jobs), 1)
+		total_frames = sum(max(int(row.segment_frame_count or 0), 0) for row in shot_jobs)
+		if total_frames:
+			progress = sum(
+				float(row.progress or 0) * max(int(row.segment_frame_count or 0), 0)
+				for row in shot_jobs
+			) / total_frames
+		else:
+			progress = sum(float(row.progress or 0) for row in shot_jobs) / max(len(shot_jobs), 1)
 		output = shot.selected_output_asset_version if shot else None
 		result.append({
 			"shot": shot_name,

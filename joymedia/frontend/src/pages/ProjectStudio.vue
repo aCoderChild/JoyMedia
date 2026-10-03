@@ -447,6 +447,7 @@ const {
   generateVideo,
   appendScenes,
   retryFailedScenes,
+  handleGenerationRetry,
   reviseStoryboard,
   reviseShotWithAi,
   improveVideoIdea,
