@@ -7,6 +7,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.timeline_editor import (
 	duplicate_timeline_clip,
+	fit_audio_clip_to_full_video,
 	fit_audio_clip_to_video,
 	reorder_timeline_clip,
 	set_timeline_transition,
@@ -129,6 +130,29 @@ class TestTimelineEditor(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			fit_audio_clip_to_video(self.project.name, audio_clip.name)
+
+	def test_bgm_can_fit_to_full_video_from_current_position(self):
+		audio_clip = frappe.get_doc({
+			"doctype": "Timeline Clip",
+			"media_project": self.project.name,
+			"clip_order": 2,
+			"track_type": "Audio",
+			"timeline_start_frame": 120,
+			"enabled": 1,
+			"source_asset_version": self.version_1.name,
+			"source_in_frame": 24,
+			"source_out_frame": 48,
+			"initial_source_in_frame": 24,
+			"initial_source_out_frame": 48,
+			"audio_role": "BGM",
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}).insert(ignore_permissions=True)
+
+		fit_audio_clip_to_full_video(self.project.name, audio_clip.name)
+		audio_clip.reload()
+		self.assertEqual(audio_clip.timeline_start_frame, 0)
+		self.assertEqual(audio_clip.source_out_frame, 96)
 
 	def test_split_and_duplicate_keep_source_asset(self):
 		split_timeline_clip(self.project.name, self.clip_1.name, 48)

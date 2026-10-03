@@ -277,6 +277,7 @@
       @delete-clip="deleteClip(selectedClip)"
       @update-audio-clip="onUpdateAudioClip"
       @fit-audio-clip-to-video="onFitAudioClipToVideo"
+      @fit-audio-clip-to-full-video="onFitAudioClipToFullVideo"
       @update-source-for-selected-clip="onUpdateSourceForClip"
       @regenerate-source-for-selected-clip="onRegenerateSourceForClip"
       @apply-asset-to-shot="applyAssetToShot"
@@ -466,6 +467,7 @@ const {
   updateSourceForShot,
   updateAudioClip,
   fitAudioClipToVideo,
+  fitAudioClipToFullVideo,
   moveClip,
   addAudioClip,
   exportTimeline,
@@ -564,6 +566,10 @@ async function onUpdateAudioClip(clip, settings) {
 
 async function onFitAudioClipToVideo(clip) {
   await fitAudioClipToVideo(clip);
+}
+
+async function onFitAudioClipToFullVideo(clip) {
+  await fitAudioClipToFullVideo(clip);
 }
 
 async function handleSelectReference({ asset, role }) {

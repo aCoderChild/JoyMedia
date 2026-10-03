@@ -22,7 +22,7 @@
             </div>
             <template v-for="clip in track.clips" :key="clip.name">
               <button
-                v-if="clip.audio_role !== 'Source' || clip.source_has_audio"
+                v-if="!clip.is_silent_source && (clip.audio_role !== 'Source' || clip.source_has_audio)"
                 type="button"
                 class="audio-timeline-clip"
                 :class="[
@@ -63,13 +63,6 @@
           </div>
         </div>
 
-        <div
-          v-if="audioTracks.length"
-          class="audio-timeline-playhead"
-          :style="{ left: `${playheadFrame * pixelsPerFrame}px` }"
-          aria-hidden="true"
-        />
-
     </div>
 
     <button type="button" class="audio-add-track" @click="$emit('openAudioPicker')">
@@ -84,10 +77,10 @@ import AudioWaveform from "./AudioWaveform.vue";
 
 const props = defineProps({
   audioClips: { type: Array, default: () => [] },
+  videoClips: { type: Array, default: () => [] },
   selectedClipName: { type: String, default: null },
   totalFrames: { type: Number, default: 0 },
   fps: { type: Number, default: 24 },
-  playheadFrame: { type: Number, default: 0 },
   pixelsPerFrame: { type: Number, default: 2 },
   timelineCanvasWidth: { type: Number, default: 700 },
   currentLang: { type: String, default: "en" },
@@ -100,7 +93,19 @@ const trimDrag = ref(null);
 
 const audioTracks = computed(() => {
   const groups = new Map();
-  for (const clip of props.audioClips) {
+  const sourceClips = props.audioClips.filter((clip) => clip.audio_role === "Source");
+  const sourceByVideo = new Map(sourceClips.map((clip) => [clip.linked_video_clip, clip]));
+  const sourceSegments = props.videoClips.length
+    ? props.videoClips.map((videoClip) => sourceByVideo.get(videoClip.name) || {
+        name: `silent-${videoClip.name}`,
+        audio_role: "Source",
+        is_silent_source: true,
+        shot_number: videoClip.shot_number,
+        timeline_start_frame: videoClip.timeline_start_frame,
+        duration_frames: videoClip.duration_frames,
+      })
+    : sourceClips;
+  for (const clip of [...sourceSegments, ...props.audioClips.filter((clip) => clip.audio_role !== "Source")]) {
     const trackIndex = Math.max(0, Number(clip.track_index || 0));
     if (!groups.has(trackIndex)) groups.set(trackIndex, []);
     groups.get(trackIndex).push(clip);

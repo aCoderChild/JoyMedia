@@ -72,9 +72,9 @@
             type="button"
             class="w-full py-1.5 px-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 text-xs font-semibold cursor-pointer"
             :disabled="timelineBusy"
-            @click="$emit('fitAudioClipToVideo', selectedClip)"
+            @click="$emit(selectedClip.audio_role === 'BGM' ? 'fitAudioClipToFullVideo' : 'fitAudioClipToVideo', selectedClip)"
           >
-            {{ currentLang === 'vi' ? 'Khớp audio với video' : 'Fit Audio to Video' }}
+            {{ currentLang === 'vi' ? (selectedClip.audio_role === 'BGM' ? 'Khớp nhạc với toàn bộ video' : 'Khớp audio với video') : (selectedClip.audio_role === 'BGM' ? 'Fit BGM to Full Video' : 'Fit Audio to Remaining Video') }}
           </button>
 
           <!-- Audio Role -->
@@ -533,6 +533,7 @@ const emit = defineEmits([
   "deleteClip",
   "updateAudioClip",
   "fitAudioClipToVideo",
+  "fitAudioClipToFullVideo",
   "updateSourceForSelectedClip",
   "regenerateSourceForSelectedClip",
   "applyAssetToShot",

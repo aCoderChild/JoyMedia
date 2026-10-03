@@ -63,10 +63,10 @@
 
       <AudioTimelineTracks
         :audio-clips="activeAudioClips"
+        :video-clips="activeVideoClips"
         :fps="fps"
         :selected-clip-name="selectedClipName"
         :total-frames="totalFrames"
-        :playhead-frame="playheadFrame"
         :pixels-per-frame="pixelsPerFrame"
         :timeline-canvas-width="timelineCanvasWidth"
         :current-lang="currentLang"

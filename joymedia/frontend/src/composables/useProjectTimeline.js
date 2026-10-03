@@ -263,6 +263,14 @@ export function useProjectTimeline(projectName) {
     );
   }
 
+  function fitAudioClipToFullVideo(clip) {
+    return mutate(
+      "fit_audio_clip_to_full_video",
+      { clip_name: clip.name },
+      clip.name
+    );
+  }
+
   function moveClip(clip, timelineStartFrame, trackIndex = null) {
     return mutate(
       "move_timeline_clip",
@@ -319,6 +327,7 @@ export function useProjectTimeline(projectName) {
     updateSourceForShot,
     updateAudioClip,
     fitAudioClipToVideo,
+    fitAudioClipToFullVideo,
     moveClip,
     addAudioClip,
     exportTimeline,
