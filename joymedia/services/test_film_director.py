@@ -85,10 +85,16 @@ class TestFilmDirector(FrappeTestCase):
 
 		film_director.normalize_story_references(shots, REFERENCES, "product_reference")
 
-		self.assertEqual(
-			"The person from <Picture 1> walks through the place from <Picture 2>.",
-			shots[0]["generation_prompt"],
-		)
+		self.assertTrue(shots[0]["generation_prompt"].startswith(
+			"The person from <Picture 1> walks through the place from <Picture 2>. One continuous shot with no cuts"
+		))
+
+	def test_plan_problems_catch_short_repeated_and_overused_plans(self):
+		take = lambda prompt, place: {"generation_prompt": prompt, "references": [{"reference_key": "model"}, {"reference_key": place}]}
+
+		self.assertEqual([], film_director.plan_problems([take("a", "p1"), take("b", "p2"), take("c", "p1")], 3))
+		problems = film_director.plan_problems([take("same", "p1"), take("same", "p1"), take("x", "p1")], 4)
+		self.assertEqual(3, len(problems))
 
 	def test_roster_flags_images_without_a_description(self):
 		references = [
@@ -126,6 +132,17 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertEqual(3, film_director.story_take_count(30, places[:2]))
 		self.assertEqual(2, film_director.story_take_count(15, places))
 		self.assertEqual(6, film_director.story_take_count(60, places))
+
+	def test_every_film_has_an_opening_a_peak_and_an_ending(self):
+		self.assertEqual(["OPENING", "CLOSING"], film_director.story_beats(2))
+		self.assertEqual(["OPENING", "CLIMAX", "CLOSING"], film_director.story_beats(3))
+		self.assertEqual(["OPENING", "BUILD", "CLIMAX", "RESOLUTION", "CLOSING"], film_director.story_beats(5))
+		self.assertEqual(["OPENING", "BUILD", "BUILD", "CLIMAX", "RESOLUTION", "CLOSING"], film_director.story_beats(6))
+
+		instruction = film_director.build_director_instruction(REFERENCES, "product_reference", 25)
+		self.assertIn("- Take 1 OPENING:", instruction)
+		self.assertIn("- Take 2 CLIMAX:", instruction)
+		self.assertIn("- Take 3 CLOSING:", instruction)
 
 	def test_take_durations_are_renderable_and_keep_the_total(self):
 		shots = [{"duration_seconds": value, "shot_number": index} for index, value in enumerate((12.33, 3.42, 5.08, 4.17), 1)]

@@ -10,6 +10,7 @@ from .film_director import (
 	balance_take_durations,
 	build_director_instruction,
 	normalize_story_references,
+	plan_problems,
 	story_take_count,
 )
 
@@ -274,16 +275,17 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		'"duration_seconds":5,"generation_prompt":"...",'
 		f'"references":[{example_references}]}}]}}'
 	)
+	take_count = story_take_count(total_video_duration, story_reference_contexts) if story_film else None
 	user_prompt = (
 		f"{instruction}\n\n"
 		f"PRODUCT NAME\n{product_name}\n\n"
 		f"VIDEO IDEA\n{video_idea or ''}\n\n"
 		f"TOTAL VIDEO DURATION: {total_video_duration} seconds\n"
 		f"TARGET FPS: {target_fps}\n"
-		f"SHOT COUNT GUIDANCE: {shot_count if shot_count is not None else 'Choose the appropriate number of creative shots; do not use model frame capacity to choose it.'}\n\n"
+		f"SHOT COUNT GUIDANCE: {shot_count if shot_count is not None else f'Exactly {take_count} takes, one per place.' if take_count else 'Choose the appropriate number of creative shots; do not use model frame capacity to choose it.'}\n\n"
 		+ (
 			f"Return exactly {shot_count} shots. " if shot_count is not None
-			else f"Return exactly {story_take_count(total_video_duration, reference_media)} takes as shots. " if story_film
+			else f"Return exactly {take_count} takes as shots. " if take_count
 			else "Choose a coherent storyboard structure, normally between 1 and 8 shots. "
 		)
 		+ "Organize the shots into a coherent narrative progression.\n\n"
@@ -346,24 +348,27 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	}
 	request_payload["max_tokens"] = _completion_budget(base_url, request_payload)
 
-	response = None
-	for attempt in range(3):
-		try:
-			response = requests.post(f"{base_url}/chat/completions", json=request_payload, timeout=(10, timeout))
-			break
-		except requests.ConnectionError:
-			if attempt < 2:
-				time.sleep(1)
-		except requests.Timeout:
-			frappe.throw(_("Qwen did not return a video plan within {0} seconds.").format(int(timeout)))
-	if response is None:
-		frappe.throw(_("Qwen is unavailable at {0}. Check the Qwen service or SSH tunnel, then try again.").format(base_url))
-	if not response.ok:
-		frappe.throw(_("Qwen request failed ({0}): {1}").format(response.status_code, response.text))
-	try:
-		result = json.loads(response.json()["choices"][0]["message"]["content"])
-	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-		frappe.throw(_("Qwen returned invalid video plan JSON: {0}").format(str(exc)))
+	result, content = _request_plan(base_url, request_payload, timeout)
+	problems = plan_problems(_plan_shots(result), take_count) if take_count else []
+	if problems:
+		# The fine-tuned planner tends to return its habitual 3 shots or repeat one prompt; correct it once.
+		retry_payload = {
+			**request_payload,
+			"messages": request_payload["messages"] + [
+				{"role": "assistant", "content": content},
+				{
+					"role": "user",
+					"content": " ".join(problems) + (
+						f" Return the complete plan again: exactly {take_count} takes following the STORY ARC, "
+						f"durations adding up to {total_video_duration} seconds, same JSON shape."
+					),
+				},
+			],
+		}
+		retry_payload["max_tokens"] = _completion_budget(base_url, retry_payload)
+		retry_result, _content = _request_plan(base_url, retry_payload, timeout)
+		if len(plan_problems(_plan_shots(retry_result), take_count)) <= len(problems):
+			result = retry_result
 
 	if story_film and isinstance(result, dict) and isinstance(result.get("shots"), list):
 		normalize_story_references(result["shots"], story_reference_contexts, story_reference_role)
@@ -387,6 +392,33 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	if story_film:
 		result["shots"] = balance_take_durations(result["shots"], total_video_duration)
 	return result
+
+
+def _request_plan(base_url, payload, timeout):
+	"""Send one planner request; return (parsed plan, raw content)."""
+	response = None
+	for attempt in range(3):
+		try:
+			response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
+			break
+		except requests.ConnectionError:
+			if attempt < 2:
+				time.sleep(1)
+		except requests.Timeout:
+			frappe.throw(_("Qwen did not return a video plan within {0} seconds.").format(int(timeout)))
+	if response is None:
+		frappe.throw(_("Qwen is unavailable at {0}. Check the Qwen service or SSH tunnel, then try again.").format(base_url))
+	if not response.ok:
+		frappe.throw(_("Qwen request failed ({0}): {1}").format(response.status_code, response.text))
+	try:
+		content = response.json()["choices"][0]["message"]["content"]
+		return json.loads(content), content
+	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+		frappe.throw(_("Qwen returned invalid video plan JSON: {0}").format(str(exc)))
+
+
+def _plan_shots(result):
+	return result.get("shots") if isinstance(result, dict) and isinstance(result.get("shots"), list) else []
 
 
 def _completion_budget(base_url, payload):

@@ -27,6 +27,10 @@ PERSON_PATTERN = re.compile(
 )
 WORD_PATTERN = re.compile(r"[a-z]+")
 PICTURE_TAG_PATTERN = re.compile(r"<Picture\s*(\d+)>", re.I)
+TAKE_CONSTRAINTS = (
+	"One continuous shot with no cuts, photorealistic, smooth stabilized motion, no text, no logos, "
+	"no deformation."
+)
 
 MIN_TAKE_SECONDS = 5
 MAX_TAKE_SECONDS = 10
@@ -45,8 +49,12 @@ STRUCTURE
 - Each take is ONE unbroken camera shot in ONE place: no cuts, no montage, no
   second location inside the take.
 - The character appears in EVERY take except an optional final establishing take.
-- Order the places so the film has a clear progression (for example outside to inside,
-  public to private, or day to night). End on a wide establishing view of the main place.
+- Follow the STORY ARC below: each take plays its beat, in order. Order the places so
+  the journey makes sense (for example outside to inside, public to private) and put
+  the most spectacular place on the CLIMAX take.
+- The film is one continuous journey: each take starts where the previous one ended
+  (the character arrives from the previous place, continuing the same direction and
+  mood), and time of day may progress naturally (for example afternoon to dusk).
 - Every take except the last ends with a camera move that hides the cut to the next
   take, inside the same place: a push toward a window or doorway, light sweeping
   across the frame, or a whip pan.
@@ -55,7 +63,8 @@ STRUCTURE
   never repeat an action.
 - Match the look (light, colour grade, mood) to the VIDEO IDEA and GLOBAL INSTRUCTIONS.
   If none is given, use soft natural cinematic light and a gentle filmic grade. Keep
-  the same look in every take.
+  one consistent colour grade across all takes.
+- shot_name is "<BEAT>: <short title>", e.g. "OPENING: Arrival at dusk".
 
 EVERY generation_prompt (English, 60-110 words) states, in this order:
 1. The person from <Picture 1>: their outfit and their performance in this take.
@@ -78,14 +87,39 @@ REFERENCES
 """.strip()
 
 FEW_SHOT_EXAMPLE = (
-	"EXAMPLE generation_prompt: The person from <Picture 1>, in the outfit from <Picture 1>, walks "
-	"slowly through the place from <Picture 2>, pauses by the window and looks out with a quiet "
-	"smile. Keep their face and hair identical to <Picture 1> and the exact layout and materials "
-	"of <Picture 2>. Slow dolly-in at eye level. Soft morning light, natural filmic grade, shallow "
-	"depth of field. The take ends as the camera pushes through the window into bright light. "
-	"One continuous shot with no cuts, photorealistic, smooth stabilized motion, no text, no "
-	"logos, no deformation."
+	"generation_prompt TEMPLATE (fill every [ ] for its own beat and place; never reuse wording "
+	"between takes): The person from <Picture 1>, in [outfit from <Picture 1>], [action that plays "
+	"this take's beat] in the place from <Picture 2>, [what of that place is seen]. Keep their face "
+	"and hair identical to <Picture 1> and the exact layout and materials of <Picture 2>. [One "
+	"camera move]. [Light, grade and depth of field]. [How the take ends]. One continuous shot with "
+	"no cuts, photorealistic, smooth stabilized motion, no text, no logos, no deformation."
 )
+
+
+STORY_BEATS = {
+	"OPENING": "hook the viewer with a striking first image; introduce the character arriving and set "
+	"the mood and time of day.",
+	"BUILD": "the character explores and discovers; their delight and the camera energy grow.",
+	"CLIMAX": "the emotional peak in the most spectacular place: the character's strongest moment "
+	"(a big smile, arms open to the view, a signature gesture) with the boldest camera move; "
+	"make it the longest take.",
+	"RESOLUTION": "a quiet, intimate moment of belonging and contentment; slower camera, softer light.",
+	"CLOSING": "the final image: the character's last look, or a wide establishing view of the main "
+	"place, settling to stillness so the film ends cleanly.",
+}
+
+
+def story_beats(take_count):
+	"""Return the story beat of each take: an opening, a climax and a closing at every length."""
+	if take_count <= 1:
+		return ["OPENING"]
+	if take_count == 2:
+		return ["OPENING", "CLOSING"]
+	if take_count == 3:
+		return ["OPENING", "CLIMAX", "CLOSING"]
+	if take_count == 4:
+		return ["OPENING", "BUILD", "CLIMAX", "CLOSING"]
+	return ["OPENING"] + ["BUILD"] * (take_count - 4) + ["CLIMAX", "RESOLUTION", "CLOSING"]
 
 
 def take_count_range(total_seconds):
@@ -180,14 +214,21 @@ def is_story_film(reference_contexts):
 def build_director_instruction(reference_contexts, reference_role, total_seconds):
 	"""Return the planner instruction for a story film, including the reference roster."""
 	roster = build_roster(reference_contexts)
+	take_count = story_take_count(total_seconds, reference_contexts)
 	lines = [
 		DIRECTOR_RULES.format(
-			take_count=story_take_count(total_seconds, reference_contexts),
+			take_count=take_count,
 			min_take=MIN_TAKE_SECONDS,
 			max_take=MAX_TAKE_SECONDS,
 		),
 		"",
 		f'Every reference you list must use usage_role "{reference_role}".',
+		"",
+		"STORY ARC",
+		*(
+			f"- Take {number} {beat}: {STORY_BEATS[beat]}"
+			for number, beat in enumerate(story_beats(take_count), start=1)
+		),
 		"",
 		"CHARACTER",
 	]
@@ -231,8 +272,31 @@ def normalize_story_references(shots, reference_contexts, reference_role):
 				if len(places) > 1 else character_key
 			ordered = [others[0] if others else fallback, best_place]
 		shot["references"] = [{"reference_key": key, "usage_role": reference_role} for key in ordered]
-		shot["generation_prompt"] = _clamp_picture_tags(prompt, len(ordered))
+		prompt = _clamp_picture_tags(prompt, len(ordered)).strip()
+		if "no cuts" not in prompt.lower():
+			# Without it the model often cuts between angles inside one take.
+			prompt = f"{prompt} {TAKE_CONSTRAINTS}".strip()
+		shot["generation_prompt"] = prompt
 	return shots
+
+
+def plan_problems(shots, take_count):
+	"""Return what is wrong with a story plan, phrased as corrections for the planner."""
+	shots = [shot for shot in shots or [] if isinstance(shot, dict)]
+	problems = []
+	if len(shots) < take_count:
+		problems.append(f"You returned {len(shots)} takes; return exactly {take_count}.")
+	prompts = [" ".join(str(shot.get("generation_prompt") or "").lower().split()) for shot in shots]
+	if len(set(prompts)) < len(prompts):
+		problems.append("Several takes have the same generation_prompt; write each one for its own beat and place.")
+	places = [
+		str(((shot.get("references") or [{}])[-1] or {}).get("reference_key") or "")
+		for shot in shots
+	]
+	overused = sorted({key for key in places if key and places.count(key) > 2})
+	if overused:
+		problems.append(f"Place {', '.join(overused)} is used more than twice; give those takes other places.")
+	return problems
 
 
 def _clamp_picture_tags(prompt, reference_count):
