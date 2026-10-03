@@ -1131,6 +1131,8 @@ class MediaProject(Document):
 		if not frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}):
 			from joymedia.services.video_plan_service import apply_video_plan
 			apply_video_plan(self.name, self.generate_video_plan())
+			from joymedia.services.shot_duration_planner import recalculate_shot_durations
+			recalculate_shot_durations(self.name)
 			frappe.db.commit()
 		return self.generate_video()
 

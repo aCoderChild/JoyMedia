@@ -42,6 +42,25 @@ class TestQwenClient(FrappeTestCase):
 			plan["shots"][1]["references"],
 		)
 
+	def test_equal_image_and_shot_counts_use_equal_total_duration(self):
+		plan = _normalize_qwen_plan(
+			{
+				"shots": [
+					{"generation_prompt": "Exterior.", "duration_seconds": 20},
+					{"generation_prompt": "Pool.", "duration_seconds": 1},
+				]
+			},
+			reference_image_count=2,
+			generation_mode="Multi-shot",
+			reference_images=[
+				{"reference_key": "property_1"},
+				{"reference_key": "property_2"},
+			],
+			total_video_duration=45,
+		)
+
+		self.assertEqual([22.5, 22.5], [shot["duration_seconds"] for shot in plan["shots"]])
+
 	def test_text_model_prompt_only_output_does_not_invent_reference_assignments(self):
 		plan = _normalize_qwen_plan(
 			{

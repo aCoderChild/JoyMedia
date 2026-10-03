@@ -133,7 +133,7 @@
           <div class="flex items-center justify-between text-xs font-bold text-ink-primary mb-1">
             <span class="truncate">{{ currentLang === 'vi' ? `Cảnh ${shot.shot_number}` : `Scene ${shot.shot_number}` }}</span>
             <span class="text-ink-secondary font-mono text-[11px] font-semibold bg-surface-card px-1.5 py-0.5 rounded border border-outline-border/60">
-              {{ estimateShotDuration(shot) }}s
+              {{ Number(estimateShotDuration(shot)).toFixed(1) }}s
             </span>
           </div>
 

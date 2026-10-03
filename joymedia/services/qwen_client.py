@@ -286,11 +286,21 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	if reference_images:
 		user_prompt += (
 			"\n\nGENERATION IMAGE REFERENCES\n"
-			+ f"JoyMedia will resolve {len(reference_images)} selected image references after planning. "
+			+ f"JoyMedia supplied {len(reference_images)} selected image references in order. "
 			"Do not output image indexes."
 		)
 		for image in reference_images:
-			user_prompt += f"\nIMAGE {image['index']}: {image['asset_name']}"
+			user_prompt += (
+				f"\nIMAGE {image['index']}: key={image.get('reference_key') or ''}, "
+				f"name={image['asset_name']}"
+			)
+		if generation_mode == "Multi-shot" and shot_count == len(reference_images):
+			user_prompt += (
+				"\nThere is one independent image for each Shot. Use the images in order: "
+				"Shot 1 uses IMAGE 1, Shot 2 uses IMAGE 2, and so on. "
+				"Each generation_prompt must describe the actual scene shown by its assigned image "
+				"using the supplied reference analysis; never swap rooms, amenities, or locations between images."
+			)
 
 	request_payload = {
 		"model": model,
@@ -328,6 +338,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		generation_mode=generation_mode,
 		reference_images=reference_images,
 		workflow_input_contract=workflow_input_contract,
+		total_video_duration=total_video_duration,
 	)
 	_validate_video_plan(
 		result,
@@ -346,6 +357,7 @@ def _normalize_qwen_plan(
 	generation_mode="Multi-shot",
 	reference_images=None,
 	workflow_input_contract=None,
+	total_video_duration=None,
 ):
 	"""Normalize model output without inventing semantic reference assignments."""
 	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
@@ -401,6 +413,15 @@ def _normalize_qwen_plan(
 						"usage_role": single_image_role,
 					}
 				]
+	if (
+		total_video_duration is not None
+		and generation_mode == "Multi-shot"
+		and reference_images
+		and len(normalized_shots) == len(reference_images)
+	):
+		equal_duration = float(total_video_duration) / len(normalized_shots)
+		for shot in normalized_shots:
+			shot["duration_seconds"] = equal_duration
 	return {"shots": normalized_shots}
 
 
@@ -504,6 +525,15 @@ def _validate_video_plan(
 		normalized_shots.append(normalized)
 	if total_video_duration is not None:
 		target_duration = float(total_video_duration)
+		if (
+			generation_mode == "Multi-shot"
+			and reference_images
+			and len(normalized_shots) == len(reference_images)
+		):
+			equal_duration = target_duration / len(normalized_shots)
+			for shot in normalized_shots:
+				shot["duration_seconds"] = equal_duration
+			return {"shots": normalized_shots}
 		plan_duration = sum(shot["duration_seconds"] for shot in normalized_shots)
 		if not math.isfinite(target_duration) or target_duration <= 0 or plan_duration <= 0:
 			frappe.throw(_("Video plan duration must be a positive finite number."))
