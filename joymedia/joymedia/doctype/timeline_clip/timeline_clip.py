@@ -34,3 +34,143 @@ class TimelineClip(Document):
 			self.audio_role = "SFX"
 		if self.track_type == "Video" and self.linked_video_clip:
 			self.linked_video_clip = None
+
+	def after_insert(self):
+		"""Preserve storyboard order while generated shots arrive asynchronously.
+
+		Initial generated clips are created one-by-one as ComfyUI jobs finish. That
+		completion order is not necessarily the storyboard order. Reorder only a
+		pristine, one-clip-per-shot timeline; once a user trims, moves, splits,
+		duplicates, transitions, or replaces a source, editorial order is sacred.
+		"""
+		if self.track_type == "Audio" and self.audio_role == "Source" and self.linked_video_clip:
+			_align_source_audio_to_video(self)
+			return
+		if self.track_type != "Video" or not self.shot or not self.media_project:
+			return
+		_restore_pristine_generated_shot_order(self.media_project)
+
+
+def _align_source_audio_to_video(audio_clip):
+	video = frappe.db.get_value(
+		"Timeline Clip",
+		audio_clip.linked_video_clip,
+		[
+			"clip_order",
+			"timeline_start_frame",
+			"initial_timeline_start_frame",
+			"source_in_frame",
+			"source_out_frame",
+			"initial_source_in_frame",
+			"initial_source_out_frame",
+		],
+		as_dict=True,
+	)
+	if not video:
+		return
+	frappe.db.set_value(
+		"Timeline Clip",
+		audio_clip.name,
+		{
+			"clip_order": int(video.clip_order or 0),
+			"timeline_start_frame": int(video.timeline_start_frame or 0),
+			"initial_timeline_start_frame": int(
+				video.initial_timeline_start_frame or video.timeline_start_frame or 0
+			),
+			"source_in_frame": int(video.source_in_frame or 0),
+			"source_out_frame": int(video.source_out_frame or 0),
+			"initial_source_in_frame": int(video.initial_source_in_frame or video.source_in_frame or 0),
+			"initial_source_out_frame": int(video.initial_source_out_frame or video.source_out_frame or 0),
+		},
+		update_modified=False,
+	)
+
+
+def _restore_pristine_generated_shot_order(project_name):
+	clips = frappe.get_all(
+		"Timeline Clip",
+		filters={
+			"media_project": project_name,
+			"track_type": "Video",
+			"enabled": 1,
+		},
+		fields=[
+			"name",
+			"shot",
+			"clip_order",
+			"timeline_start_frame",
+			"initial_timeline_start_frame",
+			"source_in_frame",
+			"source_out_frame",
+			"initial_source_in_frame",
+			"initial_source_out_frame",
+			"transition_to_next",
+			"transition_frames",
+			"is_outdated",
+		],
+		order_by="clip_order asc, creation asc",
+	)
+	if not clips:
+		return
+
+	seen_shots = set()
+	cursor = 0
+	for clip in clips:
+		if not clip.shot or clip.shot in seen_shots:
+			return
+		seen_shots.add(clip.shot)
+		if int(clip.source_in_frame or 0) != int(clip.initial_source_in_frame or 0):
+			return
+		if int(clip.source_out_frame or 0) != int(clip.initial_source_out_frame or 0):
+			return
+		if int(clip.timeline_start_frame or 0) != int(clip.initial_timeline_start_frame or 0):
+			return
+		if int(clip.timeline_start_frame or 0) != cursor:
+			return
+		if clip.is_outdated or (clip.transition_to_next or "Cut") != "Cut" or int(clip.transition_frames or 0):
+			return
+		cursor += max(0, int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0))
+
+	shots = frappe.get_all(
+		"Shot",
+		filters={
+			"media_project": project_name,
+			"name": ["in", list(seen_shots)],
+			"is_removed": 0,
+		},
+		fields=["name", "shot_number"],
+	)
+	if len(shots) != len(seen_shots):
+		return
+	shot_number = {row.name: int(row.shot_number or 0) for row in shots}
+	ordered = sorted(clips, key=lambda clip: (shot_number.get(clip.shot, 0), clip.name))
+
+	cursor = 0
+	for index, clip in enumerate(ordered, start=1):
+		frappe.db.set_value(
+			"Timeline Clip",
+			clip.name,
+			{
+				"clip_order": index,
+				"timeline_start_frame": cursor,
+				"initial_timeline_start_frame": cursor,
+			},
+			update_modified=False,
+		)
+		linked_audio = frappe.db.get_value(
+			"Timeline Clip",
+			{"linked_video_clip": clip.name, "track_type": "Audio"},
+			"name",
+		)
+		if linked_audio:
+			frappe.db.set_value(
+				"Timeline Clip",
+				linked_audio,
+				{
+					"clip_order": index,
+					"timeline_start_frame": cursor,
+					"initial_timeline_start_frame": cursor,
+				},
+				update_modified=False,
+			)
+		cursor += max(0, int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0))
