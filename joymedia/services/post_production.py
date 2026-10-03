@@ -14,7 +14,6 @@ import copy
 import re
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 import frappe
@@ -364,30 +363,9 @@ def _i2v_workflow(first_frame, prompt, seconds, last_frame=None, megapixels=None
 
 
 def _render_video(workflow):
-	"""Run one ComfyUI job to completion and return its saved video."""
-	from joymedia.services.comfyui_client import download_output, get_history, interrupt, submit_workflow
+	from joymedia.services.comfyui_client import run_workflow_to_bytes
 
-	prompt_id = submit_workflow(workflow)["prompt_id"]
-	deadline = time.monotonic() + COMFYUI_JOB_TIMEOUT_SECONDS
-	while time.monotonic() < deadline:
-		history = get_history(prompt_id).get(prompt_id)
-		if history:
-			status = history.get("status") or {}
-			if status.get("status_str") == "error":
-				errors = [
-					message[1].get("exception_message", "")
-					for message in status.get("messages") or []
-					if message and message[0] == "execution_error"
-				]
-				raise ValueError(_("ComfyUI job failed: {0}").format("; ".join(errors) or prompt_id))
-			saved = (history.get("outputs") or {}).get(I2V_SAVE_NODE, {})
-			for item in saved.get("images", []) + saved.get("videos", []) + saved.get("gifs", []):
-				return download_output(item["filename"], item.get("subfolder", ""), item.get("type", "output"))
-			if status.get("completed"):
-				raise ValueError(_("ComfyUI job {0} produced no video.").format(prompt_id))
-		time.sleep(10)
-	interrupt(prompt_id=prompt_id)
-	raise ValueError(_("ComfyUI job {0} timed out.").format(prompt_id))
+	return run_workflow_to_bytes(workflow, I2V_SAVE_NODE, timeout=COMFYUI_JOB_TIMEOUT_SECONDS)
 
 
 def _extract_frame(video_path, frame_index, output_path):

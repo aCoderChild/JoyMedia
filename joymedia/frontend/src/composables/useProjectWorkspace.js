@@ -84,6 +84,7 @@ export function useProjectWorkspace(projectName) {
         end_card_title: settingsPayload.end_card_title || "",
         end_card_tagline: settingsPayload.end_card_tagline || "",
         soundtrack_prompt: settingsPayload.soundtrack_prompt || "",
+        export_quality: settingsPayload.export_quality || "Standard 1080p",
       });
       await fetchWorkspace();
       showSettings.value = false;

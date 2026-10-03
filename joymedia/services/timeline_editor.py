@@ -613,6 +613,8 @@ def queue_project_timeline_export(project_name: str):
 	frappe.enqueue(
 		"joymedia.services.timeline_editor.run_project_timeline_export",
 		queue="long",
+		# Studio finishing renders every second of film on the GPU.
+		timeout=7200,
 		project_name=project.name,
 	)
 	return {

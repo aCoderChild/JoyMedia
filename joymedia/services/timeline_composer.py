@@ -1,11 +1,13 @@
 """Render the persistent JoyMedia Timeline Clip edit decision list."""
 
+import shutil
 import tempfile
 from pathlib import Path
 
 import frappe
 from frappe import _
 
+from joymedia.services import finishing
 from joymedia.services.video_composer import (
 	_get_audio_sources,
 	_get_or_create_final_asset,
@@ -17,6 +19,7 @@ from joymedia.services.video_composer import (
 )
 
 
+STUDIO_EXPORT_QUALITY = "Studio 1440p60"
 FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
 END_CARD_SECONDS = 3.5
 TITLE_FONT = "PlayfairDisplay.ttf"
@@ -64,6 +67,10 @@ def compose_project_timeline_internal(project_name: str):
 	video_clips.sort(key=lambda clip: (int(clip.timeline_start_frame or 0), int(clip.clip_order or 0)))
 
 	profile = _delivery_profile(project)
+	studio = (project.get("export_quality") or "") == STUDIO_EXPORT_QUALITY
+	# Studio exports render at half size and are upscaled and interpolated afterwards.
+	render = finishing.render_profile(profile) if studio else profile
+	output_profile = finishing.studio_profile(profile) if studio else profile
 	clip_frames = [int(clip.source_out_frame) - int(clip.source_in_frame) for clip in video_clips]
 	if any(frames <= 0 for frames in clip_frames):
 		frappe.throw(_("Every timeline clip must contain at least one frame."))
@@ -92,11 +99,11 @@ def compose_project_timeline_internal(project_name: str):
 				_normalize_clip(
 					source_path,
 					normalized_path,
-					profile,
+					render,
 					int(clip.source_in_frame),
 					int(clip.source_out_frame),
 				)
-				_validate_normalized_video(normalized_path, profile, expected_frames=frame_count)
+				_validate_normalized_video(normalized_path, render, expected_frames=frame_count)
 				normalized_paths.append(normalized_path)
 
 			silent_master = temp_path / f"{project.name}-timeline-silent.mp4"
@@ -106,16 +113,23 @@ def compose_project_timeline_internal(project_name: str):
 				clip_frames,
 				transition_frames,
 				silent_master,
-				profile,
+				render,
 				positioned=positioned,
 			)
-			_validate_normalized_video(silent_master, profile, expected_frames=expected_frames)
+			_validate_normalized_video(silent_master, render, expected_frames=expected_frames)
+			output_frames = expected_frames
+			if studio:
+				finished_master = temp_path / f"{project.name}-timeline-studio.mp4"
+				finishing.finish_video(silent_master, finished_master, expected_frames, render["fps"], temp_path)
+				output_frames = finishing.finished_frame_count(expected_frames, render["fps"])
+				_validate_normalized_video(finished_master, output_profile, expected_frames=output_frames)
+				silent_master = finished_master
 			title = (project.get("end_card_title") or "").strip()
 			tagline = (project.get("end_card_tagline") or "").strip()
 			if title or tagline:
 				carded_master = temp_path / f"{project.name}-timeline-card.mp4"
-				_apply_end_card(silent_master, carded_master, profile, title, tagline, temp_path)
-				_validate_normalized_video(carded_master, profile, expected_frames=expected_frames)
+				_apply_end_card(silent_master, carded_master, output_profile, title, tagline, temp_path)
+				_validate_normalized_video(carded_master, output_profile, expected_frames=output_frames)
 				silent_master = carded_master
 
 			delivery_path = silent_master
@@ -126,10 +140,14 @@ def compose_project_timeline_internal(project_name: str):
 			if audio_sources:
 				delivery_path = temp_path / f"{project.name}-timeline.mp4"
 				_mix_audio(silent_master, audio_sources, delivery_path)
-				_validate_normalized_video(delivery_path, profile, expected_frames=expected_frames)
+				_validate_normalized_video(delivery_path, output_profile, expected_frames=output_frames)
 
 			video_duration = _get_video_duration(delivery_path)
-			video_bytes = delivery_path.read_bytes()
+			# Studio exports exceed the upload size limit, which is meant for user
+			# uploads; the rendered file is moved into place instead of re-read.
+			file_name = f"{project.name}-edited-{frappe.generate_hash(length=8)}.mp4"
+			stored_path = Path(frappe.get_site_path("private", "files", file_name))
+			shutil.move(str(delivery_path), stored_path)
 	except (OSError, ValueError) as exc:
 		frappe.throw(_("Unable to render timeline: {0}").format(str(exc)))
 	except Exception as exc:
@@ -142,13 +160,16 @@ def compose_project_timeline_internal(project_name: str):
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",
-			"file_name": f"{project.name}-edited.mp4",
-			"content": video_bytes,
+			"file_name": file_name,
+			"file_url": f"/private/files/{file_name}",
+			"file_size": stored_path.stat().st_size,
 			"is_private": 1,
 			"attached_to_doctype": "Media Asset",
 			"attached_to_name": output_asset.name,
 		}
-	).insert(ignore_permissions=True)
+	)
+	file_doc.flags.copy_from_existing_file = True
+	file_doc.insert(ignore_permissions=True)
 
 	asset_version = frappe.get_doc(
 		{
@@ -157,7 +178,7 @@ def compose_project_timeline_internal(project_name: str):
 			"file": file_doc.file_url,
 			"source": "Edited",
 			"duration_seconds": video_duration,
-			"fps": profile["fps"],
+			"fps": output_profile["fps"],
 		}
 	).insert(ignore_permissions=True)
 
@@ -174,7 +195,7 @@ def compose_project_timeline_internal(project_name: str):
 		"file": file_doc.file_url,
 		"duration_seconds": video_duration,
 		"timeline_frames": expected_frames,
-		"fps": profile["fps"],
+		"fps": output_profile["fps"],
 	}
 
 

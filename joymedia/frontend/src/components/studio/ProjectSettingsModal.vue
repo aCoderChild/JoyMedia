@@ -194,6 +194,28 @@
               />
             </div>
 
+            <!-- Export quality -->
+            <div class="space-y-1.5">
+              <label class="block font-semibold text-ink-primary">
+                {{ currentLang === 'vi' ? 'Chất lượng xuất video:' : 'Export quality:' }}
+              </label>
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  v-for="option in exportQualities"
+                  :key="option.value"
+                  type="button"
+                  class="text-left px-3 py-2 rounded-xl border text-xs cursor-pointer"
+                  :class="form.export_quality === option.value
+                    ? 'border-indigo-500 bg-indigo-500/20 text-ink-primary'
+                    : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
+                  @click="form.export_quality = option.value"
+                >
+                  <span class="block font-semibold">{{ currentLang === 'vi' ? option.vi : option.en }}</span>
+                  <span class="block text-[10.5px] text-ink-muted mt-0.5">{{ currentLang === 'vi' ? option.viSub : option.enSub }}</span>
+                </button>
+              </div>
+            </div>
+
             <!-- AI soundtrack -->
             <div class="space-y-1.5">
               <label class="block font-semibold text-ink-primary">
@@ -305,7 +327,13 @@ const form = reactive({
   end_card_title: "",
   end_card_tagline: "",
   soundtrack_prompt: "",
+  export_quality: "Standard 1080p",
 });
+
+const exportQualities = [
+  { value: "Standard 1080p", vi: "Tiêu chuẩn · 1080p", en: "Standard · 1080p", viSub: "24 khung/giây, xuất nhanh", enSub: "24 fps, fast export" },
+  { value: "Studio 1440p60", vi: "Studio · 1440p 60fps", en: "Studio · 1440p 60fps", viSub: "AI làm nét và làm mượt, ~12 phút/30 giây", enSub: "AI upscaled and smoothed, ~12 min per 30 s" },
+];
 
 watch(
   () => props.settings,
@@ -323,6 +351,7 @@ watch(
       form.end_card_title = s.end_card_title || "";
       form.end_card_tagline = s.end_card_tagline || "";
       form.soundtrack_prompt = s.soundtrack_prompt || "";
+      form.export_quality = s.export_quality || "Standard 1080p";
     }
   },
   { immediate: true }

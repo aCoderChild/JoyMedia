@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 import uuid
 
 import frappe
@@ -172,6 +173,31 @@ def download_output(
 		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
 	_raise_for_comfyui_error(response)
 	return response.content
+
+
+def run_workflow_to_bytes(workflow: dict, output_node: str, *, timeout: float = 3600, base_url: str | None = None) -> bytes:
+	"""Run one ComfyUI job to completion and return the first file saved by output_node."""
+	prompt_id = submit_workflow(workflow, base_url=base_url)["prompt_id"]
+	deadline = time.monotonic() + timeout
+	while time.monotonic() < deadline:
+		history = get_history(prompt_id, base_url=base_url).get(prompt_id)
+		if history:
+			status = history.get("status") or {}
+			if status.get("status_str") == "error":
+				errors = [
+					message[1].get("exception_message", "")
+					for message in status.get("messages") or []
+					if message and message[0] == "execution_error"
+				]
+				frappe.throw(_("ComfyUI job failed: {0}").format("; ".join(errors) or prompt_id))
+			saved = (history.get("outputs") or {}).get(output_node, {})
+			for item in saved.get("images", []) + saved.get("videos", []) + saved.get("gifs", []):
+				return download_output(item["filename"], item.get("subfolder", ""), item.get("type", "output"), base_url=base_url)
+			if status.get("completed"):
+				frappe.throw(_("ComfyUI job {0} produced no output.").format(prompt_id))
+		time.sleep(5)
+	interrupt(prompt_id=prompt_id, base_url=base_url)
+	frappe.throw(_("ComfyUI job {0} timed out.").format(prompt_id))
 
 
 def probe_output(filename: str, subfolder: str = "", file_type: str = "output", *, base_url: str | None = None) -> bool:

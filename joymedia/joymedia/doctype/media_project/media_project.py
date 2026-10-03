@@ -497,6 +497,7 @@ def get_project_workspace(name):
 			"end_card_title": settings.end_card_title or "",
 			"end_card_tagline": settings.end_card_tagline or "",
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
+			"export_quality": settings.export_quality or "Standard 1080p",
 			**_customer_style_details(settings),
 		} if settings.workflow else None),
 		"storyboard": storyboard,
@@ -835,6 +836,7 @@ def save_project_video_settings(
 	project_name, total_duration_seconds, delivery_preset, video_style=None,
 	generation_mode=None, global_instructions=None, reference_mode=None,
 	quality_mode=None, end_card_title=None, end_card_tagline=None, soundtrack_prompt=None,
+	export_quality=None,
 ):
 	project = frappe.get_doc("Media Project", project_name)
 	return project.save_video_settings(
@@ -848,6 +850,7 @@ def save_project_video_settings(
 		end_card_title,
 		end_card_tagline,
 		soundtrack_prompt,
+		export_quality,
 	)
 
 
@@ -1234,6 +1237,7 @@ class MediaProject(Document):
 			"end_card_title": settings.end_card_title or "",
 			"end_card_tagline": settings.end_card_tagline or "",
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
+			"export_quality": settings.export_quality or "Standard 1080p",
 			**_customer_style_details(settings),
 		}
 
@@ -1242,6 +1246,7 @@ class MediaProject(Document):
 		self, total_duration_seconds, delivery_preset, video_style=None,
 		generation_mode=None, global_instructions=None, reference_mode=None,
 		quality_mode=None, end_card_title=None, end_card_tagline=None, soundtrack_prompt=None,
+		export_quality=None,
 	):
 		self._require_write_access()
 		try:
@@ -1282,6 +1287,10 @@ class MediaProject(Document):
 			self.end_card_tagline = str(end_card_tagline).strip()
 		if soundtrack_prompt is not None:
 			self.soundtrack_prompt = str(soundtrack_prompt).strip()
+		if export_quality:
+			if export_quality not in ("Standard 1080p", "Studio 1440p60"):
+				frappe.throw(_("Select Standard 1080p or Studio 1440p60 export quality."))
+			self.export_quality = export_quality
 		self.workflow = workflow.name
 		if delivery_preset == "Landscape":
 			self.delivery_width, self.delivery_height = 1920, 1080
