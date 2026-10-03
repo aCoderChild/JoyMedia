@@ -10,6 +10,7 @@ joymedia.patches.clear_legacy_generation_run_final_assets
 # Patches added in this section will be executed after doctypes are migrated
 joymedia.patches.disable_public_signup
 joymedia.patches.register_minimax_h3_sato_workflows
+joymedia.patches.register_minimax_h3_sato_adapter_versions
 joymedia.patches.ensure_joymedia_user_role
 joymedia.patches.remove_joymedia_user_custom_permissions
 joymedia.patches.add_optional_last_frame_binding

@@ -15,7 +15,7 @@ PROMPT_BINDING_KEY = "generation_prompt"
 
 def workflow_supports_continuation(workflow):
 	"""Return whether a workflow has a required first-frame input binding."""
-	if getattr(workflow, "adapter_key", "") == "minimax_h3_sato":
+	if str(getattr(workflow, "adapter_key", "")).startswith("minimax_h3_sato"):
 		return True
 	return any(
 		frappe.scrub(binding.required_input_role or "") == "first_frame"
@@ -88,6 +88,7 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 	adapter = get_workflow_adapter(workflow_version)
 	width = run_snapshot.get("delivery_width")
 	height = run_snapshot.get("delivery_height")
+	fps = run_snapshot.get("output_fps") or workflow_version.output_fps or 24
 	if not width or not height:
 		frappe.throw(_("Generation Run {0} has no valid delivery dimensions in its snapshot.").format(run.name))
 	adapter.prepare_execution(
@@ -95,6 +96,7 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		seed=int(attempt.seed),
 		width=int(width),
 		height=int(height),
+		fps=float(fps),
 		frame_count=int(job.segment_frame_count),
 		output_prefix=f"{job.name}_{attempt.name}",
 		last_frame_index=int(job.segment_frame_count) - 1,

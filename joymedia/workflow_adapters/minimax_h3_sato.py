@@ -1,19 +1,14 @@
 from .base import GenericWorkflowAdapter
 
 
-class MiniMaxH3SatoAdapter(GenericWorkflowAdapter):
-	"""Adapter for the exported MiniMax H3 Sato generation/continuation graphs."""
+class MiniMaxH3SatoGenerationAdapter(GenericWorkflowAdapter):
+	"""Adapter for the exported MiniMax H3 Sato initial-generation graph."""
 
+	continuation_workflow_key = "h3_sato_continuation"
 	cumulative_segment_output = True
 
 	def extract_execution_metadata(self, workflow_data):
-		generation = workflow_data.get("270", {}).get("inputs") or workflow_data.get("328", {}).get("inputs", {})
-		return {
-			"frame_count": int(generation.get("seconds", 5) * generation.get("fps", 24)),
-			"output_fps": generation.get("fps", 24),
-			"produces_video": 1,
-			"produces_audio": 1,
-		}
+		return _extract_metadata(workflow_data, "270")
 
 	def prepare_execution(
 		self,
@@ -22,31 +17,85 @@ class MiniMaxH3SatoAdapter(GenericWorkflowAdapter):
 		seed,
 		width,
 		height,
+		fps=None,
 		frame_count,
 		output_prefix,
 		last_frame_index,
 		last_frame_prefix,
 	):
-		if "270" in workflow:
-			_set_execution_input(workflow, "248", "seed", seed)
-			_set_execution_input(workflow, "270", "width", width)
-			_set_execution_input(workflow, "270", "height", height)
-			_set_execution_input(workflow, "270", "seconds", max(1, round(frame_count / 24)))
-			_set_execution_input(workflow, "270", "fps", 24)
-			_set_execution_input(workflow, "254", "filename_prefix", output_prefix)
-			_set_execution_input(workflow, "272", "filename_prefix", f"{output_prefix}_state")
-			return workflow
+		fps = float(fps or 24)
+		_set_execution_input(workflow, "248", "seed", seed)
+		_set_execution_input(workflow, "270", "width", width)
+		_set_execution_input(workflow, "270", "height", height)
+		_set_execution_input(workflow, "270", "seconds", frame_count / fps)
+		_set_execution_input(workflow, "270", "fps", fps)
+		_set_execution_input(workflow, "254", "filename_prefix", output_prefix)
+		_set_execution_input(workflow, "272", "filename_prefix", f"{output_prefix}_state")
+		return workflow
 
+
+class MiniMaxH3SatoContinuationAdapter(GenericWorkflowAdapter):
+	"""Adapter for the exported MiniMax H3 Sato cumulative continuation graph."""
+
+	cumulative_segment_output = True
+
+	def extract_execution_metadata(self, workflow_data):
+		return _extract_metadata(workflow_data, "328")
+
+	def prepare_execution(
+		self,
+		workflow,
+		*,
+		seed,
+		width,
+		height,
+		fps=None,
+		frame_count,
+		output_prefix,
+		last_frame_index,
+		last_frame_prefix,
+	):
+		fps = float(fps or 24)
+		duration = frame_count / fps
 		_set_execution_input(workflow, "291", "seed", seed)
 		_set_execution_input(workflow, "328", "width", width)
 		_set_execution_input(workflow, "328", "height", height)
-		_set_execution_input(workflow, "328", "seconds", max(1, round(frame_count / 24)))
-		_set_execution_input(workflow, "328", "segment_seconds", str(max(1, round(frame_count / 24))))
-		_set_execution_input(workflow, "328", "fps", 24)
-		_set_execution_input(workflow, "373", "filename_prefix", output_prefix)
-		_set_execution_input(workflow, "374", "filename_prefix", f"{output_prefix}_stitched")
+		_set_execution_input(workflow, "328", "seconds", duration)
+		_set_execution_input(workflow, "328", "segment_seconds", str(duration))
+		_set_execution_input(workflow, "328", "fps", fps)
 		_set_execution_input(workflow, "355", "filename_prefix", f"{output_prefix}_state")
+		_set_execution_input(workflow, "374", "filename_prefix", output_prefix)
 		return workflow
+
+
+class MiniMaxH3SatoAdapter(GenericWorkflowAdapter):
+	"""Compatibility adapter for workflow records created before split adapter keys."""
+
+	continuation_workflow_key = "h3_sato_continuation"
+	cumulative_segment_output = True
+
+	def extract_execution_metadata(self, workflow_data):
+		adapter = (
+			MiniMaxH3SatoGenerationAdapter()
+			if "270" in workflow_data
+			else MiniMaxH3SatoContinuationAdapter()
+		)
+		return adapter.extract_execution_metadata(workflow_data)
+
+	def prepare_execution(self, workflow, **kwargs):
+		adapter = MiniMaxH3SatoGenerationAdapter() if "270" in workflow else MiniMaxH3SatoContinuationAdapter()
+		return adapter.prepare_execution(workflow, **kwargs)
+
+
+def _extract_metadata(workflow_data, node_key):
+	inputs = workflow_data.get(node_key, {}).get("inputs", {})
+	fps = float(inputs.get("fps", 24))
+	return {
+		"frame_count": int(float(inputs.get("seconds", 5)) * fps),
+		"output_fps": fps,
+		"produces_video": 1,
+		"produces_audio": 1,
+	}
 
 
 def _set_execution_input(workflow, node_key, input_name, value):

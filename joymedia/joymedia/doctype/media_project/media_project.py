@@ -62,7 +62,10 @@ def _get_continuation_workflow(workflow):
 	from joymedia.services.workflow_resolver import workflow_supports_continuation
 
 	if getattr(workflow, "continuation_workflow", None):
-		return frappe.get_doc("Generation Workflow", workflow.continuation_workflow)
+		# The project/run keeps the initial-generation workflow as its public
+		# workflow; the orchestrator selects the linked continuation workflow for
+		# dependent technical segments.
+		return workflow
 	if workflow_supports_continuation(workflow):
 		return workflow
 	continuation_workflow = get_latest_valid_workflow("h3_i2v_production")
@@ -148,6 +151,7 @@ def _active_project_shots(project_name, fields=None):
 
 def build_project_snapshot(project):
 	settings = _project_settings(project)
+	workflow_fps = frappe.db.get_value("Generation Workflow", settings.workflow, "output_fps") if settings.workflow else None
 	snapshot = {
 		"media_project": project.name,
 		"project_name": project.project_name or "",
@@ -157,6 +161,7 @@ def build_project_snapshot(project):
 		"delivery_preset": settings.delivery_preset or "",
 		"delivery_width": int(settings.delivery_width or 0),
 		"delivery_height": int(settings.delivery_height or 0),
+		"output_fps": float(workflow_fps or 24),
 		"generation_mode": settings.generation_mode or "Multi-shot",
 		"global_instructions": settings.global_instructions or "",
 		"workflow": settings.workflow or "",

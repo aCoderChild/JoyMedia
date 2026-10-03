@@ -313,30 +313,6 @@
       "title": "STEP 1 - Load Latent  [BYPASSED: Ctrl+B to enable from run 2 on]"
     }
   },
-  "361": {
-    "inputs": {
-      "image": "1.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Load Image"
-    }
-  },
-  "373": {
-    "inputs": {
-      "filename_prefix": "video/MiniMaxH3_Easy",
-      "format": "auto",
-      "codec": "auto",
-      "video": [
-        "330",
-        0
-      ]
-    },
-    "class_type": "SaveVideo",
-    "_meta": {
-      "title": "Save Video"
-    }
-  },
   "374": {
     "inputs": {
       "filename_prefix": "video/MiniMaxH3_Stitched",

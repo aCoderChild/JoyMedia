@@ -139,7 +139,7 @@ class GenerationTask(Document):
 		# Continuous first_frame is runtime lineage resolved from the dependency per Attempt.
 		if self.depends_on_task:
 			actual_snapshot.pop("first_frame", None)
-			if getattr(workflow, "adapter_key", "") == "minimax_h3_sato":
+			if str(getattr(workflow, "adapter_key", "")).startswith("minimax_h3_sato"):
 				actual_snapshot.pop("seed_video", None)
 				actual_snapshot.pop("continuation_state", None)
 
@@ -152,7 +152,7 @@ class GenerationTask(Document):
 		for role in required_roles:
 			if self.depends_on_task and role == "first_frame":
 				continue
-			if self.depends_on_task and getattr(workflow, "adapter_key", "") == "minimax_h3_sato" and role in {
+			if self.depends_on_task and str(getattr(workflow, "adapter_key", "")).startswith("minimax_h3_sato") and role in {
 				"seed_video",
 				"continuation_state",
 			}:

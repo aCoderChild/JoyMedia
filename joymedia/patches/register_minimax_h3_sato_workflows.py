@@ -6,7 +6,7 @@ from .register_minimax_h3_workflows import _register_workflow
 GENERATION = {
 	"filename": "minimax_h3_sato_generation.json",
 	"workflow_key": "h3_sato_generation",
-	"adapter_key": "minimax_h3_sato",
+	"adapter_key": "minimax_h3_sato_generation",
 	"bindings": (
 		{
 			"binding_key": "generation_prompt",
@@ -30,7 +30,7 @@ GENERATION = {
 CONTINUATION = {
 	"filename": "minimax_h3_sato_continuation.json",
 	"workflow_key": "h3_sato_continuation",
-	"adapter_key": "minimax_h3_sato",
+	"adapter_key": "minimax_h3_sato_continuation",
 	"bindings": (
 		{
 			"binding_key": "generation_prompt",

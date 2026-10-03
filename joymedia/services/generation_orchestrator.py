@@ -35,6 +35,20 @@ TERMINAL_JOB_STATUSES = ("Completed", "Failed", "Cancelled")
 MAX_AUTOMATIC_RETRIES = 1
 
 
+def _get_continuation_workflow_from_adapter(adapter):
+	workflow_key = getattr(adapter, "continuation_workflow_key", None)
+	if not workflow_key:
+		return None
+	rows = frappe.get_all(
+		"Generation Workflow",
+		filters={"workflow_key": workflow_key},
+		fields=["name"],
+		order_by="version_number desc, modified desc",
+		limit_page_length=1,
+	)
+	return frappe.get_doc("Generation Workflow", rows[0].name) if rows else None
+
+
 @frappe.whitelist()
 def start_run(run_name: str):
 	"""Start a Draft Generation Run and hand the remaining workflow to background jobs."""
@@ -106,10 +120,11 @@ def prepare_run(run_name: str):
 		"Generation Workflow",
 		run.workflow,
 	)
+	workflow_adapter = get_workflow_adapter(workflow)
 	continuation_workflow = (
 		frappe.get_doc("Generation Workflow", workflow.continuation_workflow)
 		if workflow.continuation_workflow
-		else None
+		else _get_continuation_workflow_from_adapter(workflow_adapter)
 	)
 	shots = snapshot.get("shots") or []
 	try:
@@ -131,9 +146,15 @@ def prepare_run(run_name: str):
 		if continuation_workflow:
 			validate_workflow_for_execution(continuation_workflow)
 			validate_workflow_bindings(continuation_workflow)
-		cumulative_segments = bool(get_workflow_adapter(workflow).cumulative_segment_output)
+		cumulative_segments = bool(workflow_adapter.cumulative_segment_output)
+		cross_shot_continuity = bool(
+			snapshot.get("generation_mode") in ("Continuous", "Consistency")
+			or execution_scope.get("continuity")
+		)
 		jobs_to_prepare = []
-		previous_shot_tail_job = execution_scope.get("continuation_from_task") if execution_scope.get("continuity") else None
+		previous_shot_tail_job = (
+			execution_scope.get("continuation_from_task") if cross_shot_continuity else None
+		)
 		for shot in shots:
 			shot_name = shot.get("shot")
 			segments = plan_generation_segments(
@@ -156,10 +177,7 @@ def prepare_run(run_name: str):
 					continue
 
 				dependency = previous_segment_job
-				if not dependency and not cumulative_segments and (
-					snapshot.get("generation_mode") in ("Continuous", "Consistency")
-					or execution_scope.get("continuity")
-				):
+				if not dependency and cross_shot_continuity:
 					dependency = previous_shot_tail_job
 				prompt_text = compile_segment_prompt_from_snapshot(
 					frappe._dict(
@@ -173,7 +191,11 @@ def prepare_run(run_name: str):
 				)
 				segment_workflow = (
 					continuation_workflow
-					if segment["segment_index"] > 1 and continuation_workflow
+					if continuation_workflow
+					and (
+						segment["segment_index"] > 1
+						or (dependency and dependency == previous_shot_tail_job)
+					)
 					else workflow
 				)
 				job = frappe.get_doc(
@@ -201,7 +223,7 @@ def prepare_run(run_name: str):
 				job.save(ignore_permissions=True)
 				jobs_to_prepare.append(job)
 				previous_segment_job = job.name
-			previous_shot_tail_job = previous_segment_job if not cumulative_segments else None
+			previous_shot_tail_job = previous_segment_job if cross_shot_continuity else None
 
 		for job in jobs_to_prepare:
 			shot_snapshot = next(
@@ -883,12 +905,16 @@ def _finalize_completed_shots(run):
 			fields=["status"],
 		)
 		if jobs and all(job.status == "Completed" for job in jobs):
-			cumulative = frappe.db.get_value(
+			last_job = frappe.get_all(
 				"Generation Task",
-				{"generation_run": run.name, "shot": shot_name, "segment_index": 2},
-				"workflow",
+				filters={"generation_run": run.name, "shot": shot_name},
+				fields=["workflow"],
+				order_by="segment_index desc",
+				limit_page_length=1,
 			)
-			workflow = frappe.get_doc("Generation Workflow", cumulative or run.workflow)
+			workflow = frappe.get_doc(
+				"Generation Workflow", last_job[0].workflow if last_job else run.workflow
+			)
 			if get_workflow_adapter(workflow).cumulative_segment_output:
 				from .video_composer import promote_cumulative_shot_output
 

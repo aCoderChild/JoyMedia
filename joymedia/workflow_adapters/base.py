@@ -26,6 +26,7 @@ class GenericWorkflowAdapter:
 		seed,
 		width,
 		height,
+		fps=None,
 		frame_count,
 		output_prefix,
 		last_frame_index,
