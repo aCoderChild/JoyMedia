@@ -20,6 +20,8 @@
           <input v-model.number="zoom" type="range" min="0.6" max="3" step="0.1" />
           <span>＋</span>
         </label>
+        <button type="button" class="timeline-history-btn" :disabled="!canUndo || busy" @click="$emit('undo')">↶ Undo</button>
+        <button type="button" class="timeline-history-btn" :disabled="!canRedo || busy" @click="$emit('redo')">↷ Redo</button>
       </div>
     </div>
 
@@ -46,8 +48,8 @@
             :selected-clip-name="selectedClipName"
             :playhead-frame="playheadFrame"
             :busy="busy"
-            :total-frames="totalFrames"
-            :total-seconds="totalSeconds"
+            :total-frames="canvasTotalFrames || totalFrames"
+            :total-seconds="(canvasTotalFrames || totalFrames) / (fps || 24)"
             :current-lang="currentLang"
             @select-clip="forwardSelectClip"
             @update:playhead-frame="$emit('update:playheadFrame', $event)"
@@ -94,13 +96,21 @@
         >
           <span class="timeline-global-playhead-head" />
         </div>
+        <div
+          v-if="renderTotalFrames < canvasTotalFrames"
+          class="timeline-outside-render"
+          :style="{ left: `${renderTotalFrames * pixelsPerFrame}px` }"
+          aria-hidden="true"
+        >
+          <span>{{ currentLang === 'vi' ? 'KẾT THÚC VIDEO' : 'END OF VIDEO' }}</span>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import AudioTimelineTracks from "./AudioTimelineTracks.vue";
 import EditTimelineTrack from "./EditTimelineTrack.vue";
 
@@ -114,6 +124,10 @@ const props = defineProps({
   busy: { type: Boolean, default: false },
   totalFrames: { type: Number, default: 0 },
   totalSeconds: { type: Number, default: 0 },
+  canvasTotalFrames: { type: Number, default: 0 },
+  renderTotalFrames: { type: Number, default: 0 },
+  canUndo: { type: Boolean, default: false },
+  canRedo: { type: Boolean, default: false },
   audioTrackAsset: { type: Object, default: null },
   currentLang: { type: String, default: "en" },
 });
@@ -130,6 +144,8 @@ const emit = defineEmits([
   "selectTransition",
   "openInspector",
   "openAudioPicker",
+  "undo",
+  "redo",
 ]);
 
 const zoom = ref(1);
@@ -145,7 +161,26 @@ const activeAudioClips = computed(() => {
 });
 
 const pixelsPerFrame = computed(() => Math.max(2, (36 * zoom.value) / Math.max(1, props.fps || 24)));
-const timelineCanvasWidth = computed(() => Math.max(700, Number(props.totalFrames || 0) * pixelsPerFrame.value));
+const canvasFrames = computed(() => Number(props.canvasTotalFrames || props.totalFrames || 0));
+const timelineCanvasWidth = computed(() => Math.max(700, canvasFrames.value * pixelsPerFrame.value));
+
+function handleHistoryShortcut(event) {
+  const target = event.target;
+  if (target?.matches?.("input, textarea, select, [contenteditable='true']")) return;
+  if (!(event.metaKey || event.ctrlKey)) return;
+  const key = event.key.toLowerCase();
+  if (key === "y" || (key === "z" && event.shiftKey)) {
+    event.preventDefault();
+    emit("redo");
+    return;
+  }
+  if (key !== "z") return;
+  event.preventDefault();
+  emit("undo");
+}
+
+onMounted(() => window.addEventListener("keydown", handleHistoryShortcut));
+onBeforeUnmount(() => window.removeEventListener("keydown", handleHistoryShortcut));
 
 function forwardSelectClip(...args) {
   emit("selectClip", ...args);

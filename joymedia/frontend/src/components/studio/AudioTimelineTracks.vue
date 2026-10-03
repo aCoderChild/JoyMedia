@@ -22,7 +22,7 @@
             </div>
             <template v-for="clip in track.clips" :key="clip.name">
               <button
-                v-if="!clip.is_silent_source && (clip.audio_role !== 'Source' || clip.source_has_audio)"
+                v-if="clip.enabled && !clip.is_silent_source && (clip.audio_role !== 'Source' || clip.source_has_audio)"
                 type="button"
                 class="audio-timeline-clip"
                 :class="[
@@ -56,8 +56,21 @@
                 />
                 <span v-if="clip.audio_role !== 'Source'" class="audio-role-badge">{{ audioRoleLabel(clip.audio_role) }}</span>
               </button>
-              <div v-else class="audio-timeline-empty-segment" :style="clipStyle(clip)">
+              <div
+                v-else
+                class="audio-timeline-empty-segment"
+                :style="clipStyle(clip)"
+                @click="$emit('selectClip', clip)"
+              >
                 <span>{{ currentLang === 'vi' ? 'Không có audio nguồn' : 'No source audio' }}</span>
+                <button
+                  v-if="clip.audio_role === 'Source' && !clip.is_silent_source"
+                  type="button"
+                  class="audio-source-restore"
+                  @click.stop="$emit('openInspector', clip)"
+                >
+                  {{ currentLang === 'vi' ? 'Khôi phục' : 'Restore' }}
+                </button>
               </div>
             </template>
           </div>

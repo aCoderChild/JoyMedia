@@ -127,8 +127,21 @@
             <span>{{ currentLang === 'vi' ? 'Giảm âm lượng track khác khi có lời thoại (Ducking)' : 'Lower other audio / Ducking during speech' }}</span>
           </label>
 
+          <!-- Source audio is disabled in place so refresh cannot recreate it. -->
+          <div v-if="selectedClip.audio_role === 'Source'" class="pt-2 border-t border-outline-border">
+            <button
+              type="button"
+              class="w-full py-1.5 px-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold cursor-pointer"
+              :disabled="timelineBusy"
+              @click="$emit('setSourceAudioEnabled', selectedClip, !selectedClip.enabled)"
+            >
+              {{ selectedClip.enabled ? (currentLang === 'vi' ? 'Xóa audio nguồn' : 'Remove Source Audio') : (currentLang === 'vi' ? 'Khôi phục audio nguồn' : 'Restore Source Audio') }}
+            </button>
+          </div>
+
           <!-- Delete Audio Clip -->
           <div class="pt-2 border-t border-outline-border">
+            <template v-if="selectedClip.audio_role !== 'Source'">
             <button
               type="button"
               class="w-full py-1.5 px-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
@@ -138,6 +151,7 @@
               <span>⌫</span>
               <span>{{ currentLang === 'vi' ? 'Xóa audio khỏi timeline' : 'Remove Audio Clip' }}</span>
             </button>
+            </template>
           </div>
         </div>
 
@@ -534,6 +548,7 @@ const emit = defineEmits([
   "updateAudioClip",
   "fitAudioClipToVideo",
   "fitAudioClipToFullVideo",
+  "setSourceAudioEnabled",
   "updateSourceForSelectedClip",
   "regenerateSourceForSelectedClip",
   "applyAssetToShot",

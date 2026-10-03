@@ -230,7 +230,11 @@
             :busy="timelineBusy"
             :total-frames="timeline?.total_frames || 0"
             :total-seconds="timeline?.total_seconds || 0"
+            :canvas-total-frames="timeline?.canvas_total_frames || timeline?.total_frames || 0"
+            :render-total-frames="timeline?.render_total_frames || timeline?.total_frames || 0"
             :current-lang="currentLang"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
             @select-clip="onSelectClip"
             @update:playhead-frame="onSeekPlayhead"
             @trim="handleTrimClip"
@@ -243,6 +247,8 @@
             @open-inspector="openClipInspector"
             @open-audio-picker="openAudioPicker"
             @add-scene="openAddScenePopover"
+            @undo="undo"
+            @redo="redo"
           />
         </template>
       </div>
@@ -278,6 +284,7 @@
       @update-audio-clip="onUpdateAudioClip"
       @fit-audio-clip-to-video="onFitAudioClipToVideo"
       @fit-audio-clip-to-full-video="onFitAudioClipToFullVideo"
+      @set-source-audio-enabled="onSetSourceAudioEnabled"
       @update-source-for-selected-clip="onUpdateSourceForClip"
       @regenerate-source-for-selected-clip="onRegenerateSourceForClip"
       @apply-asset-to-shot="applyAssetToShot"
@@ -468,6 +475,11 @@ const {
   updateAudioClip,
   fitAudioClipToVideo,
   fitAudioClipToFullVideo,
+  setSourceAudioEnabled,
+  canUndo,
+  canRedo,
+  undo,
+  redo,
   moveClip,
   addAudioClip,
   exportTimeline,
@@ -570,6 +582,11 @@ async function onFitAudioClipToVideo(clip) {
 
 async function onFitAudioClipToFullVideo(clip) {
   await fitAudioClipToFullVideo(clip);
+}
+
+async function onSetSourceAudioEnabled(clip, enabled) {
+  const videoClip = videoClips.value.find((item) => item.name === clip.linked_video_clip);
+  if (videoClip) await setSourceAudioEnabled(videoClip, enabled);
 }
 
 async function handleSelectReference({ asset, role }) {
@@ -984,7 +1001,7 @@ function onVideoTimeUpdate(payload) {
 }
 
 function onSeekPlayhead(frame) {
-	const totalFrames = Number(timeline.value?.total_frames || 0);
+	const totalFrames = Number(timeline.value?.canvas_total_frames || timeline.value?.total_frames || 0);
 	playheadFrame.value = Math.max(0, Math.min(totalFrames || frame, Math.round(frame)));
 	const currentFps = fps.value || 24;
 	const seekTime = playheadFrame.value / currentFps;

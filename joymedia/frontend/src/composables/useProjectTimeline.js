@@ -6,6 +6,9 @@ export function useProjectTimeline(projectName) {
   const busy = ref(false);
   const selectedClipName = ref(null);
   const playheadFrame = ref(0);
+  const undoStack = ref([]);
+  const redoStack = ref([]);
+  const MAX_HISTORY = 50;
 
   const clips = computed(() => timeline.value?.clips || []);
   const videoClips = computed(() => clips.value.filter((clip) => (clip.track_type || "Video") === "Video"));
@@ -35,7 +38,10 @@ export function useProjectTimeline(projectName) {
     selectedClipName.value = candidate?.name || null;
 
     if (preservePlayhead && previousTimeline && next) {
-      playheadFrame.value = Math.min(previousPlayhead, Number(next.total_frames || previousPlayhead));
+      playheadFrame.value = Math.min(
+        previousPlayhead,
+        Number(next.canvas_total_frames || next.total_frames || previousPlayhead),
+      );
     } else if (candidate) {
       playheadFrame.value = candidate.timeline_start_frame;
     } else {
@@ -54,6 +60,8 @@ export function useProjectTimeline(projectName) {
       );
 
       applyTimeline(result);
+      undoStack.value = [];
+      redoStack.value = [];
       if (result && ["Queued", "Running"].includes(result.export_status)) {
         startExportPolling();
       }
@@ -64,9 +72,38 @@ export function useProjectTimeline(projectName) {
     }
   }
 
+  function snapshotTimeline() {
+    return {
+      clips: clips.value.map((clip) => ({
+        name: clip.name,
+        shot: clip.shot,
+        clip_order: clip.clip_order,
+        track_type: clip.track_type,
+        track_index: clip.track_index,
+        timeline_start_frame: clip.timeline_start_frame,
+        enabled: clip.enabled,
+        source_asset_version: clip.source_asset_version,
+        source_in_frame: clip.source_in_frame,
+        source_out_frame: clip.source_out_frame,
+        initial_source_in_frame: clip.initial_source_in_frame,
+        initial_source_out_frame: clip.initial_source_out_frame,
+        transition_to_next: clip.transition_to_next,
+        transition_frames: clip.transition_frames,
+        audio_role: clip.audio_role,
+        gain_db: clip.gain_db,
+        fade_in_frames: clip.fade_in_frames,
+        fade_out_frames: clip.fade_out_frames,
+        duck_others: clip.duck_others,
+        linked_video_clip: clip.linked_video_clip,
+        is_outdated: clip.is_outdated,
+      })),
+    };
+  }
+
   async function mutate(method, payload, preferredClip = null) {
     if (busy.value) return null;
 
+    const before = snapshotTimeline();
     busy.value = true;
 
     try {
@@ -78,6 +115,9 @@ export function useProjectTimeline(projectName) {
         }
       );
 
+      undoStack.value.push(before);
+      if (undoStack.value.length > MAX_HISTORY) undoStack.value.shift();
+      redoStack.value = [];
       applyTimeline(result, preferredClip, { preserveSelection: true, preservePlayhead: true });
       return result;
     } catch (error) {
@@ -90,6 +130,51 @@ export function useProjectTimeline(projectName) {
         type: "error",
       });
 
+      return null;
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  async function restoreHistoryState(state) {
+    return call("joymedia.services.timeline_editor.restore_timeline_state", {
+      project_name: project(),
+      state_json: JSON.stringify(state),
+    });
+  }
+
+  async function undo() {
+    if (!undoStack.value.length || busy.value) return null;
+    const previous = undoStack.value.pop();
+    const current = snapshotTimeline();
+    busy.value = true;
+    try {
+      const result = await restoreHistoryState(previous);
+      redoStack.value.push(current);
+      applyTimeline(result, null, { preserveSelection: true, preservePlayhead: true });
+      return result;
+    } catch (error) {
+      undoStack.value.push(previous);
+      toast({ title: "Undo failed", text: error?.message || "Please try again.", type: "error" });
+      return null;
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  async function redo() {
+    if (!redoStack.value.length || busy.value) return null;
+    const next = redoStack.value.pop();
+    const current = snapshotTimeline();
+    busy.value = true;
+    try {
+      const result = await restoreHistoryState(next);
+      undoStack.value.push(current);
+      applyTimeline(result, null, { preserveSelection: true, preservePlayhead: true });
+      return result;
+    } catch (error) {
+      redoStack.value.push(next);
+      toast({ title: "Redo failed", text: error?.message || "Please try again.", type: "error" });
       return null;
     } finally {
       busy.value = false;
@@ -271,6 +356,14 @@ export function useProjectTimeline(projectName) {
     );
   }
 
+  function setSourceAudioEnabled(videoClip, enabled) {
+    return mutate(
+      "set_source_audio_enabled",
+      { video_clip_name: videoClip.name, enabled },
+      videoClip.name,
+    );
+  }
+
   function moveClip(clip, timelineStartFrame, trackIndex = null) {
     return mutate(
       "move_timeline_clip",
@@ -298,6 +391,8 @@ export function useProjectTimeline(projectName) {
   const exportError = computed(() => timeline.value?.export_error || null);
   const isExporting = computed(() => ["Queued", "Running"].includes(exportStatus.value));
   const isOutdated = computed(() => Boolean(timeline.value?.is_outdated));
+  const canUndo = computed(() => undoStack.value.length > 0);
+  const canRedo = computed(() => redoStack.value.length > 0);
 
   return {
     timeline,
@@ -313,6 +408,8 @@ export function useProjectTimeline(projectName) {
     exportError,
     isExporting,
     isOutdated,
+    canUndo,
+    canRedo,
 
     applyTimeline,
     loadTimeline,
@@ -328,6 +425,9 @@ export function useProjectTimeline(projectName) {
     updateAudioClip,
     fitAudioClipToVideo,
     fitAudioClipToFullVideo,
+    setSourceAudioEnabled,
+    undo,
+    redo,
     moveClip,
     addAudioClip,
     exportTimeline,

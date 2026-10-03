@@ -66,8 +66,9 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, isMuted, 
     const clips = getRefValue(audioClips) || [];
     const activeNames = new Set();
 
-    for (const clip of clips) {
-      const audio = ensureAudioElement(clip);
+	for (const clip of clips) {
+		if (!clip.enabled) continue;
+		const audio = ensureAudioElement(clip);
       if (!audio) continue;
       activeNames.add(clip.name);
 
@@ -116,9 +117,10 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, isMuted, 
     for (const audio of audioElements.values()) audio.pause();
   }
 
-  function activeAudioClipsAtFrame(frame) {
-    return (getRefValue(audioClips) || []).filter((clip) => {
-      const startFrame = Number(clip.timeline_start_frame || 0);
+	function activeAudioClipsAtFrame(frame) {
+		return (getRefValue(audioClips) || []).filter((clip) => {
+			if (!clip.enabled) return false;
+			const startFrame = Number(clip.timeline_start_frame || 0);
       const endFrame = Number(clip.timeline_end_frame || startFrame);
       return frame >= startFrame && frame < endFrame;
     });

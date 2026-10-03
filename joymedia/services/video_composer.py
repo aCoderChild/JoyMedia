@@ -272,7 +272,7 @@ def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
 		clip_frames = int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0)
 		end_seconds = min(start_seconds + clip_frames / fps, video_duration)
 		if start_seconds >= video_duration:
-			frappe.throw(_("Audio clip {0} starts after the composed video ends.").format(clip.name))
+			continue
 		if end_seconds <= start_seconds:
 			frappe.throw(_("Audio clip {0} has no usable timeline duration.").format(clip.name))
 		cue_duration = end_seconds - start_seconds

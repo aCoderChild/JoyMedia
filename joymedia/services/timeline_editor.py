@@ -6,6 +6,7 @@ Studio trim, split, reorder and duplicate clips without mutating completed gener
 jobs or pretending that a UI-only change affected the final render.
 """
 
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -227,7 +228,7 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 				"track_index": linked_audio.track_index,
 				"linked_video_clip": new_clip.name,
 				"timeline_start_frame": new_clip.timeline_start_frame,
-				"enabled": new_clip.enabled,
+				"enabled": linked_audio.enabled,
 				"source_asset_version": linked_audio.source_asset_version,
 				"source_in_frame": split_frame,
 				"source_out_frame": old_out,
@@ -293,7 +294,7 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 				"track_index": linked_audio.track_index,
 				"linked_video_clip": new_clip.name,
 				"timeline_start_frame": new_clip.timeline_start_frame,
-				"enabled": new_clip.enabled,
+				"enabled": linked_audio.enabled,
 				"source_asset_version": linked_audio.source_asset_version,
 				"source_in_frame": new_clip.source_in_frame,
 				"source_out_frame": new_clip.source_out_frame,
@@ -322,6 +323,12 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 @frappe.whitelist()
 def delete_timeline_clip(project_name: str, clip_name: str):
 	project, clip = _project_clip(project_name, clip_name)
+	if clip.track_type == "Audio" and clip.audio_role == "Source":
+		clip.enabled = 0
+		clip.save(ignore_permissions=True)
+		_invalidate_project_output(project.name)
+		frappe.db.commit()
+		return _serialize_timeline(project, _timeline_clip_rows(project.name))
 	_ensure_editable_clip(clip)
 	if clip.track_type == "Video":
 		linked_audio = _linked_audio_clip(clip)
@@ -330,6 +337,66 @@ def delete_timeline_clip(project_name: str, clip_name: str):
 	frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
 	_reflow_video_track(project.name)
 	_normalize_transitions(project.name)
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
+@frappe.whitelist()
+def set_source_audio_enabled(project_name: str, video_clip_name: str, enabled):
+	project, video_clip = _project_clip(project_name, video_clip_name)
+	if video_clip.track_type != "Video":
+		frappe.throw(_("Source audio belongs to a video clip."))
+	linked_audio = _linked_audio_clip(video_clip)
+	if not linked_audio:
+		frappe.throw(_("This video clip has no source audio."))
+	linked_audio.enabled = 1 if _as_bool(enabled) else 0
+	linked_audio.save(ignore_permissions=True)
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
+@frappe.whitelist()
+def restore_timeline_state(project_name: str, state_json):
+	project = frappe.get_doc("Media Project", project_name)
+	_require_project_write(project)
+	try:
+		state = json.loads(state_json) if isinstance(state_json, str) else state_json
+		rows = state.get("clips", [])
+	except (TypeError, ValueError, AttributeError) as exc:
+		frappe.throw(_("Invalid timeline history state: {0}").format(str(exc)))
+
+	fields = (
+		"shot", "clip_order", "track_type", "track_index", "timeline_start_frame", "enabled",
+		"source_asset_version", "source_in_frame", "source_out_frame", "initial_source_in_frame",
+		"initial_source_out_frame", "transition_to_next", "transition_frames", "audio_role",
+		"gain_db", "fade_in_frames", "fade_out_frames", "duck_others", "is_outdated",
+	)
+	old_to_new = {}
+	for clip_name in frappe.get_all("Timeline Clip", filters={"media_project": project.name}, pluck="name"):
+		frappe.delete_doc("Timeline Clip", clip_name, ignore_permissions=True, force=True)
+
+	for row in rows:
+		values = {field: row.get(field) for field in fields if field in row}
+		values.update({"doctype": "Timeline Clip", "media_project": project.name})
+		old_name = row.get("name")
+		new_clip = frappe.get_doc(values).insert(ignore_permissions=True)
+		if old_name:
+			old_to_new[old_name] = new_clip.name
+
+	for row in rows:
+		old_link = row.get("linked_video_clip")
+		if not old_link or old_link not in old_to_new:
+			continue
+		frappe.db.set_value(
+			"Timeline Clip",
+			old_to_new[row.get("name")],
+			"linked_video_clip",
+			old_to_new[old_link],
+			update_modified=False,
+		)
+
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
@@ -858,6 +925,10 @@ def _enabled_clips(clips):
 def _serialize_timeline(project, clips):
 	latest_run = _latest_fully_generated_run(project.name)
 	enabled_clips = _enabled_clips(clips)
+	visible_clips = enabled_clips + [
+		clip for clip in clips
+		if not clip.enabled and clip.track_type == "Audio" and clip.audio_role == "Source"
+	]
 	if not enabled_clips:
 		return {
 			"ready": False,
@@ -876,7 +947,7 @@ def _serialize_timeline(project, clips):
 
 	fps = _project_fps(project.name)
 	serialized = []
-	for index, clip in enumerate(enabled_clips):
+	for index, clip in enumerate(visible_clips):
 		length = _clip_length(clip)
 		asset = frappe.db.get_value(
 			"Asset Version",
@@ -906,7 +977,7 @@ def _serialize_timeline(project, clips):
 				source_has_audio = False
 		transition = clip.transition_to_next or "Cut"
 		transition_frames = int(clip.transition_frames or 0) if transition != "Cut" else 0
-		if index == len(enabled_clips) - 1:
+		if index == len(visible_clips) - 1:
 			transition = "Cut"
 			transition_frames = 0
 		serialized.append(
@@ -949,7 +1020,13 @@ def _serialize_timeline(project, clips):
 		)
 
 	final_video = _final_video(project.name)
-	total_frames = _visual_timeline_end_frame(project.name)
+	render_total_frames = _visual_timeline_end_frame(project.name)
+	audio_end_frames = [
+		int(clip.timeline_start_frame or 0) + _clip_length(clip)
+		for clip in enabled_clips
+		if clip.track_type == "Audio"
+	]
+	canvas_total_frames = max([render_total_frames, *audio_end_frames])
 	return {
 		"ready": bool(serialized),
 		"project": project.name,
@@ -957,8 +1034,12 @@ def _serialize_timeline(project, clips):
 		"latest_generation_run": latest_run.name if latest_run else None,
 		"is_outdated": any(item["is_outdated"] for item in serialized),
 		"fps": fps,
-		"total_frames": total_frames,
-		"total_seconds": total_frames / fps,
+		"total_frames": render_total_frames,
+		"total_seconds": render_total_frames / fps,
+		"render_total_frames": render_total_frames,
+		"render_total_seconds": render_total_frames / fps,
+		"canvas_total_frames": canvas_total_frames,
+		"canvas_total_seconds": canvas_total_frames / fps,
 		"clips": serialized,
 		"final_video": final_video,
 		"export_status": getattr(project, "export_status", "Idle") or "Idle",
@@ -1141,11 +1222,7 @@ def add_timeline_audio_clip(
 	source_total_frames = _source_max_frames(asset_version.name, fps)
 	if not source_total_frames:
 		frappe.throw(_("Unable to determine the audio asset duration."))
-	visual_end_frame = _visual_timeline_end_frame(project.name)
-	available_frames = visual_end_frame - start_frame
-	if available_frames <= 0:
-		frappe.throw(_("Audio must start before the video ends."))
-	source_out = min(source_total_frames, available_frames)
+	source_out = source_total_frames
 
 	existing_audio_indexes = frappe.get_all(
 		"Timeline Clip",

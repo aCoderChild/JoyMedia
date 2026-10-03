@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -7,10 +8,13 @@ from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.timeline_editor import (
 	duplicate_timeline_clip,
+	add_timeline_audio_clip,
 	fit_audio_clip_to_full_video,
 	fit_audio_clip_to_video,
 	reorder_timeline_clip,
 	set_timeline_transition,
+	set_source_audio_enabled,
+	restore_timeline_state,
 	split_timeline_clip,
 	sync_timeline_source_for_shot,
 	trim_timeline_clip,
@@ -26,6 +30,18 @@ def _generate_video_bytes(seconds=4):
 				"ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
 				f"color=c=black:s=320x240:r=24:d={seconds}", "-an", "-c:v", "libx264",
 				"-pix_fmt", "yuv420p", tmp.name,
+			],
+			check=True,
+		)
+		return Path(tmp.name).read_bytes()
+
+
+def _generate_audio_bytes(seconds=6):
+	with tempfile.NamedTemporaryFile(suffix=".flac") as tmp:
+		subprocess.run(
+			[
+				"ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+				f"sine=frequency=440:duration={seconds}", "-c:a", "flac", tmp.name,
 			],
 			check=True,
 		)
@@ -153,6 +169,129 @@ class TestTimelineEditor(FrappeTestCase):
 		audio_clip.reload()
 		self.assertEqual(audio_clip.timeline_start_frame, 0)
 		self.assertEqual(audio_clip.source_out_frame, 96)
+
+	def test_new_audio_clip_keeps_source_duration_beyond_video_end(self):
+		audio_asset = frappe.get_doc({
+			"doctype": "Media Asset",
+			"asset_name": "Test Long Audio",
+			"media_type": "Audio",
+			"asset_category": "Audio",
+			"asset_scope": "Project Output",
+			"media_project": self.project.name,
+			"status": "Active",
+		}).insert(ignore_permissions=True)
+		file_doc = frappe.get_doc({
+			"doctype": "File",
+			"file_name": "test-long-audio.flac",
+			"content": _generate_audio_bytes(),
+			"is_private": 1,
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": audio_asset.name,
+		}).insert(ignore_permissions=True)
+		audio_version = frappe.get_doc({
+			"doctype": "Asset Version",
+			"media_asset": audio_asset.name,
+			"file": file_doc.file_url,
+			"source": "Uploaded",
+		}).insert(ignore_permissions=True)
+
+		result = add_timeline_audio_clip(self.project.name, audio_version.name)
+		added = next(clip for clip in result["clips"] if clip["name"] == result["selected_clip"])
+		self.assertEqual(added["source_out_frame"], 144)
+		self.assertEqual(result["total_frames"], 96)
+		self.assertEqual(result["canvas_total_frames"], 144)
+
+	def test_source_audio_can_be_disabled_without_deleting_video(self):
+		source_audio = frappe.get_doc({
+			"doctype": "Timeline Clip",
+			"media_project": self.project.name,
+			"shot": self.shot.name,
+			"clip_order": 1,
+			"track_type": "Audio",
+			"track_index": 0,
+			"linked_video_clip": self.clip_1.name,
+			"timeline_start_frame": 0,
+			"enabled": 1,
+			"source_asset_version": self.version_1.name,
+			"source_in_frame": 0,
+			"source_out_frame": 96,
+			"initial_source_in_frame": 0,
+			"initial_source_out_frame": 96,
+			"audio_role": "Source",
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}).insert(ignore_permissions=True)
+
+		set_source_audio_enabled(self.project.name, self.clip_1.name, False)
+		source_audio.reload()
+		self.clip_1.reload()
+		self.assertFalse(source_audio.enabled)
+		self.assertTrue(self.clip_1.enabled)
+
+		set_source_audio_enabled(self.project.name, self.clip_1.name, True)
+		source_audio.reload()
+		self.assertTrue(source_audio.enabled)
+
+	def test_disabled_source_audio_stays_disabled_when_video_is_split(self):
+		source_audio = frappe.get_doc({
+			"doctype": "Timeline Clip",
+			"media_project": self.project.name,
+			"shot": self.shot.name,
+			"clip_order": 1,
+			"track_type": "Audio",
+			"track_index": 0,
+			"linked_video_clip": self.clip_1.name,
+			"timeline_start_frame": 0,
+			"enabled": 0,
+			"source_asset_version": self.version_1.name,
+			"source_in_frame": 0,
+			"source_out_frame": 96,
+			"initial_source_in_frame": 0,
+			"initial_source_out_frame": 96,
+			"audio_role": "Source",
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}).insert(ignore_permissions=True)
+
+		split_timeline_clip(self.project.name, self.clip_1.name, 48)
+		source_clips = frappe.get_all(
+			"Timeline Clip",
+			filters={"media_project": self.project.name, "track_type": "Audio", "audio_role": "Source"},
+			fields=["enabled"],
+		)
+		self.assertEqual(len(source_clips), 2)
+		self.assertTrue(all(not clip.enabled for clip in source_clips))
+
+	def test_timeline_state_can_be_restored_without_touching_source_assets(self):
+		state = {
+			"clips": [{
+				"name": self.clip_1.name,
+				"shot": self.shot.name,
+				"clip_order": 1,
+				"track_type": "Video",
+				"track_index": 0,
+				"timeline_start_frame": 0,
+				"enabled": 1,
+				"source_asset_version": self.version_1.name,
+				"source_in_frame": 12,
+				"source_out_frame": 84,
+				"initial_source_in_frame": 0,
+				"initial_source_out_frame": 96,
+				"transition_to_next": "Cut",
+				"transition_frames": 0,
+				"is_outdated": 0,
+			}],
+		}
+
+		restore_timeline_state(self.project.name, json.dumps(state))
+		restored = frappe.get_all(
+			"Timeline Clip",
+			filters={"media_project": self.project.name},
+			fields=["source_asset_version", "source_in_frame", "source_out_frame"],
+		)
+		self.assertEqual(len(restored), 1)
+		self.assertEqual(restored[0].source_asset_version, self.version_1.name)
+		self.assertEqual((restored[0].source_in_frame, restored[0].source_out_frame), (12, 84))
 
 	def test_split_and_duplicate_keep_source_asset(self):
 		split_timeline_clip(self.project.name, self.clip_1.name, 48)
