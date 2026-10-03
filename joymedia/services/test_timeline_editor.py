@@ -1,6 +1,7 @@
 import json
 import subprocess
 import tempfile
+from unittest.mock import patch
 from pathlib import Path
 
 import frappe
@@ -12,6 +13,7 @@ from joymedia.services.timeline_editor import (
 	fit_audio_clip_to_full_video,
 	fit_audio_clip_to_video,
 	reorder_timeline_clip,
+	reset_timeline_clip,
 	set_timeline_transition,
 	set_source_audio_enabled,
 	restore_timeline_state,
@@ -107,6 +109,7 @@ class TestTimelineEditor(FrappeTestCase):
 			"clip_order": 2,
 			"track_type": "Audio",
 			"timeline_start_frame": 24,
+			"initial_timeline_start_frame": 24,
 			"enabled": 1,
 			"source_asset_version": self.version_1.name,
 			"source_in_frame": 0,
@@ -125,6 +128,10 @@ class TestTimelineEditor(FrappeTestCase):
 		trim_timeline_clip(self.project.name, audio_clip.name, 12, 72)
 		audio_clip.reload()
 		self.assertEqual(audio_clip.timeline_start_frame, 36)
+
+		reset_timeline_clip(self.project.name, audio_clip.name)
+		audio_clip.reload()
+		self.assertEqual(audio_clip.timeline_start_frame, 24)
 
 	def test_source_audio_cannot_be_fit_to_video(self):
 		audio_clip = frappe.get_doc({
@@ -261,6 +268,36 @@ class TestTimelineEditor(FrappeTestCase):
 		)
 		self.assertEqual(len(source_clips), 2)
 		self.assertTrue(all(not clip.enabled for clip in source_clips))
+
+	def test_disabled_source_audio_stays_disabled_after_video_trim(self):
+		source_audio = frappe.get_doc({
+			"doctype": "Timeline Clip",
+			"media_project": self.project.name,
+			"shot": self.shot.name,
+			"clip_order": 1,
+			"track_type": "Audio",
+			"track_index": 0,
+			"linked_video_clip": self.clip_1.name,
+			"timeline_start_frame": 0,
+			"enabled": 1,
+			"source_asset_version": self.version_1.name,
+			"source_in_frame": 0,
+			"source_out_frame": 96,
+			"initial_source_in_frame": 0,
+			"initial_source_out_frame": 96,
+			"audio_role": "Source",
+			"transition_to_next": "Cut",
+			"transition_frames": 0,
+		}).insert(ignore_permissions=True)
+
+		set_source_audio_enabled(self.project.name, self.clip_1.name, False)
+		with patch(
+			"joymedia.services.timeline_editor._get_or_create_source_audio_version",
+			return_value=self.version_1.name,
+		):
+			trim_timeline_clip(self.project.name, self.clip_1.name, 10, 80)
+		source_audio.reload()
+		self.assertFalse(source_audio.enabled)
 
 	def test_timeline_state_can_be_restored_without_touching_source_assets(self):
 		state = {

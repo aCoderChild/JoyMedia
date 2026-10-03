@@ -95,6 +95,8 @@ def reset_timeline_clip(project_name: str, clip_name: str):
 		frappe.throw(_("This clip has no stored baseline range. Reset the timeline to shots to recreate it."))
 	clip.source_in_frame = initial_in
 	clip.source_out_frame = initial_out
+	if clip.track_type == "Audio" and clip.initial_timeline_start_frame is not None:
+		clip.timeline_start_frame = int(clip.initial_timeline_start_frame or 0)
 	clip.save(ignore_permissions=True)
 	_normalize_transitions(project.name)
 	_invalidate_project_output(project.name)
@@ -201,6 +203,7 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 			"track_type": clip.track_type,
 			"track_index": clip.track_index,
 			"timeline_start_frame": int(clip.timeline_start_frame or 0) + split_frame - int(clip.source_in_frame),
+			"initial_timeline_start_frame": int(clip.timeline_start_frame or 0) + split_frame - int(clip.source_in_frame),
 			"enabled": clip.enabled,
 			"source_asset_version": clip.source_asset_version,
 			"source_in_frame": split_frame,
@@ -228,6 +231,7 @@ def split_timeline_clip(project_name: str, clip_name: str, source_split_frame):
 				"track_index": linked_audio.track_index,
 				"linked_video_clip": new_clip.name,
 				"timeline_start_frame": new_clip.timeline_start_frame,
+				"initial_timeline_start_frame": new_clip.timeline_start_frame,
 				"enabled": linked_audio.enabled,
 				"source_asset_version": linked_audio.source_asset_version,
 				"source_in_frame": split_frame,
@@ -266,6 +270,7 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 			"track_type": clip.track_type,
 			"track_index": clip.track_index,
 			"timeline_start_frame": int(clip.timeline_start_frame or 0) + _clip_length(clip),
+			"initial_timeline_start_frame": int(clip.timeline_start_frame or 0) + _clip_length(clip),
 			"enabled": clip.enabled,
 			"source_asset_version": clip.source_asset_version,
 			"source_in_frame": clip.source_in_frame,
@@ -294,6 +299,7 @@ def duplicate_timeline_clip(project_name: str, clip_name: str):
 				"track_index": linked_audio.track_index,
 				"linked_video_clip": new_clip.name,
 				"timeline_start_frame": new_clip.timeline_start_frame,
+				"initial_timeline_start_frame": new_clip.timeline_start_frame,
 				"enabled": linked_audio.enabled,
 				"source_asset_version": linked_audio.source_asset_version,
 				"source_in_frame": new_clip.source_in_frame,
@@ -368,7 +374,8 @@ def restore_timeline_state(project_name: str, state_json):
 		frappe.throw(_("Invalid timeline history state: {0}").format(str(exc)))
 
 	fields = (
-		"shot", "clip_order", "track_type", "track_index", "timeline_start_frame", "enabled",
+		"shot", "clip_order", "track_type", "track_index", "timeline_start_frame",
+		"initial_timeline_start_frame", "enabled",
 		"source_asset_version", "source_in_frame", "source_out_frame", "initial_source_in_frame",
 		"initial_source_out_frame", "transition_to_next", "transition_frames", "audio_role",
 		"gain_db", "fade_in_frames", "fade_out_frames", "duck_others", "is_outdated",
@@ -679,6 +686,7 @@ def _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps):
 			"track_type": "Video",
 			"track_index": 0,
 			"timeline_start_frame": timeline_cursor,
+			"initial_timeline_start_frame": timeline_cursor,
 			"enabled": 1,
 			"source_asset_version": shot.selected_output_asset_version,
 			"source_in_frame": 0,
@@ -701,6 +709,7 @@ def _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps):
 				"track_index": 0,
 				"linked_video_clip": video_clip.name,
 				"timeline_start_frame": timeline_cursor,
+				"initial_timeline_start_frame": timeline_cursor,
 				"enabled": 1,
 				"source_asset_version": audio_version,
 				"source_in_frame": 0,
@@ -848,6 +857,7 @@ def _ensure_source_audio_clips(project, clips):
 				"track_index": 0,
 				"linked_video_clip": video_clip.name,
 				"timeline_start_frame": video_clip.timeline_start_frame,
+				"initial_timeline_start_frame": video_clip.timeline_start_frame,
 				"enabled": video_clip.enabled,
 				"source_asset_version": audio_version,
 				"source_in_frame": video_clip.source_in_frame,
@@ -1007,6 +1017,7 @@ def _serialize_timeline(project, clips):
 				"duration_frames": length,
 				"duration_seconds": length / fps,
 				"timeline_start_frame": start,
+				"initial_timeline_start_frame": int(clip.initial_timeline_start_frame or clip.timeline_start_frame or 0),
 				"timeline_end_frame": end,
 				"transition_to_next": transition,
 				"transition_frames": transition_frames,
@@ -1239,6 +1250,7 @@ def add_timeline_audio_clip(
 			"track_type": "Audio",
 			"track_index": next_audio_track_index,
 			"timeline_start_frame": start_frame,
+			"initial_timeline_start_frame": start_frame,
 			"enabled": 1,
 			"source_asset_version": asset_version.name,
 			"source_in_frame": 0,
@@ -1301,7 +1313,6 @@ def _sync_linked_audio_clip(video_clip):
 	linked_audio.initial_source_in_frame = video_clip.initial_source_in_frame
 	linked_audio.initial_source_out_frame = video_clip.initial_source_out_frame
 	linked_audio.source_asset_version = audio_version
-	linked_audio.enabled = video_clip.enabled
 	linked_audio.save(ignore_permissions=True)
 
 

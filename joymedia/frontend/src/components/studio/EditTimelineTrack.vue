@@ -190,10 +190,18 @@ const selectedClip = computed(() =>
 );
 
 const activeClip = computed(() =>
+  (selectedClip.value &&
+    selectedClip.value.track_type !== "Video" &&
+    selectedClip.value.audio_role !== "Source" &&
+    props.playheadFrame > selectedClip.value.timeline_start_frame &&
+    props.playheadFrame < selectedClip.value.timeline_end_frame
+    ? selectedClip.value
+    : null) ||
   props.allClips.find(
     (clip) =>
       props.playheadFrame > clip.timeline_start_frame &&
-      props.playheadFrame < clip.timeline_end_frame
+      props.playheadFrame < clip.timeline_end_frame &&
+      (clip.track_type || "Video") === "Video"
   ) || null
 );
 

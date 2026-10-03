@@ -45,6 +45,7 @@ joymedia.patches.repair_legacy_generated_assets
 joymedia.patches.backfill_audio_asset_metadata
 joymedia.patches.repair_legacy_audio_clip_ranges
 joymedia.patches.repair_legacy_audio_clip_baselines
+joymedia.patches.backfill_initial_timeline_start_frames
 joymedia.patches.register_minimax_h3_workflows
 joymedia.patches.register_corrected_minimax_h3_r2v
 joymedia.patches.register_minimax_h3_ref2va_v2

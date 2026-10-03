@@ -11,6 +11,7 @@
   "track_type",
   "track_index",
   "timeline_start_frame",
+  "initial_timeline_start_frame",
   "enabled",
   "source_section",
   "source_asset_version",
@@ -80,6 +81,13 @@
    "fieldtype": "Int",
    "label": "Timeline Start Frame",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Baseline timeline position used by Reset Clip.",
+   "fieldname": "initial_timeline_start_frame",
+   "fieldtype": "Int",
+   "label": "Initial Timeline Start Frame"
   },
   {
    "default": "1",

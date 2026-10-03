@@ -518,6 +518,16 @@ const {
   isPlaying,
   isMuted,
   studioMode,
+  playheadFrame,
+  timelineTotalFrames: computed(() => Number(timeline.value?.canvas_total_frames || timeline.value?.total_frames || 0)),
+  renderTotalFrames: computed(() => Number(timeline.value?.render_total_frames || timeline.value?.total_frames || 0)),
+  onTimelineFrame: (frame) => {
+    playheadFrame.value = frame;
+    syncActiveSceneFromFrame(frame);
+  },
+  onTimelineEnd: () => {
+    isPlaying.value = false;
+  },
   getVideo: () => {
     const preview = studioPreviewRef.value;
     return preview?.previewVideo?.value || preview?.previewVideo || null;
@@ -982,6 +992,7 @@ function editStoryboardShot(shot, index) {
 }
 
 function onVideoTimeUpdate(payload) {
+	if (studioMode.value === "edit") return;
   const currentTime = payload?.currentTime ?? payload?.target?.currentTime ?? 0;
   const currentFps = fps.value || 24;
 

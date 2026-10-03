@@ -23,9 +23,23 @@ function seekAudioSafely(audio, expectedTime) {
   );
 }
 
-export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, isMuted, studioMode, getVideo }) {
+export function useTimelinePreviewEngine({
+  audioClips,
+  fps,
+  isPlaying,
+  isMuted,
+  studioMode,
+  playheadFrame,
+  timelineTotalFrames,
+  renderTotalFrames,
+  getVideo,
+  onTimelineFrame,
+  onTimelineEnd,
+}) {
   const audioElements = new Map();
   let animationFrame = null;
+  let timelineStartedAt = 0;
+  let timelineStartFrame = 0;
 
   function sourceFor(clip) {
     return clip?.source_file || clip?.source_url || "";
@@ -148,6 +162,43 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, isMuted, 
         console.warn("Unable to start timeline audio", clip.name, error);
       });
     }
+    if (getRefValue(studioMode) === "edit") {
+      timelineStartFrame = Math.max(0, Math.round(Number(frame || 0)));
+      timelineStartedAt = performance.now();
+    }
+  }
+
+  function syncTimelineVideo(frame) {
+    const video = getVideoElement(getVideo);
+    if (!video || getRefValue(studioMode) !== "edit" || video.readyState < 1) return;
+    const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
+    const renderFrames = Math.max(0, Number(getRefValue(renderTotalFrames) || 0));
+    const targetFrame = Math.min(Math.max(0, Number(frame || 0)), renderFrames);
+    const targetTime = targetFrame / currentFps;
+    if (Number.isFinite(targetTime) && Math.abs(Number(video.currentTime || 0) - targetTime) > 0.08) {
+      video.currentTime = targetTime;
+    }
+  }
+
+  function tickTimeline(now) {
+    animationFrame = null;
+    if (getRefValue(studioMode) !== "edit" || getRefValue(isMuted) || !getRefValue(isPlaying)) return;
+    const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
+    const totalFrames = Math.max(
+      0,
+      Number(getRefValue(timelineTotalFrames) || getRefValue(renderTotalFrames) || 0),
+    );
+    const elapsedFrames = Math.round(((now - timelineStartedAt) / 1000) * currentFps);
+    const frame = Math.min(totalFrames, timelineStartFrame + elapsedFrames);
+    syncAtFrame(frame);
+    syncTimelineVideo(frame);
+    if (onTimelineFrame) onTimelineFrame(frame);
+    if (frame >= totalFrames) {
+      pauseAll();
+      if (onTimelineEnd) onTimelineEnd();
+      return;
+    }
+    animationFrame = requestAnimationFrame(tickTimeline);
   }
 
   function tick() {
@@ -162,7 +213,14 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, isMuted, 
   }
 
   function start() {
-    if (animationFrame == null) animationFrame = requestAnimationFrame(tick);
+    if (animationFrame != null) return;
+    if (getRefValue(studioMode) === "edit") {
+      timelineStartFrame = Math.max(0, Number(getRefValue(playheadFrame) || 0));
+      timelineStartedAt = performance.now();
+      animationFrame = requestAnimationFrame(tickTimeline);
+    } else {
+      animationFrame = requestAnimationFrame(tick);
+    }
   }
 
   function stop() {
