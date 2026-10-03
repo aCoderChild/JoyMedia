@@ -368,5 +368,18 @@
     "_meta": {
       "title": "Boolean (Enable Lightning LoRA)"
     }
+  },
+  "147": {
+    "inputs": {
+      "filename_prefix": "sato_scene-001",
+      "latent": [
+        "125",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3EasySaveLatent_SatoDive",
+    "_meta": {
+      "title": "Save Latent -> feeds the continuation workflow"
+    }
   }
 }

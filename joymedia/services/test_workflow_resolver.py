@@ -280,6 +280,7 @@ class TestWorkflowResolver(FrappeTestCase):
 			"132": {"inputs": {"value": 5}},
 			"136": {"inputs": {"width": ["115", 0], "height": ["115", 1]}},
 			"92": {"inputs": {"filename_prefix": "old"}},
+			"147": {"inputs": {"filename_prefix": "old"}},
 		}
 
 		MiniMaxH3ReferenceToVideoAdapter().prepare_execution(
@@ -297,3 +298,4 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertEqual(["115", 0], workflow["136"]["inputs"]["width"])
 		self.assertEqual(["115", 1], workflow["136"]["inputs"]["height"])
 		self.assertEqual("JOB-1_ATT-1", workflow["92"]["inputs"]["filename_prefix"])
+		self.assertEqual("JOB-1_ATT-1_state", workflow["147"]["inputs"]["filename_prefix"])

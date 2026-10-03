@@ -57,8 +57,7 @@ class GenerationTask(Document):
 		if not shot.media_project:
 			frappe.throw(_("Shot requires a Media Project."))
 		project = frappe.get_doc("Media Project", shot.media_project)
-		self._validate_generation_run(project)
-		workflow = frappe.get_doc("Generation Workflow", self.workflow)
+		workflow = self._validate_generation_run(project)
 		if self.depends_on_task:
 			# A dependency means runtime continuation from the upstream task's
 			# Last Frame Artifact. Workflows without a first_frame input cannot
@@ -107,18 +106,33 @@ class GenerationTask(Document):
 		run = frappe.get_doc("Generation Run", self.generation_run)
 		if run.media_project != project.name:
 			frappe.throw(_("Generation Run Media Project must match the Generation Task Shot."))
+		workflow = frappe.get_doc("Generation Workflow", self.workflow)
+		try:
+			snapshot = frappe.parse_json(run.project_snapshot_json or "{}")
+		except (TypeError, ValueError):
+			snapshot = {}
+		if not isinstance(snapshot, dict):
+			snapshot = {}
+		shot_snapshot = next(
+			(row for row in snapshot.get("shots") or [] if row.get("shot") == self.shot),
+			None,
+		)
+		if shot_snapshot:
+			from joymedia.services.workflow_profiles import allowed_workflows_for_shot
+
+			allowed_workflows = allowed_workflows_for_shot(snapshot, shot_snapshot)
+			if workflow.name not in {candidate.name for candidate in allowed_workflows}:
+				frappe.throw(
+					_("Generation Task Workflow {0} is not valid for Shot {1} in this run.").format(
+						workflow.name, self.shot
+					)
+				)
+			return workflow
 		if run.workflow != self.workflow and frappe.db.get_value(
 			"Generation Workflow", run.workflow, "continuation_workflow"
-		) != self.workflow and frappe.db.get_value(
-			"Generation Workflow", self.workflow, "workflow_key"
-		) not in {
-			"h3_i2v_production",
-			"h3_r2v_production",
-			"h3_r2v_turbo",
-			"h3_sato_generation",
-			"h3_sato_continuation",
-		}:
+		) != self.workflow:
 			frappe.throw(_("Generation Run Workflow must match the Generation Task Workflow."))
+		return workflow
 
 	def get_shot_input_snapshot(self):
 		shot = frappe.get_doc("Shot", self.shot)

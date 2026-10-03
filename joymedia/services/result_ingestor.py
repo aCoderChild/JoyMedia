@@ -410,18 +410,27 @@ def _find_primary_mp4(history, preferred_node_keys=None):
 
 
 def _find_continuation_state(history):
-	"""Find the exact latent locator emitted by the Sato latent-save node."""
+	"""Find the basename emitted by a Sato latent-save node."""
 	for node_outputs in (history.get("outputs") or {}).values():
+		if not isinstance(node_outputs, dict):
+			continue
+		for value in node_outputs.get("text") or []:
+			filename = value.get("filename") if isinstance(value, dict) else value
+			if not filename:
+				continue
+			filename = Path(str(filename)).name
+			if filename.lower().endswith((".h3latent", ".h3latent.safetensors")):
+				return filename
 		for values in node_outputs.values():
 			if not isinstance(values, list):
 				continue
 			for output in values:
-				if not isinstance(output, dict) or not output.get("filename"):
+				filename = output.get("filename") if isinstance(output, dict) else output
+				if not filename:
 					continue
-				filename = str(output["filename"])
+				filename = Path(str(filename)).name
 				if filename.lower().endswith((".h3latent", ".h3latent.safetensors")):
-					subfolder = str(output.get("subfolder") or "").strip("/")
-					return "/".join(part for part in (subfolder, filename) if part)
+					return filename
 	return None
 
 

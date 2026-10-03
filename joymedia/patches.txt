@@ -54,3 +54,4 @@ joymedia.patches.register_minimax_h3_workflows
 joymedia.patches.register_corrected_minimax_h3_r2v
 joymedia.patches.register_minimax_h3_ref2va_v2
 joymedia.patches.register_minimax_h3_ref2va_v3
+joymedia.patches.link_r2v_to_sato_continuation

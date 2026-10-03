@@ -37,6 +37,10 @@ class MiniMaxH3ImageToVideoAdapter(GenericWorkflowAdapter):
 class MiniMaxH3ReferenceToVideoAdapter(GenericWorkflowAdapter):
 	"""Adapter for the exported MiniMax H3 Reference-to-Video API graphs."""
 
+	continuation_workflow_key = "h3_sato_continuation"
+	cumulative_segment_output = True
+	primary_output_node_keys = ("92",)
+
 	def extract_execution_metadata(self, workflow_data):
 		return dict(H3_PROFILE_DEFAULTS)
 
@@ -56,6 +60,7 @@ class MiniMaxH3ReferenceToVideoAdapter(GenericWorkflowAdapter):
 		_set_input(workflow, "129", "noise_seed", seed)
 		_set_input(workflow, "132", "value", max(5, frame_count / 24))
 		_set_input(workflow, "92", "filename_prefix", output_prefix)
+		_set_input(workflow, "147", "filename_prefix", f"{output_prefix}_state")
 		return workflow
 
 

@@ -2,6 +2,7 @@ import frappe
 from frappe import _
 
 from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
+from joymedia.workflow_adapters import get_workflow_adapter
 
 
 def choose_shot_workflow(snapshot, shot):
@@ -43,3 +44,17 @@ def choose_shot_workflow(snapshot, shot):
 def input_role_for_workflow(workflow):
 	"""Return the user reference role expected by the selected initial profile."""
 	return "product_reference" if workflow.workflow_key in ("h3_r2v_production", "h3_r2v_turbo") else "first_frame"
+
+
+def allowed_workflows_for_shot(snapshot, shot):
+	"""Return the initial profile and its internal continuation profile for a Shot."""
+	initial = choose_shot_workflow(snapshot, shot)
+	continuation = None
+	if initial.continuation_workflow:
+		continuation = frappe.get_doc("Generation Workflow", initial.continuation_workflow)
+	else:
+		adapter = get_workflow_adapter(initial)
+		continuation_key = getattr(adapter, "continuation_workflow_key", None)
+		if continuation_key:
+			continuation = get_latest_valid_workflow(continuation_key)
+	return tuple(workflow for workflow in (initial, continuation) if workflow)

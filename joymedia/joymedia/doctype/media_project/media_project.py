@@ -1211,6 +1211,8 @@ class MediaProject(Document):
 		quality_mode = quality_mode or getattr(self, "quality_mode", None) or "Production"
 		if quality_mode not in ("Draft", "Production"):
 			frappe.throw(_("Select Draft or Production quality."))
+		if reference_mode == "Single Image":
+			quality_mode = "Production"
 		workflow_key = (
 			"h3_r2v_turbo" if reference_mode == "Multi-reference" and quality_mode == "Draft"
 			else "h3_r2v_production" if reference_mode == "Multi-reference"

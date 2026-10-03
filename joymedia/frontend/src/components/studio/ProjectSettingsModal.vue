@@ -146,7 +146,7 @@
                   :class="form.reference_mode === mode.value
                     ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
                     : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
-                  @click="form.reference_mode = mode.value"
+                  @click="setReferenceMode(mode.value)"
                 >
                   <span class="text-xs font-semibold">{{ mode.label }}</span>
                   <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">{{ mode.sub }}</p>
@@ -166,7 +166,11 @@
                   class="p-2.5 rounded-xl border text-left transition-all cursor-pointer"
                   :class="form.quality_mode === quality.value
                     ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
-                    : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
+                    : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'
+                    + (form.reference_mode === 'Single Image' && quality.value === 'Draft'
+                      ? ' opacity-50 cursor-not-allowed'
+                      : '')"
+                  :disabled="form.reference_mode === 'Single Image' && quality.value === 'Draft'"
                   @click="form.quality_mode = quality.value"
                 >
                   <span class="text-xs font-semibold">{{ quality.label }}</span>
@@ -263,6 +267,9 @@ watch(
       form.generation_mode = s.generation_mode || "Multi-shot";
       form.reference_mode = s.reference_mode || "Single Image";
       form.quality_mode = s.quality_mode || "Production";
+      if (form.reference_mode === "Single Image") {
+        form.quality_mode = "Production";
+      }
       form.global_instructions = s.global_instructions || "";
     }
   },
@@ -270,6 +277,13 @@ watch(
 );
 
 function submitSave() {
-  emit("save", { ...form });
+	emit("save", { ...form });
+}
+
+function setReferenceMode(mode) {
+  form.reference_mode = mode;
+  if (mode === "Single Image") {
+    form.quality_mode = "Production";
+  }
 }
 </script>
