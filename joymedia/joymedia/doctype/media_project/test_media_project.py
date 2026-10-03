@@ -35,6 +35,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		project.save(ignore_permissions=True)
 		selected = _get_project_selected_assets(project)
 		self.assertEqual({row.media_type for row in selected}, {"Image", "Video", "Audio"})
+		self.assertTrue(all("?fid=" in row.file for row in selected))
 
 	def test_project_reference_key_uses_logical_asset_name_and_resolves_collisions(self):
 		project, _ = _create_project("Reference Keys", self.workflow)

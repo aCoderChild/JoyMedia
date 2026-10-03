@@ -1095,8 +1095,14 @@ function onClipTransitionFramesChange(frames) {
 }
 
 function splitClipAtPlayhead() {
-  if (!selectedClip.value) return;
-  splitClip(selectedClip.value, playheadFrame.value);
+  const clip = selectedClip.value;
+  if (!clip) return;
+  const localFrame = Math.round(playheadFrame.value) - Number(clip.timeline_start_frame || 0);
+  const sourceSplitFrame = Number(clip.source_in_frame || 0) + localFrame;
+  if (sourceSplitFrame <= Number(clip.source_in_frame || 0) || sourceSplitFrame >= Number(clip.source_out_frame || 0)) {
+    return;
+  }
+  splitClip(clip, sourceSplitFrame);
 }
 
 function handleSplitClip({ clip, sourceSplitFrame }) {

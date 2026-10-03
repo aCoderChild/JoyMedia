@@ -224,7 +224,7 @@ def _get_project_selected_assets(project):
 				asset_name=asset.asset_name,
 				media_type=asset.media_type,
 				asset_category=asset.asset_category,
-				file=version.file,
+				file=_get_asset_file_url(asset.name, version.file),
 				width=version.width,
 				height=version.height,
 				duration_seconds=version.duration_seconds,
@@ -331,7 +331,7 @@ def _storyboard_payload(specification):
 	)
 	for shot in shots:
 		if shot.selected_output_asset_version:
-			shot["output_video"] = frappe.db.get_value("Asset Version", shot.selected_output_asset_version, "file")
+			shot["output_video"] = _get_asset_version_file_url(shot.selected_output_asset_version)
 		input_rows = frappe.get_all(
 			"Shot Reference",
 			filters={"parent": shot.name, "parenttype": "Shot"},
@@ -341,7 +341,7 @@ def _storyboard_payload(specification):
 		for role, output_key in (("first_frame", "reference_image"), ("last_frame", "last_frame_image")):
 			row = next((r for r in input_rows if frappe.scrub(r.reference_role or "") == role), None)
 			if row:
-				shot[output_key] = frappe.db.get_value("Asset Version", row.asset_version, "file")
+				shot[output_key] = _get_asset_version_file_url(row.asset_version)
 	return shots
 
 
@@ -361,7 +361,7 @@ def get_project_workspace(name):
 	final_asset_version = project.current_output_asset_version or (production.final_asset_version if production else None)
 	final_video = ({
 		"asset_version": final_asset_version,
-		"file": frappe.db.get_value("Asset Version", final_asset_version, "file"),
+		"file": _get_asset_version_file_url(final_asset_version),
 		"is_outdated": bool(production and production.get("is_outdated")),
 		"is_current": not active_run or bool(production and production.final_asset_version == final_asset_version),
 		"is_previous_version": active_run and not bool(production and production.final_asset_version == final_asset_version),
@@ -440,7 +440,7 @@ def _aggregate_shot_progress(run_name):
 			"progress": progress,
 			"error_summary": next((row.error_summary for row in shot_jobs if row.error_summary), None),
 			"selected_output_asset_version": output,
-			"output_video": frappe.db.get_value("Asset Version", output, "file") if output else None,
+			"output_video": _get_asset_version_file_url(output) if output else None,
 		})
 	return sorted(result, key=lambda row: (row["shot_number"] or 0, row["shot"]))
 
@@ -460,7 +460,7 @@ def get_project_production(name):
 	final_asset_version = project.current_output_asset_version or production.final_asset_version
 	production["final_video"] = ({
 		"asset_version": final_asset_version,
-		"file": frappe.db.get_value("Asset Version", final_asset_version, "file"),
+		"file": _get_asset_version_file_url(final_asset_version),
 	} if final_asset_version else None)
 	return production
 
@@ -482,6 +482,10 @@ def _get_asset_file_url(media_asset, file_url):
 	if not file_url:
 		return None
 
+	# Library files created by older upload flows may not have been attached to
+	# the Media Asset, even though Asset Version.file still points at them. A
+	# raw /private/files URL is rejected by Frappe unless it includes the file
+	# identity (fid), so resolve the file by the immutable URL as a fallback.
 	file_name = frappe.db.get_value(
 		"File",
 		{
@@ -492,9 +496,25 @@ def _get_asset_file_url(media_asset, file_url):
 		"name",
 	)
 	if not file_name:
+		file_name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+	if not file_name:
 		return file_url
 
 	return frappe.get_doc("File", file_name).unique_url
+
+
+def _get_asset_version_file_url(asset_version_name):
+	if not asset_version_name:
+		return None
+	version = frappe.db.get_value(
+		"Asset Version",
+		asset_version_name,
+		["media_asset", "file"],
+		as_dict=True,
+	)
+	if not version:
+		return None
+	return _get_asset_file_url(version.media_asset, version.file)
 
 
 @frappe.whitelist()

@@ -20,6 +20,15 @@ TRANSITIONS = {"Cut", "Dissolve", "Fade"}
 MIN_CLIP_SECONDS = 0.25
 
 
+def _unique_file_url(file_url):
+	if not file_url:
+		return None
+	file_name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+	if not file_name:
+		return file_url
+	return frappe.get_doc("File", file_name).unique_url
+
+
 def _require_project_read(project):
 	if hasattr(project, "_require_read_access"):
 		project._require_read_access()
@@ -849,7 +858,7 @@ def _serialize_timeline(project, clips):
 				"shot": clip.shot,
 				"shot_number": shot_number,
 				"source_asset_version": clip.source_asset_version,
-				"source_file": asset.file if asset else None,
+				"source_file": _unique_file_url(asset.file) if asset else None,
 				"source_has_audio": source_has_audio,
 				"source_asset_name": media_asset.asset_name if media_asset else None,
 				"source_asset_category": media_asset.asset_category if media_asset else None,
