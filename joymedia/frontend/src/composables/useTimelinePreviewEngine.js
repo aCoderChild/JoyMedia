@@ -8,6 +8,21 @@ function getVideoElement(getVideo) {
   return getVideo?.() || null;
 }
 
+function seekAudioSafely(audio, expectedTime) {
+  if (audio.readyState >= 1) {
+    audio.currentTime = expectedTime;
+    return;
+  }
+
+  audio.addEventListener(
+    "loadedmetadata",
+    () => {
+      audio.currentTime = expectedTime;
+    },
+    { once: true },
+  );
+}
+
 export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, isMuted, studioMode, getVideo }) {
   const audioElements = new Map();
   let animationFrame = null;
@@ -69,19 +84,21 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, isMuted, 
       audio.volume = gainFor(clip);
       if (!Number.isFinite(audio.currentTime) || Math.abs(audio.currentTime - expectedTime) > 0.08) {
         try {
-          audio.currentTime = expectedTime;
+          seekAudioSafely(audio, expectedTime);
         } catch (error) {
           console.warn("Unable to seek timeline audio:", error);
         }
       }
-      if (getRefValue(isPlaying) && audio.paused) {
-        audio.play().catch((error) => {
-          console.warn("Timeline audio playback failed", {
-            clip: clip.name,
-            source: sourceFor(clip),
-            error,
+      if (getRefValue(isPlaying)) {
+        if (audio.paused) {
+          audio.play().catch((error) => {
+            console.warn("Timeline audio playback failed", {
+              clip: clip.name,
+              source: sourceFor(clip),
+              error,
+            });
           });
-        });
+        }
       } else {
         audio.pause();
       }
@@ -122,7 +139,8 @@ export function useTimelinePreviewEngine({ audioClips, fps, isPlaying, isMuted, 
         currentFrame -
         Number(clip.timeline_start_frame || 0);
 
-      audio.currentTime = Math.max(0, sourceFrame / currentFps);
+      const expectedTime = Math.max(0, sourceFrame / currentFps);
+      seekAudioSafely(audio, expectedTime);
       audio.volume = gainFor(clip);
       audio.play().catch((error) => {
         console.warn("Unable to start timeline audio", clip.name, error);

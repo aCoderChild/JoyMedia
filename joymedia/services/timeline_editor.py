@@ -888,7 +888,7 @@ def _serialize_timeline(project, clips):
 		)
 
 	final_video = _final_video(project.name)
-	total_frames = max((item["timeline_end_frame"] for item in serialized), default=0)
+	total_frames = _visual_timeline_end_frame(project.name)
 	return {
 		"ready": bool(serialized),
 		"project": project.name,
@@ -1076,9 +1076,15 @@ def add_timeline_audio_clip(
 	if media_asset.media_type != "Audio":
 		frappe.throw(_("Only Audio assets can be added to an audio track."))
 	fps = _project_fps(project.name)
-	duration = float(asset_version.duration_seconds or 0)
-	source_out = max(1, round(duration * fps)) if duration > 0 else max(1, round(10.0 * fps))
 	start_frame = max(0, _int_value(timeline_start_frame, _("Start frame must be an integer.")))
+	source_total_frames = _source_max_frames(asset_version.name, fps)
+	if not source_total_frames:
+		frappe.throw(_("Unable to determine the audio asset duration."))
+	visual_end_frame = _visual_timeline_end_frame(project.name)
+	available_frames = visual_end_frame - start_frame
+	if available_frames <= 0:
+		frappe.throw(_("Audio must start before the video ends."))
+	source_out = min(source_total_frames, available_frames)
 
 	existing_audio_indexes = frappe.get_all(
 		"Timeline Clip",
@@ -1181,6 +1187,27 @@ def _source_max_frames(asset_version_name, project_fps):
 	if not asset or not asset.duration_seconds:
 		return None
 	return max(1, round(float(asset.duration_seconds) * project_fps))
+
+
+def _visual_timeline_end_frame(project_name):
+	clips = frappe.get_all(
+		"Timeline Clip",
+		filters={
+			"media_project": project_name,
+			"track_type": "Video",
+			"enabled": 1,
+		},
+		fields=["timeline_start_frame", "source_in_frame", "source_out_frame"],
+	)
+	return max(
+		(
+			int(row.timeline_start_frame or 0)
+			+ int(row.source_out_frame or 0)
+			- int(row.source_in_frame or 0)
+			for row in clips
+		),
+		default=0,
+	)
 
 
 def _minimum_clip_frames(project_fps):

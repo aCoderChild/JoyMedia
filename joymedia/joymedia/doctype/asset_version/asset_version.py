@@ -76,6 +76,8 @@ class AssetVersion(Document):
 			self.set_image_metadata()
 		elif media_asset.media_type == "Video":
 			self.set_video_metadata()
+		elif media_asset.media_type == "Audio":
+			self.set_audio_metadata()
 
 	def set_image_metadata(self):
 		file_doc = frappe.get_doc("File", {"file_url": self.file})
@@ -120,6 +122,40 @@ class AssetVersion(Document):
 			subprocess.CalledProcessError,
 		) as exc:
 			frappe.throw(f"Unable to read video metadata for Asset Version {self.name or '(new)'}: {exc}")
+
+	def set_audio_metadata(self):
+		file_doc = frappe.get_doc("File", {"file_url": self.file})
+		try:
+			result = subprocess.run(
+				[
+					"ffprobe",
+					"-v",
+					"error",
+					"-show_entries",
+					"format=duration",
+					"-of",
+					"json",
+					file_doc.get_full_path(),
+				],
+				capture_output=True,
+				text=True,
+				check=True,
+			)
+			metadata = json.loads(result.stdout)
+			duration = float(metadata["format"]["duration"])
+			if duration <= 0:
+				raise ValueError("audio duration must be positive")
+
+			self.duration_seconds = duration
+			self.fps = None
+		except (
+			KeyError,
+			OSError,
+			ValueError,
+			json.JSONDecodeError,
+			subprocess.CalledProcessError,
+		) as exc:
+			frappe.throw(f"Unable to read audio metadata for Asset Version {self.name or '(new)'}: {exc}")
 
 	@staticmethod
 	def _frame_rate(value):
