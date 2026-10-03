@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -85,6 +86,35 @@ class TestVideoComposer(FrappeTestCase):
 			_normalize_shot(source, output, profile, planned_frames=48)
 			_validate_normalized_video(output, profile, expected_frames=48)
 			self.assertAlmostEqual(_get_video_duration(output), 2.0, delta=0.05)
+
+	def test_normalize_segment_clamps_audio_to_exact_target_duration(self):
+		from joymedia.services.video_composer import _normalize_segment
+
+		with tempfile.TemporaryDirectory(prefix="joymedia-cumulative-audio-test-") as temp_dir:
+			temp_path = Path(temp_dir)
+			source = temp_path / "source.mp4"
+			output = temp_path / "normalized.mp4"
+			_run_ffmpeg(
+				"-f", "lavfi", "-i", "testsrc=size=320x240:rate=24:duration=2",
+				"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=3",
+				"-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+				"-c:a", "aac", str(source),
+			)
+			profile = {"width": 320, "height": 240, "fps": 24.0}
+			_normalize_segment(source, output, profile, generated_frames=24, drop_first=False, preserve_audio=True)
+			_validate_normalized_video(output, profile, expected_frames=24)
+			self.assertAlmostEqual(_get_video_duration(output), 1.0, delta=0.05)
+			audio_duration = float(
+				json.loads(
+					subprocess.run(
+						[
+							"ffprobe", "-v", "error", "-select_streams", "a:0",
+							"-show_entries", "stream=duration", "-of", "json", str(output),
+						], capture_output=True, text=True, check=True,
+					).stdout
+				)["streams"][0]["duration"]
+			)
+			self.assertAlmostEqual(audio_duration, 1.0, delta=0.05)
 
 	def test_mix_audio_supports_timed_gain_fades_and_ducking(self):
 		with tempfile.TemporaryDirectory(prefix="joymedia-audio-test-") as temp_dir:

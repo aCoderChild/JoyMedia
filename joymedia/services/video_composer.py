@@ -460,7 +460,17 @@ def _normalize_segment(
 		video_filter,
 	]
 	if preserve_audio:
-		command.extend(["-map", "0:a?", "-c:a", "aac"])
+		audio_duration = effective_frames / profile["fps"]
+		command.extend(
+			[
+				"-map",
+				"0:a?",
+				"-af",
+				f"apad,atrim=duration={audio_duration:.6f},asetpts=PTS-STARTPTS",
+				"-c:a",
+				"aac",
+			]
+		)
 	else:
 		command.append("-an")
 	command.extend(
