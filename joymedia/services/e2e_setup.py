@@ -107,8 +107,9 @@ def setup_e2e_project(project_name="E2E-STUDIO-TEST-1", duration_seconds=8):
 	final_version = _create_output_asset(
 		project, "E2E Final Master Output", "e2e-final.mp4", duration_seconds=duration_seconds, color="green"
 	)
+	# This fixture represents a project that has already been explicitly exported.
+	# Generation Run itself owns only generation state; delivery stays on Media Project.
 	project.current_output_asset_version = final_version.name
-	project.selected_output_asset_version = final_version.name
 	project.save(ignore_permissions=True)
 	audio_asset = frappe.get_doc({
 		"doctype": "Media Asset",
@@ -144,7 +145,6 @@ def setup_e2e_project(project_name="E2E-STUDIO-TEST-1", duration_seconds=8):
 		"workflow": project.workflow,
 		"requested_by": "Administrator",
 		"status": "Completed",
-		"final_asset_version": final_version.name,
 	}).insert(ignore_permissions=True)
 	from joymedia.services.timeline_editor import get_project_timeline, add_timeline_audio_clip
 	get_project_timeline(project.name)
