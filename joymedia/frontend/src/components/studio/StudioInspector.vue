@@ -403,114 +403,161 @@
         </div>
       </template>
 
-      <!-- 4. SHOT SELECTED: Shot Details & Contextual AI Rewrite -->
+      <!-- 4. SHOT SELECTED: Scene details -->
       <template v-else-if="activeSelectedShot">
-        <!-- Shot Info Card -->
-        <div class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-ink-primary flex items-center gap-1.5">
-              <span>🎞️</span>
-              <span>{{ currentLang === 'vi' ? `Cảnh ${activeSelectedShot.shot_number}` : `Shot ${activeSelectedShot.shot_number}` }}</span>
+        <!-- Preview + status -->
+        <div class="space-y-2">
+          <div class="relative w-full aspect-video rounded-xl overflow-hidden bg-black">
+            <MediaThumbnail
+              v-if="activeSelectedShot.output_video || shotReferences[0]?.file"
+              :src="activeSelectedShot.output_video || shotReferences[shotReferences.length - 1]?.file"
+              :media-type="activeSelectedShot.output_video ? 'Video' : 'Image'"
+              :alt="sceneLabel"
+              :show-play-overlay="false"
+              aspect="aspect-video"
+            />
+            <span
+              class="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold backdrop-blur"
+              :class="shotStatus.class"
+            >
+              {{ shotStatus.label }}
             </span>
-            <!-- Shot Duration Adjuster -->
-            <div class="flex items-center gap-1">
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-[13px] font-semibold text-ink-primary truncate" :title="activeSelectedShot.shot_name">
+              {{ activeSelectedShot.shot_name || sceneLabel }}
+            </p>
+            <div class="flex items-center gap-1 shrink-0" :title="currentLang === 'vi' ? 'Thời lượng cảnh' : 'Scene length'">
               <button
                 type="button"
                 class="capcut-trim-button"
-                :title="currentLang === 'vi' ? 'Giảm 0,5 giây' : 'Trim 0.5s'"
+                :disabled="isProductionActive"
+                :title="currentLang === 'vi' ? 'Giảm 0,5 giây' : 'Shorten by 0.5s'"
                 @click="$emit('changeShotDuration', activeSelectedShot, -0.5)"
               >
                 −
               </button>
-              <span class="text-ink-primary font-mono text-xs font-bold min-w-[34px] text-center">
-                {{ estimateShotDuration(activeSelectedShot) }}s
+              <span class="text-ink-primary font-mono text-xs font-bold min-w-[38px] text-center">
+                {{ Number(estimateShotDuration(activeSelectedShot)).toFixed(1) }}s
               </span>
               <button
                 type="button"
                 class="capcut-trim-button"
-                :title="currentLang === 'vi' ? 'Tăng 0,5 giây' : 'Extend 0.5s'"
+                :disabled="isProductionActive"
+                :title="currentLang === 'vi' ? 'Tăng 0,5 giây' : 'Lengthen by 0.5s'"
                 @click="$emit('changeShotDuration', activeSelectedShot, 0.5)"
               >
                 +
               </button>
             </div>
           </div>
+        </div>
 
-          <!-- Miniature Keyframe Nodes -->
-          <div class="p-2 rounded-xl bg-surface-card border border-outline-border flex items-center justify-between gap-2 text-xs">
+        <!-- Images this scene is generated from -->
+        <div v-if="!usesKeyframes && shotReferences.length" class="space-y-1.5">
+          <span class="block text-[11px] font-semibold text-ink-secondary">
+            {{ currentLang === 'vi' ? 'Hình ảnh sử dụng' : 'Uses' }}
+          </span>
+          <div class="grid grid-cols-2 gap-2">
+            <div
+              v-for="(reference, index) in shotReferences"
+              :key="`${reference.asset_version}-${index}`"
+              class="rounded-xl border border-outline-border bg-surface-muted overflow-hidden"
+            >
+              <img :src="reference.file" :alt="reference.label" class="w-full aspect-video object-contain bg-black" />
+              <div class="px-2 py-1.5">
+                <span class="block text-[11px] font-semibold text-ink-primary truncate">{{ reference.label || `#${index + 1}` }}</span>
+                <span class="block text-[10px] text-ink-muted truncate">{{ referenceRoleLabel(reference) }} · &lt;Picture {{ index + 1 }}&gt;</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Start / end images (single-image scenes only) -->
+        <div v-else class="space-y-1.5">
+          <span class="block text-[11px] font-semibold text-ink-secondary">
+            {{ currentLang === 'vi' ? 'Khung hình' : 'Frames' }}
+          </span>
+          <div class="grid grid-cols-2 gap-2 text-xs">
             <button
               type="button"
-              class="flex-1 p-1.5 rounded-lg border text-center transition-all cursor-pointer bg-surface-muted hover:border-indigo-400 text-ink-secondary"
+              class="p-2 rounded-xl border border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary text-center cursor-pointer"
               @click="$emit('selectKeyframeTarget', activeSelectedShot, selectedShotIndex, 'start')"
             >
-              <span class="block text-[10px] font-bold">{{ currentLang === 'vi' ? 'Ảnh đầu' : 'Start Image' }}</span>
-              <span class="block text-[9px] text-ink-muted">0.0s</span>
+              <span class="block text-[11px] font-semibold">{{ currentLang === 'vi' ? 'Ảnh đầu' : 'Start image' }}</span>
+              <span class="block text-[10px] text-ink-muted">0.0s</span>
             </button>
-            <span class="text-ink-muted">──→</span>
             <button
               type="button"
-              class="flex-1 p-1.5 rounded-lg border text-center transition-all cursor-pointer bg-surface-muted hover:border-emerald-400 text-ink-secondary"
+              class="p-2 rounded-xl border border-outline-border bg-surface-muted hover:border-emerald-400 text-ink-secondary text-center cursor-pointer"
               @click="$emit('selectKeyframeTarget', activeSelectedShot, selectedShotIndex, 'end')"
             >
-              <span class="block text-[10px] font-bold">{{ generationMode === 'Continuous' ? (currentLang === 'vi' ? 'Nối tiếp' : 'Continuity') : (currentLang === 'vi' ? 'Ảnh cuối' : 'End Image') }}</span>
-              <span class="block text-[9px] text-ink-muted">{{ estimateShotDuration(activeSelectedShot) }}s</span>
+              <span class="block text-[11px] font-semibold">{{ generationMode === 'Continuous' ? (currentLang === 'vi' ? 'Nối tiếp' : 'Continuity') : (currentLang === 'vi' ? 'Ảnh cuối' : 'End image') }}</span>
+              <span class="block text-[10px] text-ink-muted">{{ Number(estimateShotDuration(activeSelectedShot)).toFixed(1) }}s</span>
             </button>
           </div>
+        </div>
 
-          <!-- Shot Prompt & Subject -->
-          <div class="space-y-1.5">
-            <div class="flex items-center justify-between">
-              <label class="block text-[11px] font-semibold text-ink-secondary">
-                {{ currentLang === 'vi' ? 'Mô tả phân cảnh (Prompt):' : 'Shot Prompt:' }}
-              </label>
-              <button
-                type="button"
-                class="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
-                @click="showAiRewrite = !showAiRewrite"
-              >
-                ✨ {{ currentLang === 'vi' ? 'Viết lại bằng AI' : 'Rewrite ✦' }}
-              </button>
-            </div>
-
-            <textarea
-              v-model="activeSelectedShot.generation_prompt"
-              rows="3"
-              class="w-full px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500 font-mono resize-none leading-relaxed"
-              @blur="$emit('saveActiveShot')"
-            />
+        <!-- Scene description -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="block text-[11px] font-semibold text-ink-secondary">
+              {{ currentLang === 'vi' ? 'Mô tả cảnh' : 'Scene description' }}
+            </label>
+            <span class="text-[10px]" :class="promptDirty ? 'text-amber-500' : 'text-ink-muted'">
+              {{ promptDirty ? (currentLang === 'vi' ? 'Chưa lưu' : 'Unsaved') : (currentLang === 'vi' ? 'Đã lưu' : 'Saved') }}
+            </span>
           </div>
+          <textarea
+            v-model="activeSelectedShot.generation_prompt"
+            rows="10"
+            :disabled="isProductionActive"
+            class="w-full px-3 py-2 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500 resize-y leading-relaxed"
+            @blur="savePrompt"
+          />
+          <div v-if="!usesKeyframes && shotReferences.length" class="text-[10px] text-ink-muted leading-relaxed">
+            <span v-for="(reference, index) in shotReferences" :key="`legend-${index}`" class="mr-2 inline-block">
+              &lt;Picture {{ index + 1 }}&gt; = {{ reference.label || referenceRoleLabel(reference) }}
+            </span>
+          </div>
+          <button
+            v-if="promptDirty"
+            type="button"
+            class="w-full jm-btn-primary !py-1.5 text-xs"
+            @click="savePrompt"
+          >
+            {{ currentLang === 'vi' ? 'Lưu mô tả' : 'Save description' }}
+          </button>
+        </div>
 
-          <!-- Contextual AI Rewrite Drawer/Box -->
-          <div v-if="showAiRewrite" class="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 space-y-2">
-            <span class="text-[11px] font-bold text-indigo-400 block">✨ {{ currentLang === 'vi' ? 'Chỉ dẫn viết lại với AI:' : 'AI Rewrite Instruction:' }}</span>
+        <!-- Ask AI -->
+        <div class="space-y-1.5">
+          <label class="block text-[11px] font-semibold text-ink-secondary">
+            ✨ {{ currentLang === 'vi' ? 'Nhờ AI chỉnh cảnh này' : 'Ask AI to change this scene' }}
+          </label>
+          <div class="flex gap-1.5">
             <input
               v-model="aiRewriteInstruction"
               type="text"
-              :placeholder="currentLang === 'vi' ? 'VD: Thêm ánh sáng kịch tính, góc quay từ dưới lên...' : 'e.g. Add dramatic lighting, low angle camera...'"
-              class="w-full px-2 py-1 rounded-lg bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
+              :disabled="isProductionActive || aiRevisionLoading"
+              :placeholder="currentLang === 'vi' ? 'VD: cho cô ấy bước ra ban công…' : 'e.g. have her walk onto the balcony…'"
+              class="flex-1 min-w-0 px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
               @keydown.enter="submitAiRewrite"
             />
-            <div class="flex items-center justify-end gap-1.5">
-              <button
-                type="button"
-                class="px-2 py-0.5 rounded text-[11px] text-ink-muted hover:text-ink-primary"
-                @click="showAiRewrite = false"
-              >
-                {{ currentLang === 'vi' ? 'Đóng' : 'Close' }}
-              </button>
-              <button
-                type="button"
-                class="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"
-                :disabled="aiRevisionLoading || !aiRewriteInstruction.trim()"
-                @click="submitAiRewrite"
-              >
-                <span v-if="aiRevisionLoading" class="lucide-refresh-cw size-3 animate-spin inline-block mr-1" />
-                <span>{{ currentLang === 'vi' ? 'Thực hiện ✦' : 'Rewrite ✦' }}</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer disabled:opacity-50"
+              :disabled="isProductionActive || aiRevisionLoading || !aiRewriteInstruction.trim()"
+              @click="submitAiRewrite"
+            >
+              <span v-if="aiRevisionLoading" class="lucide-refresh-cw size-3 animate-spin inline-block" />
+              <span v-else>{{ currentLang === 'vi' ? 'Áp dụng' : 'Apply' }}</span>
+            </button>
           </div>
+        </div>
 
-          <!-- Regenerate Shot Button -->
+        <!-- Regenerate -->
+        <div class="pt-2 border-t border-outline-border space-y-1">
           <button
             type="button"
             class="w-full jm-btn-secondary !py-2 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
@@ -518,18 +565,21 @@
             @click="$emit('regenerateCurrentShot')"
           >
             <span>↻</span>
-            <span>{{ currentLang === 'vi' ? 'Tạo lại cảnh này' : 'Regenerate this Shot' }}</span>
+            <span>{{ currentLang === 'vi' ? 'Tạo lại cảnh này' : 'Regenerate this scene' }}</span>
           </button>
+          <p class="text-[10px] text-ink-muted text-center">
+            {{ isProductionActive
+              ? (currentLang === 'vi' ? 'Đang tạo video — chờ hoàn tất để chỉnh sửa.' : 'Generation is running — wait for it to finish to edit.')
+              : (currentLang === 'vi' ? 'Chỉ tạo lại cảnh này với mô tả hiện tại.' : 'Re-renders only this scene with the current description.') }}
+          </p>
         </div>
       </template>
-
-
     </div>
   </aside>
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import MediaThumbnail from "../MediaThumbnail.vue";
 
 const props = defineProps({
@@ -584,14 +634,64 @@ const emit = defineEmits([
   "openMediaPicker",
 ]);
 
-const showAiRewrite = ref(false);
 const aiRewriteInstruction = ref("");
 
 function submitAiRewrite() {
   if (!aiRewriteInstruction.value.trim()) return;
   emit("askAi", aiRewriteInstruction.value.trim());
   aiRewriteInstruction.value = "";
-  showAiRewrite.value = false;
+}
+
+const shotReferences = computed(() => props.activeSelectedShot?.references || []);
+// Single-image scenes are driven by start/end frames; reference scenes by <Picture N> images.
+const usesKeyframes = computed(
+  () => !shotReferences.value.length
+    || shotReferences.value.some((reference) => ["first_frame", "last_frame"].includes(reference.input_role))
+);
+const sceneLabel = computed(() =>
+  props.currentLang === "vi" ? `Cảnh ${props.activeSelectedShot?.shot_number}` : `Scene ${props.activeSelectedShot?.shot_number}`
+);
+const shotStatus = computed(() => {
+  if (props.activeSelectedShot?.output_video) {
+    return { label: props.currentLang === "vi" ? "Đã tạo" : "Ready", class: "bg-emerald-500/90 text-white" };
+  }
+  if (props.isProductionActive) {
+    return { label: props.currentLang === "vi" ? "Đang tạo…" : "Generating…", class: "bg-indigo-500/90 text-white" };
+  }
+  return { label: props.currentLang === "vi" ? "Chưa tạo" : "Not generated", class: "bg-black/60 text-white" };
+});
+
+function referenceRoleLabel(reference) {
+  const role = String(reference?.reference_role || "").toLowerCase();
+  if (role === "character") return props.currentLang === "vi" ? "Nhân vật" : "Character";
+  if (role === "environment") return props.currentLang === "vi" ? "Bối cảnh" : "Location";
+  return reference?.reference_role || (props.currentLang === "vi" ? "Tham chiếu" : "Reference");
+}
+
+const savedPrompt = ref("");
+watch(
+  () => props.activeSelectedShot?.name,
+  () => {
+    savedPrompt.value = props.activeSelectedShot?.generation_prompt || "";
+    aiRewriteInstruction.value = "";
+  },
+  { immediate: true }
+);
+// A refreshed storyboard (e.g. after an AI rewrite) brings a new saved prompt.
+watch(
+  () => props.activeSelectedShot,
+  (shot, previous) => {
+    if (shot && shot !== previous) savedPrompt.value = shot.generation_prompt || "";
+  }
+);
+const promptDirty = computed(
+  () => (props.activeSelectedShot?.generation_prompt || "") !== savedPrompt.value
+);
+
+function savePrompt() {
+  if (!promptDirty.value) return;
+  savedPrompt.value = props.activeSelectedShot?.generation_prompt || "";
+  emit("saveActiveShot");
 }
 
 function formatClipTime(frames, fps = 24) {
@@ -621,7 +721,7 @@ const inspectorHeaderTitle = computed(() => {
     return props.currentLang === "vi" ? "Ảnh kết thúc" : "End Image";
   }
   if (props.activeSelectedShot) {
-    return props.currentLang === "vi" ? `Cảnh ${props.activeSelectedShot.shot_number}` : `Shot ${props.activeSelectedShot.shot_number}`;
+    return props.currentLang === "vi" ? `Cảnh ${props.activeSelectedShot.shot_number}` : `Scene ${props.activeSelectedShot.shot_number}`;
   }
   return props.currentLang === "vi" ? "Cài đặt dự án" : "Project Settings";
 });

@@ -1031,19 +1031,10 @@ async function removeStoryboardShot(shot) {
 }
 
 async function previewStoryboardShot(shot, index) {
+  // onSelectShot seeks the master to the scene (or swaps in the scene's own
+  // video); playback simply continues from there, without a pause/play cycle.
   onSelectShot(shot, index);
-  isPlaying.value = false;
   await nextTick();
-  if (hasCurrentMaster.value) {
-    previewSelection.value = "master";
-    const startTime = getShotStartTime(index);
-    playheadFrame.value = Math.round(startTime * (fps.value || 24));
-    seekPreview(startTime);
-  } else {
-    previewSelection.value = "shot";
-    playheadFrame.value = 0;
-    seekPreview(0);
-  }
   isPlaying.value = true;
 }
 

@@ -414,6 +414,23 @@ def _storyboard_payload(specification):
 				)
 				if project_reference and getattr(project_reference, "reference_key", None):
 					shot[f"{output_key}_reference_key"] = project_reference.reference_key
+		# Ordered images the scene is generated from; position N is <Picture N>
+		# for Reference-to-Video scenes.
+		project_references = {
+			selection.asset_version: selection for selection in specification.selected_media or []
+		}
+		shot["references"] = [
+			{
+				"asset_version": row.asset_version,
+				"file": _get_asset_version_file_url(row.asset_version),
+				"input_role": row.reference_role,
+				"reference_role": getattr(project_references.get(row.asset_version), "reference_role", None),
+				"label": getattr(project_references.get(row.asset_version), "label", None)
+				or _asset_version_name(row.asset_version),
+			}
+			for row in input_rows
+			if row.asset_version
+		]
 	return shots
 
 
@@ -596,6 +613,11 @@ def _get_asset_file_url(media_asset, file_url):
 		return file_url
 
 	return frappe.get_doc("File", file_name).unique_url
+
+
+def _asset_version_name(asset_version_name):
+	media_asset = frappe.db.get_value("Asset Version", asset_version_name, "media_asset")
+	return frappe.db.get_value("Media Asset", media_asset, "asset_name") if media_asset else None
 
 
 def _get_asset_version_file_url(asset_version_name):

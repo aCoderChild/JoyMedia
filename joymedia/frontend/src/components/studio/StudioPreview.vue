@@ -70,7 +70,7 @@
         playsinline
         @loadedmetadata="onLoadedMetadata"
         @timeupdate="onTimeUpdate"
-        @play="$emit('play', $event)"
+        @play="onPlay"
         @pause="onPause"
         @ended="onEnded"
         @error="onError"
@@ -199,21 +199,33 @@ const emit = defineEmits([
   "stepFrame",
 ]);
 
-watch(
-  () => props.isPlaying,
-  async (playing) => {
-    if (!previewVideo.value) return;
-    if (playing) {
-      try {
-        await previewVideo.value.play();
-      } catch (err) {
-        console.warn("Video play interrupted/failed:", err);
-      }
-    } else {
-      previewVideo.value.pause();
+// The parent's isPlaying commands the <video>; the element's own play/pause
+// events are reported back only when they differ from that command. Reporting
+// the echo of our own play()/pause() calls makes parent and element flip each
+// other forever when playback is toggled quickly (e.g. jumping between scenes).
+let commandedPlaying = props.isPlaying;
+
+async function applyPlayback(playing) {
+  commandedPlaying = playing;
+  const video = previewVideo.value;
+  if (!video) return;
+  if (!playing) {
+    video.pause();
+    return;
+  }
+  try {
+    await video.play();
+  } catch (err) {
+    // AbortError only means a newer pause()/source change superseded this play().
+    if (err?.name !== "AbortError" && commandedPlaying) {
+      console.warn("Video playback was blocked:", err);
+      commandedPlaying = false;
+      emit("pause", err);
     }
   }
-);
+}
+
+watch(() => props.isPlaying, applyPlayback);
 
 function onLoadedMetadata(event) {
   emit("loadedmetadata", {
@@ -222,9 +234,7 @@ function onLoadedMetadata(event) {
     videoHeight: event.target.videoHeight,
     event,
   });
-  if (props.isPlaying) {
-    previewVideo.value?.play()?.catch(() => {});
-  }
+  if (props.isPlaying) applyPlayback(true);
 }
 
 function onTimeUpdate(event) {
@@ -235,12 +245,23 @@ function onTimeUpdate(event) {
   });
 }
 
+function onPlay(event) {
+  // Media events are delivered late: a "play" from an earlier play() can arrive
+  // after a newer pause(). Only a playing element reports a real play.
+  if (event.target !== previewVideo.value || commandedPlaying || event.target.paused) return;
+  commandedPlaying = true;
+  emit("play", event);
+}
+
 function onPause(event) {
   // Timeline/Edit playback is owned by the global timeline clock, not by the
   // lifecycle of one physical Shot file. A clip reaching its end or being
   // replaced by the next clip can fire a native pause event while the global
   // timeline is intentionally still playing. Ignore that internal pause.
   if (props.studioMode === "edit" && props.isPlaying) return;
+  // A replaced <video> (new source) fires a late pause when it is removed.
+  if (event.target !== previewVideo.value || !commandedPlaying || !event.target.paused) return;
+  commandedPlaying = false;
   emit("pause", event);
 }
 
@@ -250,6 +271,7 @@ function onEnded(event) {
   // the end of one physical Shot file must not pause the whole edit; the
   // parent switches to the next Timeline Clip and keeps isPlaying true.
   if (props.studioMode !== "edit") {
+    commandedPlaying = false;
     emit("pause", event);
   }
 }
