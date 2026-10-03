@@ -165,6 +165,16 @@
         </span>
       </button>
 
+      <a
+        v-if="finalVideoUrl && !isExporting"
+        :href="finalVideoUrl"
+        download
+        class="jm-btn-secondary !py-1 !px-3 text-xs flex items-center gap-1.5 shadow-sm"
+      >
+        <span>⬇</span>
+        <span>{{ currentLang === 'vi' ? 'Tải xuống' : 'Download' }}</span>
+      </a>
+
       <!-- Language Switcher -->
       <button
         type="button"
@@ -198,6 +208,7 @@ const props = defineProps({
   isExporting: { type: Boolean, default: false },
   exportStatus: { type: String, default: "Idle" },
   currentOutputAssetVersion: { type: String, default: "" },
+  finalVideoUrl: { type: String, default: "" },
   mediaDrawerOpen: { type: Boolean, default: false },
   projectAssetsCount: { type: Number, default: 0 },
   production: { type: Object, default: null },

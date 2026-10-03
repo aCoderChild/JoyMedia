@@ -10,6 +10,7 @@
       :is-exporting="isExporting"
       :export-status="exportStatus"
       :current-output-asset-version="currentOutputAssetVersion"
+      :final-video-url="finalVideo?.file || ''"
       :media-drawer-open="mediaDrawerOpen"
       :project-assets-count="projectAssets.length"
       :production="currentRun"
@@ -20,7 +21,7 @@
       @toggle-media-drawer="mediaDrawerOpen = !mediaDrawerOpen"
       @toggle-lang="toggleLang"
       @open-settings="showSettings = true"
-      @export-timeline="exportTimeline"
+      @export-timeline="exportAndRefresh"
       @retry-generation="handleGenerationRetry"
       @stop-generation="cancelGeneration"
     />
@@ -496,6 +497,22 @@ const {
   addAudioClip,
   exportTimeline,
 } = useProjectTimeline(projectName);
+
+async function exportAndRefresh() {
+  try {
+    const result = await exportTimeline();
+    if (!result) return;
+    // The export replaces the project's final video, which only the workspace reports.
+    await fetchWorkspace();
+    notify({
+      title: currentLang.value === "vi" ? "Đã xuất video" : "Video exported",
+      text: currentLang.value === "vi" ? "Bấm Tải xuống để lưu video." : "Click Download to save the video.",
+      type: "success",
+    });
+  } catch (err) {
+    notify({ title: "Timeline export failed", text: errorMessage(err, "Export failed."), type: "error" });
+  }
+}
 
 async function refreshStudioGenerationState(snapshot = null) {
   if (snapshot) {
