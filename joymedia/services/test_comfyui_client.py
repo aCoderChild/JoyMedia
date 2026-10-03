@@ -8,6 +8,7 @@ from joymedia.services.comfyui_client import (
 	get_queue_state,
 	get_request_auth,
 	get_system_stats,
+	interrupt,
 	submit_workflow,
 )
 
@@ -66,3 +67,14 @@ class TestComfyUIClient(FrappeTestCase):
 		self.assertEqual("pending", get_queue_state("prompt-pending", base_url="http://comfyui"))
 		self.assertIsNone(get_queue_state("prompt-gone", base_url="http://comfyui"))
 		self.assertEqual("http://comfyui/queue", get.call_args.args[0])
+
+	@patch("joymedia.services.comfyui_client.frappe.conf", {})
+	@patch("joymedia.services.comfyui_client.requests.post")
+	def test_interrupt_targets_prompt(self, post):
+		response = Mock(ok=True)
+		post.return_value = response
+
+		interrupt(prompt_id="prompt-running", base_url="http://comfyui")
+
+		self.assertEqual("http://comfyui/interrupt", post.call_args.args[0])
+		self.assertEqual({"prompt_id": "prompt-running"}, post.call_args.kwargs["json"])

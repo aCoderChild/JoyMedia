@@ -134,8 +134,12 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		})
 		shot = frappe.get_doc("Shot", frappe.db.get_value("Shot", {"media_project": project.name}))
 		self.assertEqual(
-			[(row.reference_role, row.asset_version) for row in shot.generation_inputs],
+			[(row.reference_role, row.asset_version) for row in shot.generation_inputs if row.reference_role == "product_reference"],
 			[("product_reference", first_version.name), ("product_reference", second_version.name)],
+		)
+		self.assertEqual(
+			[(row.reference_role, row.asset_version) for row in shot.generation_inputs if row.reference_role == "first_frame"],
+			[("first_frame", first_version.name)],
 		)
 
 	def test_planning_context_tracks_prompt_assets_settings_and_global_instructions(self):
@@ -155,6 +159,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		from joymedia.services.video_plan_service import apply_video_plan
 
 		project, _ = _create_project("Storyboard Revision", self.workflow)
+		_attach_image_reference(project, "Revision Reference")
 		apply_video_plan(project.name, {
 			"shots": [{
 				"shot_number": 1,
@@ -186,6 +191,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		from joymedia.services.video_plan_service import apply_video_plan
 
 		project, _ = _create_project("Snapshot Duration Order", self.workflow)
+		_attach_image_reference(project, "Snapshot Reference")
 		apply_video_plan(project.name, {
 			"shots": [{
 				"shot_number": 1,
@@ -272,6 +278,14 @@ def _create_asset_version(project, media_type, extension):
 	else:
 		version.insert(ignore_permissions=True)
 	return asset, version
+
+
+def _attach_image_reference(project, asset_name):
+	asset, version = _create_asset_version(project, "Image", "png")
+	asset.asset_name = asset_name
+	asset.save(ignore_permissions=True)
+	project.append("selected_media", {"asset_version": version.name})
+	project.save(ignore_permissions=True)
 
 
 def _ensure_workflow():

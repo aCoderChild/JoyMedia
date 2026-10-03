@@ -42,9 +42,15 @@ def get_workflow_input_contract(workflow):
 			"min_count": 0,
 			"max_count": 0,
 		}
+		is_reference_slot = binding_key.startswith("reference_image_")
+		if entry["allow_multiple"] and not is_reference_slot:
+			# A single semantic binding can accept a pool of values. Repeated
+			# reference-image bindings remain bounded by their slot count below.
+			entry["max_count"] = 0
 		if entry["required"]:
 			entry["min_count"] += 1
-		entry["max_count"] += 1
+		if not entry["allow_multiple"] or is_reference_slot:
+			entry["max_count"] += 1
 		previous = contract.get(role)
 		if previous and any(
 			previous[field] != entry[field]

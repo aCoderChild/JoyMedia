@@ -1,4 +1,5 @@
 import hashlib
+import json
 import secrets
 
 import frappe
@@ -278,17 +279,43 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 
 		get_system_stats()
 
-	validate_workflow_for_execution(workflow)
-	validate_workflow_bindings(workflow)
-	required_roles = {
-		frappe.scrub(binding.required_input_role)
-		for binding in workflow.bindings
-		if binding.required
-		and binding.required_input_role
-	}
+	from joymedia.joymedia.doctype.media_project.media_project import build_project_snapshot
+	from .workflow_profiles import choose_shot_workflow
+	try:
+		snapshot = json.loads(build_project_snapshot(project)[0])
+	except (TypeError, ValueError):
+		frappe.throw(_("The project snapshot could not be prepared for preflight."))
+	snapshot_shots = {row.get("shot"): row for row in snapshot.get("shots") or []}
 
 	for shot_row in shots:
 		shot = frappe.get_doc("Shot", shot_row.name)
+		shot_snapshot = snapshot_shots.get(shot.name, {
+			"shot": shot.name,
+			"shot_number": shot.shot_number,
+			"planned_frame_count": shot.planned_frame_count,
+			"generation_prompt": shot.generation_prompt,
+			"references": [
+				{"reference_role": row.reference_role, "asset_version": row.asset_version}
+				for row in shot.generation_inputs or []
+			],
+		})
+		shot_workflow = choose_shot_workflow(snapshot, shot_snapshot)
+		validate_workflow_for_execution(shot_workflow)
+		validate_workflow_bindings(shot_workflow)
+		shot_adapter = get_workflow_adapter(shot_workflow)
+		continuation_workflow = (
+			frappe.get_doc("Generation Workflow", shot_workflow.continuation_workflow)
+			if shot_workflow.continuation_workflow
+			else _get_continuation_workflow_from_adapter(shot_adapter)
+		)
+		if continuation_workflow:
+			validate_workflow_for_execution(continuation_workflow)
+			validate_workflow_bindings(continuation_workflow)
+		required_roles = {
+			frappe.scrub(binding.required_input_role)
+			for binding in shot_workflow.bindings
+			if binding.required and binding.required_input_role
+		}
 		if not (shot.generation_prompt or "").strip():
 			frappe.throw(
 				_("Shot {0} has no generation prompt. Regenerate or edit the storyboard first.").format(
@@ -321,7 +348,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 					)
 				)
 			binding = next(
-				(binding for binding in workflow.bindings
+				(binding for binding in shot_workflow.bindings
 				 if binding.required and frappe.scrub(binding.required_input_role or "") == role),
 				None,
 			)
@@ -334,11 +361,11 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 
 		segments = plan_generation_segments(
 			shot_row.planned_frame_count,
-			max_segment_frames=workflow.frame_count,
+			max_segment_frames=shot_workflow.frame_count,
 		)
 		if not segments:
 			frappe.throw(_("Shot {0} has no generation segments.").format(shot.name))
-		if any(segment["segment_frame_count"] > workflow.frame_count for segment in segments):
+		if any(segment["segment_frame_count"] > shot_workflow.frame_count for segment in segments):
 			frappe.throw(
 				_("Shot {0} contains a segment larger than Workflow frame capacity.").format(shot.name)
 			)
@@ -391,17 +418,20 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 		return _run_summary(run)
 	if run.status in ACTIVE_RUN_STATUSES:
 		try:
-			workflow = frappe.get_doc("Generation Workflow", run.workflow)
-			validate_workflow_for_execution(workflow)
+			for job_name in _get_run_job_names(run.name):
+				job = frappe.get_doc("Generation Task", job_name)
+				validate_workflow_for_execution(frappe.get_doc("Generation Workflow", job.workflow))
 		except Exception as exc:
 			message = _exception_message(exc)
 			for job_name in _get_run_job_names(run.name):
+				if frappe.db.get_value("Generation Task", job_name, "status") in ("Completed", "Failed", "Cancelled"):
+					continue
 				frappe.db.set_value(
 					"Generation Task",
 					job_name,
 					{
 						"status": "Failed",
-						"error_summary": message,
+						"error_summary": "The selected video setup is unavailable. Please try again or contact support.",
 						"failure_class": "Workflow",
 						"completed_at": now(),
 					},
@@ -639,11 +669,25 @@ def cancel_run(run_name: str):
 		"Generation Attempt", filters={"generation_task": ["in", _get_run_job_names(run.name)]}, pluck="name"
 	):
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
-		if attempt.external_job_id and attempt.status == "Queued":
-			delete_queue_prompts([attempt.external_job_id], base_url=attempt.comfyui_endpoint_url)
-		elif attempt.external_job_id and attempt.status == "Running":
-			interrupt(base_url=attempt.comfyui_endpoint_url)
-	for attempt_name in _get_pending_attempt_names_for_run(run.name):
+		try:
+			if attempt.external_job_id and attempt.status == "Queued":
+				delete_queue_prompts([attempt.external_job_id], base_url=attempt.comfyui_endpoint_url)
+			elif attempt.external_job_id and attempt.status == "Running":
+				interrupt(prompt_id=attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
+		except Exception:
+			frappe.logger("joymedia.generation_run").exception(
+				"Unable to stop ComfyUI prompt %s while cancelling run %s",
+				attempt.external_job_id,
+				run.name,
+			)
+	for attempt_name in frappe.get_all(
+		"Generation Attempt",
+		filters={
+			"generation_task": ["in", _get_run_job_names(run.name)],
+			"status": ["not in", ["Completed", "Failed", "Cancelled"]],
+		},
+		pluck="name",
+	):
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
 		attempt.status = "Cancelled"
 		attempt.completed_at = now()
@@ -673,7 +717,8 @@ def refresh_active_runs():
 		"Generation Run", filters={"status": ["in", ACTIVE_RUN_STATUSES]}, pluck="name"
 	):
 		try:
-			refresh_run(run_name)
+			with filelock(f"joymedia-refresh-run-{run_name}"):
+				refresh_run(run_name)
 			sync_media_project_status_for_run(run_name)
 			frappe.db.commit()
 		except Exception:
@@ -688,6 +733,8 @@ def sync_media_project_status_for_run(run_name: str):
 	run = frappe.get_doc("Generation Run", run_name)
 	media_project = run.media_project
 	if not media_project:
+		return
+	if frappe.db.get_value("Media Project", media_project, "status") == "Archived":
 		return
 	latest = frappe.get_all(
 		"Generation Run", filters={"media_project": media_project}, fields=["name", "status"],
@@ -796,14 +843,17 @@ def _submit_attempt_or_record_failure(attempt_name):
 	try:
 		return submit_attempt(attempt_name)
 	except Exception as exc:
+		from .user_messages import classify_failure, friendly_failure, technical_message
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
 		if attempt.status == "Pending":
+			failure_class = classify_failure(exc, "Generation")
 			error_message = _exception_message(exc)
 			attempt.status = "Failed"
-			attempt.error_summary = error_message
-			attempt.error_details = error_message
+			attempt.failure_class = failure_class
+			attempt.error_summary = friendly_failure(failure_class, error_message)
+			attempt.error_details = technical_message(error_message)
 			attempt.save(ignore_permissions=True)
-		return {"error": _exception_message(exc)}
+		return {"error": attempt.error_summary}
 
 
 def _update_job_summary(job):
@@ -829,7 +879,7 @@ def _update_job_summary(job):
 		job.completed_at = job.completed_at or now()
 		job.failure_class = effective_attempt.get("failure_class") if effective_attempt.status == "Failed" else None
 		job.error_summary = (
-			(effective_attempt.get("error_details") or effective_attempt.get("error_summary"))
+			effective_attempt.get("error_summary")
 			if effective_attempt.status == "Failed"
 			and (effective_attempt.get("error_details") or effective_attempt.get("error_summary"))
 			else _("All execution attempts failed.")
@@ -870,8 +920,9 @@ def _refresh_run_counters(run):
 			run.status = "Running"
 			run.completed_at = None
 	elif run.total_tasks and run.failed_tasks > 0:
-		run.status = "Failed"
-		run.completed_at = run.completed_at or now()
+		active_tasks = any(job.status in ("Pending", "Ready", "Queued", "Running") for job in jobs)
+		run.status = "Running" if active_tasks else "Failed"
+		run.completed_at = None if active_tasks else (run.completed_at or now())
 		latest_failed_job = next(
 			(
 				job
@@ -881,7 +932,11 @@ def _refresh_run_counters(run):
 			None,
 		)
 		run.failure_class = latest_failed_job.failure_class if latest_failed_job else None
-		run.error_summary = latest_failed_job.error_summary if latest_failed_job else None
+		run.error_summary = (
+			"Some scenes need attention while other scenes are still rendering."
+			if active_tasks
+			else latest_failed_job.error_summary if latest_failed_job else None
+		)
 	elif run.total_tasks and any(job.status == "Running" for job in jobs):
 		run.status = "Running"
 		run.failure_class = None

@@ -8,7 +8,7 @@ from frappe import _
 from frappe.utils.synchronization import filelock
 from frappe.utils import get_datetime, now, time_diff_in_seconds
 
-from .comfyui_client import download_output, get_history, get_queue_state
+from .comfyui_client import download_output, get_history, get_queue_state, probe_output
 from .artifact_service import get_attempt_artifact
 from joymedia.workflow_adapters import get_workflow_adapter
 
@@ -92,12 +92,9 @@ def _sync_attempt_result(attempt_name):
 	)
 	workflow = frappe.get_doc("Generation Workflow", workflow_name) if workflow_name else None
 	preferred_nodes = None
-	if workflow and get_workflow_adapter(workflow).cumulative_segment_output:
-		preferred_nodes = (
-			("374", "254")
-			if workflow.workflow_key == "h3_sato_continuation"
-			else ("254", "374")
-		)
+	if workflow:
+		adapter = get_workflow_adapter(workflow)
+		preferred_nodes = getattr(adapter, "primary_output_node_keys", None) or None
 	output = _find_primary_mp4(history, preferred_node_keys=preferred_nodes)
 	if not output:
 		_log_sync_failure(attempt, "returned no MP4 output: %s", history.get("outputs"))
@@ -124,6 +121,18 @@ def _sync_attempt_without_history(attempt):
 	elif queue_state == "pending" or _within_missing_job_grace_period(attempt):
 		attempt.status = "Queued"
 	else:
+		job = frappe.get_doc("Generation Task", attempt.generation_task) if attempt.get("generation_task") else None
+		output_filename = f"{job.name}_{attempt.name}_00001_.mp4" if job else None
+		if output_filename and probe_output(output_filename, base_url=attempt.comfyui_endpoint_url):
+			history = {
+				"status": {"completed": True},
+				"outputs": {"joymedia_probe": {"images": [{"filename": output_filename, "type": "output"}]}},
+			}
+			try:
+				artifact, last_frame_artifact = _ingest_completed_output(attempt, history, history["outputs"]["joymedia_probe"]["images"][0])
+			except UnusableComfyUIOutput as exc:
+				return _fail_attempt(attempt, "ComfyUI output could not be processed.", str(exc), "Generation")
+			return _complete_attempt(attempt, history, artifact, last_frame_artifact)
 		_log_sync_failure(attempt, "is missing from ComfyUI /history and /queue")
 		return _fail_attempt(
 			attempt,
@@ -149,16 +158,37 @@ def _log_sync_failure(attempt, message, *args):
 
 
 def _fail_attempt(attempt, error_summary, error_details, failure_class):
+	from .user_messages import friendly_failure, technical_message
 	attempt.status = "Failed"
-	attempt.error_summary = error_summary
-	attempt.error_details = error_details
+	attempt.error_summary = friendly_failure(failure_class, error_summary)
+	attempt.error_details = technical_message(error_details or error_summary)
 	attempt.failure_class = failure_class
 	attempt.save(ignore_permissions=True)
+	for dependent in frappe.get_all(
+		"Generation Task",
+		filters={
+			"depends_on_task": attempt.generation_task,
+			"status": ["not in", ["Completed", "Failed", "Cancelled"]],
+		},
+		pluck="name",
+	):
+		frappe.db.set_value(
+			"Generation Task",
+			dependent,
+			{
+				"status": "Cancelled",
+				"failure_class": "Cancelled",
+				"error_summary": "Skipped because the previous scene segment failed.",
+			},
+			update_modified=False,
+		)
 	_refresh_parent_execution_state(attempt.name)
 	return {"status": attempt.status}
 
 
 def _ingest_completed_output(attempt, history, output):
+	workflow_name = frappe.db.get_value("Generation Task", attempt.generation_task, "workflow")
+	workflow = frappe.get_doc("Generation Workflow", workflow_name) if workflow_name else None
 	artifact = _create_primary_artifact(attempt)
 	_store_artifact_file_in_frappe(artifact, attempt, output)
 	last_frame = _find_last_frame_image(history)
@@ -177,6 +207,13 @@ def _ingest_completed_output(attempt, history, output):
 			f"{Path(output['filename']).stem}_last_frame.png",
 		)
 	continuation_state = _find_continuation_state(history)
+	if workflow and get_workflow_adapter(workflow).cumulative_segment_output:
+		dependants = frappe.db.exists(
+			"Generation Task",
+			{"depends_on_task": attempt.generation_task, "status": ["not in", ["Completed", "Failed", "Cancelled"]]},
+		)
+		if dependants and not continuation_state:
+			raise UnusableComfyUIOutput("Cumulative output did not include continuation state.")
 	if continuation_state:
 		_store_continuation_state(attempt, continuation_state)
 	return artifact, get_attempt_artifact(attempt.name, "Last Frame")

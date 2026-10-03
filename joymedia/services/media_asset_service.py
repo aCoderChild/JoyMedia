@@ -83,6 +83,10 @@ def _get_duplicate_version(
 def create_media_asset(asset_name, asset_category, file_url=None, file_name=None):
 	if frappe.session.user == "Guest":
 		frappe.throw(_("You must be signed in to upload media."))
+	if not set(frappe.get_roles(frappe.session.user)).intersection(
+		{"JoyMedia User", "JoyMedia Specialist", "System Manager"}
+	):
+		frappe.throw(_("You do not have permission to add media assets."))
 	if asset_category not in INPUT_ASSET_CATEGORIES:
 		frappe.throw(_("Uploaded assets must be reference inputs."))
 
@@ -90,6 +94,11 @@ def create_media_asset(asset_name, asset_category, file_url=None, file_name=None
 	if file_doc.owner != frappe.session.user and frappe.session.user != "Administrator":
 		frappe.throw(_("You can only attach files uploaded by your account."))
 	media_type = detect_media_type(file_doc)
+	if media_type in {"Document", "Other"}:
+		frappe.throw(_("Only image, video, or audio files can be added to the media library."))
+	from frappe.utils.file_manager import get_max_file_size
+	if file_doc.file_size and file_doc.file_size > get_max_file_size():
+		frappe.throw(_("This file is larger than the configured upload limit."))
 
 	asset = frappe.get_doc(
 		{
@@ -116,6 +125,10 @@ def create_media_asset(asset_name, asset_category, file_url=None, file_name=None
 			"source": "Uploaded",
 		}
 	).insert(ignore_permissions=True)
+	if media_type == "Image" and min(cint(version.width), cint(version.height)) < 640:
+		frappe.delete_doc("Asset Version", version.name, force=True, ignore_permissions=True)
+		frappe.delete_doc("Media Asset", asset.name, force=True, ignore_permissions=True)
+		frappe.throw(_("Images must be at least 640 pixels on their short side."))
 
 	duplicate = _get_duplicate_version(
 		version.content_hash,

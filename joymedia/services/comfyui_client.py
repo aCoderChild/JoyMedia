@@ -1,4 +1,4 @@
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import uuid
 
 import frappe
@@ -23,10 +23,6 @@ def get_request_auth():
 	if not username or not password:
 		frappe.throw(_("Both comfyui_username and comfyui_password must be configured."))
 	return username, password
-
-
-def get_input_dir(input_dir: str | None = None):
-	return input_dir or frappe.conf.get("comfyui_input_dir", "/home/ubuntu/ComfyUI/input")
 
 
 def upload_frappe_file(file_url: str, *, base_url: str | None = None, input_dir: str | None = None) -> dict:
@@ -55,12 +51,9 @@ def upload_frappe_file(file_url: str, *, base_url: str | None = None, input_dir:
 	result = response.json()
 	name = result["name"]
 	subfolder = result.get("subfolder", "")
-	server_path = PurePosixPath(get_input_dir(input_dir))
-	if subfolder:
-		server_path /= subfolder
-	server_path /= name
+	server_path = "/".join(part for part in (str(subfolder).strip("/"), name) if part)
 
-	return {**result, "server_path": str(server_path)}
+	return {**result, "server_path": server_path}
 
 
 def submit_workflow(workflow: dict, *, base_url: str | None = None) -> dict:
@@ -123,10 +116,13 @@ def delete_queue_prompts(prompt_ids: list[str], *, base_url: str | None = None) 
 	return response.json() if response.content else {}
 
 
-def interrupt(*, base_url: str | None = None) -> dict:
+def interrupt(*, prompt_id: str | None = None, base_url: str | None = None) -> dict:
+	if not prompt_id:
+		frappe.throw(_("A ComfyUI prompt ID is required to interrupt a job."))
 	try:
 		response = requests.post(
 			f"{get_base_url(base_url)}/interrupt",
+			json={"prompt_id": prompt_id},
 			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
 		)
@@ -173,6 +169,20 @@ def download_output(
 		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
 	_raise_for_comfyui_error(response)
 	return response.content
+
+
+def probe_output(filename: str, subfolder: str = "", file_type: str = "output", *, base_url: str | None = None) -> bool:
+	"""Check whether ComfyUI already wrote a deterministic output file."""
+	try:
+		response = requests.get(
+			f"{get_base_url(base_url)}/view",
+			params={"filename": filename, "subfolder": subfolder, "type": file_type},
+			auth=get_request_auth(),
+			timeout=10,
+		)
+		return response.ok and bool(response.content)
+	except requests.RequestException:
+		return False
 
 
 def _raise_for_comfyui_error(response):

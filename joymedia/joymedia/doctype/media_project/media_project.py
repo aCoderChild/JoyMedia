@@ -473,10 +473,6 @@ def refresh_project_studio(name):
 	project = frappe.get_doc("Media Project", name)
 	project._require_read_access()
 	production = _get_latest_project_generation_run(project.name)
-	if production and production.status in ("Queued", "Running"):
-		from joymedia.services.generation_orchestrator import refresh_run
-		with filelock(f"joymedia-refresh-run-{production.name}"):
-			refresh_run(production.name)
 	return get_project_workspace(project.name)
 
 
@@ -917,17 +913,23 @@ def update_project_shot(project_name, shot_name, values):
 	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
+	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
+	ensure_shot_planning_editable(project.name)
 	if isinstance(values, str):
 		values = frappe.parse_json(values)
+	changed = False
 	if "generation_prompt" in values:
-		shot.generation_prompt = str(values["generation_prompt"] or "").strip()
-	shot.selected_output_asset_version = None
-	shot.save(ignore_permissions=True)
+		prompt = str(values["generation_prompt"] or "").strip()
+		changed = prompt != shot.generation_prompt
+		shot.generation_prompt = prompt
+	if changed:
+		shot.save(ignore_permissions=True)
 	return {
 		"name": shot.name,
 		"shot_number": shot.shot_number,
 		"shot_name": shot.shot_name,
 		"generation_prompt": shot.generation_prompt,
+		"is_outdated": bool(changed and shot.selected_output_asset_version),
 	}
 
 
@@ -940,17 +942,29 @@ def set_project_shot_keyframe(project_name, shot_name, frame_role, asset_version
 	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
+	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
+	ensure_shot_planning_editable(project.name)
 	asset = frappe.db.get_value("Asset Version", asset_version, ["name", "media_asset"], as_dict=True)
 	if not asset or frappe.db.get_value("Media Asset", asset.media_asset, "media_type") != "Image":
 		frappe.throw(_("Keyframes must use an Image Asset Version."))
+	current_asset = next(
+		(row.asset_version for row in shot.generation_inputs or [] if frappe.scrub(row.reference_role or "") == frame_role),
+		None,
+	)
+	if current_asset == asset.name:
+		return {"shot_name": shot.name, "shot_number": shot.shot_number, "frame_role": frame_role, "is_outdated": False}
 	shot.set("generation_inputs", [
 				{"reference_role": row.reference_role, "asset_version": row.asset_version}
 		for row in shot.generation_inputs or [] if frappe.scrub(row.reference_role or "") != frame_role
 	])
 	shot.append("generation_inputs", {"reference_role": frame_role, "asset_version": asset.name})
-	shot.selected_output_asset_version = None
 	shot.save(ignore_permissions=True)
-	return {"shot_name": shot.name, "shot_number": shot.shot_number, "frame_role": frame_role}
+	return {
+		"shot_name": shot.name,
+		"shot_number": shot.shot_number,
+		"frame_role": frame_role,
+		"is_outdated": bool(shot.selected_output_asset_version),
+	}
 
 
 @frappe.whitelist()
@@ -1476,10 +1490,10 @@ class MediaProject(Document):
 		self._require_write_access()
 		from joymedia.services.generation_orchestrator import retry_failed_jobs_internal
 		run_name = frappe.db.get_value(
-			"Generation Run", {"media_project": self.name, "status": "Failed"},
+			"Generation Run", {"media_project": self.name},
 			"name", order_by="creation desc",
 		)
-		if not run_name:
+		if not run_name or frappe.db.get_value("Generation Run", run_name, "status") != "Failed":
 			frappe.throw(_("This project has no failed video run to retry."))
 		return retry_failed_jobs_internal(run_name)
 

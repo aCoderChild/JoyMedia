@@ -9,6 +9,7 @@ class GenericWorkflowAdapter:
 	"""Default adapter for workflow families without model-specific metadata extraction."""
 
 	cumulative_segment_output = False
+	primary_output_node_keys = ()
 
 	def extract_execution_metadata(self, workflow_data):
 		return {}

@@ -18,8 +18,8 @@ website_route_rules = [
 
 home_page = "/joymedia/campaigns"
 
-signup_form_template = ["joymedia.registration.get_signup_template"] if frappe.conf.get("joymedia_allow_signup") else []
-web_include_js = ["/assets/joymedia/js/joymedia_signup.js?v=4"] if frappe.conf.get("joymedia_allow_signup") else []
+signup_form_template = ["joymedia.registration.get_signup_template"]
+web_include_js = ["/assets/joymedia/js/joymedia_signup.js?v=4"]
 app_include_js = ["/assets/joymedia/js/joymedia_login_redirect.js?v=1"]
 after_migrate = "joymedia.migration.after_migrate"
 

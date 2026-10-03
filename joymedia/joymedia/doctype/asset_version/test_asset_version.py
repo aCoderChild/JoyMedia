@@ -33,7 +33,7 @@ class IntegrationTestAssetVersion(IntegrationTestCase):
 		from joymedia.services.media_asset_service import create_media_asset
 		image_buffer = BytesIO()
 		color = tuple(int(frappe.generate_hash(length=6)[index : index + 2], 16) for index in (0, 2, 4))
-		Image.new("RGB", (1, 1), color=color).save(image_buffer, format="PNG")
+		Image.new("RGB", (640, 640), color=color).save(image_buffer, format="PNG")
 		image_bytes = image_buffer.getvalue()
 
 		file_a = frappe.get_doc(

@@ -92,6 +92,7 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 			patch.object(result_ingestor, "get_attempt_artifact", return_value=None),
 			patch.object(result_ingestor, "get_history", return_value=history),
 			patch.object(result_ingestor, "get_queue_state", return_value=queue_state) as get_queue_state,
+			patch.object(result_ingestor, "probe_output", return_value=False),
 			patch.object(result_ingestor, "_refresh_parent_execution_state") as refresh_parent,
 		):
 			result = result_ingestor._sync_attempt_result(attempt.name)
@@ -136,7 +137,8 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 		self.assertEqual({"status": "Failed"}, result)
 		self.assertEqual("Failed", attempt.status)
 		self.assertEqual("Infrastructure", attempt.failure_class)
-		self.assertIn("no longer present", attempt.error_summary)
+		self.assertIn("dropped this job", attempt.error_summary)
+		self.assertIn("no longer present", attempt.error_details)
 		attempt.save.assert_called_once_with(ignore_permissions=True)
 		refresh_parent.assert_called_once_with("ATT-SYNC")
 
@@ -157,7 +159,8 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 		get_queue_state.assert_not_called()
 		self.assertEqual({"status": "Failed"}, result)
 		self.assertEqual("Generation", attempt.failure_class)
-		self.assertIn("no usable MP4", attempt.error_summary)
+		self.assertIn("could not be rendered", attempt.error_summary)
+		self.assertIn("no usable MP4", attempt.error_details)
 		refresh_parent.assert_called_once_with("ATT-SYNC")
 
 	def test_unprocessable_completed_output_fails_attempt(self):
