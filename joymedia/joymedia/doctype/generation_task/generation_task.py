@@ -58,7 +58,21 @@ class GenerationTask(Document):
 			frappe.throw(_("Shot requires a Media Project."))
 		project = frappe.get_doc("Media Project", shot.media_project)
 		self._validate_generation_run(project)
+		workflow = frappe.get_doc("Generation Workflow", self.workflow)
 		if self.depends_on_task:
+			# A dependency means runtime continuation from the upstream task's
+			# Last Frame Artifact. Workflows without a first_frame input cannot
+			# safely chain long-shot segments or cross-shot continuity.
+			from joymedia.services.workflow_resolver import workflow_supports_continuation
+
+			if not workflow_supports_continuation(workflow):
+				frappe.throw(
+					_(
+						"Workflow {0} does not support first-frame continuation, so Generation Task {1} "
+						"cannot depend on another task. Shorten the Shot to one workflow segment or use a "
+						"continuation-capable workflow."
+					).format(workflow.name, self.name or "new task")
+				)
 			dependency = frappe.get_doc("Generation Task", self.depends_on_task)
 			if dependency.generation_run != self.generation_run:
 				run = frappe.get_doc("Generation Run", self.generation_run)
@@ -85,7 +99,7 @@ class GenerationTask(Document):
 		)
 		if duplicate:
 			frappe.throw(_("Only one Generation Task may exist for each shot segment in a run."))
-		return frappe.get_doc("Generation Workflow", self.workflow)
+		return workflow
 
 	def _validate_generation_run(self, project):
 		if not self.generation_run:
