@@ -7,6 +7,8 @@ import frappe
 from frappe import _
 from frappe.utils.synchronization import filelock
 
+from .artifact_service import get_attempt_artifact
+
 
 def compose_shot_segments(generation_run_name, shot_name):
 	"""Assemble completed generated segments into one selected Shot output."""
@@ -133,6 +135,47 @@ def compose_shot_segments(generation_run_name, shot_name):
 				"file": file_doc.file_url,
 				"source": "Composed",
 				"duration_seconds": video_duration,
+				"fps": profile["fps"],
+			}
+		).insert(ignore_permissions=True)
+		shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
+		return asset_version.name
+
+
+def promote_cumulative_shot_output(generation_run_name, shot_name):
+	"""Promote the cumulative Primary Video from the final completed segment."""
+	with filelock(f"joymedia-compose-shot-{generation_run_name}-{shot_name}"):
+		shot = frappe.get_doc("Shot", shot_name)
+		job = frappe.get_all(
+			"Generation Task",
+			filters={"generation_run": generation_run_name, "shot": shot.name},
+			fields=["name", "segment_index", "status"],
+			order_by="segment_index desc",
+			limit=1,
+		)
+		if not job or job[0].status != "Completed":
+			return None
+		attempt = frappe.db.get_value(
+			"Generation Attempt",
+			{"generation_task": job[0].name, "status": "Completed"},
+			"name",
+			order_by="creation desc",
+		)
+		if not attempt:
+			return None
+		artifact = get_attempt_artifact(attempt, "Primary Video")
+		if not artifact or not artifact.frappe_file:
+			return None
+		project = frappe.get_doc("Media Project", shot.media_project)
+		shot_asset = _get_or_create_shot_output_asset(shot, project.name)
+		file_doc = _promote_artifact_file(artifact, shot_asset, f"{shot.name}.mp4")
+		profile = _get_delivery_profile(project, generation_run_name)
+		asset_version = frappe.get_doc(
+			{
+				"doctype": "Asset Version",
+				"media_asset": shot_asset.name,
+				"file": file_doc.file_url,
+				"source": "Composed",
 				"fps": profile["fps"],
 			}
 		).insert(ignore_permissions=True)

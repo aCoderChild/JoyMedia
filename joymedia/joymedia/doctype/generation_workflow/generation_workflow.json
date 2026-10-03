@@ -10,6 +10,7 @@
   "workflow_key",
   "version_number",
   "adapter_key",
+  "continuation_workflow",
   "workflow_definition_section",
   "workflow_json",
   "workflow_hash",
@@ -36,6 +37,14 @@
    "label": "Workflow Key",
    "read_only_depends_on": "eval:!doc.__islocal;",
    "reqd": 1
+  },
+  {
+   "description": "Optional workflow used for cumulative continuation segments after the first segment.",
+   "fieldname": "continuation_workflow",
+   "fieldtype": "Link",
+   "label": "Continuation Workflow",
+   "options": "Generation Workflow",
+   "read_only_depends_on": "eval:!doc.__islocal;"
   },
   {
    "default": "1",

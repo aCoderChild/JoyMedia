@@ -11,6 +11,7 @@ IDENTITY_FIELDS = (
 	"artifact_role",
 	"generation_attempt",
 	"media_type",
+	"provider_locator",
 )
 
 

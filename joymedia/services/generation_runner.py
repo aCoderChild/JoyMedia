@@ -12,6 +12,7 @@ from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file
 from .prompt_compiler import compile_prompt
 from .result_ingestor import sync_attempt_result
 from .workflow_resolver import resolve_attempt
+from joymedia.workflow_adapters import get_workflow_adapter
 from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
 
 
@@ -75,12 +76,22 @@ def prepare_generation_task(job_name: str, input_snapshot=None):
 
 
 def attach_chained_first_frame(job):
-	"""Return whether a chained task has an upstream Last Frame Artifact available."""
+	"""Backward-compatible readiness check for chained task inputs."""
+	return attach_chained_inputs(job)
+
+
+def attach_chained_inputs(job):
+	"""Return whether a chained task has the artifacts required by its workflow."""
 	if not job.depends_on_task:
 		return True
 	previous_attempt = get_effective_attempt(job.depends_on_task)
 	if not previous_attempt or previous_attempt.status != "Completed":
 		return False
+	workflow = frappe.get_doc("Generation Workflow", job.workflow)
+	if get_workflow_adapter(workflow).cumulative_segment_output:
+		state = get_attempt_artifact(previous_attempt.name, "Continuation State")
+		primary = get_attempt_artifact(previous_attempt.name, "Primary Video")
+		return bool(primary and primary.frappe_file and state and state.provider_locator)
 	return bool(get_attempt_artifact(previous_attempt.name, "Last Frame"))
 
 
@@ -139,7 +150,7 @@ def submit_attempt(attempt_name: str):
 			)
 
 		job = frappe.get_doc("Generation Task", attempt.generation_task)
-		if job.depends_on_task and not attach_chained_first_frame(job):
+		if job.depends_on_task and not attach_chained_inputs(job):
 			return {"deferred": True, "dependency": job.depends_on_task}
 
 		_autosave_prompt_snapshot(job)
@@ -183,14 +194,34 @@ def _stage_generation_inputs(job, attempt):
 		previous_attempt = get_effective_attempt(job.depends_on_task)
 		if not previous_attempt or previous_attempt.status != "Completed":
 			frappe.throw(_("A chained Generation Task requires a completed upstream Attempt."))
-		last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
-		if not last_frame_artifact or not last_frame_artifact.frappe_file:
-			frappe.throw(_("The upstream Attempt has no usable Last Frame Artifact."))
-		staged["first_frame"] = [upload_frappe_file(last_frame_artifact.frappe_file)["server_path"]]
-		resolved_inputs["first_frame"] = [{
-			"source": "Generation Artifact",
-			"artifact": last_frame_artifact.name,
-		}]
+		workflow = frappe.get_doc("Generation Workflow", job.workflow)
+		if get_workflow_adapter(workflow).cumulative_segment_output:
+			primary_artifact = get_attempt_artifact(previous_attempt.name, "Primary Video")
+			continuation_state = get_attempt_artifact(previous_attempt.name, "Continuation State")
+			if not primary_artifact or not primary_artifact.frappe_file:
+				frappe.throw(_("The upstream Attempt has no usable Primary Video Artifact."))
+			if not continuation_state or not continuation_state.provider_locator:
+				frappe.throw(_("The upstream Attempt has no usable Continuation State Artifact."))
+			staged["seed_video"] = [upload_frappe_file(primary_artifact.frappe_file)["server_path"]]
+			staged["continuation_state"] = continuation_state.provider_locator
+			resolved_inputs["seed_video"] = [{
+				"source": "Generation Artifact",
+				"artifact": primary_artifact.name,
+			}]
+			resolved_inputs["continuation_state"] = [{
+				"source": "Generation Artifact",
+				"artifact": continuation_state.name,
+				"provider_locator": continuation_state.provider_locator,
+			}]
+		else:
+			last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
+			if not last_frame_artifact or not last_frame_artifact.frappe_file:
+				frappe.throw(_("The upstream Attempt has no usable Last Frame Artifact."))
+			staged["first_frame"] = [upload_frappe_file(last_frame_artifact.frappe_file)["server_path"]]
+			resolved_inputs["first_frame"] = [{
+				"source": "Generation Artifact",
+				"artifact": last_frame_artifact.name,
+			}]
 
 	if not staged:
 		frappe.throw(_("Generation Task {0} has no resolved inputs.").format(job.name))

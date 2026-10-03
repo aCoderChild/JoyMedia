@@ -1,0 +1,373 @@
+{
+  "190": {
+    "inputs": {
+      "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "191": {
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "type": "minimax",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "192": {
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "193": {
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "264": {
+    "inputs": {
+      "file": "MiniMaxH3_Easy_00001_.mp4",
+      "video-preview": ""
+    },
+    "class_type": "LoadVideo",
+    "_meta": {
+      "title": "Load Video"
+    }
+  },
+  "265": {
+    "inputs": {
+      "video": [
+        "264",
+        0
+      ]
+    },
+    "class_type": "GetVideoComponents",
+    "_meta": {
+      "title": "Get Video Components"
+    }
+  },
+  "291": {
+    "inputs": {
+      "seed": -1
+    },
+    "class_type": "Seed (rgthree)",
+    "_meta": {
+      "title": "Seed (rgthree)"
+    }
+  },
+  "293": {
+    "inputs": {
+      "scheduler": "simple",
+      "steps": 7,
+      "denoise": 1,
+      "model": [
+        "339",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "BasicScheduler"
+    }
+  },
+  "294": {
+    "inputs": {
+      "sampler_name": "res_multistep"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "309": {
+    "inputs": {
+      "Number": "8"
+    },
+    "class_type": "Float",
+    "_meta": {
+      "title": "Context Seconds"
+    }
+  },
+  "327": {
+    "inputs": {
+      "text_encoder": [
+        "191",
+        0
+      ],
+      "video_vae": [
+        "192",
+        0
+      ],
+      "audio_vae": [
+        "193",
+        0
+      ],
+      "ref2va_model": [
+        "190",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3EasyModelAdapter_SatoDive",
+    "_meta": {
+      "title": "MiniMax H3 Easy Model Bridge - SatoDive"
+    }
+  },
+  "328": {
+    "inputs": {
+      "mode": "context_segments",
+      "audio_mode": "generated",
+      "prompt": "Continue seamlessly from the previous shot. Maintain the same smooth cinematic forward motion while the camera gradually rises along the luxury residential tower, moving slightly closer to the elegant curved balconies and upper façade. Preserve the exact architecture, proportions, golden-hour lighting, vegetation, and surrounding cityscape. Natural subtle traffic and tree movement, premium luxury real-estate commercial style, photorealistic, stabilized motion, no scene cut, no sudden camera movement, no structural deformation.\n",
+      "resolution": "480P",
+      "aspect_ratio": "16:9",
+      "custom_ratio": "16:9",
+      "width": 1344,
+      "height": 768,
+      "seconds": 10,
+      "segment_seconds": "10",
+      "context_length": 22,
+      "continuity_mode": "native_guide",
+      "transition_seconds": 0,
+      "advanced": false,
+      "fps": 24,
+      "keyframe_role": "first",
+      "ref_image_size": "1k",
+      "reference_mention_mode": "index",
+      "ref_video1_strength": 1,
+      "ref_video2_strength": 1,
+      "ref_video3_strength": 1,
+      "prompt_optimizer_settings": false,
+      "prompt_optimizer_scene_guide": "none",
+      "context_prompt_optimizer_mode": "1",
+      "context_prompt_optimizer_concurrency": 3,
+      "enable_detail_daemon": false,
+      "detail_strength": 0,
+      "ref_image_strength": 1,
+      "ref_video_strength": 1,
+      "ref_video1_range": 1,
+      "ref_video2_range": 1,
+      "ref_video3_range": 1,
+      "seed_video_strength": 1,
+      "seed_video_reserved_seconds": 1,
+      "h3_bundle": [
+        "327",
+        0
+      ],
+      "seed_video": [
+        "375",
+        3
+      ],
+      "seed_ref_video": [
+        "375",
+        3
+      ],
+      "seed_latent": [
+        "356",
+        0
+      ],
+      "prompt_optimizer_resources": "[]",
+      "prompt_optimizer_marker": "{}",
+      "prompt_optimizer_prompt_connected": false,
+      "ref_strengths": "1"
+    },
+    "class_type": "MiniMaxH3EasyContextSegments_SatoDive",
+    "_meta": {
+      "title": "MiniMax H3 Easy Context Segments - SatoDive"
+    }
+  },
+  "330": {
+    "inputs": {
+      "segments": [
+        "343",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3EasySegmentDecode_SatoDive",
+    "_meta": {
+      "title": "MiniMax H3 Easy Segment Decode - SatoDive"
+    }
+  },
+  "335": {
+    "inputs": {
+      "alignment": "auto",
+      "overlap_frames": 22,
+      "search_frames": 20,
+      "match_window": 8,
+      "window_audio": "from source",
+      "color_match": "mean + contrast",
+      "source_video": [
+        "264",
+        0
+      ],
+      "continuation_video": [
+        "330",
+        0
+      ],
+      "h3_context": [
+        "328",
+        1
+      ]
+    },
+    "class_type": "MiniMaxH3EasyStitchContinuation_SatoDive",
+    "_meta": {
+      "title": "Stitch Continuation - auto align"
+    }
+  },
+  "336": {
+    "inputs": {
+      "fps": [
+        "335",
+        2
+      ],
+      "bit_depth": 8,
+      "images": [
+        "335",
+        0
+      ],
+      "audio": [
+        "335",
+        1
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "339": {
+    "inputs": {
+      "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+      "strength": 0.75,
+      "low_vram": false,
+      "model": [
+        "328",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3TurboLoRA",
+    "_meta": {
+      "title": "Turbo LoRA"
+    }
+  },
+  "343": {
+    "inputs": {
+      "seed": [
+        "291",
+        0
+      ],
+      "segment_seeds": "default",
+      "h3_context": [
+        "328",
+        1
+      ],
+      "model": [
+        "339",
+        0
+      ],
+      "sampler": [
+        "294",
+        0
+      ],
+      "sigmas": [
+        "293",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3EasySegmentRender_SatoDive",
+    "_meta": {
+      "title": "MiniMax H3 Easy Segment Sample - SatoDive"
+    }
+  },
+  "355": {
+    "inputs": {
+      "filename_prefix": "sato_scene02",
+      "segments": [
+        "343",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3EasySaveLatent_SatoDive",
+    "_meta": {
+      "title": "STEP 2 - Save Latent  (set a name per scene)"
+    }
+  },
+  "356": {
+    "inputs": {
+      "latent_file": "sato_scene-001_00001.h3latent.safetensors"
+    },
+    "class_type": "MiniMaxH3EasyLoadLatent_SatoDive",
+    "_meta": {
+      "title": "STEP 1 - Load Latent  [BYPASSED: Ctrl+B to enable from run 2 on]"
+    }
+  },
+  "361": {
+    "inputs": {
+      "image": "1.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "373": {
+    "inputs": {
+      "filename_prefix": "video/MiniMaxH3_Easy",
+      "format": "auto",
+      "codec": "auto",
+      "video": [
+        "330",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Save Video"
+    }
+  },
+  "374": {
+    "inputs": {
+      "filename_prefix": "video/MiniMaxH3_Stitched",
+      "format": "auto",
+      "codec": "auto",
+      "video": [
+        "336",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Save STITCHED result"
+    }
+  },
+  "375": {
+    "inputs": {
+      "slice_mode": "last_seconds",
+      "seconds": [
+        "309",
+        0
+      ],
+      "fps": 24,
+      "video": [
+        "265",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3EasyVideoTailSlicer_SatoDive",
+    "_meta": {
+      "title": "MiniMax H3 Easy Video Tail Slicer - SatoDive"
+    }
+  }
+}

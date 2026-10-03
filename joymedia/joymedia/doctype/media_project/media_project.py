@@ -61,6 +61,8 @@ def _get_customer_workflow(video_style=None):
 def _get_continuation_workflow(workflow):
 	from joymedia.services.workflow_resolver import workflow_supports_continuation
 
+	if getattr(workflow, "continuation_workflow", None):
+		return frappe.get_doc("Generation Workflow", workflow.continuation_workflow)
 	if workflow_supports_continuation(workflow):
 		return workflow
 	continuation_workflow = get_latest_valid_workflow("h3_i2v_production")

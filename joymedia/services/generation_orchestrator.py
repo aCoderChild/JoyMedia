@@ -21,6 +21,7 @@ from .generation_segment_planner import plan_generation_segments
 from .prompt_compiler import compile_segment_prompt_from_snapshot
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_shot_segments
+from joymedia.workflow_adapters import get_workflow_adapter
 from .workflow_resolver import (
 	validate_workflow_bindings,
 	validate_workflow_for_execution,
@@ -105,6 +106,11 @@ def prepare_run(run_name: str):
 		"Generation Workflow",
 		run.workflow,
 	)
+	continuation_workflow = (
+		frappe.get_doc("Generation Workflow", workflow.continuation_workflow)
+		if workflow.continuation_workflow
+		else None
+	)
 	shots = snapshot.get("shots") or []
 	try:
 		execution_scope = frappe.parse_json(run.execution_scope_json or "{}")
@@ -122,6 +128,10 @@ def prepare_run(run_name: str):
 	try:
 		validate_workflow_for_execution(workflow)
 		validate_workflow_bindings(workflow)
+		if continuation_workflow:
+			validate_workflow_for_execution(continuation_workflow)
+			validate_workflow_bindings(continuation_workflow)
+		cumulative_segments = bool(get_workflow_adapter(workflow).cumulative_segment_output)
 		jobs_to_prepare = []
 		previous_shot_tail_job = execution_scope.get("continuation_from_task") if execution_scope.get("continuity") else None
 		for shot in shots:
@@ -146,7 +156,7 @@ def prepare_run(run_name: str):
 					continue
 
 				dependency = previous_segment_job
-				if not dependency and (
+				if not dependency and not cumulative_segments and (
 					snapshot.get("generation_mode") in ("Continuous", "Consistency")
 					or execution_scope.get("continuity")
 				):
@@ -161,12 +171,17 @@ def prepare_run(run_name: str):
 					segment["segment_index"],
 					len(segments),
 				)
+				segment_workflow = (
+					continuation_workflow
+					if segment["segment_index"] > 1 and continuation_workflow
+					else workflow
+				)
 				job = frappe.get_doc(
 					{
 						"doctype": "Generation Task",
 						"generation_run": run.name,
 					"shot": shot_name,
-						"workflow": run.workflow,
+						"workflow": segment_workflow.name,
 						"prompt_text": prompt_text,
 						"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
 						"status": "Draft",
@@ -186,7 +201,7 @@ def prepare_run(run_name: str):
 				job.save(ignore_permissions=True)
 				jobs_to_prepare.append(job)
 				previous_segment_job = job.name
-			previous_shot_tail_job = previous_segment_job
+			previous_shot_tail_job = previous_segment_job if not cumulative_segments else None
 
 		for job in jobs_to_prepare:
 			shot_snapshot = next(
@@ -868,7 +883,18 @@ def _finalize_completed_shots(run):
 			fields=["status"],
 		)
 		if jobs and all(job.status == "Completed" for job in jobs):
-			assembled_version = compose_shot_segments(run.name, shot_name)
+			cumulative = frappe.db.get_value(
+				"Generation Task",
+				{"generation_run": run.name, "shot": shot_name, "segment_index": 2},
+				"workflow",
+			)
+			workflow = frappe.get_doc("Generation Workflow", cumulative or run.workflow)
+			if get_workflow_adapter(workflow).cumulative_segment_output:
+				from .video_composer import promote_cumulative_shot_output
+
+				assembled_version = promote_cumulative_shot_output(run.name, shot_name)
+			else:
+				assembled_version = compose_shot_segments(run.name, shot_name)
 			if assembled_version:
 				from .timeline_editor import sync_timeline_source_for_shot
 				sync_timeline_source_for_shot(shot_name)

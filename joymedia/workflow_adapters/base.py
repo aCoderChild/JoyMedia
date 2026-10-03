@@ -8,6 +8,8 @@ def canonical_workflow_json(workflow_data):
 class GenericWorkflowAdapter:
 	"""Default adapter for workflow families without model-specific metadata extraction."""
 
+	cumulative_segment_output = False
+
 	def extract_execution_metadata(self, workflow_data):
 		return {}
 

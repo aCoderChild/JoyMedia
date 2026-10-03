@@ -10,6 +10,7 @@
   "artifact_role",
   "generation_attempt",
   "media_type",
+  "provider_locator",
   "frappe_file"
  ],
  "fields": [
@@ -31,8 +32,15 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Artifact Role",
-   "options": "Primary Video\nLast Frame\nPreview\nIntermediate",
+   "options": "Primary Video\nLast Frame\nContinuation State\nPreview\nIntermediate",
    "reqd": 1
+  },
+  {
+   "description": "Provider-owned locator for artifacts that are not downloaded into Frappe.",
+   "fieldname": "provider_locator",
+   "fieldtype": "Data",
+   "label": "Provider Locator",
+   "read_only": 1
   },
   {
    "fieldname": "generation_attempt",

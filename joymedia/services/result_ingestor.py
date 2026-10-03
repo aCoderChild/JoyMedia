@@ -10,6 +10,7 @@ from frappe.utils import get_datetime, now, time_diff_in_seconds
 
 from .comfyui_client import download_output, get_history, get_queue_state
 from .artifact_service import get_attempt_artifact
+from joymedia.workflow_adapters import get_workflow_adapter
 
 # ComfyUI may not list a just-submitted prompt in /queue or /history yet.
 MISSING_JOB_GRACE_SECONDS = 15
@@ -84,7 +85,20 @@ def _sync_attempt_result(attempt_name):
 		_refresh_parent_execution_state(attempt.name)
 		return {"status": attempt.status}
 
-	output = _find_primary_mp4(history)
+	workflow_name = (
+		frappe.db.get_value("Generation Task", attempt.generation_task, "workflow")
+		if getattr(attempt, "generation_task", None)
+		else None
+	)
+	workflow = frappe.get_doc("Generation Workflow", workflow_name) if workflow_name else None
+	preferred_nodes = None
+	if workflow and get_workflow_adapter(workflow).cumulative_segment_output:
+		preferred_nodes = (
+			("374", "254")
+			if workflow.workflow_key == "h3_sato_continuation"
+			else ("254", "374")
+		)
+	output = _find_primary_mp4(history, preferred_node_keys=preferred_nodes)
 	if not output:
 		_log_sync_failure(attempt, "returned no MP4 output: %s", history.get("outputs"))
 		return _fail_attempt(
@@ -162,6 +176,9 @@ def _ingest_completed_output(attempt, history, output):
 			_extract_last_frame(video_bytes, output["filename"]),
 			f"{Path(output['filename']).stem}_last_frame.png",
 		)
+	continuation_state = _find_continuation_state(history)
+	if continuation_state:
+		_store_continuation_state(attempt, continuation_state)
 	return artifact, get_attempt_artifact(attempt.name, "Last Frame")
 
 
@@ -337,8 +354,14 @@ def _execution_timestamp(history, message_name):
 	return None
 
 
-def _find_primary_mp4(history):
-	for node_outputs in (history.get("outputs") or {}).values():
+def _find_primary_mp4(history, preferred_node_keys=None):
+	outputs = history.get("outputs") or {}
+	ordered_keys = []
+	if preferred_node_keys:
+		ordered_keys.extend(key for key in preferred_node_keys if key in outputs)
+	ordered_keys.extend(key for key in outputs if key not in ordered_keys)
+	for node_key in ordered_keys:
+		node_outputs = outputs[node_key]
 		for output in (
 			node_outputs.get("gifs", [])
 			+ node_outputs.get("videos", [])
@@ -347,3 +370,35 @@ def _find_primary_mp4(history):
 			if str(output.get("filename", "")).lower().endswith(".mp4"):
 				return output
 	return None
+
+
+def _find_continuation_state(history):
+	"""Find the exact latent locator emitted by the Sato latent-save node."""
+	for node_outputs in (history.get("outputs") or {}).values():
+		for values in node_outputs.values():
+			if not isinstance(values, list):
+				continue
+			for output in values:
+				if not isinstance(output, dict) or not output.get("filename"):
+					continue
+				filename = str(output["filename"])
+				if filename.lower().endswith((".h3latent", ".h3latent.safetensors")):
+					subfolder = str(output.get("subfolder") or "").strip("/")
+					return "/".join(part for part in (subfolder, filename) if part)
+	return None
+
+
+def _store_continuation_state(attempt, provider_locator):
+	artifact = get_attempt_artifact(attempt.name, "Continuation State")
+	if artifact:
+		return artifact
+	return frappe.get_doc(
+		{
+			"doctype": "Generation Artifact",
+			"artifact_key": f"{attempt.name}:continuation_state",
+			"artifact_role": "Continuation State",
+			"generation_attempt": attempt.name,
+			"media_type": "Other",
+			"provider_locator": provider_locator,
+		}
+	).insert(ignore_permissions=True)

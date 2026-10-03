@@ -15,6 +15,7 @@ IMMUTABLE_FIELDS = (
 	"workflow_key",
 	"version_number",
 	"adapter_key",
+	"continuation_workflow",
 	"workflow_json",
 	"bindings",
 	"frame_count",

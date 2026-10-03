@@ -107,7 +107,9 @@ class GenerationTask(Document):
 		run = frappe.get_doc("Generation Run", self.generation_run)
 		if run.media_project != project.name:
 			frappe.throw(_("Generation Run Media Project must match the Generation Task Shot."))
-		if run.workflow != self.workflow:
+		if run.workflow != self.workflow and frappe.db.get_value(
+			"Generation Workflow", run.workflow, "continuation_workflow"
+		) != self.workflow:
 			frappe.throw(_("Generation Run Workflow must match the Generation Task Workflow."))
 
 	def get_shot_input_snapshot(self):
@@ -137,6 +139,9 @@ class GenerationTask(Document):
 		# Continuous first_frame is runtime lineage resolved from the dependency per Attempt.
 		if self.depends_on_task:
 			actual_snapshot.pop("first_frame", None)
+			if getattr(workflow, "adapter_key", "") == "minimax_h3_sato":
+				actual_snapshot.pop("seed_video", None)
+				actual_snapshot.pop("continuation_state", None)
 
 		required_roles = {
 			frappe.scrub(binding.required_input_role)
@@ -146,6 +151,11 @@ class GenerationTask(Document):
 		}
 		for role in required_roles:
 			if self.depends_on_task and role == "first_frame":
+				continue
+			if self.depends_on_task and getattr(workflow, "adapter_key", "") == "minimax_h3_sato" and role in {
+				"seed_video",
+				"continuation_state",
+			}:
 				continue
 			asset_versions = actual_snapshot.get(role, [])
 			if not asset_versions or any(

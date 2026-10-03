@@ -15,6 +15,8 @@ PROMPT_BINDING_KEY = "generation_prompt"
 
 def workflow_supports_continuation(workflow):
 	"""Return whether a workflow has a required first-frame input binding."""
+	if getattr(workflow, "adapter_key", "") == "minimax_h3_sato":
+		return True
 	return any(
 		frappe.scrub(binding.required_input_role or "") == "first_frame"
 		and bool(binding.required)
