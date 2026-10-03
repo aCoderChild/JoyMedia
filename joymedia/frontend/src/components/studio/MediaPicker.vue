@@ -144,6 +144,13 @@
               </button>
               <button
                 type="button"
+                class="w-full text-left px-2.5 py-2 rounded-lg text-xs text-ink-primary hover:bg-surface-hover cursor-pointer"
+                @click="startEditAsset(asset)"
+              >
+                {{ currentLang === 'vi' ? 'Đổi tên / phân loại' : 'Rename / category' }}
+              </button>
+              <button
+                type="button"
                 class="w-full text-left px-2.5 py-2 rounded-lg text-xs text-rose-400 hover:bg-rose-500/10 cursor-pointer"
                 @click="emitArchiveAsset(asset)"
               >
@@ -241,12 +248,19 @@
         </div>
       </div>
     </div>
+    <AssetEditDialog
+      v-if="editingAsset"
+      :asset="editingAsset"
+      @close="editingAsset = null"
+      @saved="onAssetSaved"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from "vue";
 import MediaThumbnail from "../MediaThumbnail.vue";
+import AssetEditDialog from "../AssetEditDialog.vue";
 
 const props = defineProps({
   candidates: { type: Array, default: () => [] },
@@ -260,7 +274,7 @@ const props = defineProps({
   currentLang: { type: String, default: "en" },
 });
 
-const emit = defineEmits(["close", "selectReference", "setKeyframe", "uploadFiles", "removeReference", "archiveAsset"]);
+const emit = defineEmits(["close", "selectReference", "setKeyframe", "uploadFiles", "removeReference", "archiveAsset", "assetUpdated"]);
 
 const searchQuery = ref("");
 const activeTypeFilter = ref(props.initialTypeFilter || "All");
@@ -268,6 +282,7 @@ const selectedCandidate = ref(null);
 const selectedRole = ref("Product");
 const showRoleDropdown = ref(false);
 const assetMenuName = ref("");
+const editingAsset = ref(null);
 
 watch(
   () => props.initialTypeFilter,
@@ -326,6 +341,19 @@ function selectFromMenu(asset) {
 function emitRemoveFromProject(asset) {
   assetMenuName.value = "";
   emit("removeReference", asset);
+}
+
+function startEditAsset(asset) {
+  assetMenuName.value = "";
+  editingAsset.value = asset;
+}
+
+function onAssetSaved(result) {
+  editingAsset.value = null;
+  if (selectedCandidate.value?.name === result.media_asset) {
+    selectedCandidate.value = { ...selectedCandidate.value, ...result };
+  }
+  emit("assetUpdated", result);
 }
 
 function emitArchiveAsset(asset) {

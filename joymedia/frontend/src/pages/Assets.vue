@@ -106,6 +106,13 @@
         >
           <button
             type="button"
+            class="w-full text-left px-2.5 py-2 rounded-lg text-xs text-ink-primary hover:bg-surface-hover cursor-pointer"
+            @click="startEditAsset(asset)"
+          >
+            {{ t('asset_edit') }}
+          </button>
+          <button
+            type="button"
             class="w-full text-left px-2.5 py-2 rounded-lg text-xs text-rose-400 hover:bg-rose-500/10 cursor-pointer"
             @click="archiveAsset(asset)"
           >
@@ -162,6 +169,15 @@
               {{ selectedAsset.asset_name }}
             </h2>
           </div>
+
+          <button
+            v-if="selectedAsset.asset_scope !== 'Project Output'"
+            type="button"
+            class="ml-auto shrink-0 px-3 py-1.5 rounded-lg border border-outline-border text-xs font-semibold text-ink-primary hover:bg-surface-hover cursor-pointer"
+            @click="startEditAsset(selectedAsset)"
+          >
+            ✎ {{ t('asset_edit') }}
+          </button>
 
           <button
             type="button"
@@ -296,6 +312,12 @@
         </div>
       </div>
     </div>
+    <AssetEditDialog
+      v-if="editingAsset"
+      :asset="editingAsset"
+      @close="editingAsset = null"
+      @saved="onAssetSaved"
+    />
   </section>
 </template>
 
@@ -307,6 +329,7 @@ import { notify } from "../utils/notify";
 import { errorMessage } from "../utils/errors";
 import { useI18n } from "../stores/i18n";
 import MediaThumbnail from "../components/MediaThumbnail.vue";
+import AssetEditDialog from "../components/AssetEditDialog.vue";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -315,6 +338,7 @@ const activeType = ref("All");
 const activeCategory = ref(route.query?.category || "All");
 const selectedAsset = ref(null);
 const assetMenuName = ref("");
+const editingAsset = ref(null);
 
 const showUploadModal = ref(false);
 const isUploading = ref(false);
@@ -376,6 +400,19 @@ function openAssetModal(asset) {
 
 function toggleAssetMenu(assetName) {
   assetMenuName.value = assetMenuName.value === assetName ? "" : assetName;
+}
+
+function startEditAsset(asset) {
+  assetMenuName.value = "";
+  editingAsset.value = asset;
+}
+
+async function onAssetSaved(result) {
+  editingAsset.value = null;
+  if (selectedAsset.value?.name === result.media_asset) {
+    selectedAsset.value = { ...selectedAsset.value, ...result };
+  }
+  await assetsResource.reload();
 }
 
 async function archiveAsset(asset) {

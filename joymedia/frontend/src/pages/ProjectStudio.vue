@@ -337,6 +337,7 @@
       @upload-files="uploadFilesToLibrary"
       @remove-reference="removeReference"
       @archive-asset="archiveMediaAsset"
+      @asset-updated="onMediaAssetUpdated"
     />
 
     <!-- Modal: Secondary Video Settings (Format, duration, style, instructions) -->
@@ -431,7 +432,13 @@ const {
   archiveMediaAsset,
   setShotKeyframe,
   uploadFilesToLibrary,
+  fetchCandidates,
 } = useProjectReferences(projectName, fetchWorkspace);
+
+// Names and categories show in the picker, the reference chips and the scene panel.
+async function onMediaAssetUpdated() {
+  await Promise.all([fetchCandidates(), fetchWorkspace()]);
+}
 
 // 3. Generation composable
 const {

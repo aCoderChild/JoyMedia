@@ -191,6 +191,26 @@ def archive_media_asset(media_asset, detach_projects=False):
 
 
 @frappe.whitelist()
+def update_media_asset(media_asset, asset_name=None, asset_category=None):
+	"""Rename a library asset or change its category."""
+	asset = frappe.get_doc("Media Asset", media_asset)
+	_require_asset_action_access(asset)
+	if asset.asset_scope != "Library":
+		frappe.throw(_("Only library assets can be edited."))
+	if asset_name is not None:
+		asset_name = str(asset_name).strip()
+		if not asset_name:
+			frappe.throw(_("Asset name cannot be empty."))
+		asset.asset_name = asset_name
+	if asset_category is not None:
+		if asset_category not in INPUT_ASSET_CATEGORIES:
+			frappe.throw(_("Choose a valid asset category."))
+		asset.asset_category = asset_category
+	asset.save(ignore_permissions=True)
+	return {"media_asset": asset.name, "asset_name": asset.asset_name, "asset_category": asset.asset_category}
+
+
+@frappe.whitelist()
 def restore_media_asset(media_asset):
 	asset = frappe.get_doc("Media Asset", media_asset)
 	_require_asset_action_access(asset)
