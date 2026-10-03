@@ -49,7 +49,7 @@
             :playhead-frame="playheadFrame"
             :busy="busy"
             :total-frames="canvasTotalFrames || totalFrames"
-            :total-seconds="(canvasTotalFrames || totalFrames) / (fps || 24)"
+            :total-seconds="totalSeconds"
             :current-lang="currentLang"
             @select-clip="forwardSelectClip"
             @update:playhead-frame="$emit('update:playheadFrame', $event)"
