@@ -5,7 +5,7 @@ export function useProjectTimeline(projectName) {
   const timeline = ref(null);
   const busy = ref(false);
   const selectedClipName = ref(null);
-  const playheadFrame = ref(0);
+  const playheadFrameState = ref(0);
   const undoStack = ref([]);
   const redoStack = ref([]);
   const MAX_HISTORY = 50;
@@ -14,6 +14,18 @@ export function useProjectTimeline(projectName) {
   const videoClips = computed(() => clips.value.filter((clip) => (clip.track_type || "Video") === "Video"));
   const audioClips = computed(() => clips.value.filter((clip) => clip.track_type === "Audio"));
   const fps = computed(() => Number(timeline.value?.fps || 0));
+  const playheadFrame = computed({
+    get: () => playheadFrameState.value,
+    set: (value) => {
+      const frame = Math.max(0, Math.round(Number(value) || 0));
+      const renderEnd = Number(
+        timeline.value?.render_total_frames ||
+        timeline.value?.total_frames ||
+        0
+      );
+      playheadFrameState.value = renderEnd > 0 ? Math.min(renderEnd, frame) : frame;
+    },
+  });
 
   const selectedClip = computed(() =>
     clips.value.find((clip) => clip.name === selectedClipName.value) || videoClips.value[0] || audioClips.value[0] || null
@@ -38,10 +50,7 @@ export function useProjectTimeline(projectName) {
     selectedClipName.value = candidate?.name || null;
 
     if (preservePlayhead && previousTimeline && next) {
-      playheadFrame.value = Math.min(
-        previousPlayhead,
-        Number(next.canvas_total_frames || next.total_frames || previousPlayhead),
-      );
+      playheadFrame.value = previousPlayhead;
     } else if (candidate) {
       playheadFrame.value = candidate.timeline_start_frame;
     } else {
