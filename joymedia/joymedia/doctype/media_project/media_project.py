@@ -15,6 +15,7 @@ from joymedia.joymedia.doctype.generation_workflow.generation_workflow import ge
 
 ALLOWED_STATUSES = {"Draft", "Generating", "Completed", "Needs Attention", "Cancelled", "Archived"}
 SUPPORTED_PROJECT_MEDIA_TYPES = {"Image", "Video", "Audio"}
+DEFAULT_CUSTOMER_WORKFLOW_KEY = "h3_i2v_production"
 
 
 def _planning_shot_count(total_duration_seconds):
@@ -42,11 +43,12 @@ def _normalize_generation_mode(value):
 
 
 def _get_customer_workflow(video_style=None):
-	workflow = get_latest_valid_workflow(video_style)
-	if not workflow and not video_style:
-		workflow = get_latest_valid_workflow()
+	workflow_key = video_style or DEFAULT_CUSTOMER_WORKFLOW_KEY
+	workflow = get_latest_valid_workflow(workflow_key)
 	if not workflow:
-		frappe.throw(_("No executable Generation Workflow is configured."))
+		frappe.throw(
+			_("No executable Generation Workflow is configured for {0}.").format(workflow_key)
+		)
 	return workflow
 
 

@@ -37,7 +37,12 @@ def get_workflow_input_contract(workflow):
 			"accepted_media_type": getattr(binding, "accepted_media_type", None) or "Any",
 			"allow_multiple": bool(getattr(binding, "allow_multiple", 0))
 			or binding_key.startswith("reference_image_"),
+			"min_count": 0,
+			"max_count": 0,
 		}
+		if entry["required"]:
+			entry["min_count"] += 1
+		entry["max_count"] += 1
 		previous = contract.get(role)
 		if previous and any(
 			previous[field] != entry[field]
@@ -46,6 +51,8 @@ def get_workflow_input_contract(workflow):
 			frappe.throw(_("Workflow bindings for role '{0}' have conflicting input contracts.").format(role))
 		if previous:
 			previous["required"] = previous["required"] or entry["required"]
+			previous["min_count"] += entry["min_count"]
+			previous["max_count"] += entry["max_count"]
 		else:
 			contract[role] = entry
 	return list(contract.values())

@@ -21,6 +21,7 @@ def get_project_image_manifest(media_project: str, *, include_data_url: bool = F
 	]
 	manifest = []
 	for asset in selected_assets:
+		asset_version = frappe.get_doc("Asset Version", asset["asset_version"])
 		image = {
 			"index": len(manifest) + 1,
 			"media_asset": asset["media_asset"],
@@ -29,12 +30,12 @@ def get_project_image_manifest(media_project: str, *, include_data_url: bool = F
 			"asset_version": asset["asset_version"],
 		}
 		if include_data_url:
-			if not asset["file"]:
-				frappe.throw(_("Asset Version {0} has no image file.").format(asset["asset_version"]))
-			file_doc = frappe.get_doc("File", {"file_url": asset["file"]})
+			if not asset_version.file:
+				frappe.throw(_("Asset Version {0} has no image file.").format(asset_version.name))
+			file_doc = frappe.get_doc("File", {"file_url": asset_version.file})
 			file_path = Path(file_doc.get_full_path())
 			if not file_path.exists():
-				frappe.throw(_("Asset Version file does not exist: {0}").format(asset["file"]))
+				frappe.throw(_("Asset Version file does not exist: {0}").format(asset_version.file))
 			mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
 			encoded_file = base64.b64encode(file_path.read_bytes()).decode("ascii")
 			image["data_url"] = f"data:{mime_type};base64,{encoded_file}"

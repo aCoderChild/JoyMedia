@@ -437,6 +437,12 @@ def _validate_video_plan(
 			role_counts[usage_role] = role_counts.get(usage_role, 0) + 1
 			if contract and role_counts[usage_role] > 1 and not contract.get("allow_multiple"):
 				frappe.throw(_("Workflow input role '{0}' does not allow multiple references.").format(usage_role))
+			if contract and contract.get("max_count") and role_counts[usage_role] > contract["max_count"]:
+				frappe.throw(
+					_("Workflow input role '{0}' accepts at most {1} references.").format(
+						usage_role, contract["max_count"]
+					)
+				)
 			reference["reference_key"] = str(reference["reference_key"]).strip()
 			reference["usage_role"] = usage_role
 		if reference_image_count:
@@ -451,6 +457,14 @@ def _validate_video_plan(
 				if type(image_index) is not int or image_index < 1 or image_index > reference_image_count:
 					frappe.throw(_("Invalid reference image index."))
 				normalized[fieldname] = image_index
+		for contract in workflow_input_contract or []:
+			count = role_counts.get(contract["role"], 0)
+			if count < contract.get("min_count", 0):
+				frappe.throw(
+					_("Qwen Shot {0} requires at least {1} references for role '{2}'.").format(
+						normalized["shot_number"], contract["min_count"], contract["role"]
+					)
+				)
 		normalized_shots.append(normalized)
 	if total_video_duration is not None:
 		target_duration = float(total_video_duration)

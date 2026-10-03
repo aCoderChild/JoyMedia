@@ -50,6 +50,8 @@ class TestWorkflowResolver(FrappeTestCase):
 
 		contract = get_workflow_input_contract(workflow)
 		self.assertTrue(contract[0]["allow_multiple"])
+		self.assertEqual(1, contract[0]["min_count"])
+		self.assertEqual(2, contract[0]["max_count"])
 		job = frappe._dict(name="JOB-00001", prompt_text="prompt")
 		self.assertEqual(
 			"one.png",

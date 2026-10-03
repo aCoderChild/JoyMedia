@@ -141,7 +141,7 @@
                 v-model="form.video_style"
                 class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary cursor-pointer focus:outline-none focus:border-indigo-500"
               >
-                <option :value="null">{{ currentLang === 'vi' ? 'Mặc định (Default System Workflow)' : 'Default System Workflow' }}</option>
+                <option :value="null">{{ currentLang === 'vi' ? 'Đề xuất — H3 I2V Production' : 'Recommended — H3 I2V Production' }}</option>
                 <option
                   v-for="s in videoStyles"
                   :key="s.workflow_key"

@@ -70,6 +70,12 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 			role_counts[role] = role_counts.get(role, 0) + 1
 			if contract and role_counts[role] > 1 and not contract["allow_multiple"]:
 				frappe.throw(_("Workflow input role '{0}' accepts exactly one reference.").format(role))
+			if contract and contract.get("max_count") and role_counts[role] > contract["max_count"]:
+				frappe.throw(
+					_("Workflow input role '{0}' accepts at most {1} references.").format(
+						role, contract["max_count"]
+					)
+				)
 			if contract and contract["accepted_media_type"] != "Any":
 				project_reference = project_references.get(reference.get("reference_key"))
 				media_type = (
@@ -84,6 +90,14 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 							role, contract["accepted_media_type"], media_type or "unknown"
 						)
 					)
+		for contract in workflow_contract or []:
+			count = role_counts.get(contract["role"], 0)
+			if count < contract.get("min_count", 0):
+				frappe.throw(
+					_("Shot {0} requires at least {1} references for role '{2}'.").format(
+						shot.get("shot_number"), contract["min_count"], contract["role"]
+					)
+				)
 
 	shot_numbers = [shot["shot_number"] for shot in plan["shots"]]
 	if len(shot_numbers) != len(set(shot_numbers)):
