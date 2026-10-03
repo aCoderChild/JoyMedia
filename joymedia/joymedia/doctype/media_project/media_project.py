@@ -359,13 +359,13 @@ def get_project_workspace(name):
 			production.get("project_snapshot_hash") and production.get("project_snapshot_hash") != current_snapshot_hash
 		)
 	active_run = bool(production and production.status in ("Queued", "Running"))
-	final_asset_version = project.current_output_asset_version or (production.final_asset_version if production else None)
+	final_asset_version = project.current_output_asset_version
 	final_video = ({
 		"asset_version": final_asset_version,
 		"file": _get_asset_version_file_url(final_asset_version),
 		"is_outdated": bool(production and production.get("is_outdated")),
-		"is_current": not active_run or bool(production and production.final_asset_version == final_asset_version),
-		"is_previous_version": active_run and not bool(production and production.final_asset_version == final_asset_version),
+		"is_current": not active_run or bool(final_asset_version),
+		"is_previous_version": False,
 		"legacy_non_editable": bool(final_asset_version and not storyboard),
 	} if final_asset_version else None)
 	return {
@@ -465,7 +465,7 @@ def get_project_production(name):
 		production.get("project_snapshot_hash") and production.get("project_snapshot_hash") != current_snapshot_hash
 	)
 	production["shots"] = _aggregate_shot_progress(production.name)
-	final_asset_version = project.current_output_asset_version or production.final_asset_version
+	final_asset_version = project.current_output_asset_version
 	production["final_video"] = ({
 		"asset_version": final_asset_version,
 		"file": _get_asset_version_file_url(final_asset_version),

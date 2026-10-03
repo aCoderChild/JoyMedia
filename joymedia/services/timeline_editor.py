@@ -671,34 +671,7 @@ def compose_project_timeline(project_name: str):
 
 
 def _initialize_timeline(project):
-	if not _latest_fully_generated_run(project.name):
-		return
-	existing_clips = frappe.get_all(
-		"Timeline Clip",
-		filters={"media_project": project.name},
-		fields=["name"],
-	)
-	if existing_clips:
-		_sync_missing_generated_shots_to_timeline(project)
-		return
-
-	fps = _project_fps(project.name)
-	shots = frappe.get_all(
-		"Shot",
-		filters={"media_project": project.name, "is_removed": 0},
-		fields=[
-			"name",
-			"shot_number",
-			"planned_frame_count",
-			"duration_seconds",
-			"selected_output_asset_version",
-		],
-		order_by="shot_number asc, name asc",
-	)
-	timeline_cursor = 0
-	for order, shot in enumerate(shots, start=1):
-		timeline_cursor = _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps)
-	frappe.db.commit()
+	_sync_missing_generated_shots_to_timeline(project)
 
 
 def _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps):
@@ -764,12 +737,14 @@ def _sync_missing_generated_shots_to_timeline(project):
 		fields=["shot", "clip_order", "timeline_start_frame", "source_in_frame", "source_out_frame"],
 	)
 	existing_shots = {row.shot for row in existing if row.shot}
-	if not existing:
-		return
-	next_order = max(int(row.clip_order or 0) for row in existing) + 1
+	next_order = max([int(row.clip_order or 0) for row in existing] or [0]) + 1
 	timeline_cursor = max(
-		int(row.timeline_start_frame or 0) + max(0, int(row.source_out_frame or 0) - int(row.source_in_frame or 0))
-		for row in existing
+		[
+			int(row.timeline_start_frame or 0)
+			+ max(0, int(row.source_out_frame or 0) - int(row.source_in_frame or 0))
+			for row in existing
+		]
+		or [0]
 	)
 	shots = frappe.get_all(
 		"Shot",
@@ -1151,6 +1126,7 @@ def sync_timeline_source_for_shot(shot_name):
 		fields=["name", "source_in_frame", "source_out_frame"],
 	)
 	if not clips:
+		_initialize_timeline(frappe.get_doc("Media Project", project_name))
 		return
 	for clip_data in clips:
 		frappe.db.set_value("Timeline Clip", clip_data.name, "is_outdated", 1, update_modified=False)

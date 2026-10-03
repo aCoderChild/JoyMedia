@@ -292,9 +292,6 @@ export function useProjectGeneration(projectName, onRefresh) {
     if (run.status === "Completed") return "completed";
     if (!run.total_tasks) return "planning";
     if (Number(run.completed_tasks || 0) < Number(run.total_tasks || 0)) return "rendering";
-    if (!run.final_asset_version && Number(run.completed_tasks || 0) === Number(run.total_tasks || 0)) {
-      return "composing";
-    }
     return "running";
   });
 

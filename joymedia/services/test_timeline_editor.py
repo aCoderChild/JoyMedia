@@ -388,6 +388,21 @@ class TestTimelineEditor(FrappeTestCase):
 		self.assertFalse(self.clip_1.is_outdated)
 		self.assertIsNone(frappe.db.get_value("Media Project", self.project.name, "current_output_asset_version"))
 
+	def test_first_generated_shot_creates_timeline_clip_without_full_run(self):
+		frappe.delete_doc("Timeline Clip", self.clip_1.name, force=True, ignore_permissions=True)
+
+		sync_timeline_source_for_shot(self.shot.name)
+
+		video_clips = frappe.get_all(
+			"Timeline Clip",
+			filters={"media_project": self.project.name, "track_type": "Video"},
+			fields=["shot", "source_asset_version", "timeline_start_frame"],
+		)
+		self.assertEqual(len(video_clips), 1)
+		self.assertEqual(video_clips[0].shot, self.shot.name)
+		self.assertEqual(video_clips[0].source_asset_version, self.version_1.name)
+		self.assertEqual(video_clips[0].timeline_start_frame, 0)
+
 	def test_timeline_position_is_persisted_and_movable(self):
 		move_timeline_clip(self.project.name, self.clip_1.name, 48, "Video", 1)
 		self.clip_1.reload()

@@ -181,8 +181,9 @@ class TestGenerationOrchestrator(FrappeTestCase):
 			"Generation Task", {"generation_run": "RUN-00001", "status": "Ready"}
 		)
 
+	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=False)
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_completed_execution_stays_running_until_composition(self, get_all):
+	def test_completed_execution_stays_running_until_shot_outputs_exist(self, get_all, outputs_are_selected):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.completed_at = None
@@ -194,8 +195,9 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(run.status, "Running")
 		self.assertIsNone(run.completed_at)
 
+	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=True)
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_completed_execution_with_selected_outputs_stays_running(self, get_all):
+	def test_completed_execution_with_selected_outputs_completes_run(self, get_all, outputs_are_selected):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.completed_at = None
@@ -204,8 +206,8 @@ class TestGenerationOrchestrator(FrappeTestCase):
 
 		generation_orchestrator._refresh_run_counters(run)
 
-		self.assertEqual(run.status, "Running")
-		self.assertIsNone(run.completed_at)
+		self.assertEqual(run.status, "Completed")
+		self.assertIsNotNone(run.completed_at)
 
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
 	def test_failed_attempt_followed_by_completed_attempt_completes_job(self, get_all):
@@ -264,42 +266,18 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual("No staged input was available.", job.error_summary)
 		job.db_set.assert_called_once()
 
+	@patch("joymedia.services.generation_orchestrator._refresh_run_counters")
 	@patch("joymedia.services.generation_orchestrator._enqueue")
-	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=True)
-	def test_completed_running_run_with_selected_outputs_queues_finalization(self, outputs_are_selected, enqueue):
-		run = frappe._dict(
-			name="RUN-00001", status="Running", total_tasks=1, completed_tasks=1, final_asset_version=None
-		)
-
-		generation_orchestrator._enqueue_finalization_if_ready(run)
-
-		outputs_are_selected.assert_called_once_with(run.name)
-		enqueue.assert_called_once_with("finalize_run", run.name)
-
-	@patch("joymedia.services.generation_orchestrator.compose_project_timeline_internal")
-	@patch("joymedia.services.generation_orchestrator._initialize_timeline")
-	@patch("joymedia.services.generation_orchestrator.frappe.db.get_value", return_value="PROJ-00001")
-	@patch("joymedia.services.generation_orchestrator.refresh_run")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_doc")
-	def test_finalization_sets_completed_only_after_composition(
-		self, get_doc, refresh_run, get_value, initialize_timeline, compose_timeline
-	):
-		run = MagicMock()
-		run.name = "RUN-00001"
-		run.status = "Running"
-		run.media_project = "PROJ-00001"
-		run.final_asset_version = None
-		project = frappe._dict(name="PROJ-00001")
-		get_doc.side_effect = [run, project]
-		compose_timeline.return_value = {"final_asset_version": "ASTV-00001"}
+	def test_generation_completion_does_not_enqueue_project_export(self, get_doc, enqueue, refresh_counters):
+		run = frappe._dict(name="RUN-00001", status="Completed")
+		get_doc.return_value = run
 
-		generation_orchestrator.finalize_run(run.name)
+		generation_orchestrator.enqueue_finalization_if_ready(run.name)
 
-		refresh_run.assert_called_once_with(run.name, enqueue_finalization=False)
-		initialize_timeline.assert_called_once()
-		compose_timeline.assert_called_once_with("PROJ-00001")
-		self.assertEqual(run.status, "Completed")
-		self.assertEqual(run.final_asset_version, "ASTV-00001")
-		self.assertIsNotNone(run.completed_at)
-		run.db_set.assert_called_once()
-		self.assertEqual(run.db_set.call_args.args[0]["status"], "Completed")
+		refresh_counters.assert_called_once_with(run)
+		enqueue.assert_not_called()
+
+	def test_generation_finalization_endpoint_is_removed(self):
+		with self.assertRaises(frappe.ValidationError):
+			generation_orchestrator.finalize_run("RUN-00001")

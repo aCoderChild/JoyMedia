@@ -501,7 +501,8 @@ async function refreshStudioGenerationState(snapshot = null) {
   }
   const totalTasks = Number(currentRun.value?.total_tasks || 0);
   const completedTasks = Number(currentRun.value?.completed_tasks || 0);
-  if (studioMode.value === "edit" || (totalTasks > 0 && completedTasks === totalTasks)) {
+  const hasGeneratedShots = storyboardShots.value.some((shot) => Boolean(getShotVideoFile(shot)));
+  if (studioMode.value === "edit" || hasGeneratedShots || (totalTasks > 0 && completedTasks === totalTasks)) {
     await loadTimeline(true);
   }
 }
@@ -521,6 +522,7 @@ const {
   playAtFrame: playTimelineAudio,
   pauseAll: pauseTimelineAudio,
 } = useTimelinePreviewEngine({
+  videoClips,
   audioClips,
   fps,
   isPlaying,
@@ -677,6 +679,14 @@ const activeSelectedShot = computed(() => {
   return storyboardShots.value[selectedShotIndex.value] || storyboardShots.value[0] || null;
 });
 
+const activeTimelineVideoClip = computed(() => {
+  if (studioMode.value !== "edit") return null;
+  const frame = Number(playheadFrame.value || 0);
+  return videoClips.value.find(
+    (clip) => frame >= Number(clip.timeline_start_frame || 0) && frame < Number(clip.timeline_end_frame || 0),
+  ) || videoClips.value.at(-1) || null;
+});
+
 const selectedShotFrame = computed(() => {
   const shot = activeSelectedShot.value;
   if (!shot) return null;
@@ -705,8 +715,11 @@ function onPreviewLoadedMetadata({ duration }) {
 
 // Player displayed media total duration (Strictly distinct from project target duration setting)
 const playerTotalSeconds = computed(() => {
+  if (studioMode.value === "edit") {
+    return Number(timeline.value?.render_total_seconds || timeline.value?.total_seconds || 0);
+  }
   if (studioPreview.value?.type === "master") {
-    return Number(timeline.value?.total_seconds || 0);
+    return Number(timeline.value?.render_total_seconds || timeline.value?.total_seconds || 0);
   }
   if (previewDuration.value > 0) {
     return previewDuration.value;
@@ -716,7 +729,9 @@ const playerTotalSeconds = computed(() => {
 
 const currentTimelinePositionLabel = computed(() => {
   const currentFps = fps.value || 24;
-  const totalSec = studioPreview.value?.type === "master"
+  const totalSec = studioMode.value === "edit"
+    ? Math.max(0, (playheadFrame.value || 0) / currentFps)
+    : studioPreview.value?.type === "master"
     ? Math.max(0, (playheadFrame.value || 0) / currentFps)
     : Math.max(0, mediaCurrentSeconds.value || 0);
   const m = String(Math.floor(totalSec / 60)).padStart(2, "0");
@@ -745,6 +760,18 @@ const studioPreview = computed(() => {
       clip: selectedClip.value,
       isVideo: true,
       title: `Source: Clip ${selectedClip.value.clip_order || 1}`,
+    };
+  }
+
+  // Edit mode previews the active Timeline Clip directly. The editor does not
+  // require a project-level master export to play generated shots.
+  if (studioMode.value === "edit" && activeTimelineVideoClip.value?.source_file) {
+    return {
+      type: "timeline-clip",
+      url: activeTimelineVideoClip.value.source_file,
+      clip: activeTimelineVideoClip.value,
+      isVideo: true,
+      title: `Timeline: Shot ${activeTimelineVideoClip.value.shot_number || activeTimelineVideoClip.value.clip_order || ""}`,
     };
   }
 
@@ -797,10 +824,10 @@ const studioPreview = computed(() => {
 
 watch(
   () => [studioPreview.value?.type, studioPreview.value?.url],
-  () => {
+  ([type], [previousType] = []) => {
     previewDuration.value = 0;
     mediaCurrentSeconds.value = 0;
-    isPlaying.value = false;
+    if (type !== "timeline-clip" || previousType !== "timeline-clip") isPlaying.value = false;
   }
 );
 

@@ -48,23 +48,18 @@
       <div class="flex items-center gap-2 min-w-0">
         <span class="lucide-refresh-cw size-3.5 text-indigo-400 animate-spin shrink-0" />
         <span class="font-bold text-ink-primary">
-          <template v-if="isFinalizing">
-            {{ currentLang === 'vi' ? 'Đang ghép video cuối…' : 'Composing final video…' }}
-          </template>
-          <template v-else>
-            {{ currentLang === 'vi' ? 'Đang tạo video:' : 'Generating video:' }}
-          </template>
+          {{ currentLang === 'vi' ? 'Đang tạo video:' : 'Generating video:' }}
         </span>
-        <span v-if="!isFinalizing && (shots.length || expectedShotCount)" class="text-indigo-400 font-mono font-semibold">
+        <span v-if="shots.length || expectedShotCount" class="text-indigo-400 font-mono font-semibold">
           {{ completedShotsCount }} / {{ shots.length || expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes ready' }}
         </span>
-        <span v-else-if="!isFinalizing" class="text-indigo-400 font-mono font-semibold">
+        <span v-else class="text-indigo-400 font-mono font-semibold">
           {{ currentLang === 'vi' ? 'Đang lập storyboard…' : 'Planning storyboard…' }}
         </span>
       </div>
 
       <!-- Shot Progress Indicators -->
-      <div v-if="!isFinalizing && (shots.length || expectedShotCount)" class="flex items-center gap-1.5 overflow-x-auto">
+      <div v-if="shots.length || expectedShotCount" class="flex items-center gap-1.5 overflow-x-auto">
         <span
           v-for="(shot, idx) in (shots.length ? shots : expectedShotCount)"
           :key="idx"
@@ -281,12 +276,6 @@ function onDrop(shot, index) {
 const completedShotsCount = computed(() => {
   if (!props.shots?.length) return 0;
   return props.shots.filter((s) => Boolean(props.getShotVideoFile(s))).length;
-});
-
-const isFinalizing = computed(() => {
-  return (
-    props.generationPhase === "composing"
-  );
 });
 
 function getShotState(shot) {

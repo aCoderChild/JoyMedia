@@ -21,8 +21,6 @@ from .generation_segment_planner import plan_generation_segments
 from .prompt_compiler import compile_segment_prompt_from_snapshot
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_shot_segments
-from .timeline_composer import compose_project_timeline_internal
-from .timeline_editor import _initialize_timeline
 from .workflow_resolver import (
 	validate_workflow_bindings,
 	validate_workflow_for_execution,
@@ -383,18 +381,15 @@ def _advance_run(run, enqueue_finalization=True):
 		_enqueue_submit_run(run.name)
 
 	_refresh_run_counters(run)
-	if enqueue_finalization:
-		_enqueue_finalization_if_ready(run)
 	sync_media_project_status_for_run(run.name)
 	return _run_summary(run)
 
 
 def enqueue_finalization_if_ready(run_name: str):
-	"""Queue final composition only after completed Jobs have approved selected outputs."""
+	"""Retained for compatibility; generation no longer queues project export."""
 	run = frappe.get_doc("Generation Run", run_name)
 	if run.status != "Cancelled":
 		_refresh_run_counters(run)
-		_enqueue_finalization_if_ready(run)
 	return _run_summary(run)
 
 
@@ -565,38 +560,8 @@ def prepare_chained_regeneration(attempt_name: str):
 
 
 def finalize_run(run_name: str):
-	"""Compose a running execution into its final Asset Version."""
-	with filelock(f"joymedia-finalize-run-{run_name}"):
-		run = frappe.get_doc("Generation Run", run_name)
-		refresh_run(run.name, enqueue_finalization=False)
-		run.reload()
-		if run.final_asset_version:
-			return _run_summary(run)
-		if run.status != "Running":
-			frappe.throw(_("Generation Run {0} must be Running before composition.").format(run.name))
-
-		try:
-			project = frappe.get_doc("Media Project", run.media_project)
-			_initialize_timeline(project)
-			result = compose_project_timeline_internal(project.name)
-		except Exception as exc:
-			_raise_run_error(run, _exception_message(exc))
-			return _run_summary(run)
-
-		run.final_asset_version = result["final_asset_version"]
-		run.status = "Completed"
-		run.completed_at = now()
-		run.db_set(
-		{
-			"final_asset_version": run.final_asset_version,
-			"status": run.status,
-			"completed_at": run.completed_at,
-		},
-		update_modified=False,
-	)
-		if run.media_project:
-			frappe.db.set_value("Media Project", run.media_project, "status", "Completed", update_modified=False)
-		return _run_summary(run)
+	"""Reject the removed generation-level project composition boundary."""
+	frappe.throw(_("Generation runs no longer export the project timeline. Use Export from the editor."))
 
 
 def cancel_run(run_name: str):
@@ -652,7 +617,7 @@ def sync_media_project_status_for_run(run_name: str):
 		status = "Draft"
 	elif any(item.status in ACTIVE_RUN_STATUSES for item in runs):
 		status = "Generating"
-	elif any(item.final_asset_version for item in runs):
+	elif any(item.status == "Completed" for item in runs):
 		status = "Completed"
 	elif any(item.status == "Failed" for item in runs):
 		status = "Needs Attention"
@@ -816,7 +781,7 @@ def _refresh_run_counters(run):
 	run.progress = round(run.completed_tasks / run.total_tasks * 100, 2) if run.total_tasks else 0
 
 	if run.total_tasks and run.completed_tasks == run.total_tasks:
-		if run.final_asset_version:
+		if _run_outputs_are_selected(run.name):
 			run.status = "Completed"
 			run.completed_at = run.completed_at or now()
 		else:
@@ -860,18 +825,6 @@ def _refresh_run_counters(run):
 		},
 		notify=True,
 	)
-
-
-def _enqueue_finalization_if_ready(run):
-	if (
-		run.status != "Running"
-		or run.final_asset_version
-		or not run.total_tasks
-		or run.completed_tasks != run.total_tasks
-		or not _run_outputs_are_selected(run.name)
-	):
-		return
-	_enqueue("finalize_run", run.name)
 
 
 def _run_outputs_are_selected(run_name):

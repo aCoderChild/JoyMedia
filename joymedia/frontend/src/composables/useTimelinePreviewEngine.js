@@ -24,6 +24,7 @@ function seekAudioSafely(audio, expectedTime) {
 }
 
 export function useTimelinePreviewEngine({
+  videoClips,
   audioClips,
   fps,
   isPlaying,
@@ -49,6 +50,15 @@ export function useTimelinePreviewEngine({
     const value = Math.max(0, Number(frame || 0));
     const renderFrames = Math.max(0, Number(getRefValue(renderTotalFrames) || 0));
     return renderFrames > 0 ? Math.min(value, renderFrames) : value;
+  }
+
+  function activeVideoClipAtFrame(frame) {
+    const currentFrame = clampToRenderFrame(frame);
+    return (getRefValue(videoClips) || []).find((clip) => {
+      const start = Number(clip.timeline_start_frame || 0);
+      const end = Number(clip.timeline_end_frame || start);
+      return currentFrame >= start && currentFrame < end;
+    }) || null;
   }
 
   function ensureAudioElement(clip) {
@@ -179,7 +189,11 @@ export function useTimelinePreviewEngine({
     if (!video || getRefValue(studioMode) !== "edit" || video.readyState < 1) return;
     const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
     const targetFrame = clampToRenderFrame(frame);
-    const targetTime = targetFrame / currentFps;
+    const clip = activeVideoClipAtFrame(targetFrame);
+    const sourceFrame = clip
+      ? Number(clip.source_in_frame || 0) + targetFrame - Number(clip.timeline_start_frame || 0)
+      : targetFrame;
+    const targetTime = sourceFrame / currentFps;
     if (Number.isFinite(targetTime) && Math.abs(Number(video.currentTime || 0) - targetTime) > 0.08) {
       video.currentTime = targetTime;
     }
@@ -242,6 +256,13 @@ export function useTimelinePreviewEngine({
   watch(() => getRefValue(audioClips), () => {
     if (!getRefValue(isPlaying)) syncAtFrame(0);
   }, { deep: true });
+
+  watch(() => getRefValue(playheadFrame), (frame) => {
+    if (getRefValue(studioMode) === "edit" && !getRefValue(isPlaying)) {
+      syncAtFrame(frame);
+      syncTimelineVideo(frame);
+    }
+  });
 
   watch(() => getRefValue(isPlaying), (playing) => {
     if (playing) start();
