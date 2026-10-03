@@ -261,8 +261,8 @@ def _normalize_clip(source_path, output_path, profile, source_in_frame, source_o
 		f"tpad=stop_mode=clone:stop_duration={pad_duration:.6f},"
 		f"trim=start_frame={source_in_frame}:end_frame={source_out_frame},"
 		f"setpts=PTS-STARTPTS,"
-		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=decrease,"
-		f"pad={profile['width']}:{profile['height']}:(ow-iw)/2:(oh-ih)/2"
+		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=increase,"
+		f"crop={profile['width']}:{profile['height']}"
 	)
 	_run_ffmpeg(
 		[

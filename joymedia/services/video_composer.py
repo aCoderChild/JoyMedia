@@ -402,8 +402,8 @@ def _normalize_shot(source_path, normalized_path, profile, planned_frames):
 		f"fps={profile['fps']:g},"
 		f"tpad=stop_mode=clone:stop_duration={planned_duration:.6f},"
 		f"trim=end_frame={planned_frames},setpts=PTS-STARTPTS,"
-		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=decrease,"
-		f"pad={profile['width']}:{profile['height']}:(ow-iw)/2:(oh-ih)/2"
+		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=increase,"
+		f"crop={profile['width']}:{profile['height']}"
 	)
 	_run_ffmpeg(
 		[
@@ -446,8 +446,8 @@ def _normalize_segment(
 	video_filter += (
 		f"tpad=stop_mode=clone:stop_duration={effective_frames / profile['fps']:.6f},"
 		f"trim=end_frame={effective_frames},setpts=PTS-STARTPTS,"
-		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=decrease,"
-		f"pad={profile['width']}:{profile['height']}:(ow-iw)/2:(oh-ih)/2"
+		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=increase,"
+		f"crop={profile['width']}:{profile['height']}"
 	)
 	command = [
 		"ffmpeg",
@@ -738,7 +738,10 @@ def _get_or_create_final_asset(project):
 
 
 def _run_ffmpeg(command):
-	subprocess.run(command, capture_output=True, text=True, check=True)
+	try:
+		subprocess.run(command, capture_output=True, text=True, check=True, timeout=600)
+	except subprocess.TimeoutExpired as exc:
+		raise ValueError("Video processing exceeded the 10-minute timeout.") from exc
 
 
 def _escape_concat_path(path):

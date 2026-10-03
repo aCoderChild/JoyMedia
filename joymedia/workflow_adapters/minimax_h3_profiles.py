@@ -28,6 +28,7 @@ class MiniMaxH3ImageToVideoAdapter(GenericWorkflowAdapter):
 		last_frame_index,
 		last_frame_prefix,
 	):
+		_set_resolution_selector_format(workflow, width, height)
 		_set_input(workflow, "105:15", "noise_seed", seed)
 		_set_input(workflow, "105:111", "value", max(5, frame_count / 24))
 		_set_input(workflow, "92", "filename_prefix", output_prefix)
@@ -58,6 +59,7 @@ class MiniMaxH3ReferenceToVideoAdapter(GenericWorkflowAdapter):
 		last_frame_index,
 		last_frame_prefix,
 	):
+		_set_resolution_selector_format(workflow, width, height)
 		_set_input(workflow, "129", "noise_seed", seed)
 		_set_input(workflow, "132", "value", max(5, frame_count / 24))
 		_set_input(workflow, "92", "filename_prefix", output_prefix)
@@ -73,3 +75,34 @@ def _set_input(workflow, node_key, input_name, value):
 			f"MiniMax H3 API workflow is missing execution input {node_key}.{input_name}"
 		)
 	inputs[input_name] = value
+
+
+def _set_resolution_selector_format(workflow, width, height):
+	"""Apply the project's aspect ratio using ResolutionSelector's live enum."""
+	node = workflow.get("115")
+	inputs = node.get("inputs") if isinstance(node, dict) else None
+	if not isinstance(inputs, dict):
+		return
+	inputs["aspect_ratio"] = _resolution_selector_aspect_ratio(width, height)
+
+
+def _resolution_selector_aspect_ratio(width, height):
+	width = int(width)
+	height = int(height)
+	if width <= 0 or height <= 0:
+		raise ValueError("H3 output dimensions must be greater than zero")
+
+	# ResolutionSelector does not expose 4:5. The nearest supported portrait
+	# format is used; the final composer still crops to the exact delivery size.
+	ratio = width / height
+	options = {
+		"1:1 (Square)": 1,
+		"2:3 (Portrait Photo)": 2 / 3,
+		"3:2 (Photo)": 3 / 2,
+		"3:4 (Portrait Standard)": 3 / 4,
+		"4:3 (Standard)": 4 / 3,
+		"9:16 (Portrait Widescreen)": 9 / 16,
+		"16:9 (Widescreen)": 16 / 9,
+		"21:9 (Ultrawide)": 21 / 9,
+	}
+	return min(options, key=lambda option: abs(options[option] - ratio))

@@ -26,6 +26,7 @@ class MiniMaxH3SatoGenerationAdapter(GenericWorkflowAdapter):
 		last_frame_prefix,
 	):
 		fps = float(fps or 24)
+		_set_format_inputs(workflow, "270", width, height)
 		_set_execution_input(workflow, "248", "seed", seed)
 		_set_execution_input(workflow, "270", "width", width)
 		_set_execution_input(workflow, "270", "height", height)
@@ -61,6 +62,7 @@ class MiniMaxH3SatoContinuationAdapter(GenericWorkflowAdapter):
 	):
 		fps = float(fps or 24)
 		duration = frame_count / fps
+		_set_format_inputs(workflow, "328", width, height)
 		_set_execution_input(workflow, "291", "seed", seed)
 		_set_execution_input(workflow, "328", "width", width)
 		_set_execution_input(workflow, "328", "height", height)
@@ -108,3 +110,31 @@ def _set_execution_input(workflow, node_key, input_name, value):
 	if not isinstance(inputs, dict) or input_name not in inputs:
 		raise ValueError(f"MiniMax H3 Sato workflow is missing execution input {node_key}.{input_name}")
 	inputs[input_name] = value
+
+
+def _set_format_inputs(workflow, node_key, width, height):
+	"""Use the verified Sato aspect-ratio contract; preserve its resolution preset."""
+	_set_execution_input(workflow, node_key, "aspect_ratio", _sato_aspect_ratio(width, height))
+	if _sato_aspect_ratio(width, height) == "Free Ratio":
+		_set_execution_input(workflow, node_key, "custom_ratio", f"{int(width)}:{int(height)}")
+
+
+def _sato_aspect_ratio(width, height):
+	width = int(width)
+	height = int(height)
+	if width <= 0 or height <= 0:
+		raise ValueError("Sato output dimensions must be greater than zero")
+	common = {
+		"1:1": 1,
+		"2:3": 2 / 3,
+		"3:2": 3 / 2,
+		"3:4": 3 / 4,
+		"4:3": 4 / 3,
+		"9:16": 9 / 16,
+		"16:9": 16 / 9,
+		"21:9": 21 / 9,
+	}
+	ratio = width / height
+	if abs(ratio - 4 / 5) < 0.02:
+		return "Free Ratio"
+	return min(common, key=lambda option: abs(common[option] - ratio))

@@ -16,6 +16,10 @@ from joymedia.workflow_adapters.minimax_h3_profiles import (
 	MiniMaxH3ImageToVideoAdapter,
 	MiniMaxH3ReferenceToVideoAdapter,
 )
+from joymedia.workflow_adapters.minimax_h3_sato import (
+	MiniMaxH3SatoContinuationAdapter,
+	MiniMaxH3SatoGenerationAdapter,
+)
 
 
 class TestWorkflowResolver(FrappeTestCase):
@@ -252,6 +256,7 @@ class TestWorkflowResolver(FrappeTestCase):
 
 	def test_h3_i2v_api_profile_patches_exported_node_keys(self):
 		workflow = {
+			"115": {"inputs": {"aspect_ratio": "16:9 (Widescreen)"}},
 			"105:15": {"inputs": {"noise_seed": 0}},
 			"105:111": {"inputs": {"value": 5}},
 			"105:104": {"inputs": {"width": ["115", 0], "height": ["115", 1]}},
@@ -272,10 +277,12 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertEqual(94821731, workflow["105:15"]["inputs"]["noise_seed"])
 		self.assertEqual(["115", 0], workflow["105:104"]["inputs"]["width"])
 		self.assertEqual(["115", 1], workflow["105:104"]["inputs"]["height"])
+		self.assertEqual("16:9 (Widescreen)", workflow["115"]["inputs"]["aspect_ratio"])
 		self.assertEqual("JOB-1_ATT-1", workflow["92"]["inputs"]["filename_prefix"])
 
 	def test_h3_r2v_api_profile_patches_exported_node_keys(self):
 		workflow = {
+			"115": {"inputs": {"aspect_ratio": "16:9 (Widescreen)"}},
 			"129": {"inputs": {"noise_seed": 0}},
 			"132": {"inputs": {"value": 5}},
 			"136": {"inputs": {"width": ["115", 0], "height": ["115", 1]}},
@@ -286,8 +293,8 @@ class TestWorkflowResolver(FrappeTestCase):
 		MiniMaxH3ReferenceToVideoAdapter().prepare_execution(
 			workflow,
 			seed=94821731,
-			width=1280,
-			height=720,
+			width=720,
+			height=1280,
 			frame_count=120,
 			output_prefix="JOB-1_ATT-1",
 			last_frame_index=119,
@@ -297,5 +304,32 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertEqual(94821731, workflow["129"]["inputs"]["noise_seed"])
 		self.assertEqual(["115", 0], workflow["136"]["inputs"]["width"])
 		self.assertEqual(["115", 1], workflow["136"]["inputs"]["height"])
+		self.assertEqual("9:16 (Portrait Widescreen)", workflow["115"]["inputs"]["aspect_ratio"])
 		self.assertEqual("JOB-1_ATT-1", workflow["92"]["inputs"]["filename_prefix"])
 		self.assertEqual("JOB-1_ATT-1_state", workflow["147"]["inputs"]["filename_prefix"])
+
+	def test_sato_adapters_apply_verified_aspect_ratio_contract(self):
+		generation = {
+			"270": {"inputs": {"aspect_ratio": "16:9", "custom_ratio": "16:9", "width": 960, "height": 400, "seconds": 5, "fps": 24}},
+			"248": {"inputs": {"seed": 0}},
+			"254": {"inputs": {"filename_prefix": "old"}},
+			"272": {"inputs": {"filename_prefix": "old"}},
+		}
+		MiniMaxH3SatoGenerationAdapter().prepare_execution(
+			generation, seed=1, width=1080, height=1350, frame_count=120,
+			output_prefix="JOB-1_ATT-1", last_frame_index=119, last_frame_prefix="unused",
+		)
+		self.assertEqual("Free Ratio", generation["270"]["inputs"]["aspect_ratio"])
+		self.assertEqual("1080:1350", generation["270"]["inputs"]["custom_ratio"])
+
+		continuation = {
+			"328": {"inputs": {"aspect_ratio": "16:9", "custom_ratio": "16:9", "width": 960, "height": 400, "seconds": 5, "segment_seconds": "5", "fps": 24}},
+			"291": {"inputs": {"seed": 0}},
+			"355": {"inputs": {"filename_prefix": "old"}},
+			"374": {"inputs": {"filename_prefix": "old"}},
+		}
+		MiniMaxH3SatoContinuationAdapter().prepare_execution(
+			continuation, seed=1, width=1080, height=1920, frame_count=120,
+			output_prefix="JOB-1_ATT-2", last_frame_index=119, last_frame_prefix="unused",
+		)
+		self.assertEqual("9:16", continuation["328"]["inputs"]["aspect_ratio"])
