@@ -76,7 +76,7 @@ class TestFilmDirector(FrappeTestCase):
 
 		film_director.normalize_story_references(shots, REFERENCES, "product_reference")
 
-		self.assertEqual(["bedroom", "tower"], [ref["reference_key"] for ref in shots[0]["references"]])
+		self.assertEqual(["tower", "tower"], [ref["reference_key"] for ref in shots[0]["references"]])
 
 	def test_tags_beyond_the_sent_images_point_at_the_place(self):
 		# Planners confuse place keys named "3"/"4" with picture numbers.
@@ -170,7 +170,7 @@ class TestFilmDirector(FrappeTestCase):
 
 		film_director.normalize_story_references(shots, REFERENCES, "product_reference")
 
-		self.assertEqual(["bedroom", "tower"], [ref["reference_key"] for ref in shots[0]["references"]])
+		self.assertEqual(["tower", "tower"], [ref["reference_key"] for ref in shots[0]["references"]])
 
 	def test_story_film_plan_uses_director_prompt_and_orders_references(self):
 		plan = {"shots": [

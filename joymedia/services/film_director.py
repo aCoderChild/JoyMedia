@@ -81,7 +81,7 @@ EVERY generation_prompt (English, 60-110 words) states, in this order:
 
 REFERENCES
 - Every take lists exactly two references: first the character key, then one place
-  key. A take without the character lists two place keys that appear in it.
+  key. A take without the character lists its place key twice.
 - Use only the supplied keys. Keys are names, not picture numbers: in the prompt the
   character is always <Picture 1> and the place is always <Picture 2>.
 """.strip()
@@ -245,15 +245,14 @@ def normalize_story_references(shots, reference_contexts, reference_role):
 	The order is load-bearing: the first reference is bound to <Picture 1> and the
 	second to <Picture 2> by the Reference-to-Video workflow bindings. The planner's
 	prompt text decides the order, because models often omit or reorder keys:
-	a take that shows a person gets [character, place]; otherwise [place, place],
-	with the place the prompt describes as <Picture 2>.
+	a take that shows a person gets [character, place]; otherwise the described
+	place fills both slots.
 	"""
 	roster = build_roster(reference_contexts)
 	if not roster[CHARACTER] or not roster[PLACE]:
 		return shots
 	character_key = roster[CHARACTER][0]["reference_key"]
 	places = roster[PLACE]
-	place_keys = {context["reference_key"] for context in places}
 	for shot in shots:
 		if not isinstance(shot, dict):
 			continue
@@ -267,10 +266,9 @@ def normalize_story_references(shots, reference_contexts, reference_role):
 		if PERSON_PATTERN.search(prompt):
 			ordered = [character_key, best_place]
 		else:
-			others = [key for key in listed if key in place_keys and key != best_place]
-			fallback = next(context["reference_key"] for context in places if context["reference_key"] != best_place) \
-				if len(places) > 1 else character_key
-			ordered = [others[0] if others else fallback, best_place]
+			# The model follows <Picture 1> most strongly; a second, different place
+			# there replaced the described one, so both slots carry it.
+			ordered = [best_place, best_place]
 		shot["references"] = [{"reference_key": key, "usage_role": reference_role} for key in ordered]
 		prompt = _clamp_picture_tags(prompt, len(ordered)).strip()
 		if "no cuts" not in prompt.lower():
