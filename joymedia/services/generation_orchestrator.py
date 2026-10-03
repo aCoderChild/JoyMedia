@@ -77,7 +77,10 @@ def start_run_internal(run_name: str):
 
 	run.status = "Queued"
 	run.error_summary = None
-	run.save(ignore_permissions=True)
+	run.db_set(
+		{"status": run.status, "error_summary": run.error_summary},
+		update_modified=False,
+	)
 	frappe.db.set_value("Media Project", project.name, "status", "Generating", update_modified=False)
 	_enqueue("prepare_run", run.name)
 	return {"name": run.name, "status": run.status}
@@ -288,7 +291,10 @@ def submit_run(run_name: str):
 		run.status = "Running"
 		if not run.started_at:
 			run.started_at = now()
-		run.save(ignore_permissions=True)
+		run.db_set(
+		{"status": run.status, "started_at": run.started_at},
+		update_modified=False,
+	)
 
 		for job_name in _get_run_job_names(run.name):
 			job = frappe.get_doc("Generation Task", job_name)
@@ -580,7 +586,14 @@ def finalize_run(run_name: str):
 		run.final_asset_version = result["final_asset_version"]
 		run.status = "Completed"
 		run.completed_at = now()
-		run.save(ignore_permissions=True)
+		run.db_set(
+		{
+			"final_asset_version": run.final_asset_version,
+			"status": run.status,
+			"completed_at": run.completed_at,
+		},
+		update_modified=False,
+	)
 		if run.media_project:
 			frappe.db.set_value("Media Project", run.media_project, "status", "Completed", update_modified=False)
 		return _run_summary(run)
@@ -600,7 +613,10 @@ def cancel_run(run_name: str):
 
 	run.status = "Cancelled"
 	run.completed_at = now()
-	run.save(ignore_permissions=True)
+	run.db_set(
+		{"status": run.status, "completed_at": run.completed_at},
+		update_modified=False,
+	)
 	return _run_summary(run)
 
 
@@ -1004,7 +1020,14 @@ def _raise_run_error(run, message):
 	run.status = "Failed"
 	run.error_summary = message or _("Generation run failed.")
 	run.completed_at = now()
-	run.save(ignore_permissions=True)
+	run.db_set(
+		{
+			"status": run.status,
+			"error_summary": run.error_summary,
+			"completed_at": run.completed_at,
+		},
+		update_modified=False,
+	)
 	sync_media_project_status_for_run(run.name)
 
 

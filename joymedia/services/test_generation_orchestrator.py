@@ -128,7 +128,10 @@ class TestGenerationOrchestrator(FrappeTestCase):
 			check_comfyui=True,
 		)
 		self.assertEqual(run.status, "Queued")
-		run.save.assert_called_once_with(ignore_permissions=True)
+		run.db_set.assert_called_once_with(
+			{"status": "Queued", "error_summary": None},
+			update_modified=False,
+		)
 		enqueue.assert_called_once_with("prepare_run", run.name)
 		self.assertEqual(result["status"], "Queued")
 
@@ -298,4 +301,5 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(run.status, "Completed")
 		self.assertEqual(run.final_asset_version, "ASTV-00001")
 		self.assertIsNotNone(run.completed_at)
-		run.save.assert_called_once_with(ignore_permissions=True)
+		run.db_set.assert_called_once()
+		self.assertEqual(run.db_set.call_args.args[0]["status"], "Completed")
