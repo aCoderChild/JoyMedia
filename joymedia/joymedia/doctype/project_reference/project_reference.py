@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import re
+import unicodedata
 
 import frappe
 from frappe import _
@@ -16,7 +17,10 @@ def assign_reference_key(reference, project):
 		media_asset = frappe.db.get_value("Asset Version", reference.asset_version, "media_asset")
 		base = frappe.db.get_value("Media Asset", media_asset, "asset_name") if media_asset else ""
 	base = base or reference.reference_role or "reference"
-	base = re.sub(r"[^a-z0-9]+", "_", str(base).lower()).strip("_") or "reference"
+	# Transliterate accented names ("tòa tháp" -> "toa_thap") instead of dropping letters.
+	base = unicodedata.normalize("NFKD", str(base).replace("đ", "d").replace("Đ", "D"))
+	base = base.encode("ascii", "ignore").decode("ascii")
+	base = re.sub(r"[^a-z0-9]+", "_", base.lower()).strip("_") or "reference"
 	key = base[:100]
 	used_keys = {
 		row.reference_key for row in project.selected_media or []
