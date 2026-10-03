@@ -6,8 +6,17 @@ import frappe
 import requests
 from frappe import _
 
+from .film_director import (
+	balance_take_durations,
+	build_director_instruction,
+	normalize_story_references,
+	take_count_range,
+)
+
 
 DEFAULT_TIMEOUT = 600
+DEFAULT_MAX_MODEL_LEN = 4096
+MIN_PLAN_COMPLETION_TOKENS = 700
 
 
 def _qwen_config():
@@ -179,6 +188,7 @@ def generate_video_plan(
 	format_preset: str | None = None,
 	workflow_input_contract: list[dict] | None = None,
 	continuation_context: dict | None = None,
+	story_film: bool = False,
 ) -> dict:
 	"""Create one structured storyboard from the project prompt and selected references.
 
@@ -191,6 +201,9 @@ def generate_video_plan(
 	if generation_mode not in ("Multi-shot", "Continuous"):
 		frappe.throw(_("Select Continuous or Multi-shot generation mode."))
 	base_url, model, timeout = _qwen_config()
+	story_reference_role = _example_reference_role(workflow_input_contract)
+	story_reference_contexts = reference_media
+	workflow_input_contract_for_prompt = workflow_input_contract
 
 	instruction = """
 You are the creative planner for JoyMedia product videos.
@@ -202,10 +215,17 @@ intent inside that one prompt rather than separate creative fields.
 Project reference media are named ingredients/context. Use their reference_key when
 a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 """.strip()
+	if story_film:
+		instruction = build_director_instruction(reference_media, story_reference_role, total_video_duration)
+		# The director roster replaces the generic reference, image and contract lists.
+		reference_images = None
+		reference_media = None
+		video_style = None
+		workflow_input_contract_for_prompt = None
 
 	if video_style:
 		instruction += f"\n\nVIDEO STYLE / WORKFLOW KEY:\n{video_style}"
-	if workflow_input_contract:
+	if workflow_input_contract_for_prompt:
 		instruction += (
 			"\n\nAVAILABLE INPUT ROLES FOR THIS WORKFLOW:\n"
 			+ json.dumps(workflow_input_contract, ensure_ascii=False, indent=2)
@@ -215,7 +235,9 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		instruction += f"\n\nOUTPUT FORMAT:\n{format_preset}. Frame each shot appropriately for this format."
 	if global_instructions:
 		instruction += f"\n\nGLOBAL INSTRUCTIONS FOR EVERY SHOT:\n{global_instructions}"
-	if generation_mode == "Continuous":
+	if story_film:
+		pass  # Takes are rendered with references, not first-frame chaining.
+	elif generation_mode == "Continuous":
 		instruction += (
 			"\n\nGENERATION MODE: CONTINUOUS\n"
 			"The first shot starts from a selected image. Later shots continue from the previous generated last frame. "
@@ -240,11 +262,17 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 			f"{requested_instruction or 'No explicit instruction. Choose the most natural commercially compelling continuation yourself.'}"
 		)
 
-	example_role = _example_reference_role(workflow_input_contract)
+	example_role = story_reference_role
+	example_references = (
+		f'{{"reference_key":"<character key>","usage_role":"{example_role}"}},'
+		f'{{"reference_key":"<place key>","usage_role":"{example_role}"}}'
+		if story_film
+		else f'{{"reference_key":"hero_product","usage_role":"{example_role}"}}'
+	)
 	response_shape = (
 		'{"shots":[{"shot_number":1,"shot_name":"...",'
 		'"duration_seconds":5,"generation_prompt":"...",'
-		f'"references":[{{"reference_key":"hero_product","usage_role":"{example_role}"}}]}}]}}'
+		f'"references":[{example_references}]}}]}}'
 	)
 	user_prompt = (
 		f"{instruction}\n\n"
@@ -253,7 +281,11 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		f"TOTAL VIDEO DURATION: {total_video_duration} seconds\n"
 		f"TARGET FPS: {target_fps}\n"
 		f"SHOT COUNT GUIDANCE: {shot_count if shot_count is not None else 'Choose the appropriate number of creative shots; do not use model frame capacity to choose it.'}\n\n"
-		+ (f"Return exactly {shot_count} shots. " if shot_count is not None else "Choose a coherent storyboard structure, normally between 1 and 8 shots. ")
+		+ (
+			f"Return exactly {shot_count} shots. " if shot_count is not None
+			else "Return {0} to {1} takes as shots. ".format(*take_count_range(total_video_duration)) if story_film
+			else "Choose a coherent storyboard structure, normally between 1 and 8 shots. "
+		)
 		+ "Organize the shots into a coherent narrative progression.\n\n"
 		"IMPORTANT OUTPUT RULES:\n"
 		"- Every shot MUST contain a positive integer shot_number.\n"
@@ -309,9 +341,10 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 			{"role": "user", "content": user_prompt},
 		],
 		"response_format": {"type": "json_object"},
-		"temperature": 0.2,
+		"temperature": 0.4 if story_film else 0.2,
 		"max_tokens": 3000,
 	}
+	request_payload["max_tokens"] = _completion_budget(base_url, request_payload)
 
 	response = None
 	for attempt in range(3):
@@ -332,6 +365,9 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
 		frappe.throw(_("Qwen returned invalid video plan JSON: {0}").format(str(exc)))
 
+	if story_film and isinstance(result, dict) and isinstance(result.get("shots"), list):
+		normalize_story_references(result["shots"], story_reference_contexts, story_reference_role)
+
 	result = _normalize_qwen_plan(
 		result,
 		reference_image_count=len(reference_images or []),
@@ -348,7 +384,40 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		workflow_input_contract=workflow_input_contract,
 		total_video_duration=total_video_duration,
 	)
+	if story_film:
+		result["shots"] = balance_take_durations(result["shots"], total_video_duration)
 	return result
+
+
+def _completion_budget(base_url, payload):
+	"""Fit max_tokens into the planner's context window instead of failing with HTTP 400."""
+	requested = int(payload.get("max_tokens") or 0)
+	max_model_len = int(frappe.conf.get("qwen_max_model_len") or DEFAULT_MAX_MODEL_LEN)
+	prompt_tokens = None
+	try:
+		response = requests.post(
+			f"{base_url.rsplit('/v1', 1)[0]}/tokenize",
+			json={"model": payload["model"], "messages": payload["messages"]},
+			timeout=(5, 20),
+		)
+		if response.ok:
+			data = response.json()
+			prompt_tokens = int(data["count"])
+			max_model_len = int(data.get("max_model_len") or max_model_len)
+	except (requests.RequestException, KeyError, TypeError, ValueError):
+		prompt_tokens = None
+	if prompt_tokens is None:
+		# Conservative estimate when the server has no /tokenize endpoint.
+		prompt_tokens = sum(len(str(message.get("content") or "")) for message in payload["messages"]) // 3
+	available = max_model_len - prompt_tokens - 64
+	if available < MIN_PLAN_COMPLETION_TOKENS:
+		frappe.throw(
+			_(
+				"The video brief and references are too long for the AI planner. "
+				"Shorten the video idea or global instructions, or remove some references."
+			)
+		)
+	return min(requested, available)
 
 
 def _normalize_qwen_plan(
@@ -527,8 +596,8 @@ def _validate_video_plan(
 		target_duration = float(total_video_duration)
 		if (
 			generation_mode == "Multi-shot"
-			and reference_images
-			and len(normalized_shots) == len(reference_images)
+			and reference_image_count
+			and len(normalized_shots) == reference_image_count
 		):
 			equal_duration = target_duration / len(normalized_shots)
 			for shot in normalized_shots:

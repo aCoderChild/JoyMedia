@@ -141,3 +141,13 @@ class TestQwenClient(FrappeTestCase):
 		})
 		with self.assertRaises(frappe.ValidationError):
 			_validate_video_plan(plan, workflow_input_contract=contract)
+
+	def test_validation_rescales_multi_shot_durations_to_total(self):
+		result = {"shots": [
+			{"shot_number": 1, "generation_prompt": "Exterior.", "duration_seconds": 2},
+			{"shot_number": 2, "generation_prompt": "Pool.", "duration_seconds": 6},
+		]}
+
+		_validate_video_plan(result, generation_mode="Multi-shot", total_video_duration=16)
+
+		self.assertEqual([4, 12], [shot["duration_seconds"] for shot in result["shots"]])

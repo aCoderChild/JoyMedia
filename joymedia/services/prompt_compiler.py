@@ -36,6 +36,9 @@ def compile_segment_prompt(shot: str, segment_index: int, segment_count: int):
 
 def compile_segment_prompt_from_snapshot(shot, project, segment_index: int, segment_count: int):
 	base = compile_prompt_for_documents(shot, project)
+	preamble = _reference_preamble_from_snapshot(shot, project)
+	if preamble:
+		base = f"{preamble}\n\n{base}"
 	if segment_count == 1:
 		return base
 	if segment_index == 1:
@@ -75,6 +78,28 @@ def compile_prompt_for_documents(shot, project):
 			"the product from scratch."
 		)
 	return prompt.strip()
+
+
+def _reference_preamble_from_snapshot(shot, snapshot):
+	"""Name each <Picture N> for Reference-to-Video shots, in binding order."""
+	if snapshot.get("reference_mode") != "Multi-reference":
+		return ""
+	snapshot_shot = next(
+		(item for item in snapshot.get("shots") or [] if item.get("shot") == shot.name),
+		None,
+	)
+	if not snapshot_shot:
+		return ""
+	asset_versions = [
+		reference.get("asset_version")
+		for reference in snapshot_shot.get("references") or []
+		if reference.get("asset_version")
+	]
+	if not asset_versions:
+		return ""
+	from .film_director import reference_preamble
+
+	return reference_preamble(asset_versions, snapshot.get("references") or [])
 
 
 def _build_source_snapshot(shot, project):

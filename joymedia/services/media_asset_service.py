@@ -8,6 +8,7 @@ from frappe import _
 from frappe.utils import cint
 
 
+MIN_REFERENCE_IMAGE_EDGE = 640
 INPUT_ASSET_CATEGORIES = {"Product", "Character", "Background", "Brand", "Style", "Reference", "Audio", "Other"}
 
 
@@ -125,10 +126,9 @@ def create_media_asset(asset_name, asset_category, file_url=None, file_name=None
 			"source": "Uploaded",
 		}
 	).insert(ignore_permissions=True)
-	if media_type == "Image" and min(cint(version.width), cint(version.height)) < 640:
-		frappe.delete_doc("Asset Version", version.name, force=True, ignore_permissions=True)
-		frappe.delete_doc("Media Asset", asset.name, force=True, ignore_permissions=True)
-		frappe.throw(_("Images must be at least 640 pixels on their short side."))
+	# Small images still work as references, but identity and detail suffer, so the
+	# upload is kept and flagged for the UI to warn about instead of being rejected.
+	low_resolution = media_type == "Image" and min(cint(version.width), cint(version.height)) < MIN_REFERENCE_IMAGE_EDGE
 
 	duplicate = _get_duplicate_version(
 		version.content_hash,
@@ -144,12 +144,14 @@ def create_media_asset(asset_name, asset_category, file_url=None, file_name=None
 			"media_asset": duplicate.media_asset,
 			"asset_version": duplicate.name,
 			"reused": True,
+			"low_resolution": low_resolution,
 		}
 
 	return {
 		"media_asset": asset.name,
 		"asset_version": version.name,
 		"reused": False,
+		"low_resolution": low_resolution,
 	}
 
 

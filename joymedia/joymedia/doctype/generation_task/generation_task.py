@@ -205,12 +205,9 @@ class GenerationTask(Document):
 								role, accepted_media_type, media_type or "unknown"
 							)
 						)
-			if binding and binding.value_type != "File Paths" and len(asset_versions) != 1:
-				frappe.throw(
-					_("Workflow binding for role '{0}' accepts exactly one input; found {1}.").format(
-						role, len(asset_versions)
-					)
-				)
+			from joymedia.services.workflow_resolver import validate_role_input_count
+
+			validate_role_input_count(workflow, role, len(asset_versions))
 
 	def _validate_execution_immutability(self):
 		if self.is_new():

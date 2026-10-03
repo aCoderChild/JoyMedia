@@ -76,6 +76,7 @@
    "description": "Canonical Qwen-generated creative prompt for this shot. Camera, subject, action, environment, lighting and sound intent belong inside this one prompt rather than separate fields.",
    "fieldname": "generation_prompt",
    "fieldtype": "Long Text",
+   "ignore_xss_filter": 1,
    "label": "Shot Prompt",
    "reqd": 1
   },
@@ -105,7 +106,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-01 00:00:00.000000",
+ "modified": "2026-10-03 13:32:36.962319",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Shot",

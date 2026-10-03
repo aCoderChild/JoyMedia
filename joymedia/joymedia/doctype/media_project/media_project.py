@@ -256,6 +256,20 @@ def _get_project_selected_assets(project):
 	return assets
 
 
+def _story_film_planning_context(project):
+	"""Return (reference contexts, whether to plan a character + places story film)."""
+	from joymedia.services.film_director import is_story_film
+	from joymedia.services.vision_analysis import ensure_project_image_analysis
+
+	ensure_project_image_analysis(project)
+	reference_contexts = _get_project_reference_contexts(project)
+	story_film = (
+		getattr(project, "reference_mode", None) == "Multi-reference"
+		and is_story_film(reference_contexts)
+	)
+	return reference_contexts, story_film
+
+
 def _get_project_reference_contexts(project):
 	contexts = []
 	for asset in _get_project_selected_assets(project):
@@ -861,12 +875,14 @@ def revise_project_storyboard(project_name, instruction=None, use_current_workfl
 		f"Scene {shot.shot_number}: {shot.generation_prompt} ({shot.duration_seconds}s)"
 		for shot in _active_project_shots(project.name, fields=["shot_number", "generation_prompt", "duration_seconds"])
 	)
+	reference_contexts, story_film = _story_film_planning_context(project)
 	plan = generate_video_plan(
 		product_name=_meaningful_project_value(project.product_name, "the product"),
 		video_idea=f"{project.video_idea or ''}\n\nCURRENT STORYBOARD:\n{current_shots}\n\nREVISION REQUEST:\n{instruction}",
 		total_video_duration=float(project.total_duration_seconds or 15),
 		target_fps=float(workflow.output_fps or 24),
-		reference_media=_get_project_selected_assets(project),
+		story_film=story_film,
+		reference_media=reference_contexts if story_film else _get_project_selected_assets(project),
 		video_style=workflow.workflow_key,
 		generation_mode=_normalize_generation_mode(project.generation_mode),
 		global_instructions=project.global_instructions,
@@ -1250,6 +1266,24 @@ class MediaProject(Document):
 		from joymedia.services.project_image_manifest import get_project_image_manifest
 		return get_project_image_manifest(self.name, include_data_url=True)
 
+	def _use_reference_video_for_story_film(self):
+		"""Character + location projects need Reference-to-Video to keep identity and places."""
+		from joymedia.services.film_director import is_story_film
+		from joymedia.services.vision_analysis import ensure_project_image_analysis
+
+		if getattr(self, "reference_mode", None) == "Multi-reference":
+			return
+		ensure_project_image_analysis(self)
+		if not is_story_film(_get_project_reference_contexts(self)):
+			return
+		self.save_video_settings(
+			self.total_duration_seconds,
+			self.delivery_preset,
+			generation_mode=self.generation_mode,
+			reference_mode="Multi-reference",
+			quality_mode="Production",
+		)
+
 	def generate_video_plan(self):
 		self._require_read_access()
 		from joymedia.services.qwen_client import generate_video_plan
@@ -1261,18 +1295,21 @@ class MediaProject(Document):
 			frappe.throw(_("Add at least one image reference before creating a storyboard."))
 		workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 		from joymedia.services.workflow_resolver import get_workflow_input_contract
+		reference_contexts, story_film = _story_film_planning_context(self)
 		return generate_video_plan(
 			product_name=_meaningful_project_value(self.product_name, "The supplied product"),
 			video_idea=_meaningful_project_value(self.video_idea, "Create a premium cinematic product showcase."),
 			total_video_duration=settings.total_duration_seconds,
 			target_fps=workflow.output_fps,
 			shot_count=(
-				len(image_inputs)
+				None if story_film
+				else len(image_inputs)
 				if settings.generation_mode == "Multi-shot"
 				else _planning_shot_count(settings.total_duration_seconds)
 			),
+			story_film=story_film,
 			reference_images=image_inputs,
-			reference_media=_get_project_reference_contexts(self),
+			reference_media=reference_contexts,
 			video_style=workflow.workflow_key,
 			generation_mode=settings.generation_mode,
 			global_instructions=settings.global_instructions,
@@ -1300,6 +1337,7 @@ class MediaProject(Document):
 				return self.retry_failed_jobs()
 		if not frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}):
 			from joymedia.services.video_plan_service import apply_video_plan
+			self._use_reference_video_for_story_film()
 			apply_video_plan(self.name, self.generate_video_plan())
 			from joymedia.services.shot_duration_planner import recalculate_shot_durations
 			recalculate_shot_durations(self.name)

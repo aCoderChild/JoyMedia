@@ -66,6 +66,24 @@ def get_workflow_input_contract(workflow):
 	return list(contract.values())
 
 
+def validate_role_input_count(workflow, role, count):
+	"""Throw unless `count` inputs fit the slots a workflow provides for one role."""
+	entry = next(
+		(item for item in get_workflow_input_contract(workflow) if item["role"] == frappe.scrub(role)),
+		None,
+	)
+	if not entry or entry["value_type"] == "File Paths":
+		return
+	minimum, maximum = entry["min_count"], entry["max_count"]
+	if count < minimum or (maximum and count > maximum):
+		expected = minimum if minimum == maximum else f"{minimum}-{maximum or 'n'}"
+		frappe.throw(
+			_("Workflow input role '{0}' expects {1} input(s); found {2}.").format(
+				frappe.scrub(role), expected, count
+			)
+		)
+
+
 def resolve_attempt(attempt_name: str, staged_inputs=None):
 	staged_inputs = staged_inputs or {}
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)

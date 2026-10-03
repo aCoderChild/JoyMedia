@@ -254,6 +254,16 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 		doc.insert(ignore_permissions=True)
 		created_shots.append(doc.name)
 
+	# Each insert re-balances all of the project's shots from a partial storyboard,
+	# which distorts the planned split. Restore the plan and re-balance once.
+	from joymedia.services.shot_duration_planner import recalculate_shot_durations
+
+	for doc in shot_docs:
+		frappe.db.set_value(
+			"Shot", doc.name, "duration_seconds", float(doc.duration_seconds), update_modified=False
+		)
+	recalculate_shot_durations(project.name)
+
 	return created_shots
 
 

@@ -25,6 +25,7 @@ from .video_composer import compose_shot_segments
 from .workflow_profiles import choose_shot_workflow, input_role_for_workflow
 from joymedia.workflow_adapters import get_workflow_adapter
 from .workflow_resolver import (
+	validate_role_input_count,
 	validate_workflow_bindings,
 	validate_workflow_for_execution,
 )
@@ -348,17 +349,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 						shot.name, role
 					)
 				)
-			binding = next(
-				(binding for binding in shot_workflow.bindings
-				 if binding.required and frappe.scrub(binding.required_input_role or "") == role),
-				None,
-			)
-			if binding and binding.value_type != "File Paths" and len(asset_versions) != 1:
-				frappe.throw(
-					_("Workflow binding for role '{0}' accepts exactly one input; found {1}.").format(
-						role, len(asset_versions)
-					)
-				)
+			validate_role_input_count(shot_workflow, role, len(asset_versions))
 
 		segments = plan_generation_segments(
 			shot_row.planned_frame_count,
