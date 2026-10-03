@@ -68,6 +68,74 @@
         </span>
       </button>
 
+      <!-- Activity / generation job center -->
+      <div v-if="production" class="relative">
+        <button
+          type="button"
+          class="text-xs text-ink-muted hover:text-ink-primary px-2.5 py-1 rounded-xl hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer flex items-center gap-1.5 font-medium bg-surface-muted"
+          :class="{ '!border-indigo-500 !text-indigo-400': activityOpen }"
+          :aria-expanded="activityOpen"
+          :title="currentLang === 'vi' ? 'Trạng thái tác vụ' : 'Generation activity'"
+          @click="activityOpen = !activityOpen"
+        >
+          <span>◌</span>
+          <span class="hidden sm:inline">Activity</span>
+          <span
+            v-if="activeJobCount"
+            class="size-4 rounded-full bg-indigo-600 text-white text-[9px] font-mono font-bold flex items-center justify-center"
+          >
+            {{ activeJobCount }}
+          </span>
+        </button>
+
+        <div
+          v-if="activityOpen"
+          class="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-outline-border bg-surface-card shadow-xl p-3 z-30"
+        >
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <div>
+              <div class="text-xs font-bold text-ink-primary">
+                {{ currentLang === 'vi' ? 'Hoạt động tạo video' : 'Generation activity' }}
+              </div>
+              <div class="text-[10px] text-ink-muted">
+                {{ production.completed_tasks || 0 }}/{{ production.total_tasks || 0 }} shots complete
+              </div>
+            </div>
+            <span class="text-[10px] font-semibold" :class="activityStatusClass">{{ production.status }}</span>
+          </div>
+
+          <div class="h-1.5 rounded-full bg-surface-muted overflow-hidden mb-3">
+            <div class="h-full rounded-full bg-indigo-500 transition-all" :style="{ width: `${Number(production.progress || 0)}%` }" />
+          </div>
+
+          <div v-if="production.shots?.length" class="space-y-1.5 max-h-56 overflow-y-auto">
+            <div
+              v-for="shot in production.shots"
+              :key="shot.shot"
+              class="flex items-center gap-2 rounded-lg px-2 py-1.5 bg-surface-muted/50"
+            >
+              <span class="size-4 shrink-0 rounded-full flex items-center justify-center text-[10px]" :class="shotStatusClass(shot.status)">
+                {{ shotStatusGlyph(shot.status) }}
+              </span>
+              <span class="min-w-0 flex-1 truncate text-[11px] text-ink-secondary">
+                {{ shot.shot_name || `Shot ${shot.shot_number || ''}` }}
+              </span>
+              <span class="text-[10px] text-ink-muted shrink-0">{{ Math.round(Number(shot.progress || 0)) }}%</span>
+            </div>
+          </div>
+          <div v-else class="text-[11px] text-ink-muted">No shot activity yet.</div>
+
+          <button
+            v-if="production.status === 'Failed'"
+            type="button"
+            class="mt-3 w-full rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold py-1.5 cursor-pointer"
+            @click="$emit('retryGeneration'); activityOpen = false"
+          >
+            {{ currentLang === 'vi' ? 'Thử lại cảnh lỗi' : 'Retry failed shots' }}
+          </button>
+        </div>
+      </div>
+
       <!-- Export Button (when timeline / video is ready) -->
       <button
         v-if="timelineReady"
@@ -123,6 +191,7 @@ const props = defineProps({
   currentOutputAssetVersion: { type: String, default: "" },
   mediaDrawerOpen: { type: Boolean, default: false },
   projectAssetsCount: { type: Number, default: 0 },
+  production: { type: Object, default: null },
   currentLang: { type: String, default: "en" },
   user: { type: String, default: "" },
 });
@@ -134,9 +203,11 @@ const emit = defineEmits([
   "toggleLang",
   "openSettings",
   "exportTimeline",
+  "retryGeneration",
 ]);
 
 const isEditingName = ref(false);
+const activityOpen = ref(false);
 const nameDraft = ref("");
 const titleInputRef = ref(null);
 
@@ -183,4 +254,29 @@ const statusBadgeClass = computed(() => {
   if (s === "Needs Attention") return "bg-rose-500/10 text-rose-400 border-rose-500/30";
   return "bg-surface-muted text-ink-muted border-outline-border";
 });
+
+const activeJobCount = computed(() => {
+  return (props.production?.shots || []).filter((shot) => ["Generating", "Pending"].includes(shot.status)).length;
+});
+
+const activityStatusClass = computed(() => {
+  if (props.production?.status === "Completed") return "text-emerald-400";
+  if (props.production?.status === "Failed") return "text-rose-400";
+  if (["Queued", "Running"].includes(props.production?.status)) return "text-indigo-400";
+  return "text-ink-muted";
+});
+
+function shotStatusGlyph(status) {
+  if (status === "Completed") return "✓";
+  if (status === "Failed") return "!";
+  if (status === "Generating") return "•";
+  return "·";
+}
+
+function shotStatusClass(status) {
+  if (status === "Completed") return "bg-emerald-500/15 text-emerald-400";
+  if (status === "Failed") return "bg-rose-500/15 text-rose-400";
+  if (status === "Generating") return "bg-indigo-500/15 text-indigo-400 animate-pulse";
+  return "bg-surface-muted text-ink-muted";
+}
 </script>

@@ -353,6 +353,7 @@ def get_project_workspace(name):
 	production = _get_latest_project_generation_run(project.name)
 	storyboard = _storyboard_payload(project)
 	if production:
+		production["shots"] = _aggregate_shot_progress(production.name)
 		_, current_snapshot_hash = build_project_snapshot(project)
 		production["is_outdated"] = bool(
 			production.get("project_snapshot_hash") and production.get("project_snapshot_hash") != current_snapshot_hash

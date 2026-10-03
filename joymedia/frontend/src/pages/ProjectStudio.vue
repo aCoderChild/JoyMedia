@@ -12,6 +12,7 @@
       :current-output-asset-version="currentOutputAssetVersion"
       :media-drawer-open="mediaDrawerOpen"
       :project-assets-count="projectAssets.length"
+      :production="currentRun"
       :current-lang="currentLang"
       :user="user"
       @go-back="router.push('/campaigns')"
@@ -20,6 +21,7 @@
       @toggle-lang="toggleLang"
       @open-settings="showSettings = true"
       @export-timeline="exportTimeline"
+      @retry-generation="handleGenerationRetry"
     />
 
     <!-- 2. Studio Workspace Body: Media Drawer + Canvas + Contextual Inspector -->
