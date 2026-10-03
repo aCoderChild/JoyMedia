@@ -34,6 +34,7 @@ class TimelineClip(Document):
 			self.audio_role = "SFX"
 		if self.track_type == "Video" and self.linked_video_clip:
 			self.linked_video_clip = None
+		_validate_video_transition(self)
 
 	def after_insert(self):
 		"""Preserve storyboard order while generated shots arrive asynchronously.
@@ -49,6 +50,42 @@ class TimelineClip(Document):
 		if self.track_type != "Video" or not self.shot or not self.media_project:
 			return
 		_restore_pristine_generated_shot_order(self.media_project)
+
+
+def _validate_video_transition(clip):
+	"""Keep transition semantics on the visual track, never the interleaved audio rows."""
+	if clip.track_type != "Video" or (clip.transition_to_next or "Cut") == "Cut":
+		return
+	if not clip.media_project:
+		return
+
+	filters = {
+		"media_project": clip.media_project,
+		"track_type": "Video",
+		"enabled": 1,
+		"clip_order": [">", int(clip.clip_order or 0)],
+	}
+	if clip.name:
+		filters["name"] = ["!=", clip.name]
+	next_clip = frappe.db.get_value(
+		"Timeline Clip",
+		filters,
+		["source_in_frame", "source_out_frame"],
+		as_dict=True,
+		order_by="clip_order asc, creation asc",
+	)
+	if not next_clip:
+		clip.transition_to_next = "Cut"
+		clip.transition_frames = 0
+		return
+
+	current_frames = max(0, int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0))
+	next_frames = max(0, int(next_clip.source_out_frame or 0) - int(next_clip.source_in_frame or 0))
+	max_transition = max(0, min(current_frames, next_frames) - 1)
+	if int(clip.transition_frames or 0) < 1:
+		frappe.throw(_("Dissolve and Fade transitions must be at least 1 frame."))
+	if int(clip.transition_frames or 0) > max_transition:
+		frappe.throw(_("Transition is longer than one of its neighboring video clips."))
 
 
 def _align_source_audio_to_video(audio_clip):
