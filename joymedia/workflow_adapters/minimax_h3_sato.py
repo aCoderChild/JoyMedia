@@ -7,6 +7,7 @@ class MiniMaxH3SatoGenerationAdapter(GenericWorkflowAdapter):
 	continuation_workflow_key = "h3_sato_continuation"
 	cumulative_segment_output = True
 	primary_output_node_keys = ("254", "374")
+	continuation_overlap_frames = 22
 
 	def extract_execution_metadata(self, workflow_data):
 		return _extract_metadata(workflow_data, "270")
@@ -40,6 +41,7 @@ class MiniMaxH3SatoContinuationAdapter(GenericWorkflowAdapter):
 
 	cumulative_segment_output = True
 	primary_output_node_keys = ("374", "254")
+	continuation_overlap_frames = 22
 
 	def extract_execution_metadata(self, workflow_data):
 		return _extract_metadata(workflow_data, "328")

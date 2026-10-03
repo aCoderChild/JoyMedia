@@ -176,6 +176,7 @@ def prepare_run(run_name: str):
 			segments = plan_generation_segments(
 				shot.get("planned_frame_count"),
 				max_segment_frames=shot_workflow.frame_count,
+				continuation_overlap_frames=int(getattr(shot_adapter, "continuation_overlap_frames", 1)),
 			)
 			previous_segment_job = None
 			for segment in segments:
@@ -362,6 +363,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 		segments = plan_generation_segments(
 			shot_row.planned_frame_count,
 			max_segment_frames=shot_workflow.frame_count,
+			continuation_overlap_frames=int(getattr(shot_adapter, "continuation_overlap_frames", 1)),
 		)
 		if not segments:
 			frappe.throw(_("Shot {0} has no generation segments.").format(shot.name))

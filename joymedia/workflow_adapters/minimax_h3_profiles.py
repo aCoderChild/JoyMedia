@@ -40,6 +40,7 @@ class MiniMaxH3ReferenceToVideoAdapter(GenericWorkflowAdapter):
 	continuation_workflow_key = "h3_sato_continuation"
 	cumulative_segment_output = True
 	primary_output_node_keys = ("92",)
+	continuation_overlap_frames = 22
 
 	def extract_execution_metadata(self, workflow_data):
 		return dict(H3_PROFILE_DEFAULTS)

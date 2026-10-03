@@ -34,6 +34,24 @@ class TestGenerationSegmentPlanner(TestCase):
 			plan_generation_segments(144),
 		)
 
+	def test_plans_sato_segments_with_context_overlap(self):
+		self.assertEqual(
+			[
+				{"segment_index": 1, "segment_frame_count": 124},
+				{"segment_index": 2, "segment_frame_count": 23},
+			],
+			plan_generation_segments(125, continuation_overlap_frames=22),
+		)
+
+		self.assertEqual(
+			[
+				{"segment_index": 1, "segment_frame_count": 124},
+				{"segment_index": 2, "segment_frame_count": 124},
+				{"segment_index": 3, "segment_frame_count": 36},
+			],
+			plan_generation_segments(240, continuation_overlap_frames=22),
+		)
+
 	def test_plans_long_shot_with_continuations(self):
 		self.assertEqual(
 			[

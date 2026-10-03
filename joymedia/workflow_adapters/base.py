@@ -10,6 +10,7 @@ class GenericWorkflowAdapter:
 
 	cumulative_segment_output = False
 	primary_output_node_keys = ()
+	continuation_overlap_frames = 1
 
 	def extract_execution_metadata(self, workflow_data):
 		return {}

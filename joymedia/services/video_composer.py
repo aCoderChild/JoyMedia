@@ -168,14 +168,41 @@ def promote_cumulative_shot_output(generation_run_name, shot_name):
 			return None
 		project = frappe.get_doc("Media Project", shot.media_project)
 		shot_asset = _get_or_create_shot_output_asset(shot, project.name)
-		file_doc = _promote_artifact_file(artifact, shot_asset, f"{shot.name}.mp4")
 		profile = _get_delivery_profile(project, generation_run_name)
+		expected_frames = _shot_frame_count(shot, profile)
+		try:
+			with tempfile.TemporaryDirectory(prefix=f"joymedia-cumulative-{shot.name}-") as temp_dir:
+				normalized_path = Path(temp_dir) / f"{shot.name}.mp4"
+				_normalize_segment(
+					_get_artifact_path(artifact),
+					normalized_path,
+					profile,
+					expected_frames,
+					drop_first=False,
+					preserve_audio=True,
+				)
+				_validate_normalized_video(normalized_path, profile, expected_frames=expected_frames)
+				video_bytes = normalized_path.read_bytes()
+				video_duration = _get_video_duration(normalized_path)
+		except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+			frappe.throw(_("Unable to normalize cumulative Shot output: {0}").format(_command_error(exc)))
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"{shot.name}.mp4",
+				"content": video_bytes,
+				"is_private": 1,
+				"attached_to_doctype": "Media Asset",
+				"attached_to_name": shot_asset.name,
+			}
+		).insert(ignore_permissions=True)
 		asset_version = frappe.get_doc(
 			{
 				"doctype": "Asset Version",
 				"media_asset": shot_asset.name,
 				"file": file_doc.file_url,
 				"source": "Composed",
+				"duration_seconds": video_duration,
 				"fps": profile["fps"],
 			}
 		).insert(ignore_permissions=True)
@@ -402,7 +429,15 @@ def _normalize_shot(source_path, normalized_path, profile, planned_frames):
 	)
 
 
-def _normalize_segment(source_path, normalized_path, profile, generated_frames, *, drop_first):
+def _normalize_segment(
+	source_path,
+	normalized_path,
+	profile,
+	generated_frames,
+	*,
+	drop_first,
+	preserve_audio=False,
+):
 	"""Normalize a generated segment and remove its continuation overlap frame."""
 	effective_frames = generated_frames - 1 if drop_first else generated_frames
 	video_filter = f"fps={profile['fps']:g},"
@@ -414,17 +449,22 @@ def _normalize_segment(source_path, normalized_path, profile, generated_frames, 
 		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=decrease,"
 		f"pad={profile['width']}:{profile['height']}:(ow-iw)/2:(oh-ih)/2"
 	)
-	_run_ffmpeg(
+	command = [
+		"ffmpeg",
+		"-y",
+		"-i",
+		str(source_path),
+		"-map",
+		"0:v:0",
+		"-vf",
+		video_filter,
+	]
+	if preserve_audio:
+		command.extend(["-map", "0:a?", "-c:a", "aac"])
+	else:
+		command.append("-an")
+	command.extend(
 		[
-			"ffmpeg",
-			"-y",
-			"-i",
-			str(source_path),
-			"-map",
-			"0:v:0",
-			"-vf",
-			video_filter,
-			"-an",
 			"-c:v",
 			"libx264",
 			"-profile:v",
@@ -436,6 +476,7 @@ def _normalize_segment(source_path, normalized_path, profile, generated_frames, 
 			str(normalized_path),
 		]
 	)
+	_run_ffmpeg(command)
 
 
 def _get_asset_version_path(asset_version_name):
