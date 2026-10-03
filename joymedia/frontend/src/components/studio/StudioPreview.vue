@@ -236,10 +236,11 @@ function onTimeUpdate(event) {
 }
 
 function onPause(event) {
-  const video = event?.target;
-  if (props.studioMode === "edit" && video?.ended && props.isPlaying) {
-    return;
-  }
+  // Timeline/Edit playback is owned by the global timeline clock, not by the
+  // lifecycle of one physical Shot file. A clip reaching its end or being
+  // replaced by the next clip can fire a native pause event while the global
+  // timeline is intentionally still playing. Ignore that internal pause.
+  if (props.studioMode === "edit" && props.isPlaying) return;
   emit("pause", event);
 }
 
