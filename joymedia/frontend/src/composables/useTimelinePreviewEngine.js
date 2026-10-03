@@ -96,9 +96,9 @@ export function useTimelinePreviewEngine({
     const clips = getRefValue(audioClips) || [];
     const activeNames = new Set();
 
-	for (const clip of clips) {
-		if (!clip.enabled) continue;
-		const audio = ensureAudioElement(clip);
+    for (const clip of clips) {
+      if (!clip.enabled) continue;
+      const audio = ensureAudioElement(clip);
       if (!audio) continue;
       activeNames.add(clip.name);
 
@@ -147,10 +147,10 @@ export function useTimelinePreviewEngine({
     for (const audio of audioElements.values()) audio.pause();
   }
 
-	function activeAudioClipsAtFrame(frame) {
-		return (getRefValue(audioClips) || []).filter((clip) => {
-			if (!clip.enabled) return false;
-			const startFrame = Number(clip.timeline_start_frame || 0);
+  function activeAudioClipsAtFrame(frame) {
+    return (getRefValue(audioClips) || []).filter((clip) => {
+      if (!clip.enabled) return false;
+      const startFrame = Number(clip.timeline_start_frame || 0);
       const endFrame = Number(clip.timeline_end_frame || startFrame);
       return frame >= startFrame && frame < endFrame;
     });
@@ -186,22 +186,47 @@ export function useTimelinePreviewEngine({
 
   function syncTimelineVideo(frame) {
     const video = getVideoElement(getVideo);
-    if (!video || getRefValue(studioMode) !== "edit" || video.readyState < 1) return;
-    const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
+    if (!video || getRefValue(studioMode) !== "edit") return;
+
     const targetFrame = clampToRenderFrame(frame);
     const clip = activeVideoClipAtFrame(targetFrame);
-    const sourceFrame = clip
-      ? Number(clip.source_in_frame || 0) + targetFrame - Number(clip.timeline_start_frame || 0)
-      : targetFrame;
-    const targetTime = sourceFrame / currentFps;
-    if (Number.isFinite(targetTime) && Math.abs(Number(video.currentTime || 0) - targetTime) > 0.08) {
-      video.currentTime = targetTime;
+    if (!clip) {
+      video.pause();
+      return;
     }
+
+    const seekCurrentVideo = () => {
+      const currentVideo = getVideoElement(getVideo);
+      if (!currentVideo || getRefValue(studioMode) !== "edit" || currentVideo.readyState < 1) return;
+
+      const currentFrame = clampToRenderFrame(getRefValue(playheadFrame));
+      const currentClip = activeVideoClipAtFrame(currentFrame);
+      if (!currentClip) return;
+
+      const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
+      const sourceFrame =
+        Number(currentClip.source_in_frame || 0) +
+        currentFrame -
+        Number(currentClip.timeline_start_frame || 0);
+      const targetTime = sourceFrame / currentFps;
+      if (
+        Number.isFinite(targetTime) &&
+        Math.abs(Number(currentVideo.currentTime || 0) - targetTime) > 0.08
+      ) {
+        currentVideo.currentTime = targetTime;
+      }
+    };
+
+    if (video.readyState < 1) {
+      video.addEventListener("loadedmetadata", seekCurrentVideo, { once: true });
+      return;
+    }
+    seekCurrentVideo();
   }
 
   function tickTimeline(now) {
     animationFrame = null;
-    if (getRefValue(studioMode) !== "edit" || getRefValue(isMuted) || !getRefValue(isPlaying)) return;
+    if (getRefValue(studioMode) !== "edit" || !getRefValue(isPlaying)) return;
     const currentFps = Math.max(1, Number(getRefValue(fps) || 24));
     const totalFrames = Math.max(
       0,
@@ -248,26 +273,29 @@ export function useTimelinePreviewEngine({
     pauseAll();
   }
 
-  watch([isPlaying, isMuted, studioMode], ([playing, muted, mode]) => {
-    if (playing && !muted && mode === "edit") start();
+  watch([isPlaying, studioMode], ([playing, mode]) => {
+    if (playing && mode === "edit") start();
     else stop();
   }, { immediate: true });
 
+  watch(() => getRefValue(isMuted), () => {
+    if (getRefValue(studioMode) === "edit") syncAtFrame(getRefValue(playheadFrame));
+  });
+
   watch(() => getRefValue(audioClips), () => {
-    if (!getRefValue(isPlaying)) syncAtFrame(0);
+    if (!getRefValue(isPlaying)) syncAtFrame(getRefValue(playheadFrame));
   }, { deep: true });
+
+  watch(() => getRefValue(videoClips), () => {
+    if (getRefValue(studioMode) === "edit") syncTimelineVideo(getRefValue(playheadFrame));
+  }, { deep: true, flush: "post" });
 
   watch(() => getRefValue(playheadFrame), (frame) => {
     if (getRefValue(studioMode) === "edit" && !getRefValue(isPlaying)) {
       syncAtFrame(frame);
       syncTimelineVideo(frame);
     }
-  });
-
-  watch(() => getRefValue(isPlaying), (playing) => {
-    if (playing) start();
-    else pauseAll();
-  });
+  }, { flush: "post" });
 
   onBeforeUnmount(() => {
     stop();
@@ -277,5 +305,5 @@ export function useTimelinePreviewEngine({
     audioElements.clear();
   });
 
-  return { syncAtFrame, playAtFrame, pauseAll };
+  return { syncAtFrame, playAtFrame, pauseAll, syncTimelineVideo };
 }
