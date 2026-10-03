@@ -71,7 +71,7 @@
         @loadedmetadata="onLoadedMetadata"
         @timeupdate="onTimeUpdate"
         @play="$emit('play', $event)"
-        @pause="$emit('pause', $event)"
+        @pause="onPause"
         @ended="onEnded"
         @error="onError"
       />
@@ -233,6 +233,14 @@ function onTimeUpdate(event) {
     duration: event.target.duration,
     event,
   });
+}
+
+function onPause(event) {
+  const video = event?.target;
+  if (props.studioMode === "edit" && video?.ended && props.isPlaying) {
+    return;
+  }
+  emit("pause", event);
 }
 
 function onEnded(event) {

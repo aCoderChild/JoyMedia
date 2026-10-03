@@ -1085,7 +1085,11 @@ class MediaProject(Document):
 			video_idea=_meaningful_project_value(self.video_idea, "Create a premium cinematic product showcase."),
 			total_video_duration=settings.total_duration_seconds,
 			target_fps=workflow.output_fps,
-			shot_count=_planning_shot_count(settings.total_duration_seconds),
+			shot_count=(
+				len(image_inputs)
+				if settings.generation_mode == "Multi-shot"
+				else _planning_shot_count(settings.total_duration_seconds)
+			),
 			reference_images=image_inputs,
 			reference_media=_get_project_reference_contexts(self),
 			video_style=workflow.workflow_key,
