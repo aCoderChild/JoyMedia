@@ -73,6 +73,40 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertNotIn("outputs", workspace)
 		self.assertEqual(workspace["assets"][0]["asset_version"], version.name)
 
+	@patch("joymedia.joymedia.doctype.media_project.media_project._get_asset_version_file_url")
+	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.db.get_value")
+	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.get_all")
+	def test_shot_progress_is_weighted_by_segment_frames(self, get_all, get_value, get_file_url):
+		from joymedia.joymedia.doctype.media_project.media_project import _aggregate_shot_progress
+
+		get_all.return_value = [
+			frappe._dict(
+				shot="SHOT-00001",
+				status="Completed",
+				progress=100,
+				error_summary=None,
+				segment_frame_count=120,
+			),
+			frappe._dict(
+				shot="SHOT-00001",
+				status="Running",
+				progress=0,
+				error_summary=None,
+				segment_frame_count=60,
+			),
+		]
+		get_value.return_value = frappe._dict(
+			shot_number=1,
+			shot_name="Shot 1",
+			selected_output_asset_version=None,
+		)
+		get_file_url.return_value = None
+
+		result = _aggregate_shot_progress("RUN-00001")
+
+		self.assertEqual(result[0]["status"], "Generating")
+		self.assertAlmostEqual(result[0]["progress"], 66.666666, places=4)
+
 	def test_shot_can_preserve_multiple_references_with_one_role(self):
 		from joymedia.services.video_plan_service import apply_video_plan
 
