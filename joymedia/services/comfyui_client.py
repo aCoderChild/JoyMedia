@@ -175,8 +175,13 @@ def download_output(
 	return response.content
 
 
-def run_workflow_to_bytes(workflow: dict, output_node: str, *, timeout: float = 3600, base_url: str | None = None) -> bytes:
-	"""Run one ComfyUI job to completion and return the first file saved by output_node."""
+def run_workflow_to_bytes(
+	workflow: dict, output_node: str, *, timeout: float = 3600, forget: bool = False, base_url: str | None = None
+) -> bytes:
+	"""Run one ComfyUI job to completion and return the first file saved by output_node.
+
+	forget removes the job from the shared ComfyUI history once its output is downloaded.
+	"""
 	prompt_id = submit_workflow(workflow, base_url=base_url)["prompt_id"]
 	deadline = time.monotonic() + timeout
 	while time.monotonic() < deadline:
@@ -192,12 +197,28 @@ def run_workflow_to_bytes(workflow: dict, output_node: str, *, timeout: float = 
 				frappe.throw(_("ComfyUI job failed: {0}").format("; ".join(errors) or prompt_id))
 			saved = (history.get("outputs") or {}).get(output_node, {})
 			for item in saved.get("images", []) + saved.get("videos", []) + saved.get("gifs", []):
-				return download_output(item["filename"], item.get("subfolder", ""), item.get("type", "output"), base_url=base_url)
+				content = download_output(item["filename"], item.get("subfolder", ""), item.get("type", "output"), base_url=base_url)
+				if forget:
+					delete_history([prompt_id], base_url=base_url)
+				return content
 			if status.get("completed"):
 				frappe.throw(_("ComfyUI job {0} produced no output.").format(prompt_id))
 		time.sleep(5)
 	interrupt(prompt_id=prompt_id, base_url=base_url)
 	frappe.throw(_("ComfyUI job {0} timed out.").format(prompt_id))
+
+
+def delete_history(prompt_ids: list[str], *, base_url: str | None = None):
+	try:
+		response = requests.post(
+			f"{get_base_url(base_url)}/history",
+			json={"delete": prompt_ids},
+			auth=get_request_auth(),
+			timeout=DEFAULT_TIMEOUT,
+		)
+	except requests.ConnectionError as exc:
+		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
+	_raise_for_comfyui_error(response)
 
 
 def probe_output(filename: str, subfolder: str = "", file_type: str = "output", *, base_url: str | None = None) -> bool:

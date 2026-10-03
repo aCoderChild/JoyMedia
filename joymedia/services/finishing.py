@@ -115,11 +115,13 @@ def _finish_chunk(chunk_path, keep_frames):
 				"images": ["trim", 0], "frame_rate": float(STUDIO_FPS), "loop_count": 0,
 				"filename_prefix": f"joymedia/finish/{frappe.generate_hash(length=10)}",
 				"format": "video/h264-mp4", "pix_fmt": "yuv420p", "crf": 12,
-				"save_metadata": False, "pingpong": False, "save_output": True,
+				# Chunks are intermediate: ComfyUI's temp folder is cleared on restart,
+				# while its output folder would keep ~220 MB per Studio export.
+				"save_metadata": False, "pingpong": False, "save_output": False,
 			},
 		},
 	}
-	return run_workflow_to_bytes(workflow, OUTPUT_NODE, timeout=CHUNK_TIMEOUT_SECONDS)
+	return run_workflow_to_bytes(workflow, OUTPUT_NODE, timeout=CHUNK_TIMEOUT_SECONDS, forget=True)
 
 
 def _join_chunks(chunk_paths, output_path, expected_frames, temp_path):

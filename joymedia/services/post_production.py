@@ -365,7 +365,7 @@ def _i2v_workflow(first_frame, prompt, seconds, last_frame=None, megapixels=None
 def _render_video(workflow):
 	from joymedia.services.comfyui_client import run_workflow_to_bytes
 
-	return run_workflow_to_bytes(workflow, I2V_SAVE_NODE, timeout=COMFYUI_JOB_TIMEOUT_SECONDS)
+	return run_workflow_to_bytes(workflow, I2V_SAVE_NODE, timeout=COMFYUI_JOB_TIMEOUT_SECONDS, forget=True)
 
 
 def _extract_frame(video_path, frame_index, output_path):
