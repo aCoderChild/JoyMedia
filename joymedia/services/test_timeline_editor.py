@@ -9,6 +9,8 @@ from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.timeline_editor import (
 	duplicate_timeline_clip,
+	get_project_timeline_export_status,
+	queue_project_timeline_export,
 	add_timeline_audio_clip,
 	delete_timeline_clip,
 	fit_audio_clip_to_full_video,
@@ -97,6 +99,28 @@ class TestTimelineEditor(FrappeTestCase):
 	def tearDown(self):
 		frappe.db.rollback()
 		super().tearDown()
+
+	@patch("joymedia.services.timeline_editor.frappe.db.commit")
+	@patch("joymedia.services.timeline_editor.enqueue_render")
+	@patch("joymedia.services.timeline_editor.is_render_alive", return_value=False)
+	def test_export_whose_job_died_is_failed_and_can_be_exported_again(self, alive, enqueue, commit):
+		self.project.db_set("export_status", "Running")
+
+		self.assertEqual("Failed", get_project_timeline_export_status(self.project.name)["export_status"])
+		self.assertEqual("Queued", queue_project_timeline_export(self.project.name)["export_status"])
+		enqueue.assert_called_once()
+
+	@patch("joymedia.services.timeline_editor.frappe.db.commit")
+	@patch("joymedia.services.timeline_editor.enqueue_render")
+	@patch("joymedia.services.timeline_editor.is_render_alive", return_value=True)
+	def test_export_waits_for_running_export_and_finishing(self, alive, enqueue, commit):
+		self.project.db_set("export_status", "Running")
+		self.assertEqual("Running", queue_project_timeline_export(self.project.name)["export_status"])
+
+		self.project.db_set({"export_status": "Completed", "post_production_status": "Running"})
+		with self.assertRaises(frappe.ValidationError):
+			queue_project_timeline_export(self.project.name)
+		enqueue.assert_not_called()
 
 	def test_trim_updates_range_and_invalidates_project_output(self):
 		frappe.db.set_value("Media Project", self.project.name, "current_output_asset_version", self.version_1.name)

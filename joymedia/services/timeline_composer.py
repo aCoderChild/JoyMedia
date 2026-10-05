@@ -156,6 +156,9 @@ def compose_project_timeline_internal(project_name: str):
 		stderr = getattr(exc, "stderr", None)
 		frappe.throw(_("Unable to render timeline: {0}").format((stderr or str(exc)).strip()))
 
+	# The render took minutes; MariaDB's snapshot isolation rejects writes to rows
+	# (such as naming series) that other workers changed since this transaction began.
+	frappe.db.commit()
 	output_asset = _get_or_create_final_asset(project)
 	file_doc = frappe.get_doc(
 		{

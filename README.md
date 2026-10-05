@@ -44,3 +44,16 @@ JoyMedia is an internal product-video workspace. Administrators invite staff
 accounts and grant the `JoyMedia User` role; self-registration is disabled by
 default. To enable the custom signup flow intentionally, set
 `joymedia_allow_signup = 1` in the site configuration.
+
+### Render worker
+
+Export finishing and "Finish film" run for up to an hour on the GPU. Give them
+their own worker so they never hold the worker that starts generation runs:
+
+```bash
+bench set-config -g workers '{"joymedia_render": {"timeout": 10800}}' --parse
+bench worker --queue joymedia_render          # dedicated render worker
+bench worker --queue short,default,long       # everything else
+```
+
+Without a `joymedia_render` worker these jobs fall back to the `long` queue.

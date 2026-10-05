@@ -1387,7 +1387,11 @@ class MediaProject(Document):
 		if not frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}):
 			from joymedia.services.video_plan_service import apply_video_plan
 			self._use_reference_video_for_story_film()
-			apply_video_plan(self.name, self.generate_video_plan())
+			plan = self.generate_video_plan()
+			# Planning takes minutes; start a fresh transaction so MariaDB's snapshot
+			# isolation does not reject writes to rows changed meanwhile.
+			frappe.db.commit()
+			apply_video_plan(self.name, plan)
 			from joymedia.services.shot_duration_planner import recalculate_shot_durations
 			recalculate_shot_durations(self.name)
 			frappe.db.commit()

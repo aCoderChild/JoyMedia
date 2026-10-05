@@ -172,7 +172,7 @@
         :class="{
           '!bg-emerald-600 hover:!bg-emerald-500': !hasUnexportedEdits && !isExporting && currentOutputAssetVersion
         }"
-        :disabled="isExporting"
+        :disabled="isExporting || isFinishing"
         @click="$emit('exportTimeline')"
       >
         <span v-if="isExporting" class="lucide-refresh-cw size-3 animate-spin" />

@@ -279,3 +279,19 @@ class TestGenerationOrchestrator(FrappeTestCase):
 	def test_generation_finalization_endpoint_is_removed(self):
 		with self.assertRaises(frappe.ValidationError):
 			generation_orchestrator.finalize_run("RUN-00001")
+
+	@patch("joymedia.services.generation_orchestrator._finish_film")
+	@patch("joymedia.services.generation_orchestrator.sync_media_project_status_for_run")
+	@patch("joymedia.services.generation_orchestrator._refresh_run_counters")
+	@patch("joymedia.services.generation_orchestrator._create_retry_attempt", return_value=False)
+	@patch("joymedia.services.generation_orchestrator._has_submittable_work", return_value=False)
+	@patch("joymedia.services.generation_orchestrator._finalize_completed_shots")
+	@patch("joymedia.services.generation_orchestrator._get_run_job_names", return_value=[])
+	def test_run_completion_finishes_the_film_once(self, job_names, finalize, submittable, retry, refresh_counters, sync_status, finish_film):
+		run = frappe._dict(name="RUN-00001", media_project="PRJ-00001", status="Running")
+		refresh_counters.side_effect = lambda run: run.update(status="Completed")
+
+		generation_orchestrator._advance_run(run)
+		generation_orchestrator._advance_run(run)
+
+		finish_film.assert_called_once_with("PRJ-00001")

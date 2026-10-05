@@ -11,6 +11,8 @@ audio. This step rebuilds the edit timeline from the takes and then
 """
 
 import copy
+import hashlib
+import math
 import re
 import subprocess
 import tempfile
@@ -20,6 +22,7 @@ import frappe
 from frappe import _
 
 from joymedia.services.film_director import PERSON_PATTERN
+from joymedia.services.render_queue import enqueue_render, is_render_alive
 
 # 56 frames (2.3 s) sits on MiniMax H3's 17k+5 frame grid.
 BRIDGE_OVERLAP_FRAMES = 28
@@ -27,6 +30,9 @@ BRIDGE_FRAMES = BRIDGE_OVERLAP_FRAMES * 2
 # A take keeps at least this much of itself after both of its bridges.
 MIN_TAKE_REMAINDER_FRAMES = 24
 SOUNDTRACK_MEGAPIXELS = 0.25
+# A 61 s render ran over 20 minutes and stalled the shared ComfyUI server; 31 s is proven.
+SOUNDTRACK_MAX_RENDER_SECONDS = 31
+SOUNDTRACK_LOOP_CROSSFADE_SECONDS = 2
 SOUNDTRACK_FADE_IN_FRAMES = 12
 SOUNDTRACK_FADE_OUT_FRAMES = 48
 COMFYUI_JOB_TIMEOUT_SECONDS = 3600
@@ -47,19 +53,22 @@ I2V_LAST_FRAME_NODE = "joymedia_last_frame"
 def queue_post_production(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
-	if project.post_production_status in ("Queued", "Running"):
-		return {"status": project.post_production_status}
-	if not _shot_video_clips(project.name, create=True):
+	return queue_post_production_internal(project.name)
+
+
+def queue_post_production_internal(project_name):
+	"""Queue Finish film for a project whose caller is already authorized."""
+	status = frappe.db.get_value("Media Project", project_name, "post_production_status")
+	if status in ("Queued", "Running") and is_render_alive(_job_id(project_name)):
+		return {"status": status}
+	if not _shot_video_clips(project_name, create=True):
 		frappe.throw(_("Generate the scenes before finishing the film."))
-	_set_status(project.name, "Queued", step="", error="")
-	frappe.enqueue(
+	_set_status(project_name, "Queued", step="", error="")
+	enqueue_render(
 		"joymedia.services.post_production.run_post_production",
-		queue="long",
+		_job_id(project_name),
 		timeout=COMFYUI_JOB_TIMEOUT_SECONDS * 3,
-		project_name=project.name,
-		enqueue_after_commit=True,
-		job_id=f"joymedia:post_production:{project.name}",
-		deduplicate=True,
+		project_name=project_name,
 	)
 	frappe.db.commit()
 	return {"status": "Queued"}
@@ -69,11 +78,18 @@ def queue_post_production(project_name: str):
 def get_post_production_status(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_read_access()
+	if project.post_production_status in ("Queued", "Running") and not is_render_alive(_job_id(project.name)):
+		_set_status(project.name, "Failed", step="", error=_("Finishing stopped unexpectedly. Please try again."))
+		project.reload()
 	return {
 		"status": project.post_production_status or "Idle",
 		"step": project.post_production_step or "",
 		"error": project.post_production_error or "",
 	}
+
+
+def _job_id(project_name):
+	return f"joymedia:post_production:{project_name}"
 
 
 def run_post_production(project_name: str):
@@ -263,10 +279,7 @@ def _shot_place(shot_name):
 
 
 def _add_soundtrack(project_name):
-	"""Render one soundtrack for the whole timeline and replace the per-take audio with it."""
-	from joymedia.services.timeline_composer import _asset_version_path
-	from joymedia.services.timeline_editor import _ensure_source_audio_clips, _timeline_clip_rows
-
+	"""Lay one soundtrack under the whole timeline, replacing the per-take audio."""
 	project = frappe.get_doc("Media Project", project_name)
 	clips = _shot_video_clips(project_name)
 	total_frames = max(
@@ -274,30 +287,13 @@ def _add_soundtrack(project_name):
 		for clip in clips
 	)
 	music = (project.soundtrack_prompt or "").strip() or DEFAULT_SOUNDTRACK_MUSIC
-	with tempfile.TemporaryDirectory(prefix="joymedia-soundtrack-") as temp_dir:
-		temp_path = Path(temp_dir)
-		first = temp_path / "first.png"
-		_extract_frame(_asset_version_path(clips[0].source_asset_version), 0, first)
-		workflow = _i2v_workflow(
-			first,
-			"A calm cinematic scene with a slow camera drift. "
-			f"Audio: {music}. Continuous instrumental music only, no speech, no singing, no sound effects.",
-			# One extra second so the music never ends before the picture.
-			total_frames / 24 + 1,
-			megapixels=SOUNDTRACK_MEGAPIXELS,
-		)
-		video_path = temp_path / "soundtrack.mp4"
-		video_path.write_bytes(_render_video(workflow))
-		audio_path = temp_path / "soundtrack.m4a"
-		subprocess.run(
-			["ffmpeg", "-v", "error", "-y", "-i", str(video_path), "-map", "0:a:0", "-vn",
-			 "-c:a", "aac", "-b:a", "192k", str(audio_path)],
-			check=True, capture_output=True, timeout=300,
-		)
-		audio_version = _save_output(
-			project_name, f"{project_name} AI Soundtrack", "Audio",
-			f"{project_name}-soundtrack.m4a", audio_path.read_bytes(),
-		)
+	# Finishing again (e.g. after regenerating one scene) keeps the same music.
+	asset_name = f"{project_name} AI Soundtrack {total_frames}f {hashlib.sha256(music.encode()).hexdigest()[:8]}"
+	audio_version = _latest_version_of(project_name, asset_name) or _render_soundtrack(
+		project_name, asset_name, clips[0], music, total_frames
+	)
+
+	from joymedia.services.timeline_editor import _ensure_source_audio_clips, _timeline_clip_rows
 
 	# Bridges bring their own source audio; backfill it so it can be switched off too.
 	_ensure_source_audio_clips(project, _timeline_clip_rows(project_name))
@@ -335,6 +331,60 @@ def _add_soundtrack(project_name):
 	frappe.db.commit()
 
 
+def _render_soundtrack(project_name, asset_name, first_clip, music, total_frames):
+	from joymedia.services.timeline_composer import _asset_version_path
+
+	with tempfile.TemporaryDirectory(prefix="joymedia-soundtrack-") as temp_dir:
+		temp_path = Path(temp_dir)
+		first = temp_path / "first.png"
+		_extract_frame(_asset_version_path(first_clip.source_asset_version), 0, first)
+		workflow = _i2v_workflow(
+			first,
+			"A calm cinematic scene with a slow camera drift. "
+			f"Audio: {music}. Continuous instrumental music only, no speech, no singing, no sound effects.",
+			min(_soundtrack_seconds(total_frames), SOUNDTRACK_MAX_RENDER_SECONDS),
+			megapixels=SOUNDTRACK_MEGAPIXELS,
+		)
+		video_path = temp_path / "soundtrack.mp4"
+		video_path.write_bytes(_render_video(workflow))
+		audio_path = temp_path / "soundtrack.m4a"
+		subprocess.run(
+			["ffmpeg", "-v", "error", "-y", *_soundtrack_inputs(video_path, total_frames),
+			 "-vn", "-c:a", "aac", "-b:a", "192k", str(audio_path)],
+			check=True, capture_output=True, timeout=300,
+		)
+		return _save_output(
+			project_name, asset_name, "Audio", f"{project_name}-soundtrack.m4a", audio_path.read_bytes()
+		)
+
+
+def _soundtrack_seconds(total_frames):
+	# One extra second so the music never ends before the picture.
+	return total_frames / 24 + 1
+
+
+def _soundtrack_inputs(video_path, total_frames):
+	"""ffmpeg inputs and mapping for the soundtrack audio, looped to cover long films.
+
+	H3 renders at most SOUNDTRACK_MAX_RENDER_SECONDS of soundtrack in one pass; a
+	longer film repeats it, crossfading each repeat into the next.
+	"""
+	seconds = _soundtrack_seconds(total_frames)
+	if seconds <= SOUNDTRACK_MAX_RENDER_SECONDS:
+		return ["-i", str(video_path), "-map", "0:a:0"]
+	step = SOUNDTRACK_MAX_RENDER_SECONDS - SOUNDTRACK_LOOP_CROSSFADE_SECONDS
+	copies = math.ceil((seconds - SOUNDTRACK_LOOP_CROSSFADE_SECONDS) / step)
+	chain = "[0:a]"
+	filters = []
+	for index in range(1, copies):
+		filters.append(f"{chain}[{index}:a]acrossfade=d={SOUNDTRACK_LOOP_CROSSFADE_SECONDS}[x{index}]")
+		chain = f"[x{index}]"
+	return [
+		*[argument for _ in range(copies) for argument in ("-i", str(video_path))],
+		"-filter_complex", ";".join(filters), "-map", chain, "-t", f"{seconds:.3f}",
+	]
+
+
 # ComfyUI and file helpers
 
 
@@ -365,7 +415,11 @@ def _i2v_workflow(first_frame, prompt, seconds, last_frame=None, megapixels=None
 def _render_video(workflow):
 	from joymedia.services.comfyui_client import run_workflow_to_bytes
 
-	return run_workflow_to_bytes(workflow, I2V_SAVE_NODE, timeout=COMFYUI_JOB_TIMEOUT_SECONDS, forget=True)
+	content = run_workflow_to_bytes(workflow, I2V_SAVE_NODE, timeout=COMFYUI_JOB_TIMEOUT_SECONDS, forget=True)
+	# The render took minutes; MariaDB's snapshot isolation rejects writes to rows
+	# (such as naming series) that other workers changed since this transaction began.
+	frappe.db.commit()
+	return content
 
 
 def _extract_frame(video_path, frame_index, output_path):

@@ -7,6 +7,8 @@ import requests
 from frappe import _
 
 DEFAULT_TIMEOUT = 60
+# Consecutive failed history polls (5 s apart) tolerated while a job runs.
+MAX_POLL_FAILURES = 24
 
 
 def get_base_url(base_url: str | None = None):
@@ -184,8 +186,18 @@ def run_workflow_to_bytes(
 	"""
 	prompt_id = submit_workflow(workflow, base_url=base_url)["prompt_id"]
 	deadline = time.monotonic() + timeout
+	poll_failures = 0
 	while time.monotonic() < deadline:
-		history = get_history(prompt_id, base_url=base_url).get(prompt_id)
+		try:
+			history = get_history(prompt_id, base_url=base_url).get(prompt_id)
+			poll_failures = 0
+		except (requests.RequestException, frappe.ValidationError):
+			# A brief network or tunnel drop must not throw away a long render.
+			poll_failures += 1
+			if poll_failures > MAX_POLL_FAILURES:
+				raise
+			time.sleep(5)
+			continue
 		if history:
 			status = history.get("status") or {}
 			if status.get("status_str") == "error":

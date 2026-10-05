@@ -15,6 +15,7 @@ import frappe
 from frappe import _
 from frappe.utils.synchronization import filelock
 from joymedia.services.video_composer import _get_asset_version_path, _has_audio_stream
+from joymedia.services.render_queue import enqueue_render, is_render_alive
 
 
 TRANSITIONS = {"Cut", "Dissolve", "Fade"}
@@ -602,25 +603,49 @@ def set_timeline_transition(project_name: str, clip_name: str, transition: str, 
 def queue_project_timeline_export(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
 	_require_project_write(project)
-	if getattr(project, "export_status", None) in ("Queued", "Running"):
+	if getattr(project, "export_status", None) in ("Queued", "Running") and is_render_alive(
+		_export_job_id(project.name)
+	):
 		return {
 			"status": project.export_status,
 			"export_status": project.export_status,
 		}
+	from joymedia.services.post_production import _job_id as post_production_job_id
+
+	if getattr(project, "post_production_status", None) in ("Queued", "Running") and is_render_alive(
+		post_production_job_id(project.name)
+	):
+		frappe.throw(_("The film is still being finished. Export once the transitions and soundtrack are added."))
 	project.db_set("export_status", "Queued")
 	project.db_set("export_error", None)
-	frappe.db.commit()
-	frappe.enqueue(
+	enqueue_render(
 		"joymedia.services.timeline_editor.run_project_timeline_export",
-		queue="long",
+		_export_job_id(project.name),
 		# Studio finishing renders every second of film on the GPU.
 		timeout=7200,
 		project_name=project.name,
 	)
+	frappe.db.commit()
 	return {
 		"status": "Queued",
 		"export_status": "Queued",
 	}
+
+
+def _export_job_id(project_name):
+	return f"joymedia:export:{project_name}"
+
+
+def _fail_dead_export(project):
+	"""Report an export whose background job died as Failed, so it can be retried."""
+	if project.export_status not in ("Queued", "Running") or is_render_alive(_export_job_id(project.name)):
+		return
+	project.db_set({
+		"export_status": "Failed",
+		"export_error": _("The export stopped unexpectedly. Please export again."),
+		"export_completed_at": frappe.utils.now(),
+	})
+	frappe.db.commit()
 
 
 def run_project_timeline_export(project_name: str):
@@ -637,6 +662,8 @@ def run_project_timeline_export(project_name: str):
 		frappe.db.commit()
 		return result
 	except Exception as exc:
+		# A failed write aborts the transaction; record the failure in a fresh one.
+		frappe.db.rollback()
 		project.db_set("export_status", "Failed")
 		project.db_set("export_error", str(exc))
 		project.db_set("export_completed_at", frappe.utils.now())
@@ -649,6 +676,7 @@ def run_project_timeline_export(project_name: str):
 def get_project_timeline_export_status(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
 	_require_project_read(project)
+	_fail_dead_export(project)
 	return {
 		"export_status": getattr(project, "export_status", "Idle") or "Idle",
 		"export_error": getattr(project, "export_error", None),

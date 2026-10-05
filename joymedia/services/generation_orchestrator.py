@@ -470,9 +470,22 @@ def _advance_run(run, enqueue_finalization=True):
 	elif _has_submittable_work(run.name) and _has_submission_capacity(run):
 		_enqueue_submit_run(run.name)
 
+	previous_status = run.status
 	_refresh_run_counters(run)
 	sync_media_project_status_for_run(run.name)
+	if run.status == "Completed" and previous_status != "Completed":
+		_finish_film(run.media_project)
 	return _run_summary(run)
+
+
+def _finish_film(project_name):
+	"""Add transitions and the soundtrack as soon as every scene has rendered."""
+	from .post_production import queue_post_production_internal
+
+	try:
+		queue_post_production_internal(project_name)
+	except Exception:
+		frappe.logger("joymedia.generation_run").exception("Unable to queue Finish film for %s", project_name)
 
 
 def enqueue_finalization_if_ready(run_name: str):

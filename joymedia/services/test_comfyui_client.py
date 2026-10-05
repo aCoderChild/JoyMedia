@@ -1,5 +1,7 @@
 from unittest.mock import Mock, patch
 
+import requests
+
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.comfyui_client import (
@@ -9,6 +11,7 @@ from joymedia.services.comfyui_client import (
 	get_request_auth,
 	get_system_stats,
 	interrupt,
+	run_workflow_to_bytes,
 	submit_workflow,
 )
 
@@ -78,3 +81,23 @@ class TestComfyUIClient(FrappeTestCase):
 
 		self.assertEqual("http://comfyui/interrupt", post.call_args.args[0])
 		self.assertEqual({"prompt_id": "prompt-running"}, post.call_args.kwargs["json"])
+
+	@patch("joymedia.services.comfyui_client.time.sleep")
+	@patch("joymedia.services.comfyui_client.download_output", return_value=b"video")
+	@patch("joymedia.services.comfyui_client.get_history")
+	@patch("joymedia.services.comfyui_client.submit_workflow", return_value={"prompt_id": "p1"})
+	def test_run_workflow_survives_brief_connection_drops(self, submit, get_history, download, sleep):
+		done = {"p1": {"status": {"completed": True}, "outputs": {"save": {"videos": [{"filename": "out.mp4"}]}}}}
+		get_history.side_effect = [requests.ConnectionError("tunnel down"), requests.ReadTimeout("slow"), done]
+
+		self.assertEqual(b"video", run_workflow_to_bytes({}, "save", base_url="http://comfyui"))
+		self.assertEqual(3, get_history.call_count)
+
+	@patch("joymedia.services.comfyui_client.MAX_POLL_FAILURES", 2)
+	@patch("joymedia.services.comfyui_client.time.sleep")
+	@patch("joymedia.services.comfyui_client.get_history", side_effect=requests.ConnectionError("down"))
+	@patch("joymedia.services.comfyui_client.submit_workflow", return_value={"prompt_id": "p1"})
+	def test_run_workflow_gives_up_when_comfyui_stays_unreachable(self, submit, get_history, sleep):
+		with self.assertRaises(requests.ConnectionError):
+			run_workflow_to_bytes({}, "save", base_url="http://comfyui")
+		self.assertEqual(3, get_history.call_count)

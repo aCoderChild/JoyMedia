@@ -521,6 +521,12 @@ const isFinishing = computed(() => ["Queued", "Running"].includes(postProduction
 let finishPollTimer = null;
 
 async function finishFilm() {
+  const confirmed = window.confirm(
+    currentLang.value === "vi"
+      ? "Dựng lại phim với chuyển cảnh và nhạc nền? Các chỉnh sửa thủ công trên timeline sẽ bị thay thế."
+      : "Rebuild the film with transitions and the soundtrack? Manual timeline edits will be replaced."
+  );
+  if (!confirmed) return;
   try {
     await call("joymedia.services.post_production.queue_post_production", { project_name: projectName.value });
     await fetchWorkspace();
@@ -532,6 +538,10 @@ async function finishFilm() {
 async function pollFinishing() {
   finishPollTimer = null;
   const previous = postProduction.value.status;
+  try {
+    // Reports a finishing job that died (worker restart) as Failed instead of Running forever.
+    await call("joymedia.services.post_production.get_post_production_status", { project_name: projectName.value });
+  } catch (_) {}
   await fetchWorkspace();
   const { status, error } = postProduction.value;
   if (["Queued", "Running"].includes(status)) {

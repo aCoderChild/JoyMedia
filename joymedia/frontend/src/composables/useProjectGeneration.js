@@ -47,7 +47,7 @@ export function useProjectGeneration(projectName, onRefresh) {
           stopPolling();
           isGenerating.value = false;
           if (onRefresh) await onRefresh(snap);
-          notify({ title: "Generation complete", text: "All video scenes are ready!", type: "success" });
+          notify({ title: "Generation complete", text: "All scenes are ready. Adding transitions and the soundtrack…", type: "success" });
         } else if (status === "Failed") {
           stopPolling();
           isGenerating.value = false;
