@@ -404,10 +404,11 @@ def _add_soundtrack(project_name):
 		# Marketers may describe the music in Vietnamese; H3 follows English best.
 		audio_version = _render_soundtrack(project_name, asset_name, clips[0], to_english(music), total_frames)
 
-	from joymedia.services.timeline_composer import _asset_version_path
 	from joymedia.services.timeline_editor import _ensure_source_audio_clips, _timeline_clip_rows
+	from joymedia.services.video_composer import _get_asset_version_path
 
-	music_start = _music_start_frame(_asset_version_path(audio_version), total_frames)
+	# The soundtrack is an audio asset; the timeline helper only resolves videos.
+	music_start = _music_start_frame(_get_asset_version_path(audio_version), total_frames)
 	# Bridges bring their own source audio; backfill it so it can be switched off too.
 	_ensure_source_audio_clips(project, _timeline_clip_rows(project_name))
 	for clip in frappe.get_all(

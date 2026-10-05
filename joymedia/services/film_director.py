@@ -349,6 +349,8 @@ PLACE_WORDS = (
 	"dining room", "garden", "beach", "gym", "playground", "spa", "restaurant", "bar", "office",
 	"street", "park", "lake", "river", "forest", "mountain", "penthouse", "corridor", "hallway",
 	"elevator", "courtyard", "library", "cafe", "studio", "boutique", "showroom",
+	# Features a take invents inside a place just as often as whole places.
+	"staircase", "stairs", "escalator", "fountain", "fireplace", "waterfall", "aquarium",
 )
 
 
@@ -431,7 +433,8 @@ def reference_preamble(shot_reference_versions, project_references):
 		reference = by_version.get(asset_version) or {}
 		label = str(reference.get("label") or "").strip()
 		suffix = f" ({label})" if label else ""
-		kind = classify_reference(_asset_version_context(asset_version, reference))
+		context = _asset_version_context(asset_version, reference)
+		kind = classify_reference(context)
 		if kind == CHARACTER:
 			# Reference-to-Video can open on a reference photo as it is; the character's
 			# photo must lend only the person, never its background.
@@ -441,8 +444,12 @@ def reference_preamble(shot_reference_versions, project_references):
 			)
 		elif kind == PLACE:
 			location = location or index
+			# Spell the place out: when a take's own text barely describes where it is,
+			# the model drifts to the setting of the character's photo instead.
+			seen = _first_sentence((context.get("analysis") or {}).get("description"))
+			seen = f" It shows {seen[0].lower()}{seen[1:]}" if seen else ""
 			parts.append(
-				f"<Picture {index}> is the location{suffix}: keep its architecture, layout and materials exactly."
+				f"<Picture {index}> is the location{suffix}: keep its architecture, layout and materials exactly.{seen}"
 			)
 		else:
 			parts.append(
@@ -451,6 +458,13 @@ def reference_preamble(shot_reference_versions, project_references):
 	if location:
 		parts.append(f"The video opens directly in the location from <Picture {location}>.")
 	return " ".join(parts)
+
+
+def _first_sentence(text, limit=220):
+	"""The first sentence of an image description, ending with a full stop."""
+	text = " ".join(str(text or "").split())
+	sentence = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0][:limit].rstrip(" .")
+	return f"{sentence}." if sentence else ""
 
 
 def _asset_version_context(asset_version, project_reference):
