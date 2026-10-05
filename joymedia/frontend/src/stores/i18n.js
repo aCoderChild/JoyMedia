@@ -1,8 +1,18 @@
 import { computed, ref } from "vue";
+import { call } from "frappe-ui";
 
 const STORAGE_KEY = "joymedia_lang";
 const savedLang = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
 const currentLang = ref(savedLang === "en" ? "en" : "vi");
+
+// Server messages (errors, notices) follow the studio's language.
+let syncedLang = null;
+function syncServerLanguage(lang) {
+  if (syncedLang === lang) return;
+  syncedLang = lang;
+  // Signed-out pages cannot save it; that is fine, so failures are not retried.
+  call("joymedia.services.preferences.set_language", { language: lang }).catch(() => {});
+}
 
 export const messages = {
   vi: {
@@ -389,6 +399,11 @@ export const messages = {
   },
 };
 
+// Pick the text for the studio's language where no component context is at hand.
+export function tr(en, vi) {
+  return currentLang.value === "vi" ? vi : en;
+}
+
 export function useI18n() {
   function t(key, params = {}) {
     const lang = currentLang.value;
@@ -407,12 +422,15 @@ export function useI18n() {
       if (typeof localStorage !== "undefined") {
         localStorage.setItem(STORAGE_KEY, lang);
       }
+      syncServerLanguage(lang);
     }
   }
 
   function toggleLang() {
     setLang(currentLang.value === "vi" ? "en" : "vi");
   }
+
+  syncServerLanguage(currentLang.value);
 
   return {
     currentLang: computed(() => currentLang.value),

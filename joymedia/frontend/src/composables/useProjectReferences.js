@@ -2,6 +2,7 @@ import { ref, unref } from "vue";
 import { call, upload as uploadFile } from "frappe-ui";
 import { notify } from "../utils/notify";
 import { errorMessage } from "../utils/errors";
+import { tr } from "../stores/i18n";
 
 export function useProjectReferences(projectName, onRefresh) {
   const showMediaPicker = ref(false);
@@ -50,7 +51,7 @@ export function useProjectReferences(projectName, onRefresh) {
       });
       showMediaPicker.value = false;
       if (onRefresh) await onRefresh();
-      notify({ title: "Reference added", text: `Added ${asset.asset_name} as ${role}.`, type: "success" });
+      notify({ title: "Reference added", text: tr(`Added ${asset.asset_name} as ${role}.`, `Đã thêm ${asset.asset_name} làm ${role}.`), type: "success" });
     } catch (err) {
       notify({ title: "Error", text: errorMessage(err, "Failed to add reference."), type: "error" });
     } finally {
@@ -67,7 +68,7 @@ export function useProjectReferences(projectName, onRefresh) {
         reference_role: newRole,
       });
       if (onRefresh) await onRefresh();
-      notify({ title: "Role updated", text: `Reference role updated to ${newRole}.`, type: "success" });
+      notify({ title: "Role updated", text: tr(`Reference role updated to ${newRole}.`, `Đã đổi vai trò thành ${newRole}.`), type: "success" });
     } catch (err) {
       notify({ title: "Error", text: errorMessage(err, "Failed to update role."), type: "error" });
     }
@@ -106,7 +107,7 @@ export function useProjectReferences(projectName, onRefresh) {
       }
       await fetchCandidates();
       if (onRefresh) await onRefresh();
-      notify({ title: "Asset archived", text: `${asset.asset_name} was removed from the library.`, type: "success" });
+      notify({ title: "Asset archived", text: tr(`${asset.asset_name} was removed from the library.`, `Đã xoá ${asset.asset_name} khỏi thư viện.`), type: "success" });
     } catch (err) {
       notify({ title: "Error", text: errorMessage(err, "Failed to archive asset."), type: "error" });
     }
@@ -123,7 +124,7 @@ export function useProjectReferences(projectName, onRefresh) {
       });
       showMediaPicker.value = false;
       if (onRefresh) await onRefresh();
-      notify({ title: "Keyframe set", text: `Assigned keyframe reference to Shot ${shot.shot_number}.`, type: "success" });
+      notify({ title: "Keyframe set", text: tr(`Assigned keyframe reference to Scene ${shot.shot_number}.`, `Đã đặt khung hình chính cho cảnh ${shot.shot_number}.`), type: "success" });
     } catch (err) {
       notify({ title: "Error", text: errorMessage(err, "Failed to set keyframe."), type: "error" });
     }
@@ -150,7 +151,7 @@ export function useProjectReferences(projectName, onRefresh) {
       }
       lastUploadedAssetVersion.value = newestAssetVersion;
       await fetchCandidates({ throwOnError: true });
-      notify({ title: "Uploaded", text: `${files.length} file(s) added to the media library.`, type: "success" });
+      notify({ title: "Uploaded", text: tr(`${files.length} file(s) added to the media library.`, `Đã thêm ${files.length} tệp vào thư viện.`), type: "success" });
     } catch (err) {
       uploadError.value = errorMessage(err, "Failed to upload file.");
       notify({ title: "Upload error", text: uploadError.value, type: "error" });

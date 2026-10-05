@@ -58,11 +58,11 @@
 
           <div class="grid grid-cols-2 gap-1.5 text-xs">
             <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
-              <span class="block text-[10px] text-ink-muted font-semibold">SOURCE</span>
+              <span class="block text-[10px] text-ink-muted font-semibold">{{ currentLang === 'vi' ? 'VIDEO GỐC' : 'SOURCE' }}</span>
               <span class="font-mono font-bold text-ink-primary text-xs">{{ Number(selectedClip.source_duration_seconds || 0).toFixed(1) }}s</span>
             </div>
             <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
-              <span class="block text-[10px] text-ink-muted font-semibold">USED</span>
+              <span class="block text-[10px] text-ink-muted font-semibold">{{ currentLang === 'vi' ? 'ĐANG DÙNG' : 'USED' }}</span>
               <span class="font-mono font-bold text-indigo-400 text-xs">{{ ((selectedClip.source_out_frame - selectedClip.source_in_frame) / (fps || 24)).toFixed(1) }}s</span>
             </div>
           </div>
@@ -98,10 +98,10 @@
               :disabled="timelineBusy || selectedClip.audio_role === 'Source'"
               @change="$emit('updateAudioClip', selectedClip, { audio_role: $event.target.value })"
             >
-              <option value="Source">Source audio</option>
-              <option value="BGM">BGM (Nhạc nền)</option>
-              <option value="Voiceover">Voiceover (Lời thoại)</option>
-              <option value="SFX">SFX (Hiệu ứng âm thanh)</option>
+              <option value="Source">{{ currentLang === 'vi' ? 'Âm thanh gốc' : 'Source audio' }}</option>
+              <option value="BGM">{{ currentLang === 'vi' ? 'Nhạc nền' : 'Music' }}</option>
+              <option value="Voiceover">{{ currentLang === 'vi' ? 'Lời thoại' : 'Voiceover' }}</option>
+              <option value="SFX">{{ currentLang === 'vi' ? 'Hiệu ứng âm thanh' : 'Sound effects' }}</option>
             </select>
           </div>
 
@@ -216,9 +216,9 @@
                 :disabled="timelineBusy"
                 @change="$emit('changeTransition', $event.target.value)"
               >
-                <option value="Cut">Cut (Cắt)</option>
-                <option value="Dissolve">Dissolve (Hòa tan)</option>
-                <option value="Fade">Fade (Mờ dần)</option>
+                <option value="Cut">{{ currentLang === 'vi' ? 'Cắt thẳng' : 'Cut' }}</option>
+                <option value="Dissolve">{{ currentLang === 'vi' ? 'Hoà tan' : 'Dissolve' }}</option>
+                <option value="Fade">{{ currentLang === 'vi' ? 'Mờ dần' : 'Fade' }}</option>
               </select>
               <input
                 v-if="selectedClip.transition_to_next && selectedClip.transition_to_next !== 'Cut'"
@@ -246,7 +246,7 @@
           </div>
 
           <div v-if="selectedClipSourceShot.generation_prompt" class="p-2 rounded-xl bg-surface-card border border-outline-border">
-            <span class="block text-[10px] font-semibold text-ink-muted mb-0.5">PROMPT</span>
+            <span class="block text-[10px] font-semibold text-ink-muted mb-0.5">{{ currentLang === 'vi' ? 'MÔ TẢ CHO AI' : 'AI DESCRIPTION' }}</span>
             <p class="text-[11px] text-ink-secondary line-clamp-3 font-mono">{{ selectedClipSourceShot.generation_prompt }}</p>
           </div>
 
@@ -311,13 +311,13 @@
               class="w-full px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary cursor-pointer focus:outline-none focus:border-indigo-500"
               @change="$emit('updateAssetRole', selectedAsset, $event.target.value)"
             >
-              <option value="Product">👟 Product (Sản phẩm)</option>
-              <option value="Character">👤 Character (Nhân vật)</option>
-              <option value="Environment">🏞️ Environment (Bối cảnh)</option>
-              <option value="Style">🎨 Style (Phong cách)</option>
-              <option value="Motion">🏃 Motion (Chuyển động)</option>
-              <option value="Audio">🔊 Audio (Âm thanh)</option>
-              <option value="General">📎 General (Chung)</option>
+              <option value="Product">{{ currentLang === 'vi' ? 'Sản phẩm' : 'Product' }}</option>
+              <option value="Character">{{ currentLang === 'vi' ? 'Nhân vật' : 'Character' }}</option>
+              <option value="Environment">{{ currentLang === 'vi' ? 'Bối cảnh' : 'Place' }}</option>
+              <option value="Style">{{ currentLang === 'vi' ? 'Phong cách' : 'Style' }}</option>
+              <option value="Motion">{{ currentLang === 'vi' ? 'Chuyển động' : 'Motion' }}</option>
+              <option value="Audio">{{ currentLang === 'vi' ? 'Âm thanh' : 'Audio' }}</option>
+              <option value="General">{{ currentLang === 'vi' ? 'Chung' : 'General' }}</option>
             </select>
           </div>
 

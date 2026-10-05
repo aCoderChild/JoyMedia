@@ -113,3 +113,45 @@ class TestMusicEnding(FrappeTestCase):
 			start = post_production._music_start_frame(audio, 240)
 
 		self.assertAlmostEqual(36, start, delta=3)
+
+
+class TestEditedTimelineIsKept(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		commit = patch.object(frappe.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
+		self.project = frappe.get_doc(
+			{"doctype": "Media Project", "project_name": "Edited Timeline", "delivery_preset": "Landscape"}
+		).insert(ignore_permissions=True)
+
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def _finish(self, signature):
+		with patch("joymedia.services.post_production.timeline_signature", return_value=signature), patch(
+			"joymedia.services.post_production._finish_once"
+		) as full, patch("joymedia.services.post_production._patch_changed_scenes") as patch_scenes:
+			post_production.run_post_production(self.project.name)
+		return full.called, patch_scenes.called
+
+	def test_untouched_timeline_is_rebuilt_and_remembered(self):
+		self.assertEqual((True, False), self._finish("state-a"))
+		self.assertEqual("state-a", frappe.db.get_value("Media Project", self.project.name, "finished_timeline_signature"))
+		# Nothing edited since: the next refinish rebuilds again.
+		self.assertEqual((True, False), self._finish("state-a"))
+
+	def test_timeline_edited_by_hand_is_patched_not_rebuilt(self):
+		self._finish("state-a")
+
+		self.assertEqual((False, True), self._finish("state-edited"))
+
+	@patch("joymedia.services.post_production.queue_post_production_internal")
+	def test_redo_button_rebuilds_even_an_edited_timeline(self, queue):
+		self.project.db_set("finished_timeline_signature", "state-a")
+
+		post_production.queue_post_production(self.project.name)
+
+		self.assertFalse(frappe.db.get_value("Media Project", self.project.name, "finished_timeline_signature"))
+		queue.assert_called_once()

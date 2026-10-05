@@ -1,7 +1,14 @@
 import { toast } from "frappe-ui";
+import { useI18n } from "../stores/i18n";
+import { PHRASES_VI } from "./phrases";
+
+function translate(text) {
+  if (!text || useI18n().currentLang.value !== "vi") return text;
+  return PHRASES_VI[text] || text;
+}
 
 function show(type, title, description = "") {
-  const message = [title, description].filter(Boolean).join(" — ");
+  const message = [translate(title), translate(description)].filter(Boolean).join(" — ");
   return toast[type](message);
 }
 

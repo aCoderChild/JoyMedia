@@ -64,6 +64,8 @@ SOUNDTRACK_SAVE_NODE = "374"
 def queue_post_production(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
+	# Asked for by hand: rebuild everything, including a timeline edited by hand.
+	frappe.db.set_value("Media Project", project.name, "finished_timeline_signature", "", update_modified=False)
 	return queue_post_production_internal(project.name)
 
 
@@ -111,7 +113,15 @@ def run_post_production(project_name: str):
 		# Scenes regenerated or takes switched while this ran need another pass.
 		for _round in range(MAX_FINISHING_ROUNDS):
 			started = now_datetime()
-			_finish_once(project_name)
+			if _edited_by_hand(project_name):
+				# Keep the user's edits: swap new takes in and redo only their transitions.
+				_patch_changed_scenes(project_name)
+			else:
+				_finish_once(project_name)
+				frappe.db.set_value(
+					"Media Project", project_name, "finished_timeline_signature",
+					timeline_signature(project_name), update_modified=False,
+				)
 			requested = frappe.db.get_value("Media Project", project_name, "post_production_requested_at")
 			if not requested or get_datetime(requested) <= started:
 				break
@@ -124,6 +134,76 @@ def run_post_production(project_name: str):
 		# Marketers see a plain message; the technical detail is in the Error Log.
 		_set_status(project_name, "Failed", step="", error=friendly_failure(classify_failure(exc, "Generation")))
 		raise
+
+
+def timeline_signature(project_name):
+	"""Fingerprint of the editable timeline state."""
+	rows = frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project_name},
+		fields=[
+			"name", "track_type", "track_index", "enabled", "timeline_start_frame", "source_asset_version",
+			"source_in_frame", "source_out_frame", "transition_to_next", "transition_frames", "gain_db",
+			"fade_in_frames", "fade_out_frames", "audio_role",
+		],
+		order_by="name asc",
+	)
+	return hashlib.sha256(repr([tuple(row.values()) for row in rows]).encode()).hexdigest()
+
+
+def _edited_by_hand(project_name):
+	"""Whether the timeline changed since the last full Finish film (trims, moves, mutes...)."""
+	finished = frappe.db.get_value("Media Project", project_name, "finished_timeline_signature")
+	return bool(finished) and finished != timeline_signature(project_name)
+
+
+def _patch_changed_scenes(project_name):
+	"""Swap each scene's newly selected take into an edited timeline and redo its transitions.
+
+	The user's trims, moves and audio settings stay; the soundtrack stays too.
+	"""
+	from joymedia.services.timeline_editor import update_timeline_source_for_shot
+
+	_set_status(project_name, "Running", step="Timeline", error="")
+	clips = frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project_name, "track_type": "Video", "enabled": 1},
+		fields=["name", "shot", "source_asset_version", "source_in_frame", "source_out_frame", "timeline_start_frame", "clip_order"],
+		order_by="timeline_start_frame asc, clip_order asc",
+	)
+	selected = dict(frappe.get_all(
+		"Shot", filters={"media_project": project_name}, fields=["name", "selected_output_asset_version"], as_list=True
+	))
+	changed = {
+		clip.shot for clip in clips
+		if clip.shot and selected.get(clip.shot) and clip.source_asset_version != selected[clip.shot]
+	}
+	for shot in changed:
+		update_timeline_source_for_shot(project_name, shot)
+	clips = frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project_name, "track_type": "Video", "enabled": 1},
+		fields=["name", "shot", "source_asset_version", "source_in_frame", "source_out_frame", "timeline_start_frame", "clip_order"],
+		order_by="timeline_start_frame asc, clip_order asc",
+	)
+	bridges = [
+		(previous, bridge, following)
+		for previous, bridge, following in zip(clips, clips[1:], clips[2:])
+		if not bridge.shot and (previous.shot in changed or following.shot in changed)
+	]
+	for index, (previous, bridge, following) in enumerate(bridges, start=1):
+		_set_status(project_name, "Running", step=f"Transition {index}/{len(bridges)}")
+		# The bridge renders the frames the trimmed takes leave out on either side.
+		outgoing = frappe._dict(previous, source_out_frame=int(previous.source_out_frame) + BRIDGE_OVERLAP_FRAMES)
+		incoming = frappe._dict(following, source_in_frame=int(following.source_in_frame) - BRIDGE_OVERLAP_FRAMES)
+		try:
+			version = _bridge_asset_version(project_name, outgoing, incoming)
+		except (subprocess.CalledProcessError, ValueError):
+			# The new take is too short for this cut's frames; keep the old bridge.
+			frappe.log_error(title=f"Transition not redone for {project_name}")
+			continue
+		frappe.db.set_value("Timeline Clip", bridge.name, "source_asset_version", version, update_modified=False)
+	frappe.db.commit()
 
 
 def _finish_once(project_name):

@@ -1,5 +1,7 @@
 import re
 
+from frappe import _
+
 
 _COMFY_EXCEPTION = re.compile(r"exception_message['\"]?\s*[:=]\s*['\"]([^'\"]+)", re.I)
 
@@ -33,4 +35,4 @@ def friendly_failure(failure_class, error_summary=None):
 		"Cancelled": "Rendering was stopped.",
 		"Unknown": "The scene could not be completed. Please try again.",
 	}
-	return messages.get(failure_class or "Unknown", messages["Unknown"])
+	return _(messages.get(failure_class or "Unknown", messages["Unknown"]))

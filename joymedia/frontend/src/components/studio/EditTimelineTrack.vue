@@ -3,10 +3,9 @@
     <div class="timeline-heading">
       <div class="flex items-center gap-2">
         <span class="text-xs font-bold text-ink-primary flex items-center gap-1.5">
-          <span>🎞️</span>
-          <span>{{ currentLang === 'vi' ? 'DÒNG THỜI GIAN EDIT' : 'EDIT TIMELINE' }}</span>
+          <span>🎬</span>
+          <span>{{ currentLang === 'vi' ? 'Hình ảnh' : 'Picture' }}</span>
         </span>
-        <span class="timeline-meta">{{ clips.length }} {{ currentLang === 'vi' ? 'clip' : 'clips' }} · {{ durationLabel }}</span>
       </div>
 
       <div class="flex items-center gap-1.5 flex-wrap">
@@ -117,10 +116,6 @@
                 class="clip-thumb"
               />
               <div v-else class="clip-thumb-empty">{{ clip.clip_order }}</div>
-              <div class="clip-frame-overlay">
-                <span>IN {{ clip.source_in_frame }}</span>
-                <span>OUT {{ clip.source_out_frame }}</span>
-              </div>
             </div>
             <div class="clip-range">
               <span>{{ frameTime(clip.timeline_start_frame) }}</span>
@@ -212,11 +207,6 @@ const effectiveTotalFrames = computed(() => {
   if (!props.clips.length) return 0;
   const last = props.clips[props.clips.length - 1];
   return last.timeline_end_frame || 0;
-});
-
-const durationLabel = computed(() => {
-  const secondsVal = props.totalSeconds || (effectiveTotalFrames.value / activeFps.value);
-  return `${Number(secondsVal || 0).toFixed(2)}s`;
 });
 
 const pixelsPerFrame = computed(() => Number(props.pixelsPerFrame || 2));

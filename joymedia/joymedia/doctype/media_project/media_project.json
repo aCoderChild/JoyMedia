@@ -37,6 +37,7 @@
   "post_production_step",
   "post_production_error",
   "post_production_requested_at",
+  "finished_timeline_signature",
   "planning_status",
   "planning_error",
   "status"
@@ -71,6 +72,7 @@
   {"fieldname":"post_production_step","fieldtype":"Data","label":"Post-production Step","read_only":1},
   {"fieldname":"post_production_error","fieldtype":"Small Text","label":"Post-production Error","read_only":1},
   {"description":"Last time the film needed finishing again; a running finish repeats if this is newer than its start.","fieldname":"post_production_requested_at","fieldtype":"Datetime","hidden":1,"label":"Post-production Requested At","read_only":1},
+  {"description":"Timeline state right after the last full Finish film; a different state means it was edited by hand.","fieldname":"finished_timeline_signature","fieldtype":"Data","hidden":1,"label":"Finished Timeline Signature","read_only":1},
   {"default":"Idle","fieldname":"planning_status","fieldtype":"Select","label":"Storyboard Planning Status","options":"Idle\nRunning\nFailed","read_only":1},
   {"fieldname":"planning_error","fieldtype":"Small Text","label":"Storyboard Planning Error","read_only":1},
   {"default":"Draft","fieldname":"status","fieldtype":"Select","in_list_view":1,"in_standard_filter":1,"label":"Status","options":"Draft\nGenerating\nCompleted\nNeeds Attention\nCancelled\nArchived","read_only":1,"reqd":1}

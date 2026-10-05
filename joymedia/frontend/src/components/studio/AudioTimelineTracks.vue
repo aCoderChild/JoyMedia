@@ -1,9 +1,9 @@
 <template>
   <div class="audio-timeline-tracks space-y-2">
     <div class="flex items-center justify-between px-1">
-      <span class="text-[10px] font-mono font-bold text-ink-muted uppercase tracking-wider">Audio</span>
+      <span class="text-[10px] font-mono font-bold text-ink-muted uppercase tracking-wider">{{ currentLang === 'vi' ? 'Âm thanh' : 'Audio' }}</span>
       <span class="text-[11px] text-ink-secondary">
-        {{ audioTracks.length }} {{ currentLang === 'vi' ? 'track âm thanh' : 'audio tracks' }}
+        {{ audioTracks.length }} {{ currentLang === 'vi' ? 'rãnh âm thanh' : 'audio tracks' }}
       </span>
     </div>
 
@@ -14,11 +14,11 @@
           class="audio-timeline-row"
         >
           <div class="audio-timeline-label">
-            Audio {{ track.trackIndex + 1 }}<span v-if="track.trackIndex === 0"> · {{ currentLang === 'vi' ? 'Nguồn' : 'Source' }}</span>
+            {{ currentLang === 'vi' ? 'Âm thanh' : 'Audio' }} {{ track.trackIndex + 1 }}<span v-if="track.trackIndex === 0"> · {{ currentLang === 'vi' ? 'Gốc' : 'Source' }}</span>
           </div>
           <div class="audio-timeline-lane">
             <div v-if="!track.clips.length" class="audio-timeline-empty-label">
-              {{ currentLang === 'vi' ? 'Không có audio nguồn' : 'No source audio' }}
+              {{ currentLang === 'vi' ? 'Không có âm thanh gốc' : 'No source audio' }}
             </div>
             <template v-for="clip in track.clips" :key="clip.name">
               <button
@@ -74,7 +74,7 @@
                 :style="clipStyle(clip)"
                 @click="$emit('selectClip', clip)"
               >
-                <span>{{ currentLang === 'vi' ? 'Không có audio nguồn' : 'No source audio' }}</span>
+                <span>{{ currentLang === 'vi' ? 'Không có âm thanh gốc' : 'No source audio' }}</span>
                 <button
                   v-if="clip.audio_role === 'Source' && !clip.is_silent_source"
                   type="button"

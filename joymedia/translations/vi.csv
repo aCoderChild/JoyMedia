@@ -1,0 +1,141 @@
+Project Name is required.,Cần có tên dự án.
+Project name cannot be empty.,Tên dự án không được để trống.
+You do not have access to this project.,Bạn không có quyền truy cập dự án này.
+You do not have permission to create a project.,Bạn không có quyền tạo dự án.
+You must be signed in to create a project.,Bạn cần đăng nhập để tạo dự án.
+Stop the active generation before archiving this project.,Hãy dừng việc dựng video trước khi xoá dự án này.
+Duration must be between 1 and 60 seconds.,Độ dài video phải từ 1 đến 60 giây.
+Duration must be greater than zero.,Độ dài video phải lớn hơn 0.
+"Select Landscape, Portrait, or Square format.","Hãy chọn khung hình Ngang, Dọc hoặc Vuông."
+Select Continuous or Multi-shot generation mode.,Hãy chọn chế độ Nối tiếp hoặc Các cảnh độc lập.
+Select Single Image or Multi-reference.,Hãy chọn Một ảnh hoặc Người + địa điểm.
+Select Draft or Production quality.,Hãy chọn chất lượng Nháp hoặc Hoàn chỉnh.
+Select Standard 1080p or Studio 1440p60 export quality.,Hãy chọn chất lượng Tiêu chuẩn 1080p hoặc Studio 1440p 60fps.
+Configure Video Settings before generating a storyboard.,Hãy cài đặt video trước khi tạo kịch bản.
+Configure Video Settings before appending scenes.,Hãy cài đặt video trước khi thêm cảnh.
+Configure Video Settings before applying a storyboard.,Hãy cài đặt video trước khi áp dụng kịch bản.
+Configure Video Settings before revising the storyboard.,Hãy cài đặt video trước khi sửa kịch bản.
+This project has no active Generation Workflow.,Dự án chưa được cài đặt video.
+Invalid Media Project status.,Trạng thái dự án không hợp lệ.
+Add at least one image reference before creating a storyboard.,Hãy thêm ít nhất một ảnh tham chiếu trước khi tạo kịch bản.
+The active generation workflow requires at least one image reference.,Cần ít nhất một ảnh tham chiếu để dựng video.
+Multi-reference mode requires at least two selected image references.,Chế độ Người + địa điểm cần ít nhất hai ảnh tham chiếu.
+Generate a storyboard first.,Hãy tạo kịch bản trước.
+Describe how the storyboard should change.,Hãy mô tả bạn muốn sửa kịch bản thế nào.
+Describe the change you want to make to this shot.,Hãy mô tả bạn muốn sửa cảnh này thế nào.
+Create the first storyboard before appending scenes.,Hãy tạo kịch bản đầu tiên trước khi thêm cảnh.
+Add Scene currently supports up to 120 seconds at a time.,Mỗi lần chỉ thêm được tối đa 120 giây.
+Append duration must be a positive number.,Độ dài thêm vào phải là số dương.
+The storyboard changed since Add Scene was opened. Please reopen Add Scene and try again.,Kịch bản đã thay đổi. Vui lòng mở lại Thêm cảnh và thử lại.
+AI Director returned an unexpected number of scenes.,AI đạo diễn trả về số cảnh không đúng. Vui lòng thử lại.
+The AI director's answer was cut off. Please try again.,Câu trả lời của AI đạo diễn bị ngắt giữa chừng. Vui lòng thử lại.
+The AI director could not create the storyboard. Please try again.,AI đạo diễn chưa tạo được kịch bản. Vui lòng thử lại.
+Creating the storyboard stopped unexpectedly. Please try again.,Việc tạo kịch bản bị dừng đột ngột. Vui lòng thử lại.
+The storyboard is still being written. Please wait until it is ready.,Kịch bản đang được viết. Vui lòng đợi xong.
+"The video brief and references are too long for the AI planner. Shorten the video idea or global instructions, or remove some references.","Ý tưởng và tư liệu quá dài cho AI đạo diễn. Hãy rút ngắn ý tưởng hoặc chỉ dẫn, hoặc bớt tư liệu."
+Qwen did not return a video plan within {0} seconds.,AI đạo diễn không trả lời trong {0} giây. Vui lòng thử lại.
+Qwen did not return a shot revision within {0} seconds.,AI đạo diễn không trả lời trong {0} giây. Vui lòng thử lại.
+"Qwen is unavailable at {0}. Check the Qwen service or SSH tunnel, then try again.",Không kết nối được AI đạo diễn. Vui lòng thử lại sau ít phút hoặc báo quản trị viên.
+Qwen is unavailable at {0}: {1},Không kết nối được AI đạo diễn. Vui lòng thử lại sau ít phút hoặc báo quản trị viên.
+Qwen returned an invalid shot revision.,AI đạo diễn trả về nội dung không hợp lệ. Vui lòng thử lại.
+Shot does not belong to this project.,Cảnh không thuộc dự án này.
+Scene does not belong to this project.,Cảnh không thuộc dự án này.
+Shot does not belong to this Media Project.,Cảnh không thuộc dự án này.
+Removed scenes cannot be regenerated.,Không thể tạo lại cảnh đã xoá.
+This scene is still being rendered. Please wait until it is ready.,Cảnh này đang được dựng. Vui lòng đợi xong.
+This scene has no take {0}.,Cảnh này không có phiên bản {0}.
+A scene is still being rendered. Please wait until it is ready.,Một cảnh đang được dựng. Vui lòng đợi xong.
+Shots cannot be edited while generation is active.,Không thể sửa cảnh khi video đang được dựng.
+Scenes cannot be removed while generation is active.,Không thể xoá cảnh khi video đang được dựng.
+Shot duration must be a positive number.,Độ dài cảnh phải là số dương.
+Shot duration must be greater than zero.,Độ dài cảnh phải lớn hơn 0.
+Each shot must be at least 1 second long.,Mỗi cảnh phải dài ít nhất 1 giây.
+Shot {0} has no generation prompt. Regenerate or edit the storyboard first.,Cảnh {0} chưa có mô tả. Hãy tạo lại hoặc sửa kịch bản trước.
+Generation is already active in run {0}.,Video đang được dựng. Vui lòng đợi xong.
+Project References cannot change while generation is active.,Không thể đổi tư liệu khi video đang được dựng.
+Keyframes must use an Image Asset Version.,Khung hình chính phải là ảnh.
+This project has no failed video run to retry.,Dự án không có lần dựng lỗi nào để thử lại.
+Only Failed runs can be retried.,Chỉ thử lại được lần dựng bị lỗi.
+This run has no failed Jobs to retry.,Không có cảnh lỗi nào để thử lại.
+Only Failed Generation Tasks can be retried.,Chỉ thử lại được cảnh bị lỗi.
+Single Image Shots require exactly one starting image; Shot {0} has {1}.,Mỗi cảnh cần đúng một ảnh bắt đầu; cảnh {0} đang có {1}.
+Multi-reference Shots require exactly two ordered reference images; Shot {0} has {1}.,Mỗi cảnh cần đúng hai ảnh (người và địa điểm); cảnh {0} đang có {1}.
+Shot {0} requires usable input(s) with role '{1}'.,Cảnh {0} thiếu ảnh tham chiếu dùng được.
+Generate the scenes before finishing the film.,Hãy dựng các cảnh trước khi hoàn thiện phim.
+Finishing stopped unexpectedly. Please try again.,Việc hoàn thiện phim bị dừng đột ngột. Vui lòng thử lại.
+Transitions and music are still being added. Please wait until they are ready.,Đang thêm chuyển cảnh và nhạc nền. Vui lòng đợi xong.
+The film is still being finished. Export once the transitions and soundtrack are added.,Phim đang được hoàn thiện. Hãy xuất video sau khi đã thêm chuyển cảnh và nhạc nền.
+The export did not finish. Please export again.,Xuất video chưa hoàn tất. Vui lòng xuất lại.
+The export stopped unexpectedly. Please export again.,Xuất video bị dừng đột ngột. Vui lòng xuất lại.
+The project timeline has no enabled clips.,Dòng thời gian chưa có đoạn video nào.
+Every timeline clip must contain at least one frame.,Mỗi đoạn trên dòng thời gian phải có ít nhất một khung hình.
+Video clips may not overlap on the single video track.,Các đoạn video không được chồng lên nhau.
+Timeline export currently supports one video track (Video 0).,Hiện chỉ xuất được một rãnh video.
+Unable to render timeline: {0},Không dựng được video: {0}
+Generate every shot before opening the edit timeline.,Hãy dựng tất cả các cảnh trước khi mở dòng thời gian.
+The timeline editor is not installed yet. Run the site migration to enable it.,Trình biên tập chưa được cài đặt. Vui lòng báo quản trị viên.
+Generation runs are exported from the editor.,Hãy xuất video từ trình biên tập.
+Generation runs no longer export the project timeline. Use Export from the editor.,Hãy dùng nút Xuất & tải xuống.
+A timeline clip must be at least {0} frames long.,Mỗi đoạn phải dài ít nhất {0} khung hình.
+Audio must start before the video ends.,Âm thanh phải bắt đầu trước khi video kết thúc.
+Audio trim cannot move the clip before the start of the timeline.,Không thể cắt âm thanh ra trước đầu dòng thời gian.
+Dissolve and Fade transitions must be at least 1 frame.,Chuyển cảnh mờ phải dài ít nhất 1 khung hình.
+Fade in frames must be an integer.,Độ dài tăng dần phải là số nguyên.
+Fade out frames must be an integer.,Độ dài giảm dần phải là số nguyên.
+Gain must be a valid number.,Âm lượng phải là số hợp lệ.
+Invalid clip position.,Vị trí đoạn không hợp lệ.
+Invalid video clip position.,Vị trí đoạn video không hợp lệ.
+Only Audio assets can be added to an audio track.,Chỉ thêm được tệp âm thanh vào rãnh âm thanh.
+Source audio belongs to a video clip.,Âm thanh gốc thuộc về một đoạn video.
+Source audio follows its linked video clip.,Âm thanh gốc đi theo đoạn video của nó.
+Source out frame must be after source in frame.,Điểm kết thúc phải sau điểm bắt đầu.
+Split frame must be inside the clip source range.,Điểm cắt phải nằm trong đoạn.
+The audio clip has no usable duration.,Đoạn âm thanh không có độ dài dùng được.
+The requested trim exceeds the source clip duration ({0} frames).,Đoạn cắt dài hơn video gốc ({0} khung hình).
+This clip has no stored baseline range. Reset the timeline to shots to recreate it.,Đoạn này không có bản gốc. Hãy đặt lại dòng thời gian.
+This is not an audio clip.,Đây không phải đoạn âm thanh.
+This video clip has no source audio.,Đoạn video này không có âm thanh gốc.
+Timeline clip does not belong to this project.,Đoạn không thuộc dự án này.
+Timeline clip was not found.,Không tìm thấy đoạn.
+Timeline start frame cannot be negative.,Vị trí bắt đầu không được âm.
+Transition is longer than one of its neighboring clips.,Chuyển cảnh dài hơn một trong hai đoạn kề bên.
+Transition is longer than one of its neighboring video clips.,Chuyển cảnh dài hơn một trong hai đoạn kề bên.
+Unsupported transition.,Kiểu chuyển cảnh không được hỗ trợ.
+Unsupported timeline transition.,Kiểu chuyển cảnh không được hỗ trợ.
+Unable to extract source audio: {0},Không tách được âm thanh gốc: {0}
+Asset name cannot be empty.,Tên tư liệu không được để trống.
+Asset Name is required.,Cần có tên tư liệu.
+Choose a valid asset category.,Hãy chọn phân loại hợp lệ.
+"Only image, video, or audio files can be added to the media library.","Thư viện chỉ nhận ảnh, video hoặc âm thanh."
+Only library assets can be archived from the Media Library.,Chỉ xoá được tư liệu trong thư viện.
+Only library assets can be edited.,Chỉ sửa được tư liệu trong thư viện.
+Only library assets can be restored.,Chỉ khôi phục được tư liệu trong thư viện.
+The reference image has no file.,Ảnh tham chiếu không có tệp.
+This file is larger than the configured upload limit.,Tệp lớn hơn giới hạn tải lên.
+Uploaded assets must be reference inputs.,Tư liệu tải lên phải là tư liệu tham chiếu.
+You can only attach files uploaded by your account.,Bạn chỉ dùng được tệp do tài khoản của bạn tải lên.
+You do not have permission to add media assets.,Bạn không có quyền thêm tư liệu.
+You must be signed in to manage media assets.,Bạn cần đăng nhập để quản lý tư liệu.
+You must be signed in to upload media.,Bạn cần đăng nhập để tải tư liệu lên.
+That asset cannot be used as a project reference.,Tư liệu này không dùng làm tham chiếu được.
+That asset version is not selected for this project.,Tư liệu này chưa được chọn cho dự án.
+The selected asset has no usable version.,Tư liệu đã chọn không có bản dùng được.
+"Project references support Image, Video, or Audio assets.","Tư liệu tham chiếu phải là ảnh, video hoặc âm thanh."
+Unable to connect to ComfyUI: {0},Không kết nối được máy chủ dựng video. Vui lòng thử lại sau ít phút hoặc báo quản trị viên.
+comfyui_base_url is not configured.,Máy chủ dựng video chưa được cài đặt. Vui lòng báo quản trị viên.
+ComfyUI job failed: {0},Máy chủ dựng video báo lỗi: {0}
+ComfyUI execution failed.,Máy chủ dựng video báo lỗi.
+Generation run failed.,Dựng video thất bại.
+All execution attempts failed.,Đã thử dựng nhiều lần nhưng không thành công.
+Self-registration is disabled. Ask an administrator to invite you.,Không thể tự đăng ký. Hãy nhờ quản trị viên mời bạn.
+This email is already registered. Please sign in.,Email này đã được đăng ký. Vui lòng đăng nhập.
+Password must be at least 8 characters long.,Mật khẩu phải có ít nhất 8 ký tự.
+Account created.,Đã tạo tài khoản.
+The render server dropped this job. It is safe to try again.,Máy chủ dựng video đã bỏ dở việc này. Bạn có thể thử lại.
+The selected video setup is unavailable. Please try again or contact support.,Cài đặt video đã chọn hiện không dùng được. Vui lòng thử lại hoặc báo quản trị viên.
+One of the selected media inputs is not usable for this scene.,Một tư liệu đã chọn không dùng được cho cảnh này.
+The scene could not be rendered. Please try again.,Chưa dựng được cảnh. Vui lòng thử lại.
+Rendering was stopped.,Đã dừng dựng video.
+The scene could not be completed. Please try again.,Chưa hoàn tất được cảnh. Vui lòng thử lại.
+Generation was stopped by the user.,Bạn đã dừng việc dựng video.
+Some scenes need attention while other scenes are still rendering.,Một số cảnh bị lỗi trong khi các cảnh khác vẫn đang dựng.

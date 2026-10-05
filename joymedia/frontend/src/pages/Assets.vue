@@ -432,7 +432,7 @@ async function archiveAsset(asset) {
         detach_projects: 1,
       });
     }
-    notify({ title: "Asset archived", text: `${asset.asset_name} was removed from the library.`, type: "success" });
+    notify({ title: "Asset archived", text: currentLang.value === "vi" ? `Đã xoá ${asset.asset_name} khỏi thư viện.` : `${asset.asset_name} was removed from the library.`, type: "success" });
     if (selectedAsset.value?.name === asset.name) selectedAsset.value = null;
     await assetsResource.reload();
   } catch (err) {

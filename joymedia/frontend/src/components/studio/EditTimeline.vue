@@ -4,40 +4,30 @@
       <div class="flex items-center gap-2">
         <span class="text-xs font-bold uppercase tracking-wider text-ink-primary flex items-center gap-1.5">
           <span>✂️</span>
-          <span>{{ currentLang === 'vi' ? 'Trình dựng Video (Edit Timeline)' : 'Edit Timeline' }}</span>
+          <span>{{ currentLang === 'vi' ? 'Dòng thời gian' : 'Timeline' }}</span>
         </span>
         <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-indigo-400 border border-outline-border font-bold">
-          {{ activeVideoClips.length }} {{ currentLang === 'vi' ? 'video' : 'video' }} · {{ totalSeconds?.toFixed(1) || 0 }}s
+          {{ activeVideoClips.length }} {{ currentLang === 'vi' ? 'đoạn' : 'clips' }} · {{ totalSeconds?.toFixed(1) || 0 }}s
         </span>
       </div>
 
       <div class="flex items-center gap-2 text-xs">
         <span class="text-[11px] text-ink-muted">
-          {{ currentLang === 'vi' ? 'Bấm clip để chỉnh sửa In/Out, tách hoặc chuyển cảnh trong Inspector.' : 'Click clip to adjust In/Out, split, or transitions in Inspector.' }}
+          {{ currentLang === 'vi' ? 'Bấm một đoạn để cắt, tách hoặc đổi chuyển cảnh.' : 'Click a clip to trim, split or change its transition.' }}
         </span>
         <label class="timeline-zoom-control">
           <span>－</span>
           <input v-model.number="zoom" type="range" min="0.6" max="3" step="0.1" />
           <span>＋</span>
         </label>
-        <button type="button" class="timeline-history-btn" :disabled="!canUndo || busy" @click="$emit('undo')">↶ Undo</button>
-        <button type="button" class="timeline-history-btn" :disabled="!canRedo || busy" @click="$emit('redo')">↷ Redo</button>
+        <button type="button" class="timeline-history-btn" :disabled="!canUndo || busy" @click="$emit('undo')">↶ {{ currentLang === 'vi' ? 'Hoàn tác' : 'Undo' }}</button>
+        <button type="button" class="timeline-history-btn" :disabled="!canRedo || busy" @click="$emit('redo')">↷ {{ currentLang === 'vi' ? 'Làm lại' : 'Redo' }}</button>
       </div>
     </div>
 
     <div class="timeline-shared-scroll rounded-xl border border-outline-border bg-surface-muted/40 p-2">
       <div class="timeline-shared-canvas space-y-3" :style="{ width: `${timelineCanvasWidth}px` }">
         <div>
-          <div class="flex items-center gap-2 mb-1 px-1">
-            <span class="text-[10px] font-mono font-bold text-ink-muted uppercase tracking-wider bg-surface-card px-2 py-0.5 rounded border border-outline-border flex items-center gap-1.5">
-              <span>🎬</span>
-              <span>Visuals</span>
-              <span class="text-ink-secondary text-[9px] font-semibold border-l border-outline-border pl-1">Video</span>
-            </span>
-            <span class="text-[11px] text-ink-secondary">
-              {{ activeVideoClips.length }} {{ currentLang === 'vi' ? 'phân đoạn hình ảnh' : 'video scenes' }}
-            </span>
-          </div>
 
           <EditTimelineTrack
             :clips="activeVideoClips"

@@ -730,7 +730,7 @@ async function handleSelectReference({ asset, role }) {
       await addAudioClip(assetVersion, startFrame, chosenRole);
       notify({
         title: "Audio added",
-        text: `Added ${asset.asset_name || "audio"} to ${chosenRole} track.`,
+        text: currentLang.value === "vi" ? `Đã thêm ${asset.asset_name || "âm thanh"} vào rãnh ${chosenRole}.` : `Added ${asset.asset_name || "audio"} to the ${chosenRole} track.`,
         type: "success",
       });
     }
