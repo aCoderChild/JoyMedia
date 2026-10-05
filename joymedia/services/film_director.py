@@ -37,6 +37,8 @@ MAX_TAKE_SECONDS = 10
 MAX_TAKES = 6
 # MiniMax H3 renders at least 124 frames at 24 fps; shorter takes waste the extra render.
 MIN_RENDER_SECONDS = 124 / 24
+# A continuation job adding less footage than this is not worth its fixed overhead.
+MIN_CONTINUATION_SECONDS = 2.0
 
 DIRECTOR_RULES = """
 You are the film director for JoyMedia commercials. Plan a short cinematic film
@@ -208,11 +210,42 @@ def balance_take_durations(shots, total_seconds):
 			upper = middle
 	for shot, length in zip(shots, lengths(upper)):
 		shot["duration_seconds"] = length
+	_avoid_short_continuations(shots)
 	# Remove the bisection residue so the takes sum exactly to the total.
 	shots[-1]["duration_seconds"] = total - sum(shot["duration_seconds"] for shot in shots[:-1])
 	for number, shot in enumerate(shots, start=1):
 		shot["shot_number"] = number
 	return shots
+
+
+def _avoid_short_continuations(shots):
+	"""Fit takes to whole render jobs without changing the film's length.
+
+	A take renders MIN_RENDER_SECONDS in its first job and continues in further
+	jobs, each with ~2.5 minutes of fixed overhead. A take just over one job long
+	would spend a whole job on a second or less of footage, so it is trimmed to
+	one job and the spare time goes to the climax (or the longest take), which
+	the story wants longest anyway.
+	"""
+	single = MIN_RENDER_SECONDS
+	spare = 0.0
+	for shot in shots:
+		length = float(shot["duration_seconds"])
+		if single < length < single + MIN_CONTINUATION_SECONDS:
+			spare += length - single
+			shot["duration_seconds"] = single
+	if not spare:
+		return
+	climax = next((shot for shot in shots if str(shot.get("shot_name") or "").upper().startswith("CLIMAX")), None)
+	receivers = [climax] if climax else []
+	receivers += sorted((shot for shot in shots if shot is not climax), key=lambda shot: -float(shot["duration_seconds"]))
+	for shot in receivers:
+		room = MAX_TAKE_SECONDS - float(shot["duration_seconds"])
+		given = min(room, spare)
+		shot["duration_seconds"] = float(shot["duration_seconds"]) + given
+		spare -= given
+		if spare <= 1e-9:
+			return
 
 
 def build_roster(reference_contexts):

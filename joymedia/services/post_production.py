@@ -20,6 +20,7 @@ from pathlib import Path
 
 import frappe
 from frappe import _
+from frappe.utils import get_datetime, now_datetime
 
 from joymedia.services.film_director import PERSON_PATTERN
 from joymedia.services.render_queue import enqueue_render, is_render_alive
@@ -41,6 +42,8 @@ SOUNDTRACK_FADE_IN_FRAMES = 12
 # H3 rarely resolves the music on request, so a long fade gives every film a deliberate ending.
 SOUNDTRACK_FADE_OUT_FRAMES = 72
 COMFYUI_JOB_TIMEOUT_SECONDS = 3600
+# Finishing repeats when scenes change while it runs, at most this many times per job.
+MAX_FINISHING_ROUNDS = 3
 DEFAULT_SOUNDTRACK_MUSIC = (
 	"an elegant cinematic instrumental score, soft piano melody over warm sustained strings, "
 	"slowly building with emotion to a gentle swell, then resolving softly at the end"
@@ -64,6 +67,9 @@ def queue_post_production(project_name: str):
 
 def queue_post_production_internal(project_name):
 	"""Queue Finish film for a project whose caller is already authorized."""
+	# A finish already running repeats when it sees a request newer than its start.
+	frappe.db.set_value("Media Project", project_name, "post_production_requested_at", now_datetime(), update_modified=False)
+	frappe.db.commit()
 	status = frappe.db.get_value("Media Project", project_name, "post_production_status")
 	if status in ("Queued", "Running") and is_render_alive(_job_id(project_name)):
 		return {"status": status}
@@ -99,19 +105,14 @@ def _job_id(project_name):
 
 
 def run_post_production(project_name: str):
-	from joymedia.services.timeline_editor import reset_project_timeline
-
-	_set_status(project_name, "Running", step="Timeline", error="")
 	try:
-		reset_project_timeline(project_name)
-		clips = _shot_video_clips(project_name)
-		for index, (outgoing, incoming) in enumerate(zip(clips, clips[1:]), start=1):
-			_set_status(project_name, "Running", step=f"Transition {index}/{len(clips) - 1}")
-			_insert_bridge(project_name, outgoing, incoming)
-			# Later bridges read the trimmed incoming clip.
-			clips = _shot_video_clips(project_name)
-		_set_status(project_name, "Running", step="Soundtrack")
-		_add_soundtrack(project_name)
+		# Scenes regenerated or takes switched while this ran need another pass.
+		for _round in range(MAX_FINISHING_ROUNDS):
+			started = now_datetime()
+			_finish_once(project_name)
+			requested = frappe.db.get_value("Media Project", project_name, "post_production_requested_at")
+			if not requested or get_datetime(requested) <= started:
+				break
 		_set_status(project_name, "Completed", step="")
 	except Exception as exc:
 		frappe.db.rollback()
@@ -121,6 +122,21 @@ def run_post_production(project_name: str):
 		# Marketers see a plain message; the technical detail is in the Error Log.
 		_set_status(project_name, "Failed", step="", error=friendly_failure(classify_failure(exc, "Generation")))
 		raise
+
+
+def _finish_once(project_name):
+	from joymedia.services.timeline_editor import reset_project_timeline
+
+	_set_status(project_name, "Running", step="Timeline", error="")
+	reset_project_timeline(project_name)
+	clips = _shot_video_clips(project_name)
+	for index, (outgoing, incoming) in enumerate(zip(clips, clips[1:]), start=1):
+		_set_status(project_name, "Running", step=f"Transition {index}/{len(clips) - 1}")
+		_insert_bridge(project_name, outgoing, incoming)
+		# Later bridges read the trimmed incoming clip.
+		clips = _shot_video_clips(project_name)
+	_set_status(project_name, "Running", step="Soundtrack")
+	_add_soundtrack(project_name)
 
 
 def _set_status(project_name, status, step=None, error=None):

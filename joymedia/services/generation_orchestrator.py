@@ -36,6 +36,7 @@ ACTIVE_ATTEMPT_STATUSES = ("Pending", "Queued", "Running")
 TERMINAL_ATTEMPT_STATUSES = ("Completed", "Failed", "Cancelled")
 TERMINAL_JOB_STATUSES = ("Completed", "Failed", "Cancelled")
 MAX_AUTOMATIC_RETRIES = 1
+MAX_JOBS_IN_FLIGHT_PER_RUN = 2
 
 
 def _get_continuation_workflow_from_adapter(adapter):
@@ -178,6 +179,7 @@ def prepare_run(run_name: str):
 				shot.get("planned_frame_count"),
 				max_segment_frames=shot_workflow.frame_count,
 				continuation_overlap_frames=int(getattr(shot_adapter, "continuation_overlap_frames", 1)),
+				continuation_new_frames=getattr(shot_adapter, "continuation_new_frames", None),
 			)
 			previous_segment_job = None
 			for segment in segments:
@@ -357,10 +359,14 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 			shot_row.planned_frame_count,
 			max_segment_frames=shot_workflow.frame_count,
 			continuation_overlap_frames=int(getattr(shot_adapter, "continuation_overlap_frames", 1)),
+			continuation_new_frames=getattr(shot_adapter, "continuation_new_frames", None),
 		)
 		if not segments:
 			frappe.throw(_("Shot {0} has no generation segments.").format(shot.name))
-		if any(segment["segment_frame_count"] > shot_workflow.frame_count for segment in segments):
+		continuation_capacity = (continuation_workflow or shot_workflow).frame_count
+		if segments[0]["segment_frame_count"] > shot_workflow.frame_count or any(
+			segment["segment_frame_count"] > continuation_capacity for segment in segments[1:]
+		):
 			frappe.throw(
 				_("Shot {0} contains a segment larger than Workflow frame capacity.").format(shot.name)
 			)
@@ -393,6 +399,9 @@ def submit_run(run_name: str):
 
 			if not attach_chained_first_frame(job):
 				continue
+
+			if not _has_submission_capacity(run):
+				break
 
 			if job.status == "Ready":
 				job.status = "Queued"
@@ -647,7 +656,10 @@ def sync_media_project_status_for_run(run_name: str):
 	)
 	if not latest:
 		status = "Draft"
-	elif latest[0].status in ACTIVE_RUN_STATUSES:
+	elif latest[0].status in ACTIVE_RUN_STATUSES or frappe.db.exists(
+		# Several scenes may be regenerating in separate runs.
+		"Generation Run", {"media_project": media_project, "status": ["in", ACTIVE_RUN_STATUSES]}
+	):
 		status = "Generating"
 	elif latest[0].status == "Completed":
 		status = "Completed"
@@ -1002,7 +1014,19 @@ def _has_submittable_work(run_name):
 
 
 def _has_submission_capacity(run):
-	return True
+	"""Whether the run may put another job into ComfyUI's shared, first-come-first-served queue.
+
+	Two jobs in flight keep the GPU busy back to back, while other projects' jobs can
+	interleave instead of waiting behind every scene of a long film.
+	"""
+	job_names = _get_run_job_names(run.name)
+	if not job_names:
+		return True
+	in_flight = frappe.db.count(
+		"Generation Attempt",
+		{"generation_task": ["in", job_names], "status": ["in", ["Queued", "Running"]]},
+	)
+	return in_flight < MAX_JOBS_IN_FLIGHT_PER_RUN
 
 
 def _enqueue(method_name, run_name):

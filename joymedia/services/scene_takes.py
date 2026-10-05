@@ -1,7 +1,7 @@
 """Scene takes: regenerate one scene and switch between its takes, as in Google Flow.
 
 Every render of a scene is kept as an Asset Version of the scene's "<Shot> Output"
-asset. Regenerating renders a new take from the scene's current prompt while the
+asset. Several scenes may be regenerated at once. Regenerating renders a new take from the scene's current prompt while the
 current take stays on screen; the new take is selected once it is ready, and any
 earlier take can be selected again.
 """
@@ -37,7 +37,7 @@ def take_position(project_name, shot):
 def regenerate_scene(project_name, shot_name):
 	"""Render a new take of one scene from its current prompt."""
 	project, shot = _project_shot(project_name, shot_name)
-	_ensure_idle(project)
+	_ensure_scene_free(project, shot)
 	from joymedia.joymedia.doctype.media_project.media_project import build_project_snapshot
 	from joymedia.services.generation_orchestrator import start_run_internal
 
@@ -64,7 +64,7 @@ def regenerate_scene(project_name, shot_name):
 def select_scene_take(project_name, shot_name, take_index):
 	"""Use take number take_index (1 = oldest) of a scene, then redo the film's transitions and music."""
 	project, shot = _project_shot(project_name, shot_name)
-	_ensure_idle(project)
+	_ensure_scene_free(project, shot)
 	takes = scene_takes(project.name, shot.name)
 	take_index = int(take_index)
 	if not 1 <= take_index <= len(takes):
@@ -89,11 +89,15 @@ def _project_shot(project_name, shot_name):
 	return project, shot
 
 
-def _ensure_idle(project):
-	"""One render at a time per project, so the finished film always includes every change."""
-	if frappe.db.exists("Generation Run", {"media_project": project.name, "status": ["in", ["Queued", "Running"]]}):
-		frappe.throw(_("A scene is still being rendered. Please wait until it is ready."))
-	from joymedia.services.post_production import get_post_production_status
+def _ensure_scene_free(project, shot):
+	"""A scene can change unless it is rendering or the storyboard is being written.
 
-	if get_post_production_status(project.name)["status"] in ("Queued", "Running"):
-		frappe.throw(_("Transitions and music are still being added. Please wait until they are ready."))
+	Several scenes may render at once; finishing repeats until it includes every change.
+	"""
+	from joymedia.joymedia.doctype.media_project.media_project import _busy_shots
+	from joymedia.services.storyboard_job import planning_status
+
+	if planning_status(project.name) == "Running":
+		frappe.throw(_("The storyboard is still being written. Please wait until it is ready."))
+	if shot.name in _busy_shots(project.name):
+		frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))

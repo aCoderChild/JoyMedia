@@ -39,7 +39,17 @@ export function useProjectGeneration(projectName, onRefresh) {
       consecutivePollFailures = 0;
       syncError.value = "";
       if (snap) {
-        currentRun.value = snap.production || null;
+        const planning = snap.project?.planning_status;
+        if (planning === "Failed" && currentRun.value?.planning) {
+          stopPolling();
+          isGenerating.value = false;
+          productionError.value = snap.project.planning_error || "";
+          currentRun.value = snap.production || null;
+          if (onRefresh) await onRefresh(snap);
+          notify({ title: "Storyboard", text: productionError.value, type: "error" });
+          return;
+        }
+        currentRun.value = activeRun(snap.production, planning);
       }
       if (snap?.production) {
         const status = currentRun.value.status;
@@ -77,8 +87,15 @@ export function useProjectGeneration(projectName, onRefresh) {
     pollRun();
   }
 
-  function resumeProduction(production) {
-    currentRun.value = production || null;
+  // While the AI director plans the storyboard there is no run yet; the studio
+  // shows it as a queued run so progress and polling carry on.
+  function activeRun(production, planningStatus) {
+    return planningStatus === "Running" ? { status: "Queued", planning: true, shots: [] } : production || null;
+  }
+
+  function resumeProduction(production, planningStatus = null) {
+    currentRun.value = activeRun(production, planningStatus);
+    production = currentRun.value;
     const active = ["Queued", "Running"].includes(production?.status);
     isGenerating.value = active;
     if (active) {
@@ -106,7 +123,9 @@ export function useProjectGeneration(projectName, onRefresh) {
       const res = await call("joymedia.joymedia.doctype.media_project.media_project.generate_project_video", {
         project_name: project(),
       });
-      currentRun.value = { name: res?.run, status: res?.status || "Queued" };
+      currentRun.value = res?.status === "Planning"
+        ? activeRun(null, "Running")
+        : { name: res?.run, status: res?.status || "Queued" };
       startPolling();
       if (onRefresh) await onRefresh();
       notify({ title: "Generation started", text: "Creating storyboard and rendering scenes...", type: "success" });

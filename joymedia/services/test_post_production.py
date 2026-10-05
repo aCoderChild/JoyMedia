@@ -74,3 +74,22 @@ class TestPostProductionStatus(FrappeTestCase):
 		with patch("joymedia.services.post_production.enqueue_render") as enqueue:
 			self.assertEqual({"status": "Running"}, post_production.queue_post_production_internal(self.project.name))
 		enqueue.assert_not_called()
+
+	@patch("joymedia.services.post_production.frappe.db.commit")
+	def test_finishing_repeats_when_a_scene_changes_while_it_runs(self, commit):
+		from frappe.utils import now_datetime
+
+		rounds = []
+
+		def finish_once(project_name):
+			rounds.append(project_name)
+			if len(rounds) == 1:  # a scene is regenerated during the first pass
+				frappe.db.set_value(
+					"Media Project", project_name, "post_production_requested_at", now_datetime()
+				)
+
+		with patch("joymedia.services.post_production._finish_once", side_effect=finish_once):
+			post_production.run_post_production(self.project.name)
+
+		self.assertEqual(2, len(rounds))
+		self.assertEqual("Completed", frappe.db.get_value("Media Project", self.project.name, "post_production_status"))

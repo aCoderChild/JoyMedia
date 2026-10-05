@@ -9,7 +9,13 @@ def plan_generation_segments(
 	planned_frame_count: int,
 	max_segment_frames: int = MAX_SEGMENT_FRAMES,
 	continuation_overlap_frames: int = CONTINUATION_OVERLAP_FRAMES,
+	continuation_new_frames: int | None = None,
 ):
+	"""Split a shot into a first segment and continuations.
+
+	continuation_new_frames caps the new footage each continuation adds (on top of
+	its overlap); by default a continuation is no longer than max_segment_frames.
+	"""
 	if planned_frame_count < 1:
 		raise ValueError("planned_frame_count must be positive.")
 
@@ -34,7 +40,7 @@ def plan_generation_segments(
 	)
 
 	remaining_effective_frames -= first_frames
-	effective_capacity = max_segment_frames - continuation_overlap_frames
+	effective_capacity = continuation_new_frames or max_segment_frames - continuation_overlap_frames
 	# Share the remainder evenly so no continuation is a sliver of a second.
 	continuation_count = -(-remaining_effective_frames // effective_capacity)
 	for index in range(continuation_count):

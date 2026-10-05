@@ -445,3 +445,16 @@ class TestTranslation(FrappeTestCase):
 
 		self.assertEqual("soft piano", to_english("soft piano"))
 		post.assert_not_called()
+
+
+class TestTakeLengthsFitRenderJobs(FrappeTestCase):
+	def test_takes_just_over_one_job_give_their_spare_time_to_the_climax(self):
+		names = ["OPENING", "BUILD", "CLIMAX", "RESOLUTION", "CLOSING"]
+		shots = film_director.balance_take_durations(
+			[{"duration_seconds": 6, "shot_name": f"{name}: take"} for name in names], 30
+		)
+
+		lengths = [round(shot["duration_seconds"], 2) for shot in shots]
+		self.assertAlmostEqual(30, sum(shot["duration_seconds"] for shot in shots))
+		self.assertEqual(round(film_director.MIN_RENDER_SECONDS, 2), lengths[0])
+		self.assertEqual(max(lengths), lengths[2])

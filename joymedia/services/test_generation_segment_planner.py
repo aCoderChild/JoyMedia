@@ -70,3 +70,10 @@ class TestGenerationSegmentPlanner(TestCase):
 	def test_rejects_segment_limit_below_two_frames(self):
 		with self.assertRaisesRegex(ValueError, "max_segment_frames must be at least 2"):
 			plan_generation_segments(10, max_segment_frames=1)
+
+	def test_continuations_can_add_a_full_segment_of_new_footage(self):
+		# A 10 s take is one first segment and one continuation, not two slivers.
+		self.assertEqual(
+			[124, 138],
+			[s["segment_frame_count"] for s in plan_generation_segments(240, 124, 22, continuation_new_frames=124)],
+		)

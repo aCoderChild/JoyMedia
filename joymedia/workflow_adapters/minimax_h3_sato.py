@@ -8,6 +8,8 @@ class MiniMaxH3SatoGenerationAdapter(GenericWorkflowAdapter):
 	cumulative_segment_output = True
 	primary_output_node_keys = ("254", "374")
 	continuation_overlap_frames = 22
+	# Each continuation adds up to ~5 s of new footage, like the first segment.
+	continuation_new_frames = 124
 
 	def extract_execution_metadata(self, workflow_data):
 		return _extract_metadata(workflow_data, "270")

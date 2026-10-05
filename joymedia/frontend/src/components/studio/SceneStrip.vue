@@ -185,7 +185,7 @@
               <button
                 type="button"
                 class="px-1 rounded hover:bg-surface-hover cursor-pointer disabled:opacity-30 disabled:cursor-default"
-                :disabled="isGenerating || shot.take_index <= 1"
+                :disabled="isRegenerating(shot) || shot.take_index <= 1"
                 :title="currentLang === 'vi' ? 'Phiên bản trước' : 'Previous take'"
                 @click.stop="emit('selectTake', shot, shot.take_index - 1)"
               >‹</button>
@@ -193,7 +193,7 @@
               <button
                 type="button"
                 class="px-1 rounded hover:bg-surface-hover cursor-pointer disabled:opacity-30 disabled:cursor-default"
-                :disabled="isGenerating || shot.take_index >= shot.take_count"
+                :disabled="isRegenerating(shot) || shot.take_index >= shot.take_count"
                 :title="currentLang === 'vi' ? 'Phiên bản sau' : 'Next take'"
                 @click.stop="emit('selectTake', shot, shot.take_index + 1)"
               >›</button>
@@ -204,7 +204,7 @@
                 v-if="getShotVideoFile(shot)"
                 type="button"
                 class="px-2 py-0.5 rounded-lg text-[11px] font-semibold text-indigo-400 hover:bg-indigo-500/10 cursor-pointer disabled:opacity-40 disabled:cursor-default"
-                :disabled="isGenerating"
+                :disabled="isRegenerating(shot) || Boolean(production?.planning)"
                 :title="currentLang === 'vi'
                   ? 'Dựng lại cảnh này với mô tả hiện tại. Bản cũ vẫn được giữ.'
                   : 'Render this scene again from its current description. The old take is kept.'"
@@ -288,6 +288,8 @@ const props = defineProps({
   generationPhase: { type: String, default: "idle" },
   syncError: { type: String, default: "" },
   currentLang: { type: String, default: "en" },
+  // Scenes with a render in progress (several scenes can be regenerated at once).
+  busyShots: { type: Array, default: () => [] },
   estimateShotDuration: { type: Function, default: (s) => s?.duration_seconds || 5 },
   formatShotKeyframeTime: { type: Function, default: () => "0.0s" },
   getShotVideoFile: { type: Function, default: () => "" },
@@ -369,12 +371,7 @@ function sceneSummary(shot) {
 }
 
 function isRegenerating(shot) {
-  const production = props.production;
-  return Boolean(
-    props.getShotVideoFile(shot) &&
-      ["Queued", "Running"].includes(production?.status) &&
-      (production?.shots || []).some((item) => item.shot === shot.name && item.status !== "Completed")
-  );
+  return Boolean(props.getShotVideoFile(shot) && props.busyShots.includes(shot.name));
 }
 
 function getShotState(shot) {

@@ -207,6 +207,7 @@
             :expected-shot-count="storyboardShots.length || currentRun?.total_tasks || 0"
             :production="currentRun"
             :current-lang="currentLang"
+            :busy-shots="workspace?.project?.busy_shots || []"
             :estimate-shot-duration="estimateShotDuration"
             :format-shot-keyframe-time="formatShotKeyframeTime"
             :get-shot-video-file="getShotVideoFile"
@@ -1275,7 +1276,7 @@ async function regenerateCurrentShot(target = null) {
       shot_name: shot.name,
     });
     await fetchWorkspace();
-    resumeProduction(workspace.value?.production);
+    resumeProduction(workspace.value?.production, workspace.value?.project?.planning_status);
     notify({
       title: vi ? `Đang tạo lại cảnh ${shot.shot_number}` : `Regenerating scene ${shot.shot_number}`,
       text: vi
@@ -1397,7 +1398,7 @@ function onReorderShots(fromIdx, toIdx) {
 // Lifecycle Hooks
 onMounted(async () => {
   await fetchWorkspace();
-  resumeProduction(workspace.value?.production);
+  resumeProduction(workspace.value?.production, workspace.value?.project?.planning_status);
   await fetchVideoStyles();
   await loadTimeline(true);
   // sync video idea prompt if present in project

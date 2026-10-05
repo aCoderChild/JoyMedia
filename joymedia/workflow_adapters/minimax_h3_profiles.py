@@ -46,6 +46,9 @@ class MiniMaxH3ReferenceToVideoAdapter(GenericWorkflowAdapter):
 	cumulative_segment_output = True
 	primary_output_node_keys = ("92",)
 	continuation_overlap_frames = 22
+	# Each continuation adds up to ~5 s of new footage, like the first segment. Every
+	# job costs ~2.5 min of fixed overhead, so slivers of footage per job are slow.
+	continuation_new_frames = R2V_MAX_FRAMES
 
 	def extract_execution_metadata(self, workflow_data):
 		return {**H3_PROFILE_DEFAULTS, "frame_count": R2V_MAX_FRAMES}

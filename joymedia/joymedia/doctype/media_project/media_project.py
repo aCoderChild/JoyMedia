@@ -11,6 +11,7 @@ from frappe.model.document import Document
 from frappe.utils.synchronization import filelock
 
 from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
+from joymedia.services.storyboard_job import planning_status
 
 
 ALLOWED_STATUSES = {"Draft", "Generating", "Completed", "Needs Attention", "Cancelled", "Archived"}
@@ -80,9 +81,35 @@ def _meaningful_project_value(value, fallback):
 
 
 def _get_latest_project_generation_run(media_project):
-	rows = frappe.get_all(
+	"""The newest active run, else the newest run: the studio follows work still in progress."""
+	for filters in (
+		{"media_project": media_project, "status": ["in", ["Queued", "Running"]]},
+		{"media_project": media_project},
+	):
+		rows = _project_runs(filters)
+		if rows:
+			return rows[0]
+	return None
+
+
+def _busy_shots(media_project):
+	"""Scenes with a render still in progress in any of the project's runs."""
+	active_runs = frappe.get_all(
+		"Generation Run", filters={"media_project": media_project, "status": ["in", ["Queued", "Running"]]}, pluck="name"
+	)
+	if not active_runs:
+		return []
+	return sorted(set(frappe.get_all(
+		"Generation Task",
+		filters={"generation_run": ["in", active_runs], "status": ["not in", ["Completed", "Failed", "Cancelled"]]},
+		pluck="shot",
+	)))
+
+
+def _project_runs(filters):
+	return frappe.get_all(
 		"Generation Run",
-		filters={"media_project": media_project},
+		filters=filters,
 		fields=[
 			"name", "media_project", "status", "started_at", "completed_at",
 			"progress", "completed_tasks", "total_tasks", "failed_tasks", "running_tasks",
@@ -91,7 +118,6 @@ def _get_latest_project_generation_run(media_project):
 		order_by="creation desc",
 		limit_page_length=1,
 	)
-	return rows[0] if rows else None
 
 
 def _build_planning_context(project, settings=None):
@@ -446,6 +472,7 @@ def get_project_workspace(name):
 	storyboard = _storyboard_payload(project)
 	if production:
 		production["shots"] = _aggregate_shot_progress(production.name)
+		production["eta_minutes"] = _remaining_render_minutes(production)
 		production["scenes"] = [
 			{
 				"shot": scene["shot"],
@@ -487,6 +514,9 @@ def get_project_workspace(name):
 			"post_production_status": project.post_production_status or "Idle",
 			"post_production_step": project.post_production_step or "",
 			"post_production_error": project.post_production_error or "",
+			"planning_status": planning_status(project.name),
+			"busy_shots": _busy_shots(project.name),
+			"planning_error": project.planning_error or "",
 		},
 		"assets": _get_project_selected_assets(project),
 		"video_settings": ({
@@ -515,6 +545,36 @@ def refresh_project_studio(name):
 	project._require_read_access()
 	production = _get_latest_project_generation_run(project.name)
 	return get_project_workspace(project.name)
+
+
+# Used until enough render jobs have finished to measure the real average.
+DEFAULT_RENDER_JOB_MINUTES = 4.5
+
+
+def _remaining_render_minutes(production):
+	"""Rough minutes left for an active run: unfinished render jobs x the recent average job time.
+
+	The GPU is shared, so jobs from other projects can add to this.
+	"""
+	if production.get("status") not in ("Queued", "Running"):
+		return None
+	remaining = frappe.db.count(
+		"Generation Task", {"generation_run": production.name, "status": ["not in", ["Completed", "Cancelled"]]}
+	)
+	recent = frappe.get_all(
+		"Generation Attempt",
+		filters={"status": "Completed", "started_at": ["is", "set"], "completed_at": ["is", "set"]},
+		fields=["started_at", "completed_at"],
+		order_by="completed_at desc",
+		limit_page_length=20,
+	)
+	durations = [
+		(row.completed_at - row.started_at).total_seconds() / 60
+		for row in recent
+		if row.completed_at > row.started_at
+	]
+	average = sum(durations) / len(durations) if durations else DEFAULT_RENDER_JOB_MINUTES
+	return max(1, round(remaining * average))
 
 
 def _aggregate_shot_progress(run_name):
@@ -1348,16 +1408,10 @@ class MediaProject(Document):
 			if latest_hash == current_snapshot_hash:
 				return self.retry_failed_jobs()
 		if not frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}):
-			from joymedia.services.video_plan_service import apply_video_plan
-			self._use_reference_video_for_story_film()
-			plan = self.generate_video_plan()
-			# Planning takes minutes; start a fresh transaction so MariaDB's snapshot
-			# isolation does not reject writes to rows changed meanwhile.
-			frappe.db.commit()
-			apply_video_plan(self.name, plan)
-			from joymedia.services.shot_duration_planner import recalculate_shot_durations
-			recalculate_shot_durations(self.name)
-			frappe.db.commit()
+			# Planning takes minutes: longer than a web request may run.
+			from joymedia.services.storyboard_job import queue_storyboard
+
+			return queue_storyboard(self.name)
 		return self.generate_video()
 
 	@frappe.whitelist()

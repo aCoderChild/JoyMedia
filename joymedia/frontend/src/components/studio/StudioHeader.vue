@@ -333,10 +333,15 @@ const finishingStepLabel = computed(() => {
 });
 
 const progressLabel = computed(() => {
+  if (props.production?.planning) {
+    return vi.value ? "AI đang viết kịch bản…" : "The AI is writing the storyboard…";
+  }
   if (["Queued", "Running"].includes(props.production?.status)) {
+    const eta = props.production?.eta_minutes;
+    const left = eta ? (vi.value ? ` · còn khoảng ${eta} phút` : ` · about ${eta} min left`) : "";
     return vi.value
-      ? `Đang dựng cảnh ${completedShotCount.value}/${totalShotCount.value}`
-      : `Rendering scenes ${completedShotCount.value}/${totalShotCount.value}`;
+      ? `Đang dựng cảnh ${completedShotCount.value}/${totalShotCount.value}${left}`
+      : `Rendering scenes ${completedShotCount.value}/${totalShotCount.value}${left}`;
   }
   if (props.isFinishing) {
     return vi.value
