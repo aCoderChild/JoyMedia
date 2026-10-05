@@ -14,6 +14,7 @@
   "planned_frame_count",
   "duration_seconds",
   "generation_prompt",
+  "caption",
   "generation_inputs",
   "selected_output_section",
   "selected_output_asset_version"
@@ -79,6 +80,13 @@
    "ignore_xss_filter": 1,
    "label": "Shot Prompt",
    "reqd": 1
+  },
+  {
+   "description": "Short on-screen text shown during this scene, in the language of the video idea.",
+   "fieldname": "caption",
+   "fieldtype": "Data",
+   "label": "On-screen Caption",
+   "length": 120
   },
   {
    "description": "Assets assigned to workflow input roles for this shot, such as first_frame, last_frame, mask, or product_reference.",

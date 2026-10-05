@@ -168,6 +168,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 				"shot_number": shot["shot_number"],
 				"shot_name": shot.get("shot_name") or f"Shot {shot['shot_number']}",
 				"generation_prompt": shot["generation_prompt"],
+				"caption": str(shot.get("caption") or "").strip()[:120],
 			}
 		)
 		doc.duration_seconds = shot["duration_seconds"]
@@ -381,6 +382,7 @@ def append_video_plan(
 				"shot_number": base_shot_number + offset,
 				"shot_name": shot.get("shot_name") or f"Shot {base_shot_number + offset}",
 				"generation_prompt": shot["generation_prompt"],
+				"caption": str(shot.get("caption") or "").strip()[:120],
 				"duration_seconds": float(shot["duration_seconds"]),
 				"planned_frame_count": int(shot.get("planned_frame_count") or 0),
 			}

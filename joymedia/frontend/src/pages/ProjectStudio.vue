@@ -86,6 +86,7 @@
             :final-video="finalVideo"
             :selected-shot-index="selectedShotIndex"
             :current-lang="currentLang"
+            :caption="previewCaption"
             :is-outdated="isOutdated"
             :get-shot-timestamp-range="getShotTimestampRange"
             @toggle-play-pause="handleTogglePlayback"
@@ -224,6 +225,7 @@
             @add-scene="openAddScenePopover"
             @regenerate-shot="regenerateCurrentShot"
             @select-take="selectShotTake"
+            @update-caption="updateShotCaption"
           />
         </template>
 
@@ -785,6 +787,14 @@ const activeTimelineVideoClip = computed(() => {
   ) || videoClips.value.at(-1) || null;
 });
 
+// The caption of the scene on screen, shown over the preview as the export draws it.
+const previewCaption = computed(() => {
+  if (!Number(videoSettings.value?.show_captions ?? 1)) return "";
+  const shotName = studioMode.value === "edit" ? activeTimelineVideoClip.value?.shot : activeSelectedShot.value?.name;
+  if (!shotName) return "";
+  return storyboardShots.value.find((shot) => shot.name === shotName)?.caption || "";
+});
+
 const selectedShotFrame = computed(() => {
   const shot = activeSelectedShot.value;
   if (!shot) return null;
@@ -1287,6 +1297,23 @@ async function regenerateCurrentShot(target = null) {
   } catch (err) {
     notify({
       title: vi ? "Không thể tạo lại cảnh" : "Could not regenerate the scene",
+      text: errorMessage(err, ""),
+      type: "error",
+    });
+  }
+}
+
+async function updateShotCaption(shot, caption) {
+  try {
+    const result = await call("joymedia.joymedia.doctype.media_project.media_project.update_project_shot", {
+      project_name: projectName.value,
+      shot_name: shot.name,
+      values: { caption },
+    });
+    shot.caption = result.caption;
+  } catch (err) {
+    notify({
+      title: currentLang.value === "vi" ? "Không thể lưu chữ" : "Could not save the caption",
       text: errorMessage(err, ""),
       type: "error",
     });

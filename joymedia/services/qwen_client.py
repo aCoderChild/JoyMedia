@@ -312,7 +312,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	)
 	response_shape = (
 		'{"film_title":"...","shots":[{"shot_number":1,"shot_name":"...",'
-		'"duration_seconds":5,"generation_prompt":"...",'
+		'"duration_seconds":5,"generation_prompt":"...","caption":"...",'
 		f'"references":[{example_references}]}}]}}'
 	)
 	take_count = story_take_count(total_video_duration, story_reference_contexts) if story_film else None
@@ -338,7 +338,10 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		"- film_title is a short catchy title for the video (at most 6 words) in the same language as the "
 		"VIDEO IDEA; Vietnamese if the idea is written in Vietnamese.\n"
 		"- Write every generation_prompt in English, even when the VIDEO IDEA is in Vietnamese or another language.\n"
-		"- Write each shot_name title in the language of the VIDEO IDEA.\n\n"
+		"- Write each shot_name title in the language of the VIDEO IDEA.\n"
+		"- caption is the short on-screen text for that shot (at most 6 words, in the language of the "
+		"VIDEO IDEA): a feeling or benefit the shot shows, never invented facts, prices or brand names. "
+		"Leave it empty for the last shot.\n\n"
 		"Return only valid JSON with this shape:\n"
 		f"{response_shape}"
 	)
@@ -543,6 +546,7 @@ def _normalize_qwen_plan(
 			"shot_number": shot.get("shot_number") or index,
 			"shot_name": _first_non_empty(shot.get("shot_name"), f"Shot {index}"),
 			"generation_prompt": generation_prompt,
+			"caption": str(shot.get("caption") or "").strip()[:120],
 			"duration_seconds": shot.get("duration_seconds"),
 			"references": shot.get("references") if isinstance(shot.get("references"), list) else [],
 		}

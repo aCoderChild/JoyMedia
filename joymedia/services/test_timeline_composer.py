@@ -176,3 +176,27 @@ def _mean_luma(path, seconds):
 		capture_output=True, check=True,
 	).stdout
 	return output[0]
+
+
+class TestSceneCaptions(FrappeTestCase):
+	def test_caption_shows_in_the_lower_third_during_its_scene(self):
+		with tempfile.TemporaryDirectory(prefix="joymedia-caption-") as temp_dir:
+			temp_path = Path(temp_dir)
+			source = temp_path / "source.mp4"
+			output = temp_path / "captioned.mp4"
+			_make_video(source, 6, color="black")
+			profile = {"width": 320, "height": 240, "fps": 24.0}
+
+			_apply_ending(source, output, profile, "", "", temp_path, [(0.0, 4.0, "Không gian sống xanh")])
+
+			def lower_third(seconds):
+				pixels = subprocess.run(
+					["ffmpeg", "-v", "error", "-ss", str(seconds), "-i", str(output), "-frames:v", "1",
+					 "-vf", "format=gray,crop=iw:ih/6:0:ih*0.74", "-f", "rawvideo", "-"],
+					capture_output=True, check=True,
+				).stdout
+				return max(pixels)
+
+			self.assertLess(lower_third(0.1), 40)
+			self.assertGreater(lower_third(2.0), 150)
+			self.assertLess(lower_third(5.0), 40)

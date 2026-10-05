@@ -140,6 +140,10 @@
           <p class="text-[10.5px] text-ink-muted">
             {{ currentLang === 'vi' ? 'Không bắt buộc. Hiện ở cuối video.' : 'Optional. Shown at the end of the video.' }}
           </p>
+          <label class="flex items-center gap-2 pt-1 text-xs text-ink-primary cursor-pointer select-none">
+            <input v-model="form.show_captions" type="checkbox" class="accent-indigo-600" />
+            {{ currentLang === 'vi' ? 'Hiện chữ trên từng cảnh' : 'Show each scene\'s on-screen text' }}
+          </label>
         </div>
 
         <!-- Export quality -->
@@ -361,6 +365,7 @@ const form = reactive({
   end_card_tagline: "",
   soundtrack_prompt: "",
   export_quality: "Standard 1080p",
+  show_captions: true,
 });
 
 const exportQualities = [
@@ -385,6 +390,7 @@ watch(
       form.end_card_tagline = s.end_card_tagline || "";
       form.soundtrack_prompt = s.soundtrack_prompt || "";
       form.export_quality = s.export_quality || "Standard 1080p";
+      form.show_captions = Boolean(Number(s.show_captions ?? 1));
     }
   },
   { immediate: true }

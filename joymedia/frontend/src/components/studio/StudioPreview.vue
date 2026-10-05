@@ -10,6 +10,11 @@
         'ratio-square': settingsFormat === 'Square'
       }"
     >
+      <!-- The scene's on-screen caption, as the export will draw it -->
+      <div v-if="caption" class="pointer-events-none absolute inset-x-0 bottom-[12%] z-20 flex justify-center px-6">
+        <span class="preview-caption text-center text-white text-sm sm:text-lg">{{ caption }}</span>
+      </div>
+
       <!-- Floating Scene / Target HUD Chip -->
       <div class="viewport-hud-chip">
         <span class="size-2 rounded-full bg-indigo-500 animate-pulse" />
@@ -153,6 +158,8 @@ const { t } = useI18n();
 const previewVideo = ref(null);
 const viewport = ref(null);
 const props = defineProps({
+  // On-screen caption of the scene on screen; empty for none.
+  caption: { type: String, default: "" },
   studioMode: { type: String, default: "scene" },
   studioPreview: { type: Object, default: null },
   selectedTarget: { type: String, default: "scene" },
@@ -323,6 +330,11 @@ defineExpose({
 .ratio-square {
   aspect-ratio: 1 / 1;
   max-width: 620px !important;
+}
+
+.preview-caption {
+  font-family: "Playfair Display", Georgia, serif;
+  text-shadow: 0 2px 3px rgb(0 0 0 / 0.6);
 }
 
 .viewport-hud-chip {

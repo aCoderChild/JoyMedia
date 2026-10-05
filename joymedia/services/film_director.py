@@ -426,16 +426,21 @@ def reference_preamble(shot_reference_versions, project_references):
 		if reference.get("asset_version")
 	}
 	parts = []
+	location = None
 	for index, asset_version in enumerate(shot_reference_versions[:9], start=1):
 		reference = by_version.get(asset_version) or {}
 		label = str(reference.get("label") or "").strip()
 		suffix = f" ({label})" if label else ""
 		kind = classify_reference(_asset_version_context(asset_version, reference))
 		if kind == CHARACTER:
+			# Reference-to-Video can open on a reference photo as it is; the character's
+			# photo must lend only the person, never its background.
 			parts.append(
-				f"<Picture {index}> is the main character{suffix}: keep the face, hair and body identical."
+				f"<Picture {index}> is the main character{suffix}: keep the face, hair, body and outfit "
+				"identical, but use only the person, never the background of that photo."
 			)
 		elif kind == PLACE:
+			location = location or index
 			parts.append(
 				f"<Picture {index}> is the location{suffix}: keep its architecture, layout and materials exactly."
 			)
@@ -443,6 +448,8 @@ def reference_preamble(shot_reference_versions, project_references):
 			parts.append(
 				f"<Picture {index}> is a reference subject{suffix}: keep its shape, colours and details exactly."
 			)
+	if location:
+		parts.append(f"The video opens directly in the location from <Picture {location}>.")
 	return " ".join(parts)
 
 

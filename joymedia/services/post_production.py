@@ -33,7 +33,9 @@ MIN_TAKE_REMAINDER_FRAMES = 24
 # The soundtrack only needs audio, so it renders at H3's lowest resolution.
 SOUNDTRACK_RESOLUTION = "360P"
 # Part of the soundtrack cache key: bump it when the soundtrack prompts change.
-SOUNDTRACK_VERSION = 2
+SOUNDTRACK_VERSION = 3
+# Extra soundtrack rendered past the film's end to choose where the music ends.
+MUSIC_ENDING_SEARCH_SECONDS = 3
 # Longest segment H3 renders in one go; longer renders continue segment by segment.
 SEGMENT_SECONDS = 5
 # Audio/video context shared between soundtrack segments (on the AV prefix grid 39/90/141).
@@ -322,8 +324,10 @@ def _add_soundtrack(project_name):
 		# Marketers may describe the music in Vietnamese; H3 follows English best.
 		audio_version = _render_soundtrack(project_name, asset_name, clips[0], to_english(music), total_frames)
 
+	from joymedia.services.timeline_composer import _asset_version_path
 	from joymedia.services.timeline_editor import _ensure_source_audio_clips, _timeline_clip_rows
 
+	music_start = _music_start_frame(_asset_version_path(audio_version), total_frames)
 	# Bridges bring their own source audio; backfill it so it can be switched off too.
 	_ensure_source_audio_clips(project, _timeline_clip_rows(project_name))
 	for clip in frappe.get_all(
@@ -344,10 +348,10 @@ def _add_soundtrack(project_name):
 			"initial_timeline_start_frame": 0,
 			"enabled": 1,
 			"source_asset_version": audio_version,
-			"source_in_frame": 0,
-			"source_out_frame": total_frames,
-			"initial_source_in_frame": 0,
-			"initial_source_out_frame": total_frames,
+			"source_in_frame": music_start,
+			"source_out_frame": music_start + total_frames,
+			"initial_source_in_frame": music_start,
+			"initial_source_out_frame": music_start + total_frames,
 			"audio_role": "BGM",
 			"gain_db": 0,
 			"fade_in_frames": SOUNDTRACK_FADE_IN_FRAMES,
@@ -383,8 +387,36 @@ def _render_soundtrack(project_name, asset_name, first_clip, music, total_frames
 
 
 def _soundtrack_seconds(total_frames):
-	# One extra second so the music never ends before the picture.
-	return total_frames / 24 + 1
+	# One extra second so the music never ends before the picture, plus room to choose
+	# where in the music the film ends (_music_start_frame).
+	return total_frames / 24 + 1 + MUSIC_ENDING_SEARCH_SECONDS
+
+
+def _music_start_frame(audio_path, total_frames):
+	"""Where the film's music starts, so the film ends on the softest moment of the music.
+
+	H3 does not compose an ending on request, and fading out mid-note sounds cut off.
+	The soundtrack is rendered a few seconds longer than the film; starting the music
+	up to MUSIC_ENDING_SEARCH_SECONDS later (hidden by its fade-in) moves the film's end
+	onto the quietest point there, usually the gap between two phrases.
+	"""
+	rate, step = 8000, 400  # 50 ms windows
+	pcm = subprocess.run(
+		["ffmpeg", "-v", "error", "-i", str(audio_path), "-ac", "1", "-ar", str(rate), "-f", "s16le", "-"],
+		capture_output=True, check=True, timeout=120,
+	).stdout
+	samples = memoryview(pcm).cast("h")
+	energy = [
+		sum(value * value for value in samples[start:start + step]) / step
+		for start in range(0, len(samples) - step, step)
+	]
+	film_end = round(total_frames / 24 * rate / step)
+	latest = min(len(energy) - 4, film_end + round(MUSIC_ENDING_SEARCH_SECONDS * rate / step))
+	if latest <= film_end:
+		return 0
+	# Judge each candidate end by the music around it (0.4 s), not one 50 ms window.
+	quietest = min(range(film_end, latest + 1), key=lambda index: sum(energy[max(0, index - 4):index + 4]))
+	return round((quietest - film_end) * step / rate * 24)
 
 
 def segment_durations(seconds, max_segment_seconds=SEGMENT_SECONDS, fps=24):

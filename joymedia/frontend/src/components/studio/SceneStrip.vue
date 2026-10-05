@@ -151,11 +151,24 @@
 
           <!-- Creative summary snippet -->
           <p
-            class="text-[11px] text-ink-secondary line-clamp-2 leading-relaxed mb-2 min-h-[30px]"
+            class="text-[11px] text-ink-secondary line-clamp-2 leading-relaxed mb-1.5 min-h-[30px]"
             :title="shot.generation_prompt || ''"
           >
             {{ sceneSummary(shot) }}
           </p>
+
+          <!-- On-screen caption: editable in place, saved when the field is left -->
+          <input
+            :value="shot.caption || ''"
+            type="text"
+            maxlength="120"
+            class="w-full mb-2 px-2 py-1 rounded-lg bg-surface-card border border-outline-border/60 text-[11px] italic text-ink-primary placeholder:text-ink-muted placeholder:not-italic focus:outline-none focus:border-indigo-500"
+            :placeholder="currentLang === 'vi' ? 'Chữ trên màn hình (không bắt buộc)' : 'On-screen text (optional)'"
+            :title="currentLang === 'vi' ? 'Hiện ở cuối khung hình trong cảnh này' : 'Shown at the bottom of the frame during this scene'"
+            @click.stop
+            @keydown.enter="$event.target.blur()"
+            @change="emit('updateCaption', shot, $event.target.value)"
+          />
 
           <div
             v-if="shot.reference_image || shot.last_frame_image"
@@ -309,6 +322,7 @@ const emit = defineEmits([
   "reorderShots",
   "regenerateShot",
   "selectTake",
+  "updateCaption",
 ]);
 
 const aiRevisionInput = ref("");

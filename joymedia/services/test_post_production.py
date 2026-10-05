@@ -93,3 +93,23 @@ class TestPostProductionStatus(FrappeTestCase):
 
 		self.assertEqual(2, len(rounds))
 		self.assertEqual("Completed", frappe.db.get_value("Media Project", self.project.name, "post_production_status"))
+
+
+class TestMusicEnding(FrappeTestCase):
+	def test_film_ends_on_the_quietest_moment_of_the_music(self):
+		import subprocess
+		import tempfile
+		from pathlib import Path
+
+		with tempfile.TemporaryDirectory() as temp_dir:
+			audio = Path(temp_dir) / "music.wav"
+			# 14 s of tone with a pause at 11.3-11.7 s; the film is 10 s long.
+			subprocess.run(
+				["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=330:duration=14",
+				 "-af", "volume='if(between(t,11.3,11.7),0.02,1)':eval=frame", str(audio)],
+				check=True,
+			)
+
+			start = post_production._music_start_frame(audio, 240)
+
+		self.assertAlmostEqual(36, start, delta=3)

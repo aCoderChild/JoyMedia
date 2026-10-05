@@ -413,6 +413,7 @@ def _storyboard_payload(specification):
 			"shot_number",
 			"shot_name",
 			"generation_prompt",
+			"caption",
 			"duration_seconds",
 			"planned_frame_count",
 			"selected_output_asset_version",
@@ -529,6 +530,7 @@ def get_project_workspace(name):
 			"global_instructions": settings.global_instructions or "",
 			"end_card_title": settings.end_card_title or "",
 			"end_card_tagline": settings.end_card_tagline or "",
+			"show_captions": int(settings.show_captions or 0),
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
 			"export_quality": settings.export_quality or "Standard 1080p",
 			**_customer_style_details(settings),
@@ -899,7 +901,7 @@ def save_project_video_settings(
 	project_name, total_duration_seconds, delivery_preset, video_style=None,
 	generation_mode=None, global_instructions=None, reference_mode=None,
 	quality_mode=None, end_card_title=None, end_card_tagline=None, soundtrack_prompt=None,
-	export_quality=None,
+	export_quality=None, show_captions=None,
 ):
 	project = frappe.get_doc("Media Project", project_name)
 	return project.save_video_settings(
@@ -914,6 +916,7 @@ def save_project_video_settings(
 		end_card_tagline,
 		soundtrack_prompt,
 		export_quality,
+		show_captions,
 	)
 
 
@@ -1026,22 +1029,33 @@ def update_project_shot(project_name, shot_name, values):
 	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
-	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
-	ensure_shot_planning_editable(project.name)
 	if isinstance(values, str):
 		values = frappe.parse_json(values)
 	changed = False
 	if "generation_prompt" in values:
 		prompt = str(values["generation_prompt"] or "").strip()
+		if prompt != shot.generation_prompt and shot.name in _busy_shots(project.name):
+			frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))
 		changed = prompt != shot.generation_prompt
 		shot.generation_prompt = prompt
-	if changed:
+	caption_changed = False
+	if "caption" in values:
+		# Captions are drawn at export time, so they can change at any moment.
+		caption = str(values["caption"] or "").strip()[:120]
+		caption_changed = caption != (shot.caption or "")
+		shot.caption = caption
+	if changed or caption_changed:
 		shot.save(ignore_permissions=True)
+	if caption_changed:
+		from joymedia.services.timeline_editor import _invalidate_project_output
+
+		_invalidate_project_output(project.name)
 	return {
 		"name": shot.name,
 		"shot_number": shot.shot_number,
 		"shot_name": shot.shot_name,
 		"generation_prompt": shot.generation_prompt,
+		"caption": shot.caption or "",
 		"is_outdated": bool(changed and shot.selected_output_asset_version),
 	}
 
@@ -1259,6 +1273,7 @@ class MediaProject(Document):
 			"global_instructions": settings.global_instructions or "",
 			"end_card_title": settings.end_card_title or "",
 			"end_card_tagline": settings.end_card_tagline or "",
+			"show_captions": int(settings.show_captions or 0),
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
 			"export_quality": settings.export_quality or "Standard 1080p",
 			**_customer_style_details(settings),
@@ -1269,7 +1284,7 @@ class MediaProject(Document):
 		self, total_duration_seconds, delivery_preset, video_style=None,
 		generation_mode=None, global_instructions=None, reference_mode=None,
 		quality_mode=None, end_card_title=None, end_card_tagline=None, soundtrack_prompt=None,
-		export_quality=None,
+		export_quality=None, show_captions=None,
 	):
 		self._require_write_access()
 		try:
@@ -1308,6 +1323,8 @@ class MediaProject(Document):
 			self.end_card_title = str(end_card_title).strip()
 		if end_card_tagline is not None:
 			self.end_card_tagline = str(end_card_tagline).strip()
+		if show_captions is not None:
+			self.show_captions = 1 if str(show_captions).lower() in ("1", "true", "yes", "on") else 0
 		if soundtrack_prompt is not None:
 			self.soundtrack_prompt = str(soundtrack_prompt).strip()
 		if export_quality:

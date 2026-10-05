@@ -24,6 +24,8 @@ FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
 END_CARD_SECONDS = 3.5
 # Every film fades to black, and its sound to silence, over its last second.
 ENDING_FADE_SECONDS = 1.0
+# Scenes shorter than this get no caption: it would flash by unread.
+MIN_CAPTION_SECONDS = 2.0
 TITLE_FONT = "PlayfairDisplay.ttf"
 TAGLINE_FONT = "GreatVibes-Regular.ttf"
 
@@ -57,6 +59,7 @@ def compose_project_timeline_internal(project_name: str):
 			"source_out_frame",
 			"transition_to_next",
 			"transition_frames",
+			"shot",
 		],
 		order_by="clip_order asc, creation asc",
 	)
@@ -129,7 +132,8 @@ def compose_project_timeline_internal(project_name: str):
 			title = (project.get("end_card_title") or "").strip()
 			tagline = (project.get("end_card_tagline") or "").strip()
 			ended_master = temp_path / f"{project.name}-timeline-ending.mp4"
-			_apply_ending(silent_master, ended_master, output_profile, title, tagline, temp_path)
+			cues = _caption_cues(project, video_clips, clip_frames, transition_frames, positioned, render["fps"])
+			_apply_ending(silent_master, ended_master, output_profile, title, tagline, temp_path, cues)
 			_validate_normalized_video(ended_master, output_profile, expected_frames=output_frames)
 			silent_master = ended_master
 
@@ -206,12 +210,46 @@ def compose_project_timeline_internal(project_name: str):
 	}
 
 
-def _apply_ending(source_path, output_path, profile, title, tagline, temp_path):
-	"""End the film: fade any title and tagline in, then fade the picture to black."""
+def _caption_cues(project, video_clips, clip_frames, transition_frames, positioned, fps):
+	"""(start, end, text) in seconds for every scene with a caption, while it is on screen."""
+	if not int(project.get("show_captions") or 0):
+		return []
+	shots = [clip.shot for clip in video_clips if clip.get("shot")]
+	captions = dict(frappe.get_all(
+		"Shot", filters={"name": ["in", shots]}, fields=["name", "caption"], as_list=True
+	)) if shots else {}
+	cues, cursor = [], 0
+	for clip, frames, transition in zip(video_clips, clip_frames, transition_frames):
+		start = int(clip.timeline_start_frame or 0) if positioned else cursor
+		cursor += frames - transition
+		text = str(captions.get(clip.get("shot")) or "").strip()
+		if text and frames / fps >= MIN_CAPTION_SECONDS:
+			cues.append((start / fps, (start + frames) / fps, text))
+	return cues
+
+
+def _apply_ending(source_path, output_path, profile, title, tagline, temp_path, captions=()):
+	"""Draw scene captions, fade any title and tagline in, then fade the picture to black."""
 	duration = _get_video_duration(source_path)
 	start = max(0.0, duration - min(END_CARD_SECONDS, duration * 0.4))
 	height = profile["height"]
 	filters = []
+	for index, (begin, end, text) in enumerate(captions):
+		text_file = temp_path / f"caption-{index}.txt"
+		text_file.write_text(text, encoding="utf-8")
+		size = round(min(height * 0.055, profile["width"] * 0.9 / (0.55 * max(len(text), 1))))
+		show, hide = begin + 0.3, min(end, start if title or tagline else end) - 0.3
+		if hide - show < 1.0:
+			continue
+		filters.append(
+			f"drawtext=fontfile='{FONT_DIR / TITLE_FONT}':textfile='{text_file}':fontsize={size}:fontcolor=white:"
+			f"shadowcolor=black@0.55:shadowx=0:shadowy={max(2, height // 360)}:"
+			f"x=(w-text_w)/2:y=h*0.82-text_h/2:"
+			f"alpha='if(lt(t,{show:.3f}),0,if(lt(t,{show + 0.5:.3f}),(t-{show:.3f})/0.5,"
+			f"if(lt(t,{hide - 0.5:.3f}),1,if(lt(t,{hide:.3f}),({hide:.3f}-t)/0.5,0))))'"
+		)
+	# Scene captions are drawn before the end card's dimming filter is inserted at the front.
+	caption_filters = len(filters)
 	# Text goes through files so quotes, colons and accents need no escaping.
 	for index, (text, font, size, delay, offset) in enumerate((
 		(title, TITLE_FONT, round(height * 0.1), 0.0, -0.06 if tagline else 0.0),
@@ -229,7 +267,7 @@ def _apply_ending(source_path, output_path, profile, title, tagline, temp_path):
 			f"alpha='if(lt(t,{appear:.3f}),0,min(1,(t-{appear:.3f})/0.8))'"
 		)
 	# The title stays readable over a dimmed last shot; the whole frame then fades out.
-	if filters:
+	if len(filters) > caption_filters:
 		filters.insert(0, f"eq=brightness='if(gte(t,{start:.3f}),-0.12*min(1,(t-{start:.3f})/0.8),0)':eval=frame")
 	filters.append(f"fade=t=out:st={max(0.0, duration - ENDING_FADE_SECONDS):.3f}:d={ENDING_FADE_SECONDS}")
 	_run_ffmpeg(
