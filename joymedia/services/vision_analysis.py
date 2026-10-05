@@ -27,8 +27,25 @@ Describe this reference image for a video director who cannot see it. Return onl
  "outfit": "for a person: the exact garment type (name traditional dress such as a Vietnamese ao dai), colour, hair; otherwise empty",
  "lighting": "a few words"}
 Rules: describe only what is visible, never guess. kind is "person" when a person is the main subject,
-"place" for buildings, rooms and outdoor areas even if small people appear.
+"place" for buildings, rooms and outdoor areas even if small people appear, and "product" for a single
+object shown on its own: goods, packaging, jewellery, decor, and artworks, prints, plates or stickers
+EVEN WHEN they depict a scene. For a product, describe the object first (shape, material, border,
+colours), then what it depicts, e.g. "A round mosaic artwork with a jewelled border, depicting a harbour".
 """.strip()
+
+PRODUCT_ANALYSIS_PROMPT = """
+This image shows a PRODUCT that a video will feature as an object (held, displayed or used).
+Describe it for a video director who cannot see it. Return only JSON:
+{"kind": "product",
+ "scene_type": "product",
+ "description": "at most 45 words: first the object itself (type of object, shape, size impression, material, frame or border, finish, main colours), then what is printed, painted or shown on it, e.g. 'A tall frosted-glass bottle with a brushed silver cap; its label shows a green mountain logo'",
+ "outfit": "",
+ "lighting": "a few words"}
+Rules: describe only what is visible, never guess. Never describe the depicted scene as if it were the setting.
+""".strip()
+
+# Stored with each analysis; analyses made with an older prompt are redone.
+ANALYSIS_VERSION = 2
 
 
 def is_configured():
@@ -43,26 +60,38 @@ def ensure_project_image_analysis(project):
 	for row in project.selected_media or []:
 		if not row.asset_version:
 			continue
+		as_product = (row.reference_role or "") == "Product"
 		version = frappe.db.get_value(
 			"Asset Version",
 			row.asset_version,
-			["name", "media_asset", "file", "analysis_status"],
+			["name", "media_asset", "file", "analysis_status", "analysis_json"],
 			as_dict=True,
 		)
-		if not version or not version.file or version.analysis_status == "Ready":
+		if not version or not version.file or _is_current(version, as_product):
 			continue
 		if frappe.db.get_value("Media Asset", version.media_asset, "media_type") != "Image":
 			continue
-		analyse_asset_version(version.name)
+		analyse_asset_version(version.name, as_product=as_product)
 		analysed.append(version.name)
 	return analysed
 
 
-def analyse_asset_version(asset_version_name):
+def _is_current(version, as_product=False):
+	"""Whether the stored analysis was made with the current prompt for how the image is used."""
+	if version.analysis_status != "Ready":
+		return False
+	try:
+		analysis = json.loads(version.analysis_json or "{}")
+	except ValueError:
+		return False
+	return analysis.get("version") == ANALYSIS_VERSION and (not as_product or analysis.get("kind") == "product")
+
+
+def analyse_asset_version(asset_version_name, as_product=False):
 	"""Analyse one image Asset Version and store the result. Failures are recorded, not raised."""
 	file_url = frappe.db.get_value("Asset Version", asset_version_name, "file")
 	try:
-		analysis = describe_image(_image_data_url(file_url))
+		analysis = describe_image(_image_data_url(file_url), PRODUCT_ANALYSIS_PROMPT if as_product else ANALYSIS_PROMPT)
 	except Exception as exc:
 		frappe.logger("joymedia.vision").warning(
 			"Image analysis failed for Asset Version %s: %s", asset_version_name, exc
@@ -87,7 +116,7 @@ def analyse_asset_version(asset_version_name):
 	return analysis
 
 
-def describe_image(data_url):
+def describe_image(data_url, prompt=ANALYSIS_PROMPT):
 	base_url = frappe.conf.get("qwen_vl_base_url").rstrip("/")
 	payload = {
 		"model": frappe.conf.get("qwen_vl_model"),
@@ -96,7 +125,7 @@ def describe_image(data_url):
 				"role": "user",
 				"content": [
 					{"type": "image_url", "image_url": {"url": data_url}},
-					{"type": "text", "text": ANALYSIS_PROMPT},
+					{"type": "text", "text": prompt},
 				],
 			}
 		],
@@ -108,19 +137,22 @@ def describe_image(data_url):
 	response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
 	response.raise_for_status()
 	content = response.json()["choices"][0]["message"]["content"]
-	return normalize_analysis(json.loads(content))
+	return normalize_analysis(json.loads(content), as_product=prompt == PRODUCT_ANALYSIS_PROMPT)
 
 
-def normalize_analysis(result):
+def normalize_analysis(result, as_product=False):
 	if not isinstance(result, dict):
 		raise ValueError("Image analysis must be a JSON object.")
 	kind = str(result.get("kind") or "").strip().lower()
+	if as_product:
+		kind = "product"
 	return {
 		"kind": kind if kind in VALID_KINDS else "other",
 		"scene_type": str(result.get("scene_type") or "").strip().lower()[:40],
 		"description": str(result.get("description") or "").strip()[:400],
 		"outfit": str(result.get("outfit") or "").strip()[:200],
 		"lighting": str(result.get("lighting") or "").strip()[:100],
+		"version": ANALYSIS_VERSION,
 	}
 
 

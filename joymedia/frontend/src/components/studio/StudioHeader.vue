@@ -170,6 +170,21 @@
         {{ currentLang === 'vi' ? 'Dừng' : 'Stop' }}
       </button>
 
+      <!-- A fast draft is ready: render every scene again at full quality -->
+      <button
+        v-if="timelineReady && qualityMode === 'Draft'"
+        type="button"
+        class="jm-btn-secondary !py-1 !px-3 text-xs flex items-center gap-1.5 shadow-sm"
+        :disabled="isFinishing || isExporting || ['Queued', 'Running'].includes(production?.status)"
+        :title="currentLang === 'vi'
+          ? 'Dựng lại tất cả cảnh ở chất lượng cao nhất. Bản nháp vẫn được giữ.'
+          : 'Render every scene again at full quality. The draft takes are kept.'"
+        @click="$emit('renderFinal')"
+      >
+        <span>✨</span>
+        <span>{{ currentLang === 'vi' ? 'Dựng bản đẹp' : 'Render final' }}</span>
+      </button>
+
       <button
         v-if="timelineReady"
         type="button"
@@ -222,6 +237,7 @@ const props = defineProps({
   isExporting: { type: Boolean, default: false },
   isFinishing: { type: Boolean, default: false },
   postProductionStep: { type: String, default: "" },
+  qualityMode: { type: String, default: "Production" },
   exportStatus: { type: String, default: "Idle" },
   currentOutputAssetVersion: { type: String, default: "" },
   mediaDrawerOpen: { type: Boolean, default: false },
@@ -239,6 +255,7 @@ const emit = defineEmits([
   "openSettings",
   "exportTimeline",
   "finishFilm",
+  "renderFinal",
   "retryGeneration",
   "stopGeneration",
 ]);

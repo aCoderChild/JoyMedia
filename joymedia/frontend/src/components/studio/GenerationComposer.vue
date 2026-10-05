@@ -20,7 +20,7 @@
           <span class="text-xs">{{ getRoleIcon(asset.reference_role || asset.asset_category) }}</span>
           <span class="text-[11px] text-indigo-400 font-bold">@</span>
           <span class="font-semibold truncate max-w-[130px]">{{ asset.asset_name }}</span>
-          <span class="text-[10px] text-ink-muted capitalize">· {{ asset.reference_role || asset.asset_category || 'Reference' }}</span>
+          <span class="text-[10px] text-ink-muted">· {{ roleLabel(asset.reference_role || asset.asset_category) }}</span>
         </button>
       </template>
 
@@ -169,6 +169,23 @@ function getCleanKey(asset) {
   if (asset?.reference_key) return asset.reference_key;
   const name = asset?.asset_name || asset?.reference_role || "item";
   return name.toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^_+|_+$/g, "").slice(0, 24);
+}
+
+const ROLE_LABELS = {
+  Product: ["Product", "Sản phẩm"],
+  Character: ["Character", "Nhân vật"],
+  Environment: ["Place", "Bối cảnh"],
+  Background: ["Place", "Bối cảnh"],
+  Style: ["Style", "Phong cách"],
+  Motion: ["Motion", "Chuyển động"],
+  Audio: ["Audio", "Âm thanh"],
+  General: ["Automatic", "Tự động"],
+};
+
+function roleLabel(role) {
+  const labels = ROLE_LABELS[role];
+  if (!labels) return role || (props.currentLang === "vi" ? "Tư liệu" : "Reference");
+  return labels[props.currentLang === "vi" ? 1 : 0];
 }
 
 function getRoleIcon(role) {

@@ -17,12 +17,13 @@ R2V_CONTRACT = [{
 	"max_count": 2,
 }]
 
+# Roles left "General" (automatic): the category, then the image analysis decide.
 REFERENCES = [
-	{"reference_key": "model", "media_type": "Image", "asset_category": "Character", "reference_role": "Product", "asset_name": "model"},
-	{"reference_key": "tower", "media_type": "Image", "asset_category": "Product", "reference_role": "Product", "asset_name": "tower",
+	{"reference_key": "model", "media_type": "Image", "asset_category": "Character", "reference_role": "General", "asset_name": "model"},
+	{"reference_key": "tower", "media_type": "Image", "asset_category": "Reference", "reference_role": "General", "asset_name": "tower",
 	 "analysis": {"kind": "place", "description": "Cream high-rise tower at golden hour"}},
-	{"reference_key": "bedroom", "media_type": "Image", "asset_category": "Background", "reference_role": "Product", "asset_name": "bedroom"},
-	{"reference_key": "logo", "media_type": "Image", "asset_category": "Brand", "reference_role": "Product", "asset_name": "logo"},
+	{"reference_key": "bedroom", "media_type": "Image", "asset_category": "Background", "reference_role": "General", "asset_name": "bedroom"},
+	{"reference_key": "logo", "media_type": "Image", "asset_category": "Brand", "reference_role": "General", "asset_name": "logo"},
 ]
 
 
@@ -41,10 +42,18 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertTrue(film_director.is_story_film(REFERENCES))
 		self.assertFalse(film_director.is_story_film(REFERENCES[1:]))
 
-	def test_person_analysis_overrides_product_category(self):
-		context = {"media_type": "Image", "asset_category": "Product", "analysis": {"kind": "person"}}
-
-		self.assertEqual(film_director.CHARACTER, film_director.classify_reference(context))
+	def test_what_people_chose_beats_the_image_analysis(self):
+		# A product that is a painting of a harbour: the analysis sees a place.
+		painting = {"media_type": "Image", "reference_role": "Product", "asset_category": "Reference",
+			"analysis": {"kind": "place"}}
+		self.assertEqual(film_director.PRODUCT, film_director.classify_reference(painting))
+		# Role left automatic: the category decides, then the analysis.
+		self.assertEqual(film_director.PRODUCT, film_director.classify_reference(
+			{**painting, "reference_role": "General", "asset_category": "Product"}))
+		self.assertEqual(film_director.PLACE, film_director.classify_reference(
+			{**painting, "reference_role": "General"}))
+		self.assertEqual(film_director.CHARACTER, film_director.classify_reference(
+			{"media_type": "Image", "reference_role": "General", "analysis": {"kind": "person"}}))
 
 	def test_takes_with_a_person_get_character_then_described_place(self):
 		shots = [
@@ -185,6 +194,9 @@ class TestFilmDirector(FrappeTestCase):
 		def fake_post(url, json=None, timeout=None):
 			if url.endswith("/tokenize"):
 				return _response({"count": 900, "max_model_len": 4096})
+			# Keep the planning request; the later on-screen-words request has no plan to return.
+			if "on-screen words" in json["messages"][1]["content"]:
+				return _response({"choices": [{"message": {"content": "{}"}}]})
 			sent["payload"] = json
 			return _response({"choices": [{"message": {"content": frappe.as_json(plan)}}]})
 
@@ -291,7 +303,9 @@ class TestFilmDirector(FrappeTestCase):
 		):
 			product_preamble = film_director.reference_preamble(["AV-MODEL"], [])
 		self.assertEqual(
-			"<Picture 1> is a reference subject: keep its shape, colours and details exactly.", product_preamble
+			"<Picture 1> is the product: keep its exact shape, size, colours, patterns and details. "
+			"It is an object in the scene, never the setting.",
+			product_preamble,
 		)
 
 	def test_reference_to_video_takes_render_in_short_segments(self):
@@ -519,6 +533,7 @@ class TestPlannerOutputCleanup(FrappeTestCase):
 	def test_leaked_example_numbering_is_removed_from_titles(self):
 		self.assertEqual("Áo dài trắng dạo quanh căn hộ", qwen_client.clean_title("Biến thể TVC 179: Áo dài trắng dạo quanh căn hộ"))
 		self.assertEqual("Sống xanh 2024", qwen_client.clean_title("Sống xanh 2024"))
+		self.assertEqual("", qwen_client.clean_title("Biến thể TVC 297"))
 
 	def test_empty_captions_fall_back_to_the_scene_title_except_the_last(self):
 		shots = [{"shot_name": "OPENING: Bước đi tự tin", "caption": ""}, {"shot_name": "CLOSING: Hoàng hôn", "caption": ""}]
@@ -531,3 +546,70 @@ class TestPlannerOutputCleanup(FrappeTestCase):
 	def test_english_ideas_go_to_the_planner_unchanged(self, post):
 		self.assertEqual("A sunset tour of the tower.", qwen_client._idea_for_planner("A sunset tour of the tower."))
 		post.assert_not_called()
+
+
+PRODUCT_FILM = [
+	{"reference_key": "nu_ao_dai", "media_type": "Image", "reference_role": "Character", "asset_name": "nữ áo dài",
+	 "analysis": {"kind": "person", "outfit": "white ao dai"}},
+	{"reference_key": "tranh", "media_type": "Image", "reference_role": "Product", "asset_name": "1",
+	 "analysis": {"kind": "place", "description": "A coastal town at sunset with boats and a lighthouse."}},
+]
+
+
+class TestProductFilm(FrappeTestCase):
+	def test_character_with_a_product_is_a_product_film_not_a_walk_through_it(self):
+		self.assertTrue(film_director.is_product_film(PRODUCT_FILM))
+
+		instruction = film_director.build_director_instruction(PRODUCT_FILM, "product_reference", 25)
+
+		self.assertIn("is an OBJECT", instruction)
+		self.assertIn("key=tranh: THE PRODUCT, an object (not a place)", instruction)
+		self.assertNotIn("follows the character through the supplied places", instruction)
+
+	def test_takes_reference_the_character_and_product_and_hero_takes_the_product_twice(self):
+		shots = [
+			{"generation_prompt": "She lifts the artwork toward the window light.", "references": []},
+			{"generation_prompt": "A slow orbit around the artwork on a marble table.", "references": []},
+		]
+
+		film_director.normalize_story_references(shots, PRODUCT_FILM, "product_reference")
+
+		self.assertEqual(
+			[["nu_ao_dai", "tranh"], ["tranh", "tranh"]],
+			[[ref["reference_key"] for ref in shot["references"]] for shot in shots],
+		)
+
+
+class TestGroundedWords(FrappeTestCase):
+	@patch("joymedia.services.qwen_client._qwen_config", return_value=("http://qwen/v1", "m", 60))
+	@patch("joymedia.services.qwen_client.requests.post")
+	def test_titles_and_captions_come_from_what_the_scenes_show(self, post, config):
+		post.return_value = _response({"choices": [{"message": {"content": frappe.as_json({
+			"film_title": "Ánh hoàng hôn",
+			"scenes": [{"title": "Nâng niu tác phẩm", "caption": "Tinh tế từng chi tiết"},
+				{"title": "Cận cảnh viền đá", "caption": "Kết thúc"}],
+		})}}]})
+		shots = [
+			{"shot_name": "OPENING: Siêu xe tăng tốc", "generation_prompt": "She lifts the artwork."},
+			{"shot_name": "CLOSING: Nhẫn kim cương", "generation_prompt": "A close-up of the artwork's border."},
+		]
+
+		words = qwen_client.write_titles_and_captions(shots, "Quảng cáo sản phẩm")
+		qwen_client.default_captions(shots)
+
+		self.assertEqual("Ánh hoàng hôn", words["film_title"])
+		self.assertEqual(["OPENING: Nâng niu tác phẩm", "CLOSING: Cận cảnh viền đá"], [s["shot_name"] for s in shots])
+		self.assertEqual(["Tinh tế từng chi tiết", ""], [s["caption"] for s in shots])
+
+
+class TestProductAnalysis(FrappeTestCase):
+	@patch("joymedia.services.vision_analysis.analyse_asset_version")
+	@patch("joymedia.services.vision_analysis.is_configured", return_value=True)
+	def test_product_references_are_described_as_objects(self, configured, analyse):
+		project = frappe._dict(selected_media=[frappe._dict(asset_version="AV-1", reference_role="Product")])
+		version = frappe._dict(name="AV-1", media_asset="MA-1", file="/f.png", analysis_status="Ready",
+			analysis_json='{"kind": "place", "version": 2}')
+		with patch.object(vision_analysis.frappe.db, "get_value", side_effect=[version, "Image"]):
+			vision_analysis.ensure_project_image_analysis(project)
+
+		analyse.assert_called_once_with("AV-1", as_product=True)

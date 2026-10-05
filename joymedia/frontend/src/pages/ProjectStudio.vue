@@ -24,6 +24,8 @@
       @open-settings="showSettings = true"
       @export-timeline="exportAndRefresh"
       @finish-film="finishFilm"
+      @render-final="renderFinal"
+      :quality-mode="videoSettings.quality_mode || 'Production'"
       @retry-generation="handleGenerationRetry"
       @stop-generation="cancelGeneration"
     />
@@ -1317,6 +1319,28 @@ async function updateShotCaption(shot, caption) {
       text: errorMessage(err, ""),
       type: "error",
     });
+  }
+}
+
+async function renderFinal() {
+  const vi = currentLang.value === "vi";
+  const confirmed = window.confirm(
+    vi
+      ? "Dựng lại tất cả cảnh ở chất lượng cao nhất? Việc này lâu hơn bản nháp khoảng 4 lần. Bản nháp vẫn được giữ trong các phiên bản."
+      : "Render every scene again at full quality? This takes about 4× longer than the draft. The draft takes are kept as earlier takes."
+  );
+  if (!confirmed) return;
+  try {
+    await call("joymedia.services.scene_takes.render_final", { project_name: projectName.value });
+    await fetchWorkspace();
+    resumeProduction(workspace.value?.production, workspace.value?.project?.planning_status);
+    notify({
+      title: vi ? "Đang dựng bản đẹp" : "Rendering the final film",
+      text: vi ? "Các cảnh mới sẽ thay bản nháp khi dựng xong." : "The new scenes replace the draft as they finish.",
+      type: "success",
+    });
+  } catch (err) {
+    notify({ title: vi ? "Không thể dựng bản đẹp" : "Could not render the final film", text: errorMessage(err, ""), type: "error" });
   }
 }
 

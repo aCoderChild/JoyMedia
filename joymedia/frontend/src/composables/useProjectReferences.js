@@ -47,7 +47,7 @@ export function useProjectReferences(projectName, onRefresh) {
       await call("joymedia.joymedia.doctype.media_project.media_project.select_project_reference", {
         media_project: project(),
         asset_name: asset.name,
-        reference_role: role || "Product",
+        reference_role: role || "General",
       });
       showMediaPicker.value = false;
       if (onRefresh) await onRefresh();

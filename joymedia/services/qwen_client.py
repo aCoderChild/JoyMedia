@@ -11,6 +11,7 @@ from .film_director import (
 	balance_take_durations,
 	build_director_instruction,
 	close_the_film,
+	is_product_film,
 	name_story_beats,
 	normalize_story_references,
 	place_text,
@@ -165,13 +166,75 @@ def improve_video_idea(
 # The planner was fine-tuned on examples titled "Biến thể TVC 12: …" and sometimes
 # copies that numbering into titles.
 TITLE_NUMBERING = re.compile(
-	r"^\s*(?:biến thể|bien the|variant|version|phiên bản|tvc|shot|cảnh|scene)[\s\w]*?\d+\s*[:.\-–]\s*", re.I
+	r"^\s*(?:biến thể|bien the|variant|version|phiên bản|tvc|shot|cảnh|scene)[\s\w]*?\d+\s*(?:[:.\-–]\s*|$)", re.I
 )
 
 
 def clean_title(title):
 	"""A title without the planner's leaked example numbering."""
 	return TITLE_NUMBERING.sub("", str(title or "").strip())[:80].strip()
+
+
+def write_titles_and_captions(shots, video_idea):
+	"""Title the film and its scenes, and caption them, from the scenes' final prompts.
+
+	The fine-tuned planner titles scenes after its training examples (a diamond ring, a
+	sports car) whatever the scene shows, so the words come from a separate request that
+	reads only what each scene actually contains. Keeps the planner's words on failure.
+	"""
+	scenes = "\n".join(
+		f"{index}. {str(shot.get('generation_prompt') or '')[:500]}" for index, shot in enumerate(shots, start=1)
+	)
+	request = (
+		"You write the on-screen words of a short commercial video.\n"
+		f"VIDEO IDEA (its language is the output language): {video_idea or 'none'}\n\n"
+		f"SCENES, as described to the video model:\n{scenes}\n\n"
+		"Return JSON: {\"film_title\": \"...\", \"scenes\": [{\"title\": \"...\", \"caption\": \"...\"}]} with one "
+		"entry per scene, in order. film_title: at most 6 words. title: at most 6 words naming what the "
+		"scene shows. caption: at most 6 words of on-screen text, a feeling or benefit the scene shows. "
+		"Describe only what the scene text contains; never invent products, places, prices or brand "
+		"names. Write everything in the language of the VIDEO IDEA (Vietnamese if it is Vietnamese)."
+	)
+	try:
+		base_url, model, timeout = _qwen_config()
+		response = requests.post(
+			f"{base_url}/chat/completions",
+			json={
+				"model": model,
+				"messages": [
+					{"role": "system", "content": "You write short, accurate on-screen text. Return JSON only."},
+					{"role": "user", "content": request},
+				],
+				"response_format": {"type": "json_object"},
+				"temperature": 0.3,
+				"max_tokens": 600,
+			},
+			timeout=(10, min(timeout, 180)),
+		)
+		response.raise_for_status()
+		words = json.loads(response.json()["choices"][0]["message"]["content"])
+	except Exception:
+		frappe.logger("joymedia.qwen").exception("Unable to write scene titles and captions")
+		return {}
+	entries = words.get("scenes") if isinstance(words, dict) else None
+	if not isinstance(entries, list) or len(entries) != len(shots):
+		return {}
+	for shot, entry in zip(shots, entries):
+		entry = entry if isinstance(entry, dict) else {}
+		title = clean_title(entry.get("title"))
+		if title:
+			name = str(shot.get("shot_name") or "")
+			beat = name.split(":", 1)[0].strip() if ":" in name else ""
+			shot["shot_name"] = f"{beat}: {title}" if beat else title
+		shot["caption"] = clean_title(entry.get("caption"))[:60]
+	return {"film_title": clean_title(words.get("film_title"))}
+
+
+def _story_title(shots):
+	"""The title of the climax scene (or the first scene), without its beat word."""
+	names = [str(shot.get("shot_name") or "") for shot in shots]
+	name = next((name for name in names if name.upper().startswith("CLIMAX")), names[0] if names else "")
+	return clean_title(name.split(":", 1)[1] if ":" in name else name)
 
 
 def default_captions(shots):
@@ -184,6 +247,8 @@ def default_captions(shots):
 		if not str(shot.get("caption") or "").strip():
 			name = str(shot.get("shot_name") or "")
 			shot["caption"] = clean_title(name.split(":", 1)[1] if ":" in name else name)[:60]
+	if len(shots) > 1:
+		shots[-1]["caption"] = ""
 	return shots
 
 
@@ -437,9 +502,10 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	request_payload["max_tokens"] = _completion_budget(base_url, request_payload)
 
 	result = _request_plan(base_url, request_payload, timeout)
+	# Product films describe their settings in words, so there is no place photo to check.
 	places = {
 		context.get("reference_key"): place_text(context) for context in story_reference_contexts or []
-	} if story_film else None
+	} if story_film and not is_product_film(story_reference_contexts) else None
 
 	def problems_of(plan):
 		if plan is None:
@@ -493,7 +559,12 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		result["shots"] = balance_take_durations(name_story_beats(result["shots"]), total_video_duration)
 	if not continuation_context:
 		close_the_film(result["shots"])
+	words = write_titles_and_captions(result["shots"], video_idea)
+	if words.get("film_title"):
+		film_title = words["film_title"]
 	default_captions(result["shots"])
+	# A title that was only the planner's numbering falls back to the climax's title.
+	film_title = film_title or _story_title(result["shots"])
 	if film_title:
 		result["film_title"] = film_title
 	return result

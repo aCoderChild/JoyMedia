@@ -188,7 +188,7 @@
               <span class="text-ink-muted">{{ currentLang === 'vi' ? 'Đề xuất:' : 'Suggested:' }}</span>
               <span class="font-bold text-indigo-400 flex items-center gap-1">
                 <span>{{ getRoleIcon(selectedRole) }}</span>
-                <span>{{ selectedRole }}</span>
+                <span>{{ roleOptions.find((role) => role.value === selectedRole)?.label || selectedRole }}</span>
               </span>
             </div>
           </div>
@@ -279,7 +279,7 @@ const emit = defineEmits(["close", "selectReference", "setKeyframe", "uploadFile
 const searchQuery = ref("");
 const activeTypeFilter = ref(props.initialTypeFilter || "All");
 const selectedCandidate = ref(null);
-const selectedRole = ref("Product");
+const selectedRole = ref("General");
 const showRoleDropdown = ref(false);
 const assetMenuName = ref("");
 const editingAsset = ref(null);
@@ -291,23 +291,30 @@ watch(
   }
 );
 
-const roleOptions = [
-  { value: "Product", label: "Product", icon: "👟" },
-  { value: "Character", label: "Character", icon: "👤" },
-  { value: "Environment", label: "Environment", icon: "🏞️" },
-  { value: "Style", label: "Style", icon: "🎨" },
-  { value: "Motion", label: "Motion", icon: "🏃" },
-  { value: "Audio", label: "Audio", icon: "🔊" },
-  { value: "General", label: "General", icon: "📎" },
-];
+const ROLE_LABELS = {
+  Product: ["Product", "Sản phẩm", "👟"],
+  Character: ["Character", "Nhân vật", "👤"],
+  Environment: ["Place", "Bối cảnh", "🏞️"],
+  Style: ["Style", "Phong cách", "🎨"],
+  Motion: ["Motion", "Chuyển động", "🏃"],
+  Audio: ["Audio", "Âm thanh", "🔊"],
+  General: ["Automatic (AI decides)", "Tự động (AI nhận biết)", "✨"],
+};
+const roleOptions = computed(() =>
+  Object.entries(ROLE_LABELS).map(([value, [en, vi, icon]]) => ({
+    value, label: props.currentLang === "vi" ? vi : en, icon,
+  })),
+);
 
 function getRoleIcon(role) {
-  const match = roleOptions.find((r) => r.value === role);
+  const match = roleOptions.value.find((r) => r.value === role);
   return match?.icon || "📎";
 }
 
+// Suggests a role from what the library already knows. Anything unsure stays "General"
+// so the AI judges it from the picture: a suggested "Product" would make a place photo a product.
 function suggestRole(asset) {
-  if (!asset) return "Product";
+  if (!asset) return "General";
   const type = (asset.media_type || "").toLowerCase();
   const cat = (asset.asset_category || "").toLowerCase();
   if (type === "audio") return "Audio";
@@ -315,7 +322,8 @@ function suggestRole(asset) {
   if (cat.includes("background") || cat.includes("environment") || cat.includes("bối cảnh")) return "Environment";
   if (cat.includes("style") || cat.includes("phong cách")) return "Style";
   if (cat.includes("motion") || cat.includes("chuyển động")) return "Motion";
-  return "Product";
+  if (cat.includes("product") || cat.includes("sản phẩm") || cat.includes("brand")) return "Product";
+  return "General";
 }
 
 function onCandidateClick(asset) {

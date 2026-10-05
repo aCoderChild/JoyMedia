@@ -312,9 +312,11 @@ def _renumber_video_clips(project_name):
 
 def _bridge_asset_version(project_name, outgoing, incoming):
 	"""Return a cached bridge for these two takes, or render one."""
+	# Fast draft projects render their transitions with the turbo model too.
+	fast = frappe.db.get_value("Media Project", project_name, "quality_mode") == "Draft"
 	asset_name = (
 		f"{project_name} Transition {outgoing.source_asset_version}@{outgoing.source_out_frame}"
-		f" > {incoming.source_asset_version}@{incoming.source_in_frame}"
+		f" > {incoming.source_asset_version}@{incoming.source_in_frame}{' fast' if fast else ''}"
 	)
 	cached = _latest_version_of(project_name, asset_name)
 	if cached:
@@ -343,6 +345,7 @@ def _bridge_asset_version(project_name, outgoing, incoming):
 			_bridge_prompt(outgoing.shot, incoming.shot),
 			BRIDGE_FRAMES / 24,
 			last_frame=last,
+			fast=fast,
 		)
 		video_bytes = _render_video(workflow)
 	return _save_output(project_name, asset_name, "Video", f"{_slug(asset_name)}.mp4", video_bytes)
@@ -355,6 +358,11 @@ def _bridge_prompt(outgoing_shot, incoming_shot):
 	)
 	by_name = {row.name: row.generation_prompt or "" for row in prompts}
 	from_place, to_place = _shot_place(outgoing_shot), _shot_place(incoming_shot)
+	journey = (
+		f"flow smoothly from {from_place} to {to_place}"
+		if from_place and to_place and from_place != to_place
+		else "flow smoothly into the next moment"
+	)
 	movement = (
 		"The person keeps moving gracefully while the camera glides with them, and the surroundings"
 		if all(PERSON_PATTERN.search(by_name.get(shot, "")) for shot in (outgoing_shot, incoming_shot))
@@ -366,20 +374,34 @@ def _bridge_prompt(outgoing_shot, incoming_shot):
 	)
 	return (
 		"Seamless cinematic transition from the first frame to the last frame. "
-		f"{movement} flow smoothly from {from_place} to {to_place} as a soft warm light sweeps "
+		f"{movement} {journey} as a soft warm light sweeps "
 		f"across the frame.{identity} One continuous shot with no cuts, smooth stabilized motion, "
 		"photorealistic, no text, no deformation. Audio: a soft airy whoosh."
 	)
 
 
 def _shot_place(shot_name):
-	"""Name of the place a take is set in: its last reference image."""
+	"""Name of the place a take is set in (its last reference image), or None.
+
+	A take whose last reference is a product, not a place, has no place name: a product
+	called "1" must not become "the 1" in a transition prompt.
+	"""
+	from joymedia.services.film_director import PLACE, _asset_version_context, classify_reference
+
 	asset_version = frappe.db.get_value(
 		"Shot Reference", {"parent": shot_name, "parenttype": "Shot"}, "asset_version", order_by="idx desc"
 	)
-	media_asset = frappe.db.get_value("Asset Version", asset_version, "media_asset") if asset_version else None
+	if not asset_version:
+		return None
+	project = frappe.db.get_value("Shot", shot_name, "media_project")
+	reference = frappe.db.get_value(
+		"Project Reference", {"parent": project, "asset_version": asset_version}, ["reference_role", "label"], as_dict=True
+	) or {}
+	if classify_reference(_asset_version_context(asset_version, reference)) != PLACE:
+		return None
+	media_asset = frappe.db.get_value("Asset Version", asset_version, "media_asset")
 	name = frappe.db.get_value("Media Asset", media_asset, "asset_name") if media_asset else None
-	return f"the {name}" if name else "the first place to the next place"
+	return f"the {name}" if name else None
 
 
 # Soundtrack
@@ -585,11 +607,11 @@ def _soundtrack_workflow(first_frame, music, seconds):
 # ComfyUI and file helpers
 
 
-def _i2v_workflow(first_frame, prompt, seconds, last_frame=None):
+def _i2v_workflow(first_frame, prompt, seconds, last_frame=None, fast=False):
 	from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
 	from joymedia.services.comfyui_client import upload_local_file
 
-	source = get_latest_valid_workflow("h3_i2v_production")
+	source = get_latest_valid_workflow("h3_i2v_turbo" if fast else "h3_i2v_production")
 	if not source:
 		frappe.throw(_("No executable Image-to-Video workflow is configured."))
 	workflow = copy.deepcopy(frappe.parse_json(source.workflow_json))

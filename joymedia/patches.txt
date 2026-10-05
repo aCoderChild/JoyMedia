@@ -59,3 +59,4 @@ joymedia.patches.raise_r2v_segment_frames
 joymedia.patches.register_r2v_production_hd
 joymedia.patches.short_r2v_segments
 joymedia.patches.full_quality_sato_workflows
+joymedia.patches.fast_draft_workflows

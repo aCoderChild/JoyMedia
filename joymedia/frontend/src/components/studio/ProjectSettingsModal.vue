@@ -78,6 +78,28 @@
           </div>
         </div>
 
+        <!-- Render mode: fast drafts first, then the final film -->
+        <div class="space-y-1.5">
+          <label class="block font-bold text-ink-primary">
+            {{ currentLang === 'vi' ? 'Chế độ dựng:' : 'Render mode:' }}
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              v-for="quality in qualityModes"
+              :key="quality.value"
+              type="button"
+              class="p-2.5 rounded-xl border text-left transition-all cursor-pointer"
+              :class="form.quality_mode === quality.value
+                ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
+                : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
+              @click="form.quality_mode = quality.value"
+            >
+              <span class="text-xs font-semibold">{{ currentLang === 'vi' ? quality.viLabel : quality.label }}</span>
+              <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">{{ currentLang === 'vi' ? quality.viSub : quality.sub }}</p>
+            </button>
+          </div>
+        </div>
+
         <!-- Music -->
         <div class="space-y-1.5">
           <label class="block font-bold text-ink-primary">
@@ -244,31 +266,6 @@
               </div>
             </div>
 
-            <div class="space-y-1.5">
-              <label class="block font-semibold text-ink-primary">
-                {{ currentLang === 'vi' ? 'Chất lượng:' : 'Quality:' }}
-              </label>
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  v-for="quality in qualityModes"
-                  :key="quality.value"
-                  type="button"
-                  class="p-2.5 rounded-xl border text-left transition-all cursor-pointer"
-                  :class="form.quality_mode === quality.value
-                    ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
-                    : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'
-                    + (form.reference_mode === 'Single Image' && quality.value === 'Draft'
-                      ? ' opacity-50 cursor-not-allowed'
-                      : '')"
-                  :disabled="form.reference_mode === 'Single Image' && quality.value === 'Draft'"
-                  @click="form.quality_mode = quality.value"
-                >
-                  <span class="text-xs font-semibold">{{ currentLang === 'vi' ? quality.viLabel : quality.label }}</span>
-                  <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">{{ currentLang === 'vi' ? quality.viSub : quality.sub }}</p>
-                </button>
-              </div>
-            </div>
-
             <!-- Global Instructions -->
             <div class="space-y-1.5">
               <label class="block font-semibold text-ink-primary">
@@ -335,8 +332,8 @@ const referenceModes = [
 ];
 
 const qualityModes = [
-  { value: "Draft", label: "Draft", sub: "Faster previews.", viLabel: "Nháp", viSub: "Xem trước nhanh hơn." },
-  { value: "Production", label: "Final", sub: "Best rendering quality.", viLabel: "Hoàn chỉnh", viSub: "Chất lượng dựng tốt nhất." },
+  { value: "Draft", label: "Fast — preview", sub: "About 4× faster. Check the story, then render the final.", viLabel: "Nhanh — xem thử", viSub: "Nhanh gấp khoảng 4 lần. Duyệt kịch bản rồi dựng bản đẹp." },
+  { value: "Production", label: "Best — final", sub: "Highest quality, takes longer.", viLabel: "Đẹp nhất — bản cuối", viSub: "Chất lượng cao nhất, lâu hơn." },
 ];
 
 // The prompts are English for the AI; the labels are what marketers see.
@@ -382,9 +379,6 @@ watch(
       form.generation_mode = s.generation_mode || "Multi-shot";
       form.reference_mode = s.reference_mode || "Single Image";
       form.quality_mode = s.quality_mode || "Production";
-      if (form.reference_mode === "Single Image") {
-        form.quality_mode = "Production";
-      }
       form.global_instructions = s.global_instructions || "";
       form.end_card_title = s.end_card_title || "";
       form.end_card_tagline = s.end_card_tagline || "";
@@ -402,8 +396,5 @@ function submitSave() {
 
 function setReferenceMode(mode) {
   form.reference_mode = mode;
-  if (mode === "Single Image") {
-    form.quality_mode = "Production";
-  }
 }
 </script>

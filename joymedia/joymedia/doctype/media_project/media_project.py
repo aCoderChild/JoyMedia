@@ -862,12 +862,14 @@ def create_project(project_name, product_name, video_idea=None, campaign_brief=N
 		"project_name": project_name,
 		"product_name": (product_name or "").strip(),
 		"video_idea": video_idea or campaign_brief,
-		"workflow": _get_customer_workflow().name,
+		"workflow": _get_customer_workflow("h3_i2v_turbo").name,
 		"total_duration_seconds": 15,
 		"delivery_preset": "Landscape",
 		"delivery_width": 1920,
 		"delivery_height": 1080,
 		"generation_mode": "Multi-shot",
+		# New projects render fast drafts; "Render final" redoes the scenes at full quality.
+		"quality_mode": "Draft",
 	}).insert(ignore_permissions=True)
 	return project
 
@@ -1304,13 +1306,11 @@ class MediaProject(Document):
 		quality_mode = quality_mode or getattr(self, "quality_mode", None) or "Production"
 		if quality_mode not in ("Draft", "Production"):
 			frappe.throw(_("Select Draft or Production quality."))
-		if reference_mode == "Single Image":
-			quality_mode = "Production"
-		workflow_key = (
-			"h3_r2v_turbo" if reference_mode == "Multi-reference" and quality_mode == "Draft"
-			else "h3_r2v_production" if reference_mode == "Multi-reference"
-			else "h3_i2v_production"
-		)
+		workflow_key = {
+			("Multi-reference", "Draft"): "h3_r2v_turbo",
+			("Multi-reference", "Production"): "h3_r2v_production",
+			("Single Image", "Draft"): "h3_i2v_turbo",
+		}.get((reference_mode, quality_mode), "h3_i2v_production")
 		workflow = _get_customer_workflow(workflow_key)
 		self.total_duration_seconds = total_duration_seconds
 		self.delivery_preset = delivery_preset
@@ -1370,12 +1370,18 @@ class MediaProject(Document):
 			self.delivery_preset,
 			generation_mode=self.generation_mode,
 			reference_mode="Multi-reference",
-			quality_mode="Production",
+			# Keep the project's speed: fast draft or final quality.
+			quality_mode=self.quality_mode or "Production",
 		)
 
 	def generate_video_plan(self):
 		self._require_read_access()
 		from joymedia.services.qwen_client import generate_video_plan
+		from joymedia.services.vision_analysis import ensure_project_image_analysis
+
+		# Pictures added or analysed with an older prompt are (re)described first.
+		ensure_project_image_analysis(self)
+		frappe.db.commit()
 		settings = _project_settings(self)
 		if not settings.workflow:
 			frappe.throw(_("Configure Video Settings before generating a storyboard."))

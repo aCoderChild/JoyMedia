@@ -38,6 +38,36 @@ def regenerate_scene(project_name, shot_name):
 	"""Render a new take of one scene from its current prompt."""
 	project, shot = _project_shot(project_name, shot_name)
 	_ensure_scene_free(project, shot)
+	return {**_start_takes_run(project, [shot.name]), "shot_name": shot.name}
+
+
+@frappe.whitelist()
+def render_final(project_name):
+	"""Re-render every scene of a fast draft at full quality, as new takes.
+
+	The draft takes stay as earlier takes of each scene; transitions and music follow
+	automatically once the new takes are ready.
+	"""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	from joymedia.joymedia.doctype.media_project.media_project import _active_project_shots, _busy_shots
+	from joymedia.services.storyboard_job import planning_status
+
+	if planning_status(project.name) == "Running" or _busy_shots(project.name):
+		frappe.throw(_("Scenes are still being rendered. Please wait until they are ready."))
+	shots = [shot.name for shot in _active_project_shots(project.name, fields=["name"])]
+	if not shots:
+		frappe.throw(_("Generate a storyboard first."))
+	project.save_video_settings(
+		project.total_duration_seconds, project.delivery_preset,
+		generation_mode=project.generation_mode, reference_mode=project.reference_mode, quality_mode="Production",
+	)
+	project.reload()
+	return _start_takes_run(project, shots)
+
+
+def _start_takes_run(project, shot_names):
+	"""A run that renders new takes of these scenes, replacing each one's take when ready."""
 	from joymedia.joymedia.doctype.media_project.media_project import build_project_snapshot
 	from joymedia.services.generation_orchestrator import start_run_internal
 
@@ -48,8 +78,8 @@ def regenerate_scene(project_name, shot_name):
 			"media_project": project.name,
 			"project_snapshot_json": snapshot_json,
 			"project_snapshot_hash": snapshot_hash,
-			# replace_selection: the new take replaces the current one once it is ready.
-			"execution_scope_json": json.dumps({"shot_names": [shot.name], "replace_selection": True}),
+			# replace_selection: each new take replaces the current one once it is ready.
+			"execution_scope_json": json.dumps({"shot_names": shot_names, "replace_selection": True}),
 			"workflow": project.workflow,
 			"requested_by": frappe.session.user,
 			"status": "Draft",
@@ -57,7 +87,7 @@ def regenerate_scene(project_name, shot_name):
 	).insert(ignore_permissions=True)
 	result = start_run_internal(run.name)
 	frappe.db.commit()
-	return {"run": run.name, "status": result["status"], "shot_name": shot.name}
+	return {"run": run.name, "status": result["status"]}
 
 
 @frappe.whitelist()

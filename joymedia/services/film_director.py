@@ -14,12 +14,15 @@ import frappe
 
 CHARACTER = "character"
 PLACE = "place"
+PRODUCT = "product"
 OTHER = "other"
 
 CHARACTER_ROLES = {"character"}
 PLACE_ROLES = {"environment", "composition"}
+PRODUCT_ROLES = {"product"}
 CHARACTER_CATEGORIES = {"character"}
 PLACE_CATEGORIES = {"background"}
+PRODUCT_CATEGORIES = {"product"}
 
 PERSON_PATTERN = re.compile(
 	r"\b(she|her|hers|he|his|him|woman|man|girl|boy|person|character|couple|family)\b",
@@ -89,6 +92,60 @@ REFERENCES
 - Use only the supplied keys. Keys are names, not picture numbers: in the prompt the
   character is always <Picture 1> and the place is always <Picture 2>.
 """.strip()
+
+PRODUCT_DIRECTOR_RULES = """
+You are the film director for JoyMedia commercials. Plan a short cinematic
+commercial in which the character presents the product.
+
+THE PRODUCT
+- The product in <Picture 2> is an OBJECT: the character holds, shows, uses, wears or
+  admires it. It is never the setting and never a place to walk into, even when the
+  product's picture shows a scene (a painting, a print, a decorated plate or a package
+  can depict a landscape: it is still an object).
+- Keep the product's exact shape, size, colours, patterns and details in every take,
+  and keep it clearly visible: the film makes the product stand out.
+
+STRUCTURE
+- Plan exactly {take_count} long continuous takes of {min_take}-{max_take} seconds each.
+- Each take is ONE unbroken camera shot in ONE setting: no cuts, no montage.
+- The character appears in every take except product hero takes. Include at least one
+  hero take of the product alone (close-up, slow orbit or push-in on its details).
+- Follow the STORY ARC below: each take plays its beat, in order. The CLIMAX shows the
+  product at its best (the character revealing or using it, the boldest camera move).
+- SETTINGS: {settings}
+- The character keeps the outfit shown in <Picture 1> unless the VIDEO IDEA asks
+  for a change. Vary performance and camera move between takes; never repeat an action.
+- Match the look (light, colour grade, mood) to the VIDEO IDEA and GLOBAL INSTRUCTIONS
+  and keep one consistent colour grade across all takes.
+- shot_name is "<BEAT>: <short title>". Keep the BEAT word in English; write the short
+  title in the language of the VIDEO IDEA.
+
+EVERY generation_prompt (English, 60-110 words) states, in this order:
+1. The person from <Picture 1>: their outfit and what they do with the product.
+   Keep their face, hair and body identical to <Picture 1>.
+2. The product from <Picture 2>: where it is (in their hands, on a table...) and its
+   exact look. Keep its shape, colours and details identical to <Picture 2>.
+3. The setting, in words.
+4. One clear camera move, then light, grade and depth of field.
+5. The constraints: one continuous shot with no cuts, photorealistic, smooth stabilized
+   motion, no text, no logos, no extra people, no deformation.
+
+REFERENCES
+- Every take lists exactly two references: first the character key, then the product
+  key. A product hero take lists the product key twice.
+- Use only the supplied keys. In the prompt the character is always <Picture 1> and
+  the product is always <Picture 2> (in a hero take, <Picture 1> and <Picture 2>
+  are both the product).
+""".strip()
+
+PRODUCT_FEW_SHOT_EXAMPLE = (
+	"generation_prompt TEMPLATE (fill every [ ] for its own beat; never reuse wording between "
+	"takes): The person from <Picture 1>, in [outfit from <Picture 1>], [what they do with the "
+	"product in this beat]. The product from <Picture 2>, [where it is and its exact look], keeps "
+	"its exact shape, colours and details. [The setting, in words]. Keep their face and hair "
+	"identical to <Picture 1>. [One camera move]. [Light, grade and depth of field]. One continuous "
+	"shot with no cuts, photorealistic, smooth stabilized motion, no text, no logos, no deformation."
+)
 
 FEW_SHOT_EXAMPLE = (
 	"generation_prompt TEMPLATE (fill every [ ] for its own beat and place; never reuse wording "
@@ -169,27 +226,33 @@ def story_take_count(total_seconds, reference_contexts):
 	minimum, maximum = take_count_range(total_seconds)
 	total = max(float(total_seconds or 0), MIN_TAKE_SECONDS)
 	renderable = max(minimum, math.floor(total / MIN_RENDER_SECONDS))
+	if is_product_film(reference_contexts):
+		# No place per take: about one take per seven seconds of film.
+		return max(minimum, min(maximum, renderable, round(total / 7)))
 	places = len(build_roster(reference_contexts)[PLACE])
 	return max(minimum, min(places, maximum, renderable))
 
 
 def classify_reference(context):
-	"""Return CHARACTER, PLACE or OTHER for one project reference context."""
+	"""Return CHARACTER, PLACE, PRODUCT or OTHER for one project reference context.
+
+	What a person chose wins: the reference's role, then the asset's category, and
+	only then the image analysis, which judges by what a picture shows (a product
+	that is a painting of a harbour looks like a place).
+	"""
 	if (context.get("media_type") or "Image") != "Image":
 		return OTHER
-	analysis = context.get("analysis") if isinstance(context.get("analysis"), dict) else {}
-	kind = str(analysis.get("kind") or "").strip().lower()
-	if kind == "person":
-		return CHARACTER
-	if kind == "place":
-		return PLACE
 	role = str(context.get("reference_role") or "").strip().lower()
 	category = str(context.get("asset_category") or "").strip().lower()
-	if role in CHARACTER_ROLES or category in CHARACTER_CATEGORIES:
-		return CHARACTER
-	if role in PLACE_ROLES or category in PLACE_CATEGORIES:
-		return PLACE
-	return OTHER
+	analysis = context.get("analysis") if isinstance(context.get("analysis"), dict) else {}
+	kind = str(analysis.get("kind") or "").strip().lower()
+	for chosen, choices in ((role, (CHARACTER_ROLES, PLACE_ROLES, PRODUCT_ROLES)), (category, (
+		CHARACTER_CATEGORIES, PLACE_CATEGORIES, PRODUCT_CATEGORIES
+	))):
+		for kind_of_reference, values in zip((CHARACTER, PLACE, PRODUCT), choices):
+			if chosen in values:
+				return kind_of_reference
+	return {"person": CHARACTER, "place": PLACE, "product": PRODUCT}.get(kind, OTHER)
 
 
 def balance_take_durations(shots, total_seconds):
@@ -263,7 +326,7 @@ def _avoid_short_continuations(shots):
 
 def build_roster(reference_contexts):
 	"""Split project references into character and place lists, keeping project order."""
-	roster = {CHARACTER: [], PLACE: [], OTHER: []}
+	roster = {CHARACTER: [], PLACE: [], PRODUCT: [], OTHER: []}
 	for context in reference_contexts or []:
 		if not context.get("reference_key"):
 			continue
@@ -272,14 +335,23 @@ def build_roster(reference_contexts):
 
 
 def is_story_film(reference_contexts):
+	"""A character with places to move through, or with a product to present."""
 	roster = build_roster(reference_contexts)
-	return bool(roster[CHARACTER] and roster[PLACE])
+	return bool(roster[CHARACTER] and (roster[PLACE] or roster[PRODUCT]))
+
+
+def is_product_film(reference_contexts):
+	"""A character presenting a product: the product is the star, never the setting."""
+	roster = build_roster(reference_contexts)
+	return bool(roster[CHARACTER] and roster[PRODUCT])
 
 
 def build_director_instruction(reference_contexts, reference_role, total_seconds):
 	"""Return the planner instruction for a story film, including the reference roster."""
 	roster = build_roster(reference_contexts)
 	take_count = story_take_count(total_seconds, reference_contexts)
+	if roster[PRODUCT]:
+		return _product_director_instruction(roster, reference_role, take_count)
 	lines = [
 		DIRECTOR_RULES.format(
 			take_count=take_count,
@@ -304,6 +376,42 @@ def build_director_instruction(reference_contexts, reference_role, total_seconds
 	return "\n".join(lines)
 
 
+def _product_director_instruction(roster, reference_role, take_count):
+	if roster[PLACE]:
+		settings = (
+			"set the takes in the places listed under PLACES, described in words (their pictures "
+			"are not sent with the product takes); the same place may host several takes."
+		)
+	else:
+		settings = (
+			"choose settings that suit the product and the VIDEO IDEA (for example a bright minimal "
+			"studio or a warm, tasteful living space) and keep them consistent across the film."
+		)
+	lines = [
+		PRODUCT_DIRECTOR_RULES.format(
+			take_count=take_count, min_take=MIN_TAKE_SECONDS, max_take=MAX_TAKE_SECONDS, settings=settings,
+		),
+		"",
+		f'Every reference you list must use usage_role "{reference_role}".',
+		"",
+		"STORY ARC",
+		*(
+			f"- Take {number} {beat}: {STORY_BEATS[beat]}"
+			for number, beat in enumerate(story_beats(take_count), start=1)
+		),
+		"",
+		"CHARACTER",
+		*(_roster_line(context, person=True) for context in roster[CHARACTER]),
+		"PRODUCT",
+		*(_roster_line(context, product=True) for context in roster[PRODUCT][:1]),
+	]
+	if roster[PLACE]:
+		lines.append("PLACES")
+		lines.extend(_roster_line(context) for context in roster[PLACE])
+	lines.extend(["", PRODUCT_FEW_SHOT_EXAMPLE])
+	return "\n".join(lines)
+
+
 def normalize_story_references(shots, reference_contexts, reference_role):
 	"""Make every shot reference exactly two images, in <Picture 1>/<Picture 2> order.
 
@@ -314,6 +422,8 @@ def normalize_story_references(shots, reference_contexts, reference_role):
 	place fills both slots.
 	"""
 	roster = build_roster(reference_contexts)
+	if roster[CHARACTER] and roster[PRODUCT]:
+		return _normalize_product_references(shots, roster, reference_role)
 	if not roster[CHARACTER] or not roster[PLACE]:
 		return shots
 	character_key = roster[CHARACTER][0]["reference_key"]
@@ -338,6 +448,23 @@ def normalize_story_references(shots, reference_contexts, reference_role):
 		prompt = _clamp_picture_tags(prompt, len(ordered)).strip()
 		if "no cuts" not in prompt.lower():
 			# Without it the model often cuts between angles inside one take.
+			prompt = f"{prompt} {TAKE_CONSTRAINTS}".strip()
+		shot["generation_prompt"] = prompt
+	return shots
+
+
+def _normalize_product_references(shots, roster, reference_role):
+	"""[character, product] for takes with the person, [product, product] for hero takes."""
+	character_key = roster[CHARACTER][0]["reference_key"]
+	product_key = roster[PRODUCT][0]["reference_key"]
+	for shot in shots:
+		if not isinstance(shot, dict):
+			continue
+		prompt = str(shot.get("generation_prompt") or "")
+		ordered = [character_key, product_key] if PERSON_PATTERN.search(prompt) else [product_key, product_key]
+		shot["references"] = [{"reference_key": key, "usage_role": reference_role} for key in ordered]
+		prompt = _clamp_picture_tags(prompt, len(ordered)).strip()
+		if "no cuts" not in prompt.lower():
 			prompt = f"{prompt} {TAKE_CONSTRAINTS}".strip()
 		shot["generation_prompt"] = prompt
 	return shots
@@ -451,6 +578,11 @@ def reference_preamble(shot_reference_versions, project_references):
 			parts.append(
 				f"<Picture {index}> is the location{suffix}: keep its architecture, layout and materials exactly.{seen}"
 			)
+		elif kind == PRODUCT:
+			parts.append(
+				f"<Picture {index}> is the product{suffix}: keep its exact shape, size, colours, patterns and "
+				"details. It is an object in the scene, never the setting."
+			)
 		else:
 			parts.append(
 				f"<Picture {index}> is a reference subject{suffix}: keep its shape, colours and details exactly."
@@ -489,8 +621,13 @@ def _asset_version_context(asset_version, project_reference):
 	}
 
 
-def _roster_line(context, person=False):
+def _roster_line(context, person=False, product=False):
 	analysis = context.get("analysis") if isinstance(context.get("analysis"), dict) else {}
+	if product:
+		# Say what it is before what it depicts: a product that is a painting of a
+		# harbour must not become the harbour.
+		seen = str(analysis.get("description") or context.get("label") or context.get("asset_name") or "").strip()
+		return f"- key={context['reference_key']}: THE PRODUCT, an object (not a place); its picture: {seen[:300]}"
 	outfit = str(analysis.get("outfit") or "").strip() if isinstance(analysis.get("outfit"), str) else ""
 	if person and outfit:
 		# Only the person's look: the background of their photo ("outdoors among lotus

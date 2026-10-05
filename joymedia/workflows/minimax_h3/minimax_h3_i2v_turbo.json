@@ -1,17 +1,26 @@
 {
   "92": {
     "inputs": {
-      "filename_prefix": "video/MiniMax_H3_R2V_Turbo4",
+      "filename_prefix": "video/MiniMax_H3",
       "format": "auto",
       "codec": "auto",
       "video": [
-        "130",
+        "105:91",
         0
       ]
     },
     "class_type": "SaveVideo",
     "_meta": {
       "title": "Save Video"
+    }
+  },
+  "114": {
+    "inputs": {
+      "image": "transparent_rgb_gaming_mouse.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
     }
   },
   "115": {
@@ -22,10 +31,33 @@
     },
     "class_type": "ResolutionSelector",
     "_meta": {
-      "title": "Resolution Selector (Size)"
+      "title": "Resolution Selector"
     }
   },
   "119": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 0.9,
+      "resolution_steps": 32
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale Image to Total Pixels"
+    }
+  },
+  "120": {
+    "inputs": {
+      "image": [
+        "119",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "105:11": {
     "inputs": {
       "vae_name": "minimax_h3_video_vae_fp16.safetensors"
     },
@@ -34,7 +66,7 @@
       "title": "Load VAE"
     }
   },
-  "120": {
+  "105:24": {
     "inputs": {
       "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
     },
@@ -43,14 +75,14 @@
       "title": "Load VAE"
     }
   },
-  "121": {
+  "105:23": {
     "inputs": {
       "samples": [
-        "125",
+        "105:14",
         0
       ],
       "vae": [
-        "120",
+        "105:24",
         0
       ]
     },
@@ -59,14 +91,14 @@
       "title": "VAE Decode Audio"
     }
   },
-  "122": {
+  "105:10": {
     "inputs": {
       "samples": [
-        "125",
+        "105:14",
         0
       ],
       "vae": [
-        "119",
+        "105:11",
         0
       ]
     },
@@ -75,7 +107,7 @@
       "title": "VAE Decode"
     }
   },
-  "123": {
+  "105:17": {
     "inputs": {
       "sampler_name": "res_multistep"
     },
@@ -84,16 +116,16 @@
       "title": "KSamplerSelect"
     }
   },
-  "124": {
+  "105:9": {
     "inputs": {
       "scheduler": "simple",
       "steps": [
-        "142",
+        "105:123",
         0
       ],
       "denoise": 1,
       "model": [
-        "127",
+        "105:122",
         0
       ]
     },
@@ -102,26 +134,26 @@
       "title": "BasicScheduler"
     }
   },
-  "125": {
+  "105:14": {
     "inputs": {
       "noise": [
-        "129",
+        "105:15",
         0
       ],
       "guider": [
-        "126",
+        "105:16",
         0
       ],
       "sampler": [
-        "123",
+        "105:17",
         0
       ],
       "sigmas": [
-        "124",
+        "105:9",
         0
       ],
       "latent_image": [
-        "136",
+        "105:104",
         1
       ]
     },
@@ -130,14 +162,14 @@
       "title": "SamplerCustomAdvanced"
     }
   },
-  "126": {
+  "105:16": {
     "inputs": {
       "model": [
-        "141",
+        "105:122",
         0
       ],
       "conditioning": [
-        "136",
+        "105:104",
         0
       ]
     },
@@ -146,9 +178,9 @@
       "title": "Basic Guider"
     }
   },
-  "127": {
+  "105:6": {
     "inputs": {
-      "unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -156,7 +188,7 @@
       "title": "Load Diffusion Model"
     }
   },
-  "128": {
+  "105:13": {
     "inputs": {
       "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
       "type": "minimax",
@@ -167,25 +199,25 @@
       "title": "Load CLIP"
     }
   },
-  "129": {
+  "105:15": {
     "inputs": {
-      "noise_seed": 746640970513875
+      "noise_seed": 424242
     },
     "class_type": "RandomNoise",
     "_meta": {
       "title": "RandomNoise"
     }
   },
-  "130": {
+  "105:91": {
     "inputs": {
       "fps": 24,
       "bit_depth": 8,
       "images": [
-        "122",
+        "105:10",
         0
       ],
       "audio": [
-        "121",
+        "105:23",
         0
       ]
     },
@@ -194,34 +226,9 @@
       "title": "Create Video"
     }
   },
-  "131": {
+  "105:104": {
     "inputs": {
-      "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
-      "values.a": [
-        "132",
-        0
-      ]
-    },
-    "class_type": "ComfyMathExpression",
-    "_meta": {
-      "title": "Math Expression"
-    }
-  },
-  "132": {
-    "inputs": {
-      "value": 5
-    },
-    "class_type": "PrimitiveFloat",
-    "_meta": {
-      "title": "Float (Duration)"
-    }
-  },
-  "136": {
-    "inputs": {
-      "prompt": [
-        "138",
-        0
-      ],
+      "prompt": "A cinematic medium shot of the subject from <Picture 1>. The subject remains consistent with the input image. The camera slowly pushes forward. Subtle natural motion and gentle environmental movement in the background. Stable composition, realistic lighting, coherent motion. Audio: subtle room tone and natural ambient sound.",
       "width": [
         "115",
         0
@@ -231,127 +238,56 @@
         1
       ],
       "length": [
-        "131",
+        "105:107",
         1
       ],
-      "ref_image_size": "match",
+      "batch_size": 1,
       "clip": [
-        "128",
+        "105:13",
         0
       ],
       "vae": [
-        "119",
+        "105:11",
         0
       ],
-      "audio_vae": [
-        "120",
-        0
-      ],
-      "ref_images.ref_image_0": [
-        "137",
-        0
-      ],
-      "ref_images.ref_image_1": [
-        "139",
+      "first_frame": [
+        "114",
         0
       ]
     },
-    "class_type": "MiniMaxH3ReferenceToVideo",
+    "class_type": "MiniMaxH3ImageToVideo",
     "_meta": {
-      "title": "MiniMax H3 Reference to Video"
+      "title": "MiniMax H3 Image to Video"
     }
   },
-  "137": {
+  "105:107": {
     "inputs": {
-      "image": "1.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Load Image"
-    }
-  },
-  "138": {
-    "inputs": {
-      "value": "Bold comic-book ink style, heavy linework, red and blue-black palette, night city. Use <Picture 2> and <Picture 1> as reference frames and <Audio 1> exactly as it is.\nCUT 1: top-down view of the little boy superhero on the rooftop — red cape fluttering in the wind, hands planted on his hips, freckles and a cocky grin as he looks straight up into the camera. The camera slowly descends toward him as he delivers his line — as he speaks, comic-book graphic overlay text word by word in sync with his voice: \"GET READY TO\" - \"MEET\" — \"YOUR\" — \"MAKER\" — huge jagged comic lettering, white with heavy black outlines and red drop shadows, tilted at scrappy angles, until the three words hang stacked in the air above him between his face and the lens.\nTRANSITION: a violent WHIP PAN off the rooftop that SMEARS the floating words away with it, motion-streaked —\nCUT 2: low hero angle on the colossal black mech-kaiju towering over the skyline as it rears back and unleashes a GIANT terrifying ROAR — jaws wide with fangs, red eyes and chest-core flaring blinding bright, blue lightning arcing off its head, the roar's shockwave rippling dust and rattling windows down the buildings, comic-style speed-lines and ink splatter bursting from the impact of the sound. It leans INTO the camera as the roar peaks. Hold on the roar."
-    },
-    "class_type": "PrimitiveStringMultiline",
-    "_meta": {
-      "title": "Input Text (Prompt)"
-    }
-  },
-  "139": {
-    "inputs": {
-      "image": "2.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Load Image"
-    }
-  },
-  "141": {
-    "inputs": {
-      "switch": [
-        "146",
-        0
-      ],
-      "on_false": [
-        "127",
-        0
-      ],
-      "on_true": [
-        "145",
+      "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
+      "values.a": [
+        "105:111",
         0
       ]
     },
-    "class_type": "ComfySwitchNode",
+    "class_type": "ComfyMathExpression",
     "_meta": {
-      "title": "If/Else Switch (model)"
+      "title": "Math Expression"
     }
   },
-  "142": {
+  "105:111": {
     "inputs": {
-      "switch": [
-        "146",
-        0
-      ],
-      "on_false": [
-        "143",
-        0
-      ],
-      "on_true": [
-        "144",
-        0
-      ]
+      "value": 5
     },
-    "class_type": "ComfySwitchNode",
+    "class_type": "PrimitiveFloat",
     "_meta": {
-      "title": "If/Else Switch (Steps)"
+      "title": "Float (duration)"
     }
   },
-  "143": {
+  "105:121": {
     "inputs": {
-      "value": 20
-    },
-    "class_type": "PrimitiveInt",
-    "_meta": {
-      "title": "Int (Full)"
-    }
-  },
-  "144": {
-    "inputs": {
-      "value": 4
-    },
-    "class_type": "PrimitiveInt",
-    "_meta": {
-      "title": "Int (Lightning LoRA)"
-    }
-  },
-  "145": {
-    "inputs": {
-      "lora_name": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
+      "lora_name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
       "strength_model": 1,
       "model": [
-        "127",
+        "105:6",
         0
       ]
     },
@@ -360,26 +296,71 @@
       "title": "Load LoRA"
     }
   },
-  "146": {
+  "105:122": {
+    "inputs": {
+      "switch": [
+        "105:126",
+        0
+      ],
+      "on_false": [
+        "105:6",
+        0
+      ],
+      "on_true": [
+        "105:121",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "If/Else Switch (Model)"
+    }
+  },
+  "105:123": {
+    "inputs": {
+      "switch": [
+        "105:126",
+        0
+      ],
+      "on_false": [
+        "105:124",
+        0
+      ],
+      "on_true": [
+        "105:125",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "If/Else Switch (Steps)"
+    }
+  },
+  "105:124": {
+    "inputs": {
+      "value": 20
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Int"
+    }
+  },
+  "105:125": {
+    "inputs": {
+      "value": 8
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Int"
+    }
+  },
+  "105:126": {
     "inputs": {
       "value": true
     },
     "class_type": "PrimitiveBoolean",
     "_meta": {
       "title": "Boolean (Enable Lightning LoRA)"
-    }
-  },
-  "147": {
-    "inputs": {
-      "filename_prefix": "sato_scene-001",
-      "latent": [
-        "125",
-        0
-      ]
-    },
-    "class_type": "MiniMaxH3EasySaveLatent_SatoDive",
-    "_meta": {
-      "title": "Save Latent -> feeds the continuation workflow"
     }
   }
 }

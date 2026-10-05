@@ -32,6 +32,7 @@ def choose_shot_workflow(snapshot, shot):
 		workflow_key = (
 			"h3_sato_generation"
 			if int(shot.get("planned_frame_count") or 0) > int(short_workflow.frame_count or 0)
+			else "h3_i2v_turbo" if quality_mode == "Draft"
 			else "h3_i2v_production"
 		)
 
