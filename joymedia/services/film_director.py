@@ -121,6 +121,19 @@ CLOSING_DIRECTION = (
 )
 
 
+def name_story_beats(shots):
+	"""Set each take's beat from its position in the story arc, keeping the planner's title.
+
+	The planner sometimes translates or invents the beat word ("Biến thể 1: …"), which
+	loses which take is the climax.
+	"""
+	for shot, beat in zip(shots, story_beats(len(shots))):
+		name = str(shot.get("shot_name") or "").strip()
+		title = name.split(":", 1)[1].strip() if ":" in name else name
+		shot["shot_name"] = f"{beat}: {title}" if title else beat
+	return shots
+
+
 def close_the_film(shots):
 	"""Make the last shot end the film; returns the shots."""
 	if shots and isinstance(shots[-1], dict):
@@ -284,7 +297,7 @@ def build_director_instruction(reference_contexts, reference_role, total_seconds
 		"",
 		"CHARACTER",
 	]
-	lines.extend(_roster_line(context) for context in roster[CHARACTER])
+	lines.extend(_roster_line(context, person=True) for context in roster[CHARACTER])
 	lines.append("PLACES")
 	lines.extend(_roster_line(context) for context in roster[PLACE])
 	lines.extend(["", FEW_SHOT_EXAMPLE])
@@ -330,8 +343,39 @@ def normalize_story_references(shots, reference_contexts, reference_role):
 	return shots
 
 
-def plan_problems(shots, take_count):
-	"""Return what is wrong with a story plan, phrased as corrections for the planner."""
+# Kinds of place a take's action can wrongly drift into (a balcony in a lobby photo).
+PLACE_WORDS = (
+	"balcony", "rooftop", "terrace", "pool", "lobby", "bedroom", "bathroom", "kitchen", "living room",
+	"dining room", "garden", "beach", "gym", "playground", "spa", "restaurant", "bar", "office",
+	"street", "park", "lake", "river", "forest", "mountain", "penthouse", "corridor", "hallway",
+	"elevator", "courtyard", "library", "cafe", "studio", "boutique", "showroom",
+)
+
+
+def place_text(context):
+	"""Everything known about what a place reference shows."""
+	analysis = context.get("analysis") if isinstance(context.get("analysis"), dict) else {}
+	return " ".join(
+		str(value or "")
+		for value in (context.get("reference_key"), context.get("label"), context.get("asset_name"), analysis.get("description"))
+	).replace("_", " ").lower()
+
+
+def invented_places(prompt, place_description):
+	"""Kinds of place the prompt sets its action in that the place photo does not show."""
+	prompt = str(prompt or "").lower()
+	return [
+		word for word in PLACE_WORDS
+		if re.search(rf"\b{word}s?\b", prompt) and not re.search(rf"\b{word}", place_description)
+	]
+
+
+def plan_problems(shots, take_count, places=None):
+	"""Return what is wrong with a story plan, phrased as corrections for the planner.
+
+	places maps a place reference_key to place_text(); with it, takes whose action
+	drifts into a place their photo does not show are reported.
+	"""
 	shots = [shot for shot in shots or [] if isinstance(shot, dict)]
 	problems = []
 	if len(shots) < take_count:
@@ -339,13 +383,21 @@ def plan_problems(shots, take_count):
 	prompts = [" ".join(str(shot.get("generation_prompt") or "").lower().split()) for shot in shots]
 	if len(set(prompts)) < len(prompts):
 		problems.append("Several takes have the same generation_prompt; write each one for its own beat and place.")
-	places = [
+	place_keys = [
 		str(((shot.get("references") or [{}])[-1] or {}).get("reference_key") or "")
 		for shot in shots
 	]
-	overused = sorted({key for key in places if key and places.count(key) > 2})
+	overused = sorted({key for key in place_keys if key and place_keys.count(key) > 2})
 	if overused:
 		problems.append(f"Place {', '.join(overused)} is used more than twice; give those takes other places.")
+	for number, (shot, key) in enumerate(zip(shots, place_keys), start=1):
+		description = (places or {}).get(key)
+		invented = invented_places(shot.get("generation_prompt"), description) if description else []
+		if invented:
+			problems.append(
+				f"Take {number} sets its action in a {' / '.join(invented)}, but its place {key} shows: "
+				f"{description[:160]}. Keep the whole take inside what that place shows."
+			)
 	return problems
 
 
@@ -361,12 +413,7 @@ def _best_matching_place(prompt, places):
 	prompt_words = set(WORD_PATTERN.findall(prompt.lower()))
 
 	def score(context):
-		analysis = context.get("analysis") if isinstance(context.get("analysis"), dict) else {}
-		text = " ".join(
-			str(value or "")
-			for value in (context.get("reference_key"), context.get("label"), context.get("asset_name"), analysis.get("description"))
-		).replace("_", " ").lower()
-		return len(prompt_words & {word for word in WORD_PATTERN.findall(text) if len(word) > 3})
+		return len(prompt_words & {word for word in WORD_PATTERN.findall(place_text(context)) if len(word) > 3})
 
 	return max(places, key=score)["reference_key"]
 
@@ -421,8 +468,13 @@ def _asset_version_context(asset_version, project_reference):
 	}
 
 
-def _roster_line(context):
+def _roster_line(context, person=False):
 	analysis = context.get("analysis") if isinstance(context.get("analysis"), dict) else {}
+	outfit = str(analysis.get("outfit") or "").strip() if isinstance(analysis.get("outfit"), str) else ""
+	if person and outfit:
+		# Only the person's look: the background of their photo ("outdoors among lotus
+		# flowers") is not a place, and the planner would paste it into every take.
+		return f"- key={context['reference_key']}: a person; look and outfit: {outfit[:200]}"
 	description = str(analysis.get("description") or "").strip()
 	if not description:
 		name = " ".join(part for part in (context.get("label"), context.get("asset_name")) if part).strip()

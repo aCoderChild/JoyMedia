@@ -10,13 +10,19 @@ from .film_director import (
 	balance_take_durations,
 	build_director_instruction,
 	close_the_film,
+	name_story_beats,
 	normalize_story_references,
+	place_text,
 	plan_problems,
 	story_take_count,
 )
 
 
 DEFAULT_TIMEOUT = 600
+PLAN_CUT_OFF = (
+	"Your previous answer was cut off before the JSON ended. Keep every generation_prompt "
+	"under 70 words so the whole plan fits."
+)
 DEFAULT_MAX_MODEL_LEN = 4096
 MIN_PLAN_COMPLETION_TOKENS = 700
 
@@ -386,27 +392,38 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	}
 	request_payload["max_tokens"] = _completion_budget(base_url, request_payload)
 
-	result, content = _request_plan(base_url, request_payload, timeout)
-	problems = plan_problems(_plan_shots(result), take_count) if take_count else []
+	result = _request_plan(base_url, request_payload, timeout)
+	places = {
+		context.get("reference_key"): place_text(context) for context in story_reference_contexts or []
+	} if story_film else None
+
+	def problems_of(plan):
+		if plan is None:
+			return [PLAN_CUT_OFF]
+		return plan_problems(_plan_shots(plan), take_count, places) if take_count else []
+
+	problems = problems_of(result)
 	if problems:
-		# The fine-tuned planner tends to return its habitual 3 shots or repeat one prompt; correct it once.
+		# The fine-tuned planner tends to return its habitual 3 shots, repeat one prompt or
+		# drift out of a take's place; correct it once. The retry is a fresh request with the
+		# corrections: replaying its previous answer would overflow the planner's context.
+		corrections = "\n".join(f"- {problem}" for problem in problems)
+		if take_count:
+			corrections += (
+				f"\n- Return exactly {take_count} takes following the STORY ARC, "
+				f"durations adding up to {total_video_duration} seconds."
+			)
+		system, user = request_payload["messages"][:2]
 		retry_payload = {
 			**request_payload,
-			"messages": request_payload["messages"] + [
-				{"role": "assistant", "content": content},
-				{
-					"role": "user",
-					"content": " ".join(problems) + (
-						f" Return the complete plan again: exactly {take_count} takes following the STORY ARC, "
-						f"durations adding up to {total_video_duration} seconds, same JSON shape."
-					),
-				},
-			],
+			"messages": [system, {**user, "content": f"{user['content']}\n\nCORRECTIONS TO APPLY:\n{corrections}"}],
 		}
 		retry_payload["max_tokens"] = _completion_budget(base_url, retry_payload)
-		retry_result, _content = _request_plan(base_url, retry_payload, timeout)
-		if len(plan_problems(_plan_shots(retry_result), take_count)) <= len(problems):
+		retry_result = _request_plan(base_url, retry_payload, timeout)
+		if retry_result is not None and len(problems_of(retry_result)) <= len(problems):
 			result = retry_result
+	if result is None:
+		frappe.throw(_("The AI director's answer was cut off. Please try again."))
 
 	if story_film and isinstance(result, dict) and isinstance(result.get("shots"), list):
 		normalize_story_references(result["shots"], story_reference_contexts, story_reference_role)
@@ -429,7 +446,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		total_video_duration=total_video_duration,
 	)
 	if story_film:
-		result["shots"] = balance_take_durations(result["shots"], total_video_duration)
+		result["shots"] = balance_take_durations(name_story_beats(result["shots"]), total_video_duration)
 	if not continuation_context:
 		close_the_film(result["shots"])
 	if film_title:
@@ -438,7 +455,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 
 
 def _request_plan(base_url, payload, timeout):
-	"""Send one planner request; return (parsed plan, raw content)."""
+	"""Send one planner request; return the parsed plan, or None when the answer was cut off."""
 	response = None
 	for attempt in range(3):
 		try:
@@ -455,9 +472,13 @@ def _request_plan(base_url, payload, timeout):
 		frappe.throw(_("Qwen request failed ({0}): {1}").format(response.status_code, response.text))
 	try:
 		content = response.json()["choices"][0]["message"]["content"]
-		return json.loads(content), content
-	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-		frappe.throw(_("Qwen returned invalid video plan JSON: {0}").format(str(exc)))
+	except (KeyError, IndexError, TypeError, ValueError) as exc:
+		frappe.throw(_("Qwen returned an invalid response: {0}").format(str(exc)))
+	try:
+		return json.loads(content)
+	except (TypeError, ValueError):
+		# Usually the plan ran past max_tokens; the caller retries with shorter prompts.
+		return None
 
 
 def _plan_shots(result):

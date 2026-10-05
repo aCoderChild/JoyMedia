@@ -458,3 +458,58 @@ class TestTakeLengthsFitRenderJobs(FrappeTestCase):
 		self.assertAlmostEqual(30, sum(shot["duration_seconds"] for shot in shots))
 		self.assertEqual(round(film_director.MIN_RENDER_SECONDS, 2), lengths[0])
 		self.assertEqual(max(lengths), lengths[2])
+
+
+class TestDirectorGuards(FrappeTestCase):
+	def test_take_drifting_out_of_its_place_is_reported(self):
+		shots = [{"generation_prompt": "She steps onto the balcony at sunset.", "references": [{"reference_key": "lobby"}]}]
+		places = {"lobby": "lobby a modern interior with a reception desk and wooden paneling"}
+
+		problems = film_director.plan_problems(shots, 1, places)
+
+		self.assertEqual(1, len(problems))
+		self.assertIn("balcony", problems[0])
+		self.assertEqual([], film_director.invented_places("She waits by the reception desk.", places["lobby"]))
+
+	def test_beat_words_follow_the_story_arc_whatever_the_planner_wrote(self):
+		shots = [{"shot_name": "Biến thể 1: Dạo bước"}, {"shot_name": "Khoảnh khắc cuối"}]
+
+		film_director.name_story_beats(shots)
+
+		self.assertEqual(["OPENING: Dạo bước", "CLOSING: Khoảnh khắc cuối"], [shot["shot_name"] for shot in shots])
+
+	def test_character_roster_gives_the_look_not_the_photo_background(self):
+		context = {
+			"reference_key": "nu_ao_dai",
+			"analysis": {"description": "A woman stands outdoors among lotus flowers.", "outfit": "white ao dai, long hair"},
+		}
+
+		line = film_director._roster_line(context, person=True)
+
+		self.assertIn("white ao dai", line)
+		self.assertNotIn("lotus", line)
+
+
+class TestPlannerCutOff(FrappeTestCase):
+	@patch("joymedia.services.qwen_client._completion_budget", return_value=1000)
+	@patch("joymedia.services.qwen_client._qwen_config", return_value=("http://qwen/v1", "m", 60))
+	@patch("joymedia.services.qwen_client.requests.post")
+	def test_cut_off_plan_is_requested_again_without_replaying_it(self, post, config, budget):
+		cut_off = MagicMock(ok=True)
+		cut_off.json.return_value = {"choices": [{"message": {"content": '{"shots": [{"generation_prompt": "A lo'}}]}
+		good = MagicMock(ok=True)
+		good.json.return_value = {"choices": [{"message": {"content": (
+			'{"film_title": "Sáng", "shots": [{"shot_number": 1, "shot_name": "Mở", "duration_seconds": 5,'
+			' "generation_prompt": "A slow push-in on the product.", "references": []}]}'
+		)}}]}
+		post.side_effect = [cut_off, good]
+
+		with patch("joymedia.services.qwen_client._validate_video_plan"):
+			plan = qwen_client.generate_video_plan(
+				product_name="P", video_idea="I", total_video_duration=5, target_fps=24, shot_count=1
+			)
+
+		self.assertEqual("Sáng", plan["film_title"])
+		retry_messages = post.call_args_list[1].kwargs["json"]["messages"]
+		self.assertEqual(2, len(retry_messages))
+		self.assertIn("cut off", retry_messages[1]["content"])
