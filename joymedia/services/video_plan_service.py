@@ -264,7 +264,19 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 		)
 	recalculate_shot_durations(project.name)
 
+	_name_untitled_project(project, plan.get("film_title"))
 	return created_shots
+
+
+# Names new projects get before anyone types one; they are replaced by the storyboard's title.
+PLACEHOLDER_PROJECT_NAMES = {"", "untitled", "untitled project", "new project", "dự án mới"}
+
+
+def _name_untitled_project(project, film_title):
+	"""Name a project the user never named after its storyboard's title."""
+	title = str(film_title or "").strip()
+	if title and (project.project_name or "").strip().lower() in PLACEHOLDER_PROJECT_NAMES:
+		frappe.db.set_value("Media Project", project.name, "project_name", title, update_modified=False)
 
 
 def _assign_reference_pool(plan, project, settings, contract_by_role, project_references, mode):

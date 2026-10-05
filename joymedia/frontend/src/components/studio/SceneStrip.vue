@@ -23,7 +23,7 @@
             <input
               v-model="aiRevisionInput"
               type="text"
-              :placeholder="currentLang === 'vi' ? 'Hỏi AI Director sửa kịch bản... (vd: sang trọng hơn)' : 'Ask AI Director... (e.g. Make it more luxurious)'"
+              :placeholder="currentLang === 'vi' ? 'Nhờ AI sửa kịch bản... (vd: thêm một cảnh cận sản phẩm)' : 'Ask the AI to change the storyboard... (e.g. add a product close-up)'"
               class="bg-surface-muted border border-outline-border focus:border-indigo-500 rounded-xl pl-7 pr-3 py-1 text-xs text-ink-primary placeholder:text-ink-muted w-48 sm:w-72 focus:outline-none transition-all"
               :disabled="isRevising || isGenerating"
             />
@@ -131,15 +131,20 @@
 
           <!-- Middle: Scene Title & Clean Duration -->
           <div class="flex items-center justify-between text-xs font-bold text-ink-primary mb-1">
-            <span class="truncate">{{ currentLang === 'vi' ? `Cảnh ${shot.shot_number}` : `Scene ${shot.shot_number}` }}</span>
+            <span class="truncate">
+              {{ currentLang === 'vi' ? `Cảnh ${shot.shot_number}` : `Scene ${shot.shot_number}` }}<template v-if="sceneBeat(shot)"> · {{ sceneBeat(shot) }}</template>
+            </span>
             <span class="text-ink-secondary font-mono text-[11px] font-semibold bg-surface-card px-1.5 py-0.5 rounded border border-outline-border/60">
               {{ Number(estimateShotDuration(shot)).toFixed(1) }}s
             </span>
           </div>
 
           <!-- Creative summary snippet -->
-          <p class="text-[11px] text-ink-secondary line-clamp-2 leading-relaxed mb-2 min-h-[30px]">
-            {{ shot.generation_prompt || (currentLang === 'vi' ? 'Cảnh giới thiệu sản phẩm' : 'Product showcase') }}
+          <p
+            class="text-[11px] text-ink-secondary line-clamp-2 leading-relaxed mb-2 min-h-[30px]"
+            :title="shot.generation_prompt || ''"
+          >
+            {{ sceneSummary(shot) }}
           </p>
 
           <div
@@ -166,7 +171,7 @@
           <!-- Bottom: Role Badge & Scene action menu -->
           <div class="flex items-center justify-between pt-1.5 border-t border-outline-border/60 text-xs">
             <span class="text-[10px] text-ink-muted truncate font-medium max-w-[110px]">
-              {{ shot.reference_role ? `@ ${shot.reference_role}` : 'Product · Studio' }}
+              {{ shot.reference_role ? `@ ${shot.reference_role}` : '' }}
             </span>
             <div class="relative">
               <button
@@ -298,6 +303,30 @@ const completedShotsCount = computed(() => {
   if (!props.shots?.length) return 0;
   return props.shots.filter((s) => Boolean(props.getShotVideoFile(s))).length;
 });
+
+// Story roles the AI director gives each scene ("CLIMAX: Sunset on the terrace").
+const SCENE_BEATS = {
+  OPENING: ["Opening", "Mở đầu"],
+  BUILD: ["Build-up", "Phát triển"],
+  CLIMAX: ["Climax", "Cao trào"],
+  RESOLUTION: ["Wind-down", "Lắng đọng"],
+  CLOSING: ["Ending", "Kết thúc"],
+};
+
+function sceneBeat(shot) {
+  const beat = SCENE_BEATS[String(shot.shot_name || "").split(":")[0].trim().toUpperCase()];
+  return beat ? beat[props.currentLang === "vi" ? 1 : 0] : "";
+}
+
+function sceneSummary(shot) {
+  const name = String(shot.shot_name || "");
+  const title = name.includes(":") ? name.slice(name.indexOf(":") + 1).trim() : name.trim();
+  if (title && !/^(scene|shot)\s*\d+$/i.test(title)) return title;
+  const picture = props.currentLang === "vi" ? "ảnh" : "picture";
+  // The full prompt is for the AI; show it without its <Picture N> markup.
+  const prompt = String(shot.generation_prompt || "").replace(/<Picture\s*(\d+)>/gi, `${picture} $1`);
+  return prompt || (props.currentLang === "vi" ? "Cảnh giới thiệu sản phẩm" : "Product showcase");
+}
 
 function getShotState(shot) {
   if (props.getShotVideoFile(shot)) return "Ready";

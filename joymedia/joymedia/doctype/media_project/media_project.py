@@ -1186,8 +1186,6 @@ class MediaProject(Document):
 		self.product_name = (self.product_name or "").strip()
 		if not self.project_name:
 			frappe.throw(_("Project Name is required."))
-		if not self.product_name and self.status not in ("Draft",):
-			frappe.throw(_("Product Name is required."))
 		if self.status not in ALLOWED_STATUSES:
 			frappe.throw(_("Invalid Media Project status."))
 

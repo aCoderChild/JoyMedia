@@ -31,12 +31,15 @@ BRIDGE_FRAMES = BRIDGE_OVERLAP_FRAMES * 2
 MIN_TAKE_REMAINDER_FRAMES = 24
 # The soundtrack only needs audio, so it renders at H3's lowest resolution.
 SOUNDTRACK_RESOLUTION = "360P"
+# Part of the soundtrack cache key: bump it when the soundtrack prompts change.
+SOUNDTRACK_VERSION = 2
 # Longest segment H3 renders in one go; longer renders continue segment by segment.
 SEGMENT_SECONDS = 5
 # Audio/video context shared between soundtrack segments (on the AV prefix grid 39/90/141).
 SOUNDTRACK_CONTEXT_FRAMES = 39
 SOUNDTRACK_FADE_IN_FRAMES = 12
-SOUNDTRACK_FADE_OUT_FRAMES = 48
+# H3 rarely resolves the music on request, so a long fade gives every film a deliberate ending.
+SOUNDTRACK_FADE_OUT_FRAMES = 72
 COMFYUI_JOB_TIMEOUT_SECONDS = 3600
 DEFAULT_SOUNDTRACK_MUSIC = (
 	"an elegant cinematic instrumental score, soft piano melody over warm sustained strings, "
@@ -294,10 +297,14 @@ def _add_soundtrack(project_name):
 	)
 	music = (project.soundtrack_prompt or "").strip() or DEFAULT_SOUNDTRACK_MUSIC
 	# Finishing again (e.g. after regenerating one scene) keeps the same music.
-	asset_name = f"{project_name} AI Soundtrack {total_frames}f {hashlib.sha256(music.encode()).hexdigest()[:8]}"
-	audio_version = _latest_version_of(project_name, asset_name) or _render_soundtrack(
-		project_name, asset_name, clips[0], music, total_frames
-	)
+	key = hashlib.sha256(f"{SOUNDTRACK_VERSION}:{music}".encode()).hexdigest()[:8]
+	asset_name = f"{project_name} AI Soundtrack {total_frames}f {key}"
+	audio_version = _latest_version_of(project_name, asset_name)
+	if not audio_version:
+		from joymedia.services.qwen_client import to_english
+
+		# Marketers may describe the music in Vietnamese; H3 follows English best.
+		audio_version = _render_soundtrack(project_name, asset_name, clips[0], to_english(music), total_frames)
 
 	from joymedia.services.timeline_editor import _ensure_source_audio_clips, _timeline_clip_rows
 
@@ -410,15 +417,19 @@ def _soundtrack_workflow(first_frame, music, seconds):
 	for node in ("264", "265", "375", "356", "335", "336", "355"):
 		workflow.pop(node)
 	durations = segment_durations(seconds)
-	segment = (
-		"A calm cinematic scene with a slow camera drift. "
-		f"Audio: {music}. Continuous instrumental music only, no speech, no singing, no sound effects."
-	)
+	instrumental = "Instrumental music only, no speech, no singing, no sound effects."
+	opening = f"A calm cinematic scene with a slow camera drift. Audio: {music}. The music begins. {instrumental}"
 	continued = (
 		"The camera keeps drifting slowly. "
-		f"Audio: the same {music} continues seamlessly with the same instruments, key and tempo. "
-		"Instrumental music only, no speech, no singing, no sound effects."
+		f"Audio: the same {music} continues seamlessly with the same instruments, key and tempo. {instrumental}"
 	)
+	# A film needs an ending: the last segment resolves the music instead of stopping mid-phrase.
+	ending = (
+		"The camera slowly comes to rest. "
+		f"Audio: the same {music} plays its final phrase and resolves to a last sustained chord that "
+		f"fades gently into silence. {instrumental}"
+	)
+	prompts = [opening] + [continued] * (len(durations) - 2) + [ending] if len(durations) > 1 else [opening]
 	workflow["joymedia_first_frame"] = {
 		"class_type": "LoadImage", "inputs": {"image": upload_local_file(first_frame)["server_path"]},
 	}
@@ -427,7 +438,7 @@ def _soundtrack_workflow(first_frame, music, seconds):
 		context.pop(name, None)
 	context.update({
 		"first_frame": ["joymedia_first_frame", 0],
-		"prompt": segmented_prompt([segment] + [continued] * (len(durations) - 1), durations),
+		"prompt": segmented_prompt(prompts, durations),
 		"seconds": seconds,
 		"segment_seconds": ",".join(f"{value:g}" for value in durations),
 		"resolution": SOUNDTRACK_RESOLUTION,

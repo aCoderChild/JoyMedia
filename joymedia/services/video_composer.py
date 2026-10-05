@@ -541,7 +541,8 @@ def _concatenate_normalized_shots(paths, output_path, profile):
 	)
 
 
-def _mix_audio(silent_master_path, audio_sources, delivery_path):
+def _mix_audio(silent_master_path, audio_sources, delivery_path, ending=None):
+	"""Mix audio_sources under the master; ending=(start, seconds) fades the whole mix out."""
 	command = ["ffmpeg", "-y", "-i", str(silent_master_path)]
 	filter_parts = []
 	duck_labels = []
@@ -582,6 +583,11 @@ def _mix_audio(silent_master_path, audio_sources, delivery_path):
 			filter_parts.append("[duck_source]anull[mixed]")
 	else:
 		_mix_labels(filter_parts, base_labels, "mixed")
+	output_label = "[mixed]"
+	if ending:
+		start, seconds = ending
+		filter_parts.append(f"[mixed]afade=t=out:st={start:.6f}:d={seconds:.6f}[ending]")
+		output_label = "[ending]"
 	command.extend(
 		[
 			"-filter_complex",
@@ -589,7 +595,7 @@ def _mix_audio(silent_master_path, audio_sources, delivery_path):
 			"-map",
 			"0:v:0",
 			"-map",
-			"[mixed]",
+			output_label,
 			# The master is already normalized H.264; re-encoding would only lose detail.
 			"-c:v",
 			"copy",

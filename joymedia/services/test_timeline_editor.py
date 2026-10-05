@@ -58,6 +58,10 @@ def _generate_audio_bytes(seconds=6):
 class TestTimelineEditor(FrappeTestCase):
 	def setUp(self):
 		super().setUp()
+		# The editor commits after each change; without this every run leaves its projects behind.
+		commit = patch.object(frappe.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
 		workflow = _create_workflow()
 		self.project = frappe.get_doc({
 			"doctype": "Media Project",

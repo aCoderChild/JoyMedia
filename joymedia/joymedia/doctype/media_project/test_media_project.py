@@ -11,7 +11,15 @@ from frappe.tests import IntegrationTestCase
 class IntegrationTestMediaProject(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
+		# The code under test commits; without this every run leaves its projects behind.
+		commit = patch.object(frappe.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
 		self.workflow = _ensure_workflow()
+
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
 
 	def test_project_uses_video_idea_as_single_creative_brief(self):
 		from joymedia.joymedia.doctype.media_project.media_project import create_project

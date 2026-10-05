@@ -6,10 +6,10 @@
         <div>
           <h3 class="text-sm font-bold text-ink-primary flex items-center gap-2">
             <span>⚙</span>
-            <span>{{ currentLang === 'vi' ? 'Cài đặt Dự án Video' : 'Video Project Settings' }}</span>
+            <span>{{ currentLang === 'vi' ? 'Cài đặt video' : 'Video settings' }}</span>
           </h3>
           <p class="text-xs text-ink-muted mt-0.5">
-            {{ currentLang === 'vi' ? 'Định dạng, thời lượng và thông số AI cho video.' : 'Format, duration, and AI generation parameters.' }}
+            {{ currentLang === 'vi' ? 'Khung hình, độ dài, nhạc nền và chữ kết thúc.' : 'Shape, length, music and closing title.' }}
           </p>
         </div>
         <button
@@ -26,7 +26,7 @@
         <!-- 1. Format / Aspect Ratio Preset -->
         <div class="space-y-1.5">
           <label class="block font-bold text-ink-primary">
-            {{ currentLang === 'vi' ? 'Định dạng & Tỉ lệ khung hình (Format):' : 'Delivery Format & Aspect Ratio:' }}
+            {{ currentLang === 'vi' ? 'Khung hình:' : 'Shape:' }}
           </label>
           <div class="grid grid-cols-3 gap-2">
             <button
@@ -40,7 +40,7 @@
               @click="form.delivery_preset = preset.value"
             >
               <span class="text-base">{{ preset.icon }}</span>
-              <span class="text-xs font-semibold">{{ preset.label }}</span>
+              <span class="text-xs font-semibold">{{ currentLang === 'vi' ? preset.vi : preset.label }}</span>
               <span class="text-[10px] text-ink-muted">{{ preset.sub }}</span>
             </button>
           </div>
@@ -50,7 +50,7 @@
         <div class="space-y-1.5">
           <div class="flex items-center justify-between">
             <label class="font-bold text-ink-primary">
-              {{ currentLang === 'vi' ? 'Thời lượng video (Giây):' : 'Video Duration (Seconds):' }}
+              {{ currentLang === 'vi' ? 'Độ dài video:' : 'Video length:' }}
             </label>
             <span class="font-mono font-bold text-indigo-400 text-xs">{{ form.total_duration_seconds }}s</span>
           </div>
@@ -92,24 +92,30 @@
               :class="form.soundtrack_prompt === mood.prompt
                 ? 'border-indigo-500 bg-indigo-500/20 text-indigo-400 font-bold'
                 : 'border-outline-border bg-surface-muted text-ink-secondary hover:border-indigo-400'"
-              @click="form.soundtrack_prompt = mood.prompt"
+              @click="form.soundtrack_prompt = mood.prompt; customMusic = false"
             >
-              {{ mood.icon }} {{ currentLang === 'vi' ? mood.vi : mood.en }}
+              {{ currentLang === 'vi' ? mood.vi : mood.en }}
+            </button>
+            <button
+              type="button"
+              class="px-2.5 py-1 rounded-full border text-[11px] cursor-pointer transition-colors"
+              :class="showCustomMusic
+                ? 'border-indigo-500 bg-indigo-500/20 text-indigo-400 font-bold'
+                : 'border-dashed border-outline-border text-ink-muted hover:border-indigo-400'"
+              @click="customMusic = true"
+            >
+              {{ currentLang === 'vi' ? 'Tự mô tả…' : 'Describe my own…' }}
             </button>
           </div>
           <textarea
+            v-if="showCustomMusic"
             v-model="form.soundtrack_prompt"
             rows="2"
             :placeholder="currentLang === 'vi'
-              ? 'Chọn một phong cách ở trên, hoặc tự mô tả, vd: guitar mộc vui tươi và trống nhẹ'
-              : 'Pick a mood above, or describe your own, e.g. uplifting acoustic guitar and soft drums'"
+              ? 'Viết bằng tiếng Việt hoặc tiếng Anh, vd: guitar mộc vui tươi, trống nhẹ'
+              : 'Any language, e.g. uplifting acoustic guitar and soft drums'"
             class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 resize-none"
           />
-          <p class="text-[10.5px] text-ink-muted">
-            {{ currentLang === 'vi'
-              ? 'Một bản nhạc liền mạch cho cả video, thêm tự động khi các cảnh đã dựng xong. Để trống: piano và dây điện ảnh nhẹ nhàng.'
-              : 'One continuous track for the whole video, added automatically once the scenes are ready. Empty: gentle cinematic piano and strings.' }}
-          </p>
         </div>
 
         <!-- End card -->
@@ -121,20 +127,18 @@
             v-model="form.end_card_title"
             type="text"
             maxlength="60"
-            :placeholder="currentLang === 'vi' ? 'Tiêu đề, vd: The Riviera Point' : 'Title, e.g. The Riviera Point'"
+            :placeholder="currentLang === 'vi' ? 'Tên thương hiệu hoặc sản phẩm' : 'Brand or product name'"
             class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500"
           />
           <input
             v-model="form.end_card_tagline"
             type="text"
             maxlength="80"
-            :placeholder="currentLang === 'vi' ? 'Khẩu hiệu, vd: Phong cách sống đẳng cấp' : 'Tagline, e.g. A new way of living'"
+            :placeholder="currentLang === 'vi' ? 'Câu khẩu hiệu ngắn' : 'A short slogan'"
             class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500"
           />
           <p class="text-[10.5px] text-ink-muted">
-            {{ currentLang === 'vi'
-              ? 'Hiện mờ dần ở 3,5 giây cuối khi xuất video. Để trống nếu không cần.'
-              : 'Fades in over the last 3.5 seconds of the export. Leave empty for none.' }}
+            {{ currentLang === 'vi' ? 'Không bắt buộc. Hiện ở cuối video.' : 'Optional. Shown at the end of the video.' }}
           </p>
         </div>
 
@@ -303,7 +307,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 
 const props = defineProps({
   settings: { type: Object, default: () => ({}) },
@@ -316,9 +320,9 @@ const emit = defineEmits(["close", "save"]);
 const showAdvanced = ref(false);
 
 const formatPresets = [
-  { value: "Landscape", label: "Landscape", sub: "16:9 · 1920x1080", icon: "🖥️" },
-  { value: "Portrait", label: "Portrait", sub: "9:16 · 1080x1920", icon: "📱" },
-  { value: "Square", label: "Square", sub: "1:1 · 1080x1080", icon: "⏹️" },
+  { value: "Landscape", label: "Landscape", vi: "Ngang", sub: "16:9 · YouTube, Web", icon: "🖥️" },
+  { value: "Portrait", label: "Portrait", vi: "Dọc", sub: "9:16 · TikTok, Reels", icon: "📱" },
+  { value: "Square", label: "Square", vi: "Vuông", sub: "1:1 · Facebook, Instagram", icon: "⏹️" },
 ];
 
 const referenceModes = [
@@ -333,13 +337,18 @@ const qualityModes = [
 
 // The prompts are English for the AI; the labels are what marketers see.
 const musicMoods = [
-  { key: "elegant", icon: "🎻", en: "Elegant", vi: "Sang trọng", prompt: "an elegant cinematic instrumental score, soft piano melody over warm sustained strings, slowly building with emotion to a gentle swell, then resolving softly at the end" },
-  { key: "uplifting", icon: "🌤️", en: "Uplifting", vi: "Tươi vui", prompt: "an uplifting modern instrumental, bright acoustic guitar and light claps over warm pads, positive and hopeful, steady medium tempo" },
-  { key: "energetic", icon: "⚡", en: "Energetic", vi: "Sôi động", prompt: "an energetic upbeat electronic pop instrumental, punchy drums, driving bass and bright synth hooks, fast tempo" },
-  { key: "calm", icon: "🌿", en: "Calm", vi: "Thư giãn", prompt: "a calm ambient instrumental, soft airy pads, gentle felt piano and light textures, slow and relaxing" },
-  { key: "corporate", icon: "💼", en: "Corporate", vi: "Doanh nghiệp", prompt: "a confident modern corporate instrumental, clean piano and plucked synths over a light steady beat, inspiring and professional" },
-  { key: "luxury", icon: "🍸", en: "Lounge", vi: "Lounge", prompt: "a luxurious smooth lounge instrumental, mellow electric piano, soft jazz brushes and warm upright bass, sophisticated and relaxed" },
+  { key: "gentle", en: "Gentle", vi: "Nhẹ nhàng", prompt: "a gentle cinematic instrumental score, soft piano melody over warm strings, slowly building with emotion, then resolving softly at the end" },
+  { key: "uplifting", en: "Uplifting", vi: "Tươi vui", prompt: "an uplifting modern instrumental, bright acoustic guitar and light claps over warm pads, positive and hopeful, steady medium tempo" },
+  { key: "energetic", en: "Energetic", vi: "Sôi động", prompt: "an energetic upbeat electronic pop instrumental, punchy drums, driving bass and bright synth hooks, fast tempo" },
+  { key: "inspiring", en: "Inspiring", vi: "Truyền cảm hứng", prompt: "an inspiring cinematic instrumental, steady piano pulse and soaring strings building to a hopeful, confident climax" },
+  { key: "calm", en: "Calm", vi: "Thư giãn", prompt: "a calm ambient instrumental, soft airy pads, gentle felt piano and light textures, slow and relaxing" },
+  { key: "modern", en: "Modern", vi: "Hiện đại", prompt: "a clean modern instrumental, plucked synths and soft electronic beat with a light, confident groove" },
 ];
+const customMusic = ref(false);
+// The text box appears for "Describe my own" or a prompt that is not one of the moods.
+const showCustomMusic = computed(
+  () => customMusic.value || Boolean(form.soundtrack_prompt && !musicMoods.some((mood) => mood.prompt === form.soundtrack_prompt))
+);
 
 const form = reactive({
   delivery_preset: "Landscape",

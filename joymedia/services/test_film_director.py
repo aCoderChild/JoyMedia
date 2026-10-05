@@ -396,3 +396,52 @@ class TestContinuationReferences(FrappeTestCase):
 		self.assertEqual("lobby.png", workflow["joymedia_reference_2"]["inputs"]["image"])
 		# The saved latent cannot be resized, so the continuation matches the take's size.
 		self.assertEqual(("custom", 1344, 768), (context["resolution"], context["width"], context["height"]))
+
+
+class TestFilmEnding(FrappeTestCase):
+	def test_last_shot_is_directed_to_end_the_film_once(self):
+		shots = [{"generation_prompt": "Opening."}, {"generation_prompt": "Final view of the garden."}]
+
+		film_director.close_the_film(shots)
+		film_director.close_the_film(shots)
+
+		self.assertEqual("Opening.", shots[0]["generation_prompt"])
+		self.assertEqual(1, shots[1]["generation_prompt"].count(film_director.CLOSING_DIRECTION))
+
+
+class TestProjectNaming(FrappeTestCase):
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def _project(self, name):
+		return frappe.get_doc({"doctype": "Media Project", "project_name": name, "product_name": ""}).insert(
+			ignore_permissions=True
+		)
+
+	def test_untitled_project_takes_the_storyboard_title(self):
+		from joymedia.services.video_plan_service import _name_untitled_project
+
+		untitled, named = self._project("Dự án mới"), self._project("Spring launch")
+		for project in (untitled, named):
+			_name_untitled_project(project, "Sắc xuân bên hồ")
+
+		self.assertEqual("Sắc xuân bên hồ", frappe.db.get_value("Media Project", untitled.name, "project_name"))
+		self.assertEqual("Spring launch", frappe.db.get_value("Media Project", named.name, "project_name"))
+
+	def test_project_without_product_name_can_be_deleted(self):
+		from joymedia.joymedia.doctype.media_project.media_project import archive_project
+
+		project = self._project("Dự án mới")
+
+		self.assertTrue(archive_project(project.name)["archived"])
+		self.assertEqual("Archived", frappe.db.get_value("Media Project", project.name, "status"))
+
+
+class TestTranslation(FrappeTestCase):
+	@patch("joymedia.services.qwen_client.requests.post")
+	def test_english_music_text_is_not_sent_for_translation(self, post):
+		from joymedia.services.qwen_client import to_english
+
+		self.assertEqual("soft piano", to_english("soft piano"))
+		post.assert_not_called()

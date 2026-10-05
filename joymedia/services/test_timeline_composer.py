@@ -7,7 +7,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.timeline_composer import (
-	_apply_end_card,
+	_apply_ending,
 	_get_generated_audio_sources,
 	_normalize_clip,
 	_render_sequence,
@@ -66,15 +66,30 @@ class TestTimelineComposer(FrappeTestCase):
 			temp_path = Path(temp_dir)
 			source = temp_path / "source.mp4"
 			output = temp_path / "card.mp4"
-			_make_video(source, 4, color="black")
+			_make_video(source, 6, color="black")
 			profile = {"width": 320, "height": 240, "fps": 24.0}
 
-			_apply_end_card(source, output, profile, 'Tòa tháp "Riviera": Point', "Phong cách sống", temp_path)
+			_apply_ending(source, output, profile, 'Tòa tháp "Ánh Dương": Plaza', "Phong cách sống", temp_path)
 
-			_validate_normalized_video(output, profile, expected_frames=96)
-			before, after = _mean_luma(output, 1.0), _mean_luma(output, 3.9)
+			_validate_normalized_video(output, profile, expected_frames=144)
+			# The title is fully in at 4.4 s; the fade to black starts at 5 s.
+			before, after = _mean_luma(output, 2.0), _mean_luma(output, 4.8)
 			self.assertEqual(0, before)
 			self.assertGreater(after, before + 2)
+
+	def test_every_film_fades_to_black_at_the_end(self):
+		with tempfile.TemporaryDirectory(prefix="joymedia-ending-") as temp_dir:
+			temp_path = Path(temp_dir)
+			source = temp_path / "source.mp4"
+			output = temp_path / "ended.mp4"
+			_make_video(source, 4, color="white")
+			profile = {"width": 320, "height": 240, "fps": 24.0}
+
+			_apply_ending(source, output, profile, "", "", temp_path)
+
+			_validate_normalized_video(output, profile, expected_frames=96)
+			self.assertGreater(_mean_luma(output, 2.0), 200)
+			self.assertLess(_mean_luma(output, 3.92), 40)
 
 	def test_render_sequence_honors_dissolve_overlap(self):
 		with tempfile.TemporaryDirectory(prefix="joymedia-timeline-xfade-") as temp_dir:

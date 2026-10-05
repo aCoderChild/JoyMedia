@@ -64,7 +64,9 @@ STRUCTURE
 - Match the look (light, colour grade, mood) to the VIDEO IDEA and GLOBAL INSTRUCTIONS.
   If none is given, use soft natural cinematic light and a gentle filmic grade. Keep
   one consistent colour grade across all takes.
-- shot_name is "<BEAT>: <short title>", e.g. "OPENING: Arrival at dusk".
+- shot_name is "<BEAT>: <short title>", e.g. "OPENING: Arrival at dusk". Keep the BEAT word
+  in English; write the short title in the language of the VIDEO IDEA (Vietnamese for a
+  Vietnamese idea, e.g. "OPENING: Dạo bước buổi sớm").
 
 EVERY generation_prompt (English, 60-110 words) states, in this order:
 1. The person from <Picture 1>: their outfit and their performance in this take.
@@ -107,6 +109,23 @@ STORY_BEATS = {
 	"CLOSING": "the final image: the character's last look, or a wide establishing view of the main "
 	"place, settling to stillness so the film ends cleanly.",
 }
+
+
+# Appended to the last shot of every plan: the planner often writes it like any other
+# take, and the film then stops mid-motion instead of ending.
+CLOSING_DIRECTION = (
+	"This is the last shot of the film: the camera slowly pulls back and rises into a wide, calm "
+	"final view, all motion settles to stillness and the light softens, so the film ends gracefully."
+)
+
+
+def close_the_film(shots):
+	"""Make the last shot end the film; returns the shots."""
+	if shots and isinstance(shots[-1], dict):
+		prompt = str(shots[-1].get("generation_prompt") or "").strip()
+		if prompt and CLOSING_DIRECTION not in prompt:
+			shots[-1]["generation_prompt"] = f"{prompt} {CLOSING_DIRECTION}"
+	return shots
 
 
 def story_beats(take_count):

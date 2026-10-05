@@ -9,6 +9,7 @@ from frappe import _
 from .film_director import (
 	balance_take_durations,
 	build_director_instruction,
+	close_the_film,
 	normalize_story_references,
 	plan_problems,
 	story_take_count,
@@ -125,7 +126,8 @@ def improve_video_idea(
 		"1. Elevate narrative hook, lighting mood, camera motion, tactile material textures, and commercial elegance.\n"
 		"2. Where appropriate, refer to ingredients using their exact @reference_key tag (e.g., @hero_shoe).\n"
 		"3. Keep the prompt concise (2-4 sentences max), punchy, and production-ready for video synthesis.\n"
-		"4. Return ONLY valid JSON with shape:\n"
+		"4. Write improved_idea in the same language as CURRENT IDEA (keep a Vietnamese idea in Vietnamese).\n"
+		"5. Return ONLY valid JSON with shape:\n"
 		'{"improved_idea": "The enhanced creative video concept..."}'
 	)
 
@@ -151,6 +153,38 @@ def improve_video_idea(
 		frappe.logger().warning(f"Qwen idea improvement failed, falling back: {exc}")
 
 	return {"improved_idea": _build_fallback_improved_idea(current_idea, product_name, references)}
+
+
+def to_english(text):
+	"""Translate a short creative description (e.g. a Vietnamese music mood) for the video model.
+
+	English passes through unchanged; if the planner is unavailable the text is used as written.
+	"""
+	text = (text or "").strip()
+	if not text or text.isascii():
+		return text
+	try:
+		base_url, model, timeout = _qwen_config()
+		response = requests.post(
+			f"{base_url}/chat/completions",
+			json={
+				"model": model,
+				"messages": [
+					{"role": "system", "content": "You translate short creative descriptions into natural English. Return JSON only."},
+					{"role": "user", "content": f'Translate into English: {text}\nReturn {{"english": "..."}}'},
+				],
+				"response_format": {"type": "json_object"},
+				"temperature": 0,
+				"max_tokens": 300,
+			},
+			timeout=(10, min(timeout, 120)),
+		)
+		response.raise_for_status()
+		english = json.loads(response.json()["choices"][0]["message"]["content"]).get("english")
+		return str(english).strip() or text
+	except Exception:
+		frappe.logger("joymedia.qwen").exception("Unable to translate %r", text)
+		return text
 
 
 def _build_fallback_improved_idea(current_idea, product_name, references):
@@ -271,7 +305,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		else f'{{"reference_key":"hero_product","usage_role":"{example_role}"}}'
 	)
 	response_shape = (
-		'{"shots":[{"shot_number":1,"shot_name":"...",'
+		'{"film_title":"...","shots":[{"shot_number":1,"shot_name":"...",'
 		'"duration_seconds":5,"generation_prompt":"...",'
 		f'"references":[{example_references}]}}]}}'
 	)
@@ -294,7 +328,11 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		"- Every shot MUST contain one non-empty generation_prompt.\n"
 		"- Every shot MUST contain a positive duration_seconds value.\n"
 		"- Never return null or empty generation_prompt values.\n"
-		"- References must use only supplied reference_key values and semantic usage_role values.\n\n"
+		"- References must use only supplied reference_key values and semantic usage_role values.\n"
+		"- film_title is a short catchy title for the video (at most 6 words) in the same language as the "
+		"VIDEO IDEA; Vietnamese if the idea is written in Vietnamese.\n"
+		"- Write every generation_prompt in English, even when the VIDEO IDEA is in Vietnamese or another language.\n"
+		"- Write each shot_name title in the language of the VIDEO IDEA.\n\n"
 		"Return only valid JSON with this shape:\n"
 		f"{response_shape}"
 	)
@@ -373,6 +411,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	if story_film and isinstance(result, dict) and isinstance(result.get("shots"), list):
 		normalize_story_references(result["shots"], story_reference_contexts, story_reference_role)
 
+	film_title = str(result.get("film_title") or "").strip()[:80] if isinstance(result, dict) else ""
 	result = _normalize_qwen_plan(
 		result,
 		reference_image_count=len(reference_images or []),
@@ -391,6 +430,10 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	)
 	if story_film:
 		result["shots"] = balance_take_durations(result["shots"], total_video_duration)
+	if not continuation_context:
+		close_the_film(result["shots"])
+	if film_title:
+		result["film_title"] = film_title
 	return result
 
 

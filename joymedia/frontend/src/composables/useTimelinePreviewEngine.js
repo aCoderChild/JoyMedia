@@ -80,9 +80,19 @@ export function useTimelinePreviewEngine({
     return audio;
   }
 
-  function gainFor(clip) {
+  function gainFor(clip, frame = null) {
     const gainDb = Number(clip?.gain_db || 0);
-    return Math.max(0, Math.min(1, 10 ** (gainDb / 20)));
+    let gain = Math.max(0, Math.min(1, 10 ** (gainDb / 20)));
+    if (frame !== null) {
+      // Same fades as the export, so the music eases in and out instead of cutting.
+      const startFrame = Number(clip.timeline_start_frame || 0);
+      const endFrame = Number(clip.timeline_end_frame || startFrame);
+      const fadeIn = Number(clip.fade_in_frames || 0);
+      const fadeOut = Number(clip.fade_out_frames || 0);
+      if (fadeIn > 0) gain *= Math.min(1, Math.max(0, (frame - startFrame) / fadeIn));
+      if (fadeOut > 0) gain *= Math.min(1, Math.max(0, (endFrame - frame) / fadeOut));
+    }
+    return gain;
   }
 
   function syncAtFrame(frame) {
@@ -112,7 +122,7 @@ export function useTimelinePreviewEngine({
 
       const sourceFrame = Number(clip.source_in_frame || 0) + currentFrame - startFrame;
       const expectedTime = Math.max(0, sourceFrame / currentFps);
-      audio.volume = gainFor(clip);
+      audio.volume = gainFor(clip, currentFrame);
       if (!Number.isFinite(audio.currentTime) || Math.abs(audio.currentTime - expectedTime) > 0.08) {
         try {
           seekAudioSafely(audio, expectedTime);
@@ -173,7 +183,7 @@ export function useTimelinePreviewEngine({
 
       const expectedTime = Math.max(0, sourceFrame / currentFps);
       seekAudioSafely(audio, expectedTime);
-      audio.volume = gainFor(clip);
+      audio.volume = gainFor(clip, currentFrame);
       audio.play().catch((error) => {
         console.warn("Unable to start timeline audio", clip.name, error);
       });

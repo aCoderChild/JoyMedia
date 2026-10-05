@@ -68,7 +68,7 @@
         @click="$emit('toggleMediaDrawer')"
       >
         <span>▧</span>
-        <span class="hidden sm:inline">Media</span>
+        <span class="hidden sm:inline">{{ currentLang === 'vi' ? 'Tư liệu' : 'Media' }}</span>
         <span
           v-if="projectAssetsCount"
           class="size-4 rounded-full bg-indigo-600 text-white text-[9px] font-mono font-bold flex items-center justify-center"
@@ -88,7 +88,7 @@
           @click="activityOpen = !activityOpen"
         >
           <span>◌</span>
-          <span class="hidden sm:inline">Activity</span>
+          <span class="hidden sm:inline">{{ currentLang === 'vi' ? 'Tiến trình' : 'Progress' }}</span>
           <span
             v-if="activeJobCount"
             class="size-4 rounded-full bg-indigo-600 text-white text-[9px] font-mono font-bold flex items-center justify-center"
@@ -137,6 +137,19 @@
           <div v-else class="text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Chưa có cảnh nào đang dựng.' : 'No scenes rendering yet.' }}</div>
 
           <button
+            v-if="timelineReady && production.status === 'Completed'"
+            type="button"
+            class="mt-3 w-full rounded-lg border border-outline-border hover:bg-surface-hover text-ink-secondary text-[11px] font-semibold py-1.5 cursor-pointer disabled:opacity-50"
+            :disabled="isFinishing || isExporting"
+            :title="currentLang === 'vi'
+              ? 'Chạy tự động khi các cảnh dựng xong. Bấm để làm lại.'
+              : 'Runs automatically when the scenes are ready. Click to redo it.'"
+            @click="$emit('finishFilm'); activityOpen = false"
+          >
+            {{ currentLang === 'vi' ? 'Làm lại chuyển cảnh và nhạc nền' : 'Redo transitions and music' }}
+          </button>
+
+          <button
             v-if="production.status === 'Failed'"
             type="button"
             class="mt-3 w-full rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold py-1.5 cursor-pointer"
@@ -155,25 +168,6 @@
         @click="$emit('stopGeneration')"
       >
         {{ currentLang === 'vi' ? 'Dừng' : 'Stop' }}
-      </button>
-
-      <button
-        v-if="timelineReady"
-        type="button"
-        class="jm-btn-secondary !py-1 !px-3 text-xs flex items-center gap-1.5 shadow-sm"
-        :disabled="isFinishing || isExporting"
-        :title="currentLang === 'vi'
-          ? 'Tự động chạy khi các cảnh dựng xong. Bấm để làm lại chuyển cảnh và nhạc nền.'
-          : 'Runs automatically when the scenes are ready. Click to redo the transitions and music.'"
-        @click="$emit('finishFilm')"
-      >
-        <span v-if="isFinishing" class="lucide-refresh-cw size-3 animate-spin" />
-        <span v-else>✨</span>
-        <span>
-          {{ isFinishing
-            ? `${currentLang === 'vi' ? 'Đang hoàn thiện' : 'Finishing'}${finishingStepLabel ? ` · ${finishingStepLabel}` : '...'}`
-            : (currentLang === 'vi' ? 'Hoàn thiện phim' : 'Finish film') }}
-        </span>
       </button>
 
       <button

@@ -22,6 +22,8 @@ from joymedia.services.video_composer import (
 STUDIO_EXPORT_QUALITY = "Studio 1440p60"
 FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
 END_CARD_SECONDS = 3.5
+# Every film fades to black, and its sound to silence, over its last second.
+ENDING_FADE_SECONDS = 1.0
 TITLE_FONT = "PlayfairDisplay.ttf"
 TAGLINE_FONT = "GreatVibes-Regular.ttf"
 
@@ -126,11 +128,10 @@ def compose_project_timeline_internal(project_name: str):
 				silent_master = finished_master
 			title = (project.get("end_card_title") or "").strip()
 			tagline = (project.get("end_card_tagline") or "").strip()
-			if title or tagline:
-				carded_master = temp_path / f"{project.name}-timeline-card.mp4"
-				_apply_end_card(silent_master, carded_master, output_profile, title, tagline, temp_path)
-				_validate_normalized_video(carded_master, output_profile, expected_frames=output_frames)
-				silent_master = carded_master
+			ended_master = temp_path / f"{project.name}-timeline-ending.mp4"
+			_apply_ending(silent_master, ended_master, output_profile, title, tagline, temp_path)
+			_validate_normalized_video(ended_master, output_profile, expected_frames=output_frames)
+			silent_master = ended_master
 
 			delivery_path = silent_master
 			video_duration = _get_video_duration(silent_master)
@@ -139,7 +140,10 @@ def compose_project_timeline_internal(project_name: str):
 			)
 			if audio_sources:
 				delivery_path = temp_path / f"{project.name}-timeline.mp4"
-				_mix_audio(silent_master, audio_sources, delivery_path)
+				_mix_audio(
+					silent_master, audio_sources, delivery_path,
+					ending=(max(0.0, video_duration - ENDING_FADE_SECONDS), ENDING_FADE_SECONDS),
+				)
 				_validate_normalized_video(delivery_path, output_profile, expected_frames=output_frames)
 
 			video_duration = _get_video_duration(delivery_path)
@@ -202,8 +206,8 @@ def compose_project_timeline_internal(project_name: str):
 	}
 
 
-def _apply_end_card(source_path, output_path, profile, title, tagline, temp_path):
-	"""Fade a title and tagline in over the last seconds of the film."""
+def _apply_ending(source_path, output_path, profile, title, tagline, temp_path):
+	"""End the film: fade any title and tagline in, then fade the picture to black."""
 	duration = _get_video_duration(source_path)
 	start = max(0.0, duration - min(END_CARD_SECONDS, duration * 0.4))
 	height = profile["height"]
@@ -224,6 +228,10 @@ def _apply_end_card(source_path, output_path, profile, title, tagline, temp_path
 			f"x=(w-text_w)/2:y=(h-text_h)/2+h*{offset}:"
 			f"alpha='if(lt(t,{appear:.3f}),0,min(1,(t-{appear:.3f})/0.8))'"
 		)
+	# The title stays readable over a dimmed last shot; the whole frame then fades out.
+	if filters:
+		filters.insert(0, f"eq=brightness='if(gte(t,{start:.3f}),-0.12*min(1,(t-{start:.3f})/0.8),0)':eval=frame")
+	filters.append(f"fade=t=out:st={max(0.0, duration - ENDING_FADE_SECONDS):.3f}:d={ENDING_FADE_SECONDS}")
 	_run_ffmpeg(
 		[
 			"ffmpeg",

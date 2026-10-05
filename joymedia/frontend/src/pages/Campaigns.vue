@@ -136,11 +136,12 @@
       >
         <button
           type="button"
-          class="absolute top-2.5 right-2.5 z-20 size-7 rounded-lg bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
-          :aria-label="`Archive ${project.project_name}`"
+          class="absolute top-2.5 right-2.5 z-20 size-7 rounded-lg bg-black/60 text-white hover:bg-rose-600 transition-colors cursor-pointer flex items-center justify-center"
+          :title="currentLang === 'vi' ? 'Xoá dự án' : 'Delete project'"
+          :aria-label="`${currentLang === 'vi' ? 'Xoá' : 'Delete'} ${project.project_name}`"
           @click.stop="archiveProject(project)"
         >
-          ⋯
+          <span class="lucide-trash-2 size-3.5" />
         </button>
         <div>
           <!-- Thumbnail via MediaThumbnail Component -->
@@ -293,18 +294,30 @@ async function handleNewProject() {
 }
 
 async function archiveProject(project) {
+  const vi = currentLang.value === "vi";
+  // Deleting archives the project: it disappears for everyone but an administrator can restore it.
   const confirmed = window.confirm(
-    `Archive “${project.project_name}”? Its storyboard, timeline, and generated outputs will no longer appear in Projects.`
+    vi
+      ? `Xoá dự án “${project.project_name}”? Dự án sẽ không còn hiện trong danh sách.`
+      : `Delete “${project.project_name}”? It will no longer appear in your projects.`
   );
   if (!confirmed) return;
   try {
     await call("joymedia.joymedia.doctype.media_project.media_project.archive_project", {
       project_name: project.name,
     });
-    notify({ title: "Project archived", text: `${project.project_name} was archived.`, type: "success" });
+    notify({
+      title: vi ? "Đã xoá dự án" : "Project deleted",
+      text: project.project_name,
+      type: "success",
+    });
     await projectsResource.reload();
   } catch (err) {
-    notify({ title: "Error", text: errorMessage(err, "Failed to archive project."), type: "error" });
+    notify({
+      title: vi ? "Không thể xoá dự án" : "Could not delete the project",
+      text: errorMessage(err, ""),
+      type: "error",
+    });
   }
 }
 
