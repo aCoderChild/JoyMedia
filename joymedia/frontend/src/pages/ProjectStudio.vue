@@ -221,6 +221,8 @@
             @revise-storyboard="reviseStoryboard"
             @reorder-shots="onReorderShots"
             @add-scene="openAddScenePopover"
+            @regenerate-shot="regenerateCurrentShot"
+            @select-take="selectShotTake"
           />
         </template>
 
@@ -357,6 +359,7 @@
 </template>
 
 <script setup>
+import { cachedClipUrl } from "../composables/useClipCache";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { call } from "frappe-ui";
@@ -862,7 +865,7 @@ const studioPreview = computed(() => {
   if (studioMode.value === "edit" && activeTimelineVideoClip.value?.source_file) {
     return {
       type: "timeline-clip",
-      url: activeTimelineVideoClip.value.source_file,
+      url: cachedClipUrl(activeTimelineVideoClip.value.source_file),
       clip: activeTimelineVideoClip.value,
       isVideo: true,
       title: `Timeline: Shot ${activeTimelineVideoClip.value.shot_number || activeTimelineVideoClip.value.clip_order || ""}`,
@@ -1262,18 +1265,53 @@ async function saveActiveShot() {
   }
 }
 
-async function regenerateCurrentShot() {
-  const shot = activeSelectedShot.value;
+async function regenerateCurrentShot(target = null) {
+  const shot = target?.name ? target : activeSelectedShot.value;
   if (!shot?.name) return;
+  const vi = currentLang.value === "vi";
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.regenerate_project_shot", {
+    await call("joymedia.services.scene_takes.regenerate_scene", {
       project_name: projectName.value,
       shot_name: shot.name,
     });
     await fetchWorkspace();
-    notify({ title: "Shot regenerating", text: `Generating new video for Shot ${shot.shot_number}.`, type: "success" });
+    resumeProduction(workspace.value?.production);
+    notify({
+      title: vi ? `Đang tạo lại cảnh ${shot.shot_number}` : `Regenerating scene ${shot.shot_number}`,
+      text: vi
+        ? "Bản hiện tại vẫn được giữ. Bản mới sẽ thay thế khi dựng xong, chuyển cảnh và nhạc được làm lại tự động."
+        : "The current take is kept. The new take replaces it when ready; transitions and music are redone automatically.",
+      type: "success",
+    });
   } catch (err) {
-    notify({ title: "Error", text: errorMessage(err, "Failed to regenerate shot."), type: "error" });
+    notify({
+      title: vi ? "Không thể tạo lại cảnh" : "Could not regenerate the scene",
+      text: errorMessage(err, ""),
+      type: "error",
+    });
+  }
+}
+
+async function selectShotTake(shot, takeIndex) {
+  const vi = currentLang.value === "vi";
+  try {
+    await call("joymedia.services.scene_takes.select_scene_take", {
+      project_name: projectName.value,
+      shot_name: shot.name,
+      take_index: takeIndex,
+    });
+    await fetchWorkspace();
+    notify({
+      title: vi ? `Cảnh ${shot.shot_number}: phiên bản ${takeIndex}` : `Scene ${shot.shot_number}: take ${takeIndex}`,
+      text: vi ? "Đang làm lại chuyển cảnh và nhạc nền." : "Redoing the transitions and music.",
+      type: "success",
+    });
+  } catch (err) {
+    notify({
+      title: vi ? "Không thể đổi phiên bản" : "Could not switch takes",
+      text: errorMessage(err, ""),
+      type: "error",
+    });
   }
 }
 

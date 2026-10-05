@@ -558,109 +558,6 @@ def retry_generation_task_from_ui(job_name: str, reason: str = "Execution Failur
 		return {"generation_task": job.name, "attempts": results}
 
 
-def prepare_chained_regeneration(attempt_name: str):
-	"""Invalidate downstream chained outputs before replacing one completed shot."""
-	generation_task_name = frappe.db.get_value(
-		"Generation Attempt", attempt_name, "generation_task"
-	)
-	shot_name = frappe.db.get_value(
-		"Generation Task", generation_task_name, "shot"
-	)
-	attempt = frappe.get_doc("Generation Attempt", attempt_name)
-	job = frappe.get_doc("Generation Task", attempt.generation_task)
-	shot = frappe.get_doc("Shot", job.shot)
-	project = frappe.get_doc("Media Project", shot.media_project)
-	run_snapshot = {}
-	if job.generation_run:
-		run = frappe.get_doc("Generation Run", job.generation_run)
-		try:
-			run_snapshot = frappe.parse_json(run.project_snapshot_json or "{}")
-		except (TypeError, ValueError):
-			frappe.throw(_("Generation Run {0} has invalid project snapshot JSON.").format(run.name))
-	if not job.generation_run:
-		return []
-
-	jobs = frappe.get_all(
-		"Generation Task",
-		filters={"generation_run": job.generation_run},
-		fields=["name", "depends_on_task", "status", "shot"],
-		order_by="creation asc",
-	)
-	children_by_parent = {}
-	for row in jobs:
-		if row.depends_on_task:
-			children_by_parent.setdefault(row.depends_on_task, []).append(row)
-
-	downstream = []
-	frontier = [job.name]
-	while frontier:
-		parent = frontier.pop(0)
-		for child in children_by_parent.get(parent, []):
-			if (
-				child.shot != shot.shot
-				and run_snapshot.get("generation_mode") not in ("Continuous", "Consistency")
-			):
-				continue
-			downstream.append(child)
-			frontier.append(child.name)
-
-	if not downstream:
-		return []
-
-	from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
-		create_manual_regeneration_attempt_internal,
-		get_effective_attempt,
-	)
-
-	regeneration_plan = []
-	for downstream_job in downstream:
-		active_attempts = frappe.get_all(
-			"Generation Attempt",
-			filters={
-				"generation_task": downstream_job.name,
-				"status": ["in", ["Pending", "Queued", "Running"]],
-			},
-			pluck="name",
-		)
-		if active_attempts:
-			frappe.throw(
-				_(
-					"Shot {0} is already running. Stop the current sequence before regenerating an earlier shot."
-				).format(downstream_job.shot)
-			)
-
-		completed_attempt = get_effective_attempt(downstream_job.name)
-		if not completed_attempt or completed_attempt.status != "Completed":
-			frappe.throw(
-				_("Shot {0} has no completed output to invalidate.").format(
-					downstream_job.shot
-				)
-			)
-
-		if frappe.db.exists("Generation Attempt", {"retry_of": completed_attempt.name}):
-			frappe.throw(
-				_(
-					"Shot {0} already has a regeneration successor. Resolve that regeneration before starting another sequence."
-				).format(downstream_job.shot)
-			)
-
-		regeneration_plan.append((downstream_job.shot, completed_attempt.name))
-
-	prepared = []
-	for shot, completed_attempt in regeneration_plan:
-		frappe.db.set_value(
-			"Shot",
-			shot,
-			"selected_output_asset_version",
-			None,
-			update_modified=False,
-		)
-		retry_attempt = create_manual_regeneration_attempt_internal(completed_attempt, "Reroll")
-		prepared.append(retry_attempt.name)
-
-	return prepared
-
-
 def finalize_run(run_name: str):
 	"""Reject the removed generation-level project composition boundary."""
 	frappe.throw(_("Generation runs no longer export the project timeline. Use Export from the editor."))
@@ -990,7 +887,7 @@ def _finalize_completed_shots(run):
 		pluck="shot",
 	)
 	for shot_name in dict.fromkeys(shot_names):
-		if frappe.db.get_value("Shot", shot_name, "selected_output_asset_version"):
+		if _keeps_selected_output(run, shot_name):
 			continue
 		jobs = frappe.get_all(
 			"Generation Task",
@@ -1017,6 +914,23 @@ def _finalize_completed_shots(run):
 			if assembled_version:
 				from .timeline_editor import sync_timeline_source_for_shot
 				sync_timeline_source_for_shot(shot_name)
+
+
+def _keeps_selected_output(run, shot_name):
+	"""Whether the Shot's current output stays: it has one, and this run does not replace it.
+
+	A "regenerate scene" run replaces the take that was selected when it started, once.
+	"""
+	selected = frappe.db.get_value("Shot", shot_name, "selected_output_asset_version")
+	if not selected:
+		return False
+	try:
+		scope = frappe.parse_json(run.execution_scope_json or "{}") or {}
+	except (TypeError, ValueError):
+		scope = {}
+	if not scope.get("replace_selection"):
+		return True
+	return frappe.db.get_value("Asset Version", selected, "creation") > run.creation
 
 
 def _get_run_job_names(run_name):

@@ -115,9 +115,19 @@
               </span>
             </button>
 
+            <!-- A new take is rendering; the current one stays visible underneath -->
+            <div
+              v-if="isRegenerating(shot)"
+              class="absolute inset-0 z-30 bg-black/55 flex items-center justify-center text-center p-1"
+            >
+              <span class="text-xs text-white font-bold animate-pulse">
+                ↻ {{ currentLang === 'vi' ? 'Đang tạo lại…' : 'Regenerating…' }}
+              </span>
+            </div>
+
             <!-- In-progress state overlay -->
             <div
-              v-if="isGenerating && getShotState(shot) !== 'Ready'"
+              v-else-if="isGenerating && getShotState(shot) !== 'Ready'"
               class="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-center p-1"
             >
               <span v-if="getShotState(shot) === 'Generating'" class="text-xs text-indigo-400 font-bold animate-pulse">
@@ -170,10 +180,38 @@
 
           <!-- Bottom: Role Badge & Scene action menu -->
           <div class="flex items-center justify-between pt-1.5 border-t border-outline-border/60 text-xs">
-            <span class="text-[10px] text-ink-muted truncate font-medium max-w-[110px]">
-              {{ shot.reference_role ? `@ ${shot.reference_role}` : '' }}
-            </span>
-            <div class="relative">
+            <!-- Takes, as in Google Flow: step through every render of this scene -->
+            <div v-if="Number(shot.take_count) > 1" class="flex items-center gap-0.5 text-[10.5px] text-ink-secondary">
+              <button
+                type="button"
+                class="px-1 rounded hover:bg-surface-hover cursor-pointer disabled:opacity-30 disabled:cursor-default"
+                :disabled="isGenerating || shot.take_index <= 1"
+                :title="currentLang === 'vi' ? 'Phiên bản trước' : 'Previous take'"
+                @click.stop="emit('selectTake', shot, shot.take_index - 1)"
+              >‹</button>
+              <span class="font-mono" :title="currentLang === 'vi' ? 'Phiên bản' : 'Take'">{{ shot.take_index || '–' }}/{{ shot.take_count }}</span>
+              <button
+                type="button"
+                class="px-1 rounded hover:bg-surface-hover cursor-pointer disabled:opacity-30 disabled:cursor-default"
+                :disabled="isGenerating || shot.take_index >= shot.take_count"
+                :title="currentLang === 'vi' ? 'Phiên bản sau' : 'Next take'"
+                @click.stop="emit('selectTake', shot, shot.take_index + 1)"
+              >›</button>
+            </div>
+            <span v-else />
+            <div class="relative flex items-center gap-1">
+              <button
+                v-if="getShotVideoFile(shot)"
+                type="button"
+                class="px-2 py-0.5 rounded-lg text-[11px] font-semibold text-indigo-400 hover:bg-indigo-500/10 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                :disabled="isGenerating"
+                :title="currentLang === 'vi'
+                  ? 'Dựng lại cảnh này với mô tả hiện tại. Bản cũ vẫn được giữ.'
+                  : 'Render this scene again from its current description. The old take is kept.'"
+                @click.stop="emit('regenerateShot', shot)"
+              >
+                ↻ {{ currentLang === 'vi' ? 'Tạo lại' : 'Redo' }}
+              </button>
               <button
                 type="button"
                 class="px-2 py-0.5 rounded-lg text-sm font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-surface-hover cursor-pointer transition-colors"
@@ -267,6 +305,8 @@ const emit = defineEmits([
   "toggleContinuityMode",
   "reviseStoryboard",
   "reorderShots",
+  "regenerateShot",
+  "selectTake",
 ]);
 
 const aiRevisionInput = ref("");
@@ -326,6 +366,15 @@ function sceneSummary(shot) {
   // The full prompt is for the AI; show it without its <Picture N> markup.
   const prompt = String(shot.generation_prompt || "").replace(/<Picture\s*(\d+)>/gi, `${picture} $1`);
   return prompt || (props.currentLang === "vi" ? "Cảnh giới thiệu sản phẩm" : "Product showcase");
+}
+
+function isRegenerating(shot) {
+  const production = props.production;
+  return Boolean(
+    props.getShotVideoFile(shot) &&
+      ["Queued", "Running"].includes(production?.status) &&
+      (production?.shots || []).some((item) => item.shot === shot.name && item.status !== "Completed")
+  );
 }
 
 function getShotState(shot) {

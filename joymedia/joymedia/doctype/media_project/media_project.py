@@ -392,9 +392,12 @@ def _storyboard_payload(specification):
 			"selected_output_asset_version",
 		],
 	)
+	from joymedia.services.scene_takes import take_position
+
 	for shot in shots:
 		if shot.selected_output_asset_version:
 			shot["output_video"] = _get_asset_version_file_url(shot.selected_output_asset_version)
+		shot["take_count"], shot["take_index"] = take_position(specification.name, shot)
 		input_rows = frappe.get_all(
 			"Shot Reference",
 			filters={"parent": shot.name, "parenttype": "Shot"},
@@ -1116,47 +1119,9 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 
 @frappe.whitelist()
 def regenerate_project_shot(project_name, shot_name):
-	project = frappe.get_doc("Media Project", project_name)
-	project._require_write_access()
-	shot = frappe.get_doc("Shot", shot_name)
-	if shot.media_project != project.name:
-		frappe.throw(_("Shot does not belong to this project."), frappe.PermissionError)
-	if shot.is_removed:
-		frappe.throw(_("Removed scenes cannot be regenerated."))
-	jobs = frappe.get_all(
-		"Generation Task", filters={"shot": shot.name},
-		fields=["name", "segment_index", "status"], order_by="segment_index asc, creation asc",
-	)
-	if not jobs:
-		frappe.throw(_("Cannot regenerate a shot before generating the video."))
-	if any(job.status in ("Queued", "Running") for job in jobs):
-		frappe.throw(_("This shot is already running."))
-	from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
-		create_manual_regeneration_attempt_internal, get_effective_attempt,
-	)
-	from joymedia.services.generation_orchestrator import (
-		_retry_and_submit_latest_failed_attempts, prepare_chained_regeneration,
-	)
-	from joymedia.services.generation_runner import submit_attempt
-	shot.db_set("selected_output_asset_version", None, update_modified=False)
-	first_attempt = get_effective_attempt(jobs[0].name)
-	if first_attempt and first_attempt.status == "Failed":
-		return {
-			"shot_name": shot.name,
-			"attempts": _retry_and_submit_latest_failed_attempts(
-				frappe.get_doc("Generation Task", jobs[0].name), "Manual Retry"
-			),
-		}
-	if not first_attempt or first_attempt.status != "Completed":
-		frappe.throw(_("Cannot regenerate this shot from its current state."))
-	attempt_names = prepare_chained_regeneration(first_attempt.name)
-	first_retry = create_manual_regeneration_attempt_internal(first_attempt.name, "Reroll")
-	attempt_names.insert(0, first_retry.name)
-	results = []
-	for attempt_name in attempt_names:
-		submission = submit_attempt(attempt_name)
-		results.append({"name": attempt_name, **submission})
-	return {"shot_name": shot.name, "attempts": results}
+	from joymedia.services.scene_takes import regenerate_scene
+
+	return regenerate_scene(project_name, shot_name)
 
 
 class MediaProject(Document):

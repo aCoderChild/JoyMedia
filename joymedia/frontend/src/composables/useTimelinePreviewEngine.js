@@ -1,4 +1,5 @@
 import { onBeforeUnmount, unref, watch } from "vue";
+import { warmClip } from "./useClipCache";
 
 function getRefValue(value) {
   return unref(value);
@@ -219,13 +220,18 @@ export function useTimelinePreviewEngine({
         currentFrame -
         Number(currentClip.timeline_start_frame || 0);
       const targetTime = sourceFrame / currentFps;
+      // While playing, a playing video drifts a little from the timeline clock;
+      // re-seeking on every small drift makes the picture stutter. Paused or
+      // scrubbing, the frame must be exact.
+      const tolerance = getRefValue(isPlaying) && !currentVideo.paused ? 0.3 : 0.04;
       if (
         Number.isFinite(targetTime) &&
-        Math.abs(Number(currentVideo.currentTime || 0) - targetTime) > 0.08
+        Math.abs(Number(currentVideo.currentTime || 0) - targetTime) > tolerance
       ) {
         currentVideo.currentTime = targetTime;
       }
     };
+
 
     if (video.readyState < 1) {
       video.addEventListener("loadedmetadata", seekCurrentVideo, { once: true });
@@ -296,9 +302,11 @@ export function useTimelinePreviewEngine({
     if (!getRefValue(isPlaying)) syncAtFrame(getRefValue(playheadFrame));
   }, { deep: true });
 
-  watch(() => getRefValue(videoClips), () => {
+  watch(() => getRefValue(videoClips), (clips) => {
+    // Fetch every clip up front so cuts play without loading gaps.
+    for (const clip of clips || []) warmClip(sourceFor(clip));
     if (getRefValue(studioMode) === "edit") syncTimelineVideo(getRefValue(playheadFrame));
-  }, { deep: true, flush: "post" });
+  }, { deep: true, flush: "post", immediate: true });
 
   watch(() => getRefValue(playheadFrame), (frame) => {
     if (getRefValue(studioMode) === "edit" && !getRefValue(isPlaying)) {
