@@ -2,7 +2,7 @@
   "4": {
     "inputs": {
       "model": [
-        "271",
+        "270",
         0
       ],
       "conditioning": [
@@ -18,10 +18,10 @@
   "5": {
     "inputs": {
       "scheduler": "simple",
-      "steps": 7,
+      "steps": 20,
       "denoise": 1,
       "model": [
-        "271",
+        "270",
         0
       ]
     },
@@ -336,21 +336,6 @@
     "class_type": "MiniMaxH3Easy_SatoDive",
     "_meta": {
       "title": "MiniMax H3 Easy - SatoDive"
-    }
-  },
-  "271": {
-    "inputs": {
-      "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
-      "strength": 0.8,
-      "low_vram": false,
-      "model": [
-        "270",
-        0
-      ]
-    },
-    "class_type": "MiniMaxH3TurboLoRA",
-    "_meta": {
-      "title": "Turbo LoRA"
     }
   },
   "272": {

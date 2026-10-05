@@ -46,8 +46,8 @@ class TestGenerationSegmentPlanner(TestCase):
 		self.assertEqual(
 			[
 				{"segment_index": 1, "segment_frame_count": 124},
-				{"segment_index": 2, "segment_frame_count": 124},
-				{"segment_index": 3, "segment_frame_count": 36},
+				{"segment_index": 2, "segment_frame_count": 80},
+				{"segment_index": 3, "segment_frame_count": 80},
 			],
 			plan_generation_segments(240, continuation_overlap_frames=22),
 		)
@@ -56,9 +56,9 @@ class TestGenerationSegmentPlanner(TestCase):
 		self.assertEqual(
 			[
 				{"segment_index": 1, "segment_frame_count": 124},
-				{"segment_index": 2, "segment_frame_count": 124},
-				{"segment_index": 3, "segment_frame_count": 124},
-				{"segment_index": 4, "segment_frame_count": 63},
+				{"segment_index": 2, "segment_frame_count": 104},
+				{"segment_index": 3, "segment_frame_count": 104},
+				{"segment_index": 4, "segment_frame_count": 103},
 			],
 			plan_generation_segments(432),
 		)

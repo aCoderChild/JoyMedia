@@ -6,7 +6,8 @@ import frappe
 import requests
 from frappe import _
 
-DEFAULT_TIMEOUT = 60
+# The shared GPU server can take over a minute to answer while it is under load.
+DEFAULT_TIMEOUT = 180
 # Consecutive failed history polls (5 s apart) tolerated while a job runs.
 MAX_POLL_FAILURES = 24
 

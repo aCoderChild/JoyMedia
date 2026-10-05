@@ -1,6 +1,3 @@
-import subprocess
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 import frappe
@@ -9,37 +6,39 @@ from frappe.tests.utils import FrappeTestCase
 from joymedia.services import post_production
 
 
-def _duration(path):
-	return float(subprocess.run(
-		["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
-		capture_output=True, text=True, check=True,
-	).stdout)
+class TestSegmentedSoundtrack(FrappeTestCase):
+	def test_long_soundtrack_is_split_into_short_equal_segments(self):
+		for seconds in (4, 21, 31, 61):
+			durations = post_production.segment_durations(seconds)
+			frames = [int(duration * 24) for duration in durations]
 
+			# H3 snaps segments down to 17k+5 frames, so each must already sit on that grid.
+			self.assertTrue(all(frame % 17 == 5 for frame in frames), (seconds, frames))
+			self.assertGreaterEqual(sum(frames), seconds * 24)
+			self.assertTrue(all(3 <= duration <= post_production.SEGMENT_SECONDS + 0.2 for duration in durations))
 
-class TestSoundtrackLength(FrappeTestCase):
-	def _soundtrack(self, rendered_seconds, film_frames):
-		with tempfile.TemporaryDirectory() as temp_dir:
-			video = Path(temp_dir) / "soundtrack.mp4"
-			audio = Path(temp_dir) / "soundtrack.m4a"
-			subprocess.run(
-				["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=black:s=64x64:r=24:d={rendered_seconds}",
-				 "-f", "lavfi", "-i", f"sine=frequency=440:duration={rendered_seconds}",
-				 "-c:v", "libx264", "-c:a", "aac", "-shortest", str(video)],
-				check=True,
-			)
-			subprocess.run(
-				["ffmpeg", "-v", "error", "-y", *post_production._soundtrack_inputs(video, film_frames),
-				 "-vn", "-c:a", "aac", str(audio)],
-				check=True,
-			)
-			return _duration(audio)
+	def test_segmented_prompt_marks_each_cut_for_h3(self):
+		prompt = post_production.segmented_prompt(["Open.", "Go on.", "End."], [4.5, 4.5, 4.5])
 
-	def test_short_film_uses_the_rendered_soundtrack(self):
-		self.assertAlmostEqual(21, self._soundtrack(21, 480), delta=0.1)
+		self.assertEqual(
+			"[Shot 1] Open.\n---\n[Shot 2] At 00:04.500, Go on.\n---\n[Shot 3] At 00:09.000, End.", prompt
+		)
 
-	def test_long_film_loops_the_capped_soundtrack_to_cover_the_picture(self):
-		rendered = post_production.SOUNDTRACK_MAX_RENDER_SECONDS
-		self.assertAlmostEqual(61, self._soundtrack(rendered, 60 * 24), delta=0.1)
+	@patch("joymedia.services.comfyui_client.upload_local_file", return_value={"server_path": "first.png"})
+	def test_soundtrack_workflow_starts_from_a_frame_without_dangling_nodes(self, upload):
+		workflow = post_production._soundtrack_workflow("first.png", "soft piano", 31)
+
+		context = workflow["328"]["inputs"]
+		self.assertEqual(["joymedia_first_frame", 0], context["first_frame"])
+		self.assertNotIn("seed_video", context)
+		self.assertEqual(7, len(context["segment_seconds"].split(",")))
+		self.assertEqual(7, context["prompt"].count("[Shot "))
+		links = [
+			value[0] for node in workflow.values() for value in node["inputs"].values()
+			if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str)
+		]
+		self.assertTrue(all(link in workflow for link in links))
+		self.assertEqual(["330", 0], workflow[post_production.SOUNDTRACK_SAVE_NODE]["inputs"]["video"])
 
 
 class TestPostProductionStatus(FrappeTestCase):

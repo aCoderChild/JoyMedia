@@ -72,10 +72,10 @@
   "293": {
     "inputs": {
       "scheduler": "simple",
-      "steps": 7,
+      "steps": 20,
       "denoise": 1,
       "model": [
-        "339",
+        "328",
         0
       ]
     },
@@ -247,21 +247,6 @@
       "title": "Create Video"
     }
   },
-  "339": {
-    "inputs": {
-      "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
-      "strength": 0.75,
-      "low_vram": false,
-      "model": [
-        "328",
-        0
-      ]
-    },
-    "class_type": "MiniMaxH3TurboLoRA",
-    "_meta": {
-      "title": "Turbo LoRA"
-    }
-  },
   "343": {
     "inputs": {
       "seed": [
@@ -274,7 +259,7 @@
         1
       ],
       "model": [
-        "339",
+        "328",
         0
       ],
       "sampler": [

@@ -29,10 +29,12 @@ BRIDGE_OVERLAP_FRAMES = 28
 BRIDGE_FRAMES = BRIDGE_OVERLAP_FRAMES * 2
 # A take keeps at least this much of itself after both of its bridges.
 MIN_TAKE_REMAINDER_FRAMES = 24
-SOUNDTRACK_MEGAPIXELS = 0.25
-# A 61 s render ran over 20 minutes and stalled the shared ComfyUI server; 31 s is proven.
-SOUNDTRACK_MAX_RENDER_SECONDS = 31
-SOUNDTRACK_LOOP_CROSSFADE_SECONDS = 2
+# The soundtrack only needs audio, so it renders at H3's lowest resolution.
+SOUNDTRACK_RESOLUTION = "360P"
+# Longest segment H3 renders in one go; longer renders continue segment by segment.
+SEGMENT_SECONDS = 5
+# Audio/video context shared between soundtrack segments (on the AV prefix grid 39/90/141).
+SOUNDTRACK_CONTEXT_FRAMES = 39
 SOUNDTRACK_FADE_IN_FRAMES = 12
 SOUNDTRACK_FADE_OUT_FRAMES = 48
 COMFYUI_JOB_TIMEOUT_SECONDS = 3600
@@ -42,11 +44,12 @@ DEFAULT_SOUNDTRACK_MUSIC = (
 )
 # Node ids of the registered h3_i2v_production graph (see MiniMaxH3ImageToVideoAdapter).
 I2V_FIRST_FRAME_NODE = "114"
-I2V_RESOLUTION_NODE = "115"
 I2V_CONDITIONING_NODE = "105:104"
 I2V_SECONDS_NODE = "105:111"
 I2V_SAVE_NODE = "92"
 I2V_LAST_FRAME_NODE = "joymedia_last_frame"
+# Save node of the registered h3_sato_continuation graph.
+SOUNDTRACK_SAVE_NODE = "374"
 
 
 @frappe.whitelist()
@@ -110,7 +113,10 @@ def run_post_production(project_name: str):
 	except Exception as exc:
 		frappe.db.rollback()
 		frappe.log_error(title=f"Post-production failed for {project_name}")
-		_set_status(project_name, "Failed", step="", error=str(exc)[:1000])
+		from joymedia.services.user_messages import classify_failure, friendly_failure
+
+		# Marketers see a plain message; the technical detail is in the Error Log.
+		_set_status(project_name, "Failed", step="", error=friendly_failure(classify_failure(exc, "Generation")))
 		raise
 
 
@@ -338,18 +344,13 @@ def _render_soundtrack(project_name, asset_name, first_clip, music, total_frames
 		temp_path = Path(temp_dir)
 		first = temp_path / "first.png"
 		_extract_frame(_asset_version_path(first_clip.source_asset_version), 0, first)
-		workflow = _i2v_workflow(
-			first,
-			"A calm cinematic scene with a slow camera drift. "
-			f"Audio: {music}. Continuous instrumental music only, no speech, no singing, no sound effects.",
-			min(_soundtrack_seconds(total_frames), SOUNDTRACK_MAX_RENDER_SECONDS),
-			megapixels=SOUNDTRACK_MEGAPIXELS,
-		)
 		video_path = temp_path / "soundtrack.mp4"
-		video_path.write_bytes(_render_video(workflow))
+		video_path.write_bytes(_render_video(
+			_soundtrack_workflow(first, music, _soundtrack_seconds(total_frames)), SOUNDTRACK_SAVE_NODE
+		))
 		audio_path = temp_path / "soundtrack.m4a"
 		subprocess.run(
-			["ffmpeg", "-v", "error", "-y", *_soundtrack_inputs(video_path, total_frames),
+			["ffmpeg", "-v", "error", "-y", "-i", str(video_path), "-map", "0:a:0",
 			 "-vn", "-c:a", "aac", "-b:a", "192k", str(audio_path)],
 			check=True, capture_output=True, timeout=300,
 		)
@@ -363,32 +364,88 @@ def _soundtrack_seconds(total_frames):
 	return total_frames / 24 + 1
 
 
-def _soundtrack_inputs(video_path, total_frames):
-	"""ffmpeg inputs and mapping for the soundtrack audio, looped to cover long films.
+def segment_durations(seconds, max_segment_seconds=SEGMENT_SECONDS, fps=24):
+	"""Equal segments of about max_segment_seconds that together last at least seconds.
 
-	H3 renders at most SOUNDTRACK_MAX_RENDER_SECONDS of soundtrack in one pass; a
-	longer film repeats it, crossfading each repeat into the next.
+	H3 snaps every segment down to its 17k+5 frame grid, so each segment is sized
+	on that grid: otherwise a 61 s soundtrack comes back 58 s long.
 	"""
-	seconds = _soundtrack_seconds(total_frames)
-	if seconds <= SOUNDTRACK_MAX_RENDER_SECONDS:
-		return ["-i", str(video_path), "-map", "0:a:0"]
-	step = SOUNDTRACK_MAX_RENDER_SECONDS - SOUNDTRACK_LOOP_CROSSFADE_SECONDS
-	copies = math.ceil((seconds - SOUNDTRACK_LOOP_CROSSFADE_SECONDS) / step)
-	chain = "[0:a]"
-	filters = []
-	for index in range(1, copies):
-		filters.append(f"{chain}[{index}:a]acrossfade=d={SOUNDTRACK_LOOP_CROSSFADE_SECONDS}[x{index}]")
-		chain = f"[x{index}]"
-	return [
-		*[argument for _ in range(copies) for argument in ("-i", str(video_path))],
-		"-filter_complex", ";".join(filters), "-map", chain, "-t", f"{seconds:.3f}",
-	]
+	frames = math.ceil(seconds * fps)
+	fewest = max(1, math.ceil(frames / (max_segment_seconds * fps)))
+
+	def plan(count):
+		per_segment = math.ceil(frames / count)
+		return count, per_segment + (5 - per_segment % 17) % 17
+
+	count, per_segment = min((plan(count) for count in range(fewest, fewest + 3)), key=lambda p: p[0] * p[1])
+	# Half a frame of headroom so float rounding never snaps a segment down a step.
+	return [(per_segment + 0.5) / fps] * count
+
+
+def segmented_prompt(prompts, durations):
+	"""H3 Context Segments prompt: one [Shot N] block per segment with its cut time."""
+	blocks, start = [], 0.0
+	for index, (prompt, duration) in enumerate(zip(prompts, durations), start=1):
+		cut = "" if index == 1 else f"At {int(start // 60):02d}:{start % 60:06.3f}, "
+		blocks.append(f"[Shot {index}] {cut}{prompt}")
+		start += duration
+	return "\n---\n".join(blocks)
+
+
+def _soundtrack_workflow(first_frame, music, seconds):
+	"""One H3 job that renders the soundtrack as short segments, each continuing the last.
+
+	A single long render drifts and stalls the shared GPU; Context Segments render
+	SEGMENT_SECONDS at a time, guided by the previous segment's tail, so the music
+	carries on across segments.
+	"""
+	from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
+	from joymedia.services.comfyui_client import upload_local_file
+
+	source = get_latest_valid_workflow("h3_sato_continuation")
+	if not source:
+		frappe.throw(_("No executable continuation workflow is configured."))
+	workflow = copy.deepcopy(frappe.parse_json(source.workflow_json))
+	# Drop the seed-video handoff and stitching: this job starts from a still frame.
+	for node in ("264", "265", "375", "356", "335", "336", "355"):
+		workflow.pop(node)
+	durations = segment_durations(seconds)
+	segment = (
+		"A calm cinematic scene with a slow camera drift. "
+		f"Audio: {music}. Continuous instrumental music only, no speech, no singing, no sound effects."
+	)
+	continued = (
+		"The camera keeps drifting slowly. "
+		f"Audio: the same {music} continues seamlessly with the same instruments, key and tempo. "
+		"Instrumental music only, no speech, no singing, no sound effects."
+	)
+	workflow["joymedia_first_frame"] = {
+		"class_type": "LoadImage", "inputs": {"image": upload_local_file(first_frame)["server_path"]},
+	}
+	context = workflow["328"]["inputs"]
+	for name in ("seed_video", "seed_ref_video", "seed_latent"):
+		context.pop(name, None)
+	context.update({
+		"first_frame": ["joymedia_first_frame", 0],
+		"prompt": segmented_prompt([segment] + [continued] * (len(durations) - 1), durations),
+		"seconds": seconds,
+		"segment_seconds": ",".join(f"{value:g}" for value in durations),
+		"resolution": SOUNDTRACK_RESOLUTION,
+		# Hold the previous segment's audio tail as the next segment's opening, so
+		# the music carries on instead of starting over at every segment.
+		"continuity_mode": "soft_av",
+		"context_length": SOUNDTRACK_CONTEXT_FRAMES,
+		"aspect_ratio": "16:9",
+	})
+	workflow[SOUNDTRACK_SAVE_NODE]["inputs"]["video"] = ["330", 0]
+	workflow[SOUNDTRACK_SAVE_NODE]["inputs"]["filename_prefix"] = f"joymedia/post/{frappe.generate_hash(length=10)}"
+	return workflow
 
 
 # ComfyUI and file helpers
 
 
-def _i2v_workflow(first_frame, prompt, seconds, last_frame=None, megapixels=None):
+def _i2v_workflow(first_frame, prompt, seconds, last_frame=None):
 	from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
 	from joymedia.services.comfyui_client import upload_local_file
 
@@ -405,17 +462,15 @@ def _i2v_workflow(first_frame, prompt, seconds, last_frame=None, megapixels=None
 			"inputs": {"image": upload_local_file(last_frame)["server_path"]},
 		}
 		conditioning["last_frame"] = [I2V_LAST_FRAME_NODE, 0]
-	if megapixels:
-		workflow[I2V_RESOLUTION_NODE]["inputs"]["megapixels"] = megapixels
 	workflow[I2V_SECONDS_NODE]["inputs"]["value"] = seconds
 	workflow[I2V_SAVE_NODE]["inputs"]["filename_prefix"] = f"joymedia/post/{frappe.generate_hash(length=10)}"
 	return workflow
 
 
-def _render_video(workflow):
+def _render_video(workflow, output_node=I2V_SAVE_NODE):
 	from joymedia.services.comfyui_client import run_workflow_to_bytes
 
-	content = run_workflow_to_bytes(workflow, I2V_SAVE_NODE, timeout=COMFYUI_JOB_TIMEOUT_SECONDS, forget=True)
+	content = run_workflow_to_bytes(workflow, output_node, timeout=COMFYUI_JOB_TIMEOUT_SECONDS, forget=True)
 	# The render took minutes; MariaDB's snapshot isolation rejects writes to rows
 	# (such as naming series) that other workers changed since this transaction began.
 	frappe.db.commit()

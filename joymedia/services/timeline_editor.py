@@ -665,7 +665,15 @@ def run_project_timeline_export(project_name: str):
 		# A failed write aborts the transaction; record the failure in a fresh one.
 		frappe.db.rollback()
 		project.db_set("export_status", "Failed")
-		project.db_set("export_error", str(exc))
+		from joymedia.services.user_messages import classify_failure, friendly_failure
+
+		# Marketers see a plain message; the technical detail is in the Error Log.
+		project.db_set(
+			"export_error",
+			friendly_failure("Infrastructure")
+			if classify_failure(exc) == "Infrastructure"
+			else _("The export did not finish. Please export again."),
+		)
 		project.db_set("export_completed_at", frappe.utils.now())
 		frappe.db.commit()
 		frappe.log_error(title=f"Timeline export failed for {project_name}")

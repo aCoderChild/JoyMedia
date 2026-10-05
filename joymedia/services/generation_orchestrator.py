@@ -254,12 +254,14 @@ def prepare_run(run_name: str):
 				(item for item in shots if item.get("shot") == job.shot),
 				{"references": []},
 			)
+			# The role comes from the take's starting workflow: a reference take's
+			# continuations keep its reference images, while an image-to-video
+			# chain's first frame is replaced by the previous segment's last frame.
+			shot_role = input_role_for_workflow(choose_shot_workflow(snapshot, shot_snapshot))
 			prepare_snapshot = [
 				{
 					**reference,
-					"reference_role": input_role_for_workflow(
-						frappe.get_doc("Generation Workflow", job.workflow)
-					),
+					"reference_role": shot_role,
 				}
 				for reference in shot_snapshot.get("references") or []
 			]

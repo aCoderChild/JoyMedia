@@ -347,11 +347,6 @@ def reference_preamble(shot_reference_versions, project_references):
 	return " ".join(parts)
 
 
-def describe_reference_tags(prompt):
-	"""Replace <Picture N> tags for continuation workflows, which see only the earlier frames."""
-	return PICTURE_TAG_PATTERN.sub("the earlier frames", prompt)
-
-
 def _asset_version_context(asset_version, project_reference):
 	"""Build the classify_reference input for an Asset Version from the database."""
 	version = frappe.db.get_value(

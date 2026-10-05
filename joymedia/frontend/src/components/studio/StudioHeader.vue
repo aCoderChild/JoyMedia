@@ -45,6 +45,15 @@
         >
           {{ formattedStatus }}
         </span>
+
+        <!-- Plain-language progress, visible without opening Activity -->
+        <span
+          v-if="progressLabel"
+          class="text-[10.5px] px-2 py-0.5 rounded-md border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 font-semibold shrink-0 hidden md:flex items-center gap-1.5"
+        >
+          <span class="lucide-refresh-cw size-3 animate-spin" />
+          {{ progressLabel }}
+        </span>
       </div>
     </div>
 
@@ -98,10 +107,12 @@
                 {{ currentLang === 'vi' ? 'Hoạt động tạo video' : 'Generation activity' }}
               </div>
               <div class="text-[10px] text-ink-muted">
-                {{ completedShotCount }}/{{ totalShotCount }} shots complete
+                {{ currentLang === 'vi'
+                  ? `Đã dựng ${completedShotCount}/${totalShotCount} cảnh`
+                  : `${completedShotCount}/${totalShotCount} scenes ready` }}
               </div>
             </div>
-            <span class="text-[10px] font-semibold" :class="activityStatusClass">{{ production.status }}</span>
+            <span class="text-[10px] font-semibold" :class="activityStatusClass">{{ runStatusLabel }}</span>
           </div>
 
           <div class="h-1.5 rounded-full bg-surface-muted overflow-hidden mb-3">
@@ -118,12 +129,12 @@
                 {{ shotStatusGlyph(shot.status) }}
               </span>
               <span class="min-w-0 flex-1 truncate text-[11px] text-ink-secondary">
-                {{ shot.shot_name || `Shot ${shot.shot_number || ''}` }}
+                {{ shot.shot_name || `${currentLang === 'vi' ? 'Cảnh' : 'Scene'} ${shot.shot_number || ''}` }}
               </span>
               <span class="text-[10px] text-ink-muted shrink-0">{{ Math.round(Number(shot.progress || 0)) }}%</span>
             </div>
           </div>
-          <div v-else class="text-[11px] text-ink-muted">No shot activity yet.</div>
+          <div v-else class="text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Chưa có cảnh nào đang dựng.' : 'No scenes rendering yet.' }}</div>
 
           <button
             v-if="production.status === 'Failed'"
@@ -131,7 +142,7 @@
             class="mt-3 w-full rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold py-1.5 cursor-pointer"
             @click="$emit('retryGeneration'); activityOpen = false"
           >
-            {{ currentLang === 'vi' ? 'Thử lại cảnh lỗi' : 'Retry failed shots' }}
+            {{ currentLang === 'vi' ? 'Thử lại cảnh lỗi' : 'Retry failed scenes' }}
           </button>
         </div>
       </div>
@@ -152,15 +163,15 @@
         class="jm-btn-secondary !py-1 !px-3 text-xs flex items-center gap-1.5 shadow-sm"
         :disabled="isFinishing || isExporting"
         :title="currentLang === 'vi'
-          ? 'Tạo chuyển cảnh giữa các cảnh và một bản nhạc nền liền mạch (dựng lại timeline)'
-          : 'Generate transitions between scenes and one continuous soundtrack (rebuilds the timeline)'"
+          ? 'Tự động chạy khi các cảnh dựng xong. Bấm để làm lại chuyển cảnh và nhạc nền.'
+          : 'Runs automatically when the scenes are ready. Click to redo the transitions and music.'"
         @click="$emit('finishFilm')"
       >
         <span v-if="isFinishing" class="lucide-refresh-cw size-3 animate-spin" />
         <span v-else>✨</span>
         <span>
           {{ isFinishing
-            ? `${currentLang === 'vi' ? 'Đang hoàn thiện' : 'Finishing'}${postProductionStep ? ` · ${postProductionStep}` : '...'}`
+            ? `${currentLang === 'vi' ? 'Đang hoàn thiện' : 'Finishing'}${finishingStepLabel ? ` · ${finishingStepLabel}` : '...'}`
             : (currentLang === 'vi' ? 'Hoàn thiện phim' : 'Finish film') }}
         </span>
       </button>
@@ -302,6 +313,44 @@ const activityStatusClass = computed(() => {
   if (props.production?.status === "Failed") return "text-rose-400";
   if (["Queued", "Running"].includes(props.production?.status)) return "text-indigo-400";
   return "text-ink-muted";
+});
+
+const vi = computed(() => props.currentLang === "vi");
+
+const runStatusLabel = computed(() => {
+  const labels = {
+    Queued: ["Waiting", "Đang chờ"],
+    Running: ["Rendering", "Đang dựng"],
+    Completed: ["Done", "Hoàn tất"],
+    Failed: ["Needs attention", "Cần xử lý"],
+    Cancelled: ["Stopped", "Đã dừng"],
+  }[props.production?.status];
+  return labels ? labels[vi.value ? 1 : 0] : props.production?.status || "";
+});
+
+// Finishing reports steps like "Transition 2/4"; marketers see them in their language.
+const finishingStepLabel = computed(() => {
+  const step = props.postProductionStep || "";
+  const transition = step.match(/^Transition (\d+\/\d+)$/);
+  if (transition) return `${vi.value ? "chuyển cảnh" : "transition"} ${transition[1]}`;
+  if (step === "Soundtrack") return vi.value ? "nhạc nền" : "music";
+  if (step === "Timeline") return vi.value ? "chuẩn bị" : "preparing";
+  return step;
+});
+
+const progressLabel = computed(() => {
+  if (["Queued", "Running"].includes(props.production?.status)) {
+    return vi.value
+      ? `Đang dựng cảnh ${completedShotCount.value}/${totalShotCount.value}`
+      : `Rendering scenes ${completedShotCount.value}/${totalShotCount.value}`;
+  }
+  if (props.isFinishing) {
+    return vi.value
+      ? `Đang thêm chuyển cảnh và nhạc${finishingStepLabel.value ? ` · ${finishingStepLabel.value}` : ""}`
+      : `Adding transitions and music${finishingStepLabel.value ? ` · ${finishingStepLabel.value}` : ""}`;
+  }
+  if (props.isExporting) return vi.value ? "Đang xuất video" : "Exporting the video";
+  return "";
 });
 
 function shotStatusGlyph(status) {

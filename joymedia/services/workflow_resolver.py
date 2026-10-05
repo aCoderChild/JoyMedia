@@ -127,15 +127,11 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		last_frame_prefix=f"{job.name}_{attempt.name}_last_frame",
 	)
 
-	if any(
-		binding.binding_key == "last_frame" and not staged_inputs.get("last_frame")
-		for binding in workflow_version.bindings
-	):
-		adapter_inputs = {
-			role: values[0] if isinstance(values, list) and len(values) == 1 else values
-			for role, values in staged_inputs.items()
-		}
-		adapter.finalize_workflow(workflow, workflow_version, adapter_inputs)
+	adapter_inputs = {
+		role: values[0] if isinstance(values, list) and len(values) == 1 else values
+		for role, values in staged_inputs.items()
+	}
+	adapter.finalize_workflow(workflow, workflow_version, adapter_inputs)
 
 	canonical = canonical_workflow_json(workflow)
 	attempt.resolved_workflow_json = json.dumps(workflow, indent=2, ensure_ascii=False)

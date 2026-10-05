@@ -73,6 +73,28 @@ class MiniMaxH3SatoContinuationAdapter(GenericWorkflowAdapter):
 		_set_execution_input(workflow, "374", "filename_prefix", output_prefix)
 		return workflow
 
+	def finalize_workflow(self, workflow, workflow_version, staged_inputs):
+		"""Give the continuation its take's reference images as <Picture 1>, <Picture 2>...
+
+		Without them a continuation sees only the previous frames, so faces,
+		outfits and places drift with every segment.
+		"""
+		references = staged_inputs.get("product_reference") or []
+		if isinstance(references, str):
+			references = [references]
+		context = workflow["328"]["inputs"]
+		seed_size = staged_inputs.get("seed_video_size")
+		if seed_size:
+			# Render at the previous segment's exact size: its latent cannot be resized.
+			context["resolution"] = "custom"
+			context["width"], context["height"] = seed_size
+		for index, image in enumerate(references, start=1):
+			node_key = f"joymedia_reference_{index}"
+			workflow[node_key] = {"class_type": "LoadImage", "inputs": {"image": image}}
+			context[f"media_{index}"] = [node_key, 0]
+			context[f"media_type_{index}"] = "image"
+		return workflow
+
 
 class MiniMaxH3SatoAdapter(GenericWorkflowAdapter):
 	"""Compatibility adapter for workflow records created before split adapter keys."""

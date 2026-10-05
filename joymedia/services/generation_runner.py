@@ -203,6 +203,9 @@ def _stage_generation_inputs(job, attempt):
 			if not continuation_state or not continuation_state.provider_locator:
 				frappe.throw(_("The upstream Attempt has no usable Continuation State Artifact."))
 			staged["seed_video"] = [upload_frappe_file(primary_artifact.frappe_file)["server_path"]]
+			# The continuation extends the previous segment's latent, which cannot be
+			# resized, so it must render at exactly that segment's frame size.
+			staged["seed_video_size"] = [_video_size(primary_artifact.frappe_file)]
 			staged["continuation_state"] = continuation_state.provider_locator
 			resolved_inputs["seed_video"] = [{
 				"source": "Generation Artifact",
@@ -229,3 +232,16 @@ def _stage_generation_inputs(job, attempt):
 	attempt.resolved_inputs_json = json.dumps(resolved_inputs, sort_keys=True)
 	attempt.save(ignore_permissions=True)
 	return staged
+
+
+def _video_size(file_url):
+	import subprocess
+
+	path = frappe.get_doc("File", {"file_url": file_url}).get_full_path()
+	output = subprocess.run(
+		["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+		 "-of", "csv=p=0", path],
+		capture_output=True, text=True, check=True, timeout=60,
+	).stdout.strip()
+	width, height = (int(value) for value in output.split(","))
+	return width, height

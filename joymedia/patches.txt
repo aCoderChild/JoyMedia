@@ -57,3 +57,5 @@ joymedia.patches.register_minimax_h3_ref2va_v3
 joymedia.patches.link_r2v_to_sato_continuation
 joymedia.patches.raise_r2v_segment_frames
 joymedia.patches.register_r2v_production_hd
+joymedia.patches.short_r2v_segments
+joymedia.patches.full_quality_sato_workflows

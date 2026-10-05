@@ -269,11 +269,13 @@ class TestFilmDirector(FrappeTestCase):
 		# The planner already used the brief; repeating it turns one take into a montage.
 		self.assertNotIn("Tour the tower", prompt)
 
-	def test_continuation_prompt_has_no_picture_tags(self):
+	def test_continuation_prompt_keeps_the_reference_pictures(self):
+		# Continuations receive the take's reference images, so their tags stay.
 		prompt = self._compile(self._snapshot(), segment_index=2, segment_count=2)
 
-		self.assertNotIn("<Picture", prompt)
-		self.assertIn("The person from the earlier frames rests in the place from the earlier frames.", prompt)
+		self.assertTrue(prompt.startswith("<Picture 1> is the main character"))
+		self.assertIn("The person from <Picture 1> rests in the place from <Picture 2>.", prompt)
+		self.assertIn("continuation segment 2 of 2", prompt)
 
 	def test_single_image_prompt_keeps_global_instructions(self):
 		prompt = self._compile(self._snapshot("Single Image"))
@@ -292,13 +294,19 @@ class TestFilmDirector(FrappeTestCase):
 			"<Picture 1> is a reference subject: keep its shape, colours and details exactly.", product_preamble
 		)
 
-	def test_reference_to_video_renders_a_ten_second_take_in_one_pass(self):
+	def test_reference_to_video_takes_render_in_short_segments(self):
+		from joymedia.services.generation_segment_planner import plan_generation_segments
 		from joymedia.workflow_adapters.minimax_h3_profiles import MiniMaxH3ReferenceToVideoAdapter
 
-		metadata = MiniMaxH3ReferenceToVideoAdapter.__new__(MiniMaxH3ReferenceToVideoAdapter).extract_execution_metadata({})
-		self.assertGreaterEqual(metadata["frame_count"], film_director.MAX_TAKE_SECONDS * 24)
-		self.assertLessEqual(metadata["frame_count"], 362)
-		self.assertEqual(5, metadata["frame_count"] % 17)
+		adapter = MiniMaxH3ReferenceToVideoAdapter.__new__(MiniMaxH3ReferenceToVideoAdapter)
+		frame_count = adapter.extract_execution_metadata({})["frame_count"]
+		self.assertEqual(5, frame_count % 17)
+		segments = plan_generation_segments(
+			film_director.MAX_TAKE_SECONDS * 24, frame_count, adapter.continuation_overlap_frames
+		)
+		# Every render is ~5 s at most; the take is continued, not rendered in one long pass.
+		self.assertGreater(len(segments), 1)
+		self.assertTrue(all(segment["segment_frame_count"] <= 5.2 * 24 for segment in segments))
 
 
 class TestRoleInputCount(FrappeTestCase):
@@ -365,3 +373,26 @@ class TestVisionAnalysis(FrappeTestCase):
 	def test_unconfigured_vision_model_skips_analysis(self):
 		with patch.dict(frappe.conf, {"qwen_vl_base_url": None, "qwen_vl_model": None}):
 			self.assertEqual([], vision_analysis.ensure_project_image_analysis(frappe._dict(selected_media=[])))
+
+
+class TestContinuationReferences(FrappeTestCase):
+	def test_continuation_receives_the_take_reference_images_as_pictures(self):
+		import json
+		from pathlib import Path
+
+		from joymedia.workflow_adapters.minimax_h3_sato import MiniMaxH3SatoContinuationAdapter
+
+		workflow = json.loads(
+			(Path(__file__).parents[1] / "workflows" / "minimax_h3" / "minimax_h3_sato_continuation.json").read_text()
+		)
+		MiniMaxH3SatoContinuationAdapter().finalize_workflow(
+			workflow, None,
+			{"product_reference": ["person.png", "lobby.png"], "seed_video": "take.mp4", "seed_video_size": (1344, 768)},
+		)
+
+		context = workflow["328"]["inputs"]
+		self.assertEqual(["joymedia_reference_1", 0], context["media_1"])
+		self.assertEqual("image", context["media_type_2"])
+		self.assertEqual("lobby.png", workflow["joymedia_reference_2"]["inputs"]["image"])
+		# The saved latent cannot be resized, so the continuation matches the take's size.
+		self.assertEqual(("custom", 1344, 768), (context["resolution"], context["width"], context["height"]))

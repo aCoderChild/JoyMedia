@@ -41,13 +41,10 @@ def compile_segment_prompt_from_snapshot(shot, project, segment_index: int, segm
 	# brief again makes the model render every place in one take as a montage.
 	base = compile_prompt_for_documents(shot, project, include_global_instructions=not asset_versions)
 	if asset_versions:
-		from .film_director import describe_reference_tags, reference_preamble
+		from .film_director import reference_preamble
 
-		if segment_index == 1:
-			base = f"{reference_preamble(asset_versions, project.get('references') or [])}\n\n{base}"
-		else:
-			# Continuation workflows receive only the previous frames, not the references.
-			base = describe_reference_tags(base)
+		# Continuations receive the same reference images as the first segment.
+		base = f"{reference_preamble(asset_versions, project.get('references') or [])}\n\n{base}"
 	if segment_count == 1:
 		return base
 	if segment_index == 1:
@@ -57,7 +54,7 @@ def compile_segment_prompt_from_snapshot(shot, project, segment_index: int, segm
 		).strip()
 	return (
 		f"{base}\n\nThis is continuation segment {segment_index} of {segment_count}. "
-		"Continue directly from the supplied first frame. "
+		"Continue seamlessly from the previous clip with the same motion, light and sound. "
 		"Do not restart or reintroduce the action."
 	).strip()
 

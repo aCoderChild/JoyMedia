@@ -35,20 +35,17 @@ def plan_generation_segments(
 
 	remaining_effective_frames -= first_frames
 	effective_capacity = max_segment_frames - continuation_overlap_frames
-
-	while remaining_effective_frames > 0:
-		effective_frames = min(
-			remaining_effective_frames,
-			effective_capacity,
+	# Share the remainder evenly so no continuation is a sliver of a second.
+	continuation_count = -(-remaining_effective_frames // effective_capacity)
+	for index in range(continuation_count):
+		effective_frames = remaining_effective_frames // continuation_count + (
+			1 if index < remaining_effective_frames % continuation_count else 0
 		)
-		generated_frames = effective_frames + continuation_overlap_frames
-
 		segments.append(
 			{
 				"segment_index": len(segments) + 1,
-				"segment_frame_count": generated_frames,
+				"segment_frame_count": effective_frames + continuation_overlap_frames,
 			}
 		)
-		remaining_effective_frames -= effective_frames
 
 	return segments
