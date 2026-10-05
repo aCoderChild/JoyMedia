@@ -54,15 +54,17 @@ production server needs all of the following.
 
 ```bash
 bench set-config -g workers '{"joymedia_render": {"timeout": 10800}}' --parse
-bench worker --queue short,default,long       # storyboards, generation, everything else
+bench worker --queue short,default            # quick jobs, bursts of cleanup jobs
+bench worker --queue long                     # storyboards and scene renders
 bench worker --queue joymedia_render          # exports and "Finish film" (up to an hour each)
 deploy/joymedia-tunnel.sh                     # SSH tunnel to the GPU server, reconnects itself
 ```
 
 The development `Procfile` starts all of them with `bench start`. In production,
-run each under supervisor or systemd so it restarts when it exits. Without a
-`joymedia_render` worker, exports fall back to the `long` queue and hold up
-storyboards and scene renders.
+run each under supervisor or systemd so it restarts when it exits. Each queue has
+its own worker so a burst of quick jobs (deleting a project queues thousands)
+never delays a storyboard, and an hour-long export never delays a scene render.
+Without a `joymedia_render` worker, exports fall back to the `long` queue.
 
 **2. GPU server tunnel.** `deploy/joymedia-tunnel.sh` forwards the planner
 (8001), the vision model (8002) and ComfyUI (8188). Set `JOYMEDIA_GPU_HOST`,

@@ -1,5 +1,6 @@
 import json
 import math
+import re
 import time
 
 import frappe
@@ -161,6 +162,46 @@ def improve_video_idea(
 	return {"improved_idea": _build_fallback_improved_idea(current_idea, product_name, references)}
 
 
+# The planner was fine-tuned on examples titled "Biến thể TVC 12: …" and sometimes
+# copies that numbering into titles.
+TITLE_NUMBERING = re.compile(
+	r"^\s*(?:biến thể|bien the|variant|version|phiên bản|tvc|shot|cảnh|scene)[\s\w]*?\d+\s*[:.\-–]\s*", re.I
+)
+
+
+def clean_title(title):
+	"""A title without the planner's leaked example numbering."""
+	return TITLE_NUMBERING.sub("", str(title or "").strip())[:80].strip()
+
+
+def default_captions(shots):
+	"""Give captionless scenes their short title as on-screen text, except the last one.
+
+	The planner often leaves captions empty; the title is already a short phrase in the
+	language of the idea. The last scene stays clear for the closing title.
+	"""
+	for shot in shots[:-1]:
+		if not str(shot.get("caption") or "").strip():
+			name = str(shot.get("shot_name") or "")
+			shot["caption"] = clean_title(name.split(":", 1)[1] if ":" in name else name)[:60]
+	return shots
+
+
+def _idea_for_planner(video_idea):
+	"""The idea in English, which the fine-tuned planner follows far better, plus the original.
+
+	Titles and captions must still come back in the idea's own language.
+	"""
+	idea = str(video_idea or "").strip()
+	english = to_english(idea)
+	if english == idea:
+		return idea
+	return (
+		f"{english}\n(Original, in the marketer's language: {idea})\n"
+		"Write film_title, shot_name titles and captions in the language of the original."
+	)
+
+
 def to_english(text):
 	"""Translate a short creative description (e.g. a Vietnamese music mood) for the video model.
 
@@ -319,7 +360,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	user_prompt = (
 		f"{instruction}\n\n"
 		f"PRODUCT NAME\n{product_name}\n\n"
-		f"VIDEO IDEA\n{video_idea or ''}\n\n"
+		f"VIDEO IDEA\n{_idea_for_planner(video_idea)}\n\n"
 		f"TOTAL VIDEO DURATION: {total_video_duration} seconds\n"
 		f"TARGET FPS: {target_fps}\n"
 		f"SHOT COUNT GUIDANCE: {shot_count if shot_count is not None else f'Exactly {take_count} takes, one per place.' if take_count else 'Choose the appropriate number of creative shots; do not use model frame capacity to choose it.'}\n\n"
@@ -431,7 +472,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	if story_film and isinstance(result, dict) and isinstance(result.get("shots"), list):
 		normalize_story_references(result["shots"], story_reference_contexts, story_reference_role)
 
-	film_title = str(result.get("film_title") or "").strip()[:80] if isinstance(result, dict) else ""
+	film_title = clean_title(result.get("film_title")) if isinstance(result, dict) else ""
 	result = _normalize_qwen_plan(
 		result,
 		reference_image_count=len(reference_images or []),
@@ -452,6 +493,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		result["shots"] = balance_take_durations(name_story_beats(result["shots"]), total_video_duration)
 	if not continuation_context:
 		close_the_film(result["shots"])
+	default_captions(result["shots"])
 	if film_title:
 		result["film_title"] = film_title
 	return result

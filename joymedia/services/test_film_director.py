@@ -513,3 +513,21 @@ class TestPlannerCutOff(FrappeTestCase):
 		retry_messages = post.call_args_list[1].kwargs["json"]["messages"]
 		self.assertEqual(2, len(retry_messages))
 		self.assertIn("cut off", retry_messages[1]["content"])
+
+
+class TestPlannerOutputCleanup(FrappeTestCase):
+	def test_leaked_example_numbering_is_removed_from_titles(self):
+		self.assertEqual("Áo dài trắng dạo quanh căn hộ", qwen_client.clean_title("Biến thể TVC 179: Áo dài trắng dạo quanh căn hộ"))
+		self.assertEqual("Sống xanh 2024", qwen_client.clean_title("Sống xanh 2024"))
+
+	def test_empty_captions_fall_back_to_the_scene_title_except_the_last(self):
+		shots = [{"shot_name": "OPENING: Bước đi tự tin", "caption": ""}, {"shot_name": "CLOSING: Hoàng hôn", "caption": ""}]
+
+		qwen_client.default_captions(shots)
+
+		self.assertEqual(["Bước đi tự tin", ""], [shot["caption"] for shot in shots])
+
+	@patch("joymedia.services.qwen_client.requests.post")
+	def test_english_ideas_go_to_the_planner_unchanged(self, post):
+		self.assertEqual("A sunset tour of the tower.", qwen_client._idea_for_planner("A sunset tour of the tower."))
+		post.assert_not_called()
