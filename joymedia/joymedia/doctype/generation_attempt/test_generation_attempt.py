@@ -5,7 +5,6 @@ from frappe.tests.utils import FrappeTestCase
 
 from .generation_attempt import (
 	GenerationAttempt,
-	create_manual_regeneration_attempt,
 	create_retry_attempt,
 )
 from joymedia.services.generation_runner import submit_attempt
@@ -96,40 +95,6 @@ class TestGenerationAttempt(FrappeTestCase):
 			},
 		)
 		retry_attempt.insert.assert_called_once_with(ignore_permissions=True)
-
-	def test_completed_attempt_can_create_one_manual_regeneration_successor(self):
-		completed_attempt = frappe._dict(
-			name="ATT-00001", status="Completed", generation_task="JOB-00001", seed=42
-		)
-		job = frappe._dict(name="JOB-00001", status="Completed")
-		job.save = MagicMock()
-		retry_attempt = MagicMock()
-		retry_attempt.insert.return_value = retry_attempt
-
-		with (
-			patch(
-				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.has_permission"
-			),
-			patch(
-				"joymedia.joymedia.doctype.generation_attempt.generation_attempt._validate_retry_reason"
-			),
-			patch(
-				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.db.exists",
-				return_value=False,
-			),
-			patch(
-				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.get_doc",
-				side_effect=[completed_attempt, job, retry_attempt],
-			) as get_doc,
-		):
-			result = create_manual_regeneration_attempt(completed_attempt.name, "Manual Retry")
-
-		self.assertIs(result, retry_attempt)
-		self.assertEqual(job.status, "Queued")
-		self.assertEqual(
-			get_doc.call_args_list[2].args[0]["retry_reason"], "Manual Retry"
-		)
-		self.assertEqual(get_doc.call_args_list[2].args[0]["retry_of"], completed_attempt.name)
 
 	def test_failed_attempt_cannot_be_submitted_again(self):
 		attempt = frappe._dict(name="ATT-00001", status="Failed")

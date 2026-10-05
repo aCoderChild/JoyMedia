@@ -45,15 +45,40 @@ accounts and grant the `JoyMedia User` role; self-registration is disabled by
 default. To enable the custom signup flow intentionally, set
 `joymedia_allow_signup = 1` in the site configuration.
 
-### Render worker
+### Deployment checklist
 
-Export finishing and "Finish film" run for up to an hour on the GPU. Give them
-their own worker so they never hold the worker that starts generation runs:
+JoyMedia plans with Qwen and renders with ComfyUI on a separate GPU server. A
+production server needs all of the following.
+
+**1. Processes.** Besides the web server, scheduler and socketio:
 
 ```bash
 bench set-config -g workers '{"joymedia_render": {"timeout": 10800}}' --parse
-bench worker --queue joymedia_render          # dedicated render worker
-bench worker --queue short,default,long       # everything else
+bench worker --queue short,default,long       # storyboards, generation, everything else
+bench worker --queue joymedia_render          # exports and "Finish film" (up to an hour each)
+deploy/joymedia-tunnel.sh                     # SSH tunnel to the GPU server, reconnects itself
 ```
 
-Without a `joymedia_render` worker these jobs fall back to the `long` queue.
+The development `Procfile` starts all of them with `bench start`. In production,
+run each under supervisor or systemd so it restarts when it exits. Without a
+`joymedia_render` worker, exports fall back to the `long` queue and hold up
+storyboards and scene renders.
+
+**2. GPU server tunnel.** `deploy/joymedia-tunnel.sh` forwards the planner
+(8001), the vision model (8002) and ComfyUI (8188). Set `JOYMEDIA_GPU_HOST`,
+`JOYMEDIA_GPU_PORT` and `JOYMEDIA_GPU_KEY` if the server or key changes. The
+site config must point at the forwarded ports:
+
+```bash
+bench --site <site> set-config comfyui_base_url http://127.0.0.1:8188
+bench --site <site> set-config qwen_base_url http://127.0.0.1:8001/v1
+bench --site <site> set-config qwen_vl_base_url http://127.0.0.1:8002/v1
+```
+
+**3. Memory.** Exports decode and encode several 1080p/1440p streams with
+ffmpeg. Give the server at least 8 GB of RAM, 16 GB if several people export
+at once, and keep at least 20 GB of disk free for renders.
+
+**4. Planner context.** The AI director's prompt and plan need more than 4096
+tokens; start the planner with `--max-model-len 12288` (the KV cache it already
+reserves is large enough). With 4096, plans are retried with shorter prompts.

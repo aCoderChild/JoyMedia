@@ -111,28 +111,6 @@ def create_retry_attempt_internal(failed_attempt_name: str, reason: str):
 	return _create_successor_attempt(failed_attempt, reason)
 
 
-def create_manual_regeneration_attempt(completed_attempt_name: str, reason: str = "Manual Retry"):
-	"""Create a Pending successor for a completed Attempt selected for manual regeneration."""
-	frappe.has_permission("Generation Attempt", "create", throw=True)
-	return create_manual_regeneration_attempt_internal(completed_attempt_name, reason)
-
-
-def create_manual_regeneration_attempt_internal(
-	completed_attempt_name: str, reason: str = "Manual Retry"
-):
-	"""Create a manual regeneration after the caller has authorized the owning project."""
-	reason = (reason or "").strip()
-	if reason not in MANUAL_REGENERATION_REASONS:
-		frappe.throw(_("Manual regeneration must use Manual Retry or Reroll."))
-	_validate_retry_reason(reason)
-	completed_attempt = frappe.get_doc("Generation Attempt", completed_attempt_name)
-	if completed_attempt.status != "Completed":
-		frappe.throw(_("Only completed Generation Attempts can be manually regenerated."))
-	if frappe.db.exists("Generation Attempt", {"retry_of": completed_attempt.name}):
-		frappe.throw(_("Generation Attempt {0} already has a retry successor.").format(completed_attempt.name))
-	return _create_successor_attempt(completed_attempt, reason)
-
-
 def _invalidate_manual_regeneration_outputs(job):
 	"""Invalidate generation completion and any explicit project export before rerolling.
 
