@@ -295,3 +295,13 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		generation_orchestrator._advance_run(run)
 
 		finish_film.assert_called_once_with("PRJ-00001")
+
+	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
+	def test_first_segments_are_submitted_before_continuations(self, get_all):
+		get_all.return_value = [
+			frappe._dict(name="T1", workflow="R2V"), frappe._dict(name="T1b", workflow="CONT"),
+			frappe._dict(name="T2", workflow="R2V"), frappe._dict(name="T2b", workflow="CONT"),
+			frappe._dict(name="T3", workflow="R2V"),
+		]
+
+		self.assertEqual(["T1", "T2", "T3", "T1b", "T2b"], generation_orchestrator._submission_order("RUN-1"))

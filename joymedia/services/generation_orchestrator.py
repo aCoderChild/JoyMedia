@@ -389,7 +389,7 @@ def submit_run(run_name: str):
 		update_modified=False,
 	)
 
-		for job_name in _get_run_job_names(run.name):
+		for job_name in _submission_order(run.name):
 			job = frappe.get_doc("Generation Task", job_name)
 			if job.status in ("Completed", "Failed", "Cancelled", "Running"):
 				continue
@@ -943,6 +943,22 @@ def _keeps_selected_output(run, shot_name):
 	if not scope.get("replace_selection"):
 		return True
 	return frappe.db.get_value("Asset Version", selected, "creation") > run.creation
+
+
+def _submission_order(run_name):
+	"""First segments before continuations, each group in storyboard order.
+
+	First segments and continuations run different models; ComfyUI reloads the model
+	whenever consecutive jobs alternate, which adds 1-2.5 minutes per job. Grouping them
+	needs one switch per run instead of one per take.
+	"""
+	rows = frappe.get_all(
+		"Generation Task",
+		filters={"generation_run": run_name},
+		fields=["name", "workflow"],
+		order_by="creation asc",
+	)
+	return [row.name for row in sorted(rows, key=lambda row: row.workflow != rows[0].workflow)] if rows else []
 
 
 def _get_run_job_names(run_name):

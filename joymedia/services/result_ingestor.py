@@ -6,7 +6,7 @@ import tempfile
 import frappe
 from frappe import _
 from frappe.utils.synchronization import filelock
-from frappe.utils import get_datetime, now, time_diff_in_seconds
+from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, time_diff_in_seconds
 
 from .comfyui_client import download_output, get_history, get_queue_state, probe_output
 from .artifact_service import get_attempt_artifact
@@ -385,9 +385,9 @@ def _refresh_parent_execution_state(attempt_name):
 def _execution_timestamp(history, message_name):
 	for name, details in history.get("status", {}).get("messages", []):
 		if name == message_name and details.get("timestamp"):
-			return datetime.fromtimestamp(details["timestamp"] / 1000, tz=timezone.utc).replace(
-				tzinfo=None
-			)
+			# Frappe stores naive datetimes in the system time zone, not UTC.
+			utc = datetime.fromtimestamp(details["timestamp"] / 1000, tz=timezone.utc)
+			return convert_utc_to_system_timezone(utc).replace(tzinfo=None)
 	return None
 
 
