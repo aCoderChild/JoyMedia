@@ -166,7 +166,9 @@ def improve_video_idea(
 # The planner was fine-tuned on examples titled "Biến thể TVC 12: …" and sometimes
 # copies that numbering into titles.
 TITLE_NUMBERING = re.compile(
-	r"^\s*(?:biến thể|bien the|variant|version|phiên bản|tvc|shot|cảnh|scene)[\s\w]*?\d+\s*(?:[:.\-–]\s*|$)", re.I
+	r"^\s*(?:(?:biến thể|bien the|variant|version|phiên bản|tvc|shot|cảnh|scene)[\s\w]*?\d+\s*(?:[:.\-–]\s*|$)"
+	r"|(?:biến thể|bien the|variant)\b\s*[:.\-–]?\s*)",
+	re.I,
 )
 
 
@@ -563,8 +565,10 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	if words.get("film_title"):
 		film_title = words["film_title"]
 	default_captions(result["shots"])
-	# A title that was only the planner's numbering falls back to the climax's title.
-	film_title = film_title or _story_title(result["shots"])
+	# A title that was only the planner's numbering (or one word left of it) falls back
+	# to the climax's title.
+	if len(film_title.split()) < 2:
+		film_title = _story_title(result["shots"]) or film_title
 	if film_title:
 		result["film_title"] = film_title
 	return result

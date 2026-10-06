@@ -513,7 +513,7 @@ class TestPlannerCutOff(FrappeTestCase):
 		cut_off.json.return_value = {"choices": [{"message": {"content": '{"shots": [{"generation_prompt": "A lo'}}]}
 		good = MagicMock(ok=True)
 		good.json.return_value = {"choices": [{"message": {"content": (
-			'{"film_title": "Sáng", "shots": [{"shot_number": 1, "shot_name": "Mở", "duration_seconds": 5,'
+			'{"film_title": "Buổi sáng", "shots": [{"shot_number": 1, "shot_name": "Mở", "duration_seconds": 5,'
 			' "generation_prompt": "A slow push-in on the product.", "references": []}]}'
 		)}}]}
 		post.side_effect = [cut_off, good]
@@ -523,7 +523,7 @@ class TestPlannerCutOff(FrappeTestCase):
 				product_name="P", video_idea="I", total_video_duration=5, target_fps=24, shot_count=1
 			)
 
-		self.assertEqual("Sáng", plan["film_title"])
+		self.assertEqual("Buổi sáng", plan["film_title"])
 		retry_messages = post.call_args_list[1].kwargs["json"]["messages"]
 		self.assertEqual(2, len(retry_messages))
 		self.assertIn("cut off", retry_messages[1]["content"])
@@ -534,6 +534,8 @@ class TestPlannerOutputCleanup(FrappeTestCase):
 		self.assertEqual("Áo dài trắng dạo quanh căn hộ", qwen_client.clean_title("Biến thể TVC 179: Áo dài trắng dạo quanh căn hộ"))
 		self.assertEqual("Sống xanh 2024", qwen_client.clean_title("Sống xanh 2024"))
 		self.assertEqual("", qwen_client.clean_title("Biến thể TVC 297"))
+		self.assertEqual("Đẹp", qwen_client.clean_title("Biến thể Đẹp"))
+		self.assertEqual("Biển xanh", qwen_client.clean_title("Biển xanh"))
 
 	def test_empty_captions_fall_back_to_the_scene_title_except_the_last(self):
 		shots = [{"shot_name": "OPENING: Bước đi tự tin", "caption": ""}, {"shot_name": "CLOSING: Hoàng hôn", "caption": ""}]
