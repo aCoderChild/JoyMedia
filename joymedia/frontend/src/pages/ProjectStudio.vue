@@ -287,6 +287,8 @@
       :current-preset="videoSettings.delivery_preset || 'Landscape'"
       :is-production-active="isProductionActive"
       :ai-revision-loading="aiRevisionLoading"
+      :review-loading="reviewLoading"
+      :shot-review-history="shotReviewHistory"
       :current-lang="currentLang"
       :estimate-shot-duration="estimateShotDuration"
       :format-shot-keyframe-time="formatShotKeyframeTime"
@@ -312,6 +314,8 @@
       @regenerate-current-shot="regenerateCurrentShot"
       @save-active-shot="saveActiveShot"
       @ask-ai="onAskAiRewriteShot"
+      @submit-review="onSubmitReview"
+      @apply-review-revision="onApplyReviewRevision"
       @open-settings="showSettings = true"
       @open-media-picker="openPicker"
     />
@@ -475,6 +479,11 @@ const {
   reviseShotWithAi,
   improveVideoIdea,
   stopPolling,
+  reviewLoading,
+  reviewError,
+  submitShotReview,
+  applyShotReviewRevision,
+  getShotReviews,
 } = useProjectGeneration(projectName, refreshStudioGenerationState);
 
 const appendSceneError = ref("");
@@ -1372,6 +1381,37 @@ function onAskAiRewriteShot(instruction) {
   if (!shot?.name) return;
   reviseShotWithAi(shot.name, instruction);
 }
+
+const shotReviewHistory = ref([]);
+
+async function loadShotReviews(shotName) {
+  if (!shotName) { shotReviewHistory.value = []; return; }
+  const res = await getShotReviews(shotName);
+  shotReviewHistory.value = res?.reviews || [];
+}
+
+async function onSubmitReview(shotName, verdict, feedbackNotes = "", rejectionCategory = "") {
+  const res = await submitShotReview(shotName, { verdict, feedbackNotes, rejectionCategory });
+  if (res) {
+    // Reflect review_status immediately on the shot object so the badge updates.
+    if (activeSelectedShot.value?.name === shotName) {
+      activeSelectedShot.value = { ...activeSelectedShot.value, review_status: verdict };
+    }
+    await loadShotReviews(shotName);
+  }
+}
+
+async function onApplyReviewRevision(shotName, reviewName, regenerate) {
+  await applyShotReviewRevision(shotName, reviewName, { regenerate });
+  await loadShotReviews(shotName);
+}
+
+// Reload review history whenever selected shot changes.
+watch(
+  () => activeSelectedShot.value?.name,
+  (name) => loadShotReviews(name),
+  { immediate: true }
+);
 
 function applyAssetToShot(asset, shot) {
   if (!asset?.asset_version || !shot?.name) return;

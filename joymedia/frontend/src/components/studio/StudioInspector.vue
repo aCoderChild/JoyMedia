@@ -573,6 +573,122 @@
               : (currentLang === 'vi' ? 'Chỉ tạo lại cảnh này với mô tả hiện tại.' : 'Re-renders only this scene with the current description.') }}
           </p>
         </div>
+
+        <!-- QA Review Panel -->
+        <div v-if="activeSelectedShot?.output_video && !isProductionActive" class="pt-2 border-t border-outline-border space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="block text-[11px] font-semibold text-ink-secondary">
+              {{ currentLang === 'vi' ? 'Kiểm duyệt cảnh' : 'Scene Review' }}
+            </label>
+            <span
+              class="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+              :class="reviewStatusClass(activeSelectedShot.review_status)"
+            >
+              {{ reviewStatusLabel(activeSelectedShot.review_status) }}
+            </span>
+          </div>
+
+          <!-- Verdict buttons -->
+          <div v-if="!showRejectForm" class="grid grid-cols-3 gap-1">
+            <button
+              type="button"
+              class="py-1.5 rounded-xl text-[10px] font-semibold border cursor-pointer transition-colors"
+              :class="activeSelectedShot.review_status === 'Approved'
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                : 'bg-surface-card border-outline-border text-ink-secondary hover:border-emerald-400 hover:text-emerald-400'"
+              :disabled="reviewLoading"
+              @click="$emit('submitReview', activeSelectedShot.name, 'Approved')"
+            >
+              {{ currentLang === 'vi' ? '✓ Duyệt' : '✓ Approve' }}
+            </button>
+            <button
+              type="button"
+              class="py-1.5 rounded-xl text-[10px] font-semibold border cursor-pointer transition-colors"
+              :class="activeSelectedShot.review_status === 'Needs Revision'
+                ? 'bg-amber-500/20 border-amber-500/40 text-amber-400'
+                : 'bg-surface-card border-outline-border text-ink-secondary hover:border-amber-400 hover:text-amber-400'"
+              :disabled="reviewLoading"
+              @click="openRejectForm('Needs Revision')"
+            >
+              {{ currentLang === 'vi' ? '~ Sửa lại' : '~ Revise' }}
+            </button>
+            <button
+              type="button"
+              class="py-1.5 rounded-xl text-[10px] font-semibold border cursor-pointer transition-colors"
+              :class="activeSelectedShot.review_status === 'Rejected'
+                ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                : 'bg-surface-card border-outline-border text-ink-secondary hover:border-rose-400 hover:text-rose-400'"
+              :disabled="reviewLoading"
+              @click="openRejectForm('Rejected')"
+            >
+              {{ currentLang === 'vi' ? '✕ Từ chối' : '✕ Reject' }}
+            </button>
+          </div>
+
+          <!-- Rejection form -->
+          <div v-if="showRejectForm" class="space-y-2 p-2 rounded-xl bg-surface-muted border border-outline-border">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-semibold text-ink-secondary">
+                {{ pendingVerdict === 'Rejected' ? (currentLang === 'vi' ? 'Từ chối cảnh' : 'Reject scene') : (currentLang === 'vi' ? 'Yêu cầu sửa' : 'Request revision') }}
+              </span>
+              <button type="button" class="text-ink-muted hover:text-ink-primary text-[10px] cursor-pointer" @click="showRejectForm = false">✕</button>
+            </div>
+            <select
+              v-model="rejectCategory"
+              class="w-full px-2 py-1.5 rounded-lg bg-surface-card border border-outline-border text-[11px] text-ink-primary cursor-pointer"
+            >
+              <option value="">{{ currentLang === 'vi' ? '— Chọn lý do —' : '— Select reason —' }}</option>
+              <option value="Motion Artifacts">{{ currentLang === 'vi' ? 'Chuyển động bị lỗi' : 'Motion Artifacts' }}</option>
+              <option value="Prompt Drift">{{ currentLang === 'vi' ? 'Sai mô tả prompt' : 'Prompt Drift' }}</option>
+              <option value="Visual Quality">{{ currentLang === 'vi' ? 'Chất lượng hình ảnh kém' : 'Visual Quality' }}</option>
+              <option value="Continuity Break">{{ currentLang === 'vi' ? 'Mất liên tục cảnh' : 'Continuity Break' }}</option>
+              <option value="Wrong Product">{{ currentLang === 'vi' ? 'Sai sản phẩm' : 'Wrong Product' }}</option>
+              <option value="Other">{{ currentLang === 'vi' ? 'Khác' : 'Other' }}</option>
+            </select>
+            <textarea
+              v-model="rejectNotes"
+              :placeholder="currentLang === 'vi' ? 'Ghi chú thêm cho AI (tùy chọn)…' : 'Additional notes for AI (optional)…'"
+              rows="2"
+              class="w-full px-2 py-1.5 rounded-lg bg-surface-card border border-outline-border text-[11px] text-ink-primary focus:outline-none focus:border-indigo-500 resize-none"
+            />
+            <button
+              type="button"
+              class="w-full py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1"
+              :disabled="reviewLoading"
+              @click="$emit('submitReview', activeSelectedShot.name, pendingVerdict, rejectNotes, rejectCategory)"
+            >
+              <span v-if="reviewLoading" class="lucide-refresh-cw size-3 animate-spin inline-block" />
+              <span v-else>{{ currentLang === 'vi' ? 'Gửi & tạo gợi ý AI' : 'Submit & generate AI fix' }}</span>
+            </button>
+          </div>
+
+          <!-- AI Suggested Revision (from last review) -->
+          <div v-if="latestRejectedReview" class="space-y-1.5 p-2 rounded-xl bg-amber-500/5 border border-amber-500/20">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] font-semibold text-amber-400">{{ currentLang === 'vi' ? '✨ AI đề xuất sửa prompt' : '✨ AI suggested revision' }}</span>
+              <span v-if="latestRejectedReview.ai_revision_applied" class="text-[9px] text-emerald-400">{{ currentLang === 'vi' ? 'Đã áp dụng' : 'Applied' }}</span>
+            </div>
+            <p class="text-[10px] text-ink-secondary font-mono line-clamp-4 leading-relaxed">{{ latestRejectedReview.ai_suggested_revision }}</p>
+            <div v-if="!latestRejectedReview.ai_revision_applied" class="grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                class="py-1.5 rounded-lg bg-surface-card border border-outline-border text-[10px] font-semibold text-ink-secondary hover:text-ink-primary cursor-pointer"
+                :disabled="reviewLoading"
+                @click="$emit('applyReviewRevision', activeSelectedShot.name, latestRejectedReview.name, false)"
+              >
+                {{ currentLang === 'vi' ? 'Chỉ cập nhật prompt' : 'Update prompt only' }}
+              </button>
+              <button
+                type="button"
+                class="py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-semibold cursor-pointer disabled:opacity-50"
+                :disabled="reviewLoading"
+                @click="$emit('applyReviewRevision', activeSelectedShot.name, latestRejectedReview.name, true)"
+              >
+                {{ currentLang === 'vi' ? 'Áp dụng & tạo lại' : 'Apply & regenerate' }}
+              </button>
+            </div>
+          </div>
+        </div>
       </template>
     </div>
   </aside>
@@ -600,6 +716,8 @@ const props = defineProps({
   regeneratingSource: { type: Boolean, default: false },
   isProductionActive: { type: Boolean, default: false },
   aiRevisionLoading: { type: Boolean, default: false },
+  reviewLoading: { type: Boolean, default: false },
+  shotReviewHistory: { type: Array, default: () => [] },
   currentLang: { type: String, default: "en" },
   estimateShotDuration: { type: Function, default: (s) => s?.duration_seconds || 5 },
   formatShotKeyframeTime: { type: Function, default: () => "0.0s" },
@@ -630,17 +748,52 @@ const emit = defineEmits([
   "regenerateCurrentShot",
   "saveActiveShot",
   "askAi",
+  "submitReview",
+  "applyReviewRevision",
   "openSettings",
   "openMediaPicker",
 ]);
 
 const aiRewriteInstruction = ref("");
+const showRejectForm = ref(false);
+const pendingVerdict = ref("");
+const rejectCategory = ref("");
+const rejectNotes = ref("");
 
 function submitAiRewrite() {
   if (!aiRewriteInstruction.value.trim()) return;
   emit("askAi", aiRewriteInstruction.value.trim());
   aiRewriteInstruction.value = "";
 }
+
+function openRejectForm(verdict) {
+  pendingVerdict.value = verdict;
+  rejectCategory.value = "";
+  rejectNotes.value = "";
+  showRejectForm.value = true;
+}
+
+function reviewStatusLabel(status) {
+  const labels = {
+    "Approved": props.currentLang === "vi" ? "Đã duyệt" : "Approved",
+    "Rejected": props.currentLang === "vi" ? "Từ chối" : "Rejected",
+    "Needs Revision": props.currentLang === "vi" ? "Cần sửa" : "Needs Revision",
+    "Pending Review": props.currentLang === "vi" ? "Chờ duyệt" : "Pending Review",
+  };
+  return labels[status] || (props.currentLang === "vi" ? "Chờ duyệt" : "Pending Review");
+}
+
+function reviewStatusClass(status) {
+  if (status === "Approved") return "bg-emerald-500/20 text-emerald-400";
+  if (status === "Rejected") return "bg-rose-500/20 text-rose-400";
+  if (status === "Needs Revision") return "bg-amber-500/20 text-amber-400";
+  return "bg-surface-muted text-ink-muted";
+}
+
+const latestRejectedReview = computed(() => {
+  const reviews = props.shotReviewHistory || [];
+  return reviews.find((r) => (r.verdict === "Rejected" || r.verdict === "Needs Revision") && r.ai_suggested_revision) || null;
+});
 
 const shotReferences = computed(() => props.activeSelectedShot?.references || []);
 // Single-image scenes are driven by start/end frames; reference scenes by <Picture N> images.
@@ -674,6 +827,9 @@ watch(
   () => {
     savedPrompt.value = props.activeSelectedShot?.generation_prompt || "";
     aiRewriteInstruction.value = "";
+    showRejectForm.value = false;
+    rejectCategory.value = "";
+    rejectNotes.value = "";
   },
   { immediate: true }
 );

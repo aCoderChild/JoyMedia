@@ -41,6 +41,17 @@ def regenerate_scene(project_name, shot_name):
 	return {**_start_takes_run(project, [shot.name]), "shot_name": shot.name}
 
 
+def regenerate_scene_with_reason(project_name, shot_name, retry_reason="Manual Retry"):
+	"""Render a new take and tag the run's attempts with the given retry_reason.
+
+	Used by the QA review loop so analytics can distinguish QA-driven regenerations.
+	"""
+	project, shot = _project_shot(project_name, shot_name)
+	_ensure_scene_free(project, shot)
+	result = _start_takes_run(project, [shot.name], retry_reason=retry_reason)
+	return {**result, "shot_name": shot.name}
+
+
 @frappe.whitelist()
 def render_final(project_name):
 	"""Re-render every scene of a fast draft at full quality, as new takes.
@@ -66,7 +77,7 @@ def render_final(project_name):
 	return _start_takes_run(project, shots)
 
 
-def _start_takes_run(project, shot_names):
+def _start_takes_run(project, shot_names, retry_reason=None):
 	"""A run that renders new takes of these scenes, replacing each one's take when ready."""
 	from joymedia.joymedia.doctype.media_project.media_project import build_project_snapshot
 	from joymedia.services.generation_orchestrator import start_run_internal
@@ -79,7 +90,11 @@ def _start_takes_run(project, shot_names):
 			"project_snapshot_json": snapshot_json,
 			"project_snapshot_hash": snapshot_hash,
 			# replace_selection: each new take replaces the current one once it is ready.
-			"execution_scope_json": json.dumps({"shot_names": shot_names, "replace_selection": True}),
+			"execution_scope_json": json.dumps({
+				"shot_names": shot_names,
+				"replace_selection": True,
+				"retry_reason": retry_reason or None,
+			}),
 			"workflow": project.workflow,
 			"requested_by": frappe.session.user,
 			"status": "Draft",
@@ -100,6 +115,8 @@ def select_scene_take(project_name, shot_name, take_index):
 	if not 1 <= take_index <= len(takes):
 		frappe.throw(_("This scene has no take {0}.").format(take_index))
 	shot.db_set("selected_output_asset_version", takes[take_index - 1].name, update_modified=False)
+	from joymedia.joymedia.doctype.media_project.media_project import sync_shot_review_status
+	sync_shot_review_status(shot.name)
 	from joymedia.services.post_production import queue_post_production_internal
 
 	queue_post_production_internal(project.name)

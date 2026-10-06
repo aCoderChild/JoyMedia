@@ -171,7 +171,7 @@
    "fieldtype": "Select",
    "label": "Retry Reason",
    "mandatory_depends_on": "eval:doc.retry_of;",
-   "options": "\nExecution Failure\nWorkflow Revision\nInput Revision\nManual Retry\nReroll\nOther",
+   "options": "\nExecution Failure\nWorkflow Revision\nInput Revision\nManual Retry\nReroll\nQA Rejection\nOther",
    "read_only_depends_on": "eval:!doc.__islocal;"
   },
   {

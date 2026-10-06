@@ -685,7 +685,24 @@ def _create_initial_attempts(job):
 			"status": "Pending",
 		}
 	).insert(ignore_permissions=True)
+	# A scene rerender starts a new Generation Run rather than a successor of an
+	# old task. Preserve its initiating reason after insertion, when the
+	# background worker has actually created the attempt.
+	retry_reason = _run_retry_reason(job.generation_run)
+	if retry_reason:
+		attempt.db_set("retry_reason", retry_reason, update_modified=False)
 	return [attempt.name]
+
+
+def _run_retry_reason(run_name):
+	if not run_name:
+		return None
+	execution_scope_json = frappe.db.get_value("Generation Run", run_name, "execution_scope_json")
+	try:
+		scope = frappe.parse_json(execution_scope_json or "{}")
+	except (TypeError, ValueError):
+		return None
+	return scope.get("retry_reason") if isinstance(scope, dict) else None
 
 
 def _create_retry_attempt(run, jobs):

@@ -23,6 +23,7 @@ class TestGenerationAttempt(FrappeTestCase):
 				"Input Revision",
 				"Manual Retry",
 				"Reroll",
+				"QA Rejection",
 				"Other",
 			},
 		)

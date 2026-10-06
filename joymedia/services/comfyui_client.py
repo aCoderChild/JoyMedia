@@ -5,11 +5,13 @@ import uuid
 import frappe
 import requests
 from frappe import _
+from frappe.utils.synchronization import filelock
 
 # The shared GPU server can take over a minute to answer while it is under load.
 DEFAULT_TIMEOUT = 180
 # Consecutive failed history polls (5 s apart) tolerated while a job runs.
 MAX_POLL_FAILURES = 24
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 
 
 def get_base_url(base_url: str | None = None):
@@ -38,21 +40,27 @@ def upload_frappe_file(file_url: str, *, base_url: str | None = None, input_dir:
 
 
 def upload_local_file(local_path, *, base_url: str | None = None) -> dict:
-	if not Path(local_path).exists():
+	path = Path(local_path)
+	if not path.exists():
 		frappe.throw(_("Local file does not exist: {0}").format(local_path))
+	_validate_image_upload(path)
 
-	try:
-		comfyui_filename = f"joymedia_{uuid.uuid4().hex}{Path(local_path).suffix.lower()}"
-		with open(local_path, "rb") as file_handle:
-			response = requests.post(
-				f"{get_base_url(base_url)}/upload/image",
-				files={"image": (comfyui_filename, file_handle)},
-				data={"type": "input", "overwrite": "true"},
-				auth=get_request_auth(),
-				timeout=DEFAULT_TIMEOUT,
-			)
-	except requests.ConnectionError as exc:
-		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
+	# ComfyUI's input endpoint is not safe for bursty parallel multipart uploads.
+	# Generation Tasks can run concurrently, but staging their inputs must be
+	# serialized across Frappe workers to keep the remote server responsive.
+	with filelock("joymedia-comfyui-upload"):
+		try:
+			comfyui_filename = f"joymedia_{uuid.uuid4().hex}{path.suffix.lower()}"
+			with open(local_path, "rb") as file_handle:
+				response = requests.post(
+					f"{get_base_url(base_url)}/upload/image",
+					files={"image": (comfyui_filename, file_handle)},
+					data={"type": "input", "overwrite": "true"},
+					auth=get_request_auth(),
+					timeout=DEFAULT_TIMEOUT,
+				)
+		except requests.ConnectionError as exc:
+			frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
 
 	_raise_for_comfyui_error(response)
 	result = response.json()
@@ -61,6 +69,18 @@ def upload_local_file(local_path, *, base_url: str | None = None) -> dict:
 	server_path = "/".join(part for part in (str(subfolder).strip("/"), name) if part)
 
 	return {**result, "server_path": server_path}
+
+
+def _validate_image_upload(path: Path):
+	"""Reject corrupt image bytes before they consume a ComfyUI queue slot."""
+	if path.suffix.lower() not in IMAGE_SUFFIXES:
+		return
+	try:
+		from PIL import Image
+		with Image.open(path) as image:
+			image.verify()
+	except (OSError, ValueError):
+		frappe.throw(_("Input image is invalid and cannot be sent to ComfyUI: {0}").format(path.name))
 
 
 def submit_workflow(workflow: dict, *, base_url: str | None = None) -> dict:

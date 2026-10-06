@@ -22,7 +22,8 @@
   "analysis_json",
   "analysis_error",
   "lineage_section",
-  "derived_from"
+  "derived_from",
+  "source_generation_attempt"
  ],
  "fields": [
   {"fieldname":"version_overview_section","fieldtype":"Section Break","label":"Version"},
@@ -41,7 +42,8 @@
   {"description":"Structured analysis used as planning context for Qwen when this asset is selected as a project reference.","fieldname":"analysis_json","fieldtype":"Code","hidden":1,"label":"Analysis JSON","options":"JSON"},
   {"fieldname":"analysis_error","fieldtype":"Small Text","hidden":1,"label":"Analysis Error"},
   {"fieldname":"lineage_section","fieldtype":"Section Break","label":"Lineage"},
-  {"description":"Previous Asset Version from which this version was derived. Leave blank for the original/root version.","fieldname":"derived_from","fieldtype":"Link","label":"Derived From","options":"Asset Version"}
+  {"description":"Previous Asset Version from which this version was derived. Leave blank for the original/root version.","fieldname":"derived_from","fieldtype":"Link","label":"Derived From","options":"Asset Version"},
+  {"description":"The final Generation Attempt whose output was promoted into this immutable version.","fieldname":"source_generation_attempt","fieldtype":"Link","hidden":1,"label":"Source Generation Attempt","options":"Generation Attempt","read_only":1}
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,

@@ -54,6 +54,21 @@ def apply_project_shot_ai_revision(project_name, shot_name, values, regenerate=F
 	return result
 
 
+def generate_review_revision(instruction, shot, product_name):
+	"""Generate an AI-suggested prompt revision based on QA rejection feedback.
+
+	Behaves like generate_shot_revision but is called internally by the review flow,
+	so it does not require the instruction to be non-empty (a rejection category alone is enough).
+	"""
+	from joymedia.services.qwen_client import generate_shot_revision
+
+	return generate_shot_revision(
+		instruction=instruction or "Revise this shot to improve quality.",
+		shot=shot,
+		product_name=product_name,
+	)
+
+
 @frappe.whitelist()
 def improve_project_video_idea(project_name, current_idea=""):
 	project = frappe.get_doc("Media Project", project_name)

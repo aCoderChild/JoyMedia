@@ -17,7 +17,8 @@
   "caption",
   "generation_inputs",
   "selected_output_section",
-  "selected_output_asset_version"
+  "selected_output_asset_version",
+  "review_status"
  ],
  "fields": [
   {
@@ -109,6 +110,16 @@
    "hidden": 1,
    "label": "Selected Output Asset Version",
    "options": "Asset Version"
+  },
+  {
+   "default": "Pending Review",
+   "description": "Human QA verdict for this shot's current selected output.",
+   "fieldname": "review_status",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Review Status",
+   "options": "Pending Review\nApproved\nRejected\nNeeds Revision",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

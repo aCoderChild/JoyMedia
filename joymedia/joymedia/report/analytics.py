@@ -43,18 +43,31 @@ def get_attempt_analytics(filters=None):
 	shots = frappe.get_all(
 		"Shot",
 		filters={"name": ["in", list(shot_names)]} if shot_names else {"name": ["in", [""]]},
-		fields=["name", "selected_output_asset_version"],
+		fields=["name", "selected_output_asset_version", "review_status"],
 	)
 	selected_outputs_by_shot = {
 		shot.name: shot.selected_output_asset_version for shot in shots if shot.selected_output_asset_version
 	}
+	review_status_by_shot = {shot.name: shot.review_status for shot in shots}
 
+	# Collect human QA verdicts from Shot Review records keyed by generation_attempt.
 	attempt_names = [attempt.name for attempt in attempts]
+	shot_reviews = frappe.get_all(
+		"Shot Review",
+		filters={"generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
+		fields=["generation_attempt", "verdict"],
+		order_by="reviewed_at desc",
+	)
+	# Most recent review per attempt wins.
+	review_verdict_by_attempt = {}
+	for rev in reversed(shot_reviews):
+		review_verdict_by_attempt[rev.generation_attempt] = rev.verdict
+
 	artifacts = frappe.get_all(
-			"Generation Artifact",
-			filters={"generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
-			fields=["name", "generation_attempt", "artifact_role", "frappe_file"],
-		)
+		"Generation Artifact",
+		filters={"generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
+		fields=["name", "generation_attempt", "artifact_role", "frappe_file"],
+	)
 	primary_outputs_by_attempt = {
 		artifact.generation_attempt: artifact.name
 		for artifact in artifacts
@@ -65,7 +78,15 @@ def get_attempt_analytics(filters=None):
 		job = jobs_by_name.get(attempt.generation_task)
 		attempt.workflow = job.workflow if job else None
 		selected = primary_outputs_by_attempt.get(attempt.name)
-		attempt.review_outcome = {"approved": bool(selected), "reviewed": bool(selected)}
+		# Use real human QA verdict when available; fall back to implicit proxy.
+		qa_verdict = review_verdict_by_attempt.get(attempt.name)
+		if qa_verdict:
+			approved = qa_verdict == "Approved"
+			reviewed = True
+		else:
+			approved = bool(selected)
+			reviewed = bool(selected)
+		attempt.review_outcome = {"approved": approved, "reviewed": reviewed}
 		attempt.selected_output = bool(
 			job
 			and selected

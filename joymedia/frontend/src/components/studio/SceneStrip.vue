@@ -144,9 +144,24 @@
             <span class="truncate">
               {{ currentLang === 'vi' ? `Cảnh ${shot.shot_number}` : `Scene ${shot.shot_number}` }}<template v-if="sceneBeat(shot)"> · {{ sceneBeat(shot) }}</template>
             </span>
-            <span class="text-ink-secondary font-mono text-[11px] font-semibold bg-surface-card px-1.5 py-0.5 rounded border border-outline-border/60">
-              {{ Number(estimateShotDuration(shot)).toFixed(1) }}s
-            </span>
+            <div class="flex items-center gap-1">
+              <!-- Review status badge -->
+              <span
+                v-if="shot.review_status && shot.review_status !== 'Pending Review'"
+                class="text-[9px] px-1.5 py-0.5 rounded-full font-semibold leading-none"
+                :class="{
+                  'bg-emerald-500/20 text-emerald-400': shot.review_status === 'Approved',
+                  'bg-rose-500/20 text-rose-400': shot.review_status === 'Rejected',
+                  'bg-amber-500/20 text-amber-400': shot.review_status === 'Needs Revision',
+                }"
+                :title="shot.review_status"
+              >
+                {{ shot.review_status === 'Approved' ? '✓' : shot.review_status === 'Rejected' ? '✕' : '~' }}
+              </span>
+              <span class="text-ink-secondary font-mono text-[11px] font-semibold bg-surface-card px-1.5 py-0.5 rounded border border-outline-border/60">
+                {{ Number(estimateShotDuration(shot)).toFixed(1) }}s
+              </span>
+            </div>
           </div>
 
           <!-- Creative summary snippet -->

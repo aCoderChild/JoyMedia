@@ -18,6 +18,7 @@ class AssetVersion(Document):
 		"source",
 		"version_number",
 		"derived_from",
+		"source_generation_attempt",
 		"content_hash",
 		"width",
 		"height",

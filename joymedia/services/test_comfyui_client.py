@@ -1,5 +1,9 @@
+import tempfile
+from pathlib import Path
+from contextlib import nullcontext
 from unittest.mock import Mock, patch
 
+import frappe
 import requests
 
 from frappe.tests.utils import FrappeTestCase
@@ -23,6 +27,36 @@ class TestComfyUIClient(FrappeTestCase):
 	)
 	def test_request_auth_uses_configured_basic_auth(self):
 		self.assertEqual(("comfy-user", "comfy-pass"), get_request_auth())
+
+	@patch("joymedia.services.comfyui_client.requests.post")
+	def test_upload_rejects_corrupt_image_before_queueing_it(self, post):
+		from joymedia.services.comfyui_client import upload_local_file
+
+		with tempfile.TemporaryDirectory() as directory:
+			path = Path(directory) / "broken.png"
+			path.write_bytes(b"not an image")
+			with self.assertRaises(frappe.ValidationError):
+				upload_local_file(path, base_url="http://comfyui")
+
+		post.assert_not_called()
+
+	@patch("joymedia.services.comfyui_client.filelock", return_value=nullcontext())
+	@patch("joymedia.services.comfyui_client.requests.post")
+	def test_upload_serializes_requests_before_calling_comfyui(self, post, lock):
+		from joymedia.services.comfyui_client import upload_local_file
+
+		response = Mock(ok=True)
+		response.json.return_value = {"name": "input.png"}
+		post.return_value = response
+		with tempfile.TemporaryDirectory() as directory:
+			path = Path(directory) / "valid.png"
+			from PIL import Image
+
+			Image.new("RGB", (1, 1), "white").save(path)
+			upload_local_file(path, base_url="http://comfyui")
+
+		lock.assert_called_once_with("joymedia-comfyui-upload")
+		post.assert_called_once()
 
 	@patch(
 		"joymedia.services.comfyui_client.frappe.conf",

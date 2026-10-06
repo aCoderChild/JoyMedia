@@ -82,9 +82,13 @@ def compose_shot_segments(generation_run_name, shot_name):
 					"source": "Composed",
 					"duration_seconds": video_duration,
 					"fps": profile["fps"],
+					"source_generation_attempt": segments[-1][1].generation_attempt,
 				}
 			).insert(ignore_permissions=True)
-			shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
+			shot.db_set(
+				{"selected_output_asset_version": asset_version.name, "review_status": "Pending Review"},
+				update_modified=False,
+			)
 			return asset_version.name
 
 		profile = _get_delivery_profile(project, generation_run_name)
@@ -136,9 +140,13 @@ def compose_shot_segments(generation_run_name, shot_name):
 				"source": "Composed",
 				"duration_seconds": video_duration,
 				"fps": profile["fps"],
+				"source_generation_attempt": segments[-1][1].generation_attempt,
 			}
 		).insert(ignore_permissions=True)
-		shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
+		shot.db_set(
+			{"selected_output_asset_version": asset_version.name, "review_status": "Pending Review"},
+			update_modified=False,
+		)
 		return asset_version.name
 
 
@@ -204,9 +212,13 @@ def promote_cumulative_shot_output(generation_run_name, shot_name):
 				"source": "Composed",
 				"duration_seconds": video_duration,
 				"fps": profile["fps"],
+				"source_generation_attempt": attempt,
 			}
 		).insert(ignore_permissions=True)
-		shot.db_set("selected_output_asset_version", asset_version.name, update_modified=False)
+		shot.db_set(
+			{"selected_output_asset_version": asset_version.name, "review_status": "Pending Review"},
+			update_modified=False,
+		)
 		return asset_version.name
 
 
