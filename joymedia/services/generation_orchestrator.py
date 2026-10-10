@@ -24,16 +24,16 @@ from .prompt_compiler import compile_segment_prompt_from_snapshot
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_shot_segments
 from .workflow_profiles import choose_shot_workflow, input_role_for_workflow, references_for_workflow
-from joymedia.workflow_adapters import get_workflow_adapter
 from .workflow_resolver import (
 	validate_role_input_count,
 	validate_workflow_bindings,
 	validate_workflow_for_execution,
+	workflow_supports_continuation,
 )
 
 
 ACTIVE_RUN_STATUSES = ("Queued", "Running")
-ACTIVE_ATTEMPT_STATUSES = ("Pending", "Queued", "Running")
+ACTIVE_ATTEMPT_STATUSES = ("Pending", "Submitting", "Queued", "Running")
 TERMINAL_ATTEMPT_STATUSES = ("Completed", "Failed", "Cancelled")
 TERMINAL_JOB_STATUSES = ("Completed", "Failed", "Cancelled")
 MAX_AUTOMATIC_RETRIES = 1
@@ -43,18 +43,34 @@ MAX_AUTOMATIC_RETRIES = 1
 MAX_JOBS_IN_FLIGHT_PER_RUN = 1
 
 
-def _get_continuation_workflow_from_adapter(adapter):
-	workflow_key = getattr(adapter, "continuation_workflow_key", None)
-	if not workflow_key:
-		return None
-	rows = frappe.get_all(
-		"Generation Workflow",
-		filters={"workflow_key": workflow_key},
-		fields=["name"],
-		order_by="version_number desc, modified desc",
-		limit_page_length=1,
+def _continuation_settings(workflow):
+	"""Read segment behavior from the immutable workflow contract, not model code."""
+	try:
+		spec = frappe.parse_json(workflow.execution_spec or "{}")
+	except (TypeError, ValueError):
+		spec = {}
+	settings = spec.get("continuation") or {}
+	return {
+		"overlap_frames": max(0, int(settings.get("overlap_frames", 1))),
+		"new_frames": settings.get("new_frames"),
+	}
+
+
+def _continuation_workflow(workflow):
+	return frappe.get_doc("Generation Workflow", workflow.continuation_workflow) if workflow.continuation_workflow else None
+
+
+def _segment_plan(workflow, frame_count, continuation_workflow=None):
+	settings = _continuation_settings(workflow)
+	segments = plan_generation_segments(
+		frame_count,
+		max_segment_frames=workflow.frame_count,
+		continuation_overlap_frames=settings["overlap_frames"],
+		continuation_new_frames=settings["new_frames"],
 	)
-	return frappe.get_doc("Generation Workflow", rows[0].name) if rows else None
+	if len(segments) > 1 and not (continuation_workflow and workflow_supports_continuation(continuation_workflow)):
+		frappe.throw(_("This shot exceeds the workflow capacity, and its workflow has no continuation contract."))
+	return segments
 
 
 def _pipeline_reference_inputs(shot, workflow):
@@ -190,13 +206,8 @@ def prepare_run(run_name: str):
 		"Generation Workflow",
 		run.workflow,
 	)
-	workflow_adapter = get_workflow_adapter(workflow)
 	pipeline_steps = get_pipeline_steps(run.generation_pipeline) if run.generation_pipeline else []
-	continuation_workflow = (
-		frappe.get_doc("Generation Workflow", workflow.continuation_workflow)
-		if workflow.continuation_workflow
-		else _get_continuation_workflow_from_adapter(workflow_adapter)
-	)
+	continuation_workflow = _continuation_workflow(workflow)
 	shots = snapshot.get("shots") or []
 	try:
 		execution_scope = frappe.parse_json(run.execution_scope_json or "{}")
@@ -232,30 +243,15 @@ def prepare_run(run_name: str):
 		for shot in shots:
 			shot_name = shot.get("shot")
 			shot_workflow = choose_shot_workflow(snapshot, shot)
-			if int(shot.get("planned_frame_count") or 0) > int(shot_workflow.frame_count or 0):
-				frappe.throw(
-					_("Shot {0} is longer than the selected workflow's single-render limit. "
-					  "Regenerate the storyboard with shorter scenes.").format(
-						shot.get("shot_number")
-					)
-				)
-			shot_adapter = get_workflow_adapter(shot_workflow)
 			shot_pipeline_steps = pipeline_steps if pipeline_steps and pipeline_steps[-1].workflow == shot_workflow.name else []
-			shot_continuation_workflow = (
-				frappe.get_doc("Generation Workflow", shot_workflow.continuation_workflow)
-				if shot_workflow.continuation_workflow
-				else _get_continuation_workflow_from_adapter(shot_adapter)
-			)
+			shot_continuation_workflow = _continuation_workflow(shot_workflow)
 			validate_workflow_for_execution(shot_workflow)
 			validate_workflow_bindings(shot_workflow)
 			if shot_continuation_workflow:
 				validate_workflow_for_execution(shot_continuation_workflow)
 				validate_workflow_bindings(shot_continuation_workflow)
-			segments = plan_generation_segments(
-				shot.get("planned_frame_count"),
-				max_segment_frames=shot_workflow.frame_count,
-				continuation_overlap_frames=int(getattr(shot_adapter, "continuation_overlap_frames", 1)),
-				continuation_new_frames=getattr(shot_adapter, "continuation_new_frames", None),
+			segments = _segment_plan(
+				shot_workflow, shot.get("planned_frame_count"), shot_continuation_workflow
 			)
 			previous_segment_job = None
 			for segment in segments:
@@ -455,24 +451,12 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 		shot_workflow = choose_shot_workflow(snapshot, shot_snapshot)
 		shot_pipeline = pipeline_for_final_workflow(shot_workflow.name)
 		pipeline_steps = get_pipeline_steps(shot_pipeline.name) if shot_pipeline else []
-		if int(shot_row.planned_frame_count or 0) > int(shot_workflow.frame_count or 0):
-			frappe.throw(
-				_("Shot {0} is longer than the selected workflow's single-render limit. "
-				  "Regenerate the storyboard with shorter scenes.").format(
-					shot.shot_number
-				)
-			)
 		validate_workflow_for_execution(shot_workflow)
 		validate_workflow_bindings(shot_workflow)
 		for pipeline_step in pipeline_steps:
 			validate_workflow_for_execution(frappe.get_doc("Generation Workflow", pipeline_step.workflow))
 			validate_workflow_bindings(frappe.get_doc("Generation Workflow", pipeline_step.workflow))
-		shot_adapter = get_workflow_adapter(shot_workflow)
-		continuation_workflow = (
-			frappe.get_doc("Generation Workflow", shot_workflow.continuation_workflow)
-			if shot_workflow.continuation_workflow
-			else _get_continuation_workflow_from_adapter(shot_adapter)
-		)
+		continuation_workflow = _continuation_workflow(shot_workflow)
 		if continuation_workflow:
 			validate_workflow_for_execution(continuation_workflow)
 			validate_workflow_bindings(continuation_workflow)
@@ -520,12 +504,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 				)
 			validate_role_input_count(shot_workflow, role, len(asset_versions))
 
-		segments = plan_generation_segments(
-			shot_row.planned_frame_count,
-			max_segment_frames=shot_workflow.frame_count,
-			continuation_overlap_frames=int(getattr(shot_adapter, "continuation_overlap_frames", 1)),
-			continuation_new_frames=getattr(shot_adapter, "continuation_new_frames", None),
-		)
+		segments = _segment_plan(shot_workflow, shot_row.planned_frame_count, continuation_workflow)
 		if not segments:
 			frappe.throw(_("Shot {0} has no generation segments.").format(shot.name))
 		continuation_capacity = (continuation_workflow or shot_workflow).frame_count
@@ -539,20 +518,30 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 
 def submit_run(run_name: str):
 	"""Create and submit outstanding attempts for prepared Jobs in this run."""
+	# This lock and the database count form the single capacity boundary for all
+	# campaigns. Per-run ordering remains strict for last-frame continuity, while
+	# capacity is controlled once for the whole ComfyUI endpoint.
+	with filelock("joymedia-global-dispatch"):
+		return _submit_run_with_global_capacity(run_name)
+
+
+def _submit_run_with_global_capacity(run_name: str):
 	with filelock(f"joymedia-submit-run-{run_name}"):
 		run = frappe.get_doc("Generation Run", run_name)
 		if run.status == "Cancelled":
 			return _run_summary(run)
 		if run.status not in ACTIVE_RUN_STATUSES:
 			return _run_summary(run)
+		if _next_fair_run_name() != run.name:
+			return _run_summary(run)
 
 		run.status = "Running"
 		if not run.started_at:
 			run.started_at = now()
 		run.db_set(
-		{"status": run.status, "started_at": run.started_at},
-		update_modified=False,
-	)
+			{"status": run.status, "started_at": run.started_at},
+			update_modified=False,
+		)
 
 		for job_name in _submission_order(run.name):
 			job = frappe.get_doc("Generation Task", job_name)
@@ -565,7 +554,7 @@ def submit_run(run_name: str):
 			if not attach_chained_first_frame(job):
 				continue
 
-			if not _has_submission_capacity(run):
+			if not _has_submission_capacity(run) or not _has_global_submission_capacity():
 				break
 
 			if job.status == "Ready":
@@ -805,6 +794,18 @@ def refresh_active_runs():
 			frappe.logger("joymedia.generation_run").exception(
 				"Unable to refresh Generation Run %s", run_name
 			)
+	from .generation_runner import reconcile_attempt_submission
+	for attempt_name in frappe.get_all(
+		"Generation Attempt", filters={"status": "Submitting"}, pluck="name"
+	):
+		try:
+			reconcile_attempt_submission(attempt_name)
+			frappe.db.commit()
+		except Exception:
+			frappe.db.rollback()
+			frappe.logger("joymedia.generation_run").exception(
+				"Unable to reconcile Generation Attempt %s", attempt_name
+			)
 
 
 def sync_media_project_status_for_run(run_name: str):
@@ -968,7 +969,7 @@ def _update_job_summary(job):
 	if effective_attempt.status == "Running":
 		job.status = "Running"
 		job.started_at = job.started_at or now()
-	elif effective_attempt.status in {"Pending", "Queued"}:
+	elif effective_attempt.status in {"Pending", "Submitting", "Queued"}:
 		job.status = "Queued"
 	elif effective_attempt.status == "Completed":
 		job.status = "Completed"
@@ -1227,11 +1228,17 @@ def _get_pending_attempt_names_for_run(run_name):
 def _has_submittable_work(run_name):
 	if _get_pending_attempt_names_for_run(run_name):
 		return True
-	return bool(
-		frappe.db.exists(
-			"Generation Task",
-			{"generation_run": run_name, "status": "Ready"},
-		)
+	ready_or_queued = frappe.get_all(
+		"Generation Task",
+		filters={"generation_run": run_name, "status": ["in", ["Ready", "Queued"]]},
+		pluck="name",
+	)
+	# A task is switched to Queued immediately before its first attempt is
+	# created. If capacity is consumed in that small interval it must remain
+	# dispatchable; otherwise it is stranded until a human retries the run.
+	return any(
+		frappe.db.count("Generation Attempt", {"generation_task": task_name}) == 0
+		for task_name in ready_or_queued
 	)
 
 
@@ -1247,9 +1254,49 @@ def _has_submission_capacity(run):
 		return True
 	in_flight = frappe.db.count(
 		"Generation Attempt",
-		{"generation_task": ["in", job_names], "status": ["in", ["Queued", "Running"]]},
+		{"generation_task": ["in", job_names], "status": ["in", ["Submitting", "Queued", "Running"]]},
 	)
 	return in_flight < MAX_JOBS_IN_FLIGHT_PER_RUN
+
+
+def _global_submission_limit():
+	"""Configured endpoint capacity. Increase only when the worker can sustain it."""
+	try:
+		return max(1, int(frappe.conf.get("joymedia_max_active_attempts", 1)))
+	except (TypeError, ValueError):
+		return 1
+
+
+def _has_global_submission_capacity():
+	active = frappe.db.count(
+		"Generation Attempt", {"status": ["in", ["Submitting", "Queued", "Running"]]}
+	)
+	return active < _global_submission_limit()
+
+
+def _next_fair_run_name():
+	"""Choose the ready run that has waited longest since its last dispatch.
+
+	The policy is intentionally independent of workflow/model names. It alternates
+	between campaigns when capacity is one, and remains deterministic under the
+	global dispatch lock.
+	"""
+	candidates = []
+	for run in frappe.get_all(
+		"Generation Run", filters={"status": ["in", ACTIVE_RUN_STATUSES]},
+		fields=["name", "creation"], order_by="creation asc",
+	):
+		if not _has_submittable_work(run.name):
+			continue
+		last_dispatch = frappe.db.get_value(
+			"Generation Attempt",
+			{"generation_task": ["in", _get_run_job_names(run.name)]},
+			"queued_at", order_by="queued_at desc",
+		)
+		# A run that has never received capacity is always served first; creation
+		# is the deterministic tie-breaker.
+		candidates.append((last_dispatch or "0000-00-00 00:00:00", run.creation, run.name))
+	return min(candidates)[2] if candidates else None
 
 
 def _enqueue(method_name, run_name):

@@ -27,6 +27,10 @@ def get_project_asset_candidates(media_project, media_type=None):
 		filters["media_type"] = media_type
 	else:
 		filters["media_type"] = ["in", sorted(SUPPORTED_PROJECT_MEDIA_TYPES)]
+	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles():
+		# A library is owned by the project owner. This prevents a user from
+		# discovering or attaching another customer's assets through this API.
+		filters["owner"] = project.owner
 	assets = frappe.get_list(
 		"Media Asset", filters=filters,
 		fields=["name", "asset_name", "media_type", "asset_category", "media_project"],
@@ -56,6 +60,12 @@ def select_project_asset(media_project, asset_name, reference_role="Product", la
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_write_access()
 	asset = frappe.get_doc("Media Asset", asset_name)
+	if (
+		frappe.session.user != "Administrator"
+		and "System Manager" not in frappe.get_roles()
+		and asset.owner != project.owner
+	):
+		frappe.throw(_("That asset belongs to another workspace."), frappe.PermissionError)
 	if asset.status != "Active" or asset.asset_scope != "Library" or asset.media_type not in SUPPORTED_PROJECT_MEDIA_TYPES:
 		frappe.throw(_("That asset cannot be used as a project reference."))
 	version = frappe.db.get_value(

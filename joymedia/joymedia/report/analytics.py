@@ -86,9 +86,10 @@ def get_attempt_analytics(filters=None):
 			selected_outputs_by_shot,
 			source_attempt_by_output,
 		)
-		# Use real human QA verdict when available; fall back to implicit proxy.
+		# Selection is an editorial choice, not a quality verdict. Only a recorded
+		# QA review is evidence for approval metrics.
 		qa_verdict = review_verdict_by_attempt.get(attempt.name)
-		approved, reviewed = _review_outcome(qa_verdict, attempt.selected_output)
+		approved, reviewed = _review_outcome(qa_verdict)
 		attempt.review_outcome = {"approved": approved, "reviewed": reviewed}
 		if filters.workflow and attempt.workflow != filters.workflow:
 			continue
@@ -103,11 +104,11 @@ def _is_selected_output(attempt_name, shot_name, selected_outputs_by_shot, sourc
 	return bool(selected_output and source_attempt_by_output.get(selected_output) == attempt_name)
 
 
-def _review_outcome(qa_verdict, selected_output):
-	"""Use explicit QA when present; selection is the legacy completion proxy."""
+def _review_outcome(qa_verdict, selected_output=None):
+	"""Return only explicit human QA outcomes (selection is not approval)."""
 	if qa_verdict:
 		return qa_verdict == "Approved", True
-	return bool(selected_output), bool(selected_output)
+	return False, False
 
 
 def percentile_95(values):

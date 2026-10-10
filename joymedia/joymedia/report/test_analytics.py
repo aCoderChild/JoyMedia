@@ -32,5 +32,5 @@ class TestAttemptAnalytics(FrappeTestCase):
 	def test_review_outcome_prefers_human_verdict_over_selection_proxy(self):
 		self.assertEqual((False, True), _review_outcome("Rejected", True))
 		self.assertEqual((True, True), _review_outcome("Approved", False))
-		self.assertEqual((True, True), _review_outcome(None, True))
+		self.assertEqual((False, False), _review_outcome(None, True))
 		self.assertEqual((False, False), _review_outcome(None, False))

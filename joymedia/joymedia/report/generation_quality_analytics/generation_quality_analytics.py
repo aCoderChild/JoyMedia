@@ -40,15 +40,16 @@ def execute(filters=None):
 		queue_wait = queue_wait_seconds(attempt)
 		if queue_wait is not None:
 			bucket["queue_wait_seconds"].append(queue_wait)
-		if attempt.selected_output:
-			if attempt.runtime_seconds is not None:
-				bucket["approved_runtime_seconds"].append(float(attempt.runtime_seconds))
+		# Account for every measured render, including failed and rejected takes.
+		# This makes the cost of retries visible instead of reporting only a
+		# selected take's runtime as though it were the full GPU cost.
+		if attempt.runtime_seconds is not None:
+			bucket["gpu_runtime_seconds"] += float(attempt.runtime_seconds)
 
 	data = []
 	for workflow, bucket in sorted(buckets.items()):
 		runtime_values = bucket["runtime_seconds"]
 		queue_wait_values = bucket["queue_wait_seconds"]
-		approved_runtime_values = bucket["approved_runtime_seconds"]
 		data.append(
 			{
 				"workflow": workflow,
@@ -62,7 +63,7 @@ def execute(filters=None):
 				"avg_runtime_seconds": _average(runtime_values),
 				"p95_runtime_seconds": percentile_95(runtime_values),
 				"avg_queue_wait_seconds": _average(queue_wait_values),
-				"gpu_seconds_per_approved_shot": _average(approved_runtime_values),
+				"gpu_seconds_per_approved_shot": _per_approved_shot(bucket),
 			}
 		)
 	return COLUMNS, data
@@ -79,9 +80,14 @@ def _new_bucket():
 		"first_pass_approved": 0,
 		"runtime_seconds": [],
 		"queue_wait_seconds": [],
-		"approved_runtime_seconds": [],
+		"gpu_runtime_seconds": 0,
 	}
 
 
 def _average(values):
 	return round(sum(values) / len(values), 2) if values else None
+
+
+def _per_approved_shot(bucket):
+	"""Total recorded render time divided by explicitly approved attempts."""
+	return round(bucket["gpu_runtime_seconds"] / bucket["approved"], 2) if bucket["approved"] else None

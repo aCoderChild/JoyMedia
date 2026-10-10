@@ -105,3 +105,9 @@ jobs:
           bench --site test_site run-tests --app joymedia
         env:
           TYPE: server
+
+      - name: Build frontend
+        working-directory: /home/runner/frappe-bench/apps/joymedia/joymedia/frontend
+        run: |
+          yarn install --frozen-lockfile
+          yarn build

@@ -83,8 +83,9 @@ def _validate_image_upload(path: Path):
 		frappe.throw(_("Input image is invalid and cannot be sent to ComfyUI: {0}").format(path.name))
 
 
-def submit_workflow(workflow: dict, *, base_url: str | None = None) -> dict:
-	client_id = str(uuid.uuid4())
+def submit_workflow(workflow: dict, *, base_url: str | None = None, client_id: str | None = None) -> dict:
+	"""Submit once with a caller-owned identity for safe reconciliation."""
+	client_id = client_id or str(uuid.uuid4())
 	try:
 		response = requests.post(
 			f"{get_base_url(base_url)}/prompt",
@@ -99,6 +100,40 @@ def submit_workflow(workflow: dict, *, base_url: str | None = None) -> dict:
 	if not result.get("prompt_id"):
 		frappe.throw(_("ComfyUI did not return prompt_id."))
 	return result
+
+
+def find_prompt_by_client_id(client_id: str, *, base_url: str | None = None) -> str | None:
+	"""Find a prompt accepted by ComfyUI before Frappe stored its prompt id.
+
+	ComfyUI preserves client_id in queued prompt extra data and normally in
+	history.  This is deliberately generic protocol handling; it does not inspect
+	model nodes or filenames.
+	"""
+	queue = get_queue(base_url=base_url)
+	for items in queue.values():
+		for item in items or []:
+			if len(item) > 3 and isinstance(item[3], dict) and item[3].get("client_id") == client_id:
+				return item[1]
+	history = get_all_history(base_url=base_url)
+	for prompt_id, item in history.items():
+		prompt = item.get("prompt") if isinstance(item, dict) else None
+		extra = prompt[3] if isinstance(prompt, list) and len(prompt) > 3 else item.get("extra_data", {})
+		if isinstance(extra, dict) and extra.get("client_id") == client_id:
+			return prompt_id
+	return None
+
+
+def get_all_history(*, base_url: str | None = None) -> dict:
+	try:
+		response = requests.get(
+			f"{get_base_url(base_url)}/history",
+			auth=get_request_auth(),
+			timeout=DEFAULT_TIMEOUT,
+		)
+	except requests.ConnectionError as exc:
+		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
+	_raise_for_comfyui_error(response)
+	return response.json()
 
 
 def get_history(prompt_id: str, *, base_url: str | None = None) -> dict:

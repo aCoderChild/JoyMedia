@@ -44,6 +44,25 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(["keyframe", "video"], [stage[0].step_key for stage in stages])
 		self.assertIsNone(stages[0][1])
 
+	@patch("joymedia.services.generation_orchestrator.workflow_supports_continuation", return_value=True)
+	def test_long_shot_uses_workflow_declared_continuation_contract(self, supports_continuation):
+		workflow = frappe._dict(
+			frame_count=48,
+			execution_spec='{"continuation": {"overlap_frames": 2, "new_frames": 46}}',
+		)
+		continuation = frappe._dict(name="WF-CONT")
+
+		segments = generation_orchestrator._segment_plan(workflow, 92, continuation)
+
+		self.assertEqual([48, 46], [segment["segment_frame_count"] for segment in segments])
+		supports_continuation.assert_called_once_with(continuation)
+
+	@patch("joymedia.services.generation_orchestrator.workflow_supports_continuation", return_value=False)
+	def test_long_shot_without_continuation_contract_is_rejected(self, supports_continuation):
+		workflow = frappe._dict(frame_count=48, execution_spec="{}")
+		with self.assertRaises(frappe.ValidationError):
+			generation_orchestrator._segment_plan(workflow, 49, None)
+
 	@patch(
 		"joymedia.services.workflow_resolver.get_workflow_input_contract",
 		return_value=[{
@@ -233,16 +252,24 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(run.status, "Queued")
 		self.assertEqual(run.running_tasks, 0)
 
-	@patch("joymedia.services.generation_orchestrator.frappe.db.exists", return_value=True)
+	@patch("joymedia.services.generation_orchestrator.frappe.db.count", return_value=0)
+	@patch("joymedia.services.generation_orchestrator.frappe.get_all", return_value=["TASK-READY"])
 	@patch(
 		"joymedia.services.generation_orchestrator._get_pending_attempt_names_for_run",
 		return_value=[],
 	)
-	def test_ready_job_is_submittable_work(self, pending_attempts, exists):
+	def test_ready_job_is_submittable_work(self, pending_attempts, get_all, count):
 		self.assertTrue(generation_orchestrator._has_submittable_work("RUN-00001"))
-		exists.assert_called_once_with(
-			"Generation Task", {"generation_run": "RUN-00001", "status": "Ready"}
+		get_all.assert_called_once_with(
+			"Generation Task", filters={"generation_run": "RUN-00001", "status": ["in", ["Ready", "Queued"]]}, pluck="name"
 		)
+
+	@patch("joymedia.services.generation_orchestrator.frappe.db.count", return_value=0)
+	@patch("joymedia.services.generation_orchestrator.frappe.get_all", return_value=["TASK-QUEUED"])
+	@patch("joymedia.services.generation_orchestrator._get_pending_attempt_names_for_run", return_value=[])
+	def test_queued_task_without_an_attempt_remains_dispatchable(self, pending, get_all, count):
+		self.assertTrue(generation_orchestrator._has_submittable_work("RUN-00001"))
+		count.assert_called_once_with("Generation Attempt", {"generation_task": "TASK-QUEUED"})
 
 	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=False)
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
@@ -377,5 +404,5 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertFalse(generation_orchestrator._has_submission_capacity(run))
 		count.assert_called_once_with(
 			"Generation Attempt",
-			{"generation_task": ["in", ["T1", "T2"]], "status": ["in", ["Queued", "Running"]]},
+			{"generation_task": ["in", ["T1", "T2"]], "status": ["in", ["Submitting", "Queued", "Running"]]},
 		)

@@ -291,6 +291,15 @@ def setup_live_comfy_queue_project(
 	return {"project_name": project.name, "workflow": workflow, "pipeline": pipeline}
 
 
+def start_live_comfy_queue_project(project_name):
+	"""Start an isolated real-render fixture through the normal project service."""
+	frappe.set_user("Administrator")
+	project = frappe.get_doc("Media Project", project_name)
+	result = project.generate_video()
+	frappe.db.commit()
+	return {"project_name": project.name, **result}
+
+
 def create_project_revision_v2(project_name):
 	frappe.set_user("Administrator")
 	project = frappe.get_doc("Media Project", project_name)

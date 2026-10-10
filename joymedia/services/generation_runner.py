@@ -8,7 +8,13 @@ from frappe.utils import now
 from frappe.utils.synchronization import filelock
 
 from .artifact_service import get_attempt_artifact
-from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file, upload_local_file
+from .comfyui_client import (
+	find_prompt_by_client_id,
+	get_base_url,
+	submit_workflow,
+	upload_frappe_file,
+	upload_local_file,
+)
 from .prompt_compiler import compile_prompt
 from .reference_compositor import compose_reference_board
 from .result_ingestor import sync_attempt_result
@@ -143,6 +149,8 @@ def _autosave_prompt_snapshot(job):
 def submit_attempt(attempt_name: str):
 	with filelock(f"joymedia-submit-attempt-{attempt_name}"):
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
+		if attempt.status == "Submitting":
+			return reconcile_attempt_submission(attempt.name)
 		if attempt.status != "Pending":
 			frappe.throw(
 				_("Attempt {0} cannot be submitted from status {1}.").format(attempt.name, attempt.status)
@@ -156,18 +164,48 @@ def submit_attempt(attempt_name: str):
 		ensure_generation_inputs(job)
 		job.reload()
 		job.validate_for_execution()
+		# Persist the identity before the network call. A process crash after
+		# ComfyUI accepts the prompt can then be reconciled without resubmitting.
+		attempt.submission_token = attempt.submission_token or f"joymedia:{attempt.name}"
+		attempt.comfyui_endpoint_url = get_base_url()
+		attempt.submission_state = "Submitting"
+		attempt.status = "Submitting"
+		attempt.save(ignore_permissions=True)
+		frappe.db.commit()
+
 		staged_inputs = _stage_generation_inputs(job, attempt)
 		workflow = resolve_attempt(attempt.name, staged_inputs=staged_inputs)
 		attempt.reload()
-		endpoint_url = get_base_url()
-		result = submit_workflow(workflow, base_url=endpoint_url)
+		endpoint_url = attempt.comfyui_endpoint_url
+		result = submit_workflow(workflow, base_url=endpoint_url, client_id=attempt.submission_token)
 
-		attempt.comfyui_endpoint_url = endpoint_url
 		attempt.external_job_id = result["prompt_id"]
+		attempt.submission_state = "Submitted"
 		attempt.status = "Queued"
 		attempt.queued_at = now()
 		attempt.save(ignore_permissions=True)
 		return result
+
+
+def reconcile_attempt_submission(attempt_name: str):
+	"""Associate an interrupted submission with ComfyUI without duplicate work."""
+	with filelock(f"joymedia-submit-attempt-{attempt_name}"):
+		attempt = frappe.get_doc("Generation Attempt", attempt_name)
+		if attempt.status != "Submitting":
+			return {"status": attempt.status, "prompt_id": attempt.external_job_id}
+		if not attempt.submission_token or not attempt.comfyui_endpoint_url:
+			frappe.throw(_("Submitting Attempt {0} has no durable submission identity.").format(attempt.name))
+		prompt_id = find_prompt_by_client_id(
+			attempt.submission_token, base_url=attempt.comfyui_endpoint_url
+		)
+		if not prompt_id:
+			return {"reconciling": True, "submission_token": attempt.submission_token}
+		attempt.external_job_id = prompt_id
+		attempt.submission_state = "Submitted"
+		attempt.status = "Queued"
+		attempt.queued_at = attempt.queued_at or now()
+		attempt.save(ignore_permissions=True)
+		return {"prompt_id": prompt_id, "reconciled": True}
 
 
 def _stage_generation_inputs(job, attempt):

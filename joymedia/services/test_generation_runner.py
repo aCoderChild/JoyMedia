@@ -97,5 +97,26 @@ class TestGenerationRunner(FrappeTestCase):
 		self.assertEqual(result, {"prompt_id": "comfy-1"})
 		stage_generation_inputs.assert_called_once_with(job, attempt)
 		get_base_url.assert_called_once_with()
-		submit_workflow.assert_called_once_with({}, base_url="http://legacy:8188")
+		submit_workflow.assert_called_once_with(
+			{}, base_url="http://legacy:8188", client_id="joymedia:ATT-00001"
+		)
 		self.assertEqual(attempt.status, "Queued")
+		self.assertEqual(attempt.submission_state, "Submitted")
+
+	@patch("joymedia.services.generation_runner.find_prompt_by_client_id", return_value="comfy-recovered")
+	@patch("joymedia.services.generation_runner.frappe.get_doc")
+	def test_interrupted_submission_is_reconciled_without_resubmitting(self, get_doc, find_prompt):
+		from joymedia.services.generation_runner import reconcile_attempt_submission
+
+		attempt = frappe._dict(
+			name="ATT-00001", status="Submitting", submission_token="joymedia:ATT-00001",
+			comfyui_endpoint_url="http://worker:8188", queued_at=None, save=MagicMock(),
+		)
+		get_doc.return_value = attempt
+
+		result = reconcile_attempt_submission(attempt.name)
+
+		find_prompt.assert_called_once_with("joymedia:ATT-00001", base_url="http://worker:8188")
+		self.assertEqual({"prompt_id": "comfy-recovered", "reconciled": True}, result)
+		self.assertEqual("Queued", attempt.status)
+		self.assertEqual("Submitted", attempt.submission_state)

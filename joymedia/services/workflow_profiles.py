@@ -1,9 +1,7 @@
 import frappe
 from frappe import _
 
-from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
 from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow, get_pipeline_steps
-from joymedia.workflow_adapters import get_workflow_adapter
 
 
 def customer_workflow_key(reference_mode, quality_mode):
@@ -73,12 +71,8 @@ def planning_input_contract(workflow, pipeline_name=None):
 def allowed_workflows_for_shot(snapshot, shot):
 	"""Return the initial profile and its internal continuation profile for a Shot."""
 	initial = choose_shot_workflow(snapshot, shot)
-	continuation = None
-	if initial.continuation_workflow:
-		continuation = frappe.get_doc("Generation Workflow", initial.continuation_workflow)
-	else:
-		adapter = get_workflow_adapter(initial)
-		continuation_key = getattr(adapter, "continuation_workflow_key", None)
-		if continuation_key:
-			continuation = get_latest_valid_workflow(continuation_key)
+	continuation = (
+		frappe.get_doc("Generation Workflow", initial.continuation_workflow)
+		if initial.continuation_workflow else None
+	)
 	return tuple(workflow for workflow in (initial, continuation) if workflow)

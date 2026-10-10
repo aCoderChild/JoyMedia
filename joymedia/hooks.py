@@ -7,10 +7,6 @@ app_description = "AI Video Generation for product commercialization"
 app_email = "maianh.pham@reliable-ai.org"
 app_license = "mit"
 
-fixtures = [
-	{"dt": "Workspace", "filters": [["name", "=", "JoyMedia"]]},
-]
-
 website_route_rules = [
 	{"from_route": "/joymedia/<path:app_path>", "to_route": "_joymedia"},
 	{"from_route": "/joymedia", "to_route": "_joymedia"},
