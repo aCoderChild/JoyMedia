@@ -20,7 +20,7 @@ from .generation_runner import (
 )
 from .generation_segment_planner import plan_generation_segments
 from .generation_pipeline_service import get_pipeline_steps, pipeline_for_final_workflow
-from .prompt_compiler import compile_segment_prompt_from_snapshot
+from .prompt_compiler import compile_segment_prompt_from_snapshot, prompt_source_for_workflow
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_shot_segments
 from .workflow_profiles import choose_shot_workflow, input_role_for_workflow, references_for_workflow
@@ -67,6 +67,9 @@ def _segment_plan(workflow, frame_count, continuation_workflow=None):
 		max_segment_frames=workflow.frame_count,
 		continuation_overlap_frames=settings["overlap_frames"],
 		continuation_new_frames=settings["new_frames"],
+		continuation_max_segment_frames=int(
+			getattr(continuation_workflow, "frame_count", None) or workflow.frame_count
+		),
 	)
 	if len(segments) > 1 and not (continuation_workflow and workflow_supports_continuation(continuation_workflow)):
 		frappe.throw(_("This shot exceeds the workflow capacity, and its workflow has no continuation contract."))
@@ -264,6 +267,7 @@ def prepare_run(run_name: str):
 						cross_shot_continuity=cross_shot_continuity,
 					)
 					for pipeline_step, dependency_override, artifact_role_override, is_first_pipeline_step in pipeline_stages:
+						step_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
 						existing_job = frappe.db.get_value(
 							"Generation Task",
 							{
@@ -281,10 +285,15 @@ def prepare_run(run_name: str):
 							frappe._dict(
 								name=shot_name, shot_number=shot.get("shot_number"),
 								generation_prompt=shot.get("generation_prompt"),
+								image_prompt=shot.get("image_prompt"),
+								motion_plan_json=shot.get("motion_plan_json"),
+								start_state=shot.get("start_state"), end_state=shot.get("end_state"),
+								handoff_type=shot.get("handoff_type"),
 							),
 							frappe._dict(snapshot), segment["segment_index"], len(segments),
+							prompt_source=prompt_source_for_workflow(step_workflow, pipeline_step.prompt_source),
+							is_final=shot.get("shot_number") == len(snapshot.get("shots") or []),
 						)
-						step_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
 						job = frappe.get_doc({
 							"doctype": "Generation Task",
 							"generation_run": run.name,
@@ -299,6 +308,12 @@ def prepare_run(run_name: str):
 								segment["segment_frame_count"]
 								if step_workflow.output_media_type == "Video" else max(1, int(step_workflow.frame_count or 1))
 							),
+							"segment_start_frame": segment["segment_start_frame"],
+							"segment_effective_frames": (
+								segment["segment_effective_frames"]
+								if step_workflow.output_media_type == "Video" else max(1, int(step_workflow.frame_count or 1))
+							),
+							"overlap_frames": segment["overlap_frames"] if step_workflow.output_media_type == "Video" else 0,
 							"depends_on_task": dependency_override or previous_pipeline_job,
 							"dependency_artifact_role": (
 								artifact_role_override
@@ -338,16 +353,6 @@ def prepare_run(run_name: str):
 					and previous_shot_tail_job
 				):
 					dependency = previous_shot_tail_job
-				prompt_text = compile_segment_prompt_from_snapshot(
-					frappe._dict(
-						name=shot_name,
-						shot_number=shot.get("shot_number"),
-						generation_prompt=shot.get("generation_prompt"),
-					),
-					frappe._dict(snapshot),
-					segment["segment_index"],
-					len(segments),
-				)
 				segment_workflow = (
 					shot_continuation_workflow
 					if shot_continuation_workflow
@@ -356,6 +361,22 @@ def prepare_run(run_name: str):
 						or (dependency and dependency == previous_shot_tail_job)
 					)
 					else shot_workflow
+				)
+				prompt_text = compile_segment_prompt_from_snapshot(
+					frappe._dict(
+						name=shot_name,
+						shot_number=shot.get("shot_number"),
+						generation_prompt=shot.get("generation_prompt"),
+						image_prompt=shot.get("image_prompt"),
+						motion_plan_json=shot.get("motion_plan_json"),
+						start_state=shot.get("start_state"), end_state=shot.get("end_state"),
+						handoff_type=shot.get("handoff_type"),
+					),
+					frappe._dict(snapshot),
+					segment["segment_index"],
+					len(segments),
+					prompt_source=prompt_source_for_workflow(segment_workflow),
+					is_final=shot.get("shot_number") == len(snapshot.get("shots") or []),
 				)
 				job = frappe.get_doc(
 					{
@@ -368,6 +389,9 @@ def prepare_run(run_name: str):
 						"status": "Draft",
 						"segment_index": segment["segment_index"],
 						"segment_frame_count": segment["segment_frame_count"],
+						"segment_start_frame": segment["segment_start_frame"],
+						"segment_effective_frames": segment["segment_effective_frames"],
+						"overlap_frames": segment["overlap_frames"],
 						"depends_on_task": dependency,
 					}
 				).insert(ignore_permissions=True)

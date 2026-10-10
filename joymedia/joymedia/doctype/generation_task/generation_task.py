@@ -15,6 +15,9 @@ class GenerationTask(Document):
 		"prompt_hash",
 		"segment_index",
 		"segment_frame_count",
+		"segment_start_frame",
+		"segment_effective_frames",
+		"overlap_frames",
 		"pipeline_step_key",
 		"depends_on_task",
 		"dependency_artifact_role",
@@ -44,6 +47,14 @@ class GenerationTask(Document):
 					workflow.frame_count, workflow.name
 				)
 			)
+		if int(self.segment_start_frame or 0) < 0:
+			frappe.throw(_("Segment Start Frame cannot be negative."))
+		if int(self.segment_effective_frames or 0) < 1:
+			frappe.throw(_("Segment Effective Frames must be positive."))
+		if int(self.overlap_frames or 0) < 0 or int(self.overlap_frames or 0) >= int(self.segment_frame_count):
+			frappe.throw(_("Overlap Frames must be less than Segment Frame Count."))
+		if int(self.segment_effective_frames or 0) + int(self.overlap_frames or 0) != int(self.segment_frame_count):
+			frappe.throw(_("Segment Frame Count must equal effective frames plus overlap frames."))
 
 	def _validate_execution_references(self):
 		if not self.shot or not frappe.db.exists("Shot", self.shot):
@@ -89,16 +100,30 @@ class GenerationTask(Document):
 					frappe.throw(_("A chained Generation Task dependency must belong to the same Generation Run."))
 			if dependency.name == self.name:
 				frappe.throw(_("A Generation Task cannot depend on itself."))
-		duplicate = frappe.db.exists(
-			"Generation Task",
+		# Serialize the identity check with concurrent task preparation. The
+		# application check remains useful for readable validation errors, while
+		# this row lock closes the duplicate-creation race in MariaDB.
+		duplicate_rows = frappe.db.sql(
+			"""
+			select name
+			from `tabGeneration Task`
+			where generation_run = %(generation_run)s
+			  and shot = %(shot)s
+			  and segment_index = %(segment_index)s
+			  and ifnull(pipeline_step_key, '') = %(pipeline_step_key)s
+			  and name != %(name)s
+			for update
+			""",
 			{
 				"generation_run": self.generation_run,
 				"shot": self.shot,
 				"segment_index": self.segment_index,
 				"pipeline_step_key": self.pipeline_step_key or "",
-				"name": ["!=", self.name],
+				"name": self.name or "",
 			},
+			as_dict=True,
 		)
+		duplicate = duplicate_rows[0].name if duplicate_rows else None
 		if duplicate:
 			frappe.throw(_("Only one Generation Task may exist for each pipeline step of a shot segment in a run."))
 		return workflow

@@ -270,16 +270,34 @@ def setup_live_comfy_queue_project(
 	environment = add_reference("Environment", "Environment", environment_image_path)
 	project.save(ignore_permissions=True)
 
-	for number, prompt in (
-		(1, "A five-second polished product advertisement. Show the lipstick clearly in the hands of the referenced woman, inside the referenced luxury hotel environment. Natural movement, premium commercial lighting, product remains recognizable."),
-		(2, "A five-second premium lipstick commercial in a warm, elegant setting. Slow camera push toward the lipstick on a marble vanity, soft practical lighting, realistic reflections, no people or text."),
+	for number, prompt, image_prompt, video_prompt, motion_plan, end_state, handoff_type in (
+		(
+			1,
+			"A five-second polished product advertisement. Show the lipstick clearly in the hands of the referenced woman, inside the referenced luxury hotel environment.",
+			"Compose a premium lipstick product keyframe: the referenced woman holds the exact referenced lipstick in the referenced luxury hotel environment, one coherent photorealistic commercial scene.",
+			"Starting from the supplied keyframe, the woman naturally presents the exact lipstick to camera in one continuous premium commercial shot.",
+			{"actions": [{"start": 0, "end": 3.8, "action": "she raises and turns the lipstick toward the camera"}, {"start": 3.8, "end": 5, "action": "she holds a clear presentation pose while the camera settles"}]},
+			"The woman holds the lipstick facing the camera in the same environment.", "pose_transition",
+		),
+		(
+			2,
+			"A five-second premium lipstick commercial in a warm, elegant setting.",
+			"Compose a clean premium lipstick hero keyframe on a marble vanity in a warm elegant setting, realistic reflections, no people or text.",
+			"Starting from the supplied keyframe, make one continuous slow camera push toward the lipstick hero product, preserving its exact geometry and color.",
+			{"actions": [{"start": 0, "end": 4, "action": "the camera slowly pushes toward the lipstick"}, {"start": 4, "end": 5, "action": "the product remains steady in a refined final composition"}]},
+			"The lipstick is centered in a stable hero composition.", "ending",
+		),
 	):
 		shot = frappe.get_doc({
 			"doctype": "Shot",
 			"media_project": project.name,
 			"shot_number": number,
 			"shot_name": "Reference composition" if number == 1 else "No-reference generation",
-			"generation_prompt": prompt,
+			"image_prompt": image_prompt,
+			"generation_prompt": video_prompt,
+			"motion_plan_json": frappe.as_json(motion_plan),
+			"end_state": end_state,
+			"handoff_type": handoff_type,
 			"duration_seconds": 5,
 		}).insert(ignore_permissions=True)
 		if number == 1:

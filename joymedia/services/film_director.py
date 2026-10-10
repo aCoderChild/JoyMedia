@@ -36,8 +36,9 @@ TAKE_CONSTRAINTS = (
 )
 
 MIN_TAKE_SECONDS = 5
-# Default single-render duration used by the storyboard planner.
-MIN_RENDER_SECONDS = 124 / 24
+# Default single-render duration used by the storyboard planner. Workflow capacity
+# is enforced later by the generic segment planner, not encoded in creative rules.
+MIN_RENDER_SECONDS = 5
 # Each storyboard scene is planned as one render unless its workflow declares continuation.
 MAX_TAKE_SECONDS = MIN_RENDER_SECONDS
 MAX_TAKES = 12
@@ -52,9 +53,9 @@ STRUCTURE
   only the main place may appear twice (to open and to close the film).
 - Each take is ONE unbroken camera shot in ONE place: no cuts, no montage, no
   second location inside the take.
-- TIMING: use the opening frames (0-5%) to establish composition, carry out the
-  main action clearly from about frame 5 through frame 110, then let the final
-  frames settle into a stable composition. Do not save the action for the end.
+- TIMING: use the opening moments (about 0-5%) to establish composition, carry out
+  the main action in the first 85-90% of the take, then leave a natural handoff.
+  Do not save the action for the end.
 - The character appears in EVERY take except an optional final establishing take.
 - Follow the STORY ARC below: each take plays its beat, in order. Order the places so
   the journey makes sense (for example outside to inside, public to private) and put
@@ -124,9 +125,9 @@ THE PRODUCT
 STRUCTURE
 - Plan exactly {take_count} long continuous takes of {min_take}-{max_take} seconds each.
 - Each take is ONE unbroken camera shot in ONE setting: no cuts, no montage.
-- TIMING: use the opening frames (0-5%) to establish composition, carry out the
-  main action clearly from about frame 5 through frame 110, then let the final
-  frames settle into a stable composition. Do not save the action for the end.
+- TIMING: use the opening moments (about 0-5%) to establish composition, carry out
+  the main action in the first 85-90% of the take, then leave a natural handoff.
+  Do not save the action for the end.
 - The character appears in every take except product hero takes. Include at least one
   hero take of the product alone (close-up, slow orbit or push-in on its details).
 - Follow the STORY ARC below: each take plays its beat, in order. The CLIMAX shows the

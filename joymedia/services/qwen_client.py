@@ -409,7 +409,6 @@ def generate_video_plan(
 	JoyMedia after planning so Asset/Asset Version stays separate from Generation Input.
 	"""
 	from joymedia.services.generation_settings import normalize_generation_mode
-	from joymedia.services.prompt_compiler import segment_action_timing_instruction
 
 	generation_mode = normalize_generation_mode(generation_mode)
 	if generation_mode not in ("Multi-shot", "Continuous"):
@@ -423,9 +422,11 @@ def generate_video_plan(
 	instruction = """
 You are the creative planner for JoyMedia product videos.
 Understand the complete video idea first, then divide it into a coherent sequence
-of creative shots. For every shot, return exactly one detailed generation_prompt.
-Put subject, action, camera, environment, lighting, continuity and relevant sound
-intent inside that one prompt rather than separate creative fields.
+of creative shots. For every shot, return a scene-composition image_prompt,
+an action-focused generation_prompt, and a seconds-based motion_plan. The
+image prompt describes the intended starting frame only. The video prompt describes
+one continuous motion from that starting frame. Keep generation_prompt as a concise
+creative summary for backward-compatible clients.
 
 Project reference media are named ingredients/context. Use their reference_key when
 a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
@@ -456,13 +457,14 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 			"\n\nGENERATION MODE: CONTINUOUS\n"
 			"The first shot starts from a selected image. Later shots continue from the previous generated last frame. "
 			"Plan motion that can continue naturally while preserving product identity and scene state.\n"
-			f"IMPORTANT: {segment_action_timing_instruction()}"
+			"Plan action in seconds. Major action should finish in the first 85-90% of the shot; "
+			"use the ending for a natural motion, pose, or camera handoff."
 		)
 	else:
 		instruction += (
 			"\n\nGENERATION MODE: MULTI-SHOT\n"
 			"Shots are generated from explicitly resolved keyframes/references. Keep boundaries coherent.\n"
-			f"{segment_action_timing_instruction()}"
+			"Plan action in seconds and make each boundary a deliberate, compatible handoff."
 		)
 	if continuation_context:
 		previous_prompt = str(continuation_context.get("previous_prompt") or "").strip()
@@ -493,7 +495,10 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		example_references = f'{{"reference_key":"hero_product","usage_role":"{example_role}"}}'
 	response_shape = (
 		'{"film_title":"...","shots":[{"shot_number":1,"shot_name":"...",'
-		'"duration_seconds":5,"generation_prompt":"...","caption":"...",'
+		'"duration_seconds":5,"generation_prompt":"...","image_prompt":"...",'
+		'"start_state":"...","end_state":"...",'
+		'"handoff_type":"motion_continuation",'
+		'"motion_plan":{"actions":[{"start":0,"end":4,"action":"..."},{"start":4,"end":5,"action":"..."}]},"caption":"...",'
 		f'"references":[{example_references}]}}]}}'
 	)
 	take_count = story_take_count(total_video_duration, story_reference_contexts) if story_film else None
@@ -513,6 +518,9 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		"IMPORTANT OUTPUT RULES:\n"
 		"- Every shot MUST contain a positive integer shot_number.\n"
 		"- Every shot MUST contain one non-empty generation_prompt.\n"
+		"- Every shot MUST contain non-empty image_prompt and generation_prompt.\n"
+		"- motion_plan.actions must be chronological approximate intervals in seconds within duration_seconds.\n"
+		"- Use motion_continuation, pose_transition, or camera_transition for a non-final handoff; use ending for the final shot.\n"
 		"- Every shot MUST contain a positive duration_seconds value.\n"
 		"- Never return null or empty generation_prompt values.\n"
 		"- References must use only supplied reference_key values and semantic usage_role values.\n"
@@ -741,6 +749,7 @@ def _normalize_qwen_plan(
 			continue
 		generation_prompt = _first_non_empty(
 			shot.get("generation_prompt"),
+			shot.get("video_generation_prompt"),
 			shot.get("prompt"),
 			shot.get("video_prompt"),
 			shot.get("description"),
@@ -749,6 +758,16 @@ def _normalize_qwen_plan(
 			"shot_number": shot.get("shot_number") or index,
 			"shot_name": _first_non_empty(shot.get("shot_name"), f"Shot {index}"),
 			"generation_prompt": generation_prompt,
+			"image_prompt": _first_non_empty(
+				shot.get("image_prompt"), shot.get("image_generation_prompt"), generation_prompt
+			),
+			"start_state": str(shot.get("start_state") or "").strip(),
+			"end_state": str(shot.get("end_state") or "").strip(),
+			"handoff_type": str(shot.get("handoff_type") or "").strip(),
+			"motion_plan": _normalized_motion_plan(
+				shot.get("motion_plan") or shot.get("temporal_plan"),
+				shot.get("duration_seconds"), generation_prompt,
+			),
 			"caption": str(shot.get("caption") or "").strip()[:120],
 			"duration_seconds": shot.get("duration_seconds"),
 			"references": shot.get("references") if isinstance(shot.get("references"), list) else [],
@@ -843,6 +862,46 @@ def _first_non_empty(*values):
 	return ""
 
 
+def _normalized_motion_plan(value, duration, fallback_action):
+	"""Keep valid director timing or create one honest legacy interval.
+
+	The fallback represents the existing prompt as a single action rather than
+	inventing a schedule. New Qwen plans are expected to provide richer actions.
+	"""
+	actions = value.get("actions") if isinstance(value, dict) else value
+	if not isinstance(actions, list):
+		actions = []
+	try:
+		limit = float(duration)
+	except (TypeError, ValueError):
+		limit = 0
+	normalized = []
+	for action in actions:
+		if not isinstance(action, dict):
+			continue
+		try:
+			start, end = float(action["start"]), float(action["end"])
+		except (KeyError, TypeError, ValueError):
+			continue
+		text = str(action.get("action") or "").strip()
+		if text:
+			normalized.append({"start": start, "end": end, "action": text})
+	if normalized:
+		return {"actions": normalized}
+	return {"actions": [{"start": 0, "end": limit, "action": fallback_action}]} if limit > 0 else {"actions": []}
+
+
+def _rescale_motion_plan(shot, previous_duration):
+	"""Keep persisted seconds intervals aligned when plan durations are normalized."""
+	new_duration = float(shot["duration_seconds"])
+	if not previous_duration or previous_duration <= 0 or new_duration == previous_duration:
+		return
+	factor = new_duration / previous_duration
+	for action in (shot.get("motion_plan") or {}).get("actions") or []:
+		action["start"] *= factor
+		action["end"] *= factor
+
+
 def _validate_video_plan(
 	result,
 	reference_image_count=0,
@@ -881,9 +940,26 @@ def _validate_video_plan(
 			"shot_number": shot["shot_number"],
 			"shot_name": str(shot.get("shot_name") or f"Shot {shot['shot_number']}").strip(),
 			"generation_prompt": prompt,
+			"image_prompt": str(shot.get("image_prompt") or shot.get("image_generation_prompt") or prompt).strip(),
+			"start_state": str(shot.get("start_state") or "").strip(),
+			"end_state": str(shot.get("end_state") or "").strip(),
+			"handoff_type": str(shot.get("handoff_type") or "").strip(),
+			"motion_plan": _normalized_motion_plan(
+				shot.get("motion_plan") or shot.get("temporal_plan"), duration_seconds, prompt
+			),
 			"duration_seconds": duration_seconds,
 			"references": shot.get("references") if isinstance(shot.get("references"), list) else [],
 		}
+		actions = normalized["motion_plan"]["actions"]
+		previous_end = 0.0
+		for action in actions:
+			if action["start"] < previous_end or action["start"] < 0 or action["end"] <= action["start"] or action["end"] > duration_seconds + 0.001:
+				frappe.throw(_("Shot {0} has an invalid seconds-based temporal plan.").format(shot["shot_number"]))
+			previous_end = action["end"]
+		if normalized["handoff_type"] and normalized["handoff_type"] not in {
+			"motion_continuation", "pose_transition", "camera_transition", "ending"
+		}:
+			frappe.throw(_("Shot {0} has an unsupported handoff type.").format(shot["shot_number"]))
 		contract_by_role = {
 			item["role"]: item for item in (workflow_input_contract or []) if item.get("role")
 		}
@@ -949,21 +1025,27 @@ def _validate_video_plan(
 		):
 			equal_duration = target_duration / len(normalized_shots)
 			for shot in normalized_shots:
+				previous_duration = shot["duration_seconds"]
 				shot["duration_seconds"] = equal_duration
+				_rescale_motion_plan(shot, previous_duration)
 			return {"shots": normalized_shots}
 		plan_duration = sum(shot["duration_seconds"] for shot in normalized_shots)
 		if not math.isfinite(target_duration) or target_duration <= 0 or plan_duration <= 0:
 			frappe.throw(_("Video plan duration must be a positive finite number."))
 		scale = target_duration / plan_duration
 		for shot in normalized_shots[:-1]:
+			previous_duration = shot["duration_seconds"]
 			shot["duration_seconds"] *= scale
+			_rescale_motion_plan(shot, previous_duration)
 		if normalized_shots:
 			shot_duration = target_duration - sum(
 				shot["duration_seconds"] for shot in normalized_shots[:-1]
 			)
 			if shot_duration <= 0 or not math.isfinite(shot_duration):
 				frappe.throw(_("Video plan durations must sum to the requested duration."))
+			previous_duration = normalized_shots[-1]["duration_seconds"]
 			normalized_shots[-1]["duration_seconds"] = shot_duration
+			_rescale_motion_plan(normalized_shots[-1], previous_duration)
 
 	if generation_mode == "Multi-shot" and reference_image_count and all(
 		"first_frame_reference_image_index" in shot and "last_frame_reference_image_index" in shot

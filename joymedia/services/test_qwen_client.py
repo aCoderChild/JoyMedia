@@ -115,6 +115,30 @@ class TestQwenClient(FrappeTestCase):
 
 		self.assertEqual([22.5, 22.5], [shot["duration_seconds"] for shot in plan["shots"]])
 
+	def test_product_marketing_duration_matrix_stays_multi_shot(self):
+		for total_seconds, shot_count in ((10, 2), (15, 3), (20, 4)):
+			result = {
+				"shots": [
+					{
+						"shot_number": index,
+						"generation_prompt": f"Product action {index}.",
+						"image_prompt": f"Product composition {index}.",
+						"duration_seconds": total_seconds / shot_count,
+					}
+					for index in range(1, shot_count + 1)
+				]
+			}
+			_validate_video_plan(
+				result,
+				shot_count=shot_count,
+				generation_mode="Multi-shot",
+				total_video_duration=total_seconds,
+			)
+			self.assertGreater(len(result["shots"]), 1)
+			self.assertAlmostEqual(
+				total_seconds, sum(shot["duration_seconds"] for shot in result["shots"]), places=6
+			)
+
 	def test_text_model_prompt_only_output_does_not_invent_reference_assignments(self):
 		plan = _normalize_qwen_plan(
 			{

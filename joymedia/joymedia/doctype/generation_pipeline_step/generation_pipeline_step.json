@@ -1,9 +1,10 @@
 {
  "doctype":"DocType", "istable":1, "engine":"InnoDB", "module":"JoyMedia", "name":"Generation Pipeline Step",
- "field_order":["step_key","workflow","depends_on_step","consumes_artifact_role","produces_artifact_role"],
+ "field_order":["step_key","workflow","prompt_source","depends_on_step","consumes_artifact_role","produces_artifact_role"],
  "fields":[
   {"fieldname":"step_key","fieldtype":"Data","label":"Step Key","reqd":1,"in_list_view":1},
   {"fieldname":"workflow","fieldtype":"Link","options":"Generation Workflow","label":"Workflow Version","reqd":1,"in_list_view":1},
+  {"fieldname":"prompt_source","fieldtype":"Select","label":"Prompt Source","description":"Semantic prompt intent for this stage. Automatic derives from the workflow output type.","options":"Automatic\nImage\nMotion\nCreative","default":"Automatic"},
   {"fieldname":"depends_on_step","fieldtype":"Data","label":"Depends On Step"},
   {"fieldname":"consumes_artifact_role","fieldtype":"Select","label":"Consumes Artifact Role","options":"\nPrimary Image\nPrimary Video\nPrimary Audio\nLast Frame\nContinuation State\nPreview\nIntermediate"},
   {"fieldname":"produces_artifact_role","fieldtype":"Select","label":"Produces Artifact Role","options":"Primary Image\nPrimary Video\nPrimary Audio\nLast Frame\nContinuation State\nPreview\nIntermediate","reqd":1}

@@ -24,7 +24,11 @@ class Shot(Document):
 			"Generation Run", {"media_project": self.media_project, "status": ["in", ["Queued", "Running"]]}
 		):
 			return
-		fields = ("shot_number", "duration_seconds", "planned_frame_count", "generation_prompt", "generation_inputs")
+		fields = (
+			"shot_number", "duration_seconds", "planned_frame_count", "generation_prompt",
+			"image_prompt", "motion_plan_json",
+			"start_state", "end_state", "handoff_type", "generation_inputs",
+		)
 		if any(self.has_value_changed(fieldname) for fieldname in fields):
 			frappe.throw("Generation-affecting Shot fields are read-only while a Generation Run is active.")
 
@@ -63,22 +67,14 @@ class Shot(Document):
 			)
 
 	def validate_required_workflow_input_mappings(self):
-		workflow_versions = {
-			job.workflow
-			for job in frappe.get_all(
-				"Generation Task",
-				filters={"shot": self.name},
-				fields=["workflow"],
-			)
-			if job.workflow
-		}
-		if not workflow_versions:
+		workflow = frappe.db.get_value("Media Project", self.media_project, "workflow")
+		if not workflow:
 			return
 
 		required_bindings = frappe.get_all(
 			"Workflow Binding",
 			filters={
-				"parent": ["in", workflow_versions],
+				"parent": workflow,
 				"parenttype": "Generation Workflow",
 				"parentfield": "bindings",
 				"required": 1,
@@ -93,12 +89,17 @@ class Shot(Document):
 				input_role = frappe.scrub(mapping.reference_role)
 				mapping_counts[input_role] = mapping_counts.get(input_role, 0) + 1
 
-		for workflow, input_role, value_type in {
-			(binding.parent, binding.required_input_role, binding.value_type)
+		for input_role, value_type in {
+			(binding.required_input_role, binding.value_type)
 			for binding in required_bindings
 			if binding.required_input_role
 		}:
 			input_role = frappe.scrub(input_role)
+			# first_frame/last_frame are execution lineage, not creative Shot
+			# inputs. They are frozen on Generation Task/Attempt when the run is
+			# prepared and may be resolved from an upstream completed artifact.
+			if input_role in {"first_frame", "last_frame"}:
+				continue
 			mapping_count = mapping_counts.get(input_role, 0)
 			if (value_type == "File Paths" and mapping_count < 1) or (
 				value_type != "File Paths" and mapping_count != 1

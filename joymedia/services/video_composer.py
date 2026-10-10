@@ -20,7 +20,10 @@ def compose_shot_segments(generation_run_name, shot_name):
 				"generation_run": generation_run_name,
 				"shot": shot.name,
 			},
-			fields=["name", "workflow", "segment_index", "segment_frame_count", "status"],
+			fields=[
+				"name", "workflow", "segment_index", "segment_frame_count",
+				"segment_effective_frames", "overlap_frames", "status",
+			],
 			order_by="segment_index asc",
 		)
 		if not all_jobs or any(job.status != "Completed" for job in all_jobs):
@@ -107,7 +110,8 @@ def compose_shot_segments(generation_run_name, shot_name):
 				expected_frames = 0
 				for index, (job, artifact) in enumerate(segments):
 					generated_frames = int(job.segment_frame_count or 0)
-					effective_frames = generated_frames if index == 0 else generated_frames - 1
+					overlap_frames = int(job.overlap_frames or 0) if index > 0 else 0
+					effective_frames = int(job.segment_effective_frames or (generated_frames - overlap_frames))
 					if effective_frames <= 0:
 						raise ValueError(f"Generation Task {job.name} has no effective segment frames")
 					normalized_path = temporary_path / f"{index + 1:04d}-{job.name}.mp4"
@@ -116,7 +120,7 @@ def compose_shot_segments(generation_run_name, shot_name):
 						normalized_path,
 						profile,
 						generated_frames,
-						drop_first=index > 0,
+						drop_first=overlap_frames,
 					)
 					_validate_normalized_video(normalized_path, profile, expected_frames=effective_frames)
 					normalized_paths.append(normalized_path)
@@ -455,14 +459,17 @@ def _normalize_segment(
 	profile,
 	generated_frames,
 	*,
-	drop_first,
+	drop_first=0,
 	preserve_audio=False,
 ):
-	"""Normalize a generated segment and remove its continuation overlap frame."""
-	effective_frames = generated_frames - 1 if drop_first else generated_frames
+	"""Normalize a generated segment and remove its configured overlap frames."""
+	drop_first = int(drop_first or 0)
+	if drop_first < 0 or drop_first >= generated_frames:
+		raise ValueError("drop_first must be smaller than generated_frames")
+	effective_frames = generated_frames - drop_first
 	video_filter = f"fps={profile['fps']:g},"
 	if drop_first:
-		video_filter += "select='not(eq(n,0))',"
+		video_filter += f"select='gte(n,{drop_first})',"
 	video_filter += (
 		f"tpad=stop_mode=clone:stop_duration={effective_frames / profile['fps']:.6f},"
 		f"trim=end_frame={effective_frames},setpts=PTS-STARTPTS,"

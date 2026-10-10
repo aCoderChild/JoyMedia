@@ -221,7 +221,11 @@ def build_project_snapshot(project):
 	snapshot["shots"] = []
 	for shot in _active_project_shots(
 		project.name,
-		fields=["name", "shot_number", "duration_seconds", "planned_frame_count", "generation_prompt"],
+		fields=[
+			"name", "shot_number", "duration_seconds", "planned_frame_count", "generation_prompt",
+			"image_prompt", "motion_plan_json",
+			"start_state", "end_state", "handoff_type",
+		],
 	):
 		shot_doc = frappe.get_doc("Shot", shot.name)
 		snapshot["shots"].append(
@@ -230,7 +234,12 @@ def build_project_snapshot(project):
 				"shot_number": shot.shot_number,
 				"duration_seconds": float(shot.duration_seconds or 0),
 				"planned_frame_count": int(shot.planned_frame_count or 0),
+				"image_prompt": shot.image_prompt or "",
 				"generation_prompt": shot.generation_prompt or "",
+				"motion_plan_json": shot.motion_plan_json or "",
+				"start_state": shot.start_state or "",
+				"end_state": shot.end_state or "",
+				"handoff_type": shot.handoff_type or "",
 				"references": [
 					{
 						"reference_role": row.reference_role or "",

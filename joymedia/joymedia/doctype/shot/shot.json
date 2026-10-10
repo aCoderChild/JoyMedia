@@ -14,6 +14,11 @@
   "planned_frame_count",
   "duration_seconds",
   "generation_prompt",
+  "image_prompt",
+  "motion_plan_json",
+  "start_state",
+  "end_state",
+  "handoff_type",
   "caption",
   "generation_inputs",
   "selected_output_section",
@@ -81,6 +86,40 @@
    "ignore_xss_filter": 1,
    "label": "Shot Prompt",
    "reqd": 1
+  },
+  {
+   "description": "Prompt for a workflow stage that creates or composes a starting image. Falls back to Shot Prompt for legacy storyboards.",
+   "fieldname": "image_prompt",
+   "fieldtype": "Long Text",
+   "ignore_xss_filter": 1,
+   "label": "Image Generation Prompt"
+  },
+  {
+   "description": "Validated, model-independent action schedule in seconds.",
+   "fieldname": "motion_plan_json",
+   "fieldtype": "Code",
+   "hidden": 1,
+   "label": "Motion Plan",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "start_state",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Starting State"
+  },
+  {
+   "fieldname": "end_state",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Ending State"
+  },
+  {
+   "fieldname": "handoff_type",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Handoff Type",
+   "options": "\nmotion_continuation\npose_transition\ncamera_transition\nending"
   },
   {
    "description": "Short on-screen text shown during this scene, in the language of the video idea.",

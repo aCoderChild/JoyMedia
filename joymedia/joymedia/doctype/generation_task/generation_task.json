@@ -24,6 +24,9 @@
   "progress",
   "segment_index",
   "segment_frame_count",
+  "segment_start_frame",
+  "segment_effective_frames",
+  "overlap_frames",
   "result_summary_section",
   "failure_class",
   "error_summary"
@@ -48,6 +51,9 @@
   {"default":"0","fieldname":"progress","fieldtype":"Percent","in_list_view":1,"label":"Progress","read_only":1},
   {"default":"1","description":"Technical segment index when a creative shot exceeds the workflow frame limit.","fieldname":"segment_index","fieldtype":"Int","hidden":1,"label":"Segment Index","read_only":1},
   {"description":"Technical frame count for this execution segment.","fieldname":"segment_frame_count","fieldtype":"Int","hidden":1,"label":"Segment Frame Count","read_only":1},
+  {"description":"Creative Shot frame at which this segment begins.","fieldname":"segment_start_frame","fieldtype":"Int","hidden":1,"label":"Segment Start Frame","read_only":1},
+  {"description":"Frames newly contributed by this segment after overlap trimming.","fieldname":"segment_effective_frames","fieldtype":"Int","hidden":1,"label":"Segment Effective Frames","read_only":1},
+  {"description":"Frames shared with the preceding segment.","fieldname":"overlap_frames","fieldtype":"Int","hidden":1,"label":"Overlap Frames","read_only":1},
   {"fieldname":"result_summary_section","fieldtype":"Section Break","label":"Result"},
   {"fieldname":"failure_class","fieldtype":"Select","hidden":1,"label":"Failure Class","options":"Infrastructure\nWorkflow\nInput\nGeneration\nCancelled\nUnknown","read_only":1},
   {"description":"High-level task failure summary aggregated from execution attempts.","fieldname":"error_summary","fieldtype":"Long Text","label":"Error Summary","read_only":1}
