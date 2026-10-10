@@ -363,7 +363,7 @@ const categoryOptions = computed(() => [
 ]);
 
 const assetsResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_library_assets",
+  url: "joymedia.api.projects.get_library_assets",
   params: {
     asset_type: activeType.value,
   },

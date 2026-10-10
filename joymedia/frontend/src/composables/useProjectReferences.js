@@ -21,7 +21,7 @@ export function useProjectReferences(projectName, onRefresh) {
     candidatesLoading.value = true;
     try {
       const candidates = await call(
-        "joymedia.joymedia.doctype.media_project.media_project.get_project_reference_candidates",
+        "joymedia.api.assets.get_project_reference_candidates",
         { media_project: project() }
       );
       mediaCandidates.value = candidates || [];
@@ -36,6 +36,7 @@ export function useProjectReferences(projectName, onRefresh) {
   }
 
   async function openPicker() {
+    uploadError.value = "";
     showMediaPicker.value = true;
     await fetchCandidates();
   }
@@ -44,7 +45,7 @@ export function useProjectReferences(projectName, onRefresh) {
     if (!asset?.name || savingReference.value) return;
     savingReference.value = true;
     try {
-      await call("joymedia.joymedia.doctype.media_project.media_project.select_project_reference", {
+      await call("joymedia.api.assets.select_project_reference", {
         media_project: project(),
         asset_name: asset.name,
         reference_role: role || "General",
@@ -62,7 +63,7 @@ export function useProjectReferences(projectName, onRefresh) {
   async function updateReferenceRole(asset, newRole) {
     if (!asset?.name) return;
     try {
-      await call("joymedia.joymedia.doctype.media_project.media_project.select_project_reference", {
+      await call("joymedia.api.assets.select_project_reference", {
         media_project: project(),
         asset_name: asset.name || asset.media_asset,
         reference_role: newRole,
@@ -78,7 +79,7 @@ export function useProjectReferences(projectName, onRefresh) {
     const version = asset?.asset_version;
     if (!version) return;
     try {
-      await call("joymedia.joymedia.doctype.media_project.media_project.remove_project_reference", {
+      await call("joymedia.api.assets.remove_project_reference", {
         media_project: project(),
         asset_version: version,
       });
@@ -116,7 +117,7 @@ export function useProjectReferences(projectName, onRefresh) {
   async function setShotKeyframe({ shot, frameRole, asset }) {
     if (!shot?.name || !asset?.asset_version) return;
     try {
-      await call("joymedia.joymedia.doctype.media_project.media_project.set_project_shot_keyframe", {
+      await call("joymedia.api.storyboard.set_project_shot_keyframe", {
         project_name: project(),
         shot_name: shot.name,
         frame_role: frameRole === "start" || frameRole === "first_frame" ? "first_frame" : "last_frame",

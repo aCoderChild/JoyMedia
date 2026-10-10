@@ -1,335 +1,104 @@
+import json
 from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from joymedia.services import workflow_profiles
 from joymedia.services.workflow_resolver import (
 	_SKIP_BINDING,
-	_resolve_semantic_binding,
-	_resolve_generation_input,
+	_resolve_declared_binding,
+	_resolve_input_value,
+	_role_slot_index,
+	build_execution_workflow,
 	get_workflow_input_contract,
 	validate_workflow_bindings,
 	validate_workflow_for_execution,
 )
-from joymedia.workflow_adapters.minimax_h3 import MiniMaxH3WorkflowAdapter
-from joymedia.workflow_adapters.minimax_h3_profiles import (
-	MiniMaxH3ImageToVideoAdapter,
-	MiniMaxH3ReferenceToVideoAdapter,
-)
-from joymedia.workflow_adapters.minimax_h3_sato import (
-	MiniMaxH3SatoContinuationAdapter,
-	MiniMaxH3SatoGenerationAdapter,
-)
 
 
 class TestWorkflowResolver(FrappeTestCase):
-	def test_human_readable_required_role_resolves_canonical_staged_input(self):
-		job = frappe._dict(name="JOB-00001")
+	def test_selected_pipeline_supplies_the_keyframe_role_contract(self):
+		final_workflow = frappe._dict(name="WF-VIDEO", bindings=[frappe._dict(
+			binding_key="first_frame", required_input_role="first_frame", value_type="File Path",
+			accepted_media_type="Image", allow_multiple=0, required=1,
+		)])
+		keyframe_workflow = frappe._dict(name="WF-KEYFRAME", bindings=[
+			frappe._dict(binding_key=role, required_input_role=role, value_type="File Paths",
+				accepted_media_type="Image", allow_multiple=1, required=0)
+			for role in ("person", "product", "environment")
+		])
+		pipeline = frappe._dict(name="PIPE-TEST", steps=[
+			frappe._dict(workflow=keyframe_workflow.name), frappe._dict(workflow=final_workflow.name),
+		])
+		documents = {
+			("Generation Pipeline", "PIPE-TEST"): pipeline,
+			("Generation Workflow", keyframe_workflow.name): keyframe_workflow,
+		}
+		with patch.object(frappe, "get_doc", side_effect=lambda doctype, name: documents[(doctype, name)]):
+			contract = workflow_profiles.planning_input_contract(final_workflow, "PIPE-TEST")
+		self.assertEqual(["person", "product", "environment"], [row["role"] for row in contract[:3]])
 
-		value = _resolve_generation_input(
-			job,
-			"FIRST FRAME",
-			{"first_frame": "first.png"},
-		)
-
-		self.assertEqual("first.png", value)
-
-	def test_ordered_r2v_reference_bindings_use_product_reference_order(self):
-		workflow = frappe._dict(
-			bindings=[
-				frappe._dict(
-					binding_key="reference_image_1",
-					required_input_role="product_reference",
-					value_type="File Path",
-					required=1,
-				),
-				frappe._dict(
-					binding_key="reference_image_2",
-					required_input_role="product_reference",
-					value_type="File Path",
-					required=0,
-				),
-			]
-		)
-
+	def test_ordered_bindings_use_declared_role_and_order(self):
+		bindings = [
+			frappe._dict(binding_key="product_primary", required_input_role="product_reference",
+				value_type="File Path", required=1, allow_multiple=0),
+			frappe._dict(binding_key="product_secondary", required_input_role="product_reference",
+				value_type="File Path", required=0, allow_multiple=0),
+		]
+		workflow = frappe._dict(bindings=bindings)
 		contract = get_workflow_input_contract(workflow)
-		self.assertTrue(contract[0]["allow_multiple"])
-		self.assertEqual(1, contract[0]["min_count"])
-		self.assertEqual(2, contract[0]["max_count"])
-		job = frappe._dict(name="JOB-00001", prompt_text="prompt")
+		self.assertEqual((1, 2), (contract[0]["min_count"], contract[0]["max_count"]))
+		self.assertEqual((0, 1), (_role_slot_index(bindings, bindings[0]), _role_slot_index(bindings, bindings[1])))
+		values = {"product_reference": ["one.png", "two.png"]}
+		self.assertEqual("one.png", _resolve_declared_binding(bindings[0], values))
+		self.assertEqual("two.png", _resolve_declared_binding(bindings[1], values, role_slot=1))
+
+	def test_optional_and_multiple_inputs_follow_declared_cardinality(self):
+		self.assertIs(_SKIP_BINDING, _resolve_input_value("last frame", {}, required=False))
 		self.assertEqual(
-			"one.png",
-			_resolve_semantic_binding(
-				workflow.bindings[0], job, {"product_reference": ["one.png", "two.png"]}
-			),
+			["one.png", "two.png"],
+			_resolve_input_value("product reference", {"product_reference": ["one.png", "two.png"]},
+				value_type="File Paths", allow_multiple=True),
 		)
-		self.assertEqual(
-			"two.png",
-			_resolve_semantic_binding(
-				workflow.bindings[1], job, {"product_reference": ["one.png", "two.png"]}
-			),
-		)
-
-	def test_r2v_reference_binding_requires_second_reference_when_configured(self):
-		binding = frappe._dict(
-			binding_key="reference_image_2",
-			required_input_role="product_reference",
-			required=1,
-		)
-
 		with self.assertRaises(frappe.ValidationError):
-			_resolve_semantic_binding(
-				binding,
-				frappe._dict(name="JOB-00001"),
-				{"product_reference": ["one.png"]},
-			)
+			_resolve_input_value("product reference", {"product_reference": ["one.png"]}, role_slot=1)
 
-	def test_optional_last_frame_is_skipped_when_not_staged(self):
-		job = frappe._dict(name="JOB-00001")
-
-		value = _resolve_generation_input(
-			job,
-			"LAST FRAME",
-			{},
-			required=False,
-		)
-
-		self.assertIs(value, _SKIP_BINDING)
-
-	def test_file_paths_binding_preserves_repeated_role_inputs(self):
-		job = frappe._dict(name="JOB-00001")
-
-		value = _resolve_generation_input(
-			job,
-			"PRODUCT REFERENCE",
-			{"product_reference": ["one.png", "two.png"]},
-			value_type="File Paths",
-		)
-
-		self.assertEqual(["one.png", "two.png"], value)
-
-	def test_file_path_binding_rejects_repeated_role_inputs(self):
-		job = frappe._dict(name="JOB-00001")
-
-		with self.assertRaises(frappe.ValidationError):
-			_resolve_generation_input(
-				job,
-				"PRODUCT REFERENCE",
-				{"product_reference": ["one.png", "two.png"]},
-				value_type="File Path",
-			)
-
-	def test_h3_optional_last_frame_removes_stale_conditioning_branch(self):
-		workflow = {
-			"1": {"inputs": {"image": "ComfyUI/input/2.png"}},
-			"2": {"inputs": {"image": ["1", 0]}},
-			"minimax_cond": {"inputs": {"last_frame": ["2", 0]}},
-			"save_last_frame": {"inputs": {"images": ["last_frame", 0]}},
-		}
+	def test_generic_execution_builder_uses_bindings_and_specification(self):
 		workflow_version = frappe._dict(
-			bindings=[frappe._dict(binding_key="last_frame", node_key="1")]
-		)
-
-		MiniMaxH3WorkflowAdapter().finalize_workflow(workflow, workflow_version, {})
-
-		self.assertNotIn("1", workflow)
-		self.assertNotIn("2", workflow)
-		self.assertIsNone(workflow["minimax_cond"]["inputs"]["last_frame"])
-		self.assertIn("save_last_frame", workflow)
-
-	def test_h3_last_frame_branch_is_preserved_when_staged(self):
-		workflow = {
-			"1": {"inputs": {"image": "ComfyUI/input/2.png"}},
-			"2": {"inputs": {"image": ["1", 0]}},
-			"minimax_cond": {"inputs": {"last_frame": ["2", 0]}},
-		}
-		workflow_version = frappe._dict(
-			bindings=[frappe._dict(binding_key="last_frame", node_key="1")]
-		)
-
-		MiniMaxH3WorkflowAdapter().finalize_workflow(
-			workflow,
-			workflow_version,
-			{"last_frame": "/tmp/last-frame.png"},
-		)
-
-		self.assertIn("1", workflow)
-		self.assertEqual(["2", 0], workflow["minimax_cond"]["inputs"]["last_frame"])
-
-	def test_invalid_binding_reports_workflow_node_and_input(self):
-		workflow = frappe._dict(
-			name="WFV-00004",
-			workflow_json='{"minimax_cond":{"inputs":{"length":124}}}',
+			name="WF-TEST", adapter_key="comfyui_generic",
+			workflow_json=json.dumps({
+				"load": {"class_type": "LoadImage", "inputs": {"image": ""}},
+				"prompt": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "seed": 0}},
+				"save": {"class_type": "SaveImage", "inputs": {"filename_prefix": ""}},
+			}),
+			execution_spec=json.dumps({
+				"parameters": [{"semantic": "seed", "node_key": "prompt", "input_name": "seed"}],
+				"outputs": {"primary": {"node_key": "save", "media_type": "Image"}},
+			}),
 			bindings=[
-				frappe._dict(
-					binding_key="first_frame",
-					node_key="load_img",
-					input_name="image",
-					required_input_role="first_frame",
-				)
+				frappe._dict(binding_key="generation_prompt", node_key="prompt", input_name="text",
+					required_input_role="", value_type="Text", required=1, allow_multiple=0),
+				frappe._dict(binding_key="first_frame", node_key="load", input_name="image",
+					required_input_role="first_frame", value_type="File Path", required=1, allow_multiple=0),
 			],
 		)
+		workflow = build_execution_workflow(
+			workflow_version, inputs={"generation_prompt": "hello", "first_frame": "input.png"},
+			seed=9, width=1280, height=720, fps=24, frame_count=1, output_prefix="test",
+		)
+		self.assertEqual("hello", workflow["prompt"]["inputs"]["text"])
+		self.assertEqual("input.png", workflow["load"]["inputs"]["image"])
+		self.assertEqual(9, workflow["prompt"]["inputs"]["seed"])
 
-		with self.assertRaises(frappe.ValidationError) as context:
+	def test_invalid_binding_and_graph_are_rejected(self):
+		workflow = frappe._dict(
+			name="WFV-00004", workflow_json='{"node":{"class_type":"LoadImage","inputs":{"image":""}}}',
+			bindings=[frappe._dict(binding_key="first_frame", node_key="missing", input_name="image",
+				required_input_role="first_frame", value_type="File Path", required=1, allow_multiple=0)],
+		)
+		with self.assertRaises(frappe.ValidationError):
 			validate_workflow_bindings(workflow)
-
-		self.assertIn("WFV-00004", str(context.exception))
-		self.assertIn("load_img", str(context.exception))
-		self.assertIn("image", str(context.exception))
-
-	def test_execution_validation_rejects_workflow_without_class_type(self):
-		workflow = frappe._dict(
-			name="WFV-00005",
-			workflow_json='{"load_img":{"inputs":{"image":""}}}',
-		)
-
-		with self.assertRaises(frappe.ValidationError) as context:
+		workflow.workflow_json = '{"load":{"inputs":{"image":""}}}'
+		with self.assertRaises(frappe.ValidationError):
 			validate_workflow_for_execution(workflow)
-
-		self.assertIn("missing class_type", str(context.exception))
-		self.assertIn("load_img", str(context.exception))
-
-	def test_execution_validation_rejects_incomplete_video_combine(self):
-		workflow = frappe._dict(
-			name="WFV-00006",
-			workflow_json=(
-				'{"save_video":{"class_type":"VHS_VideoCombine",'
-				'"inputs":{"frame_rate":24}}}'
-			),
-		)
-
-		with self.assertRaises(frappe.ValidationError) as context:
-			validate_workflow_for_execution(workflow)
-
-		message = str(context.exception)
-		self.assertIn("VHS_VideoCombine", message)
-		self.assertIn("filename_prefix", message)
-		self.assertIn("images", message)
-
-	def test_execution_validation_rejects_reference_to_missing_node(self):
-		workflow = frappe._dict(
-			name="WFV-00007",
-			workflow_json=(
-				'{"save_video":{"class_type":"VHS_VideoCombine",'
-				'"inputs":{"images":["dec_video",0],"frame_rate":24,'
-				'"loop_count":0,"filename_prefix":"JoyMedia",'
-				'"format":"video/h264-mp4","pingpong":false,'
-				'"save_output":true}}}'
-			),
-		)
-
-		with self.assertRaises(frappe.ValidationError) as context:
-			validate_workflow_for_execution(workflow)
-
-		message = str(context.exception)
-		self.assertIn("save_video.images", message)
-		self.assertIn("dec_video", message)
-
-	def test_h3_prepare_execution_injects_internal_execution_values(self):
-		workflow = {
-			"sampler": {"inputs": {"seed": 0}},
-			"minimax_cond": {"inputs": {"length": 1, "width": 1, "height": 1}},
-			"scale_img": {"inputs": {"width": 1, "height": 1}},
-			"2": {"inputs": {"width": 1, "height": 1}},
-			"save_video": {"inputs": {"filename_prefix": "old"}},
-			"last_frame": {"inputs": {"batch_index": 0}},
-			"save_last_frame": {"inputs": {"filename_prefix": "old"}},
-		}
-
-		MiniMaxH3WorkflowAdapter().prepare_execution(
-			workflow,
-			seed=94821731,
-			width=1280,
-			height=720,
-			frame_count=120,
-			output_prefix="JOB-1_ATT-1",
-			last_frame_index=119,
-			last_frame_prefix="JOB-1_ATT-1_last_frame",
-		)
-
-		self.assertEqual(94821731, workflow["sampler"]["inputs"]["seed"])
-		self.assertEqual(120, workflow["minimax_cond"]["inputs"]["length"])
-		self.assertEqual(1280, workflow["2"]["inputs"]["width"])
-		self.assertEqual(720, workflow["scale_img"]["inputs"]["height"])
-		self.assertEqual("JOB-1_ATT-1", workflow["save_video"]["inputs"]["filename_prefix"])
-		self.assertEqual(119, workflow["last_frame"]["inputs"]["batch_index"])
-
-	def test_h3_i2v_api_profile_patches_exported_node_keys(self):
-		workflow = {
-			"115": {"inputs": {"aspect_ratio": "16:9 (Widescreen)"}},
-			"105:15": {"inputs": {"noise_seed": 0}},
-			"105:111": {"inputs": {"value": 5}},
-			"105:104": {"inputs": {"width": ["115", 0], "height": ["115", 1]}},
-			"92": {"inputs": {"filename_prefix": "old"}},
-		}
-
-		MiniMaxH3ImageToVideoAdapter().prepare_execution(
-			workflow,
-			seed=94821731,
-			width=1280,
-			height=720,
-			frame_count=120,
-			output_prefix="JOB-1_ATT-1",
-			last_frame_index=119,
-			last_frame_prefix="unused",
-		)
-
-		self.assertEqual(94821731, workflow["105:15"]["inputs"]["noise_seed"])
-		self.assertEqual(["115", 0], workflow["105:104"]["inputs"]["width"])
-		self.assertEqual(["115", 1], workflow["105:104"]["inputs"]["height"])
-		self.assertEqual("16:9 (Widescreen)", workflow["115"]["inputs"]["aspect_ratio"])
-		self.assertEqual("JOB-1_ATT-1", workflow["92"]["inputs"]["filename_prefix"])
-
-	def test_h3_r2v_api_profile_patches_exported_node_keys(self):
-		workflow = {
-			"115": {"inputs": {"aspect_ratio": "16:9 (Widescreen)"}},
-			"129": {"inputs": {"noise_seed": 0}},
-			"132": {"inputs": {"value": 5}},
-			"136": {"inputs": {"width": ["115", 0], "height": ["115", 1]}},
-			"92": {"inputs": {"filename_prefix": "old"}},
-			"147": {"inputs": {"filename_prefix": "old"}},
-		}
-
-		MiniMaxH3ReferenceToVideoAdapter().prepare_execution(
-			workflow,
-			seed=94821731,
-			width=720,
-			height=1280,
-			frame_count=120,
-			output_prefix="JOB-1_ATT-1",
-			last_frame_index=119,
-			last_frame_prefix="unused",
-		)
-
-		self.assertEqual(94821731, workflow["129"]["inputs"]["noise_seed"])
-		self.assertEqual(["115", 0], workflow["136"]["inputs"]["width"])
-		self.assertEqual(["115", 1], workflow["136"]["inputs"]["height"])
-		self.assertEqual("9:16 (Portrait Widescreen)", workflow["115"]["inputs"]["aspect_ratio"])
-		self.assertEqual("JOB-1_ATT-1", workflow["92"]["inputs"]["filename_prefix"])
-		self.assertEqual("JOB-1_ATT-1_state", workflow["147"]["inputs"]["filename_prefix"])
-
-	def test_sato_adapters_apply_verified_aspect_ratio_contract(self):
-		generation = {
-			"270": {"inputs": {"aspect_ratio": "16:9", "custom_ratio": "16:9", "width": 960, "height": 400, "seconds": 5, "fps": 24}},
-			"248": {"inputs": {"seed": 0}},
-			"254": {"inputs": {"filename_prefix": "old"}},
-			"272": {"inputs": {"filename_prefix": "old"}},
-		}
-		MiniMaxH3SatoGenerationAdapter().prepare_execution(
-			generation, seed=1, width=1080, height=1350, frame_count=120,
-			output_prefix="JOB-1_ATT-1", last_frame_index=119, last_frame_prefix="unused",
-		)
-		self.assertEqual("Free Ratio", generation["270"]["inputs"]["aspect_ratio"])
-		self.assertEqual("1080:1350", generation["270"]["inputs"]["custom_ratio"])
-
-		continuation = {
-			"328": {"inputs": {"aspect_ratio": "16:9", "custom_ratio": "16:9", "width": 960, "height": 400, "seconds": 5, "segment_seconds": "5", "fps": 24}},
-			"291": {"inputs": {"seed": 0}},
-			"355": {"inputs": {"filename_prefix": "old"}},
-			"374": {"inputs": {"filename_prefix": "old"}},
-		}
-		MiniMaxH3SatoContinuationAdapter().prepare_execution(
-			continuation, seed=1, width=1080, height=1920, frame_count=120,
-			output_prefix="JOB-1_ATT-2", last_frame_index=119, last_frame_prefix="unused",
-		)
-		self.assertEqual("9:16", continuation["328"]["inputs"]["aspect_ratio"])

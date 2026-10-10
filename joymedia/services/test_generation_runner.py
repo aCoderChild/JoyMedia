@@ -7,6 +7,41 @@ from joymedia.services.generation_runner import _stage_generation_inputs, submit
 
 
 class TestGenerationRunner(FrappeTestCase):
+	@patch("joymedia.services.generation_runner.upload_frappe_file", return_value={"server_path": "previous_last.png"})
+	@patch("joymedia.services.generation_runner.get_attempt_artifact")
+	@patch("joymedia.services.generation_runner.get_effective_attempt")
+	@patch("joymedia.services.generation_runner.frappe.get_doc")
+	def test_cross_shot_last_frame_is_staged_as_the_next_first_frame(
+		self, get_doc, get_effective_attempt, get_attempt_artifact, upload_frappe_file
+	):
+		workflow = frappe._dict(
+			name="WF-I2V",
+			execution_spec='{"input_preprocessing": {"compose_image_roles": ["reference_board"]}}',
+			bindings=[],
+		)
+		artifact = frappe._dict(name="GART-LAST", artifact_role="Last Frame", frappe_file="/private/files/last.png")
+		get_doc.return_value = workflow
+		get_effective_attempt.return_value = frappe._dict(name="ATT-PREVIOUS", status="Completed")
+		get_attempt_artifact.return_value = artifact
+		job = frappe._dict(
+			name="TASK-NEXT",
+			workflow="WF-I2V",
+			depends_on_task="TASK-PREVIOUS-VIDEO",
+			dependency_artifact_role="Last Frame",
+			inputs=[],
+		)
+		attempt = frappe._dict(name="ATT-NEXT", save=MagicMock())
+
+		staged = _stage_generation_inputs(job, attempt)
+
+		self.assertEqual({"first_frame": ["previous_last.png"]}, staged)
+		self.assertEqual(
+			{"first_frame": [{"source": "Generation Artifact", "artifact": "GART-LAST", "artifact_role": "Last Frame"}]},
+			frappe.parse_json(attempt.resolved_inputs_json),
+		)
+		get_attempt_artifact.assert_called_once_with("ATT-PREVIOUS", "Last Frame")
+		upload_frappe_file.assert_called_once_with("/private/files/last.png")
+
 	@patch("joymedia.services.generation_runner.upload_frappe_file", return_value={"server_path": "first.png"})
 	@patch("joymedia.services.generation_runner.frappe.get_doc")
 	@patch("joymedia.services.generation_runner.frappe.get_all")
@@ -18,7 +53,13 @@ class TestGenerationRunner(FrappeTestCase):
 		get_all.return_value = [
 			frappe._dict(name="GENIN-00001", asset_version="ASTV-00001", input_role="First Frame")
 		]
-		get_doc.return_value = frappe._dict(name="ASTV-00001", file="/private/files/first.png")
+		workflow = frappe._dict(
+			name="WF-I2V",
+			execution_spec='{"input_preprocessing": {"compose_image_roles": ["reference_board"]}}',
+			bindings=[],
+		)
+		asset_version = frappe._dict(name="ASTV-00001", file="/private/files/first.png")
+		get_doc.side_effect = [workflow, asset_version]
 
 		attempt = frappe._dict(name="ATT-00001", save=MagicMock())
 		staged = _stage_generation_inputs(job, attempt)

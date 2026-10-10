@@ -322,6 +322,71 @@ def _example_reference_role(workflow_input_contract):
 	return "reference"
 
 
+def _story_reference_roles(workflow_input_contract):
+	"""Map semantic director slots to the selected workflow's declared input roles."""
+	from joymedia.services.reference_compositor import normalize_reference_role
+
+	roles = {
+		normalize_reference_role(str(item.get("role") or "")): str(item.get("role") or "").strip()
+		for item in workflow_input_contract or []
+		if str(item.get("role") or "").strip()
+	}
+	fallback = _example_reference_role(workflow_input_contract)
+	return {
+		"character": roles.get("person") or roles.get("character") or fallback,
+		"product": roles.get("product") or fallback,
+		"place": roles.get("environment") or fallback,
+	}
+
+
+def _review_product_plan(*, base_url, model, timeout, product_name, video_idea, plan):
+	"""Run a strict second-pass brief check for character-led product commercials."""
+	if not isinstance(plan, dict) or not isinstance(plan.get("shots"), list):
+		return plan
+	messages = [
+		{
+			"role": "system",
+			"content": (
+				"You are a strict commercial-storyboard brief-compliance editor. "
+				"The draft may contain serious semantic errors. Compare every shot to the user's brief; "
+				"rewrite mismatching action, product, or setting instead of preserving it. Return only JSON."
+			),
+		},
+		{
+			"role": "user",
+			"content": (
+				"USER VIDEO IDEA (source of truth):\n"
+				f"{_idea_for_planner(video_idea)}\n\n"
+				f"PRODUCT NAME: {product_name}\n\n"
+				"DRAFT PLAN:\n"
+				+ json.dumps(plan, ensure_ascii=False)
+				+ "\n\nCOMPLIANCE REVIEW AND REWRITE RULES:\n"
+				"- The user idea, not the draft, decides what the person does and where the scene occurs.\n"
+				"- Keep the requested product, requested action, and requested setting in every relevant shot.\n"
+				"- Remove any invented activity, genre, location, or action that conflicts with the idea.\n"
+				"- Product reference images establish the object's appearance; never turn a depicted picture into the setting.\n"
+				"- Keep shot count, shot numbers, durations, reference keys, and usage roles unchanged.\n"
+				"- Rewrite every generation_prompt in English, with one clear continuous action and camera move.\n"
+				"- Return the full plan JSON with the same fields; no analysis or extra fields."
+			),
+		},
+	]
+	payload = {
+		"model": model,
+		"messages": messages,
+		"response_format": {"type": "json_object"},
+		"temperature": 0,
+		"max_tokens": 3000,
+	}
+	payload["max_tokens"] = _completion_budget(base_url, payload)
+	reviewed = _request_plan(base_url, payload, timeout)
+	if not isinstance(reviewed, dict) or not isinstance(reviewed.get("shots"), list):
+		return plan
+	if len(reviewed["shots"]) != len(plan["shots"]):
+		return plan
+	return reviewed
+
+
 def generate_video_plan(
 	*,
 	product_name: str,
@@ -331,7 +396,6 @@ def generate_video_plan(
 	shot_count: int | None = None,
 	reference_images: list[dict] | None = None,
 	reference_media: list[dict] | None = None,
-	video_style: str | None = None,
 	generation_mode: str = "Multi-shot",
 	global_instructions: str | None = None,
 	format_preset: str | None = None,
@@ -344,13 +408,15 @@ def generate_video_plan(
 	Reference media is planning context only. Actual workflow inputs are resolved by
 	JoyMedia after planning so Asset/Asset Version stays separate from Generation Input.
 	"""
-	generation_mode = {"Independent": "Multi-shot", "Chained": "Continuous", "Consistency": "Continuous"}.get(
-		generation_mode, generation_mode
-	)
+	from joymedia.services.generation_settings import normalize_generation_mode
+	from joymedia.services.prompt_compiler import segment_action_timing_instruction
+
+	generation_mode = normalize_generation_mode(generation_mode)
 	if generation_mode not in ("Multi-shot", "Continuous"):
 		frappe.throw(_("Select Continuous or Multi-shot generation mode."))
 	base_url, model, timeout = _qwen_config()
 	story_reference_role = _example_reference_role(workflow_input_contract)
+	story_reference_roles = _story_reference_roles(workflow_input_contract)
 	story_reference_contexts = reference_media
 	workflow_input_contract_for_prompt = workflow_input_contract
 
@@ -365,15 +431,14 @@ Project reference media are named ingredients/context. Use their reference_key w
 a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 """.strip()
 	if story_film:
-		instruction = build_director_instruction(reference_media, story_reference_role, total_video_duration)
+		instruction = build_director_instruction(
+			reference_media, story_reference_role, total_video_duration, story_reference_roles
+		)
 		# The director roster replaces the generic reference, image and contract lists.
 		reference_images = None
 		reference_media = None
-		video_style = None
 		workflow_input_contract_for_prompt = None
 
-	if video_style:
-		instruction += f"\n\nVIDEO STYLE / WORKFLOW KEY:\n{video_style}"
 	if workflow_input_contract_for_prompt:
 		instruction += (
 			"\n\nAVAILABLE INPUT ROLES FOR THIS WORKFLOW:\n"
@@ -390,12 +455,14 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		instruction += (
 			"\n\nGENERATION MODE: CONTINUOUS\n"
 			"The first shot starts from a selected image. Later shots continue from the previous generated last frame. "
-			"Plan motion that can continue naturally while preserving product identity and scene state."
+			"Plan motion that can continue naturally while preserving product identity and scene state.\n"
+			f"IMPORTANT: {segment_action_timing_instruction()}"
 		)
 	else:
 		instruction += (
 			"\n\nGENERATION MODE: MULTI-SHOT\n"
-			"Shots are generated from explicitly resolved keyframes/references. Keep boundaries coherent."
+			"Shots are generated from explicitly resolved keyframes/references. Keep boundaries coherent.\n"
+			f"{segment_action_timing_instruction()}"
 		)
 	if continuation_context:
 		previous_prompt = str(continuation_context.get("previous_prompt") or "").strip()
@@ -412,12 +479,18 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		)
 
 	example_role = story_reference_role
-	example_references = (
-		f'{{"reference_key":"<character key>","usage_role":"{example_role}"}},'
-		f'{{"reference_key":"<place key>","usage_role":"{example_role}"}}'
-		if story_film
-		else f'{{"reference_key":"hero_product","usage_role":"{example_role}"}}'
-	)
+	if story_film and is_product_film(story_reference_contexts):
+		example_references = (
+			f'{{"reference_key":"<character key>","usage_role":"{story_reference_roles["character"]}"}},'
+			f'{{"reference_key":"<product key>","usage_role":"{story_reference_roles["product"]}"}}'
+		)
+	elif story_film:
+		example_references = (
+			f'{{"reference_key":"<character key>","usage_role":"{story_reference_roles["character"]}"}},'
+			f'{{"reference_key":"<place key>","usage_role":"{story_reference_roles["place"]}"}}'
+		)
+	else:
+		example_references = f'{{"reference_key":"hero_product","usage_role":"{example_role}"}}'
 	response_shape = (
 		'{"film_title":"...","shots":[{"shot_number":1,"shot_name":"...",'
 		'"duration_seconds":5,"generation_prompt":"...","caption":"...",'
@@ -536,9 +609,22 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 			result = retry_result
 	if result is None:
 		frappe.throw(_("The AI director's answer was cut off. Please try again."))
+	if story_film and is_product_film(story_reference_contexts):
+		result = _review_product_plan(
+			base_url=base_url,
+			model=model,
+			timeout=timeout,
+			product_name=product_name,
+			video_idea=video_idea,
+			plan=result,
+		)
 
 	if story_film and isinstance(result, dict) and isinstance(result.get("shots"), list):
-		normalize_story_references(result["shots"], story_reference_contexts, story_reference_role)
+		normalize_story_references(
+			result["shots"], story_reference_contexts, story_reference_role, story_reference_roles
+		)
+		from joymedia.services.film_director import enforce_requested_product_presentation
+		enforce_requested_product_presentation(result["shots"], video_idea, story_reference_contexts)
 
 	film_title = clean_title(result.get("film_title")) if isinstance(result, dict) else ""
 	result = _normalize_qwen_plan(
@@ -699,6 +785,44 @@ def _normalize_qwen_plan(
 						"usage_role": single_image_role,
 					}
 				]
+	# R2V contracts have repeated reference-image slots (normally two). The
+	# planner may return only one semantic reference even though the selected
+	# project pool can satisfy the contract. Fill only the missing slots here so
+	# validation and later Shot creation use the same deterministic assignment.
+	if reference_images and workflow_input_contract:
+		_multi_reference_contracts = [
+			contract for contract in workflow_input_contract
+			if contract.get("allow_multiple") and contract.get("min_count", 0) > 1
+		]
+		for shot in normalized_shots:
+			for contract in _multi_reference_contracts:
+				role = contract["role"]
+				references = shot.setdefault("references", [])
+				role_references = [
+					reference for reference in references
+					if frappe.scrub(reference.get("usage_role") or "") == role
+				]
+				needed = int(contract["min_count"]) - len(role_references)
+				if needed <= 0:
+					continue
+				existing_keys = {reference.get("reference_key") for reference in role_references}
+				pool = [
+					image for image in reference_images
+					if image.get("reference_key") and image.get("reference_key") not in existing_keys
+				]
+				# Keep the assignment stable per shot while allowing a planner-supplied
+				# first reference to remain the first slot.
+				start = max(0, int(shot.get("shot_number") or 1) - 1)
+				for offset in range(len(reference_images)):
+					if len(pool) >= needed:
+						break
+					candidate = reference_images[(start + offset) % len(reference_images)]
+					key = candidate.get("reference_key")
+					if key and key not in existing_keys:
+						pool.append(candidate)
+						existing_keys.add(key)
+				for image in pool[:needed]:
+					references.append({"reference_key": image["reference_key"], "usage_role": role})
 	if (
 		total_video_duration is not None
 		and generation_mode == "Multi-shot"
@@ -797,13 +921,20 @@ def _validate_video_plan(
 					frappe.throw(_("Invalid reference image index."))
 				normalized[fieldname] = image_index
 		for contract in workflow_input_contract or []:
+			# Continuous shots after the first start from the previous generated
+			# Last Frame artifact; they must not repeat a static first-frame image.
+			if (
+				generation_mode == "Continuous"
+				and normalized["shot_number"] > 1
+				and contract["role"] == "first_frame"
+			):
+				continue
 			count = role_counts.get(contract["role"], 0)
 			if count < contract.get("min_count", 0):
 				frappe.throw(
 					_(
 						"Shot {0} needs {1} reference image(s) for the selected workflow. "
-						"Choose H3 I2V Production for one image per shot, or add the required "
-						"additional references."
+						"Add the required references or select a workflow with a compatible input contract."
 					).format(
 						normalized["shot_number"], contract["min_count"]
 					)

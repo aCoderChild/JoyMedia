@@ -16,7 +16,7 @@ def rebalance_shot_duration(media_project_name: str, shot_name: str, target_dura
 	"""Change one shot while keeping the project's canonical duration fixed."""
 	ensure_shot_planning_editable(media_project_name)
 	project = frappe.get_doc("Media Project", media_project_name)
-	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
+	from joymedia.services.project_context import _project_settings
 	settings = _project_settings(project)
 	shots = frappe.get_all(
 		"Shot",
@@ -85,7 +85,7 @@ def recalculate_shot_durations(media_project_name: str):
 	sums exactly to the Media Project's total frame count.
 	"""
 	project = frappe.get_doc("Media Project", media_project_name)
-	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
+	from joymedia.services.project_context import _project_settings
 	settings = _project_settings(project)
 	shots = frappe.get_all(
 		"Shot",

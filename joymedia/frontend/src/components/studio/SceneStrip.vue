@@ -133,8 +133,17 @@
               <span v-if="getShotState(shot) === 'Generating'" class="text-xs text-indigo-400 font-bold animate-pulse">
                 ● {{ currentLang === 'vi' ? 'Đang tạo' : 'Generating' }}
               </span>
+              <span v-else-if="getShotState(shot) === 'Queued'" class="text-[10px] text-indigo-300 font-mono">
+                ○ {{ currentLang === 'vi' ? 'Trong hàng đợi' : 'Queued' }}
+              </span>
+              <span v-else-if="getShotState(shot) === 'Failed'" class="text-[10px] text-rose-300 font-semibold" :title="getShotMessage(shot)">
+                ! {{ currentLang === 'vi' ? 'Cần xử lý' : 'Needs attention' }}
+              </span>
+              <span v-else-if="getShotState(shot) === 'Cancelled'" class="text-[10px] text-zinc-400 font-mono">
+                × {{ currentLang === 'vi' ? 'Đã dừng' : 'Stopped' }}
+              </span>
               <span v-else class="text-[10px] text-zinc-400 font-mono">
-                ○ {{ currentLang === 'vi' ? 'Đang chờ' : 'Waiting' }}
+                ○ {{ currentLang === 'vi' ? 'Chờ khung hình đầu' : 'Waiting for keyframe' }}
               </span>
             </div>
           </div>
@@ -142,7 +151,7 @@
           <!-- Middle: Scene Title & Clean Duration -->
           <div class="flex items-center justify-between text-xs font-bold text-ink-primary mb-1">
             <span class="truncate">
-              {{ currentLang === 'vi' ? `Cảnh ${shot.shot_number}` : `Scene ${shot.shot_number}` }}<template v-if="sceneBeat(shot)"> · {{ sceneBeat(shot) }}</template>
+              {{ currentLang === 'vi' ? `Cảnh ${shot.shot_number}` : `Scene ${shot.shot_number}` }} · {{ sceneSummary(shot) }}
             </span>
             <div class="flex items-center gap-1">
               <!-- Review status badge -->
@@ -405,25 +414,34 @@ function isRegenerating(shot) {
 
 function getShotState(shot) {
   if (props.getShotVideoFile(shot)) return "Ready";
-  if (props.isGenerating) {
-    return "Generating";
-  }
+  const status = props.production?.shots?.find((item) => item.shot === shot.name)?.status;
+  if (status === "Running" || status === "Generating") return "Generating";
+  if (status === "Queued") return "Queued";
+  if (status === "Failed") return "Failed";
+  if (status === "Cancelled") return "Cancelled";
   return "Waiting";
 }
 
+function getShotMessage(shot) {
+  return props.production?.shots?.find((item) => item.shot === shot.name)?.message || "";
+}
+
 function getShotBadgeClass(shot, idx) {
-  const ready = typeof shot === "object" && props.getShotVideoFile(shot);
-  if (ready) return "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
-  if (props.isGenerating && idx === completedShotsCount.value) {
+  const state = typeof shot === "object" ? getShotState(shot) : "Waiting";
+  if (state === "Ready") return "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+  if (state === "Failed") return "bg-rose-500/20 text-rose-400 border border-rose-500/30";
+  if (state === "Generating") {
     return "bg-indigo-500/20 text-indigo-400 border border-indigo-500/40 animate-pulse";
   }
+  if (state === "Queued") return "bg-indigo-500/10 text-indigo-400 border border-indigo-500/30";
   return "bg-surface-muted text-ink-muted border border-outline-border";
 }
 
 function getShotStatusGlyph(shot, idx) {
-  const ready = typeof shot === "object" && props.getShotVideoFile(shot);
-  if (ready) return "✓";
-  if (props.isGenerating && idx === completedShotsCount.value) return "●";
+  const state = typeof shot === "object" ? getShotState(shot) : "Waiting";
+  if (state === "Ready") return "✓";
+  if (state === "Failed") return "!";
+  if (state === "Generating") return "●";
   return "○";
 }
 </script>

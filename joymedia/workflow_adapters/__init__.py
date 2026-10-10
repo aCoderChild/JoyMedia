@@ -1,24 +1,10 @@
 import frappe
 
-from .minimax_h3 import MiniMaxH3WorkflowAdapter
-from .minimax_h3_sato import (
-	MiniMaxH3SatoContinuationAdapter,
-	MiniMaxH3SatoAdapter,
-	MiniMaxH3SatoGenerationAdapter,
-)
-from .minimax_h3_profiles import (
-	MiniMaxH3ImageToVideoAdapter,
-	MiniMaxH3ReferenceToVideoAdapter,
-)
+from .comfyui_generic import GenericComfyUIAdapter
 
 
 ADAPTERS = {
-	"minimax_h3": MiniMaxH3WorkflowAdapter,
-	"minimax_h3_i2v": MiniMaxH3ImageToVideoAdapter,
-	"minimax_h3_r2v": MiniMaxH3ReferenceToVideoAdapter,
-	"minimax_h3_sato_generation": MiniMaxH3SatoGenerationAdapter,
-	"minimax_h3_sato_continuation": MiniMaxH3SatoContinuationAdapter,
-	"minimax_h3_sato": MiniMaxH3SatoAdapter,
+	"comfyui_generic": GenericComfyUIAdapter,
 }
 
 
@@ -32,8 +18,19 @@ def get_workflow_adapter(workflow):
 	adapter = ADAPTERS.get(adapter_key)
 	if not adapter:
 		frappe.throw(
-			frappe._("Unsupported generation adapter '{0}' for Generation Workflow {1}.").format(
-				adapter_key, workflow.name
+			frappe._(
+				"Generation Workflow {0} uses retired adapter '{1}'. "
+				"Create a new immutable revision with adapter_key 'comfyui_generic' and an Execution Specification."
+			).format(
+				workflow.name, adapter_key
 			)
 		)
-	return adapter()
+	instance = adapter()
+	instance.workflow_version = workflow
+	try:
+		instance.execution_spec = frappe.parse_json(getattr(workflow, "execution_spec", None) or "{}")
+	except (TypeError, ValueError):
+		frappe.throw(frappe._("Generation Workflow {0} has invalid Execution Specification JSON.").format(workflow.name))
+	if not isinstance(instance.execution_spec, dict):
+		frappe.throw(frappe._("Generation Workflow {0} Execution Specification must be a JSON object.").format(workflow.name))
+	return instance

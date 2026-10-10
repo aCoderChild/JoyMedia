@@ -13,7 +13,6 @@ export function useProjectWorkspace(projectName) {
   const selectedShotIndex = ref(0);
   const inspectorOpen = ref(false);
   const showSettings = ref(false);
-  const videoStyles = ref([]);
   const savingSettings = ref(false);
 
   function project() {
@@ -25,7 +24,7 @@ export function useProjectWorkspace(projectName) {
     loading.value = true;
     error.value = null;
     try {
-      const data = await call("joymedia.joymedia.doctype.media_project.media_project.get_project_workspace", {
+      const data = await call("joymedia.api.projects.get_project_workspace", {
         name: project(),
       });
       workspace.value = data;
@@ -43,19 +42,10 @@ export function useProjectWorkspace(projectName) {
     return workspace.value;
   }
 
-  async function fetchVideoStyles() {
-    try {
-      const styles = await call("joymedia.joymedia.doctype.media_project.media_project.get_video_styles");
-      videoStyles.value = styles || [];
-    } catch (_) {
-      videoStyles.value = [];
-    }
-  }
-
   async function updateProjectName(newName) {
     if (!newName?.trim()) return;
     try {
-      const res = await call("joymedia.joymedia.doctype.media_project.media_project.update_project_name", {
+      const res = await call("joymedia.api.projects.update_project_name", {
         media_project: project(),
         project_name: newName.trim(),
       });
@@ -73,19 +63,21 @@ export function useProjectWorkspace(projectName) {
     try {
       const totalDurationSeconds =
         settingsPayload.total_duration_seconds ?? settingsPayload.duration;
-      await call("joymedia.joymedia.doctype.media_project.media_project.save_project_video_settings", {
+      await call("joymedia.api.projects.save_project_video_settings", {
         project_name: project(),
         total_duration_seconds: totalDurationSeconds,
         delivery_preset: settingsPayload.delivery_preset,
         reference_mode: settingsPayload.reference_mode || "Single Image",
         quality_mode: settingsPayload.quality_mode || "Production",
-        generation_mode: settingsPayload.generation_mode || "Multi-shot",
+        generation_mode: "Continuous",
         global_instructions: settingsPayload.global_instructions || "",
         end_card_title: settingsPayload.end_card_title || "",
         end_card_tagline: settingsPayload.end_card_tagline || "",
         soundtrack_prompt: settingsPayload.soundtrack_prompt || "",
         export_quality: settingsPayload.export_quality || "Standard 1080p",
         show_captions: settingsPayload.show_captions === false ? 0 : 1,
+        workflow: settingsPayload.workflow || undefined,
+        generation_pipeline: settingsPayload.generation_pipeline || "",
       });
       await fetchWorkspace();
       showSettings.value = false;
@@ -120,7 +112,7 @@ export function useProjectWorkspace(projectName) {
       delivery_preset: "Landscape",
       duration: 15,
       total_duration_seconds: 15,
-      generation_mode: "Multi-shot",
+      generation_mode: "Continuous",
       reference_mode: "Single Image",
       quality_mode: "Production",
       global_instructions: "",
@@ -139,7 +131,6 @@ export function useProjectWorkspace(projectName) {
     selectedShotIndex,
     inspectorOpen,
     showSettings,
-    videoStyles,
     savingSettings,
 
     projectTitle,
@@ -155,7 +146,6 @@ export function useProjectWorkspace(projectName) {
 
     fetchWorkspace,
     applyWorkspaceSnapshot,
-    fetchVideoStyles,
     updateProjectName,
     saveVideoSettings,
   };

@@ -513,14 +513,15 @@ def _create_workflow():
 	return frappe.get_doc({
 		"doctype": "Generation Workflow",
 		"workflow_key": f"timeline_test_{frappe.generate_hash(length=5)}",
-		"adapter_key": "minimax_h3",
+		"adapter_key": "comfyui_generic",
 		"workflow_json": (
 			'{"load_img":{"inputs":{"image":""},"class_type":"VHS_LoadImagePath"},'
-			'"minimax_cond":{"inputs":{"length":124},"class_type":"MiniMaxH3ImageToVideo"},'
+			'"dec_video":{"inputs":{},"class_type":"VAEDecode"},'
 			'"save_video":{"inputs":{"images":["dec_video",0],"frame_rate":24,'
 			'"filename_prefix":"JoyMedia","loop_count":0,"format":"video/h264-mp4",'
 			'"pingpong":false,"save_output":true},"class_type":"VHS_VideoCombine"}}'
 		),
+		"execution_spec": '{"parameters":[],"metadata":{"frame_count":124,"output_fps":24,"produces_video":1},"outputs":{"primary":{"node_key":"save_video","media_type":"Video"}}}',
 		"bindings": [{
 			"binding_key": "first_frame", "node_key": "load_img", "input_name": "image",
 			"required_input_role": "first_frame", "value_type": "File Path", "required": 1,

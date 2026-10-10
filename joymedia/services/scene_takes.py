@@ -61,7 +61,7 @@ def render_final(project_name):
 	"""
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
-	from joymedia.joymedia.doctype.media_project.media_project import _active_project_shots, _busy_shots
+	from joymedia.services.project_context import _active_project_shots, _busy_shots
 	from joymedia.services.storyboard_job import planning_status
 
 	if planning_status(project.name) == "Running" or _busy_shots(project.name):
@@ -79,10 +79,20 @@ def render_final(project_name):
 
 def _start_takes_run(project, shot_names, retry_reason=None):
 	"""A run that renders new takes of these scenes, replacing each one's take when ready."""
-	from joymedia.joymedia.doctype.media_project.media_project import build_project_snapshot
+	from joymedia.services.project_context import build_project_snapshot
 	from joymedia.services.generation_orchestrator import start_run_internal
+	from joymedia.services.generation_pipeline_service import get_pipeline_steps, pipeline_for_final_workflow
 
 	snapshot_json, snapshot_hash = build_project_snapshot(project)
+	# Regeneration must use the same selected keyframe→video pipeline as the
+	# original run.  Re-resolve only when a project was changed to a compatible
+	# workflow, never by model-name convention.
+	pipeline_name = project.generation_pipeline or None
+	if pipeline_name and get_pipeline_steps(pipeline_name)[-1].workflow != project.workflow:
+		pipeline_name = None
+	if not pipeline_name:
+		pipeline = pipeline_for_final_workflow(project.workflow)
+		pipeline_name = pipeline.name if pipeline else None
 	run = frappe.get_doc(
 		{
 			"doctype": "Generation Run",
@@ -96,6 +106,7 @@ def _start_takes_run(project, shot_names, retry_reason=None):
 				"retry_reason": retry_reason or None,
 			}),
 			"workflow": project.workflow,
+			"generation_pipeline": pipeline_name,
 			"requested_by": frappe.session.user,
 			"status": "Draft",
 		}
@@ -115,7 +126,7 @@ def select_scene_take(project_name, shot_name, take_index):
 	if not 1 <= take_index <= len(takes):
 		frappe.throw(_("This scene has no take {0}.").format(take_index))
 	shot.db_set("selected_output_asset_version", takes[take_index - 1].name, update_modified=False)
-	from joymedia.joymedia.doctype.media_project.media_project import sync_shot_review_status
+	from joymedia.api.reviews import sync_shot_review_status
 	sync_shot_review_status(shot.name)
 	from joymedia.services.post_production import queue_post_production_internal
 
@@ -141,7 +152,7 @@ def _ensure_scene_free(project, shot):
 
 	Several scenes may render at once; finishing repeats until it includes every change.
 	"""
-	from joymedia.joymedia.doctype.media_project.media_project import _busy_shots
+	from joymedia.services.project_context import _busy_shots
 	from joymedia.services.storyboard_job import planning_status
 
 	if planning_status(project.name) == "Running":

@@ -2,7 +2,7 @@
 
 A "story film" is a project whose references contain at least one character
 (talent) image and at least one place image. It is planned as a few long,
-continuous takes rendered with MiniMax H3 Reference-to-Video, where every take
+continuous takes rendered by a workflow with two reference slots, where every take
 receives the character as <Picture 1> and a location as <Picture 2>.
 """
 
@@ -25,7 +25,7 @@ PLACE_CATEGORIES = {"background"}
 PRODUCT_CATEGORIES = {"product"}
 
 PERSON_PATTERN = re.compile(
-	r"\b(she|her|hers|he|his|him|woman|man|girl|boy|person|character|couple|family)\b",
+	r"\b(she|her|hers|he|his|him|woman|man|girl|boy|person|character|couple|family)\b|\b(?:a|the|female|male|fashion)\s+model\b",
 	re.I,
 )
 WORD_PATTERN = re.compile(r"[a-z]+")
@@ -36,12 +36,11 @@ TAKE_CONSTRAINTS = (
 )
 
 MIN_TAKE_SECONDS = 5
-MAX_TAKE_SECONDS = 10
-MAX_TAKES = 6
-# MiniMax H3 renders at least 124 frames at 24 fps; shorter takes waste the extra render.
+# Default single-render duration used by the storyboard planner.
 MIN_RENDER_SECONDS = 124 / 24
-# A continuation job adding less footage than this is not worth its fixed overhead.
-MIN_CONTINUATION_SECONDS = 2.0
+# Each storyboard scene is planned as one render unless its workflow declares continuation.
+MAX_TAKE_SECONDS = MIN_RENDER_SECONDS
+MAX_TAKES = 12
 
 DIRECTOR_RULES = """
 You are the film director for JoyMedia commercials. Plan a short cinematic film
@@ -53,6 +52,9 @@ STRUCTURE
   only the main place may appear twice (to open and to close the film).
 - Each take is ONE unbroken camera shot in ONE place: no cuts, no montage, no
   second location inside the take.
+- TIMING: use the opening frames (0-5%) to establish composition, carry out the
+  main action clearly from about frame 5 through frame 110, then let the final
+  frames settle into a stable composition. Do not save the action for the end.
 - The character appears in EVERY take except an optional final establishing take.
 - Follow the STORY ARC below: each take plays its beat, in order. Order the places so
   the journey makes sense (for example outside to inside, public to private) and put
@@ -97,6 +99,20 @@ PRODUCT_DIRECTOR_RULES = """
 You are the film director for JoyMedia commercials. Plan a short cinematic
 commercial in which the character presents the product.
 
+SOURCE OF TRUTH
+- The VIDEO IDEA is the creative brief and has priority over default story beats,
+  reference-photo backgrounds, asset filenames, and project metadata.
+- Identify the requested subject, action, product, and setting from the VIDEO IDEA.
+  Every take must visibly advance that requested action; do not substitute a related
+  activity or invent a different product (for example, weaving/loom scenes for a
+  product-advertising brief).
+- When the brief says advertise, promote, or market the product, show the character
+  actively presenting or demonstrating it to camera; merely entering, approaching,
+  or standing beside it does not satisfy the brief.
+- Reference images establish identity and product appearance, not an unrelated plot.
+  If a product's visual description is unavailable, call it only "the product from
+  <Picture 2>" and do not guess its material, purpose, or depicted scene.
+
 THE PRODUCT
 - The product in <Picture 2> is an OBJECT: the character holds, shows, uses, wears or
   admires it. It is never the setting and never a place to walk into, even when the
@@ -108,10 +124,15 @@ THE PRODUCT
 STRUCTURE
 - Plan exactly {take_count} long continuous takes of {min_take}-{max_take} seconds each.
 - Each take is ONE unbroken camera shot in ONE setting: no cuts, no montage.
+- TIMING: use the opening frames (0-5%) to establish composition, carry out the
+  main action clearly from about frame 5 through frame 110, then let the final
+  frames settle into a stable composition. Do not save the action for the end.
 - The character appears in every take except product hero takes. Include at least one
   hero take of the product alone (close-up, slow orbit or push-in on its details).
 - Follow the STORY ARC below: each take plays its beat, in order. The CLIMAX shows the
   product at its best (the character revealing or using it, the boldest camera move).
+- Adapt each beat to the VIDEO IDEA. The arc is only pacing guidance and must never
+  change the requested action, product, or setting into a different concept.
 - SETTINGS: {settings}
 - The character keeps the outfit shown in <Picture 1> unless the VIDEO IDEA asks
   for a change. Vary performance and camera move between takes; never repeat an action.
@@ -122,7 +143,8 @@ STRUCTURE
 
 EVERY generation_prompt (English, 60-110 words) states, in this order:
 1. The person from <Picture 1>: their outfit and what they do with the product.
-   Keep their face, hair and body identical to <Picture 1>.
+   If the VIDEO IDEA asks for promotion, explicitly show them holding or presenting
+   the product to camera. Keep their face, hair and body identical to <Picture 1>.
 2. The product from <Picture 2>: where it is (in their hands, on a table...) and its
    exact look. Keep its shape, colours and details identical to <Picture 2>.
 3. The setting, in words.
@@ -216,16 +238,21 @@ def story_beats(take_count):
 def take_count_range(total_seconds):
 	"""Return the (min, max) number of takes that keeps every take within the model's range."""
 	total = max(float(total_seconds or 0), MIN_TAKE_SECONDS)
-	minimum = max(2, math.ceil(total / MAX_TAKE_SECONDS))
+	minimum = max(1, math.ceil(total / MAX_TAKE_SECONDS))
+	if minimum > MAX_TAKES:
+		frappe.throw(
+			f"This project needs {minimum} scenes at the {MAX_TAKE_SECONDS:.1f}-second render limit; "
+			"shorten the video or increase the storyboard scene limit."
+		)
 	maximum = max(minimum, min(MAX_TAKES, math.floor(total / MIN_TAKE_SECONDS)))
-	return min(minimum, MAX_TAKES), maximum
+	return minimum, maximum
 
 
 def story_take_count(total_seconds, reference_contexts):
 	"""Return how many takes to plan: one per place, within the duration's renderable range."""
 	minimum, maximum = take_count_range(total_seconds)
 	total = max(float(total_seconds or 0), MIN_TAKE_SECONDS)
-	renderable = max(minimum, math.floor(total / MIN_RENDER_SECONDS))
+	renderable = max(minimum, math.ceil(total / MAX_TAKE_SECONDS))
 	if is_product_film(reference_contexts):
 		# No place per take: about one take per seven seconds of film.
 		return max(minimum, min(maximum, renderable, round(total / 7)))
@@ -256,7 +283,7 @@ def classify_reference(context):
 
 
 def balance_take_durations(shots, total_seconds):
-	"""Keep every take renderable (MIN_RENDER_SECONDS-MAX_TAKE_SECONDS) while preserving the total.
+	"""Keep every take inside one workflow render while preserving the total.
 
 	Takes keep their planned proportions where possible. When the total cannot give
 	every take the minimum length, the shortest middle takes are dropped.
@@ -265,11 +292,24 @@ def balance_take_durations(shots, total_seconds):
 	if not shots or total <= 0:
 		return shots
 	shots = list(shots)
-	while len(shots) > 2 and len(shots) * MIN_RENDER_SECONDS > total:
-		middle = min(range(1, len(shots) - 1), key=lambda index: float(shots[index]["duration_seconds"]))
-		shots.pop(middle)
+	while len(shots) > 1 and len(shots) * MIN_RENDER_SECONDS > total:
+		remove_index = (
+			min(range(1, len(shots) - 1), key=lambda index: float(shots[index]["duration_seconds"]))
+			if len(shots) > 2
+			else 1
+		)
+		shots.pop(remove_index)
+	minimum, _maximum = take_count_range(total)
+	if len(shots) < minimum:
+		# The planner normally supplies this many takes. Keep the configured render cap even
+		# when a model response is short by splitting the longest supplied beat.
+		while len(shots) < minimum:
+			longest = max(shots, key=lambda shot: float(shot["duration_seconds"]))
+			clone = dict(longest)
+			clone["shot_name"] = f"{clone.get('shot_name') or 'SCENE'}: continuation beat"
+			shots.append(clone)
 	low = min(MIN_RENDER_SECONDS, total / len(shots))
-	high = max(MAX_TAKE_SECONDS, total / len(shots))
+	high = MAX_TAKE_SECONDS
 	weights = [max(float(shot["duration_seconds"]), 0.001) for shot in shots]
 
 	def lengths(scale):
@@ -286,42 +326,11 @@ def balance_take_durations(shots, total_seconds):
 			upper = middle
 	for shot, length in zip(shots, lengths(upper)):
 		shot["duration_seconds"] = length
-	_avoid_short_continuations(shots)
 	# Remove the bisection residue so the takes sum exactly to the total.
 	shots[-1]["duration_seconds"] = total - sum(shot["duration_seconds"] for shot in shots[:-1])
 	for number, shot in enumerate(shots, start=1):
 		shot["shot_number"] = number
 	return shots
-
-
-def _avoid_short_continuations(shots):
-	"""Fit takes to whole render jobs without changing the film's length.
-
-	A take renders MIN_RENDER_SECONDS in its first job and continues in further
-	jobs, each with ~2.5 minutes of fixed overhead. A take just over one job long
-	would spend a whole job on a second or less of footage, so it is trimmed to
-	one job and the spare time goes to the climax (or the longest take), which
-	the story wants longest anyway.
-	"""
-	single = MIN_RENDER_SECONDS
-	spare = 0.0
-	for shot in shots:
-		length = float(shot["duration_seconds"])
-		if single < length < single + MIN_CONTINUATION_SECONDS:
-			spare += length - single
-			shot["duration_seconds"] = single
-	if not spare:
-		return
-	climax = next((shot for shot in shots if str(shot.get("shot_name") or "").upper().startswith("CLIMAX")), None)
-	receivers = [climax] if climax else []
-	receivers += sorted((shot for shot in shots if shot is not climax), key=lambda shot: -float(shot["duration_seconds"]))
-	for shot in receivers:
-		room = MAX_TAKE_SECONDS - float(shot["duration_seconds"])
-		given = min(room, spare)
-		shot["duration_seconds"] = float(shot["duration_seconds"]) + given
-		spare -= given
-		if spare <= 1e-9:
-			return
 
 
 def build_roster(reference_contexts):
@@ -346,12 +355,15 @@ def is_product_film(reference_contexts):
 	return bool(roster[CHARACTER] and roster[PRODUCT])
 
 
-def build_director_instruction(reference_contexts, reference_role, total_seconds):
+def build_director_instruction(reference_contexts, reference_role, total_seconds, reference_roles=None):
 	"""Return the planner instruction for a story film, including the reference roster."""
 	roster = build_roster(reference_contexts)
+	reference_roles = reference_roles or {}
 	take_count = story_take_count(total_seconds, reference_contexts)
 	if roster[PRODUCT]:
-		return _product_director_instruction(roster, reference_role, take_count)
+		return _product_director_instruction(roster, reference_role, take_count, reference_roles)
+	character_role = reference_roles.get(CHARACTER, reference_role)
+	place_role = reference_roles.get(PLACE, reference_role)
 	lines = [
 		DIRECTOR_RULES.format(
 			take_count=take_count,
@@ -359,7 +371,7 @@ def build_director_instruction(reference_contexts, reference_role, total_seconds
 			max_take=MAX_TAKE_SECONDS,
 		),
 		"",
-		f'Every reference you list must use usage_role "{reference_role}".',
+		f'Use usage_role "{character_role}" for character references and "{place_role}" for place references.',
 		"",
 		"STORY ARC",
 		*(
@@ -376,7 +388,10 @@ def build_director_instruction(reference_contexts, reference_role, total_seconds
 	return "\n".join(lines)
 
 
-def _product_director_instruction(roster, reference_role, take_count):
+def _product_director_instruction(roster, reference_role, take_count, reference_roles=None):
+	reference_roles = reference_roles or {}
+	character_role = reference_roles.get(CHARACTER, reference_role)
+	product_role = reference_roles.get(PRODUCT, reference_role)
 	if roster[PLACE]:
 		settings = (
 			"set the takes in the places listed under PLACES, described in words (their pictures "
@@ -392,7 +407,7 @@ def _product_director_instruction(roster, reference_role, take_count):
 			take_count=take_count, min_take=MIN_TAKE_SECONDS, max_take=MAX_TAKE_SECONDS, settings=settings,
 		),
 		"",
-		f'Every reference you list must use usage_role "{reference_role}".',
+		f'Use usage_role "{character_role}" for character references and "{product_role}" for product references.',
 		"",
 		"STORY ARC",
 		*(
@@ -412,7 +427,7 @@ def _product_director_instruction(roster, reference_role, take_count):
 	return "\n".join(lines)
 
 
-def normalize_story_references(shots, reference_contexts, reference_role):
+def normalize_story_references(shots, reference_contexts, reference_role, reference_roles=None):
 	"""Make every shot reference exactly two images, in <Picture 1>/<Picture 2> order.
 
 	The order is load-bearing: the first reference is bound to <Picture 1> and the
@@ -422,11 +437,14 @@ def normalize_story_references(shots, reference_contexts, reference_role):
 	place fills both slots.
 	"""
 	roster = build_roster(reference_contexts)
+	reference_roles = reference_roles or {}
 	if roster[CHARACTER] and roster[PRODUCT]:
-		return _normalize_product_references(shots, roster, reference_role)
+		return _normalize_product_references(shots, roster, reference_role, reference_roles)
 	if not roster[CHARACTER] or not roster[PLACE]:
 		return shots
 	character_key = roster[CHARACTER][0]["reference_key"]
+	character_role = reference_roles.get(CHARACTER, reference_role)
+	place_role = reference_roles.get(PLACE, reference_role)
 	places = roster[PLACE]
 	for shot in shots:
 		if not isinstance(shot, dict):
@@ -444,7 +462,10 @@ def normalize_story_references(shots, reference_contexts, reference_role):
 			# The model follows <Picture 1> most strongly; a second, different place
 			# there replaced the described one, so both slots carry it.
 			ordered = [best_place, best_place]
-		shot["references"] = [{"reference_key": key, "usage_role": reference_role} for key in ordered]
+		shot["references"] = [
+			{"reference_key": key, "usage_role": character_role if index == 0 and PERSON_PATTERN.search(prompt) else place_role}
+			for index, key in enumerate(ordered)
+		]
 		prompt = _clamp_picture_tags(prompt, len(ordered)).strip()
 		if "no cuts" not in prompt.lower():
 			# Without it the model often cuts between angles inside one take.
@@ -453,16 +474,49 @@ def normalize_story_references(shots, reference_contexts, reference_role):
 	return shots
 
 
-def _normalize_product_references(shots, roster, reference_role):
+def enforce_requested_product_presentation(shots, video_idea, reference_contexts):
+	"""Keep explicit product-advertising briefs from degrading into walk-up scenes."""
+	if not is_product_film(reference_contexts):
+		return shots
+	idea = str(video_idea or "").lower()
+	if not re.search(r"quảng cáo|quang cao|giới thiệu|gioi thieu|promot|advertis|market|showcase|present", idea):
+		return shots
+	for shot in shots or []:
+		if not isinstance(shot, dict):
+			continue
+		prompt = str(shot.get("generation_prompt") or "").strip()
+		if re.search(r"\b(hold|holding|present|presenting|demonstrat|show(?:ing)?)\b", prompt, re.I):
+			continue
+		if int(shot.get("shot_number") or 1) == 1:
+			action = (
+				"The model actively promotes the product, holding it securely with both hands and "
+				"turning its decorated front toward the camera so the viewer can clearly see it."
+			)
+		else:
+			action = (
+				"Continuing seamlessly, the model keeps the product presented to camera and gently "
+				"tilts it to reveal its design while addressing the viewer."
+			)
+		shot["generation_prompt"] = f"{prompt} {action}".strip()
+	return shots
+
+
+def _normalize_product_references(shots, roster, reference_role, reference_roles=None):
 	"""[character, product] for takes with the person, [product, product] for hero takes."""
+	reference_roles = reference_roles or {}
 	character_key = roster[CHARACTER][0]["reference_key"]
 	product_key = roster[PRODUCT][0]["reference_key"]
+	character_role = reference_roles.get(CHARACTER, reference_role)
+	product_role = reference_roles.get(PRODUCT, reference_role)
 	for shot in shots:
 		if not isinstance(shot, dict):
 			continue
 		prompt = str(shot.get("generation_prompt") or "")
 		ordered = [character_key, product_key] if PERSON_PATTERN.search(prompt) else [product_key, product_key]
-		shot["references"] = [{"reference_key": key, "usage_role": reference_role} for key in ordered]
+		shot["references"] = [
+			{"reference_key": key, "usage_role": character_role if key == character_key else product_role}
+			for key in ordered
+		]
 		prompt = _clamp_picture_tags(prompt, len(ordered)).strip()
 		if "no cuts" not in prompt.lower():
 			prompt = f"{prompt} {TAKE_CONSTRAINTS}".strip()
@@ -642,4 +696,3 @@ def _roster_line(context, person=False, product=False):
 	if isinstance(analysis.get("outfit"), str) and analysis["outfit"].strip():
 		description += f"; outfit: {analysis['outfit'].strip()}"
 	return f"- key={context['reference_key']}: {description[:320]}"
-

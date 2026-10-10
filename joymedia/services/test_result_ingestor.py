@@ -13,20 +13,6 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 
 		self.assertEqual(output, result_ingestor._find_primary_mp4(history))
 
-	def test_find_continuation_state_accepts_sato_text_output_and_returns_basename(self):
-		history = {
-			"outputs": {
-				"272": {
-					"text": ["h3_latents/TASK-00001_ATT-00001_state_00001.h3latent.safetensors"]
-				}
-			}
-		}
-
-		self.assertEqual(
-			"TASK-00001_ATT-00001_state_00001.h3latent.safetensors",
-			result_ingestor._find_continuation_state(history),
-		)
-
 	@patch("joymedia.services.result_ingestor.download_output", return_value=b"video-bytes")
 	@patch("joymedia.services.result_ingestor.frappe.get_doc")
 	def test_completed_artifact_is_copied_to_a_private_frappe_file(self, get_doc, download_output):

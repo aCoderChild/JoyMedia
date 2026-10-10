@@ -11,7 +11,7 @@ REFERENCE_IMAGE_CATEGORIES = ["Product", "Character", "Background", "Brand", "St
 
 def get_project_image_manifest(media_project: str, *, include_data_url: bool = False):
 	"""Return only selected image Asset Versions used as visual generation inputs."""
-	from joymedia.joymedia.doctype.media_project.media_project import _get_project_selected_assets
+	from joymedia.services.project_context import _get_project_selected_assets
 
 	project = frappe.get_doc("Media Project", media_project)
 	selected_assets = [

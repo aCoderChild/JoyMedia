@@ -13,10 +13,15 @@
   "continuation_workflow",
   "workflow_definition_section",
   "workflow_json",
+  "execution_spec",
   "workflow_hash",
+  "execution_spec_hash",
   "execution_characteristics_section",
   "frame_count",
   "output_fps",
+  "output_media_type",
+  "primary_output_node_key",
+  "primary_artifact_role",
   "produces_video",
   "produces_audio",
   "dynamic_bindings_section",
@@ -39,7 +44,7 @@
    "reqd": 1
   },
   {
-   "description": "Optional workflow used for cumulative continuation segments after the first segment.",
+   "description": "Optional workflow used for continuation segments after the first segment. The previous segment's Last Frame is supplied as the next segment's first frame.",
    "fieldname": "continuation_workflow",
    "fieldtype": "Link",
    "label": "Continuation Workflow",
@@ -56,8 +61,8 @@
    "reqd": 1
   },
   {
-   "default": "minimax_h3",
-   "description": "Backend adapter that knows how to bind JoyMedia inputs to this ComfyUI workflow family.",
+	"default": "comfyui_generic",
+	"description": "Generic, declarative ComfyUI API adapter. Model behavior belongs in the immutable workflow JSON, bindings, and execution specification.",
    "fieldname": "adapter_key",
    "fieldtype": "Data",
    "label": "Adapter Key",
@@ -76,6 +81,20 @@
    "label": "Workflow JSON",
    "options": "JSON",
    "reqd": 1
+  },
+  {
+   "description": "Declarative execution parameters, output nodes, and metadata used by the generic ComfyUI adapter.",
+   "fieldname": "execution_spec",
+   "fieldtype": "Code",
+   "label": "Execution Specification",
+   "options": "JSON"
+  },
+  {
+   "description": "SHA-256 of the immutable execution specification, including parameter mappings and output declarations.",
+   "fieldname": "execution_spec_hash",
+   "fieldtype": "Data",
+   "label": "Execution Specification Hash",
+   "read_only": 1
   },
   {
    "fieldname": "workflow_hash",
@@ -99,6 +118,31 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Output FPS",
+   "read_only": 1
+  },
+  {
+   "default": "Video",
+   "description": "The primary durable output emitted by this ComfyUI workflow.",
+   "fieldname": "output_media_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Primary Output Type",
+   "options": "Image\nVideo\nAudio\nJSON\nOther",
+   "read_only": 1
+  },
+  {
+   "description": "ComfyUI node key that writes the primary output.",
+   "fieldname": "primary_output_node_key",
+   "fieldtype": "Data",
+   "label": "Primary Output Node",
+   "read_only": 1
+  },
+  {
+   "default": "Primary Video",
+   "fieldname": "primary_artifact_role",
+   "fieldtype": "Select",
+   "label": "Primary Artifact Role",
+   "options": "Primary Image\nPrimary Video\nPrimary Audio\nLast Frame\nContinuation State\nPreview\nIntermediate",
    "read_only": 1
   },
   {

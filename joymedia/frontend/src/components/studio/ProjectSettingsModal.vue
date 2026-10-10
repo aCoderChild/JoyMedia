@@ -78,26 +78,23 @@
           </div>
         </div>
 
-        <!-- Render mode: fast drafts first, then the final film -->
-        <div class="space-y-1.5">
+        <div v-if="workflowOptions.length > 1" class="space-y-1.5">
           <label class="block font-bold text-ink-primary">
-            {{ currentLang === 'vi' ? 'Chế độ dựng:' : 'Render mode:' }}
+            {{ currentLang === 'vi' ? 'Trình tạo video:' : 'Video workflow:' }}
           </label>
-          <div class="grid grid-cols-2 gap-2">
-            <button
-              v-for="quality in qualityModes"
-              :key="quality.value"
-              type="button"
-              class="p-2.5 rounded-xl border text-left transition-all cursor-pointer"
-              :class="form.quality_mode === quality.value
-                ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
-                : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
-              @click="form.quality_mode = quality.value"
-            >
-              <span class="text-xs font-semibold">{{ currentLang === 'vi' ? quality.viLabel : quality.label }}</span>
-              <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">{{ currentLang === 'vi' ? quality.viSub : quality.sub }}</p>
-            </button>
-          </div>
+          <select v-model="form.workflow" class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500">
+            <option v-for="option in workflowOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+          </select>
+        </div>
+
+        <div v-if="pipelineOptions.length" class="space-y-1.5">
+          <label class="block font-bold text-ink-primary">
+            {{ currentLang === 'vi' ? 'Chuỗi tạo khung hình:' : 'Keyframe pipeline:' }}
+          </label>
+          <select v-model="form.generation_pipeline" class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500">
+            <option value="">{{ currentLang === 'vi' ? 'Tự động theo workflow' : 'Automatic for workflow' }}</option>
+            <option v-for="option in pipelineOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+          </select>
         </div>
 
         <!-- Music -->
@@ -162,10 +159,6 @@
           <p class="text-[10.5px] text-ink-muted">
             {{ currentLang === 'vi' ? 'Không bắt buộc. Hiện ở cuối video.' : 'Optional. Shown at the end of the video.' }}
           </p>
-          <label class="flex items-center gap-2 pt-1 text-xs text-ink-primary cursor-pointer select-none">
-            <input v-model="form.show_captions" type="checkbox" class="accent-indigo-600" />
-            {{ currentLang === 'vi' ? 'Hiện chữ trên từng cảnh' : 'Show each scene\'s on-screen text' }}
-          </label>
         </div>
 
         <!-- Export quality -->
@@ -190,98 +183,6 @@
           </div>
         </div>
 
-        <!-- Collapsible Advanced Settings -->
-        <div class="pt-2 border-t border-outline-border">
-          <button
-            type="button"
-            class="text-xs text-ink-muted hover:text-ink-primary font-semibold flex items-center gap-1.5 cursor-pointer py-1"
-            @click="showAdvanced = !showAdvanced"
-          >
-            <span>{{ showAdvanced ? '▾' : '▸' }}</span>
-            <span>{{ currentLang === 'vi' ? 'Cài đặt nâng cao (cho người dùng kỹ thuật)' : 'Advanced settings (for technical users)' }}</span>
-          </button>
-
-          <div v-if="showAdvanced" class="space-y-3 pt-2">
-            <!-- 3. Scene Continuity -->
-            <div class="space-y-1.5">
-              <label class="block font-semibold text-ink-primary">
-                {{ currentLang === 'vi' ? 'Liên kết giữa các cảnh:' : 'Scene continuity:' }}
-              </label>
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  class="p-2.5 rounded-xl border text-left transition-all cursor-pointer"
-                  :class="form.generation_mode === 'Continuous'
-                    ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
-                    : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
-                  @click="form.generation_mode = 'Continuous'"
-                >
-                  <div class="flex items-center gap-1.5">
-                    <span>🔗</span>
-                    <span class="text-xs font-semibold">{{ currentLang === 'vi' ? 'Nối tiếp liền mạch' : 'Keep scenes consistent' }}</span>
-                  </div>
-                  <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">
-                    {{ currentLang === 'vi' ? 'Cảnh sau tiếp nối trực tiếp chuyển động của cảnh trước.' : 'Smooth visual transitions chaining consecutive scenes.' }}
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  class="p-2.5 rounded-xl border text-left transition-all cursor-pointer"
-                  :class="form.generation_mode === 'Multi-shot'
-                    ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
-                    : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
-                  @click="form.generation_mode = 'Multi-shot'"
-                >
-                  <div class="flex items-center gap-1.5">
-                    <span>⧉</span>
-                    <span class="text-xs font-semibold">{{ currentLang === 'vi' ? 'Các cảnh độc lập' : 'Independent scenes' }}</span>
-                  </div>
-                  <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">
-                    {{ currentLang === 'vi' ? 'Cắt cảnh linh hoạt theo từng góc quay riêng biệt.' : 'Dynamic commercial cuts with distinct camera angles.' }}
-                  </p>
-                </button>
-              </div>
-            </div>
-
-            <!-- User-facing profile controls; backend workflows remain internal. -->
-            <div class="space-y-1.5">
-              <label class="block font-semibold text-ink-primary">
-                {{ currentLang === 'vi' ? 'Ảnh tham chiếu mỗi cảnh:' : 'References per shot:' }}
-              </label>
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  v-for="mode in referenceModes"
-                  :key="mode.value"
-                  type="button"
-                  class="p-2.5 rounded-xl border text-left transition-all cursor-pointer"
-                  :class="form.reference_mode === mode.value
-                    ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
-                    : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
-                  @click="setReferenceMode(mode.value)"
-                >
-                  <span class="text-xs font-semibold">{{ currentLang === 'vi' ? mode.viLabel : mode.label }}</span>
-                  <p class="text-[10.5px] text-ink-muted mt-1 leading-normal font-normal">{{ currentLang === 'vi' ? mode.viSub : mode.sub }}</p>
-                </button>
-              </div>
-            </div>
-
-            <!-- Global Instructions -->
-            <div class="space-y-1.5">
-              <label class="block font-semibold text-ink-primary">
-                {{ currentLang === 'vi' ? 'Chỉ dẫn chung toàn video (Instructions):' : 'Additional Instructions:' }}
-              </label>
-              <textarea
-                v-model="form.global_instructions"
-                rows="2"
-                :placeholder="currentLang === 'vi'
-                  ? 'Tông màu ấm, không gian hiện đại, màu sắc tự nhiên...'
-                  : 'Warm tones, minimalist modern studio, cinematic lighting...'"
-                class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 resize-none"
-              />
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- Modal Footer -->
@@ -312,28 +213,15 @@ import { computed, reactive, ref, watch } from "vue";
 
 const props = defineProps({
   settings: { type: Object, default: () => ({}) },
-  videoStyles: { type: Array, default: () => [] },
   saving: { type: Boolean, default: false },
   currentLang: { type: String, default: "en" },
 });
 
 const emit = defineEmits(["close", "save"]);
-const showAdvanced = ref(false);
-
 const formatPresets = [
   { value: "Landscape", label: "Landscape", vi: "Ngang", sub: "16:9 · YouTube, Web", icon: "🖥️" },
   { value: "Portrait", label: "Portrait", vi: "Dọc", sub: "9:16 · TikTok, Reels", icon: "📱" },
   { value: "Square", label: "Square", vi: "Vuông", sub: "1:1 · Facebook, Instagram", icon: "⏹️" },
-];
-
-const referenceModes = [
-  { value: "Single Image", label: "Single image", sub: "One starting image per scene.", viLabel: "Một ảnh", viSub: "Mỗi cảnh bắt đầu từ một ảnh." },
-  { value: "Multi-reference", label: "Person + place", sub: "Two reference images per scene.", viLabel: "Người + địa điểm", viSub: "Hai ảnh tham chiếu cho mỗi cảnh." },
-];
-
-const qualityModes = [
-  { value: "Draft", label: "Fast — preview", sub: "About 4× faster. Check the story, then render the final.", viLabel: "Nhanh — xem thử", viSub: "Nhanh gấp khoảng 4 lần. Duyệt kịch bản rồi dựng bản đẹp." },
-  { value: "Production", label: "Best — final", sub: "Highest quality, takes longer.", viLabel: "Đẹp nhất — bản cuối", viSub: "Chất lượng cao nhất, lâu hơn." },
 ];
 
 // The prompts are English for the AI; the labels are what marketers see.
@@ -350,11 +238,13 @@ const customMusic = ref(false);
 const showCustomMusic = computed(
   () => customMusic.value || Boolean(form.soundtrack_prompt && !musicMoods.some((mood) => mood.prompt === form.soundtrack_prompt))
 );
+const workflowOptions = computed(() => props.settings?.workflow_options || []);
+const pipelineOptions = computed(() => props.settings?.pipeline_options || []);
 
 const form = reactive({
   delivery_preset: "Landscape",
   total_duration_seconds: 15,
-  generation_mode: "Multi-shot",
+  generation_mode: "Continuous",
   reference_mode: "Single Image",
   quality_mode: "Production",
   global_instructions: "",
@@ -363,6 +253,8 @@ const form = reactive({
   soundtrack_prompt: "",
   export_quality: "Standard 1080p",
   show_captions: true,
+  workflow: "",
+  generation_pipeline: "",
 });
 
 const exportQualities = [
@@ -376,7 +268,7 @@ watch(
     if (s) {
       form.delivery_preset = s.delivery_preset || "Landscape";
       form.total_duration_seconds = Number(s.duration || s.total_duration_seconds) || 15;
-      form.generation_mode = s.generation_mode || "Multi-shot";
+      form.generation_mode = "Continuous";
       form.reference_mode = s.reference_mode || "Single Image";
       form.quality_mode = s.quality_mode || "Production";
       form.global_instructions = s.global_instructions || "";
@@ -385,6 +277,8 @@ watch(
       form.soundtrack_prompt = s.soundtrack_prompt || "";
       form.export_quality = s.export_quality || "Standard 1080p";
       form.show_captions = Boolean(Number(s.show_captions ?? 1));
+      form.workflow = s.workflow || workflowOptions.value[0]?.value || "";
+      form.generation_pipeline = s.generation_pipeline || "";
     }
   },
   { immediate: true }
@@ -394,7 +288,4 @@ function submitSave() {
 	emit("save", { ...form });
 }
 
-function setReferenceMode(mode) {
-  form.reference_mode = mode;
-}
 </script>

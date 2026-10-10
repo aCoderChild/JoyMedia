@@ -4,6 +4,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services import film_director, qwen_client, vision_analysis
+from joymedia.services import project_context
 from joymedia.services.prompt_compiler import compile_segment_prompt_from_snapshot
 
 
@@ -34,6 +35,73 @@ def _response(payload, ok=True):
 
 
 class TestFilmDirector(FrappeTestCase):
+	def test_product_director_routing_uses_reference_roles_not_reference_mode(self):
+		project = frappe._dict(reference_mode="Single-reference")
+		person_and_product = [
+			{"reference_key": "person", "media_type": "Image", "reference_role": "General",
+			 "analysis": {"kind": "person"}},
+			{"reference_key": "item", "media_type": "Image", "reference_role": "Product"},
+		]
+		with (
+			patch.object(project_context, "_get_project_reference_contexts", return_value=person_and_product),
+			patch.object(vision_analysis, "ensure_project_image_analysis"),
+		):
+			references, director_mode = project_context._story_film_planning_context(project)
+
+		self.assertEqual(person_and_product, references)
+		self.assertTrue(director_mode)
+		self.assertTrue(film_director.is_product_film(references))
+		product_instruction = film_director.build_director_instruction(
+			references, "product_reference", 10
+		)
+		self.assertIn("VIDEO IDEA is the creative brief and has priority", product_instruction)
+		self.assertIn("do not substitute a related", product_instruction)
+		self.assertIn("actively presenting or demonstrating it to camera", product_instruction)
+
+	def test_pipeline_director_roles_keep_person_product_and_environment_distinct(self):
+		contracts = [
+			{"role": "person", "accepted_media_type": "Image"},
+			{"role": "product", "accepted_media_type": "Image"},
+			{"role": "environment", "accepted_media_type": "Image"},
+		]
+		roles = qwen_client._story_reference_roles(contracts)
+		self.assertEqual({"character": "person", "product": "product", "place": "environment"}, roles)
+
+		shots = [{"generation_prompt": "The woman presents the plate.", "references": []}]
+		film_director.normalize_story_references(shots, [
+			{"reference_key": "model", "reference_role": "General", "media_type": "Image",
+			 "analysis": {"kind": "person"}},
+			{"reference_key": "plate", "reference_role": "Product", "media_type": "Image"},
+		], "person", roles)
+		self.assertEqual(
+			[("model", "person"), ("plate", "product")],
+			[(ref["reference_key"], ref["usage_role"]) for ref in shots[0]["references"]],
+		)
+
+	def test_product_plan_gets_a_brief_compliance_review(self):
+		draft = {"shots": [{"shot_number": 1, "generation_prompt": "The woman exercises outdoors."}]}
+		corrected = {"shots": [{"shot_number": 1, "generation_prompt": "She presents the plate in a restaurant."}]}
+		sent = {}
+
+		def review(_base_url, payload, _timeout):
+			sent.update(payload)
+			return corrected
+
+		with (
+			patch.object(qwen_client, "_completion_budget", return_value=3000),
+			patch.object(qwen_client, "_request_plan", side_effect=review),
+		):
+			result = qwen_client._review_product_plan(
+				base_url="http://qwen/v1", model="planner", timeout=30,
+				product_name="decorative plate", video_idea="Promote the plate in a five-star restaurant.",
+				plan=draft,
+			)
+
+		self.assertIs(corrected, result)
+		self.assertEqual(0, sent["temperature"])
+		self.assertIn("source of truth", sent["messages"][1]["content"])
+		self.assertIn("five-star restaurant", sent["messages"][1]["content"])
+
 	def test_roster_uses_analysis_category_and_role(self):
 		roster = film_director.build_roster(REFERENCES)
 
@@ -122,25 +190,25 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertIn("key=tower: Cream high-rise tower at golden hour", instruction)
 		self.assertNotIn("key=logo", instruction)
 		self.assertIn("<Picture 1>", instruction)
-		self.assertIn("Plan exactly 3 long continuous takes", instruction)
+		self.assertIn("Plan exactly 5 long continuous takes", instruction)
 		fixed_text = (film_director.DIRECTOR_RULES + film_director.FEW_SHOT_EXAMPLE).lower()
 		for genre_specific in ("real-estate", "property", "golden hour", "teal", "ao dai", "luxury"):
 			self.assertNotIn(genre_specific, fixed_text)
 
 	def test_take_count_keeps_every_take_within_model_range(self):
-		self.assertEqual((2, 3), film_director.take_count_range(15))
-		self.assertEqual((3, 5), film_director.take_count_range(25))
-		self.assertEqual((6, 6), film_director.take_count_range(60))
-		self.assertEqual((2, 2), film_director.take_count_range(5))
+		self.assertEqual((3, 3), film_director.take_count_range(15))
+		self.assertEqual((5, 5), film_director.take_count_range(25))
+		self.assertEqual((12, 12), film_director.take_count_range(60))
+		self.assertEqual((1, 1), film_director.take_count_range(5))
 
 	def test_story_plans_one_take_per_place_within_the_renderable_range(self):
 		places = [{"reference_key": f"p{n}", "media_type": "Image", "asset_category": "Background"} for n in range(6)]
 
-		# Six places in 30 s: every take must still be >= 124 frames, so five fit.
-		self.assertEqual(5, film_director.story_take_count(30, places))
-		self.assertEqual(3, film_director.story_take_count(30, places[:2]))
-		self.assertEqual(2, film_director.story_take_count(15, places))
-		self.assertEqual(6, film_director.story_take_count(60, places))
+		# One storyboard scene equals one 124-frame H3 render.
+		self.assertEqual(6, film_director.story_take_count(30, places))
+		self.assertEqual(6, film_director.story_take_count(30, places[:2]))
+		self.assertEqual(3, film_director.story_take_count(15, places))
+		self.assertEqual(12, film_director.story_take_count(60, places))
 
 	def test_every_film_has_an_opening_a_peak_and_an_ending(self):
 		self.assertEqual(["OPENING", "CLOSING"], film_director.story_beats(2))
@@ -150,8 +218,8 @@ class TestFilmDirector(FrappeTestCase):
 
 		instruction = film_director.build_director_instruction(REFERENCES, "product_reference", 25)
 		self.assertIn("- Take 1 OPENING:", instruction)
-		self.assertIn("- Take 2 CLIMAX:", instruction)
-		self.assertIn("- Take 3 CLOSING:", instruction)
+		self.assertIn("- Take 3 CLIMAX:", instruction)
+		self.assertIn("- Take 5 CLOSING:", instruction)
 
 	def test_take_durations_are_renderable_and_keep_the_total(self):
 		shots = [{"duration_seconds": value, "shot_number": index} for index, value in enumerate((12.33, 3.42, 5.08, 4.17), 1)]
@@ -160,15 +228,15 @@ class TestFilmDirector(FrappeTestCase):
 
 		durations = [shot["duration_seconds"] for shot in balanced]
 		self.assertAlmostEqual(25, sum(durations), places=6)
-		self.assertTrue(all(film_director.MIN_RENDER_SECONDS - 1e-6 <= value <= 10 + 1e-6 for value in durations))
-		self.assertGreater(durations[0], durations[1])
+		self.assertTrue(all(0 < value <= film_director.MAX_TAKE_SECONDS + 1e-6 for value in durations))
+		self.assertEqual(5, len(durations))
 
 	def test_too_many_takes_for_the_total_drops_short_middle_takes(self):
 		shots = [{"duration_seconds": value, "shot_number": index} for index, value in enumerate((4, 1, 3, 4), 1)]
 
 		balanced = film_director.balance_take_durations(shots, 12)
 
-		self.assertEqual([1, 2], [shot["shot_number"] for shot in balanced])
+		self.assertEqual([1, 2, 3], [shot["shot_number"] for shot in balanced])
 		self.assertAlmostEqual(12, sum(shot["duration_seconds"] for shot in balanced))
 
 	def test_product_words_are_not_mistaken_for_the_character(self):
@@ -180,6 +248,36 @@ class TestFilmDirector(FrappeTestCase):
 		film_director.normalize_story_references(shots, REFERENCES, "product_reference")
 
 		self.assertEqual(["tower", "tower"], [ref["reference_key"] for ref in shots[0]["references"]])
+
+	def test_model_person_is_bound_to_character_not_product_role(self):
+		shots = [{"generation_prompt": "A model wearing a white dress presents the ornate plate to camera."}]
+		roles = {film_director.CHARACTER: "person", film_director.PRODUCT: "product"}
+		references = [
+			*REFERENCES[:1],
+			{"reference_key": "plate", "media_type": "Image", "asset_category": "Reference",
+			 "reference_role": "Product", "asset_name": "plate"},
+		]
+
+		film_director.normalize_story_references(shots, references, "first_frame", roles)
+
+		self.assertEqual(
+			[("model", "person"), ("plate", "product")],
+			[(ref["reference_key"], ref["usage_role"]) for ref in shots[0]["references"]],
+		)
+
+	def test_advertising_brief_gets_an_explicit_product_presentation_action(self):
+		shots = [
+			{"shot_number": 1, "generation_prompt": "The model walks toward a table."},
+			{"shot_number": 2, "generation_prompt": "The model stands beside the table."},
+		]
+
+		film_director.enforce_requested_product_presentation(
+			shots, "Người mẫu quảng cáo và giới thiệu chiếc đĩa", [*REFERENCES[:1],
+			{"reference_key": "plate", "asset_category": "Reference", "reference_role": "Product"}],
+		)
+
+		self.assertIn("holding it securely", shots[0]["generation_prompt"])
+		self.assertIn("keeps the product presented to camera", shots[1]["generation_prompt"])
 
 	def test_story_film_plan_uses_director_prompt_and_orders_references(self):
 		plan = {"shots": [
@@ -218,12 +316,12 @@ class TestFilmDirector(FrappeTestCase):
 
 		prompt = sent["payload"]["messages"][1]["content"]
 		self.assertIn("film director", prompt)
-		self.assertIn("Return exactly 2 takes as shots.", prompt)
+		self.assertIn("Return exactly 3 takes as shots.", prompt)
 		self.assertNotIn("AVAILABLE INPUT ROLES", prompt)
 		self.assertNotIn("GENERATION IMAGE REFERENCES", prompt)
 		self.assertEqual(3000, sent["payload"]["max_tokens"])
 		self.assertEqual(
-			[["model", "tower"], ["model", "bedroom"]],
+			[["model", "tower"], ["model", "bedroom"], ["model", "tower"]],
 			[[ref["reference_key"] for ref in shot["references"]] for shot in result["shots"]],
 		)
 		self.assertAlmostEqual(15, sum(shot["duration_seconds"] for shot in result["shots"]))
@@ -310,16 +408,13 @@ class TestFilmDirector(FrappeTestCase):
 
 	def test_reference_to_video_takes_render_in_short_segments(self):
 		from joymedia.services.generation_segment_planner import plan_generation_segments
-		from joymedia.workflow_adapters.minimax_h3_profiles import MiniMaxH3ReferenceToVideoAdapter
-
-		adapter = MiniMaxH3ReferenceToVideoAdapter.__new__(MiniMaxH3ReferenceToVideoAdapter)
-		frame_count = adapter.extract_execution_metadata({})["frame_count"]
-		self.assertEqual(5, frame_count % 17)
+		# Segmentation is driven by the workflow's declared frame limit, not an adapter class.
+		frame_count = 124
 		segments = plan_generation_segments(
-			film_director.MAX_TAKE_SECONDS * 24, frame_count, adapter.continuation_overlap_frames
+			film_director.MAX_TAKE_SECONDS * 24, frame_count, continuation_overlap_frames=1
 		)
-		# Every render is ~5 s at most; the take is continued, not rendered in one long pass.
-		self.assertGreater(len(segments), 1)
+		# One storyboard take is one H3 render; no continuation is scheduled.
+		self.assertEqual(1, len(segments))
 		self.assertTrue(all(segment["segment_frame_count"] <= 5.2 * 24 for segment in segments))
 
 
@@ -389,29 +484,6 @@ class TestVisionAnalysis(FrappeTestCase):
 			self.assertEqual([], vision_analysis.ensure_project_image_analysis(frappe._dict(selected_media=[])))
 
 
-class TestContinuationReferences(FrappeTestCase):
-	def test_continuation_receives_the_take_reference_images_as_pictures(self):
-		import json
-		from pathlib import Path
-
-		from joymedia.workflow_adapters.minimax_h3_sato import MiniMaxH3SatoContinuationAdapter
-
-		workflow = json.loads(
-			(Path(__file__).parents[1] / "workflows" / "minimax_h3" / "minimax_h3_sato_continuation.json").read_text()
-		)
-		MiniMaxH3SatoContinuationAdapter().finalize_workflow(
-			workflow, None,
-			{"product_reference": ["person.png", "lobby.png"], "seed_video": "take.mp4", "seed_video_size": (1344, 768)},
-		)
-
-		context = workflow["328"]["inputs"]
-		self.assertEqual(["joymedia_reference_1", 0], context["media_1"])
-		self.assertEqual("image", context["media_type_2"])
-		self.assertEqual("lobby.png", workflow["joymedia_reference_2"]["inputs"]["image"])
-		# The saved latent cannot be resized, so the continuation matches the take's size.
-		self.assertEqual(("custom", 1344, 768), (context["resolution"], context["width"], context["height"]))
-
-
 class TestFilmEnding(FrappeTestCase):
 	def test_last_shot_is_directed_to_end_the_film_once(self):
 		shots = [{"generation_prompt": "Opening."}, {"generation_prompt": "Final view of the garden."}]
@@ -444,7 +516,7 @@ class TestProjectNaming(FrappeTestCase):
 		self.assertEqual("Spring launch", frappe.db.get_value("Media Project", named.name, "project_name"))
 
 	def test_project_without_product_name_can_be_deleted(self):
-		from joymedia.joymedia.doctype.media_project.media_project import archive_project
+		from joymedia.api.projects import archive_project
 
 		project = self._project("Dự án mới")
 
@@ -470,8 +542,8 @@ class TestTakeLengthsFitRenderJobs(FrappeTestCase):
 
 		lengths = [round(shot["duration_seconds"], 2) for shot in shots]
 		self.assertAlmostEqual(30, sum(shot["duration_seconds"] for shot in shots))
-		self.assertEqual(round(film_director.MIN_RENDER_SECONDS, 2), lengths[0])
-		self.assertEqual(max(lengths), lengths[2])
+		self.assertTrue(all(length <= round(film_director.MAX_TAKE_SECONDS, 2) for length in lengths))
+		self.assertEqual(6, len(lengths))
 
 
 class TestDirectorGuards(FrappeTestCase):

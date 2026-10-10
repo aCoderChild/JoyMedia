@@ -22,7 +22,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		super().tearDown()
 
 	def test_project_uses_video_idea_as_single_creative_brief(self):
-		from joymedia.joymedia.doctype.media_project.media_project import create_project
+		from joymedia.api.projects import create_project
 
 		project = create_project(
 			project_name="Prompt Project",
@@ -34,7 +34,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertFalse(frappe.get_meta("Media Project").has_field("reference_template"))
 
 	def test_selected_media_supports_image_video_and_audio(self):
-		from joymedia.joymedia.doctype.media_project.media_project import _get_project_selected_assets
+		from joymedia.services.project_context import _get_project_selected_assets
 
 		project, _ = _create_project("Reference Media", self.workflow)
 		for media_type, extension in (("Image", "png"), ("Video", "mp4"), ("Audio", "wav")):
@@ -61,7 +61,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertNotIn(first_version.name.lower(), keys)
 
 	def test_workspace_exposes_business_data_not_raw_artifacts(self):
-		from joymedia.joymedia.doctype.media_project.media_project import get_project_workspace
+		from joymedia.api.projects import get_project_workspace
 		from joymedia.services.video_plan_service import apply_video_plan
 
 		project, _ = _create_project("Workspace", self.workflow)
@@ -81,11 +81,11 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertNotIn("outputs", workspace)
 		self.assertEqual(workspace["assets"][0]["asset_version"], version.name)
 
-	@patch("joymedia.joymedia.doctype.media_project.media_project._get_asset_version_file_url")
-	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.db.get_value")
-	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.get_all")
+	@patch("joymedia.services.project_context._get_asset_version_file_url")
+	@patch("joymedia.services.project_context.frappe.db.get_value")
+	@patch("joymedia.services.project_context.frappe.get_all")
 	def test_shot_progress_is_weighted_by_segment_frames(self, get_all, get_value, get_file_url):
-		from joymedia.joymedia.doctype.media_project.media_project import _aggregate_shot_progress
+		from joymedia.services.project_context import _aggregate_shot_progress
 
 		get_all.return_value = [
 			frappe._dict(
@@ -112,7 +112,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 		result = _aggregate_shot_progress("RUN-00001")
 
-		self.assertEqual(result[0]["status"], "Generating")
+		self.assertEqual(result[0]["status"], "Running")
 		self.assertAlmostEqual(result[0]["progress"], 66.666666, places=4)
 
 	def test_shot_can_preserve_multiple_references_with_one_role(self):
@@ -151,7 +151,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		)
 
 	def test_planning_context_tracks_prompt_assets_settings_and_global_instructions(self):
-		from joymedia.joymedia.doctype.media_project.media_project import _build_planning_context
+		from joymedia.services.project_context import _build_planning_context
 
 		project, _ = _create_project("Planning Context", self.workflow)
 		context, first_hash = _build_planning_context(project)
@@ -186,7 +186,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 	def test_generation_workflow_owns_adapter_without_model_profile_doctype(self):
 		workflow = frappe.get_doc("Generation Workflow", self.workflow)
-		self.assertEqual(workflow.adapter_key, "minimax_h3")
+		self.assertEqual(workflow.adapter_key, "comfyui_generic")
 		self.assertFalse(frappe.db.exists("DocType", "AI Model Profile"))
 
 	@patch("joymedia.services.generation_orchestrator.start_run_internal")
@@ -194,7 +194,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 	def test_generation_recalculates_shots_before_freezing_run_snapshot(
 		self, validate_preflight, start_run
 	):
-		from joymedia.joymedia.doctype.media_project.media_project import build_project_snapshot
+		from joymedia.services.project_context import build_project_snapshot
 		from joymedia.services.shot_duration_planner import recalculate_shot_durations
 		from joymedia.services.video_plan_service import apply_video_plan
 
@@ -300,14 +300,15 @@ def _ensure_workflow():
 	workflow = frappe.get_doc({
 		"doctype": "Generation Workflow",
 		"workflow_key": f"product_showcase_{frappe.generate_hash(length=5)}",
-		"adapter_key": "minimax_h3",
+		"adapter_key": "comfyui_generic",
 		"workflow_json": (
 			'{"load_img":{"inputs":{"image":""},"class_type":"VHS_LoadImagePath"},'
-			'"minimax_cond":{"inputs":{"length":124},"class_type":"MiniMaxH3ImageToVideo"},'
+			'"dec_video":{"inputs":{},"class_type":"VAEDecode"},'
 			'"save_video":{"inputs":{"images":["dec_video",0],"frame_rate":24,'
 			'"filename_prefix":"JoyMedia","loop_count":0,"format":"video/h264-mp4",'
 			'"pingpong":false,"save_output":true},"class_type":"VHS_VideoCombine"}}'
 		),
+		"execution_spec": '{"parameters":[],"metadata":{"frame_count":124,"output_fps":24,"produces_video":1},"outputs":{"primary":{"node_key":"save_video","media_type":"Video"}}}',
 		"bindings": [{
 			"binding_key": "first_frame",
 			"node_key": "load_img",

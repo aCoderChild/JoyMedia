@@ -1,5 +1,5 @@
 <template>
-  <header class="studio-header flex items-center justify-between gap-3 h-12 px-3 sm:px-4 border-b border-outline-border bg-surface-card shrink-0 select-none z-10">
+  <header class="studio-header relative flex items-center justify-between gap-3 h-12 px-3 sm:px-4 border-b border-outline-border bg-surface-card shrink-0 select-none z-50">
     <!-- Left: Back to Projects, Project Title & Status -->
     <div class="flex items-center gap-2 sm:gap-3 min-w-0">
       <button
@@ -99,7 +99,8 @@
 
         <div
           v-if="activityOpen"
-          class="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-outline-border bg-surface-card shadow-xl p-3 z-30"
+          class="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-outline-border bg-surface-card shadow-xl p-3 z-50 pointer-events-auto"
+          data-testid="generation-activity-panel"
         >
           <div class="flex items-center justify-between gap-3 mb-2">
             <div>
@@ -120,19 +121,33 @@
           </div>
 
           <div v-if="production.shots?.length" class="space-y-1.5 max-h-56 overflow-y-auto">
-            <div
-              v-for="shot in production.shots"
-              :key="shot.shot"
-              class="flex items-center gap-2 rounded-lg px-2 py-1.5 bg-surface-muted/50"
-            >
-              <span class="size-4 shrink-0 rounded-full flex items-center justify-center text-[10px]" :class="shotStatusClass(shot.status)">
-                {{ shotStatusGlyph(shot.status) }}
-              </span>
-              <span class="min-w-0 flex-1 truncate text-[11px] text-ink-secondary">
-                {{ shot.shot_name || `${currentLang === 'vi' ? 'Cảnh' : 'Scene'} ${shot.shot_number || ''}` }}
-              </span>
-              <span class="text-[10px] text-ink-muted shrink-0">{{ Math.round(Number(shot.progress || 0)) }}%</span>
-            </div>
+            <template v-for="shot in production.shots" :key="shot.shot">
+              <button
+                type="button"
+                class="w-full text-left flex items-center gap-2 rounded-lg px-2 py-1.5 bg-surface-muted/50 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
+                :aria-label="`${shot.shot_name || `Scene ${shot.shot_number || ''}`} — ${shotStatusLabel(shot.status)}`"
+                @click="emit('selectShot', shot.shot_number); activityOpen = false"
+              >
+                <span class="size-4 shrink-0 rounded-full flex items-center justify-center text-[10px]" :class="shotStatusClass(shot.status)">
+                  {{ shotStatusGlyph(shot.status) }}
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-[11px] text-ink-secondary">
+                    {{ shot.shot_name || `${currentLang === 'vi' ? 'Cảnh' : 'Scene'} ${shot.shot_number || ''}` }}
+                  </span>
+                  <span v-if="shot.current_step" class="block truncate text-[10px] text-ink-muted">
+                    {{ stepStatusLabel(shot.current_step, shot.current_step_status) }}
+                  </span>
+                </span>
+                <span class="text-[10px] text-ink-muted shrink-0">{{ shotStatusLabel(shot.status) }}</span>
+              </button>
+              <p
+                v-if="shot.status === 'Failed' && shot.message"
+                class="ml-8 -mt-1 text-[10px] leading-snug text-rose-400"
+              >
+                {{ shot.message }}
+              </p>
+            </template>
           </div>
           <div v-else class="text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Chưa có cảnh nào đang dựng.' : 'No scenes rendering yet.' }}</div>
 
@@ -258,6 +273,7 @@ const emit = defineEmits([
   "renderFinal",
   "retryGeneration",
   "stopGeneration",
+  "selectShot",
 ]);
 
 const isEditingName = ref(false);
@@ -310,7 +326,7 @@ const statusBadgeClass = computed(() => {
 });
 
 const activeJobCount = computed(() => {
-  return (props.production?.shots || []).filter((shot) => ["Generating", "Pending"].includes(shot.status)).length;
+  return (props.production?.shots || []).filter((shot) => ["Queued", "Running"].includes(shot.status)).length;
 });
 
 const totalShotCount = computed(() => (props.production?.shots || []).length);
@@ -322,6 +338,7 @@ const completedShotCount = computed(() => {
 const activityStatusClass = computed(() => {
   if (props.production?.status === "Completed") return "text-emerald-400";
   if (props.production?.status === "Failed") return "text-rose-400";
+  if ((props.production?.shots || []).some((shot) => shot.status === "Failed")) return "text-rose-400";
   if (["Queued", "Running"].includes(props.production?.status)) return "text-indigo-400";
   return "text-ink-muted";
 });
@@ -329,6 +346,16 @@ const activityStatusClass = computed(() => {
 const vi = computed(() => props.currentLang === "vi");
 
 const runStatusLabel = computed(() => {
+  const shots = props.production?.shots || [];
+  if (shots.some((shot) => shot.status === "Failed")) {
+    return vi.value ? "Cần xử lý" : "Needs attention";
+  }
+  if (shots.some((shot) => shot.status === "Running")) {
+    return vi.value ? "Đang dựng" : "Rendering";
+  }
+  if (shots.some((shot) => shot.status === "Queued")) {
+    return vi.value ? "Trong hàng đợi" : "Queued";
+  }
   const labels = {
     Queued: ["Waiting", "Đang chờ"],
     Running: ["Rendering", "Đang dựng"],
@@ -354,6 +381,18 @@ const progressLabel = computed(() => {
     return vi.value ? "AI đang viết kịch bản…" : "The AI is writing the storyboard…";
   }
   if (["Queued", "Running"].includes(props.production?.status)) {
+    const shots = props.production?.shots || [];
+    const rendering = shots.filter((shot) => shot.status === "Running").length;
+    const queued = shots.filter((shot) => shot.status === "Queued").length;
+    const failed = shots.filter((shot) => shot.status === "Failed").length;
+    // A queued prompt might not have reached a worker yet.  Never invent a
+    // render ETA until something is genuinely executing.
+    if (!rendering) {
+      const parts = [];
+      if (queued) parts.push(vi.value ? `${queued} cảnh đang chờ` : `${queued} scene${queued === 1 ? "" : "s"} queued`);
+      if (failed) parts.push(vi.value ? `${failed} cảnh cần xử lý` : `${failed} scene${failed === 1 ? "" : "s"} need attention`);
+      return parts.join(" · ");
+    }
     const eta = props.production?.eta_minutes;
     const left = eta ? (vi.value ? ` · còn khoảng ${eta} phút` : ` · about ${eta} min left`) : "";
     return vi.value
@@ -372,14 +411,41 @@ const progressLabel = computed(() => {
 function shotStatusGlyph(status) {
   if (status === "Completed") return "✓";
   if (status === "Failed") return "!";
-  if (status === "Generating") return "•";
+  if (status === "Running") return "•";
+  if (status === "Queued") return "○";
   return "·";
 }
 
 function shotStatusClass(status) {
   if (status === "Completed") return "bg-emerald-500/15 text-emerald-400";
   if (status === "Failed") return "bg-rose-500/15 text-rose-400";
-  if (status === "Generating") return "bg-indigo-500/15 text-indigo-400 animate-pulse";
+  if (status === "Running") return "bg-indigo-500/15 text-indigo-400 animate-pulse";
+  if (status === "Queued") return "bg-indigo-500/10 text-indigo-400";
   return "bg-surface-muted text-ink-muted";
+}
+
+function shotStatusLabel(status) {
+  const labels = {
+    Completed: ["Ready", "Hoàn tất"],
+    Failed: ["Needs attention", "Cần xử lý"],
+    Running: ["Rendering", "Đang dựng"],
+    Queued: ["Queued", "Đang chờ"],
+    Waiting: ["Waiting", "Chờ bước trước"],
+    Cancelled: ["Stopped", "Đã dừng"],
+  };
+  return labels[status]?.[vi.value ? 1 : 0] || status || "";
+}
+
+function stepStatusLabel(step, status) {
+  const names = {
+    keyframe: vi.value ? "Tạo ảnh khung đầu" : "Creating first frame",
+    video: vi.value ? "Đang tạo video" : "Rendering video",
+  };
+  const stage = names[step] || step;
+  if (status === "Ready" || status === "Queued") {
+    return `${stage} · ${vi.value ? "đang chờ" : "queued"}`;
+  }
+  if (status === "Failed") return `${stage} · ${vi.value ? "cần xử lý" : "needs attention"}`;
+  return stage;
 }
 </script>

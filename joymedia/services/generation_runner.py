@@ -8,11 +8,11 @@ from frappe.utils import now
 from frappe.utils.synchronization import filelock
 
 from .artifact_service import get_attempt_artifact
-from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file
+from .comfyui_client import get_base_url, submit_workflow, upload_frappe_file, upload_local_file
 from .prompt_compiler import compile_prompt
+from .reference_compositor import compose_reference_board
 from .result_ingestor import sync_attempt_result
 from .workflow_resolver import resolve_attempt
-from joymedia.workflow_adapters import get_workflow_adapter
 from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
 
 
@@ -88,10 +88,9 @@ def attach_chained_inputs(job):
 	if not previous_attempt or previous_attempt.status != "Completed":
 		return False
 	workflow = frappe.get_doc("Generation Workflow", job.workflow)
-	if get_workflow_adapter(workflow).cumulative_segment_output:
-		state = get_attempt_artifact(previous_attempt.name, "Continuation State")
-		primary = get_attempt_artifact(previous_attempt.name, "Primary Video")
-		return bool(primary and primary.frappe_file and state and state.provider_locator)
+	if job.dependency_artifact_role:
+		artifact = get_attempt_artifact(previous_attempt.name, job.dependency_artifact_role)
+		return bool(artifact and artifact.frappe_file)
 	return bool(get_attempt_artifact(previous_attempt.name, "Last Frame"))
 
 
@@ -175,6 +174,9 @@ def _stage_generation_inputs(job, attempt):
 	"""Upload frozen Job inputs and resolve dynamic continuation for this Attempt."""
 	staged = {}
 	resolved_inputs = {}
+	workflow = frappe.get_doc("Generation Workflow", job.workflow)
+	compose_roles = _reference_composition_roles(workflow)
+	composed_references = {}
 	for row in job.get("inputs") or []:
 		role = frappe.scrub(row.input_role or "")
 		if row.generation_artifact:
@@ -188,33 +190,63 @@ def _stage_generation_inputs(job, attempt):
 			resolved_inputs.setdefault(role, []).append({"source": "Asset Version", "asset_version": row.asset_version})
 		if not file_url:
 			frappe.throw(_("Generation input role {0} has no file.").format(role))
+		if role in compose_roles:
+			file_doc = frappe.get_doc("File", {"file_url": file_url})
+			composed_references.setdefault(role, []).append({
+				"path": file_doc.get_full_path(),
+				"role": _reference_role_for_task_asset(job, row.asset_version),
+				"label": _reference_label_for_task_asset(job, row.asset_version),
+				"asset_version": row.asset_version,
+			})
+			continue
 		staged.setdefault(role, []).append(upload_frappe_file(file_url)["server_path"])
+
+	for role, references in composed_references.items():
+		if len(references) == 1:
+			reference = references[0]
+			staged[role] = [upload_local_file(reference["path"])["server_path"]]
+			resolved_inputs[role] = [{
+				"source": "Asset Version",
+				"asset_version": reference["asset_version"],
+				"reference_role": reference["role"],
+			}]
+			continue
+		run = frappe.get_doc("Generation Run", job.generation_run)
+		try:
+			snapshot = frappe.parse_json(run.project_snapshot_json or "{}")
+		except (TypeError, ValueError):
+			snapshot = {}
+		board = compose_reference_board(
+			references,
+			width=int(snapshot.get("delivery_width") or 1344),
+			height=int(snapshot.get("delivery_height") or 768),
+		)
+		uploaded = upload_local_file(board["path"])
+		staged[role] = [uploaded["server_path"]]
+		staged[f"{role}_instruction"] = board["instruction"]
+		resolved_inputs[role] = [{
+			"source": "Reference Board",
+			"asset_version": reference["asset_version"],
+			"reference_role": reference["role"],
+			"label": reference["label"],
+		} for reference in references]
+		resolved_inputs[f"{role}_board"] = {"sha256": board["sha256"], "count": board["count"]}
 
 	if job.depends_on_task:
 		previous_attempt = get_effective_attempt(job.depends_on_task)
 		if not previous_attempt or previous_attempt.status != "Completed":
 			frappe.throw(_("A chained Generation Task requires a completed upstream Attempt."))
 		workflow = frappe.get_doc("Generation Workflow", job.workflow)
-		if get_workflow_adapter(workflow).cumulative_segment_output:
-			primary_artifact = get_attempt_artifact(previous_attempt.name, "Primary Video")
-			continuation_state = get_attempt_artifact(previous_attempt.name, "Continuation State")
-			if not primary_artifact or not primary_artifact.frappe_file:
-				frappe.throw(_("The upstream Attempt has no usable Primary Video Artifact."))
-			if not continuation_state or not continuation_state.provider_locator:
-				frappe.throw(_("The upstream Attempt has no usable Continuation State Artifact."))
-			staged["seed_video"] = [upload_frappe_file(primary_artifact.frappe_file)["server_path"]]
-			# The continuation extends the previous segment's latent, which cannot be
-			# resized, so it must render at exactly that segment's frame size.
-			staged["seed_video_size"] = [_video_size(primary_artifact.frappe_file)]
-			staged["continuation_state"] = continuation_state.provider_locator
-			resolved_inputs["seed_video"] = [{
-				"source": "Generation Artifact",
-				"artifact": primary_artifact.name,
-			}]
-			resolved_inputs["continuation_state"] = [{
-				"source": "Generation Artifact",
-				"artifact": continuation_state.name,
-				"provider_locator": continuation_state.provider_locator,
+		if job.dependency_artifact_role:
+			artifact = get_attempt_artifact(previous_attempt.name, job.dependency_artifact_role)
+			if not artifact or not artifact.frappe_file:
+				frappe.throw(
+					_("The upstream Attempt has no usable {0} Artifact.").format(job.dependency_artifact_role)
+				)
+			staged["first_frame"] = [upload_frappe_file(artifact.frappe_file)["server_path"]]
+			resolved_inputs["first_frame"] = [{
+				"source": "Generation Artifact", "artifact": artifact.name,
+				"artifact_role": job.dependency_artifact_role,
 			}]
 		else:
 			last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
@@ -227,21 +259,52 @@ def _stage_generation_inputs(job, attempt):
 			}]
 
 	if not staged:
-		frappe.throw(_("Generation Task {0} has no resolved inputs.").format(job.name))
+		required_file_inputs = [
+			binding for binding in frappe.get_doc("Generation Workflow", job.workflow).bindings
+			if binding.required and binding.required_input_role
+		]
+		if required_file_inputs:
+			frappe.throw(_("Generation Task {0} has no resolved inputs.").format(job.name))
 
 	attempt.resolved_inputs_json = json.dumps(resolved_inputs, sort_keys=True)
 	attempt.save(ignore_permissions=True)
 	return staged
 
 
-def _video_size(file_url):
-	import subprocess
+def _reference_composition_roles(workflow):
+	"""Read roles that should be composed into a deterministic image board."""
+	try:
+		spec = frappe.parse_json(getattr(workflow, "execution_spec", None) or "{}")
+	except (TypeError, ValueError):
+		spec = {}
+	roles = ((spec.get("input_preprocessing") or {}).get("compose_image_roles") or [])
+	if roles:
+		return {frappe.scrub(role) for role in roles}
+	return set()
 
-	path = frappe.get_doc("File", {"file_url": file_url}).get_full_path()
-	output = subprocess.run(
-		["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
-		 "-of", "csv=p=0", path],
-		capture_output=True, text=True, check=True, timeout=60,
-	).stdout.strip()
-	width, height = (int(value) for value in output.split(","))
-	return width, height
+
+def _reference_role_for_task_asset(job, asset_version):
+	"""Resolve the role saved on the Shot Reference row for board guidance."""
+	if not asset_version:
+		return "general"
+	from .reference_compositor import normalize_reference_role
+	shot = frappe.get_doc("Shot", job.shot)
+	for row in shot.get("generation_inputs") or []:
+		if row.asset_version == asset_version:
+			return normalize_reference_role(row.reference_role)
+	return "general"
+
+
+def _reference_label_for_task_asset(job, asset_version):
+	if not asset_version:
+		return ""
+	project = frappe.db.get_value("Shot", job.shot, "media_project")
+	if project:
+		label = frappe.db.get_value(
+			"Project Reference",
+			{"parent": project, "parenttype": "Media Project", "asset_version": asset_version},
+			"label",
+		)
+		if label:
+			return label
+	return frappe.db.get_value("Asset Version", asset_version, "file") or ""

@@ -15,7 +15,9 @@ class GenerationTask(Document):
 		"prompt_hash",
 		"segment_index",
 		"segment_frame_count",
+		"pipeline_step_key",
 		"depends_on_task",
+		"dependency_artifact_role",
 	)
 
 	def validate(self):
@@ -64,10 +66,10 @@ class GenerationTask(Document):
 			# safely chain long-shot segments or cross-shot continuity.
 			from joymedia.services.workflow_resolver import workflow_supports_continuation
 
-			if not workflow_supports_continuation(workflow):
+			if not self.dependency_artifact_role and not workflow_supports_continuation(workflow):
 				frappe.throw(
 					_(
-						"Workflow {0} does not support first-frame continuation, so Generation Task {1} "
+						"Workflow {0} does not support a dependency input, so Generation Task {1} "
 						"cannot depend on another task. Shorten the Shot to one workflow segment or use a "
 						"continuation-capable workflow."
 					).format(workflow.name, self.name or "new task")
@@ -93,11 +95,12 @@ class GenerationTask(Document):
 				"generation_run": self.generation_run,
 				"shot": self.shot,
 				"segment_index": self.segment_index,
+				"pipeline_step_key": self.pipeline_step_key or "",
 				"name": ["!=", self.name],
 			},
 		)
 		if duplicate:
-			frappe.throw(_("Only one Generation Task may exist for each shot segment in a run."))
+			frappe.throw(_("Only one Generation Task may exist for each pipeline step of a shot segment in a run."))
 		return workflow
 
 	def _validate_generation_run(self, project):
@@ -121,7 +124,8 @@ class GenerationTask(Document):
 			from joymedia.services.workflow_profiles import allowed_workflows_for_shot
 
 			allowed_workflows = allowed_workflows_for_shot(snapshot, shot_snapshot)
-			if workflow.name not in {candidate.name for candidate in allowed_workflows}:
+			pipeline_workflows = self._pipeline_workflows(run)
+			if workflow.name not in {candidate.name for candidate in allowed_workflows} and workflow.name not in pipeline_workflows:
 				frappe.throw(
 					_("Generation Task Workflow {0} is not valid for Shot {1} in this run.").format(
 						workflow.name, self.shot
@@ -133,6 +137,14 @@ class GenerationTask(Document):
 		) != self.workflow:
 			frappe.throw(_("Generation Run Workflow must match the Generation Task Workflow."))
 		return workflow
+
+	@staticmethod
+	def _pipeline_workflows(run):
+		if not getattr(run, "generation_pipeline", None):
+			return set()
+		return set(frappe.get_all(
+			"Generation Pipeline Step", filters={"parent": run.generation_pipeline}, pluck="workflow"
+		))
 
 	def get_shot_input_snapshot(self):
 		shot = frappe.get_doc("Shot", self.shot)
@@ -161,9 +173,6 @@ class GenerationTask(Document):
 		# Continuous first_frame is runtime lineage resolved from the dependency per Attempt.
 		if self.depends_on_task:
 			actual_snapshot.pop("first_frame", None)
-			if str(getattr(workflow, "adapter_key", "")).startswith("minimax_h3_sato"):
-				actual_snapshot.pop("seed_video", None)
-				actual_snapshot.pop("continuation_state", None)
 
 		required_roles = {
 			frappe.scrub(binding.required_input_role)
@@ -173,11 +182,6 @@ class GenerationTask(Document):
 		}
 		for role in required_roles:
 			if self.depends_on_task and role == "first_frame":
-				continue
-			if self.depends_on_task and str(getattr(workflow, "adapter_key", "")).startswith("minimax_h3_sato") and role in {
-				"seed_video",
-				"continuation_state",
-			}:
 				continue
 			asset_versions = actual_snapshot.get(role, [])
 			if not asset_versions or any(

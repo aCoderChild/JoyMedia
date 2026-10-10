@@ -211,21 +211,29 @@ def compose_project_timeline_internal(project_name: str):
 
 
 def _caption_cues(project, video_clips, clip_frames, transition_frames, positioned, fps):
-	"""(start, end, text) in seconds for every scene with a caption, while it is on screen."""
+	"""(start, end, text) for the last scene's caption, shown at the end of the video."""
 	if not int(project.get("show_captions") or 0):
 		return []
-	shots = [clip.shot for clip in video_clips if clip.get("shot")]
-	captions = dict(frappe.get_all(
-		"Shot", filters={"name": ["in", shots]}, fields=["name", "caption"], as_list=True
-	)) if shots else {}
-	cues, cursor = [], 0
-	for clip, frames, transition in zip(video_clips, clip_frames, transition_frames):
-		start = int(clip.timeline_start_frame or 0) if positioned else cursor
-		cursor += frames - transition
-		text = str(captions.get(clip.get("shot")) or "").strip()
-		if text and frames / fps >= MIN_CAPTION_SECONDS:
-			cues.append((start / fps, (start + frames) / fps, text))
-	return cues
+	if not video_clips:
+		return []
+	last_clip = video_clips[-1]
+	last_shot = last_clip.get("shot")
+	if not last_shot:
+		return []
+	rows = frappe.get_all(
+		"Shot", filters={"name": last_shot}, fields=["caption"], as_list=True
+	)
+	text = str(rows[0][0] or "").strip() if rows else ""
+	if not text:
+		return []
+	last_frames = clip_frames[-1]
+	if last_frames / fps < MIN_CAPTION_SECONDS:
+		return []
+	if positioned:
+		start = int(last_clip.timeline_start_frame or 0)
+	else:
+		start = sum(f - t for f, t in zip(clip_frames[:-1], transition_frames[:-1]))
+	return [(start / fps, (start + last_frames) / fps, text)]
 
 
 def _apply_ending(source_path, output_path, profile, title, tagline, temp_path, captions=()):

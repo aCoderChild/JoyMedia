@@ -10,21 +10,23 @@ Workflow = GenerationWorkflow
 
 
 class TestWorkflow(FrappeTestCase):
-	def test_workflow_hash_uses_canonical_json_and_h3_adapter_metadata(self):
+	def test_workflow_hash_uses_canonical_json_and_generic_metadata(self):
 		doc = frappe.new_doc("Generation Workflow")
-		doc.workflow_key = "product_showcase"
-		doc.adapter_key = "minimax_h3"
-		doc.workflow_json = '{"save_video":{"inputs":{"frame_rate":30}},"minimax_cond":{"inputs":{"length":90,"height":1920,"width":1080}}}'
+		doc.workflow_key = "test_workflow"
+		doc.adapter_key = "comfyui_generic"
+		doc.workflow_json = '{"save":{"class_type":"SaveImage","inputs":{"filename_prefix":""}}}'
+		doc.execution_spec = '{"parameters":[],"metadata":{"frame_count":90,"output_fps":30},"outputs":{"primary":{"node_key":"save","media_type":"Image"}}}'
 		Workflow.validate(doc)
 		self.assertEqual(doc.frame_count, 90)
 		self.assertEqual(doc.output_fps, 30)
-		self.assertEqual(doc.workflow_hash, hashlib.sha256(b'{"minimax_cond":{"inputs":{"height":1920,"length":90,"width":1080}},"save_video":{"inputs":{"frame_rate":30}}}').hexdigest())
+		self.assertEqual(doc.workflow_hash, hashlib.sha256(b'{"save":{"class_type":"SaveImage","inputs":{"filename_prefix":""}}}').hexdigest())
 
 	def test_invalid_binding_is_rejected(self):
 		doc = frappe.new_doc("Generation Workflow")
-		doc.workflow_key = "product_showcase"
-		doc.adapter_key = "minimax_h3"
-		doc.workflow_json = '{"actual_loader":{"inputs":{"image_path":""}}}'
+		doc.workflow_key = "test_workflow"
+		doc.adapter_key = "comfyui_generic"
+		doc.workflow_json = '{"actual_loader":{"class_type":"LoadImage","inputs":{"image_path":""}},"save":{"class_type":"SaveImage","inputs":{"filename_prefix":""}}}'
+		doc.execution_spec = '{"parameters":[],"outputs":{"primary":{"node_key":"save","media_type":"Image"}}}'
 		doc.append("bindings", {"binding_key": "first_frame", "node_key": "missing_loader", "input_name": "image", "required_input_role": "First Frame", "value_type": "File Path", "required": 1})
 		with self.assertRaises(frappe.ValidationError):
 			Workflow.validate(doc)

@@ -35,12 +35,12 @@ def parse_video_plan(plan_json: str):
 
 def apply_video_plan(media_project_name: str = None, plan: dict = None):
 	project = frappe.get_doc("Media Project", media_project_name)
-	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
+	from joymedia.services.project_context import _project_settings
 	settings = _project_settings(project)
 	_validate_plan_shape(plan)
-	mode = {"Independent": "Multi-shot", "Chained": "Continuous", "Consistency": "Continuous"}.get(
-		settings.generation_mode, settings.generation_mode or "Multi-shot"
-	)
+	from joymedia.services.generation_settings import normalize_generation_mode
+
+	mode = normalize_generation_mode(settings.generation_mode)
 	if mode not in ("Multi-shot", "Continuous"):
 		frappe.throw(_("Select Continuous or Multi-shot generation mode."))
 	uses_keyframe_fields = any(
@@ -55,8 +55,10 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 	}
 	workflow_contract = None
 	if settings.workflow:
-		from joymedia.services.workflow_resolver import get_workflow_input_contract
-		workflow_contract = get_workflow_input_contract(frappe.get_doc("Generation Workflow", settings.workflow))
+		from joymedia.services.workflow_profiles import planning_input_contract
+		workflow_contract = planning_input_contract(
+			frappe.get_doc("Generation Workflow", settings.workflow), settings.generation_pipeline
+		)
 	contract_by_role = {item["role"]: item for item in (workflow_contract or [])}
 	_assign_reference_pool(plan, project, settings, contract_by_role, project_references, mode)
 	for shot in plan["shots"]:
@@ -90,13 +92,20 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 						)
 					)
 		for contract in workflow_contract or []:
+			# In Continuous mode, only Shot 1 has a static first frame. Later shots
+			# receive the previous shot's generated Last Frame at runtime.
+			if (
+				mode == "Continuous"
+				and shot.get("shot_number", 0) > 1
+				and contract["role"] == "first_frame"
+			):
+				continue
 			count = role_counts.get(contract["role"], 0)
 			if count < contract.get("min_count", 0):
 				frappe.throw(
 					_(
 						"Shot {0} needs {1} reference image(s) for the selected workflow. "
-						"Choose H3 I2V Production for one image per shot, or add the required "
-						"additional references."
+						"Add the required references or select a workflow with a compatible input contract."
 					).format(
 						shot.get("shot_number"), contract["min_count"]
 					)
@@ -294,7 +303,9 @@ def _assign_reference_pool(plan, project, settings, contract_by_role, project_re
 	if not image_references:
 		return
 
-	reference_mode = getattr(settings, "reference_mode", None) or "Single Image"
+	from joymedia.services.generation_settings import detect_reference_mode
+
+	reference_mode = detect_reference_mode(len(image_references))
 	product_role = "product_reference" if "product_reference" in contract_by_role else None
 	first_frame_role = next(
 		(
@@ -330,19 +341,21 @@ def append_video_plan(
 ):
 	"""Append only new Shot documents without replacing the existing storyboard."""
 	project = frappe.get_doc("Media Project", media_project_name)
-	from joymedia.joymedia.doctype.media_project.media_project import _project_settings
+	from joymedia.services.project_context import _project_settings
 
 	settings = _project_settings(project)
 	_validate_plan_shape(plan)
-	mode = {"Independent": "Multi-shot", "Chained": "Continuous", "Consistency": "Continuous"}.get(
-		settings.generation_mode, settings.generation_mode or "Multi-shot"
-	)
+	from joymedia.services.generation_settings import normalize_generation_mode
+
+	mode = normalize_generation_mode(settings.generation_mode)
 	if mode not in ("Multi-shot", "Continuous"):
 		frappe.throw(_("Select Continuous or Multi-shot generation mode."))
 	workflow_contract = None
 	if settings.workflow:
-		from joymedia.services.workflow_resolver import get_workflow_input_contract
-		workflow_contract = get_workflow_input_contract(frappe.get_doc("Generation Workflow", settings.workflow))
+		from joymedia.services.workflow_profiles import planning_input_contract
+		workflow_contract = planning_input_contract(
+			frappe.get_doc("Generation Workflow", settings.workflow), settings.generation_pipeline
+		)
 	contract_by_role = {item["role"]: item for item in (workflow_contract or [])}
 	project_references = {
 		getattr(row, "reference_key", None): row

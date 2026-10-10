@@ -68,7 +68,7 @@ class TestSceneTakes(FrappeTestCase):
 		# A normal run never replaces a chosen take.
 		self.assertTrue(_keeps_selected_output(full_run, self.shot.name))
 
-	@patch("joymedia.joymedia.doctype.media_project.media_project._busy_shots")
+	@patch("joymedia.services.project_context._busy_shots")
 	def test_only_a_scene_that_is_rendering_is_blocked(self, busy):
 		busy.return_value = [self.shot.name]
 		with self.assertRaises(frappe.ValidationError):

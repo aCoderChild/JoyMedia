@@ -162,6 +162,12 @@ after_migrate = "joymedia.migration.after_migrate"
 # ---------------
 # Hook on document methods and events
 
+doc_events = {
+	"File": {
+		"before_insert": "joymedia.overrides.file_hooks.ensure_home_folder_exists",
+	}
+}
+
 # doc_events = {
 # 	"*": {
 # 		"on_update": "method",

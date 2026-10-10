@@ -13,6 +13,7 @@ class GenerationRun(Document):
 	IMMUTABLE_FIELDS = (
 		"media_project",
 		"workflow",
+		"generation_pipeline",
 		"project_snapshot_json",
 		"project_snapshot_hash",
 		"execution_scope_json",
@@ -26,6 +27,15 @@ class GenerationRun(Document):
 			project = frappe.get_doc("Media Project", self.media_project)
 			if not self.workflow:
 				self.workflow = project.workflow
+			if not self.generation_pipeline:
+				from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow
+
+				pipeline = (
+					frappe.get_doc("Generation Pipeline", project.generation_pipeline)
+					if project.generation_pipeline else pipeline_for_final_workflow(self.workflow)
+				)
+				if pipeline:
+					self.generation_pipeline = pipeline.name
 		else:
 			self._validate_immutable_fields()
 		self._validate_snapshot()
@@ -61,6 +71,14 @@ class GenerationRun(Document):
 			frappe.throw(_("Generation Run project snapshot belongs to another Media Project."))
 		if snapshot.get("workflow") != self.workflow:
 			frappe.throw(_("Generation Run project snapshot workflow does not match the Run workflow."))
+		if snapshot.get("generation_pipeline") and snapshot.get("generation_pipeline") != self.generation_pipeline:
+			frappe.throw(_("Generation Run project snapshot pipeline does not match the Run pipeline."))
+		if self.generation_pipeline:
+			from joymedia.services.generation_pipeline_service import get_pipeline_steps
+
+			steps = get_pipeline_steps(self.generation_pipeline)
+			if steps[-1].workflow != self.workflow:
+				frappe.throw(_("Generation Pipeline final step must match the Run workflow."))
 		if self.execution_scope_json:
 			try:
 				scope = frappe.parse_json(self.execution_scope_json)

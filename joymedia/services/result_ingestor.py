@@ -10,8 +10,6 @@ from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, time
 
 from .comfyui_client import download_output, get_history, get_queue_state, probe_output
 from .artifact_service import get_attempt_artifact
-from joymedia.workflow_adapters import get_workflow_adapter
-
 # ComfyUI may not list a just-submitted prompt in /queue or /history yet.
 MISSING_JOB_GRACE_SECONDS = 15
 
@@ -50,7 +48,8 @@ def sync_attempt_result(attempt_name):
 
 def _sync_attempt_result(attempt_name):
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
-	primary = get_attempt_artifact(attempt.name, "Primary Video")
+	workflow = _attempt_workflow(attempt)
+	primary = get_attempt_artifact(attempt.name, workflow.primary_artifact_role if workflow else "Primary Video")
 	if attempt.status == "Completed" and primary:
 		artifact = primary
 		_store_artifact_file_in_frappe(artifact, attempt)
@@ -85,21 +84,14 @@ def _sync_attempt_result(attempt_name):
 		_refresh_parent_execution_state(attempt.name)
 		return {"status": attempt.status}
 
-	workflow_name = (
-		frappe.db.get_value("Generation Task", attempt.generation_task, "workflow")
-		if getattr(attempt, "generation_task", None)
-		else None
-	)
-	workflow = frappe.get_doc("Generation Workflow", workflow_name) if workflow_name else None
-	preferred_nodes = None
-	if workflow:
-		adapter = get_workflow_adapter(workflow)
-		preferred_nodes = getattr(adapter, "primary_output_node_keys", None) or None
-	output = _find_primary_mp4(history, preferred_node_keys=preferred_nodes)
+	workflow = _attempt_workflow(attempt)
+	preferred_nodes = [str(workflow.primary_output_node_key)] if workflow and workflow.primary_output_node_key else None
+	output = _find_primary_output(history, workflow, preferred_node_keys=preferred_nodes)
 	if not output:
-		_log_sync_failure(attempt, "returned no MP4 output: %s", history.get("outputs"))
+		output_label = "MP4" if not workflow or workflow.output_media_type == "Video" else "primary output"
+		_log_sync_failure(attempt, "returned no usable %s: %s", output_label, history.get("outputs"))
 		return _fail_attempt(
-			attempt, _("ComfyUI completed but returned no usable MP4 output."), None, "Generation"
+			attempt, _("ComfyUI completed but returned no usable {0}.").format(output_label), None, "Generation"
 		)
 
 	try:
@@ -158,9 +150,18 @@ def _log_sync_failure(attempt, message, *args):
 
 
 def _fail_attempt(attempt, error_summary, error_details, failure_class):
-	from .user_messages import friendly_failure, technical_message
+	from .user_messages import classify_failure, friendly_failure, technical_message
+	# ComfyUI often reports an authentication or node setup error as a generic
+	# execution failure. Preserve the actionable cause for orchestration and the
+	# studio instead of retrying it as if the GPU were merely busy.
+	detected_failure_class = classify_failure(error_details or error_summary, failure_class)
+	# Preserve the caller's known execution category for ordinary ComfyUI output
+	# failures; only promote configuration/input problems that require a human
+	# change before another submission can succeed.
+	if detected_failure_class in {"Workflow", "Input"}:
+		failure_class = detected_failure_class
 	attempt.status = "Failed"
-	attempt.error_summary = friendly_failure(failure_class, error_summary)
+	attempt.error_summary = friendly_failure(failure_class, error_details or error_summary)
 	attempt.error_details = technical_message(error_details or error_summary)
 	attempt.failure_class = failure_class
 	attempt.save(ignore_permissions=True)
@@ -187,11 +188,12 @@ def _fail_attempt(attempt, error_summary, error_details, failure_class):
 
 
 def _ingest_completed_output(attempt, history, output):
-	workflow_name = frappe.db.get_value("Generation Task", attempt.generation_task, "workflow")
-	workflow = frappe.get_doc("Generation Workflow", workflow_name) if workflow_name else None
-	artifact = _create_primary_artifact(attempt)
+	workflow = _attempt_workflow(attempt)
+	artifact = _create_primary_artifact(attempt, workflow)
 	_store_artifact_file_in_frappe(artifact, attempt, output)
-	last_frame = _find_last_frame_image(history)
+	if not workflow or workflow.output_media_type != "Video":
+		return artifact, None
+	last_frame = _find_last_frame_image(history, workflow)
 	if last_frame:
 		_store_last_frame(attempt, last_frame)
 	else:
@@ -206,16 +208,6 @@ def _ingest_completed_output(attempt, history, output):
 			_extract_last_frame(video_bytes, output["filename"]),
 			f"{Path(output['filename']).stem}_last_frame.png",
 		)
-	continuation_state = _find_continuation_state(history)
-	if workflow and get_workflow_adapter(workflow).cumulative_segment_output:
-		dependants = frappe.db.exists(
-			"Generation Task",
-			{"depends_on_task": attempt.generation_task, "status": ["not in", ["Completed", "Failed", "Cancelled"]]},
-		)
-		if dependants and not continuation_state:
-			raise UnusableComfyUIOutput("Cumulative output did not include continuation state.")
-	if continuation_state:
-		_store_continuation_state(attempt, continuation_state)
 	return artifact, get_attempt_artifact(attempt.name, "Last Frame")
 
 
@@ -236,8 +228,15 @@ def _complete_attempt(attempt, history, artifact, last_frame_artifact):
 		"last_frame_artifact": last_frame_artifact.name if last_frame_artifact else None,
 	}
 
-def _find_last_frame_image(history):
-	node_output = (history.get("outputs") or {}).get("save_last_frame", {})
+def _find_last_frame_image(history, workflow=None):
+	node_key = "save_last_frame"
+	if workflow:
+		try:
+			spec = frappe.parse_json(getattr(workflow, "execution_spec", None) or "{}")
+		except (TypeError, ValueError):
+			spec = {}
+		node_key = str((((spec.get("outputs") or {}).get("last_frame") or {}).get("node_key")) or node_key)
+	node_output = (history.get("outputs") or {}).get(node_key, {})
 	for output in node_output.get("images", []):
 		filename = str(output.get("filename", "")).lower()
 		if filename.endswith((".png", ".jpg", ".jpeg", ".webp")):
@@ -323,9 +322,12 @@ def _extract_last_frame(video_bytes, source_name):
 		)
 
 
-def _create_primary_artifact(attempt):
-	artifact_key = f"{attempt.name}:primary_video"
-	existing = get_attempt_artifact(attempt.name, "Primary Video")
+def _create_primary_artifact(attempt, workflow=None):
+	workflow = workflow or _attempt_workflow(attempt)
+	role = getattr(workflow, "primary_artifact_role", None) or "Primary Video"
+	media_type = getattr(workflow, "output_media_type", None) or "Video"
+	artifact_key = f"{attempt.name}:{frappe.scrub(role)}"
+	existing = get_attempt_artifact(attempt.name, role)
 	if existing:
 		return existing
 
@@ -333,9 +335,9 @@ def _create_primary_artifact(attempt):
 		{
 			"doctype": "Generation Artifact",
 			"artifact_key": artifact_key,
-			"artifact_role": "Primary Video",
+			"artifact_role": role,
 			"generation_attempt": attempt.name,
-			"media_type": "Video",
+			"media_type": media_type,
 		}
 	)
 	artifact.insert(ignore_permissions=True)
@@ -350,9 +352,9 @@ def _store_artifact_file_in_frappe(artifact, attempt, output=None):
 	if output is None:
 		history = get_history(attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
 		history = history.get(attempt.external_job_id, history)
-		output = _find_primary_mp4(history)
+		output = _find_primary_output(history, _attempt_workflow(attempt))
 	if not output:
-		frappe.throw(_("Generation Artifact {0} has no available video output.").format(artifact.name))
+		frappe.throw(_("Generation Artifact {0} has no available primary output.").format(artifact.name))
 
 	video_bytes = download_output(
 		output["filename"],
@@ -392,6 +394,20 @@ def _execution_timestamp(history, message_name):
 
 
 def _find_primary_mp4(history, preferred_node_keys=None):
+	return _find_output_by_extensions(history, (".mp4",), preferred_node_keys)
+
+
+def _find_primary_output(history, workflow, preferred_node_keys=None):
+	media_type = getattr(workflow, "output_media_type", "Video") if workflow else "Video"
+	extensions = {
+		"Video": (".mp4", ".webm", ".mov", ".mkv"),
+		"Image": (".png", ".jpg", ".jpeg", ".webp"),
+		"Audio": (".wav", ".mp3", ".flac", ".ogg", ".m4a"),
+	}.get(media_type, ())
+	return _find_output_by_extensions(history, extensions, preferred_node_keys)
+
+
+def _find_output_by_extensions(history, extensions, preferred_node_keys=None):
 	outputs = history.get("outputs") or {}
 	ordered_keys = []
 	if preferred_node_keys:
@@ -403,48 +419,16 @@ def _find_primary_mp4(history, preferred_node_keys=None):
 			node_outputs.get("gifs", [])
 			+ node_outputs.get("videos", [])
 			+ node_outputs.get("images", [])
+			+ node_outputs.get("audio", [])
 		):
-			if str(output.get("filename", "")).lower().endswith(".mp4"):
+			if str(output.get("filename", "")).lower().endswith(extensions):
 				return output
 	return None
 
 
-def _find_continuation_state(history):
-	"""Find the basename emitted by a Sato latent-save node."""
-	for node_outputs in (history.get("outputs") or {}).values():
-		if not isinstance(node_outputs, dict):
-			continue
-		for value in node_outputs.get("text") or []:
-			filename = value.get("filename") if isinstance(value, dict) else value
-			if not filename:
-				continue
-			filename = Path(str(filename)).name
-			if filename.lower().endswith((".h3latent", ".h3latent.safetensors")):
-				return filename
-		for values in node_outputs.values():
-			if not isinstance(values, list):
-				continue
-			for output in values:
-				filename = output.get("filename") if isinstance(output, dict) else output
-				if not filename:
-					continue
-				filename = Path(str(filename)).name
-				if filename.lower().endswith((".h3latent", ".h3latent.safetensors")):
-					return filename
-	return None
-
-
-def _store_continuation_state(attempt, provider_locator):
-	artifact = get_attempt_artifact(attempt.name, "Continuation State")
-	if artifact:
-		return artifact
-	return frappe.get_doc(
-		{
-			"doctype": "Generation Artifact",
-			"artifact_key": f"{attempt.name}:continuation_state",
-			"artifact_role": "Continuation State",
-			"generation_attempt": attempt.name,
-			"media_type": "Other",
-			"provider_locator": provider_locator,
-		}
-	).insert(ignore_permissions=True)
+def _attempt_workflow(attempt):
+	workflow_name = (
+		frappe.db.get_value("Generation Task", attempt.generation_task, "workflow")
+		if getattr(attempt, "generation_task", None) else None
+	)
+	return frappe.get_doc("Generation Workflow", workflow_name) if workflow_name else None

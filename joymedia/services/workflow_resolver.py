@@ -15,8 +15,6 @@ PROMPT_BINDING_KEY = "generation_prompt"
 
 def workflow_supports_continuation(workflow):
 	"""Return whether a workflow has a required first-frame input binding."""
-	if str(getattr(workflow, "adapter_key", "")).startswith("minimax_h3_sato"):
-		return True
 	return any(
 		frappe.scrub(binding.required_input_role or "") == "first_frame"
 		and bool(binding.required)
@@ -31,25 +29,21 @@ def get_workflow_input_contract(workflow):
 		role = frappe.scrub(binding.required_input_role or "")
 		if not role:
 			continue
-		binding_key = frappe.scrub(binding.binding_key or "")
 		entry = {
 			"role": role,
 			"value_type": getattr(binding, "value_type", None) or "File Path",
 			"required": bool(binding.required),
 			"accepted_media_type": getattr(binding, "accepted_media_type", None) or "Any",
-			"allow_multiple": bool(getattr(binding, "allow_multiple", 0))
-			or binding_key.startswith("reference_image_"),
+			"allow_multiple": bool(getattr(binding, "allow_multiple", 0)),
 			"min_count": 0,
 			"max_count": 0,
 		}
-		is_reference_slot = binding_key.startswith("reference_image_")
-		if entry["allow_multiple"] and not is_reference_slot:
-			# A single semantic binding can accept a pool of values. Repeated
-			# reference-image bindings remain bounded by their slot count below.
+		if entry["allow_multiple"]:
+			# A list-valued binding owns an unbounded ordered input collection.
 			entry["max_count"] = 0
 		if entry["required"]:
 			entry["min_count"] += 1
-		if not entry["allow_multiple"] or is_reference_slot:
+		if not entry["allow_multiple"]:
 			entry["max_count"] += 1
 		previous = contract.get(role)
 		if previous and any(
@@ -100,23 +94,14 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		frappe.throw(_("Invalid Workflow JSON: {0}").format(str(exc)))
 
 	validate_workflow_for_execution(workflow_version, base_workflow)
-	workflow = copy.deepcopy(base_workflow)
-	_validate_workflow_bindings(workflow_version, workflow)
-	for binding in workflow_version.bindings:
-		value = _resolve_semantic_binding(binding, job, staged_inputs)
-		node = workflow[binding.node_key]
-		if value is _SKIP_BINDING:
-			continue
-		node["inputs"][binding.input_name] = value
-
-	adapter = get_workflow_adapter(workflow_version)
 	width = run_snapshot.get("delivery_width")
 	height = run_snapshot.get("delivery_height")
 	fps = run_snapshot.get("output_fps") or workflow_version.output_fps or 24
 	if not width or not height:
 		frappe.throw(_("Generation Run {0} has no valid delivery dimensions in its snapshot.").format(run.name))
-	adapter.prepare_execution(
-		workflow,
+	workflow = build_execution_workflow(
+		workflow_version,
+		inputs={PROMPT_BINDING_KEY: job.prompt_text, **staged_inputs},
 		seed=int(attempt.seed),
 		width=int(width),
 		height=int(height),
@@ -127,19 +112,67 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		last_frame_prefix=f"{job.name}_{attempt.name}_last_frame",
 	)
 
-	adapter_inputs = {
-		role: values[0] if isinstance(values, list) and len(values) == 1 else values
-		for role, values in staged_inputs.items()
-	}
-	adapter.finalize_workflow(workflow, workflow_version, adapter_inputs)
-
-	canonical = canonical_workflow_json(workflow)
-	attempt.resolved_workflow_json = json.dumps(workflow, indent=2, ensure_ascii=False)
+	# Provider credentials are injected only into the outbound prompt.  Keep them
+	# out of the immutable Attempt snapshot, logs, hashes, and customer-visible
+	# diagnostics.
+	recorded_workflow = copy.deepcopy(workflow)
+	for node in recorded_workflow.values():
+		inputs = node.get("inputs") if isinstance(node, dict) else None
+		if not isinstance(inputs, dict):
+			continue
+		for input_name in list(inputs):
+			if any(token in str(input_name).lower() for token in ("api_key", "auth_token", "token_comfy_org")):
+				inputs[input_name] = "<redacted>"
+	canonical = canonical_workflow_json(recorded_workflow)
+	attempt.resolved_workflow_json = json.dumps(recorded_workflow, indent=2, ensure_ascii=False)
 	attempt.resolved_workflow_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 	# Generation Attempt is an internal technical record. Campaign-authorized
 	# orchestration must be able to snapshot the resolved workflow even though
 	# customer roles do not have direct technical DocType write permission.
 	attempt.save(ignore_permissions=True)
+	return workflow
+
+
+def build_execution_workflow(
+	workflow_version,
+	*,
+	inputs,
+	seed,
+	width,
+	height,
+	fps,
+	frame_count,
+	output_prefix,
+	last_frame_index=None,
+	last_frame_prefix=None,
+):
+	"""Build a ComfyUI prompt from a declared workflow contract.
+
+	This is deliberately independent of Generation Attempt.  Normal renders,
+	post-production and future services therefore use the exact same binding and
+	execution-specification path rather than mutating provider or model node IDs.
+	"""
+	try:
+		base_workflow = json.loads(workflow_version.workflow_json)
+	except json.JSONDecodeError as exc:
+		frappe.throw(_("Invalid Workflow JSON: {0}").format(str(exc)))
+	validate_workflow_for_execution(workflow_version, base_workflow)
+	workflow = copy.deepcopy(base_workflow)
+	_validate_workflow_bindings(workflow_version, workflow)
+	_apply_declared_bindings(workflow_version, workflow, inputs)
+	adapter = get_workflow_adapter(workflow_version)
+	adapter.prepare_execution(
+		workflow,
+		seed=int(seed),
+		width=int(width),
+		height=int(height),
+		fps=float(fps),
+		frame_count=int(frame_count),
+		output_prefix=output_prefix,
+		last_frame_index=last_frame_index,
+		last_frame_prefix=last_frame_prefix,
+	)
+	adapter.finalize_workflow(workflow, workflow_version, inputs)
 	return workflow
 
 
@@ -153,6 +186,17 @@ def validate_workflow_bindings(workflow_version):
 		frappe.throw(_("Workflow JSON must define a JSON object."))
 
 	_validate_workflow_bindings(workflow_version, workflow)
+	adapter = get_workflow_adapter(workflow_version)
+	validate_specification = getattr(adapter, "validate_specification", None)
+	if validate_specification:
+		try:
+			validate_specification(workflow)
+		except (TypeError, ValueError, KeyError) as exc:
+			frappe.throw(
+				_("Invalid Execution Specification for Workflow {0}: {1}").format(
+					workflow_version.name, str(exc)
+				)
+			)
 
 
 def validate_workflow_for_execution(workflow_version, workflow=None):
@@ -280,61 +324,81 @@ def _validate_workflow_bindings(workflow_version, workflow):
 			)
 
 
-def _resolve_semantic_binding(binding, job, staged_inputs):
+def _apply_declared_bindings(workflow_version, workflow, inputs):
+	"""Apply semantic inputs to graph bindings without knowing a model family."""
+	for binding in workflow_version.bindings:
+		value = _resolve_declared_binding(
+			binding,
+			inputs,
+			role_slot=_role_slot_index(workflow_version.bindings, binding),
+		)
+		if value is not _SKIP_BINDING:
+			workflow[str(binding.node_key)]["inputs"][binding.input_name] = value
+
+
+def _resolve_declared_binding(binding, inputs, role_slot=0):
 	if frappe.scrub(binding.binding_key or "") == PROMPT_BINDING_KEY:
-		return job.prompt_text
-	if frappe.scrub(binding.binding_key or "").startswith("reference_image_"):
-		return _resolve_reference_image_binding(binding, staged_inputs)
-	return _resolve_generation_input(
-		job,
+		value = inputs.get(PROMPT_BINDING_KEY)
+		if value not in (None, ""):
+			return value
+		if not binding.required:
+			return _SKIP_BINDING
+		frappe.throw(_("Workflow requires a generation prompt."))
+	return _resolve_input_value(
 		binding.required_input_role,
-		staged_inputs,
+		inputs,
 		value_type=binding.value_type,
 		required=bool(binding.required),
+		allow_multiple=bool(getattr(binding, "allow_multiple", 0)),
+		role_slot=role_slot,
+	)
+def _resolve_semantic_binding(binding, job, staged_inputs, role_slot=0):
+	return _resolve_declared_binding(
+		binding,
+		{PROMPT_BINDING_KEY: job.prompt_text, **staged_inputs},
+		role_slot=role_slot,
 	)
 
 
-def _resolve_reference_image_binding(binding, staged_inputs):
-	"""Resolve ordered R2V reference_image_1/reference_image_2 bindings."""
-	try:
-		index = int(str(binding.binding_key).rsplit("_", 1)[1]) - 1
-	except (ValueError, IndexError):
-		frappe.throw(_("Invalid reference image binding key: {0}").format(binding.binding_key))
-
-	values = staged_inputs.get(frappe.scrub(binding.required_input_role)) or []
-	if not isinstance(values, list):
-		values = [values]
-	if index < len(values) and values[index]:
-		return values[index]
-	if not binding.required:
-		return _SKIP_BINDING
-	frappe.throw(
-		_("No staged reference image {0} found for Generation Task {1}.").format(
-			index + 1, getattr(binding, "generation_task", "") or "the current task"
-		)
-	)
+def _role_slot_index(bindings, binding):
+	"""Return a role-local slot index without encoding order in a binding name."""
+	role = frappe.scrub(getattr(binding, "required_input_role", None) or "")
+	if not role or bool(getattr(binding, "allow_multiple", 0)):
+		return 0
+	index = 0
+	for candidate in bindings:
+		if candidate is binding:
+			return index
+		if (
+			frappe.scrub(getattr(candidate, "required_input_role", None) or "") == role
+			and not bool(getattr(candidate, "allow_multiple", 0))
+			and frappe.scrub(getattr(candidate, "binding_key", "") or "") != PROMPT_BINDING_KEY
+		):
+			index += 1
+	return index
 
 
-def _resolve_generation_input(job, required_role, staged_inputs, value_type="File Path", required=True):
+def _resolve_input_value(
+	required_role, inputs, value_type="File Path", required=True,
+	allow_multiple=False, role_slot=0,
+):
 	if not required_role:
 		frappe.throw(_("Generation Input binding requires Required Input Role."))
 	normalized_role = frappe.scrub(required_role)
-	staged_value = staged_inputs.get(normalized_role)
+	staged_value = inputs.get(normalized_role)
 	values = staged_value if isinstance(staged_value, list) else ([staged_value] if staged_value else [])
 	if values:
-		if value_type == "File Paths":
+		if value_type == "File Paths" and allow_multiple:
 			return values
-		if len(values) != 1:
-			frappe.throw(
-				_("Workflow binding for role '{0}' accepts exactly one input; found {1}.").format(
-					normalized_role, len(values)
-				)
+		if role_slot < len(values):
+			return values[role_slot]
+		if not required:
+			return _SKIP_BINDING
+		frappe.throw(
+			_("Workflow binding for role '{0}' requires input slot {1}; found {2}.").format(
+				normalized_role, role_slot + 1, len(values)
 			)
-		return values[0]
+		)
 	if not required:
 		return _SKIP_BINDING
-	frappe.throw(
-		_("No staged ComfyUI input found for role '{0}' on Generation Task {1}.").format(
-			normalized_role, job.name
-		)
-	)
+	frappe.throw(_("No workflow input found for role '{0}'.").format(normalized_role))

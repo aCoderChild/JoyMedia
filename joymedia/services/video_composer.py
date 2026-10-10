@@ -14,16 +14,24 @@ def compose_shot_segments(generation_run_name, shot_name):
 	"""Assemble completed generated segments into one selected Shot output."""
 	with filelock(f"joymedia-compose-shot-{generation_run_name}-{shot_name}"):
 		shot = frappe.get_doc("Shot", shot_name)
-		jobs = frappe.get_all(
+		all_jobs = frappe.get_all(
 			"Generation Task",
 			filters={
 				"generation_run": generation_run_name,
 				"shot": shot.name,
 			},
-			fields=["name", "segment_index", "segment_frame_count", "status"],
+			fields=["name", "workflow", "segment_index", "segment_frame_count", "status"],
 			order_by="segment_index asc",
 		)
-		if not jobs or any(job.status != "Completed" for job in jobs):
+		if not all_jobs or any(job.status != "Completed" for job in all_jobs):
+			return None
+		# A multi-stage pipeline can include image/audio preparation tasks. Only
+		# primary-video tasks belong on the visible Shot timeline.
+		jobs = [
+			job for job in all_jobs
+			if frappe.db.get_value("Generation Workflow", job.workflow, "output_media_type") == "Video"
+		]
+		if not jobs:
 			return None
 
 		project = frappe.get_doc("Media Project", shot.media_project)

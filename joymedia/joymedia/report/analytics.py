@@ -63,40 +63,51 @@ def get_attempt_analytics(filters=None):
 	for rev in reversed(shot_reviews):
 		review_verdict_by_attempt[rev.generation_attempt] = rev.verdict
 
-	artifacts = frappe.get_all(
-		"Generation Artifact",
-		filters={"generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
-		fields=["name", "generation_attempt", "artifact_role", "frappe_file"],
+	# A reviewer selects an Asset Version, not the transient Generation Artifact.
+	# Asset Version.source_generation_attempt is the durable lineage link for every
+	# output type (image, video, or audio), including composed shot outputs.
+	output_versions = frappe.get_all(
+		"Asset Version",
+		filters={"source_generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
+		fields=["name", "source_generation_attempt"],
 	)
-	primary_outputs_by_attempt = {
-		artifact.generation_attempt: artifact.name
-		for artifact in artifacts
-		if artifact.artifact_role == "Primary Video" and artifact.frappe_file
+	source_attempt_by_output = {
+		version.name: version.source_generation_attempt
+		for version in output_versions
+		if version.source_generation_attempt
 	}
 	enriched_attempts = []
 	for attempt in attempts:
 		job = jobs_by_name.get(attempt.generation_task)
 		attempt.workflow = job.workflow if job else None
-		selected = primary_outputs_by_attempt.get(attempt.name)
+		attempt.selected_output = _is_selected_output(
+			attempt.name,
+			job.shot if job else None,
+			selected_outputs_by_shot,
+			source_attempt_by_output,
+		)
 		# Use real human QA verdict when available; fall back to implicit proxy.
 		qa_verdict = review_verdict_by_attempt.get(attempt.name)
-		if qa_verdict:
-			approved = qa_verdict == "Approved"
-			reviewed = True
-		else:
-			approved = bool(selected)
-			reviewed = bool(selected)
+		approved, reviewed = _review_outcome(qa_verdict, attempt.selected_output)
 		attempt.review_outcome = {"approved": approved, "reviewed": reviewed}
-		attempt.selected_output = bool(
-			job
-			and selected
-			and selected_outputs_by_shot.get(job.shot) == selected
-		)
 		if filters.workflow and attempt.workflow != filters.workflow:
 			continue
 		enriched_attempts.append(attempt)
 
 	return enriched_attempts, []
+
+
+def _is_selected_output(attempt_name, shot_name, selected_outputs_by_shot, source_attempt_by_output):
+	"""Whether this attempt produced the Asset Version currently selected for its shot."""
+	selected_output = selected_outputs_by_shot.get(shot_name)
+	return bool(selected_output and source_attempt_by_output.get(selected_output) == attempt_name)
+
+
+def _review_outcome(qa_verdict, selected_output):
+	"""Use explicit QA when present; selection is the legacy completion proxy."""
+	if qa_verdict:
+		return qa_verdict == "Approved", True
+	return bool(selected_output), bool(selected_output)
 
 
 def percentile_95(values):

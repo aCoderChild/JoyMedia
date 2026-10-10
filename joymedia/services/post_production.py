@@ -6,11 +6,10 @@ audio. This step rebuilds the edit timeline from the takes and then
 - replaces every cut with a short generated bridge clip that morphs from the
   outgoing take into the incoming one. The bridge overlaps both takes by
   BRIDGE_OVERLAP_FRAMES, so no other clip moves and the film keeps its length;
-- generates one MiniMax H3 soundtrack for the whole film and lays it under the
-  timeline, replacing the per-take audio.
+- generates one soundtrack for the whole film with the project's selected video
+  workflow and lays it under the timeline, replacing the per-take audio.
 """
 
-import copy
 import hashlib
 import math
 import re
@@ -25,23 +24,21 @@ from frappe.utils import get_datetime, now_datetime
 from joymedia.services.film_director import PERSON_PATTERN
 from joymedia.services.render_queue import enqueue_render, is_render_alive
 
-# 56 frames (2.3 s) sits on MiniMax H3's 17k+5 frame grid.
+# The default bridge is long enough to conceal a cut while preserving the edit length.
 BRIDGE_OVERLAP_FRAMES = 28
 BRIDGE_FRAMES = BRIDGE_OVERLAP_FRAMES * 2
 # A take keeps at least this much of itself after both of its bridges.
 MIN_TAKE_REMAINDER_FRAMES = 24
-# The soundtrack only needs audio, so it renders at H3's lowest resolution.
-SOUNDTRACK_RESOLUTION = "360P"
 # Part of the soundtrack cache key: bump it when the soundtrack prompts change.
 SOUNDTRACK_VERSION = 3
 # Extra soundtrack rendered past the film's end to choose where the music ends.
 MUSIC_ENDING_SEARCH_SECONDS = 3
-# Longest segment H3 renders in one go; longer renders continue segment by segment.
+# Conservative default for workflows that produce sound through video segments.
 SEGMENT_SECONDS = 5
 # Audio/video context shared between soundtrack segments (on the AV prefix grid 39/90/141).
 SOUNDTRACK_CONTEXT_FRAMES = 39
 SOUNDTRACK_FADE_IN_FRAMES = 12
-# H3 rarely resolves the music on request, so a long fade gives every film a deliberate ending.
+# A long fade gives every film a deliberate ending when a workflow does not resolve music itself.
 SOUNDTRACK_FADE_OUT_FRAMES = 72
 COMFYUI_JOB_TIMEOUT_SECONDS = 3600
 # Finishing repeats when scenes change while it runs, at most this many times per job.
@@ -50,16 +47,6 @@ DEFAULT_SOUNDTRACK_MUSIC = (
 	"an elegant cinematic instrumental score, soft piano melody over warm sustained strings, "
 	"slowly building with emotion to a gentle swell, then resolving softly at the end"
 )
-# Node ids of the registered h3_i2v_production graph (see MiniMaxH3ImageToVideoAdapter).
-I2V_FIRST_FRAME_NODE = "114"
-I2V_CONDITIONING_NODE = "105:104"
-I2V_SECONDS_NODE = "105:111"
-I2V_SAVE_NODE = "92"
-I2V_LAST_FRAME_NODE = "joymedia_last_frame"
-# Save node of the registered h3_sato_continuation graph.
-SOUNDTRACK_SAVE_NODE = "374"
-
-
 @frappe.whitelist()
 def queue_post_production(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
@@ -180,6 +167,12 @@ def _patch_changed_scenes(project_name):
 	}
 	for shot in changed:
 		update_timeline_source_for_shot(project_name, shot)
+
+	generation_mode = frappe.db.get_value("Media Project", project_name, "generation_mode") or "Multi-shot"
+	if generation_mode in ("Continuous", "Consistency"):
+		frappe.db.commit()
+		return
+
 	clips = frappe.get_all(
 		"Timeline Clip",
 		filters={"media_project": project_name, "track_type": "Video", "enabled": 1},
@@ -193,13 +186,11 @@ def _patch_changed_scenes(project_name):
 	]
 	for index, (previous, bridge, following) in enumerate(bridges, start=1):
 		_set_status(project_name, "Running", step=f"Transition {index}/{len(bridges)}")
-		# The bridge renders the frames the trimmed takes leave out on either side.
 		outgoing = frappe._dict(previous, source_out_frame=int(previous.source_out_frame) + BRIDGE_OVERLAP_FRAMES)
 		incoming = frappe._dict(following, source_in_frame=int(following.source_in_frame) - BRIDGE_OVERLAP_FRAMES)
 		try:
 			version = _bridge_asset_version(project_name, outgoing, incoming)
 		except (subprocess.CalledProcessError, ValueError):
-			# The new take is too short for this cut's frames; keep the old bridge.
 			frappe.log_error(title=f"Transition not redone for {project_name}")
 			continue
 		frappe.db.set_value("Timeline Clip", bridge.name, "source_asset_version", version, update_modified=False)
@@ -212,11 +203,12 @@ def _finish_once(project_name):
 	_set_status(project_name, "Running", step="Timeline", error="")
 	reset_project_timeline(project_name)
 	clips = _shot_video_clips(project_name)
-	for index, (outgoing, incoming) in enumerate(zip(clips, clips[1:]), start=1):
-		_set_status(project_name, "Running", step=f"Transition {index}/{len(clips) - 1}")
-		_insert_bridge(project_name, outgoing, incoming)
-		# Later bridges read the trimmed incoming clip.
-		clips = _shot_video_clips(project_name)
+	generation_mode = frappe.db.get_value("Media Project", project_name, "generation_mode") or "Multi-shot"
+	if generation_mode not in ("Continuous", "Consistency"):
+		for index, (outgoing, incoming) in enumerate(zip(clips, clips[1:]), start=1):
+			_set_status(project_name, "Running", step=f"Transition {index}/{len(clips) - 1}")
+			_insert_bridge(project_name, outgoing, incoming)
+			clips = _shot_video_clips(project_name)
 	_set_status(project_name, "Running", step="Soundtrack")
 	_add_soundtrack(project_name)
 
@@ -312,11 +304,9 @@ def _renumber_video_clips(project_name):
 
 def _bridge_asset_version(project_name, outgoing, incoming):
 	"""Return a cached bridge for these two takes, or render one."""
-	# Fast draft projects render their transitions with the turbo model too.
-	fast = frappe.db.get_value("Media Project", project_name, "quality_mode") == "Draft"
 	asset_name = (
 		f"{project_name} Transition {outgoing.source_asset_version}@{outgoing.source_out_frame}"
-		f" > {incoming.source_asset_version}@{incoming.source_in_frame}{' fast' if fast else ''}"
+		f" > {incoming.source_asset_version}@{incoming.source_in_frame}"
 	)
 	cached = _latest_version_of(project_name, asset_name)
 	if cached:
@@ -340,14 +330,14 @@ def _bridge_asset_version(project_name, outgoing, incoming):
 			int(incoming.source_in_frame) + BRIDGE_OVERLAP_FRAMES - 1,
 			last,
 		)
-		workflow = _i2v_workflow(
+		workflow, output_node = _video_workflow(
+			project_name,
 			first,
 			_bridge_prompt(outgoing.shot, incoming.shot),
 			BRIDGE_FRAMES / 24,
 			last_frame=last,
-			fast=fast,
 		)
-		video_bytes = _render_video(workflow)
+		video_bytes = _render_video(workflow, output_node)
 	return _save_output(project_name, asset_name, "Video", f"{_slug(asset_name)}.mp4", video_bytes)
 
 
@@ -423,7 +413,7 @@ def _add_soundtrack(project_name):
 	if not audio_version:
 		from joymedia.services.qwen_client import to_english
 
-		# Marketers may describe the music in Vietnamese; H3 follows English best.
+		# The local prompt model may describe music in Vietnamese; render prompts use English.
 		audio_version = _render_soundtrack(project_name, asset_name, clips[0], to_english(music), total_frames)
 
 	from joymedia.services.timeline_editor import _ensure_source_audio_clips, _timeline_clip_rows
@@ -475,9 +465,10 @@ def _render_soundtrack(project_name, asset_name, first_clip, music, total_frames
 		first = temp_path / "first.png"
 		_extract_frame(_asset_version_path(first_clip.source_asset_version), 0, first)
 		video_path = temp_path / "soundtrack.mp4"
-		video_path.write_bytes(_render_video(
-			_soundtrack_workflow(first, music, _soundtrack_seconds(total_frames)), SOUNDTRACK_SAVE_NODE
-		))
+		workflow, output_node = _soundtrack_workflow(
+			project_name, first, music, _soundtrack_seconds(total_frames)
+		)
+		video_path.write_bytes(_render_video(workflow, output_node))
 		audio_path = temp_path / "soundtrack.m4a"
 		subprocess.run(
 			["ffmpeg", "-v", "error", "-y", "-i", str(video_path), "-map", "0:a:0",
@@ -498,7 +489,7 @@ def _soundtrack_seconds(total_frames):
 def _music_start_frame(audio_path, total_frames):
 	"""Where the film's music starts, so the film ends on the softest moment of the music.
 
-	H3 does not compose an ending on request, and fading out mid-note sounds cut off.
+	Some video workflows do not compose an ending on request, and fading out mid-note sounds cut off.
 	The soundtrack is rendered a few seconds longer than the film; starting the music
 	up to MUSIC_ENDING_SEARCH_SECONDS later (hidden by its fade-in) moves the film's end
 	onto the quietest point there, usually the gap between two phrases.
@@ -525,8 +516,8 @@ def _music_start_frame(audio_path, total_frames):
 def segment_durations(seconds, max_segment_seconds=SEGMENT_SECONDS, fps=24):
 	"""Equal segments of about max_segment_seconds that together last at least seconds.
 
-	H3 snaps every segment down to its 17k+5 frame grid, so each segment is sized
-	on that grid: otherwise a 61 s soundtrack comes back 58 s long.
+	The configured segment grid has a small frame offset. Size each segment on
+	that grid so a long soundtrack does not return shorter than requested.
 	"""
 	frames = math.ceil(seconds * fps)
 	fewest = max(1, math.ceil(frames / (max_segment_seconds * fps)))
@@ -541,7 +532,7 @@ def segment_durations(seconds, max_segment_seconds=SEGMENT_SECONDS, fps=24):
 
 
 def segmented_prompt(prompts, durations):
-	"""H3 Context Segments prompt: one [Shot N] block per segment with its cut time."""
+	"""One [Shot N] prompt block per segment with its cut time."""
 	blocks, start = [], 0.0
 	for index, (prompt, duration) in enumerate(zip(prompts, durations), start=1):
 		cut = "" if index == 1 else f"At {int(start // 60):02d}:{start % 60:06.3f}, "
@@ -550,86 +541,61 @@ def segmented_prompt(prompts, durations):
 	return "\n---\n".join(blocks)
 
 
-def _soundtrack_workflow(first_frame, music, seconds):
-	"""One H3 job that renders the soundtrack as short segments, each continuing the last.
-
-	A single long render drifts and stalls the shared GPU; Context Segments render
-	SEGMENT_SECONDS at a time, guided by the previous segment's tail, so the music
-	carries on across segments.
-	"""
-	from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
-	from joymedia.services.comfyui_client import upload_local_file
-
-	source = get_latest_valid_workflow("h3_sato_continuation")
-	if not source:
-		frappe.throw(_("No executable continuation workflow is configured."))
-	workflow = copy.deepcopy(frappe.parse_json(source.workflow_json))
-	# Drop the seed-video handoff and stitching: this job starts from a still frame.
-	for node in ("264", "265", "375", "356", "335", "336", "355"):
-		workflow.pop(node)
-	durations = segment_durations(seconds)
+def _soundtrack_workflow(project_name, first_frame, music, seconds):
+	"""Render a soundtrack through the project's declared video workflow."""
 	instrumental = "Instrumental music only, no speech, no singing, no sound effects."
-	opening = f"A calm cinematic scene with a slow camera drift. Audio: {music}. The music begins. {instrumental}"
-	continued = (
-		"The camera keeps drifting slowly. "
-		f"Audio: the same {music} continues seamlessly with the same instruments, key and tempo. {instrumental}"
+	prompt = (
+		f"A calm cinematic scene with a slow camera drift. Audio: {music}. "
+		f"The music develops naturally and resolves softly at the end. {instrumental}"
 	)
-	# A film needs an ending: the last segment resolves the music instead of stopping mid-phrase.
-	ending = (
-		"The camera slowly comes to rest. "
-		f"Audio: the same {music} plays its final phrase and resolves to a last sustained chord that "
-		f"fades gently into silence. {instrumental}"
-	)
-	prompts = [opening] + [continued] * (len(durations) - 2) + [ending] if len(durations) > 1 else [opening]
-	workflow["joymedia_first_frame"] = {
-		"class_type": "LoadImage", "inputs": {"image": upload_local_file(first_frame)["server_path"]},
-	}
-	context = workflow["328"]["inputs"]
-	for name in ("seed_video", "seed_ref_video", "seed_latent"):
-		context.pop(name, None)
-	context.update({
-		"first_frame": ["joymedia_first_frame", 0],
-		"prompt": segmented_prompt(prompts, durations),
-		"seconds": seconds,
-		"segment_seconds": ",".join(f"{value:g}" for value in durations),
-		"resolution": SOUNDTRACK_RESOLUTION,
-		# Hold the previous segment's audio tail as the next segment's opening, so
-		# the music carries on instead of starting over at every segment.
-		"continuity_mode": "soft_av",
-		"context_length": SOUNDTRACK_CONTEXT_FRAMES,
-		"aspect_ratio": "16:9",
-	})
-	workflow[SOUNDTRACK_SAVE_NODE]["inputs"]["video"] = ["330", 0]
-	workflow[SOUNDTRACK_SAVE_NODE]["inputs"]["filename_prefix"] = f"joymedia/post/{frappe.generate_hash(length=10)}"
-	return workflow
+	return _video_workflow(project_name, first_frame, prompt, seconds)
 
 
 # ComfyUI and file helpers
 
 
-def _i2v_workflow(first_frame, prompt, seconds, last_frame=None, fast=False):
-	from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
+def _video_workflow(project_name, first_frame, prompt, seconds, last_frame=None):
+	"""Build a post-production prompt solely from the selected workflow contract.
+
+	An optional ``last_frame`` is sent only to workflows that explicitly declare
+	it.  This makes transition quality a workflow capability, not a backend
+	branch tied to a provider, node id, or model name.
+	"""
 	from joymedia.services.comfyui_client import upload_local_file
+	from joymedia.services.workflow_resolver import build_execution_workflow, get_workflow_input_contract
+	from joymedia.workflow_adapters import get_workflow_adapter
 
-	source = get_latest_valid_workflow("h3_i2v_turbo" if fast else "h3_i2v_production")
-	if not source:
-		frappe.throw(_("No executable Image-to-Video workflow is configured."))
-	workflow = copy.deepcopy(frappe.parse_json(source.workflow_json))
-	workflow[I2V_FIRST_FRAME_NODE]["inputs"]["image"] = upload_local_file(first_frame)["server_path"]
-	conditioning = workflow[I2V_CONDITIONING_NODE]["inputs"]
-	conditioning["prompt"] = prompt
-	if last_frame:
-		workflow[I2V_LAST_FRAME_NODE] = {
-			"class_type": "LoadImage",
-			"inputs": {"image": upload_local_file(last_frame)["server_path"]},
-		}
-		conditioning["last_frame"] = [I2V_LAST_FRAME_NODE, 0]
-	workflow[I2V_SECONDS_NODE]["inputs"]["value"] = seconds
-	workflow[I2V_SAVE_NODE]["inputs"]["filename_prefix"] = f"joymedia/post/{frappe.generate_hash(length=10)}"
-	return workflow
+	project = frappe.get_doc("Media Project", project_name)
+	if not project.workflow:
+		frappe.throw(_("Select a video generation workflow before finishing the film."))
+	workflow_version = frappe.get_doc("Generation Workflow", project.workflow)
+	contract = {item["role"]: item for item in get_workflow_input_contract(workflow_version)}
+	if workflow_version.output_media_type != "Video" or "first_frame" not in contract:
+		frappe.throw(_("The selected workflow cannot render video from a first frame."))
+	inputs = {
+		"generation_prompt": prompt,
+		"first_frame": upload_local_file(first_frame)["server_path"],
+	}
+	if last_frame and "last_frame" in contract:
+		inputs["last_frame"] = upload_local_file(last_frame)["server_path"]
+	fps = float(workflow_version.output_fps or 24)
+	frame_count = max(1, math.ceil(float(seconds) * fps))
+	seed_material = f"{project_name}|{prompt}|{frame_count}|{first_frame}|{last_frame or ''}"
+	workflow = build_execution_workflow(
+		workflow_version,
+		inputs=inputs,
+		seed=int(hashlib.sha256(seed_material.encode()).hexdigest()[:12], 16),
+		width=int(project.delivery_width or 1920),
+		height=int(project.delivery_height or 1080),
+		fps=fps,
+		frame_count=frame_count,
+		output_prefix=f"joymedia/post/{frappe.generate_hash(length=10)}",
+	)
+	metadata = get_workflow_adapter(workflow_version).extract_execution_metadata(workflow)
+	return workflow, metadata["primary_output_node_key"]
 
 
-def _render_video(workflow, output_node=I2V_SAVE_NODE):
+def _render_video(workflow, output_node):
 	from joymedia.services.comfyui_client import run_workflow_to_bytes
 
 	content = run_workflow_to_bytes(workflow, output_node, timeout=COMFYUI_JOB_TIMEOUT_SECONDS, forget=True)

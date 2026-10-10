@@ -46,7 +46,7 @@ def apply_project_shot_ai_revision(project_name, shot_name, values, regenerate=F
 	if not isinstance(values, dict):
 		frappe.throw(_("AI shot changes must be a JSON object."))
 	clean_values = {field: values.get(field, "") for field in SHOT_FIELDS}
-	from joymedia.joymedia.doctype.media_project.media_project import update_project_shot, regenerate_project_shot
+	from joymedia.api.storyboard import update_project_shot, regenerate_project_shot
 
 	result = update_project_shot(project_name, shot_name, clean_values)
 	if frappe.parse_json(regenerate) if isinstance(regenerate, str) else regenerate:
@@ -73,8 +73,8 @@ def generate_review_revision(instruction, shot, product_name):
 def improve_project_video_idea(project_name, current_idea=""):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
-	from joymedia.joymedia.doctype.media_project.media_project import _get_project_selected_assets
-	from joymedia.joymedia.doctype.media_project.media_project import _meaningful_project_value
+	from joymedia.services.project_context import _get_project_selected_assets
+	from joymedia.services.project_context import _meaningful_project_value
 	from joymedia.services.qwen_client import improve_video_idea
 
 	references = _get_project_selected_assets(project)

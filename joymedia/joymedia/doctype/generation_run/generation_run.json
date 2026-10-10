@@ -11,6 +11,7 @@
   "project_snapshot_hash",
   "execution_scope_json",
   "workflow",
+  "generation_pipeline",
   "status",
   "requested_by",
   "execution_summary_section",
@@ -74,6 +75,15 @@
    "in_list_view": 1,
    "label": "Workflow",
    "options": "Generation Workflow",
+   "read_only": 1
+  },
+  {
+   "description": "Optional immutable multi-stage pipeline that prepares the selected workflow.",
+   "fieldname": "generation_pipeline",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Generation Pipeline",
+   "options": "Generation Pipeline",
    "read_only": 1
   },
   {

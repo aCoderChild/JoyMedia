@@ -34,7 +34,7 @@ class TestWorkflowResolutionExecution(FrappeTestCase):
 				"inputs": {"image": "placeholder.png"},
 			},
 			"105:104": {
-				"class_type": "MiniMaxH3ImageToVideo",
+				"class_type": "CLIPTextEncode",
 				"inputs": {
 					"prompt": "placeholder",
 					"width": 1280,
@@ -44,7 +44,11 @@ class TestWorkflowResolutionExecution(FrappeTestCase):
 		}
 		workflow_version = frappe._dict(
 			name="WF-00001",
-			adapter_key="minimax_h3_i2v",
+			adapter_key="comfyui_generic",
+			execution_spec=json.dumps({
+				"parameters": [],
+				"outputs": {"primary": {"node_key": "105:104", "media_type": "Video"}},
+			}),
 			workflow_json=json.dumps(workflow_graph),
 			bindings=[
 				frappe._dict(

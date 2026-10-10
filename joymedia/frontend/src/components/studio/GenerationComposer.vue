@@ -9,19 +9,29 @@
 
       <!-- Existing Reference Chips with Real @reference_key -->
       <template v-if="projectAssets.length">
-        <button
+        <span
           v-for="asset in projectAssets"
           :key="asset.asset_version || asset.name"
-          type="button"
-          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface-muted hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer shrink-0 text-ink-primary group"
-          :title="currentLang === 'vi' ? `Chèn @${asset.asset_name} vào mô tả` : `Insert @${asset.asset_name} into prompt`"
-          @click="insertReferenceTag(asset)"
+          class="relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface-muted hover:bg-surface-hover border border-outline-border transition-colors shrink-0 text-ink-primary group"
         >
-          <span class="text-xs">{{ getRoleIcon(asset.reference_role || asset.asset_category) }}</span>
-          <span class="text-[11px] text-indigo-400 font-bold">@</span>
-          <span class="font-semibold truncate max-w-[130px]">{{ asset.asset_name }}</span>
-          <span class="text-[10px] text-ink-muted">· {{ roleLabel(asset.reference_role || asset.asset_category) }}</span>
-        </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 cursor-pointer"
+            :title="currentLang === 'vi' ? `Chèn @${asset.asset_name} vào mô tả` : `Insert @${asset.asset_name} into prompt`"
+            @click="insertReferenceTag(asset)"
+          >
+            <span class="text-xs">{{ getRoleIcon(asset.reference_role || asset.asset_category) }}</span>
+            <span class="text-[11px] text-indigo-400 font-bold">@</span>
+            <span class="font-semibold truncate max-w-[130px]">{{ asset.asset_name }}</span>
+            <span class="text-[10px] text-ink-muted">· {{ roleLabel(asset.reference_role || asset.asset_category) }}</span>
+          </button>
+          <button
+            type="button"
+            class="absolute -top-1.5 -right-1.5 size-4 rounded-full bg-surface-card border border-outline-border text-ink-muted hover:text-rose-400 hover:border-rose-400 transition-colors cursor-pointer text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100"
+            :title="currentLang === 'vi' ? 'Gỡ khỏi dự án' : 'Remove from project'"
+            @click.stop="$emit('removeReference', asset)"
+          >✕</button>
+        </span>
       </template>
 
       <span v-else class="text-xs text-ink-muted italic">
@@ -142,7 +152,7 @@ const props = defineProps({
   currentLang: { type: String, default: "en" },
 });
 
-const emit = defineEmits(["update:prompt", "generate", "openMediaPicker", "openSettings", "improvePrompt"]);
+const emit = defineEmits(["update:prompt", "generate", "openMediaPicker", "openSettings", "improvePrompt", "removeReference"]);
 
 const textareaRef = ref(null);
 const isImprovingLocal = ref(false);

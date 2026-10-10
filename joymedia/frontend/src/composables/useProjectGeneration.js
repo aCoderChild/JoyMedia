@@ -33,7 +33,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     if (!polling) return;
     try {
       const snap = await call(
-        "joymedia.joymedia.doctype.media_project.media_project.refresh_project_studio",
+        "joymedia.api.projects.refresh_project_studio",
         { name: project() }
       );
       consecutivePollFailures = 0;
@@ -113,14 +113,14 @@ export function useProjectGeneration(projectName, onRefresh) {
       // If there is an idea prompt, we can save it to the project before generating
       if (videoIdeaPrompt.value?.trim()) {
         try {
-          await call("joymedia.joymedia.doctype.media_project.media_project.update_project_brief", {
+          await call("joymedia.api.projects.update_project_brief", {
             project_name: project(),
             video_idea: videoIdeaPrompt.value.trim(),
           });
         } catch (_) {}
       }
 
-      const res = await call("joymedia.joymedia.doctype.media_project.media_project.generate_project_video", {
+      const res = await call("joymedia.api.projects.generate_project_video", {
         project_name: project(),
       });
       currentRun.value = res?.status === "Planning"
@@ -141,7 +141,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     isGenerating.value = true;
     try {
       const res = await call(
-        "joymedia.joymedia.doctype.media_project.media_project.append_project_scenes",
+        "joymedia.api.storyboard.append_project_scenes",
         {
           project_name: project(),
           duration_seconds: durationSeconds,
@@ -163,7 +163,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     try {
       isGenerating.value = true;
       productionError.value = "";
-      await call("joymedia.joymedia.doctype.media_project.media_project.retry_project_failed_jobs", {
+      await call("joymedia.api.projects.retry_project_failed_jobs", {
         project_name: project(),
       });
       startPolling();
@@ -178,7 +178,7 @@ export function useProjectGeneration(projectName, onRefresh) {
 
   async function cancelGeneration() {
     try {
-      await call("joymedia.joymedia.doctype.media_project.media_project.cancel_project_generation", {
+      await call("joymedia.api.projects.cancel_project_generation", {
         project_name: project(),
       });
       stopPolling();
@@ -201,7 +201,7 @@ export function useProjectGeneration(projectName, onRefresh) {
   async function reviseStoryboard(instruction = "") {
     isRevising.value = true;
     try {
-      await call("joymedia.joymedia.doctype.media_project.media_project.revise_project_storyboard", {
+      await call("joymedia.api.storyboard.revise_project_storyboard", {
         project_name: project(),
         instruction,
         use_current_workflow_defaults: true,
@@ -219,14 +219,14 @@ export function useProjectGeneration(projectName, onRefresh) {
     if (!instruction?.trim() || aiRevisionLoading.value) return;
     aiRevisionLoading.value = true;
     try {
-      const res = await call("joymedia.joymedia.doctype.media_project.media_project.revise_project_shot_with_ai", {
+      const res = await call("joymedia.api.storyboard.revise_project_shot_with_ai", {
         project_name: project(),
         shot_name: shotName,
         instruction: instruction.trim(),
       });
       if (res?.generation_prompt || res?.prompt) {
         // Auto apply revision to shot
-        await call("joymedia.joymedia.doctype.media_project.media_project.apply_project_shot_ai_revision", {
+        await call("joymedia.api.storyboard.apply_project_shot_ai_revision", {
           project_name: project(),
           shot_name: shotName,
           values: res,
@@ -264,7 +264,7 @@ export function useProjectGeneration(projectName, onRefresh) {
       if (res?.improved_idea) {
         videoIdeaPrompt.value = res.improved_idea;
         try {
-          await call("joymedia.joymedia.doctype.media_project.media_project.update_project_brief", {
+          await call("joymedia.api.projects.update_project_brief", {
             project_name: project(),
             video_idea: res.improved_idea,
           });
@@ -296,7 +296,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     reviewError.value = "";
     try {
       const res = await call(
-        "joymedia.joymedia.doctype.media_project.media_project.submit_shot_review",
+        "joymedia.api.reviews.submit_shot_review",
         {
           project_name: project(),
           shot_name: shotName,
@@ -323,7 +323,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     reviewLoading.value = true;
     try {
       const res = await call(
-        "joymedia.joymedia.doctype.media_project.media_project.apply_shot_review_revision",
+        "joymedia.api.reviews.apply_shot_review_revision",
         {
           project_name: project(),
           shot_name: shotName,
@@ -348,7 +348,7 @@ export function useProjectGeneration(projectName, onRefresh) {
   async function getShotReviews(shotName) {
     try {
       return await call(
-        "joymedia.joymedia.doctype.media_project.media_project.get_shot_reviews",
+        "joymedia.api.reviews.get_shot_reviews",
         { project_name: project(), shot_name: shotName }
       );
     } catch {

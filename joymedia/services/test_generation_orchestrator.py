@@ -8,6 +8,69 @@ from joymedia.services import generation_orchestrator
 
 
 class TestGenerationOrchestrator(FrappeTestCase):
+	def test_continuous_pipeline_uses_previous_video_last_frame_for_next_shot(self):
+		steps = [
+			frappe._dict(step_key="keyframe", consumes_artifact_role=None),
+			frappe._dict(step_key="video", consumes_artifact_role="Primary Image"),
+		]
+
+		first_shot = generation_orchestrator._pipeline_steps_for_segment(steps)
+		following_shot = generation_orchestrator._pipeline_steps_for_segment(
+			steps,
+			previous_shot_tail_job="TASK-PREVIOUS-VIDEO",
+			cross_shot_continuity=True,
+		)
+
+		self.assertEqual(["keyframe", "video"], [stage[0].step_key for stage in first_shot])
+		self.assertTrue(first_shot[0][3])
+		self.assertEqual(1, len(following_shot))
+		self.assertEqual("video", following_shot[0][0].step_key)
+		self.assertEqual("TASK-PREVIOUS-VIDEO", following_shot[0][1])
+		self.assertEqual("Last Frame", following_shot[0][2])
+		self.assertFalse(following_shot[0][3])
+
+	def test_pipeline_keeps_full_stages_for_independent_shots(self):
+		steps = [
+			frappe._dict(step_key="keyframe", consumes_artifact_role=None),
+			frappe._dict(step_key="video", consumes_artifact_role="Primary Image"),
+		]
+
+		stages = generation_orchestrator._pipeline_steps_for_segment(
+			steps,
+			previous_shot_tail_job="TASK-PREVIOUS-VIDEO",
+			cross_shot_continuity=False,
+		)
+
+		self.assertEqual(["keyframe", "video"], [stage[0].step_key for stage in stages])
+		self.assertIsNone(stages[0][1])
+
+	@patch(
+		"joymedia.services.workflow_resolver.get_workflow_input_contract",
+		return_value=[{
+			"role": "keyframe_reference",
+			"accepted_media_type": "Image",
+			"allow_multiple": True,
+			"max_count": 0,
+		}],
+	)
+	def test_pipeline_reference_inputs_treat_zero_max_count_as_unbounded(self, get_contract):
+		shot = {
+			"references": [
+				{"asset_version": "ASTV-00001", "reference_role": "Product"},
+				{"asset_version": "ASTV-00002", "reference_role": "Character"},
+				{"asset_version": "ASTV-00003", "reference_role": "Environment"},
+			]
+		}
+		workflow = frappe._dict(name="WF-TEST")
+
+		result = generation_orchestrator._pipeline_reference_inputs(shot, workflow)
+
+		self.assertEqual(
+			{"keyframe_reference": ["ASTV-00001", "ASTV-00002", "ASTV-00003"]},
+			result,
+		)
+		get_contract.assert_called_once_with(workflow)
+
 	@patch("joymedia.services.generation_orchestrator.filelock", return_value=nullcontext())
 	@patch("joymedia.services.generation_orchestrator.frappe.db.commit")
 	@patch("joymedia.services.generation_orchestrator.refresh_generation_state_for_attempt")
@@ -305,3 +368,14 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		]
 
 		self.assertEqual(["T1", "T2", "T3", "T1b", "T2b"], generation_orchestrator._submission_order("RUN-1"))
+
+	@patch("joymedia.services.generation_orchestrator.frappe.db.count", return_value=1)
+	@patch("joymedia.services.generation_orchestrator._get_run_job_names", return_value=["T1", "T2"])
+	def test_submission_capacity_allows_only_one_in_flight_attempt(self, job_names, count):
+		run = frappe._dict(name="RUN-1")
+
+		self.assertFalse(generation_orchestrator._has_submission_capacity(run))
+		count.assert_called_once_with(
+			"Generation Attempt",
+			{"generation_task": ["in", ["T1", "T2"]], "status": ["in", ["Queued", "Running"]]},
+		)

@@ -1,6 +1,21 @@
 import hashlib
 
 import frappe
+
+
+ACTION_DEADLINE_FRAME = 110
+SEGMENT_FRAME_CAPACITY = 124
+
+
+def segment_action_timing_instruction():
+	"""Stable timing contract shared by Qwen planning and every rendered segment."""
+	return (
+		f"Action timing contract: complete every required people, product, camera, transition, "
+		f"environment and other visible action by frame {ACTION_DEADLINE_FRAME} at the latest. "
+		f"Use frames {ACTION_DEADLINE_FRAME + 1}-{SEGMENT_FRAME_CAPACITY} only to settle the final "
+		"pose, preserve the scene, and prepare a clean visual handoff to the next segment or shot. "
+		"Never start a new major action in that handoff buffer."
+	)
 from frappe import _
 
 
@@ -21,16 +36,18 @@ def compile_prompt(shot: str):
 def compile_segment_prompt(shot: str, segment_index: int, segment_count: int):
 	base = compile_prompt(shot)
 	if segment_count == 1:
-		return base
+		return f"{base}\n\n{segment_action_timing_instruction()}".strip()
 	if segment_index == 1:
 		return (
 			f"{base}\n\nThis is segment 1 of {segment_count}. "
-			"Begin the planned action naturally."
+			"Begin the planned action naturally.\n\n"
+			f"{segment_action_timing_instruction()}"
 		).strip()
 	return (
 		f"{base}\n\nThis is continuation segment {segment_index} of {segment_count}. "
-		"Continue directly from the supplied first frame. "
-		"Do not restart or reintroduce the action."
+		"Continue directly from the supplied first frame, which is the last frame of the previous segment. "
+		"Do not restart or reintroduce the action.\n\n"
+		f"{segment_action_timing_instruction()}"
 	).strip()
 
 
@@ -46,16 +63,18 @@ def compile_segment_prompt_from_snapshot(shot, project, segment_index: int, segm
 		# Continuations receive the same reference images as the first segment.
 		base = f"{reference_preamble(asset_versions, project.get('references') or [])}\n\n{base}"
 	if segment_count == 1:
-		return base
+		return f"{base}\n\n{segment_action_timing_instruction()}".strip()
 	if segment_index == 1:
 		return (
 			f"{base}\n\nThis is segment 1 of {segment_count}. "
-			"Begin the planned action naturally."
+			"Begin the planned action naturally.\n\n"
+			f"{segment_action_timing_instruction()}"
 		).strip()
 	return (
 		f"{base}\n\nThis is continuation segment {segment_index} of {segment_count}. "
-		"Continue seamlessly from the previous clip with the same motion, light and sound. "
-		"Do not restart or reintroduce the action."
+		"Continue seamlessly from the previous clip's exact last frame with the same motion, light and sound. "
+		"Do not restart or reintroduce the action.\n\n"
+		f"{segment_action_timing_instruction()}"
 	).strip()
 
 
@@ -75,13 +94,18 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 		)
 
 	generation_mode = project.get("generation_mode")
-	if generation_mode in ("Continuous", "Consistency") and int(shot.shot_number or 0) > 1:
+	if generation_mode in ("Continuous", "Consistency"):
+		if int(shot.shot_number or 0) > 1:
+			prompt = (
+				f"{prompt}\n\n"
+				"Continuity: Continue naturally from the previous shot's generated last frame. "
+				"Preserve the product geometry, color, orientation, and scene state. "
+				"Describe the next movement from the existing pose rather than reintroducing "
+				"the product from scratch."
+			)
 		prompt = (
 			f"{prompt}\n\n"
-			"Continuity: Continue naturally from the previous shot's generated last frame. "
-			"Preserve the product geometry, color, orientation, and scene state. "
-			"Describe the next movement from the existing pose rather than reintroducing "
-			"the product from scratch."
+			f"{segment_action_timing_instruction()}"
 		)
 	return prompt.strip()
 

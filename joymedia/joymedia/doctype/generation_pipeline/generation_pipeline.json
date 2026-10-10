@@ -1,0 +1,12 @@
+{
+ "actions": [], "autoname": "PIPE-.#####", "doctype": "DocType", "engine": "InnoDB", "module": "JoyMedia", "name": "Generation Pipeline", "naming_rule": "Expression", "title_field": "pipeline_key", "track_changes": 1,
+ "field_order": ["pipeline_key", "version_number", "output_media_type", "steps"],
+ "fields": [
+  {"fieldname":"pipeline_key","fieldtype":"Data","label":"Pipeline Key","reqd":1,"in_list_view":1,"read_only_depends_on":"eval:!doc.__islocal;"},
+  {"fieldname":"version_number","fieldtype":"Int","label":"Version","reqd":1,"read_only":1,"in_list_view":1},
+  {"fieldname":"output_media_type","fieldtype":"Select","label":"Final Output Type","options":"Image\nVideo\nAudio\nJSON\nOther","read_only":1},
+  {"fieldname":"steps","fieldtype":"Table","label":"Pipeline Steps","options":"Generation Pipeline Step","reqd":1}
+ ],
+ "permissions": [{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"print":1,"email":1,"export":1,"share":1}],
+ "sort_field":"creation", "sort_order":"DESC"
+}

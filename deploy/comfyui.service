@@ -1,0 +1,19 @@
+[Unit]
+Description=JoyMedia ComfyUI server
+After=network-online.target joymedia-qwen.service
+Wants=network-online.target joymedia-qwen.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/ComfyUI
+# Wait for Qwen to reserve its VRAM allocation before ComfyUI loads workflows.
+ExecStartPre=/bin/sh -c 'for i in $$(seq 1 180); do curl -fsS http://127.0.0.1:8001/v1/models >/dev/null && exit 0; sleep 1; done; exit 1'
+ExecStart=/home/ubuntu/comfy_env/bin/python /home/ubuntu/ComfyUI/main.py --listen 127.0.0.1 --port 8188 --fast --vram-headroom 12
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/ubuntu/comfyui-systemd.log
+StandardError=append:/home/ubuntu/comfyui-systemd.log
+
+[Install]
+WantedBy=multi-user.target

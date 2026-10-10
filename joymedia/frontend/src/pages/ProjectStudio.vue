@@ -28,6 +28,7 @@
       :quality-mode="videoSettings.quality_mode || 'Production'"
       @retry-generation="handleGenerationRetry"
       @stop-generation="cancelGeneration"
+      @select-shot="selectShotFromActivity"
     />
 
     <!-- 2. Studio Workspace Body: Media Drawer + Canvas + Contextual Inspector -->
@@ -193,6 +194,7 @@
             @open-media-picker="openPicker"
             @open-settings="showSettings = true"
             @improve-prompt="improveVideoIdea"
+            @remove-reference="removeReference"
           />
 
           <!-- Scene Filmstrip / Storyboard Track -->
@@ -358,7 +360,6 @@
     <ProjectSettingsModal
       v-if="showSettings"
       :settings="videoSettings"
-      :video-styles="videoStyles"
       :saving="savingSettings"
       :current-lang="currentLang"
       @close="showSettings = false"
@@ -413,7 +414,6 @@ const {
   selectedShotIndex,
   inspectorOpen,
   showSettings,
-  videoStyles,
   savingSettings,
   projectTitle,
   projectStatus,
@@ -427,7 +427,6 @@ const {
   videoSettings,
   fetchWorkspace,
   applyWorkspaceSnapshot,
-  fetchVideoStyles,
   updateProjectName,
   saveVideoSettings,
 } = useProjectWorkspace(projectName);
@@ -487,6 +486,20 @@ const {
 } = useProjectGeneration(projectName, refreshStudioGenerationState);
 
 const appendSceneError = ref("");
+
+// Workspace polling is the source of truth for terminal run state.  A local
+// optimistic flag can survive a browser refresh or a worker finishing between
+// polls, which previously left the storyboard showing “Generating” after all
+// tasks had failed.
+watch(
+  () => workspace.value?.production?.status,
+  (status) => {
+    if (!status) return;
+    if (!['Queued', 'Running'].includes(status) && isGenerating.value) {
+      resumeProduction(workspace.value?.production, workspace.value?.project?.planning_status);
+    }
+  },
+);
 
 // 4. Timeline composable
 const {
@@ -759,7 +772,7 @@ async function handleSelectReference({ asset, role }) {
     asset.asset_name
   ) {
     try {
-      await call("joymedia.joymedia.doctype.media_project.media_project.update_project_brief", {
+      await call("joymedia.api.projects.update_project_brief", {
         project_name: projectName.value,
         product_name: asset.asset_name,
       });
@@ -798,12 +811,14 @@ const activeTimelineVideoClip = computed(() => {
   ) || videoClips.value.at(-1) || null;
 });
 
-// The caption of the scene on screen, shown over the preview as the export draws it.
+// The caption is only shown on the last scene, matching the export behavior.
 const previewCaption = computed(() => {
   if (!Number(videoSettings.value?.show_captions ?? 1)) return "";
+  const lastShot = storyboardShots.value[storyboardShots.value.length - 1];
+  if (!lastShot) return "";
   const shotName = studioMode.value === "edit" ? activeTimelineVideoClip.value?.shot : activeSelectedShot.value?.name;
-  if (!shotName) return "";
-  return storyboardShots.value.find((shot) => shot.name === shotName)?.caption || "";
+  if (shotName !== lastShot.name) return "";
+  return lastShot.caption || "";
 });
 
 const selectedShotFrame = computed(() => {
@@ -1066,6 +1081,12 @@ function onSelectShot(shot, index) {
   }
 }
 
+function selectShotFromActivity(shotNumber) {
+  const index = storyboardShots.value.findIndex((shot) => Number(shot.shot_number) === Number(shotNumber));
+  if (index < 0) return;
+  onSelectShot(storyboardShots.value[index], index);
+}
+
 function openAddScenePopover() {
   addSceneAfterShot.value = storyboardShots.value.at(-1) || null;
   appendSceneError.value = "";
@@ -1102,7 +1123,7 @@ async function removeStoryboardShot(shot) {
   };
   try {
     let result = await call(
-      "joymedia.joymedia.doctype.media_project.media_project.remove_project_scene",
+      "joymedia.api.storyboard.remove_project_scene",
       request,
     );
     if (result?.requires_confirmation) {
@@ -1111,7 +1132,7 @@ async function removeStoryboardShot(shot) {
       );
       if (!confirmed) return;
       result = await call(
-        "joymedia.joymedia.doctype.media_project.media_project.remove_project_scene",
+        "joymedia.api.storyboard.remove_project_scene",
         { ...request, confirm_continuation: true },
       );
     }
@@ -1246,7 +1267,7 @@ async function changeShotDuration(shot, delta) {
   const current = estimateShotDuration(shot);
   const next = Math.max(1, Math.min(20, current + delta));
   try {
-    const result = await call("joymedia.joymedia.doctype.media_project.media_project.update_project_shot_timing", {
+    const result = await call("joymedia.api.storyboard.update_project_shot_timing", {
       project_name: projectName.value,
       shot_name: shot.name,
       duration_seconds: next,
@@ -1277,7 +1298,7 @@ async function saveActiveShot() {
   const shot = activeSelectedShot.value;
   if (!shot?.name) return;
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.update_project_shot", {
+    await call("joymedia.api.storyboard.update_project_shot", {
       project_name: projectName.value,
       shot_name: shot.name,
       values: { generation_prompt: shot.generation_prompt },
@@ -1316,7 +1337,7 @@ async function regenerateCurrentShot(target = null) {
 
 async function updateShotCaption(shot, caption) {
   try {
-    const result = await call("joymedia.joymedia.doctype.media_project.media_project.update_project_shot", {
+    const result = await call("joymedia.api.storyboard.update_project_shot", {
       project_name: projectName.value,
       shot_name: shot.name,
       values: { caption },
@@ -1473,10 +1494,13 @@ function onRegenerateSourceForClip() {
   regenerateCurrentShot();
 }
 
-function onReorderShots(fromIdx, toIdx) {
-  // Local reorder
-  const arr = [...storyboardShots.value];
-  const [moved] = arr.splice(fromIdx, 1);
+async function onReorderShots(fromIdx, toIdx) {
+  const previous = [...storyboardShots.value];
+  const moved = previous[fromIdx];
+  if (!moved) return;
+  // Optimistic local reorder; persisted below and reverted if the server rejects it.
+  const arr = [...previous];
+  arr.splice(fromIdx, 1);
   arr.splice(toIdx, 0, moved);
   arr.forEach((s, idx) => {
     s.shot_number = idx + 1;
@@ -1484,13 +1508,24 @@ function onReorderShots(fromIdx, toIdx) {
   if (workspace.value?.storyboard) {
     workspace.value.storyboard.shots = arr;
   }
+  try {
+    await call("joymedia.api.storyboard.reorder_project_shot", {
+      project_name: projectName.value,
+      shot_name: moved.name,
+      target_shot_number: toIdx + 1,
+    });
+  } catch (err) {
+    if (workspace.value?.storyboard) {
+      workspace.value.storyboard.shots = previous;
+    }
+    notify({ title: "Error", text: errorMessage(err, "Failed to reorder scenes."), type: "error" });
+  }
 }
 
 // Lifecycle Hooks
 onMounted(async () => {
   await fetchWorkspace();
   resumeProduction(workspace.value?.production, workspace.value?.project?.planning_status);
-  await fetchVideoStyles();
   await loadTimeline(true);
   // sync video idea prompt if present in project
   if (workspace.value?.project?.video_idea) {

@@ -2,49 +2,72 @@ import frappe
 from frappe import _
 
 from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
+from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow, get_pipeline_steps
 from joymedia.workflow_adapters import get_workflow_adapter
 
 
+def customer_workflow_key(reference_mode, quality_mode):
+	"""Legacy compatibility shim; workflow selection now belongs to Project settings."""
+	return None
+
+
 def choose_shot_workflow(snapshot, shot):
-	"""Choose an executable backend profile from frozen Shot inputs and settings."""
-	references = shot.get("references") or []
-	reference_mode = snapshot.get("reference_mode") or "Single Image"
-	quality_mode = snapshot.get("quality_mode") or "Production"
-
-	if reference_mode == "Multi-reference":
-		if len(references) != 2:
-			frappe.throw(
-				_("Multi-reference Shots require exactly two ordered reference images; Shot {0} has {1}.").format(
-					shot.get("shot_number"), len(references)
-				)
-			)
-		workflow_key = "h3_r2v_turbo" if quality_mode == "Draft" else "h3_r2v_production"
-	else:
-		if len(references) != 1:
-			frappe.throw(
-				_("Single Image Shots require exactly one starting image; Shot {0} has {1}.").format(
-					shot.get("shot_number"), len(references)
-				)
-			)
-		short_workflow = get_latest_valid_workflow("h3_i2v_production")
-		if not short_workflow:
-			frappe.throw(_("No executable Single Image workflow is configured."))
-		workflow_key = (
-			"h3_sato_generation"
-			if int(shot.get("planned_frame_count") or 0) > int(short_workflow.frame_count or 0)
-			else "h3_i2v_turbo" if quality_mode == "Draft"
-			else "h3_i2v_production"
-		)
-
-	workflow = get_latest_valid_workflow(workflow_key)
-	if not workflow:
-		frappe.throw(_("No executable backend workflow is configured for {0}.").format(workflow_key))
-	return workflow
+	"""Use the exact workflow frozen into the project snapshot."""
+	workflow_name = snapshot.get("workflow")
+	if not workflow_name or not frappe.db.exists("Generation Workflow", workflow_name):
+		frappe.throw(_("The project snapshot has no executable Generation Workflow."))
+	return frappe.get_doc("Generation Workflow", workflow_name)
 
 
 def input_role_for_workflow(workflow):
-	"""Return the user reference role expected by the selected initial profile."""
-	return "product_reference" if workflow.workflow_key in ("h3_r2v_production", "h3_r2v_turbo") else "first_frame"
+	"""Return the first image input role declared by a workflow's bindings."""
+	from joymedia.services.workflow_resolver import get_workflow_input_contract
+
+	for item in get_workflow_input_contract(workflow):
+		if item.get("accepted_media_type") in ("Image", "Any"):
+			return item["role"]
+	return None
+
+
+def references_for_workflow(workflow, references):
+	"""Return references bounded only by the selected workflow's declared contract."""
+	references = [reference for reference in references or [] if reference.get("asset_version")]
+	from joymedia.services.workflow_resolver import get_workflow_input_contract
+
+	role = input_role_for_workflow(workflow)
+	contract = next((item for item in get_workflow_input_contract(workflow) if item["role"] == role), None)
+	if not contract or not contract.get("allow_multiple"):
+		return references[:1]
+	maximum = int(contract.get("max_count") or 0)
+	return references[:maximum] if maximum else references
+
+
+def planning_input_contract(workflow, pipeline_name=None):
+	"""Return the reference contract used while planning a pipeline-backed shot.
+
+	The final workflow may consume an upstream artifact such as ``first_frame``.
+	That is pipeline internals, not a user-upload requirement, so planning uses
+	the initial pipeline step's contract.
+	"""
+	from joymedia.services.workflow_resolver import get_workflow_input_contract
+
+	contract = get_workflow_input_contract(workflow)
+	pipeline = frappe.get_doc("Generation Pipeline", pipeline_name) if pipeline_name else pipeline_for_final_workflow(workflow.name)
+	if pipeline and (not pipeline.steps or pipeline.steps[-1].workflow != workflow.name):
+		frappe.throw(_("Generation Pipeline {0} does not end with Workflow {1}.").format(
+			pipeline.name, workflow.name
+		))
+	if not pipeline:
+		return contract
+
+	steps = get_pipeline_steps(pipeline.name)
+	keyframe_workflow = frappe.get_doc("Generation Workflow", steps[0].workflow)
+	keyframe_contract = get_workflow_input_contract(keyframe_workflow)
+	# Only expose keyframe workflow inputs to the planner. ``first_frame`` is an
+	# internal artifact produced by this step and consumed by the final video
+	# workflow; it is not a reference the user must upload or the planner should
+	# attach to each shot.
+	return [item for item in keyframe_contract if item.get("role") != "first_frame"]
 
 
 def allowed_workflows_for_shot(snapshot, shot):

@@ -16,6 +16,7 @@ def plan_generation_segments(
 	continuation_new_frames caps the new footage each continuation adds (on top of
 	its overlap); by default a continuation is no longer than max_segment_frames.
 	"""
+	planned_frame_count = int(round(planned_frame_count))
 	if planned_frame_count < 1:
 		raise ValueError("planned_frame_count must be positive.")
 

@@ -239,7 +239,7 @@ onMounted(() => {
 
 // Dynamic Resource Counts
 const sidebarCountsResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_sidebar_counts",
+  url: "joymedia.api.projects.get_sidebar_counts",
   auto: true,
 });
 

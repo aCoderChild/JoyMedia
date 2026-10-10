@@ -17,15 +17,19 @@ IMMUTABLE_FIELDS = (
 	"adapter_key",
 	"continuation_workflow",
 	"workflow_json",
+	"execution_spec",
 	"bindings",
 	"frame_count",
 	"output_fps",
+	"output_media_type",
+	"primary_output_node_key",
+	"primary_artifact_role",
 	"produces_video",
 	"produces_audio",
 )
 
-DEFAULT_WORKFLOW_KEY = "product_showcase"
-DEFAULT_ADAPTER_KEY = "minimax_h3"
+DEFAULT_WORKFLOW_KEY = "generation_workflow"
+DEFAULT_ADAPTER_KEY = "comfyui_generic"
 
 
 def get_latest_valid_workflow(workflow_key=None):
@@ -48,13 +52,6 @@ def get_latest_valid_workflow(workflow_key=None):
 			get_workflow_adapter(workflow)
 			validate_workflow_bindings(workflow)
 			validate_workflow_for_execution(workflow)
-			if workflow.workflow_key == DEFAULT_WORKFLOW_KEY and not any(
-				binding.binding_key == "first_frame"
-				and binding.required
-				and binding.required_input_role
-				for binding in workflow.bindings
-			):
-				continue
 		except Exception:
 			continue
 		return workflow
@@ -116,7 +113,11 @@ def clone_workflow_as_draft(version_name: str):
 			"doctype": "Generation Workflow",
 			"workflow_key": workflow.workflow_key,
 			"adapter_key": workflow.adapter_key,
+			"output_media_type": workflow.output_media_type,
+			"primary_output_node_key": workflow.primary_output_node_key,
+			"primary_artifact_role": workflow.primary_artifact_role,
 			"workflow_json": workflow.workflow_json,
+			"execution_spec": workflow.execution_spec,
 		}
 	)
 	for binding in workflow.bindings:
@@ -152,6 +153,12 @@ class GenerationWorkflow(Document):
 		validate_workflow_bindings(self)
 		self.workflow_hash = hashlib.sha256(
 			canonical_workflow_json(workflow_data).encode("utf-8")
+		).hexdigest()
+		execution_spec = frappe.parse_json(self.execution_spec or "{}")
+		if not isinstance(execution_spec, dict):
+			frappe.throw(_("Execution Specification must define a JSON object."))
+		self.execution_spec_hash = hashlib.sha256(
+			canonical_workflow_json(execution_spec).encode("utf-8")
 		).hexdigest()
 
 		for fieldname, value in adapter.extract_execution_metadata(workflow_data).items():

@@ -1,5 +1,5 @@
 [Unit]
-Description=JoyMedia Qwen OpenAI-Compatible Server
+Description=JoyMedia Qwen TVC LoRA OpenAI-Compatible Server
 After=network-online.target
 Wants=network-online.target
 
@@ -8,7 +8,7 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu
 Environment=VLLM_USE_FLASHINFER_SAMPLER=0
-ExecStart=/home/ubuntu/qwen_env/bin/vllm serve /home/ubuntu/models/Qwen2.5-VL-72B-AWQ --served-model-name joymedia-qwen --host 127.0.0.1 --port 8001 --dtype auto --kv-cache-memory-bytes 6442450944 --max-model-len 16384 --enforce-eager
+ExecStart=/home/ubuntu/venvs/joymedia-qwen/bin/vllm serve unsloth/Qwen2.5-32B-Instruct-bnb-4bit --served-model-name qwen-base --host 127.0.0.1 --port 8001 --quantization bitsandbytes --load-format bitsandbytes --enable-lora --max-lora-rank 64 --lora-modules '{"name":"joymedia-qwen","path":"/home/ubuntu/output_qwen2.5_32b_tvc_lora_final","base_model_name":"unsloth/Qwen2.5-32B-Instruct-bnb-4bit"}' --max-model-len 4096 --gpu-memory-utilization 0.29
 StandardOutput=append:/home/ubuntu/qwen-systemd.log
 StandardError=append:/home/ubuntu/qwen-systemd.log
 Restart=always

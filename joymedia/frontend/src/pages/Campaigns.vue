@@ -241,7 +241,7 @@ const searchQuery = ref("");
 const creatingProject = ref(false);
 
 const projectsResource = createResource({
-  url: "joymedia.joymedia.doctype.media_project.media_project.get_project_cards",
+  url: "joymedia.api.projects.get_project_cards",
   auto: true,
 });
 
@@ -271,7 +271,7 @@ async function handleNewProject() {
   if (creatingProject.value) return;
   creatingProject.value = true;
   try {
-    const created = await call("joymedia.joymedia.doctype.media_project.media_project.create_project", {
+    const created = await call("joymedia.api.projects.create_project", {
       project_name: currentLang.value === "vi" ? "Dự án mới" : "Untitled Project",
       product_name: "",
       video_idea: null,
@@ -303,7 +303,7 @@ async function archiveProject(project) {
   );
   if (!confirmed) return;
   try {
-    await call("joymedia.joymedia.doctype.media_project.media_project.archive_project", {
+    await call("joymedia.api.projects.archive_project", {
       project_name: project.name,
     });
     notify({

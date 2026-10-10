@@ -32,7 +32,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Artifact Role",
-   "options": "Primary Video\nLast Frame\nContinuation State\nPreview\nIntermediate",
+   "options": "Primary Image\nPrimary Video\nPrimary Audio\nLast Frame\nContinuation State\nPreview\nIntermediate",
    "reqd": 1
   },
   {

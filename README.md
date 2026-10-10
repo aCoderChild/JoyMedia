@@ -73,9 +73,25 @@ site config must point at the forwarded ports:
 
 ```bash
 bench --site <site> set-config comfyui_base_url http://127.0.0.1:8188
+# API-node credential used by server-side Flux.2 requests (keep it out of code/workflows)
+bench --site <site> set-config comfyui_api_key '<COMFY_ORG_API_KEY>'
 bench --site <site> set-config qwen_base_url http://127.0.0.1:8001/v1
 bench --site <site> set-config qwen_vl_base_url http://127.0.0.1:8002/v1
 ```
+
+For automatic startup, install the GPU services once on the GPU host (after
+copying this `deploy/` directory there):
+
+```bash
+sudo JOYMEDIA_TUNNEL_USER=<ssh-user> ./deploy/install-gpu-services.sh
+```
+
+This installs and enables Qwen and ComfyUI systemd services. The Bench tunnel
+then runs `systemctl start` idempotently before it opens the forwarded ports,
+so `bench start` restores the GPU services and its tunnel after either host
+restarts. `<ssh-user>` must match `JOYMEDIA_GPU_HOST` and have the configured
+SSH key; the installer grants it only the two required `systemctl start`
+permissions. Set `JOYMEDIA_GPU_AUTOSTART=0` to disable this behavior.
 
 **3. Memory.** Exports decode and encode several 1080p/1440p streams with
 ffmpeg. Give the server at least 8 GB of RAM, 16 GB if several people export

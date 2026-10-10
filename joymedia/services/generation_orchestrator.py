@@ -19,10 +19,11 @@ from .generation_runner import (
 	submit_attempt,
 )
 from .generation_segment_planner import plan_generation_segments
+from .generation_pipeline_service import get_pipeline_steps, pipeline_for_final_workflow
 from .prompt_compiler import compile_segment_prompt_from_snapshot
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_shot_segments
-from .workflow_profiles import choose_shot_workflow, input_role_for_workflow
+from .workflow_profiles import choose_shot_workflow, input_role_for_workflow, references_for_workflow
 from joymedia.workflow_adapters import get_workflow_adapter
 from .workflow_resolver import (
 	validate_role_input_count,
@@ -36,7 +37,10 @@ ACTIVE_ATTEMPT_STATUSES = ("Pending", "Queued", "Running")
 TERMINAL_ATTEMPT_STATUSES = ("Completed", "Failed", "Cancelled")
 TERMINAL_JOB_STATUSES = ("Completed", "Failed", "Cancelled")
 MAX_AUTOMATIC_RETRIES = 1
-MAX_JOBS_IN_FLIGHT_PER_RUN = 2
+# Keep each generation run strictly ordered.  This is required for chained
+# shots: the next shot must not enter ComfyUI until the previous shot has
+# produced the Last Frame artifact used as its first frame.
+MAX_JOBS_IN_FLIGHT_PER_RUN = 1
 
 
 def _get_continuation_workflow_from_adapter(adapter):
@@ -51,6 +55,68 @@ def _get_continuation_workflow_from_adapter(adapter):
 		limit_page_length=1,
 	)
 	return frappe.get_doc("Generation Workflow", rows[0].name) if rows else None
+
+
+def _pipeline_reference_inputs(shot, workflow):
+	"""Map a Shot's ordered references into the pipeline's first image stage."""
+	from .workflow_resolver import get_workflow_input_contract
+	from .reference_compositor import normalize_reference_role
+
+	contract = get_workflow_input_contract(workflow)
+	roles = {item["role"] for item in contract if item.get("role")}
+	role_limits = {
+		item["role"]: item.get("max_count")
+		for item in contract
+		if item.get("role") and item.get("max_count") is not None
+	}
+	image_role = next(
+		(
+			item["role"]
+			for item in contract
+			if item.get("accepted_media_type") in ("Image", "Any")
+			and item.get("allow_multiple")
+		),
+		"first_frame",
+	)
+	inputs = {}
+	for reference in shot.get("references") or []:
+		asset_version = reference.get("asset_version")
+		if not asset_version:
+			continue
+		role = normalize_reference_role(reference.get("input_role") or reference.get("reference_role") or "")
+		if role not in roles:
+			role = image_role
+		values = inputs.setdefault(role, [])
+		max_count = role_limits.get(role)
+		# The workflow contract uses zero for an unbounded File Paths role.
+		if not max_count or len(values) < max_count:
+			values.append(asset_version)
+	return inputs
+
+
+def _pipeline_steps_for_segment(
+	pipeline_steps,
+	*,
+	previous_segment_job=None,
+	previous_shot_tail_job=None,
+	cross_shot_continuity=False,
+):
+	"""Return executable stages, chaining later continuous segments from Last Frame.
+
+	The first segment/shot runs the full configured pipeline (for example, a
+	keyframe workflow followed by I2V). A later segment or continuous shot already
+	has its visual start state, so it runs only the final pipeline stage with the
+	upstream video's Last Frame bound dynamically as that workflow's first frame.
+	"""
+	if not pipeline_steps:
+		return []
+	continuation_source = previous_segment_job or (
+		previous_shot_tail_job if cross_shot_continuity else None
+	)
+	if continuation_source:
+		return [(pipeline_steps[-1], continuation_source, "Last Frame", False)]
+
+	return [(step, None, None, index == 0) for index, step in enumerate(pipeline_steps)]
 
 
 @frappe.whitelist()
@@ -125,6 +191,7 @@ def prepare_run(run_name: str):
 		run.workflow,
 	)
 	workflow_adapter = get_workflow_adapter(workflow)
+	pipeline_steps = get_pipeline_steps(run.generation_pipeline) if run.generation_pipeline else []
 	continuation_workflow = (
 		frappe.get_doc("Generation Workflow", workflow.continuation_workflow)
 		if workflow.continuation_workflow
@@ -147,10 +214,13 @@ def prepare_run(run_name: str):
 	try:
 		validate_workflow_for_execution(workflow)
 		validate_workflow_bindings(workflow)
+		for pipeline_step in pipeline_steps:
+			pipeline_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
+			validate_workflow_for_execution(pipeline_workflow)
+			validate_workflow_bindings(pipeline_workflow)
 		if continuation_workflow:
 			validate_workflow_for_execution(continuation_workflow)
 			validate_workflow_bindings(continuation_workflow)
-		cumulative_segments = bool(workflow_adapter.cumulative_segment_output)
 		cross_shot_continuity = bool(
 			snapshot.get("generation_mode") in ("Continuous", "Consistency")
 			or execution_scope.get("continuity")
@@ -159,17 +229,23 @@ def prepare_run(run_name: str):
 		previous_shot_tail_job = (
 			execution_scope.get("continuation_from_task") if cross_shot_continuity else None
 		)
-		previous_shot_cumulative = False
 		for shot in shots:
 			shot_name = shot.get("shot")
 			shot_workflow = choose_shot_workflow(snapshot, shot)
+			if int(shot.get("planned_frame_count") or 0) > int(shot_workflow.frame_count or 0):
+				frappe.throw(
+					_("Shot {0} is longer than the selected workflow's single-render limit. "
+					  "Regenerate the storyboard with shorter scenes.").format(
+						shot.get("shot_number")
+					)
+				)
 			shot_adapter = get_workflow_adapter(shot_workflow)
+			shot_pipeline_steps = pipeline_steps if pipeline_steps and pipeline_steps[-1].workflow == shot_workflow.name else []
 			shot_continuation_workflow = (
 				frappe.get_doc("Generation Workflow", shot_workflow.continuation_workflow)
 				if shot_workflow.continuation_workflow
 				else _get_continuation_workflow_from_adapter(shot_adapter)
 			)
-			shot_cumulative = bool(shot_adapter.cumulative_segment_output)
 			validate_workflow_for_execution(shot_workflow)
 			validate_workflow_bindings(shot_workflow)
 			if shot_continuation_workflow:
@@ -183,6 +259,69 @@ def prepare_run(run_name: str):
 			)
 			previous_segment_job = None
 			for segment in segments:
+				if shot_pipeline_steps:
+					previous_pipeline_job = None
+					pipeline_stages = _pipeline_steps_for_segment(
+						shot_pipeline_steps,
+						previous_segment_job=previous_segment_job,
+						previous_shot_tail_job=previous_shot_tail_job,
+						cross_shot_continuity=cross_shot_continuity,
+					)
+					for pipeline_step, dependency_override, artifact_role_override, is_first_pipeline_step in pipeline_stages:
+						existing_job = frappe.db.get_value(
+							"Generation Task",
+							{
+								"generation_run": run.name,
+								"shot": shot_name,
+								"segment_index": segment["segment_index"],
+								"pipeline_step_key": pipeline_step.step_key,
+							},
+							"name",
+						)
+						if existing_job:
+							previous_pipeline_job = existing_job
+							continue
+						prompt_text = compile_segment_prompt_from_snapshot(
+							frappe._dict(
+								name=shot_name, shot_number=shot.get("shot_number"),
+								generation_prompt=shot.get("generation_prompt"),
+							),
+							frappe._dict(snapshot), segment["segment_index"], len(segments),
+						)
+						step_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
+						job = frappe.get_doc({
+							"doctype": "Generation Task",
+							"generation_run": run.name,
+							"shot": shot_name,
+							"workflow": pipeline_step.workflow,
+							"pipeline_step_key": pipeline_step.step_key,
+							"prompt_text": prompt_text,
+							"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
+							"status": "Draft",
+							"segment_index": segment["segment_index"],
+							"segment_frame_count": (
+								segment["segment_frame_count"]
+								if step_workflow.output_media_type == "Video" else max(1, int(step_workflow.frame_count or 1))
+							),
+							"depends_on_task": dependency_override or previous_pipeline_job,
+							"dependency_artifact_role": (
+								artifact_role_override
+								or (pipeline_step.consumes_artifact_role if previous_pipeline_job else None)
+							),
+						}).insert(ignore_permissions=True)
+						# The first pipeline stage consumes the Shot's ordered references;
+						# later stages consume only the upstream generated artifact.
+						if is_first_pipeline_step:
+							for input_role, asset_versions in _pipeline_reference_inputs(shot, step_workflow).items():
+								for asset_version in asset_versions:
+									job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
+						job.save(ignore_permissions=True)
+						jobs_to_prepare.append(job)
+						previous_pipeline_job = job.name
+					previous_segment_job = previous_pipeline_job
+					if cross_shot_continuity:
+						previous_shot_tail_job = previous_pipeline_job
+					continue
 				existing_job = frappe.db.get_value(
 					"Generation Task",
 					{
@@ -201,7 +340,6 @@ def prepare_run(run_name: str):
 					not dependency
 					and cross_shot_continuity
 					and previous_shot_tail_job
-					and (not shot_cumulative or previous_shot_cumulative)
 				):
 					dependency = previous_shot_tail_job
 				prompt_text = compile_segment_prompt_from_snapshot(
@@ -241,7 +379,7 @@ def prepare_run(run_name: str):
 					"inputs",
 					[
 						{"input_role": input_role_for_workflow(shot_workflow), "asset_version": reference.get("asset_version")}
-						for reference in shot.get("references") or []
+						for reference in references_for_workflow(shot_workflow, shot.get("references"))
 						if reference.get("reference_role") and reference.get("asset_version")
 					],
 				)
@@ -249,9 +387,16 @@ def prepare_run(run_name: str):
 				jobs_to_prepare.append(job)
 				previous_segment_job = job.name
 			previous_shot_tail_job = previous_segment_job if cross_shot_continuity else None
-			previous_shot_cumulative = shot_cumulative
 
 		for job in jobs_to_prepare:
+			if job.pipeline_step_key:
+				pipeline_snapshot = [
+					{"reference_role": row.input_role, "asset_version": row.asset_version}
+					for row in job.get("inputs") or []
+					if row.asset_version
+				]
+				prepare_generation_task(job.name, pipeline_snapshot)
+				continue
 			shot_snapshot = next(
 				(item for item in shots if item.get("shot") == job.shot),
 				{"references": []},
@@ -265,7 +410,9 @@ def prepare_run(run_name: str):
 					**reference,
 					"reference_role": shot_role,
 				}
-				for reference in shot_snapshot.get("references") or []
+				for reference in references_for_workflow(
+					choose_shot_workflow(snapshot, shot_snapshot), shot_snapshot.get("references")
+				)
 			]
 			prepare_generation_task(job.name, prepare_snapshot)
 	except Exception as exc:
@@ -285,7 +432,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 
 		get_system_stats()
 
-	from joymedia.joymedia.doctype.media_project.media_project import build_project_snapshot
+	from joymedia.services.project_context import build_project_snapshot
 	from .workflow_profiles import choose_shot_workflow
 	try:
 		snapshot = json.loads(build_project_snapshot(project)[0])
@@ -306,8 +453,20 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 			],
 		})
 		shot_workflow = choose_shot_workflow(snapshot, shot_snapshot)
+		shot_pipeline = pipeline_for_final_workflow(shot_workflow.name)
+		pipeline_steps = get_pipeline_steps(shot_pipeline.name) if shot_pipeline else []
+		if int(shot_row.planned_frame_count or 0) > int(shot_workflow.frame_count or 0):
+			frappe.throw(
+				_("Shot {0} is longer than the selected workflow's single-render limit. "
+				  "Regenerate the storyboard with shorter scenes.").format(
+					shot.shot_number
+				)
+			)
 		validate_workflow_for_execution(shot_workflow)
 		validate_workflow_bindings(shot_workflow)
+		for pipeline_step in pipeline_steps:
+			validate_workflow_for_execution(frappe.get_doc("Generation Workflow", pipeline_step.workflow))
+			validate_workflow_bindings(frappe.get_doc("Generation Workflow", pipeline_step.workflow))
 		shot_adapter = get_workflow_adapter(shot_workflow)
 		continuation_workflow = (
 			frappe.get_doc("Generation Workflow", shot_workflow.continuation_workflow)
@@ -329,11 +488,17 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 				)
 			)
 
+		# Match the exact binding behaviour used when the Generation Task is
+		# prepared.  This also lets an older multi-reference storyboard fall back
+		# to its first image when the optional Ref2V backend is not installed.
 		mappings = {}
-		for mapping in shot.generation_inputs:
-			if mapping.reference_role and mapping.asset_version:
-				mappings.setdefault(frappe.scrub(mapping.reference_role), []).append(mapping.asset_version)
+		for reference in references_for_workflow(shot_workflow, shot_snapshot.get("references")):
+			if reference.get("asset_version"):
+				mappings.setdefault(input_role_for_workflow(shot_workflow), []).append(reference["asset_version"])
 		for role in required_roles:
+			if pipeline_steps and role == "first_frame":
+				# The pipeline's upstream image workflow creates this input.
+				continue
 			if (
 				role == "first_frame"
 				and shot_row.shot_number > 1
@@ -716,6 +881,10 @@ def _create_retry_attempt(run, jobs):
 			not effective_attempt
 			or effective_attempt.status != "Failed"
 			or active_attempts
+			# Invalid inputs and unavailable/authenticated workflow providers need a
+			# human change. Retrying them automatically only creates phantom queue
+			# activity and hides the real action from the user.
+			or effective_attempt.failure_class in {"Workflow", "Input"}
 			or len(retry_attempts) >= MAX_AUTOMATIC_RETRIES
 		):
 			continue
@@ -812,10 +981,32 @@ def _update_job_summary(job):
 		job.progress = 0
 		job.completed_at = job.completed_at or now()
 		job.failure_class = effective_attempt.get("failure_class") if effective_attempt.status == "Failed" else None
+		failure_summary = effective_attempt.get("error_summary")
+		if effective_attempt.status == "Failed":
+			# Older attempts can predate classification of ComfyUI node failures.
+			# Re-evaluate their technical detail while aggregating so a project never
+			# presents an authentication problem as a vague, retryable render error.
+			from .user_messages import classify_failure, friendly_failure
+
+			detected_failure_class = classify_failure(
+				effective_attempt.get("error_details") or failure_summary,
+				job.failure_class or "Generation",
+			)
+			technical_detail = str(effective_attempt.get("error_details") or failure_summary or "").lower()
+			is_authentication_failure = any(
+				token in technical_detail
+				for token in ("unauthorized", "forbidden", "please login", "authentication", "not authenticated")
+			)
+			if detected_failure_class == "Workflow" and is_authentication_failure:
+				job.failure_class = detected_failure_class
+				failure_summary = friendly_failure(
+					detected_failure_class,
+					effective_attempt.get("error_details") or failure_summary,
+				)
 		job.error_summary = (
-			effective_attempt.get("error_summary")
+			failure_summary
 			if effective_attempt.status == "Failed"
-			and (effective_attempt.get("error_details") or effective_attempt.get("error_summary"))
+			and (effective_attempt.get("error_details") or failure_summary)
 			else _("All execution attempts failed.")
 		)
 	# Job counters are derived from immutable Attempt history. A retry creates an
@@ -924,22 +1115,20 @@ def _finalize_completed_shots(run):
 			fields=["status"],
 		)
 		if jobs and all(job.status == "Completed" for job in jobs):
-			last_job = frappe.get_all(
+			last_jobs = frappe.get_all(
 				"Generation Task",
 				filters={"generation_run": run.name, "shot": shot_name},
-				fields=["workflow"],
-				order_by="segment_index desc",
-				limit_page_length=1,
+				fields=["workflow", "segment_index"],
+				order_by="segment_index desc, creation desc",
+			)
+			last_job = next(
+				(job for job in last_jobs if frappe.db.get_value("Generation Workflow", job.workflow, "output_media_type") == "Video"),
+				None,
 			)
 			workflow = frappe.get_doc(
-				"Generation Workflow", last_job[0].workflow if last_job else run.workflow
+				"Generation Workflow", last_job.workflow if last_job else run.workflow
 			)
-			if get_workflow_adapter(workflow).cumulative_segment_output:
-				from .video_composer import promote_cumulative_shot_output
-
-				assembled_version = promote_cumulative_shot_output(run.name, shot_name)
-			else:
-				assembled_version = compose_shot_segments(run.name, shot_name)
+			assembled_version = compose_shot_segments(run.name, shot_name)
 			if assembled_version:
 				from .timeline_editor import sync_timeline_source_for_shot
 				sync_timeline_source_for_shot(shot_name)
@@ -1047,10 +1236,11 @@ def _has_submittable_work(run_name):
 
 
 def _has_submission_capacity(run):
-	"""Whether the run may put another job into ComfyUI's shared, first-come-first-served queue.
+	"""Whether this run may put another job into ComfyUI's queue.
 
-	Two jobs in flight keep the GPU busy back to back, while other projects' jobs can
-	interleave instead of waiting behind every scene of a long film.
+	Only one attempt may be queued or running for a run at a time.  The result
+	ingestor calls ``refresh_run`` after completion, which then releases the next
+	job and lets chained-frame validation attach the completed Last Frame.
 	"""
 	job_names = _get_run_job_names(run.name)
 	if not job_names:

@@ -3,11 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from joymedia.joymedia.doctype.media_project.media_project import (
-	apply_shot_review_revision,
-	submit_shot_review,
-	sync_shot_review_status,
-)
+from joymedia.api.reviews import apply_shot_review_revision, submit_shot_review, sync_shot_review_status
 from joymedia.services.test_timeline_editor import _create_output_version, _create_workflow
 
 

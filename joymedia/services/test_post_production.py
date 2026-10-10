@@ -24,21 +24,17 @@ class TestSegmentedSoundtrack(FrappeTestCase):
 			"[Shot 1] Open.\n---\n[Shot 2] At 00:04.500, Go on.\n---\n[Shot 3] At 00:09.000, End.", prompt
 		)
 
-	@patch("joymedia.services.comfyui_client.upload_local_file", return_value={"server_path": "first.png"})
-	def test_soundtrack_workflow_starts_from_a_frame_without_dangling_nodes(self, upload):
-		workflow = post_production._soundtrack_workflow("first.png", "soft piano", 31)
+	@patch("joymedia.services.post_production._video_workflow")
+	def test_soundtrack_uses_the_project_workflow_contract(self, video_workflow):
+		video_workflow.return_value = ({"save": {"inputs": {}}}, "save")
 
-		context = workflow["328"]["inputs"]
-		self.assertEqual(["joymedia_first_frame", 0], context["first_frame"])
-		self.assertNotIn("seed_video", context)
-		self.assertEqual(7, len(context["segment_seconds"].split(",")))
-		self.assertEqual(7, context["prompt"].count("[Shot "))
-		links = [
-			value[0] for node in workflow.values() for value in node["inputs"].values()
-			if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str)
-		]
-		self.assertTrue(all(link in workflow for link in links))
-		self.assertEqual(["330", 0], workflow[post_production.SOUNDTRACK_SAVE_NODE]["inputs"]["video"])
+		workflow, output_node = post_production._soundtrack_workflow("PROJECT-TEST", "first.png", "soft piano", 31)
+
+		self.assertEqual("save", output_node)
+		self.assertIn("save", workflow)
+		args = video_workflow.call_args.args
+		self.assertEqual(("PROJECT-TEST", "first.png"), args[:2])
+		self.assertIn("soft piano", args[2])
 
 
 class TestPostProductionStatus(FrappeTestCase):

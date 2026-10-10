@@ -1168,7 +1168,10 @@ def sync_timeline_source_for_shot(shot_name):
 		_initialize_timeline(frappe.get_doc("Media Project", project_name))
 		return
 	for clip_data in clips:
-		frappe.db.set_value("Timeline Clip", clip_data.name, "is_outdated", 1, update_modified=False)
+		frappe.db.sql(
+			"UPDATE `tabTimeline Clip` SET `is_outdated` = 1 WHERE `name` = %s",
+			clip_data.name,
+		)
 
 	_invalidate_project_output(project_name)
 	frappe.db.commit()

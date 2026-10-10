@@ -1,7 +1,7 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from joymedia.joymedia.doctype.media_project.media_project import build_project_snapshot
+from joymedia.services.project_context import build_project_snapshot
 
 
 class IntegrationTestGenerationRun(FrappeTestCase):
