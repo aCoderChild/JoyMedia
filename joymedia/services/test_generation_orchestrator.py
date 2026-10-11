@@ -123,6 +123,30 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		)
 		get_contract.assert_called_once_with(workflow)
 
+	@patch(
+		"joymedia.services.workflow_resolver.get_workflow_input_contract",
+		return_value=[{
+			"role": "product_reference",
+			"accepted_media_type": "Image",
+			"allow_multiple": False,
+			"max_count": 2,
+		}],
+	)
+	def test_pipeline_reference_inputs_preserve_direct_r2v_role(self, get_contract):
+		workflow = frappe._dict(name="WF-R2V")
+		result = generation_orchestrator._pipeline_reference_inputs(
+			{"references": [
+				{"asset_version": "ASTV-00001", "reference_role": "product_reference"},
+				{"asset_version": "ASTV-00002", "reference_role": "product_reference"},
+			]},
+			workflow,
+		)
+
+		self.assertEqual(
+			{"product_reference": ["ASTV-00001", "ASTV-00002"]},
+			result,
+		)
+
 	@patch("joymedia.services.generation_orchestrator.filelock", return_value=nullcontext())
 	@patch("joymedia.services.generation_orchestrator.frappe.db.commit")
 	@patch("joymedia.services.generation_orchestrator.refresh_generation_state_for_attempt")

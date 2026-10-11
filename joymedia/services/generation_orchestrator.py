@@ -102,7 +102,11 @@ def _pipeline_reference_inputs(shot, workflow):
 		asset_version = reference.get("asset_version")
 		if not asset_version:
 			continue
-		role = normalize_reference_role(reference.get("input_role") or reference.get("reference_role") or "")
+		raw_role = frappe.scrub(reference.get("input_role") or reference.get("reference_role") or "")
+		# Keep an already-concrete workflow role intact.  In particular, direct
+		# R2V uses ``product_reference`` for two scalar image slots; converting it
+		# to a semantic routing alias here leaves the required slots unbound.
+		role = raw_role if raw_role in roles else normalize_reference_role(raw_role)
 		if role not in roles:
 			role = image_role
 		values = inputs.setdefault(role, [])
