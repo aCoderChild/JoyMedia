@@ -563,7 +563,11 @@ def enforce_property_marketing_brief(shots, video_idea, reference_contexts):
 				"Preserve her identity and the property's visible appearance. One continuous shot, photorealistic, no cuts, no added text or invented logos."
 			)
 		shot["generation_prompt"] = prompt
-		shot["image_prompt"] = prompt
+		image_subject = "the destination property area shown in <Picture 3>" if len(place_keys) > 1 else "the property area shown in <Picture 2>"
+		shot["image_prompt"] = (
+			f"The woman from <Picture 1>, wearing {outfit}, presents {image_subject}; "
+			"show only the supplied visible layout, photorealistic commercial frame."
+		)
 		shot["shot_name"] = f"{beats[index]}: {titles[beats[index]]}"
 		shot["start_state"] = "Người dẫn giới thiệu không gian" if _has_vietnamese(video_idea) else "Host presents the space"
 		shot["end_state"] = (
@@ -826,9 +830,10 @@ def enforce_explicit_product_brief(shots, video_idea):
 			"Use an elegant dining table, warm upscale lighting, and a shallow depth of field. "
 			"One continuous shot with no cuts, photorealistic, smooth stabilized motion, no added text or invented logos, no deformation."
 		)
-		# Flux and video must start from the same shot description. The video
-		# prompt already contains the product, action, setting and camera intent.
-		shot["image_prompt"] = shot["generation_prompt"]
+		shot["image_prompt"] = (
+			"The woman in the selected traditional ao dai holds the decorated plate toward camera "
+			f"{product_brief_setting(video_idea)}, warm upscale commercial lighting, photorealistic starting frame."
+		)
 	return shots
 
 

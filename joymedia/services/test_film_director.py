@@ -619,7 +619,8 @@ class TestDirectorGuards(FrappeTestCase):
 		self.assertIn("invent no room type", shots[0]["generation_prompt"])
 		self.assertIn("livable", shots[0]["generation_prompt"])
 		self.assertNotIn("makes tea", shots[0]["generation_prompt"])
-		self.assertEqual(shots[0]["generation_prompt"], shots[0]["image_prompt"])
+		self.assertNotEqual(shots[0]["generation_prompt"], shots[0]["image_prompt"])
+		self.assertIn("photorealistic commercial frame", shots[0]["image_prompt"])
 		self.assertEqual(5, shots[0]["motion_plan"]["actions"][-1]["end"])
 
 	def test_compact_property_plan_prompt_includes_all_selected_areas(self):

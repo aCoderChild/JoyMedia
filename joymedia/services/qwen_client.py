@@ -53,7 +53,7 @@ def generate_shot_revision(*, instruction, shot, product_name="", video_idea="")
 	current_image_prompt = str(shot.get("image_prompt") or "").strip()
 	user_prompt = (
 		"Revise exactly one cinematic commercial shot. Return only valid JSON. The revised scene description "
-		"will be used unchanged for both Flux image generation and video generation.\n\n"
+		"will provide a starting-frame image prompt for Flux and a separate motion-aware video prompt.\n\n"
 		f"PRODUCT: {product_name}\n"
 		f"VIDEO IDEA (source of truth): {video_idea}\n"
 		f"USER INSTRUCTION: {instruction}\n\n"
@@ -65,8 +65,8 @@ def generate_shot_revision(*, instruction, shot, product_name="", video_idea="")
 		'{"summary":"short explanation",'
 		'"changes":[{"field":"Shot Prompt","detail":"..."}],'
 		'"generation_prompt":"...","image_prompt":"..."}\n'
-		"Return one complete replacement generation_prompt and make image_prompt exactly the same text. "
-		"Preserve details not changed by the instruction, while correcting any mismatch with the video idea."
+		"Return one complete replacement generation_prompt for video and one concise image_prompt describing only the starting frame. "
+		"Keep both prompts faithful to the video idea and preserve details not changed by the instruction."
 	)
 	payload = {
 		"model": model,
@@ -96,8 +96,8 @@ def generate_shot_revision(*, instruction, shot, product_name="", video_idea="")
 	if not generation_prompt:
 		frappe.throw(_("Qwen returned an empty generation_prompt for the shot revision."))
 	result["generation_prompt"] = generation_prompt
-	# Keep one canonical description even if Qwen returns two fields with drift.
-	result["image_prompt"] = generation_prompt
+	image_prompt = str(result.get("image_prompt") or result.get("image_generation_prompt") or "").strip()
+	result["image_prompt"] = image_prompt or generation_prompt
 	result["changes"] = result.get("changes") if isinstance(result.get("changes"), list) else []
 	result["summary"] = str(result.get("summary") or "Shot changes are ready to review.").strip()
 	return result

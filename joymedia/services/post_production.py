@@ -56,6 +56,35 @@ def queue_post_production(project_name: str):
 	return queue_post_production_internal(project.name)
 
 
+@frappe.whitelist()
+def cancel_post_production(project_name: str):
+	"""Stop the current finishing job and its active ComfyUI prompt, if any."""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	prompt_id = str(project.get("post_production_comfy_prompt_id") or "").strip()
+	if prompt_id:
+		from joymedia.services.comfyui_client import delete_queue_prompts, interrupt
+
+		try:
+			interrupt(prompt_id=prompt_id)
+			delete_queue_prompts([prompt_id])
+		except Exception:
+			frappe.logger("joymedia.post_production").exception("Unable to cancel ComfyUI prompt %s", prompt_id)
+	from frappe.utils.background_jobs import get_queue
+	from joymedia.services.render_queue import _render_queue
+
+	job = get_queue(_render_queue()).fetch_job(_job_id(project.name))
+	if job:
+		job.cancel()
+	frappe.db.set_value(
+		"Media Project", project.name,
+		{"post_production_status": "Cancelled", "post_production_step": "", "post_production_error": "", "post_production_comfy_prompt_id": ""},
+		update_modified=False,
+	)
+	frappe.db.commit()
+	return {"status": "Cancelled"}
+
+
 def queue_post_production_internal(project_name):
 	"""Queue Finish film for a project whose caller is already authorized."""
 	# A finish already running repeats when it sees a request newer than its start.
@@ -97,6 +126,7 @@ def _job_id(project_name):
 
 def run_post_production(project_name: str):
 	try:
+		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", "", update_modified=False)
 		# Scenes regenerated or takes switched while this ran need another pass.
 		for _round in range(MAX_FINISHING_ROUNDS):
 			started = now_datetime()
@@ -112,13 +142,17 @@ def run_post_production(project_name: str):
 			requested = frappe.db.get_value("Media Project", project_name, "post_production_requested_at")
 			if not requested or get_datetime(requested) <= started:
 				break
+		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", "", update_modified=False)
 		_set_status(project_name, "Completed", step="")
 	except Exception as exc:
 		frappe.db.rollback()
+		if frappe.db.get_value("Media Project", project_name, "post_production_status") == "Cancelled":
+			return
 		frappe.log_error(title=f"Post-production failed for {project_name}")
 		from joymedia.services.user_messages import classify_failure, friendly_failure
 
 		# Marketers see a plain message; the technical detail is in the Error Log.
+		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", "", update_modified=False)
 		_set_status(project_name, "Failed", step="", error=friendly_failure(classify_failure(exc, "Generation")))
 		raise
 
@@ -337,7 +371,7 @@ def _bridge_asset_version(project_name, outgoing, incoming):
 			BRIDGE_FRAMES / 24,
 			last_frame=last,
 		)
-		video_bytes = _render_video(workflow, output_node)
+		video_bytes = _render_video(project_name, workflow, output_node)
 	return _save_output(project_name, asset_name, "Video", f"{_slug(asset_name)}.mp4", video_bytes)
 
 
@@ -468,7 +502,7 @@ def _render_soundtrack(project_name, asset_name, first_clip, music, total_frames
 		workflow, output_node = _soundtrack_workflow(
 			project_name, first, music, _soundtrack_seconds(total_frames)
 		)
-		video_path.write_bytes(_render_video(workflow, output_node))
+		video_path.write_bytes(_render_video(project_name, workflow, output_node))
 		audio_path = temp_path / "soundtrack.m4a"
 		subprocess.run(
 			["ffmpeg", "-v", "error", "-y", "-i", str(video_path), "-map", "0:a:0",
@@ -598,10 +632,16 @@ def _video_workflow(project_name, first_frame, prompt, seconds, last_frame=None)
 	return workflow, metadata["primary_output_node_key"]
 
 
-def _render_video(workflow, output_node):
+def _render_video(project_name, workflow, output_node):
 	from joymedia.services.comfyui_client import run_workflow_to_bytes
 
-	content = run_workflow_to_bytes(workflow, output_node, timeout=COMFYUI_JOB_TIMEOUT_SECONDS, forget=True)
+	def remember_prompt(prompt_id):
+		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", prompt_id, update_modified=False)
+		frappe.db.commit()
+
+	content = run_workflow_to_bytes(
+		workflow, output_node, timeout=COMFYUI_JOB_TIMEOUT_SECONDS, forget=True, on_submitted=remember_prompt
+	)
 	# The render took minutes; MariaDB's snapshot isolation rejects writes to rows
 	# (such as naming series) that other workers changed since this transaction began.
 	frappe.db.commit()

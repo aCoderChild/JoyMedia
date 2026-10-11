@@ -26,6 +26,7 @@
       @finish-film="finishFilm"
       @retry-generation="handleGenerationRetry"
       @stop-generation="cancelGeneration"
+      @cancel-finishing="cancelFinishing"
       @select-shot="selectShotFromActivity"
     />
 
@@ -574,6 +575,18 @@ async function finishFilm() {
     await fetchWorkspace();
   } catch (err) {
     notify({ title: currentLang.value === "vi" ? "Không thể hoàn thiện phim" : "Could not finish the film", text: errorMessage(err, ""), type: "error" });
+  }
+}
+
+async function cancelFinishing() {
+  try {
+    await call("joymedia.services.post_production.cancel_post_production", { project_name: projectName.value });
+    if (finishPollTimer) clearTimeout(finishPollTimer);
+    finishPollTimer = null;
+    await fetchWorkspace();
+    notify({ title: currentLang.value === "vi" ? "Đã dừng hoàn thiện phim" : "Finishing stopped", type: "success" });
+  } catch (err) {
+    notify({ title: currentLang.value === "vi" ? "Không thể dừng hoàn thiện phim" : "Could not stop finishing", text: errorMessage(err, ""), type: "error" });
   }
 }
 

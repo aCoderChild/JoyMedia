@@ -8,10 +8,10 @@ from joymedia.services.qwen_client import _normalize_qwen_plan, _validate_video_
 class TestQwenClient(FrappeTestCase):
 	@patch("joymedia.services.qwen_client._qwen_config", return_value=("http://qwen", "model", 30))
 	@patch("joymedia.services.qwen_client.requests.post")
-	def test_shot_revision_returns_one_prompt_for_image_and_video(self, post, _config):
+	def test_shot_revision_preserves_separate_image_and_video_prompts(self, post, _config):
 		response = MagicMock(ok=True)
 		response.json.return_value = {
-			"choices": [{"message": {"content": '{"summary":"Aligned.","changes":[],"generation_prompt":"A woman presents a ceramic plate in an elegant restaurant.","image_prompt":"An unrelated garden."}'}}]
+			"choices": [{"message": {"content": '{"summary":"Aligned.","changes":[],"generation_prompt":"A woman presents a ceramic plate in an elegant restaurant.","image_prompt":"A woman holding a ceramic plate in an elegant restaurant."}'}}]
 		}
 		post.return_value = response
 		shot = frappe._dict(
@@ -26,9 +26,11 @@ class TestQwenClient(FrappeTestCase):
 			video_idea="A woman advertises a plate in a luxurious restaurant.",
 		)
 
-		self.assertEqual(result["generation_prompt"], result["image_prompt"])
+		self.assertNotEqual(result["generation_prompt"], result["image_prompt"])
+		self.assertIn("ceramic plate", result["image_prompt"])
 		request_text = post.call_args.kwargs["json"]["messages"][1]["content"]
 		self.assertIn("VIDEO IDEA (source of truth)", request_text)
+		self.assertIn("separate motion-aware video prompt", request_text)
 
 	def test_equal_image_and_shot_counts_assign_images_in_order_for_single_image_workflows(self):
 		contract = [{

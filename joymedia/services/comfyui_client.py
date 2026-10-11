@@ -234,13 +234,16 @@ def download_output(
 
 
 def run_workflow_to_bytes(
-	workflow: dict, output_node: str, *, timeout: float = 3600, forget: bool = False, base_url: str | None = None
+	workflow: dict, output_node: str, *, timeout: float = 3600, forget: bool = False, base_url: str | None = None,
+	on_submitted=None,
 ) -> bytes:
 	"""Run one ComfyUI job to completion and return the first file saved by output_node.
 
 	forget removes the job from the shared ComfyUI history once its output is downloaded.
 	"""
 	prompt_id = submit_workflow(workflow, base_url=base_url)["prompt_id"]
+	if on_submitted:
+		on_submitted(prompt_id)
 	deadline = time.monotonic() + timeout
 	poll_failures = 0
 	while time.monotonic() < deadline:
