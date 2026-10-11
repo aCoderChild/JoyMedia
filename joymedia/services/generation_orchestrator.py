@@ -1127,10 +1127,13 @@ def _refresh_run_counters(run):
 		run.status = "Queued"
 		run.failure_class = None
 		run.error_summary = None
-	# Run counters are derived system state. Result ingestion can update the same
-	# Run while this aggregation is in progress, so an ORM save of a stale document
-	# would roll back the whole background job after ComfyUI has accepted a prompt.
-	run.db_set(
+	# Run counters are derived system state.  ``Document.db_set`` first reloads
+	# the document with SELECT ... FOR UPDATE; that conflicts with the snapshot
+	# held by this background job after it inserts Generation Tasks.  Write the
+	# derived fields directly so preparing a run cannot die before submission.
+	frappe.db.set_value(
+		"Generation Run",
+		run.name,
 		{
 			"total_tasks": run.total_tasks,
 			"completed_tasks": run.completed_tasks,
@@ -1142,7 +1145,7 @@ def _refresh_run_counters(run):
 			"failure_class": run.failure_class,
 			"error_summary": run.error_summary,
 		},
-		notify=True,
+		update_modified=False,
 	)
 
 

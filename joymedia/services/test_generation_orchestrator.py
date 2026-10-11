@@ -250,8 +250,9 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		enqueue.assert_called_once_with("prepare_run", run.name)
 		self.assertEqual(result["status"], "Queued")
 
+	@patch("joymedia.services.generation_orchestrator.frappe.db.set_value")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_refresh_run_counters_are_derived_from_jobs(self, get_all):
+	def test_refresh_run_counters_are_derived_from_jobs(self, get_all, set_value):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.completed_at = None
@@ -270,8 +271,9 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(run.running_tasks, 1)
 		self.assertEqual(run.progress, 50)
 		self.assertEqual(run.status, "Running")
-		run.db_set.assert_called_once()
-		self.assertEqual(run.db_set.call_args.args[0]["status"], "Running")
+		set_value.assert_called_once()
+		self.assertEqual(set_value.call_args.args[2]["status"], "Running")
+		self.assertEqual(set_value.call_args.kwargs["update_modified"], False)
 
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
 	def test_ready_jobs_leave_a_run_queued_until_an_attempt_is_submitted(self, get_all):
@@ -305,8 +307,9 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		count.assert_called_once_with("Generation Attempt", {"generation_task": "TASK-QUEUED"})
 
 	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=False)
+	@patch("joymedia.services.generation_orchestrator.frappe.db.set_value")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_completed_execution_stays_running_until_shot_outputs_exist(self, get_all, outputs_are_selected):
+	def test_completed_execution_stays_running_until_shot_outputs_exist(self, get_all, set_value, outputs_are_selected):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.completed_at = None
@@ -318,8 +321,9 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertIsNone(run.completed_at)
 
 	@patch("joymedia.services.generation_orchestrator._run_outputs_are_selected", return_value=True)
+	@patch("joymedia.services.generation_orchestrator.frappe.db.set_value")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_completed_execution_with_selected_outputs_completes_run(self, get_all, outputs_are_selected):
+	def test_completed_execution_with_selected_outputs_completes_run(self, get_all, set_value, outputs_are_selected):
 		run = MagicMock()
 		run.name = "RUN-00001"
 		run.completed_at = None
