@@ -62,11 +62,17 @@ def _route_and_validate_plan_shot(shot, project_references, default_workflow):
 		project_reference = project_references.get(reference.get("reference_key"))
 		if not project_reference or not project_reference.asset_version:
 			frappe.throw(_("Unknown Project Reference key '{0}'.").format(reference.get("reference_key")))
+		project_role = frappe.scrub(project_reference.reference_role or "")
+		planned_role = reference.get("usage_role") or ""
+		# "General" is the default for older/auto-tagged project references. It
+		# carries no rendering meaning, so retain the planner's explicit person,
+		# product or environment role instead of collapsing it back to General.
+		role = planned_role if project_role in {"", "general", "keyframe_reference"} else project_role
 		references.append({
 			"reference_key": reference["reference_key"],
-			# Project Reference roles carry durable product/person/environment
-			# semantics. Planner roles are only a fallback for legacy imports.
-			"reference_role": project_reference.reference_role or reference.get("usage_role") or "General",
+			# Explicit Project Reference roles win; planner roles preserve automatic
+			# semantics where the durable role is still the generic default.
+			"reference_role": role or "General",
 			"asset_version": project_reference.asset_version,
 		})
 	route = resolve_shot_render_route(
@@ -180,7 +186,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 		pluck="name",
 	)
 	if existing_shots:
-		if frappe.db.exists("Generation Run", {"media_project": project.name}):
+		if not _may_replace_unrendered_storyboard(project.name):
 			frappe.throw(
 				_(
 					"This storyboard cannot be replaced after generation starts. "
@@ -307,6 +313,27 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 
 	_name_untitled_project(project, plan.get("film_title"))
 	return created_shots
+
+
+def _may_replace_unrendered_storyboard(project_name):
+	"""Allow recovery from a cancelled run that never created a render task.
+
+	A cancelled run can be left behind when planning or preflight fails before any
+	Generation Task exists.  It must not permanently lock an incorrect storyboard.
+	Any active, completed, failed, or task-bearing run remains immutable.
+	"""
+	runs = frappe.get_all(
+		"Generation Run",
+		filters={"media_project": project_name},
+		fields=["name", "status"],
+	)
+	if not runs:
+		return True
+	if any(run.status != "Cancelled" for run in runs):
+		return False
+	return not frappe.db.exists(
+		"Generation Task", {"generation_run": ["in", [run.name for run in runs]]}
+	)
 
 
 # Names new projects get before anyone types one; they are replaced by the storyboard's title.

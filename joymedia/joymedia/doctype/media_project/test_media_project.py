@@ -183,6 +183,60 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual(result["media_project"], project.name)
 		self.assertEqual(new_shot.generation_prompt, "Original shot prompt.")
 
+	def test_cancelled_unstarted_run_does_not_lock_storyboard_replacement(self):
+		from joymedia.services.project_context import build_project_snapshot
+		from joymedia.services.video_plan_service import apply_video_plan
+
+		project, _ = _create_project("Recover Cancelled Plan", self.workflow)
+		_attach_image_reference(project, "Recovery Reference")
+		apply_video_plan(project.name, {
+			"shots": [{"shot_number": 1, "duration_seconds": 5, "generation_prompt": "Incorrect plan."}],
+		})
+		snapshot_json, snapshot_hash = build_project_snapshot(project)
+		frappe.get_doc({
+			"doctype": "Generation Run",
+			"media_project": project.name,
+			"workflow": self.workflow,
+			"project_snapshot_json": snapshot_json,
+			"project_snapshot_hash": snapshot_hash,
+			"status": "Cancelled",
+			"requested_by": frappe.session.user,
+		}).insert(ignore_permissions=True)
+
+		apply_video_plan(project.name, {
+			"shots": [{"shot_number": 1, "duration_seconds": 5, "generation_prompt": "Corrected plan."}],
+		})
+
+		self.assertEqual(
+			"Corrected plan.",
+			frappe.db.get_value("Shot", {"media_project": project.name}, "generation_prompt"),
+		)
+
+	def test_property_component_role_is_persisted_for_render_routing(self):
+		project, _ = _create_project("Property Roles", self.workflow)
+		project.video_idea = "@host quảng cáo bất động sản; @1 là một phần trong bất động sản đó."
+		for asset_name in ("Host", "Property Area"):
+			_attach_image_reference(project, asset_name)
+		property_asset = frappe.get_doc(
+			"Media Asset",
+			frappe.db.get_value("Asset Version", project.selected_media[1].asset_version, "media_asset"),
+		)
+		property_asset.asset_category = "Reference"
+		property_asset.save(ignore_permissions=True)
+		project.selected_media[0].reference_key = "host"
+		project.selected_media[0].reference_role = "General"
+		project.selected_media[1].reference_key = "1"
+		project.selected_media[1].reference_role = "General"
+		project.save(ignore_permissions=True)
+
+		with patch("joymedia.services.vision_analysis.ensure_project_image_analysis"):
+			project._use_reference_video_for_story_film()
+
+		self.assertEqual(
+			"Environment",
+			frappe.db.get_value("Project Reference", project.selected_media[1].name, "reference_role"),
+		)
+
 	def test_generation_workflow_owns_adapter_without_model_profile_doctype(self):
 		workflow = frappe.get_doc("Generation Workflow", self.workflow)
 		self.assertEqual(workflow.adapter_key, "comfyui_generic")

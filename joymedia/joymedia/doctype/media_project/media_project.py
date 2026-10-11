@@ -195,6 +195,20 @@ class MediaProject(Document):
 		references = _get_project_reference_contexts(self)
 		references = infer_product_reference_contexts(references, self.video_idea)
 		references = infer_property_area_references(references, self.video_idea)
+		# Rendering routes use the durable Project Reference role, rather than the
+		# planner-only context. Persist an inferred property-area role so an image
+		# explicitly tagged as a property component cannot fall back to General.
+		inferred_roles = {
+			str(item.get("reference_key") or ""): item.get("reference_role")
+			for item in references
+		}
+		for selected in self.selected_media or []:
+			role = inferred_roles.get(str(selected.reference_key or ""))
+			if role and selected.reference_role != role:
+				frappe.db.set_value(
+					"Project Reference", selected.name, "reference_role", role, update_modified=False
+				)
+				selected.reference_role = role
 		if not is_story_film(references):
 			return
 		self.save_video_settings(
