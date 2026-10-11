@@ -267,7 +267,7 @@ def create_project(project_name, product_name, video_idea=None, campaign_brief=N
 		"delivery_height": 720,
 		"export_quality": export_quality,
 		"generation_mode": "Continuous",
-		# New projects render fast drafts; "Render final" redoes the scenes at full quality.
+		# New projects render a fast draft; export uses the current editable timeline.
 		"quality_mode": "Draft",
 	}).insert(ignore_permissions=True)
 	return project

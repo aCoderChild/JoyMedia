@@ -52,31 +52,6 @@ def regenerate_scene_with_reason(project_name, shot_name, retry_reason="Manual R
 	return {**result, "shot_name": shot.name}
 
 
-@frappe.whitelist()
-def render_final(project_name):
-	"""Re-render every scene of a fast draft at full quality, as new takes.
-
-	The draft takes stay as earlier takes of each scene; transitions and music follow
-	automatically once the new takes are ready.
-	"""
-	project = frappe.get_doc("Media Project", project_name)
-	project._require_write_access()
-	from joymedia.services.project_context import _active_project_shots, _busy_shots
-	from joymedia.services.storyboard_job import planning_status
-
-	if planning_status(project.name) == "Running" or _busy_shots(project.name):
-		frappe.throw(_("Scenes are still being rendered. Please wait until they are ready."))
-	shots = [shot.name for shot in _active_project_shots(project.name, fields=["name"])]
-	if not shots:
-		frappe.throw(_("Generate a storyboard first."))
-	project.save_video_settings(
-		project.total_duration_seconds, project.delivery_preset,
-		generation_mode=project.generation_mode, reference_mode=project.reference_mode, quality_mode="Production",
-	)
-	project.reload()
-	return _start_takes_run(project, shots)
-
-
 def _start_takes_run(project, shot_names, retry_reason=None):
 	"""A run that renders new takes of these scenes, replacing each one's take when ready."""
 	from joymedia.services.project_context import build_project_snapshot

@@ -24,8 +24,6 @@
       @open-settings="showSettings = true"
       @export-timeline="exportAndRefresh"
       @finish-film="finishFilm"
-      @render-final="renderFinal"
-      :quality-mode="videoSettings.quality_mode || 'Production'"
       @retry-generation="handleGenerationRetry"
       @stop-generation="cancelGeneration"
       @select-shot="selectShotFromActivity"
@@ -96,6 +94,7 @@
             @toggle-mute="handleToggleMute"
             @play="isPlaying = true"
             @pause="isPlaying = false"
+            @ended="onPreviewEnded"
             @loadedmetadata="onPreviewLoadedMetadata"
             @timeupdate="onVideoTimeUpdate"
             @step-frame="stepPlayhead"
@@ -538,13 +537,26 @@ const {
   exportTimeline,
 } = useProjectTimeline(projectName);
 
-function downloadFile(url) {
+async function downloadFile(url) {
+  if (!url) throw new Error("The exported video has no download URL.");
+
+  // Asset files may be private Frappe files. A plain anchor lets the browser
+  // navigate to the file instead of downloading it (and fails in Safari when
+  // the response does not expose Content-Disposition). Fetch with the active
+  // session, then download the authenticated blob.
+  const response = await fetch(url, { credentials: "same-origin" });
+  if (!response.ok) {
+    throw new Error(`The exported video could not be downloaded (${response.status}).`);
+  }
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  link.href = url;
-  link.download = "";
+  link.href = objectUrl;
+  link.download = "edited-video.mp4";
   document.body.appendChild(link);
   link.click();
   link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 const isFinishing = computed(() => ["Queued", "Running"].includes(postProduction.value.status));
@@ -608,7 +620,7 @@ async function exportAndRefresh() {
     // The export replaces the project's final video, which only the workspace reports.
     await fetchWorkspace();
     if (!finalVideo.value?.file) return;
-    downloadFile(finalVideo.value.file);
+    await downloadFile(finalVideo.value.file);
     notify({
       title: currentLang.value === "vi" ? "Đã xuất video" : "Video exported",
       text: currentLang.value === "vi" ? "Video đang được tải xuống." : "The video is downloading.",
@@ -690,6 +702,34 @@ function handleTogglePlayback() {
 function handleToggleMute() {
   isMuted.value = !isMuted.value;
   if (isMuted.value) pauseTimelineAudio();
+}
+
+async function onPreviewEnded() {
+  if (studioMode.value !== "edit" || !isPlaying.value) return;
+
+  const clip = activeTimelineVideoClip.value;
+  const totalFrames = Number(
+    timeline.value?.render_total_frames || timeline.value?.total_frames || 0,
+  );
+  const nextFrame = Number(clip?.timeline_end_frame ?? playheadFrame.value + 1);
+
+  if (!clip || nextFrame >= totalFrames) {
+    playheadFrame.value = totalFrames || playheadFrame.value;
+    isPlaying.value = false;
+    return;
+  }
+
+  // The video element represents one source clip, while the editor represents
+  // one continuous timeline. Advance the global clock explicitly so Vue swaps
+  // to the next clip and keeps the same play command alive.
+  playheadFrame.value = nextFrame;
+  syncActiveSceneFromFrame(nextFrame);
+  syncTimelineAudio(nextFrame);
+  await nextTick();
+  if (isPlaying.value) {
+    const video = studioPreviewRef.value?.previewVideo?.value || studioPreviewRef.value?.previewVideo;
+    video?.play?.().catch(() => {});
+  }
 }
 
 // Automatically transition to Edit mode only when an active generation run finishes
@@ -1361,28 +1401,6 @@ async function updateShotCaption(shot, caption) {
       text: errorMessage(err, ""),
       type: "error",
     });
-  }
-}
-
-async function renderFinal() {
-  const vi = currentLang.value === "vi";
-  const confirmed = window.confirm(
-    vi
-      ? "Dựng lại tất cả cảnh ở chất lượng cao nhất? Việc này lâu hơn bản nháp khoảng 4 lần. Bản nháp vẫn được giữ trong các phiên bản."
-      : "Render every scene again at full quality? This takes about 4× longer than the draft. The draft takes are kept as earlier takes."
-  );
-  if (!confirmed) return;
-  try {
-    await call("joymedia.services.scene_takes.render_final", { project_name: projectName.value });
-    await fetchWorkspace();
-    resumeProduction(workspace.value?.production, workspace.value?.project?.planning_status);
-    notify({
-      title: vi ? "Đang dựng bản đẹp" : "Rendering the final film",
-      text: vi ? "Các cảnh mới sẽ thay bản nháp khi dựng xong." : "The new scenes replace the draft as they finish.",
-      type: "success",
-    });
-  } catch (err) {
-    notify({ title: vi ? "Không thể dựng bản đẹp" : "Could not render the final film", text: errorMessage(err, ""), type: "error" });
   }
 }
 
