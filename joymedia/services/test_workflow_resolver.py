@@ -54,6 +54,25 @@ class TestWorkflowResolver(FrappeTestCase):
 		self.assertEqual("one.png", _resolve_declared_binding(bindings[0], values))
 		self.assertEqual("two.png", _resolve_declared_binding(bindings[1], values, role_slot=1))
 
+	def test_references_for_repeated_scalar_bindings_keep_each_slot(self):
+		workflow = frappe._dict(bindings=[
+			frappe._dict(binding_key="product_primary", required_input_role="product_reference",
+				value_type="File Path", required=1, allow_multiple=0, accepted_media_type="Image"),
+			frappe._dict(binding_key="product_secondary", required_input_role="product_reference",
+				value_type="File Path", required=1, allow_multiple=0, accepted_media_type="Image"),
+		])
+
+		self.assertEqual(
+			["ASTV-1", "ASTV-2"],
+			[
+				row["asset_version"]
+				for row in workflow_profiles.references_for_workflow(
+					workflow,
+					[{"asset_version": "ASTV-1"}, {"asset_version": "ASTV-2"}],
+				)
+			],
+		)
+
 	def test_optional_and_multiple_inputs_follow_declared_cardinality(self):
 		self.assertIs(_SKIP_BINDING, _resolve_input_value("last frame", {}, required=False))
 		self.assertEqual(

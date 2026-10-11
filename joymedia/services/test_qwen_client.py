@@ -72,6 +72,35 @@ class TestQwenClient(FrappeTestCase):
 			plan["shots"][0]["references"],
 		)
 
+	def test_repeated_scalar_reference_slots_fill_from_selected_pool(self):
+		contract = [{
+			"role": "product_reference",
+			"min_count": 2,
+			"max_count": 2,
+			"accepted_media_type": "Image",
+			"allow_multiple": False,
+		}]
+		plan = _normalize_qwen_plan(
+			{
+				"shots": [{
+					"generation_prompt": "Show the product with the model.",
+					"duration_seconds": 5,
+					"references": [{"reference_key": "dress", "usage_role": "product_reference"}],
+				}],
+			},
+			reference_images=[{"reference_key": "dress"}, {"reference_key": "model"}],
+			workflow_input_contract=contract,
+		)
+
+		_validate_video_plan(plan, workflow_input_contract=contract)
+		self.assertEqual(
+			[
+				{"reference_key": "dress", "usage_role": "product_reference"},
+				{"reference_key": "model", "usage_role": "product_reference"},
+			],
+			plan["shots"][0]["references"],
+		)
+
 	def test_pipeline_reference_role_preserves_multiple_references_for_keyframe_stage(self):
 		contract = [{
 			"role": "keyframe_reference",

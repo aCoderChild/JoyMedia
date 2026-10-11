@@ -807,18 +807,22 @@ def _normalize_qwen_plan(
 						"usage_role": single_image_role,
 					}
 				]
-	# R2V contracts have repeated reference-image slots (normally two). The
-	# planner may return only one semantic reference even though the selected
-	# project pool can satisfy the contract. Fill only the missing slots here so
-	# validation and later Shot creation use the same deterministic assignment.
+	# A workflow can expose several required image slots under one semantic role,
+	# either as a File Paths list or as separate scalar bindings. The planner may
+	# return fewer references than the selected project pool provides. Fill the
+	# missing slots here so validation and later Shot creation use the same
+	# deterministic assignment.
 	if reference_images and workflow_input_contract:
-		_multi_reference_contracts = [
+		required_reference_contracts = [
 			contract for contract in workflow_input_contract
-			if contract.get("allow_multiple") and contract.get("min_count", 0) > 1
+			if contract.get("min_count", 0) > 0
+			and contract.get("accepted_media_type") in ("Image", "Any")
 		]
 		for shot in normalized_shots:
-			for contract in _multi_reference_contracts:
+			for contract in required_reference_contracts:
 				role = contract["role"]
+				if generation_mode == "Continuous" and shot["shot_number"] > 1 and role == "first_frame":
+					continue
 				references = shot.setdefault("references", [])
 				role_references = [
 					reference for reference in references
@@ -828,21 +832,18 @@ def _normalize_qwen_plan(
 				if needed <= 0:
 					continue
 				existing_keys = {reference.get("reference_key") for reference in role_references}
-				pool = [
-					image for image in reference_images
-					if image.get("reference_key") and image.get("reference_key") not in existing_keys
-				]
 				# Keep the assignment stable per shot while allowing a planner-supplied
 				# first reference to remain the first slot.
 				start = max(0, int(shot.get("shot_number") or 1) - 1)
+				pool = []
 				for offset in range(len(reference_images)):
-					if len(pool) >= needed:
-						break
 					candidate = reference_images[(start + offset) % len(reference_images)]
 					key = candidate.get("reference_key")
 					if key and key not in existing_keys:
 						pool.append(candidate)
 						existing_keys.add(key)
+						if len(pool) == needed:
+							break
 				for image in pool[:needed]:
 					references.append({"reference_key": image["reference_key"], "usage_role": role})
 	if (
@@ -977,7 +978,12 @@ def _validate_video_plan(
 			if workflow_input_contract is not None and not contract:
 				frappe.throw(_("Qwen returned unsupported workflow input role '{0}'.").format(usage_role))
 			role_counts[usage_role] = role_counts.get(usage_role, 0) + 1
-			if contract and role_counts[usage_role] > 1 and not contract.get("allow_multiple"):
+			if (
+				contract
+				and role_counts[usage_role] > 1
+				and not contract.get("allow_multiple")
+				and int(contract.get("max_count") or 1) <= 1
+			):
 				frappe.throw(_("Workflow input role '{0}' does not allow multiple references.").format(usage_role))
 			if contract and contract.get("max_count") and role_counts[usage_role] > contract["max_count"]:
 				frappe.throw(

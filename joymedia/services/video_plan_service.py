@@ -69,7 +69,12 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 			if workflow_contract is not None and not contract:
 				frappe.throw(_("Workflow does not support Shot Reference role '{0}'.").format(role))
 			role_counts[role] = role_counts.get(role, 0) + 1
-			if contract and role_counts[role] > 1 and not contract["allow_multiple"]:
+			if (
+				contract
+				and role_counts[role] > 1
+				and not contract.get("allow_multiple")
+				and int(contract.get("max_count") or 1) <= 1
+			):
 				frappe.throw(_("Workflow input role '{0}' accepts exactly one reference.").format(role))
 			if contract and contract.get("max_count") and role_counts[role] > contract["max_count"]:
 				frappe.throw(

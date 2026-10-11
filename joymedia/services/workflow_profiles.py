@@ -34,7 +34,7 @@ def references_for_workflow(workflow, references):
 
 	role = input_role_for_workflow(workflow)
 	contract = next((item for item in get_workflow_input_contract(workflow) if item["role"] == role), None)
-	if not contract or not contract.get("allow_multiple"):
+	if not contract:
 		return references[:1]
 	maximum = int(contract.get("max_count") or 0)
 	return references[:maximum] if maximum else references
