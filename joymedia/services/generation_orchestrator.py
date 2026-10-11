@@ -1207,8 +1207,15 @@ def _finalize_completed_shots(run):
 			)
 			assembled_version = compose_shot_segments(run.name, shot_name)
 			if assembled_version:
-				from .timeline_editor import sync_timeline_source_for_shot
-				sync_timeline_source_for_shot(shot_name)
+				from .timeline_editor import update_timeline_source_for_shot
+				# Whole-video regeneration replaces the storyboard take. Keep the
+				# existing editorial ranges and positions, but bind each video clip
+				# to the newly selected Shot output immediately.
+				if _run_replaces_selection(run):
+					update_timeline_source_for_shot(run.media_project, shot_name)
+				else:
+					from .timeline_editor import sync_timeline_source_for_shot
+					sync_timeline_source_for_shot(shot_name)
 
 
 def _keeps_selected_output(run, shot_name):
@@ -1226,6 +1233,14 @@ def _keeps_selected_output(run, shot_name):
 	if not scope.get("replace_selection"):
 		return True
 	return frappe.db.get_value("Asset Version", selected, "creation") > run.creation
+
+
+def _run_replaces_selection(run):
+	try:
+		scope = frappe.parse_json(run.execution_scope_json or "{}") or {}
+	except (TypeError, ValueError):
+		return False
+	return bool(scope.get("replace_selection"))
 
 
 def _submission_order(run_name):
