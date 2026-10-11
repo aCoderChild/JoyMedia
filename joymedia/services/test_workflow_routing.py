@@ -5,6 +5,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.workflow_routing import (
 	automatic_planning_input_contract,
+	_route,
 	resolve_shot_render_route,
 	route_shot_references,
 	strategy_for_references,
@@ -80,6 +81,14 @@ class TestWorkflowRouting(FrappeTestCase):
 			_reference("Character", 1), _reference("Environment", 2),
 		])
 		self.assertEqual("flux2_multireference_i2v", strategy)
+
+	def test_any_explicit_reference_requires_a_new_keyframe(self):
+		workflow = SimpleNamespace(name="WF-I2V")
+		route = _route(
+			"flux_keyframe_i2v", workflow, SimpleNamespace(name="PIPE-KEYFRAME"),
+			[{"asset_version": "ASTV-1", "reference_role": "keyframe_reference"}], "test",
+		)
+		self.assertTrue(route["requires_recomposition"])
 
 	@patch("joymedia.services.workflow_routing.frappe.get_doc")
 	@patch("joymedia.services.workflow_routing._pipeline_for")

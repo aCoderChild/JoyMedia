@@ -368,6 +368,7 @@ def prepare_run(run_name: str):
 					not dependency
 					and cross_shot_continuity
 					and previous_shot_tail_job
+					and not shot.get("requires_recomposition")
 				):
 					dependency = previous_shot_tail_job
 				segment_workflow = (

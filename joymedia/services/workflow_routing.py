@@ -148,9 +148,12 @@ def _route(strategy, workflow, pipeline, references, reason):
 		"generation_pipeline": pipeline.name if pipeline else "",
 		"references": references,
 		"reason": reason,
-		# A new product/multi-reference composition must run its keyframe stage;
-		# it cannot safely skip directly to a prior shot's continuation frame.
-		"requires_recomposition": strategy == "flux2_multireference_i2v",
+		# A Shot which names a reference has a new visual requirement.  In a
+		# continuous project it must therefore run its keyframe/composition stage
+		# before I2V; otherwise the orchestration shortcut would silently animate
+		# the previous Shot's Last Frame and discard this Shot's references.
+		# Reuse Last Frame only for intentionally reference-free continuation shots.
+		"requires_recomposition": bool(references),
 	}
 
 
