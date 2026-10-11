@@ -61,21 +61,20 @@ class TestTimelineComposer(FrappeTestCase):
 			_validate_normalized_video(output, profile, expected_frames=24)
 			self.assertAlmostEqual(_get_video_duration(output), 1.0, delta=0.05)
 
-	def test_end_card_fades_in_over_the_last_seconds_only(self):
-		with tempfile.TemporaryDirectory(prefix="joymedia-end-card-") as temp_dir:
+	def test_ending_preserves_picture_before_fade(self):
+		with tempfile.TemporaryDirectory(prefix="joymedia-ending-") as temp_dir:
 			temp_path = Path(temp_dir)
 			source = temp_path / "source.mp4"
-			output = temp_path / "card.mp4"
-			_make_video(source, 6, color="black")
+			output = temp_path / "ended.mp4"
+			_make_video(source, 6, color="white")
 			profile = {"width": 320, "height": 240, "fps": 24.0}
 
-			_apply_ending(source, output, profile, 'Tòa tháp "Ánh Dương": Plaza', "Phong cách sống", temp_path)
+			_apply_ending(source, output, profile, temp_path)
 
 			_validate_normalized_video(output, profile, expected_frames=144)
-			# The title is fully in at 4.4 s; the fade to black starts at 5 s.
 			before, after = _mean_luma(output, 2.0), _mean_luma(output, 4.8)
-			self.assertEqual(0, before)
-			self.assertGreater(after, before + 2)
+			self.assertGreater(before, 200)
+			self.assertGreater(after, 200)
 
 	def test_every_film_fades_to_black_at_the_end(self):
 		with tempfile.TemporaryDirectory(prefix="joymedia-ending-") as temp_dir:
@@ -85,7 +84,7 @@ class TestTimelineComposer(FrappeTestCase):
 			_make_video(source, 4, color="white")
 			profile = {"width": 320, "height": 240, "fps": 24.0}
 
-			_apply_ending(source, output, profile, "", "", temp_path)
+			_apply_ending(source, output, profile, temp_path)
 
 			_validate_normalized_video(output, profile, expected_frames=96)
 			self.assertGreater(_mean_luma(output, 2.0), 200)
@@ -187,7 +186,7 @@ class TestSceneCaptions(FrappeTestCase):
 			_make_video(source, 6, color="black")
 			profile = {"width": 320, "height": 240, "fps": 24.0}
 
-			_apply_ending(source, output, profile, "", "", temp_path, [(0.0, 4.0, "Không gian sống xanh")])
+			_apply_ending(source, output, profile, temp_path, [(0.0, 4.0, "Không gian sống xanh")])
 
 			def lower_third(seconds):
 				pixels = subprocess.run(

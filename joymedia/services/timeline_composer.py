@@ -21,13 +21,11 @@ from joymedia.services.video_composer import (
 
 STUDIO_EXPORT_QUALITY = "Studio 1440p60"
 FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
-END_CARD_SECONDS = 3.5
 # Every film fades to black, and its sound to silence, over its last second.
 ENDING_FADE_SECONDS = 1.0
 # Scenes shorter than this get no caption: it would flash by unread.
 MIN_CAPTION_SECONDS = 2.0
 TITLE_FONT = "PlayfairDisplay.ttf"
-TAGLINE_FONT = "GreatVibes-Regular.ttf"
 
 TRANSITION_FILTERS = {
 	"Dissolve": "fade",
@@ -129,11 +127,9 @@ def compose_project_timeline_internal(project_name: str):
 				output_frames = finishing.finished_frame_count(expected_frames, render["fps"])
 				_validate_normalized_video(finished_master, output_profile, expected_frames=output_frames)
 				silent_master = finished_master
-			title = (project.get("end_card_title") or "").strip()
-			tagline = (project.get("end_card_tagline") or "").strip()
 			ended_master = temp_path / f"{project.name}-timeline-ending.mp4"
 			cues = _caption_cues(project, video_clips, clip_frames, transition_frames, positioned, render["fps"])
-			_apply_ending(silent_master, ended_master, output_profile, title, tagline, temp_path, cues)
+			_apply_ending(silent_master, ended_master, output_profile, temp_path, cues)
 			_validate_normalized_video(ended_master, output_profile, expected_frames=output_frames)
 			silent_master = ended_master
 
@@ -236,17 +232,16 @@ def _caption_cues(project, video_clips, clip_frames, transition_frames, position
 	return [(start / fps, (start + last_frames) / fps, text)]
 
 
-def _apply_ending(source_path, output_path, profile, title, tagline, temp_path, captions=()):
-	"""Draw scene captions, fade any title and tagline in, then fade the picture to black."""
+def _apply_ending(source_path, output_path, profile, temp_path, captions=()):
+	"""Draw scene captions, then fade the picture to black."""
 	duration = _get_video_duration(source_path)
-	start = max(0.0, duration - min(END_CARD_SECONDS, duration * 0.4))
 	height = profile["height"]
 	filters = []
 	for index, (begin, end, text) in enumerate(captions):
 		text_file = temp_path / f"caption-{index}.txt"
 		text_file.write_text(text, encoding="utf-8")
 		size = round(min(height * 0.055, profile["width"] * 0.9 / (0.55 * max(len(text), 1))))
-		show, hide = begin + 0.3, min(end, start if title or tagline else end) - 0.3
+		show, hide = begin + 0.3, end - 0.3
 		if hide - show < 1.0:
 			continue
 		filters.append(
@@ -256,27 +251,6 @@ def _apply_ending(source_path, output_path, profile, title, tagline, temp_path, 
 			f"alpha='if(lt(t,{show:.3f}),0,if(lt(t,{show + 0.5:.3f}),(t-{show:.3f})/0.5,"
 			f"if(lt(t,{hide - 0.5:.3f}),1,if(lt(t,{hide:.3f}),({hide:.3f}-t)/0.5,0))))'"
 		)
-	# Scene captions are drawn before the end card's dimming filter is inserted at the front.
-	caption_filters = len(filters)
-	# Text goes through files so quotes, colons and accents need no escaping.
-	for index, (text, font, size, delay, offset) in enumerate((
-		(title, TITLE_FONT, round(height * 0.1), 0.0, -0.06 if tagline else 0.0),
-		(tagline, TAGLINE_FONT, round(height * 0.072), 0.5, 0.07 if title else 0.0),
-	)):
-		if not text:
-			continue
-		text_file = temp_path / f"end-card-{index}.txt"
-		text_file.write_text(text, encoding="utf-8")
-		appear = start + delay
-		filters.append(
-			f"drawtext=fontfile='{FONT_DIR / font}':textfile='{text_file}':fontsize={size}:fontcolor=white:"
-			f"shadowcolor=black@0.45:shadowx=0:shadowy={max(2, height // 360)}:"
-			f"x=(w-text_w)/2:y=(h-text_h)/2+h*{offset}:"
-			f"alpha='if(lt(t,{appear:.3f}),0,min(1,(t-{appear:.3f})/0.8))'"
-		)
-	# The title stays readable over a dimmed last shot; the whole frame then fades out.
-	if len(filters) > caption_filters:
-		filters.insert(0, f"eq=brightness='if(gte(t,{start:.3f}),-0.12*min(1,(t-{start:.3f})/0.8),0)':eval=frame")
 	filters.append(f"fade=t=out:st={max(0.0, duration - ENDING_FADE_SECONDS):.3f}:d={ENDING_FADE_SECONDS}")
 	_run_ffmpeg(
 		[

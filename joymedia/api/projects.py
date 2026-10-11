@@ -169,8 +169,6 @@ def get_project_workspace(name):
 			"reference_mode": getattr(settings, "reference_mode", None) or "Single Image",
 			"quality_mode": getattr(settings, "quality_mode", None) or "Production",
 			"global_instructions": settings.global_instructions or "",
-			"end_card_title": settings.end_card_title or "",
-			"end_card_tagline": settings.end_card_tagline or "",
 			"show_captions": int(settings.show_captions or 0),
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
 			"export_quality": normalize_export_quality(settings.export_quality),
@@ -292,7 +290,7 @@ def update_project_name(media_project, project_name):
 def save_project_video_settings(
 	project_name, total_duration_seconds, delivery_preset,
 	generation_mode=None, global_instructions=None, reference_mode=None,
-	quality_mode=None, end_card_title=None, end_card_tagline=None, soundtrack_prompt=None,
+	quality_mode=None, soundtrack_prompt=None,
 	export_quality=None, show_captions=None, workflow=None, generation_pipeline=None,
 ):
 	project = frappe.get_doc("Media Project", project_name)
@@ -303,8 +301,6 @@ def save_project_video_settings(
 		global_instructions=global_instructions,
 		reference_mode=reference_mode,
 		quality_mode=quality_mode,
-		end_card_title=end_card_title,
-		end_card_tagline=end_card_tagline,
 		soundtrack_prompt=soundtrack_prompt,
 		export_quality=export_quality,
 		show_captions=show_captions,

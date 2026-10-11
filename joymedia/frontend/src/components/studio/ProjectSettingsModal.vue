@@ -9,7 +9,7 @@
             <span>{{ currentLang === 'vi' ? 'Cài đặt video' : 'Video settings' }}</span>
           </h3>
           <p class="text-xs text-ink-muted mt-0.5">
-            {{ currentLang === 'vi' ? 'Khung hình, độ dài, nhạc nền và chữ kết thúc.' : 'Shape, length, music and closing title.' }}
+            {{ currentLang === 'vi' ? 'Khung hình, độ dài và nhạc nền.' : 'Shape, length and music.' }}
           </p>
         </div>
         <button
@@ -118,30 +118,6 @@
           />
         </div>
 
-        <!-- End card -->
-        <div class="space-y-1.5">
-          <label class="block font-bold text-ink-primary">
-            {{ currentLang === 'vi' ? 'Chữ kết thúc video:' : 'Closing title:' }}
-          </label>
-          <input
-            v-model="form.end_card_title"
-            type="text"
-            maxlength="60"
-            :placeholder="currentLang === 'vi' ? 'Tên thương hiệu hoặc sản phẩm' : 'Brand or product name'"
-            class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500"
-          />
-          <input
-            v-model="form.end_card_tagline"
-            type="text"
-            maxlength="80"
-            :placeholder="currentLang === 'vi' ? 'Câu khẩu hiệu ngắn' : 'A short slogan'"
-            class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500"
-          />
-          <p class="text-[10.5px] text-ink-muted">
-            {{ currentLang === 'vi' ? 'Không bắt buộc. Hiện ở cuối video.' : 'Optional. Shown at the end of the video.' }}
-          </p>
-        </div>
-
         <!-- Export quality -->
         <div class="space-y-1.5">
           <label class="block font-bold text-ink-primary">
@@ -226,8 +202,6 @@ const form = reactive({
   reference_mode: "Single Image",
   quality_mode: "Production",
   global_instructions: "",
-  end_card_title: "",
-  end_card_tagline: "",
   soundtrack_prompt: "",
   export_quality: "Draft 720p",
   show_captions: true,
@@ -248,8 +222,6 @@ watch(
       form.reference_mode = s.reference_mode || "Single Image";
       form.quality_mode = s.quality_mode || "Production";
       form.global_instructions = s.global_instructions || "";
-      form.end_card_title = s.end_card_title || "";
-      form.end_card_tagline = s.end_card_tagline || "";
       form.soundtrack_prompt = s.soundtrack_prompt || "";
       form.export_quality = s.export_quality === "Standard 1080p" ? "Draft 720p" : (s.export_quality || "Draft 720p");
       form.show_captions = Boolean(Number(s.show_captions ?? 1));

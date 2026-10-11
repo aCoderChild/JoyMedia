@@ -103,8 +103,6 @@ class MediaProject(Document):
 			"delivery_preset": settings.delivery_preset,
 			"generation_mode": _normalize_generation_mode(settings.generation_mode),
 			"global_instructions": settings.global_instructions or "",
-			"end_card_title": settings.end_card_title or "",
-			"end_card_tagline": settings.end_card_tagline or "",
 			"show_captions": int(settings.show_captions or 0),
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
 			"export_quality": normalize_export_quality(settings.export_quality),
@@ -115,7 +113,7 @@ class MediaProject(Document):
 	def save_video_settings(
 		self, total_duration_seconds, delivery_preset,
 		generation_mode=None, global_instructions=None, reference_mode=None,
-		quality_mode=None, end_card_title=None, end_card_tagline=None, soundtrack_prompt=None,
+		quality_mode=None, soundtrack_prompt=None,
 		export_quality=None, show_captions=None, workflow=None, generation_pipeline=None,
 	):
 		self._require_write_access()
@@ -151,10 +149,6 @@ class MediaProject(Document):
 		self.quality_mode = quality_mode
 		if global_instructions is not None:
 			self.global_instructions = global_instructions
-		if end_card_title is not None:
-			self.end_card_title = str(end_card_title).strip()
-		if end_card_tagline is not None:
-			self.end_card_tagline = str(end_card_tagline).strip()
 		if show_captions is not None:
 			self.show_captions = 1 if str(show_captions).lower() in ("1", "true", "yes", "on") else 0
 		if soundtrack_prompt is not None:
