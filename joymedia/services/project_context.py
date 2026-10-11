@@ -18,6 +18,9 @@ from joymedia.joymedia.doctype.generation_workflow.generation_workflow import ge
 SUPPORTED_PROJECT_MEDIA_TYPES = {"Image", "Video", "Audio"}
 # Used until enough render jobs have finished to measure the real average.
 DEFAULT_RENDER_JOB_MINUTES = 4.5
+DEFAULT_EXPORT_QUALITY = "Draft 720p"
+VALID_EXPORT_QUALITIES = {"Draft 720p", "Studio 1440p60"}
+LEGACY_EXPORT_QUALITIES = {"Standard 1080p": DEFAULT_EXPORT_QUALITY}
 
 
 def is_placeholder_product_name(value):
@@ -68,6 +71,27 @@ def _get_customer_workflow(workflow_reference=None):
 		if workflow:
 			return workflow
 	frappe.throw(_("No executable video Generation Workflow is configured."))
+
+
+def normalize_export_quality(value):
+	"""Return a supported delivery tier while keeping existing projects usable."""
+	value = LEGACY_EXPORT_QUALITIES.get(value, value)
+	return value if value in VALID_EXPORT_QUALITIES else DEFAULT_EXPORT_QUALITY
+
+
+def _get_customer_workflow_for_export_quality(export_quality=None):
+	"""Resolve a server-configured workflow for a customer-facing delivery tier.
+
+	Workflow identity and pipeline details remain backend concerns. Sites may map
+	any compatible workflow key or document name through their configuration;
+	the general default remains the safe fallback during rollout.
+	"""
+	quality = normalize_export_quality(export_quality)
+	config_key = {
+		"Draft 720p": "joymedia_draft_generation_workflow",
+		"Studio 1440p60": "joymedia_studio_generation_workflow",
+	}[quality]
+	return _get_customer_workflow(frappe.conf.get(config_key))
 
 
 def _get_continuation_workflow(workflow):

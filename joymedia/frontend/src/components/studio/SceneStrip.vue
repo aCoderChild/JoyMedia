@@ -151,7 +151,7 @@
           <!-- Middle: Scene Title & Clean Duration -->
           <div class="flex items-center justify-between text-xs font-bold text-ink-primary mb-1">
             <span class="truncate">
-              {{ currentLang === 'vi' ? `Cảnh ${shot.shot_number}` : `Scene ${shot.shot_number}` }} · {{ sceneSummary(shot) }}
+              {{ currentLang === 'vi' ? `Cảnh ${shot.shot_number}` : `Scene ${shot.shot_number}` }}<template v-if="sceneBeat(shot)"> · {{ sceneBeat(shot) }}</template>
             </span>
             <div class="flex items-center gap-1">
               <!-- Review status badge -->

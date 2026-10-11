@@ -173,11 +173,37 @@ def submit_attempt(attempt_name: str):
 		attempt.save(ignore_permissions=True)
 		frappe.db.commit()
 
-		staged_inputs = _stage_generation_inputs(job, attempt)
-		workflow = resolve_attempt(attempt.name, staged_inputs=staged_inputs)
-		attempt.reload()
-		endpoint_url = attempt.comfyui_endpoint_url
-		result = submit_workflow(workflow, base_url=endpoint_url, client_id=attempt.submission_token)
+		try:
+			staged_inputs = _stage_generation_inputs(job, attempt)
+			workflow = resolve_attempt(attempt.name, staged_inputs=staged_inputs)
+			attempt.reload()
+			endpoint_url = attempt.comfyui_endpoint_url
+			result = submit_workflow(workflow, base_url=endpoint_url, client_id=attempt.submission_token)
+		except Exception as exc:
+			# A response validation error means ComfyUI did not accept this prompt.
+			# Check the durable client identity first so an interrupted response never
+			# creates a duplicate render, then surface a retryable failed attempt.
+			prompt_id = find_prompt_by_client_id(
+				attempt.submission_token, base_url=attempt.comfyui_endpoint_url
+			)
+			if prompt_id:
+				attempt.external_job_id = prompt_id
+				attempt.submission_state = "Submitted"
+				attempt.status = "Queued"
+				attempt.queued_at = now()
+				attempt.save(ignore_permissions=True)
+				return {"prompt_id": prompt_id, "reconciled": True}
+			from .user_messages import classify_failure, friendly_failure, technical_message
+			message = str(exc)
+			failure_class = classify_failure(message, "Generation")
+			attempt.status = "Failed"
+			attempt.submission_state = "Rejected"
+			attempt.failure_class = failure_class
+			attempt.error_summary = friendly_failure(failure_class, message)
+			attempt.error_details = technical_message(message)
+			attempt.completed_at = now()
+			attempt.save(ignore_permissions=True)
+			raise
 
 		attempt.external_job_id = result["prompt_id"]
 		attempt.submission_state = "Submitted"

@@ -1,4 +1,5 @@
 from contextlib import nullcontext
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -8,6 +9,22 @@ from joymedia.services import generation_orchestrator
 
 
 class TestGenerationOrchestrator(FrappeTestCase):
+	@patch("joymedia.services.generation_orchestrator._get_run_job_names")
+	@patch("joymedia.services.generation_orchestrator._has_submittable_work", return_value=True)
+	@patch("joymedia.services.generation_orchestrator.frappe.db.get_value")
+	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
+	def test_fair_dispatch_handles_runs_with_and_without_a_datetime_dispatch(
+		self, get_all, get_value, has_submittable_work, get_run_job_names,
+	):
+		get_all.return_value = [
+			frappe._dict(name="RUN-OLDER", creation=datetime(2026, 10, 10, 10, 0, 0)),
+			frappe._dict(name="RUN-NEW", creation=datetime(2026, 10, 10, 11, 0, 0)),
+		]
+		get_value.side_effect = [datetime(2026, 10, 10, 10, 30, 0), None]
+		get_run_job_names.side_effect = [["TASK-OLDER"], ["TASK-NEW"]]
+
+		self.assertEqual("RUN-NEW", generation_orchestrator._next_fair_run_name())
+
 	def test_continuous_pipeline_uses_previous_video_last_frame_for_next_shot(self):
 		steps = [
 			frappe._dict(step_key="keyframe", consumes_artifact_role=None),

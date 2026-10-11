@@ -61,7 +61,7 @@
   {"description":"Optional tagline shown under the end card title.","fieldname":"end_card_tagline","fieldtype":"Data","label":"End Card Tagline"},
   {"default":"1","description":"Show each scene's caption on screen.","fieldname":"show_captions","fieldtype":"Check","label":"Show Captions"},
   {"description":"Optional description of the AI soundtrack's music.","fieldname":"soundtrack_prompt","fieldtype":"Small Text","label":"Soundtrack Music"},
-  {"default":"Standard 1080p","description":"Studio upscales the export x2 with Real-ESRGAN and interpolates it to 60 fps with RIFE (slower).","fieldname":"export_quality","fieldtype":"Select","label":"Export Quality","options":"Standard 1080p\nStudio 1440p60"},
+  {"default":"Draft 720p","description":"The delivery tier selects a compatible workflow automatically. Studio upscales the export and interpolates it to 60 fps (slower).","fieldname":"export_quality","fieldtype":"Select","label":"Export Quality","options":"Draft 720p\nStudio 1440p60"},
   {"description":"Generation Workflow used for new runs.","fieldname":"workflow","fieldtype":"Link","label":"Generation Workflow","options":"Generation Workflow"},
   {"description":"Optional versioned pipeline. Its final workflow must match Generation Workflow.","fieldname":"generation_pipeline","fieldtype":"Link","label":"Generation Pipeline","options":"Generation Pipeline"},
   {"description":"Project ingredients/references. Each row points to an immutable Asset Version and may represent image, video or audio media.","fieldname":"selected_media","fieldtype":"Table","label":"Selected Media","options":"Project Reference"},

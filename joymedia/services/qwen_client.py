@@ -521,6 +521,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		"- Every shot MUST contain non-empty image_prompt and generation_prompt.\n"
 		"- motion_plan.actions must be chronological approximate intervals in seconds within duration_seconds.\n"
 		"- Use motion_continuation, pose_transition, or camera_transition for a non-final handoff; use ending for the final shot.\n"
+		"- The final shot must complete the film: reach its final end_state before its duration ends, settle into a held composition, and contain no new transition, setup, or action after that state.\n"
 		"- Every shot MUST contain a positive duration_seconds value.\n"
 		"- Never return null or empty generation_prompt values.\n"
 		"- References must use only supplied reference_key values and semantic usage_role values.\n"
@@ -653,8 +654,10 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	)
 	if story_film:
 		result["shots"] = balance_take_durations(name_story_beats(result["shots"]), total_video_duration)
-	if not continuation_context:
-		close_the_film(result["shots"])
+	# Every request returns a complete playable film, including appended scenes.
+	# The final scene therefore always closes the current film rather than
+	# implying another transition beyond the planned duration.
+	close_the_film(result["shots"])
 	words = write_titles_and_captions(result["shots"], video_idea)
 	if words.get("film_title"):
 		film_title = words["film_title"]

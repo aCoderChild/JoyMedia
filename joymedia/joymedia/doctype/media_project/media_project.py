@@ -14,7 +14,7 @@ from joymedia.services.project_context import (
 	_active_project_shots,
 	_customer_style_details,
 	_get_continuation_workflow,
-	_get_customer_workflow,
+	_get_customer_workflow_for_export_quality,
 	_get_latest_project_generation_run,
 	_get_project_reference_contexts,
 	_get_project_selected_assets,
@@ -23,38 +23,11 @@ from joymedia.services.project_context import (
 	_plan_append_scene_frames,
 	_planning_shot_count,
 	_project_settings,
+	normalize_export_quality,
 	_story_film_planning_context,
 )
 
 ALLOWED_STATUSES = {"Draft", "Generating", "Completed", "Needs Attention", "Cancelled", "Archived"}
-
-
-def _workflow_options():
-	return [
-		{
-			"value": row.name,
-			"label": f"{row.workflow_key} · v{row.version_number}",
-		}
-		for row in frappe.get_all(
-			"Generation Workflow", filters={"output_media_type": "Video"},
-			fields=["name", "workflow_key", "version_number"],
-			order_by="workflow_key asc, version_number desc",
-		)
-	]
-
-
-def _pipeline_options():
-	return [
-		{
-			"value": row.name,
-			"label": f"{row.pipeline_key} · v{row.version_number}",
-		}
-		for row in frappe.get_all(
-			"Generation Pipeline", filters={"output_media_type": "Video"},
-			fields=["name", "pipeline_key", "version_number"],
-			order_by="pipeline_key asc, version_number desc",
-		)
-	]
 
 
 class MediaProject(Document):
@@ -134,11 +107,7 @@ class MediaProject(Document):
 			"end_card_tagline": settings.end_card_tagline or "",
 			"show_captions": int(settings.show_captions or 0),
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
-			"export_quality": settings.export_quality or "Standard 1080p",
-			"workflow": settings.workflow,
-			"generation_pipeline": settings.generation_pipeline or "",
-			"workflow_options": _workflow_options(),
-			"pipeline_options": _pipeline_options(),
+			"export_quality": normalize_export_quality(settings.export_quality),
 			**_customer_style_details(settings),
 		}
 
@@ -167,16 +136,14 @@ class MediaProject(Document):
 		quality_mode = quality_mode or getattr(self, "quality_mode", None) or "Production"
 		if quality_mode not in ("Draft", "Production"):
 			frappe.throw(_("Select Draft or Production quality."))
-		workflow = _get_customer_workflow(workflow or self.workflow)
-		from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow, get_pipeline_steps
-		pipeline_name = generation_pipeline if generation_pipeline is not None else self.generation_pipeline
-		if pipeline_name:
-			steps = get_pipeline_steps(pipeline_name)
-			if steps[-1].workflow != workflow.name:
-				frappe.throw(_("The selected Generation Pipeline must end with the selected Generation Workflow."))
-		else:
-			pipeline = pipeline_for_final_workflow(workflow.name)
-			pipeline_name = pipeline.name if pipeline else ""
+		# Workflow and pipeline are selected by the backend from the delivery tier.
+		# Keep legacy arguments in the RPC signature but never accept client-side
+		# technical execution choices.
+		export_quality = normalize_export_quality(export_quality or self.export_quality)
+		workflow = _get_customer_workflow_for_export_quality(export_quality)
+		from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow
+		pipeline = pipeline_for_final_workflow(workflow.name)
+		pipeline_name = pipeline.name if pipeline else ""
 		self.total_duration_seconds = total_duration_seconds
 		self.delivery_preset = delivery_preset
 		self.generation_mode = generation_mode
@@ -192,18 +159,19 @@ class MediaProject(Document):
 			self.show_captions = 1 if str(show_captions).lower() in ("1", "true", "yes", "on") else 0
 		if soundtrack_prompt is not None:
 			self.soundtrack_prompt = str(soundtrack_prompt).strip()
-		if export_quality:
-			if export_quality not in ("Standard 1080p", "Studio 1440p60"):
-				frappe.throw(_("Select Standard 1080p or Studio 1440p60 export quality."))
-			self.export_quality = export_quality
+		self.export_quality = export_quality
 		self.workflow = workflow.name
 		self.generation_pipeline = pipeline_name
+		# Studio finishing turns the 1080p source into a 1440p/60fps delivery.
+		# The source remains at the workflow-friendly size; only the customer
+		# facing tier determines the final delivery profile.
+		studio_source = export_quality == "Studio 1440p60"
 		if delivery_preset == "Landscape":
-			self.delivery_width, self.delivery_height = 1920, 1080
+			self.delivery_width, self.delivery_height = (1920, 1080) if studio_source else (1280, 720)
 		elif delivery_preset == "Portrait":
-			self.delivery_width, self.delivery_height = 1080, 1920
+			self.delivery_width, self.delivery_height = (1080, 1920) if studio_source else (720, 1280)
 		elif delivery_preset == "Square":
-			self.delivery_width, self.delivery_height = 1080, 1080
+			self.delivery_width, self.delivery_height = (1080, 1080) if studio_source else (720, 720)
 		if self.status != "Archived":
 			latest_run = _get_latest_project_generation_run(self.name)
 			self.status = {

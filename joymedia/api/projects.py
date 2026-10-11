@@ -12,11 +12,12 @@ from joymedia.services.project_context import (
 	_customer_style_details,
 	_get_asset_file_url,
 	_get_asset_version_file_url,
-	_get_customer_workflow,
+	_get_customer_workflow_for_export_quality,
 	_get_latest_project_generation_run,
 	_get_project_selected_assets,
 	_normalize_generation_mode,
 	_project_settings,
+	normalize_export_quality,
 	_remaining_render_minutes,
 	_storyboard_payload,
 	build_project_snapshot,
@@ -108,7 +109,6 @@ def get_project_workspace(name):
 	project = frappe.get_doc("Media Project", name)
 	project._require_read_access()
 	settings = _project_settings(project)
-	settings_options = project.get_video_settings() if settings.workflow else {}
 	production = _get_latest_project_generation_run(project.name)
 	storyboard = _storyboard_payload(project)
 	if production:
@@ -172,14 +172,7 @@ def get_project_workspace(name):
 			"end_card_tagline": settings.end_card_tagline or "",
 			"show_captions": int(settings.show_captions or 0),
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
-			"export_quality": settings.export_quality or "Standard 1080p",
-			"workflow": settings.workflow,
-			"generation_pipeline": settings.generation_pipeline or "",
-			# The studio settings dialog is driven from this workspace response, not
-			# the document endpoint.  Keep the selectable, versioned execution
-			# options in the same snapshot as the selected values.
-			"workflow_options": settings_options.get("workflow_options", []),
-			"pipeline_options": settings_options.get("pipeline_options", []),
+			"export_quality": normalize_export_quality(settings.export_quality),
 			**_customer_style_details(settings),
 		} if settings.workflow else None),
 		"storyboard": storyboard,
@@ -247,7 +240,8 @@ def create_project(project_name, product_name, video_idea=None, campaign_brief=N
 	"""Create a project. Legacy arguments remain accepted but are not persisted as separate concepts."""
 	if not set(frappe.get_roles()).intersection({"JoyMedia User", "JoyMedia Specialist", "System Manager"}):
 		frappe.throw(_("You do not have permission to create a project."))
-	workflow = _get_customer_workflow()
+	export_quality = "Draft 720p"
+	workflow = _get_customer_workflow_for_export_quality(export_quality)
 	from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow
 	pipeline = pipeline_for_final_workflow(workflow.name)
 	project = frappe.get_doc({
@@ -259,8 +253,9 @@ def create_project(project_name, product_name, video_idea=None, campaign_brief=N
 		"generation_pipeline": pipeline.name if pipeline else None,
 		"total_duration_seconds": 15,
 		"delivery_preset": "Landscape",
-		"delivery_width": 1920,
-		"delivery_height": 1080,
+		"delivery_width": 1280,
+		"delivery_height": 720,
+		"export_quality": export_quality,
 		"generation_mode": "Continuous",
 		# New projects render fast drafts; "Render final" redoes the scenes at full quality.
 		"quality_mode": "Draft",

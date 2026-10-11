@@ -493,6 +493,8 @@ class TestFilmEnding(FrappeTestCase):
 
 		self.assertEqual("Opening.", shots[0]["generation_prompt"])
 		self.assertEqual(1, shots[1]["generation_prompt"].count(film_director.CLOSING_DIRECTION))
+		self.assertEqual("ending", shots[1]["handoff_type"])
+		self.assertIn("settled", shots[1]["end_state"])
 
 
 class TestProjectNaming(FrappeTestCase):

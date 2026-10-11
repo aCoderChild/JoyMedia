@@ -52,7 +52,7 @@ def temporal_timing_instruction(shot, is_final=False):
 		return ""
 	handoff = str(getattr(shot, "handoff_type", None) or "").strip()
 	end_state = str(getattr(shot, "end_state", None) or "").strip()
-	ending = "End naturally; do not prepare another shot." if is_final or handoff == "ending" else (
+	ending = "Conclude the whole film in the stated end state; settle and hold the final composition. Do not prepare another shot, transition, or new action." if is_final or handoff == "ending" else (
 		f"Finish in this handoff state: {end_state}. Continue as a {handoff or 'motion_continuation'} into the next shot."
 	)
 	return "Chronological action plan (approximate timing): " + "; ".join(parts) + ". " + ending

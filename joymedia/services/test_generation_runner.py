@@ -7,6 +7,28 @@ from joymedia.services.generation_runner import _stage_generation_inputs, submit
 
 
 class TestGenerationRunner(FrappeTestCase):
+	@patch("joymedia.services.generation_runner.find_prompt_by_client_id", return_value=None)
+	@patch("joymedia.services.generation_runner.submit_workflow", side_effect=frappe.ValidationError("invalid graph"))
+	@patch("joymedia.services.generation_runner.get_base_url", return_value="http://worker:8188")
+	@patch("joymedia.services.generation_runner.resolve_attempt", return_value={})
+	@patch("joymedia.services.generation_runner._stage_generation_inputs", return_value={})
+	@patch("joymedia.services.generation_runner.frappe.get_doc")
+	def test_rejected_comfy_prompt_marks_attempt_failed(
+		self, get_doc, stage_inputs, resolve_attempt, get_base_url, submit_workflow, find_prompt,
+	):
+		attempt = frappe._dict(name="ATT-00001", status="Pending", generation_task="JOB-00001")
+		attempt.reload = MagicMock()
+		attempt.save = MagicMock()
+		job = MagicMock(workflow="WF-00001", depends_on_task=None)
+		get_doc.side_effect = [attempt, job]
+
+		with self.assertRaises(frappe.ValidationError):
+			submit_attempt(attempt.name)
+
+		self.assertEqual("Failed", attempt.status)
+		self.assertEqual("Rejected", attempt.submission_state)
+		self.assertTrue(attempt.error_summary)
+		find_prompt.assert_called_once_with("joymedia:ATT-00001", base_url="http://worker:8188")
 	@patch("joymedia.services.generation_runner.upload_frappe_file", return_value={"server_path": "previous_last.png"})
 	@patch("joymedia.services.generation_runner.get_attempt_artifact")
 	@patch("joymedia.services.generation_runner.get_effective_attempt")

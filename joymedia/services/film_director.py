@@ -217,9 +217,14 @@ def name_story_beats(shots):
 def close_the_film(shots):
 	"""Make the last shot end the film; returns the shots."""
 	if shots and isinstance(shots[-1], dict):
-		prompt = str(shots[-1].get("generation_prompt") or "").strip()
+		last_shot = shots[-1]
+		last_shot["handoff_type"] = "ending"
+		prompt = str(last_shot.get("generation_prompt") or "").strip()
 		if prompt and CLOSING_DIRECTION not in prompt:
-			shots[-1]["generation_prompt"] = f"{prompt} {CLOSING_DIRECTION}"
+			last_shot["generation_prompt"] = f"{prompt} {CLOSING_DIRECTION}"
+		end_state = str(last_shot.get("end_state") or "").strip()
+		if not end_state:
+			last_shot["end_state"] = "A composed final frame, with all subject and camera movement settled."
 	return shots
 
 

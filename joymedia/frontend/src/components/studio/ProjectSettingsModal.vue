@@ -78,25 +78,6 @@
           </div>
         </div>
 
-        <div v-if="workflowOptions.length > 1" class="space-y-1.5">
-          <label class="block font-bold text-ink-primary">
-            {{ currentLang === 'vi' ? 'Trình tạo video:' : 'Video workflow:' }}
-          </label>
-          <select v-model="form.workflow" class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500">
-            <option v-for="option in workflowOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
-        </div>
-
-        <div v-if="pipelineOptions.length" class="space-y-1.5">
-          <label class="block font-bold text-ink-primary">
-            {{ currentLang === 'vi' ? 'Chuỗi tạo khung hình:' : 'Keyframe pipeline:' }}
-          </label>
-          <select v-model="form.generation_pipeline" class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500">
-            <option value="">{{ currentLang === 'vi' ? 'Tự động theo workflow' : 'Automatic for workflow' }}</option>
-            <option v-for="option in pipelineOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
-        </div>
-
         <!-- Music -->
         <div class="space-y-1.5">
           <label class="block font-bold text-ink-primary">
@@ -238,9 +219,6 @@ const customMusic = ref(false);
 const showCustomMusic = computed(
   () => customMusic.value || Boolean(form.soundtrack_prompt && !musicMoods.some((mood) => mood.prompt === form.soundtrack_prompt))
 );
-const workflowOptions = computed(() => props.settings?.workflow_options || []);
-const pipelineOptions = computed(() => props.settings?.pipeline_options || []);
-
 const form = reactive({
   delivery_preset: "Landscape",
   total_duration_seconds: 15,
@@ -251,14 +229,12 @@ const form = reactive({
   end_card_title: "",
   end_card_tagline: "",
   soundtrack_prompt: "",
-  export_quality: "Standard 1080p",
+  export_quality: "Draft 720p",
   show_captions: true,
-  workflow: "",
-  generation_pipeline: "",
 });
 
 const exportQualities = [
-  { value: "Standard 1080p", vi: "Tiêu chuẩn · 1080p", en: "Standard · 1080p", viSub: "24 khung/giây, vài phút", enSub: "24 fps, a few minutes" },
+  { value: "Draft 720p", vi: "Nhanh · 720p", en: "Fast · 720p", viSub: "Tạo nhanh, phù hợp bản nháp", enSub: "Fast generation for drafts" },
   { value: "Studio 1440p60", vi: "Studio · 1440p 60fps", en: "Studio · 1440p 60fps", viSub: "AI làm nét và làm mượt, ~25 phút cho 30 giây", enSub: "AI sharpened and smoothed, ~25 min per 30 s" },
 ];
 
@@ -275,10 +251,8 @@ watch(
       form.end_card_title = s.end_card_title || "";
       form.end_card_tagline = s.end_card_tagline || "";
       form.soundtrack_prompt = s.soundtrack_prompt || "";
-      form.export_quality = s.export_quality || "Standard 1080p";
+      form.export_quality = s.export_quality === "Standard 1080p" ? "Draft 720p" : (s.export_quality || "Draft 720p");
       form.show_captions = Boolean(Number(s.show_captions ?? 1));
-      form.workflow = s.workflow || workflowOptions.value[0]?.value || "";
-      form.generation_pipeline = s.generation_pipeline || "";
     }
   },
   { immediate: true }

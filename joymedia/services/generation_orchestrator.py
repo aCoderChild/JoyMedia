@@ -1318,9 +1318,11 @@ def _next_fair_run_name():
 			"queued_at", order_by="queued_at desc",
 		)
 		# A run that has never received capacity is always served first; creation
-		# is the deterministic tie-breaker.
-		candidates.append((last_dispatch or "0000-00-00 00:00:00", run.creation, run.name))
-	return min(candidates)[2] if candidates else None
+		# is the deterministic tie-breaker. Keep timestamps as timestamps: Frappe
+		# returns ``datetime`` values here, so a string sentinel makes Python's
+		# tuple comparison fail as soon as both kinds are present.
+		candidates.append((0 if last_dispatch is None else 1, last_dispatch or run.creation, run.creation, run.name))
+	return min(candidates)[3] if candidates else None
 
 
 def _enqueue(method_name, run_name):
