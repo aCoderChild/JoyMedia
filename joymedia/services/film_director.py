@@ -560,8 +560,6 @@ def enforce_explicit_product_brief(shots, video_idea):
 	anchor = explicit_product_brief_anchor(video_idea)
 	if not anchor:
 		return shots
-	image_anchor = anchor.replace("advertises and presents", "presents")
-	setting = product_brief_setting(video_idea)
 	for index, shot in enumerate(shots or [], start=1):
 		if not isinstance(shot, dict):
 			continue
@@ -574,10 +572,9 @@ def enforce_explicit_product_brief(shots, video_idea):
 			"Use an elegant dining table, warm upscale lighting, and a shallow depth of field. "
 			"One continuous shot with no cuts, photorealistic, smooth stabilized motion, no text, no logos, no deformation."
 		)
-		shot["image_prompt"] = (
-			f"The woman in the selected traditional ao dai presents the selected plate to camera in {setting}, "
-			"with the plate clearly visible on an elegant dining table and warm upscale lighting."
-		)
+		# Flux and video must start from the same shot description. The video
+		# prompt already contains the product, action, setting and camera intent.
+		shot["image_prompt"] = shot["generation_prompt"]
 	return shots
 
 

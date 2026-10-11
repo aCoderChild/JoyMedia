@@ -504,56 +504,34 @@
             <label class="block text-[11px] font-semibold text-ink-secondary">
               {{ currentLang === 'vi' ? 'Mô tả cảnh' : 'Scene description' }}
             </label>
-            <span class="text-[10px]" :class="promptDirty ? 'text-amber-500' : 'text-ink-muted'">
-              {{ promptDirty ? (currentLang === 'vi' ? 'Chưa lưu' : 'Unsaved') : (currentLang === 'vi' ? 'Đã lưu' : 'Saved') }}
+            <span class="text-[10px] text-ink-muted">
+              {{ currentLang === 'vi' ? 'Dùng cho ảnh Flux và video' : 'Used for Flux images and video' }}
             </span>
           </div>
-          <textarea
-            v-model="activeSelectedShot.generation_prompt"
-            rows="10"
-            :disabled="isProductionActive"
-            class="w-full px-3 py-2 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500 resize-y leading-relaxed"
-            @blur="savePrompt"
-          />
+          <div class="w-full min-h-32 px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary whitespace-pre-wrap leading-relaxed">
+            {{ activeSelectedShot?.generation_prompt || (currentLang === 'vi' ? 'Chưa có mô tả cảnh.' : 'No scene description yet.') }}
+          </div>
           <div v-if="!usesKeyframes && shotReferences.length" class="text-[10px] text-ink-muted leading-relaxed">
             <span v-for="(reference, index) in shotReferences" :key="`legend-${index}`" class="mr-2 inline-block">
               &lt;Picture {{ index + 1 }}&gt; = {{ reference.label || referenceRoleLabel(reference) }}
             </span>
           </div>
-          <button
-            v-if="promptDirty"
-            type="button"
-            class="w-full jm-btn-primary !py-1.5 text-xs"
-            @click="savePrompt"
-          >
-            {{ currentLang === 'vi' ? 'Lưu mô tả' : 'Save description' }}
-          </button>
         </div>
 
         <!-- Ask AI -->
         <div class="space-y-1.5">
-          <label class="block text-[11px] font-semibold text-ink-secondary">
-            ✨ {{ currentLang === 'vi' ? 'Nhờ AI chỉnh cảnh này' : 'Ask AI to change this scene' }}
-          </label>
-          <div class="flex gap-1.5">
-            <input
-              v-model="aiRewriteInstruction"
-              type="text"
-              :disabled="isProductionActive || aiRevisionLoading"
-              :placeholder="currentLang === 'vi' ? 'VD: cho cô ấy bước ra ban công…' : 'e.g. have her walk onto the balcony…'"
-              class="flex-1 min-w-0 px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
-              @keydown.enter="submitAiRewrite"
-            />
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer disabled:opacity-50"
-              :disabled="isProductionActive || aiRevisionLoading || !aiRewriteInstruction.trim()"
-              @click="submitAiRewrite"
-            >
-              <span v-if="aiRevisionLoading" class="lucide-refresh-cw size-3 animate-spin inline-block" />
-              <span v-else>{{ currentLang === 'vi' ? 'Áp dụng' : 'Apply' }}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            class="w-full jm-btn-primary !py-2 text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            :disabled="isProductionActive || aiRevisionLoading"
+            @click="submitAiRewrite"
+          >
+            <span v-if="aiRevisionLoading" class="lucide-refresh-cw size-3 animate-spin inline-block" />
+            <span v-else>✨ {{ currentLang === 'vi' ? 'AI tinh chỉnh mô tả' : 'AI refine description' }}</span>
+          </button>
+          <p class="text-[10px] text-ink-muted text-center">
+            {{ currentLang === 'vi' ? 'Qwen sẽ đồng bộ mô tả với ý tưởng video và tự động áp dụng kết quả.' : 'Qwen aligns the description with the video idea and applies the result automatically.' }}
+          </p>
         </div>
 
         <!-- Regenerate -->
@@ -746,7 +724,6 @@ const emit = defineEmits([
   "toggleGenerationMode",
   "changeShotDuration",
   "regenerateCurrentShot",
-  "saveActiveShot",
   "askAi",
   "submitReview",
   "applyReviewRevision",
@@ -754,16 +731,16 @@ const emit = defineEmits([
   "openMediaPicker",
 ]);
 
-const aiRewriteInstruction = ref("");
 const showRejectForm = ref(false);
 const pendingVerdict = ref("");
 const rejectCategory = ref("");
 const rejectNotes = ref("");
 
 function submitAiRewrite() {
-  if (!aiRewriteInstruction.value.trim()) return;
-  emit("askAi", aiRewriteInstruction.value.trim());
-  aiRewriteInstruction.value = "";
+  const instruction = props.currentLang === "vi"
+    ? "Đồng bộ mô tả cảnh này với ý tưởng video chính và hình tham chiếu. Giữ đúng nhân vật, sản phẩm, hành động và bối cảnh; viết một mô tả rõ ràng dùng được cho cả tạo ảnh Flux và tạo video."
+    : "Rewrite this shot so it exactly matches the main video brief and selected references. Keep the same character, product, action, and setting, and return one clear description suitable for both Flux image generation and video generation.";
+  emit("askAi", instruction);
 }
 
 function openRejectForm(verdict) {
@@ -821,34 +798,15 @@ function referenceRoleLabel(reference) {
   return reference?.reference_role || (props.currentLang === "vi" ? "Tham chiếu" : "Reference");
 }
 
-const savedPrompt = ref("");
 watch(
   () => props.activeSelectedShot?.name,
   () => {
-    savedPrompt.value = props.activeSelectedShot?.generation_prompt || "";
-    aiRewriteInstruction.value = "";
     showRejectForm.value = false;
     rejectCategory.value = "";
     rejectNotes.value = "";
   },
   { immediate: true }
 );
-// A refreshed storyboard (e.g. after an AI rewrite) brings a new saved prompt.
-watch(
-  () => props.activeSelectedShot,
-  (shot, previous) => {
-    if (shot && shot !== previous) savedPrompt.value = shot.generation_prompt || "";
-  }
-);
-const promptDirty = computed(
-  () => (props.activeSelectedShot?.generation_prompt || "") !== savedPrompt.value
-);
-
-function savePrompt() {
-  if (!promptDirty.value) return;
-  savedPrompt.value = props.activeSelectedShot?.generation_prompt || "";
-  emit("saveActiveShot");
-}
 
 function formatClipTime(frames, fps = 24) {
   const safeFps = Number(fps) || 24;

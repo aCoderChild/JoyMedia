@@ -41,19 +41,25 @@ def update_project_shot(project_name, shot_name, values):
 	if isinstance(values, str):
 		values = frappe.parse_json(values)
 	changed = False
+	image_prompt_changed = False
 	if "generation_prompt" in values:
 		prompt = str(values["generation_prompt"] or "").strip()
 		if prompt != shot.generation_prompt and shot.name in _busy_shots(project.name):
 			frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))
 		changed = prompt != shot.generation_prompt
+		image_prompt_changed = hasattr(shot, "image_prompt") and prompt != (shot.image_prompt or "")
 		shot.generation_prompt = prompt
+		# A shot has one creative description. Keep the image and motion
+		# generators on that same description so their outputs cannot diverge.
+		if hasattr(shot, "image_prompt"):
+			shot.image_prompt = prompt
 	caption_changed = False
 	if "caption" in values:
 		# Captions are drawn at export time, so they can change at any moment.
 		caption = str(values["caption"] or "").strip()[:120]
 		caption_changed = caption != (shot.caption or "")
 		shot.caption = caption
-	if changed or caption_changed:
+	if changed or image_prompt_changed or caption_changed:
 		shot.save(ignore_permissions=True)
 	if caption_changed:
 		from joymedia.services.timeline_editor import _invalidate_project_output
@@ -64,6 +70,7 @@ def update_project_shot(project_name, shot_name, values):
 		"shot_number": shot.shot_number,
 		"shot_name": shot.shot_name,
 		"generation_prompt": shot.generation_prompt,
+		"image_prompt": getattr(shot, "image_prompt", None) or shot.generation_prompt,
 		"caption": shot.caption or "",
 		"is_outdated": bool(changed and shot.selected_output_asset_version),
 	}

@@ -47,7 +47,7 @@ class TestPromptCompiler(FrappeTestCase):
 
 		self.assertEqual(prompt, "A premium bottle reveal with a slow dolly-in.")
 
-	def test_image_and_motion_prompts_are_compiled_separately(self):
+	def test_scene_description_is_compiled_for_image_and_motion(self):
 		project = frappe._dict(generation_mode="Continuous", global_instructions="")
 		shot = frappe._dict(
 			name="SHOT-TEST", shot_number=1, generation_prompt="The hand lifts the bottle toward camera.",
@@ -57,6 +57,6 @@ class TestPromptCompiler(FrappeTestCase):
 		)
 		image = compile_prompt_for_documents(shot, project, prompt_source="image")
 		motion = compile_prompt_for_documents(shot, project, prompt_source="motion")
-		self.assertEqual(image, "Compose the bottle on a marble table.")
+		self.assertEqual(image, "The hand lifts the bottle toward camera.")
 		self.assertIn("The hand lifts the bottle", motion)
 		self.assertIn("0-4s: lift the bottle", motion)

@@ -45,21 +45,27 @@ def _qwen_config():
 	return base_url.rstrip("/"), model, timeout
 
 
-def generate_shot_revision(*, instruction, shot, product_name=""):
+def generate_shot_revision(*, instruction, shot, product_name="", video_idea=""):
 	"""Ask Qwen to replace one canonical shot prompt."""
 	base_url, model, timeout = _qwen_config()
 	current_prompt = str(shot.get("generation_prompt") or "").strip()
+	current_image_prompt = str(shot.get("image_prompt") or "").strip()
 	user_prompt = (
-		"Revise exactly one cinematic commercial shot. Return only valid JSON.\n\n"
+		"Revise exactly one cinematic commercial shot. Return only valid JSON. The revised scene description "
+		"will be used unchanged for both Flux image generation and video generation.\n\n"
 		f"PRODUCT: {product_name}\n"
+		f"VIDEO IDEA (source of truth): {video_idea}\n"
 		f"USER INSTRUCTION: {instruction}\n\n"
 		"CURRENT SHOT PROMPT:\n"
 		f"{current_prompt}\n\n"
+		"CURRENT IMAGE PROMPT:\n"
+		f"{current_image_prompt}\n\n"
 		"Return this shape:\n"
 		'{"summary":"short explanation",'
 		'"changes":[{"field":"Shot Prompt","detail":"..."}],'
-		'"generation_prompt":"..."}\n'
-		"Return one complete replacement generation_prompt, preserving details not changed by the instruction."
+		'"generation_prompt":"...","image_prompt":"..."}\n'
+		"Return one complete replacement generation_prompt and make image_prompt exactly the same text. "
+		"Preserve details not changed by the instruction, while correcting any mismatch with the video idea."
 	)
 	payload = {
 		"model": model,
@@ -89,6 +95,8 @@ def generate_shot_revision(*, instruction, shot, product_name=""):
 	if not generation_prompt:
 		frappe.throw(_("Qwen returned an empty generation_prompt for the shot revision."))
 	result["generation_prompt"] = generation_prompt
+	# Keep one canonical description even if Qwen returns two fields with drift.
+	result["image_prompt"] = generation_prompt
 	result["changes"] = result.get("changes") if isinstance(result.get("changes"), list) else []
 	result["summary"] = str(result.get("summary") or "Shot changes are ready to review.").strip()
 	return result

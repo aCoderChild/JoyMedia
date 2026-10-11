@@ -129,8 +129,9 @@ def compile_segment_prompt_from_snapshot(shot, project, segment_index: int, segm
 
 def compile_prompt_for_documents(shot, project, include_global_instructions=True, prompt_source="motion", is_final=False):
 	prompt_source = prompt_source if prompt_source in PROMPT_SOURCES else "creative"
-	fieldname = {"image": "image_prompt", "motion": "generation_prompt"}.get(prompt_source, "generation_prompt")
-	prompt = (getattr(shot, fieldname, None) or shot.generation_prompt or "").strip()
+	# The scene description is the source of truth for every generation phase.
+	# Keep the image field as a legacy fallback, but never let it silently diverge.
+	prompt = (getattr(shot, "generation_prompt", None) or getattr(shot, "image_prompt", None) or "").strip()
 	if not prompt:
 		frappe.throw(
 			_("Shot {0} has no Qwen-generated generation_prompt.").format(shot.name)

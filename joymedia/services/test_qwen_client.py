@@ -1,10 +1,35 @@
 import frappe
+from unittest.mock import MagicMock, patch
 from frappe.tests.utils import FrappeTestCase
 
-from joymedia.services.qwen_client import _normalize_qwen_plan, _validate_video_plan
+from joymedia.services.qwen_client import _normalize_qwen_plan, _validate_video_plan, generate_shot_revision
 
 
 class TestQwenClient(FrappeTestCase):
+	@patch("joymedia.services.qwen_client._qwen_config", return_value=("http://qwen", "model", 30))
+	@patch("joymedia.services.qwen_client.requests.post")
+	def test_shot_revision_returns_one_prompt_for_image_and_video(self, post, _config):
+		response = MagicMock(ok=True)
+		response.json.return_value = {
+			"choices": [{"message": {"content": '{"summary":"Aligned.","changes":[],"generation_prompt":"A woman presents a ceramic plate in an elegant restaurant.","image_prompt":"An unrelated garden."}'}}]
+		}
+		post.return_value = response
+		shot = frappe._dict(
+			generation_prompt="A craftsperson works at a bench.",
+			image_prompt="A craftsperson at a bench.",
+		)
+
+		result = generate_shot_revision(
+			instruction="Match the main commercial brief.",
+			shot=shot,
+			product_name="Ceramic plate",
+			video_idea="A woman advertises a plate in a luxurious restaurant.",
+		)
+
+		self.assertEqual(result["generation_prompt"], result["image_prompt"])
+		request_text = post.call_args.kwargs["json"]["messages"][1]["content"]
+		self.assertIn("VIDEO IDEA (source of truth)", request_text)
+
 	def test_equal_image_and_shot_counts_assign_images_in_order_for_single_image_workflows(self):
 		contract = [{
 			"role": "first_frame",

@@ -59,6 +59,7 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 				instruction=instruction,
 				shot=shot,
 				product_name=project.product_name,
+				video_idea=project.video_idea,
 			)
 			ai_suggested_revision = result.get("generation_prompt")
 		except Exception:

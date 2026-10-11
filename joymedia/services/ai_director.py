@@ -2,7 +2,7 @@ import frappe
 from frappe import _
 
 
-SHOT_FIELDS = ("generation_prompt",)
+SHOT_FIELDS = ("generation_prompt", "image_prompt")
 
 
 def _get_editable_shot(project, shot_name):
@@ -26,6 +26,7 @@ def revise_project_shot_with_ai(project_name, shot_name, instruction):
 		instruction=instruction,
 		shot=shot,
 		product_name=project.product_name,
+		video_idea=project.video_idea,
 	)
 	return {
 		"shot_name": shot.name,
@@ -34,6 +35,7 @@ def revise_project_shot_with_ai(project_name, shot_name, instruction):
 		"summary": result["summary"],
 		"changes": result["changes"],
 		"generation_prompt": result["generation_prompt"],
+		"image_prompt": result["image_prompt"],
 	}
 
 
@@ -45,7 +47,10 @@ def apply_project_shot_ai_revision(project_name, shot_name, values, regenerate=F
 		values = frappe.parse_json(values)
 	if not isinstance(values, dict):
 		frappe.throw(_("AI shot changes must be a JSON object."))
-	clean_values = {field: values.get(field, "") for field in SHOT_FIELDS}
+	clean_values = {
+		"generation_prompt": str(values.get("generation_prompt") or values.get("image_prompt") or "").strip(),
+	}
+	clean_values["image_prompt"] = clean_values["generation_prompt"]
 	from joymedia.api.storyboard import update_project_shot, regenerate_project_shot
 
 	result = update_project_shot(project_name, shot_name, clean_values)
@@ -54,7 +59,7 @@ def apply_project_shot_ai_revision(project_name, shot_name, values, regenerate=F
 	return result
 
 
-def generate_review_revision(instruction, shot, product_name):
+def generate_review_revision(instruction, shot, product_name, video_idea=""):
 	"""Generate an AI-suggested prompt revision based on QA rejection feedback.
 
 	Behaves like generate_shot_revision but is called internally by the review flow,
@@ -66,6 +71,7 @@ def generate_review_revision(instruction, shot, product_name):
 		instruction=instruction or "Revise this shot to improve quality.",
 		shot=shot,
 		product_name=product_name,
+		video_idea=video_idea,
 	)
 
 
