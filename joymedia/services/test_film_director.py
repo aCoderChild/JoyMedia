@@ -648,7 +648,28 @@ class TestDirectorGuards(FrappeTestCase):
 
 		film_director.normalize_story_references(shots, references, "person")
 
-		self.assertEqual(["1", "2", "3", "4", "5", "1"], [shot["references"][1]["reference_key"] for shot in shots])
+		self.assertEqual(
+			[["host", "1"], ["host", "1", "2"], ["host", "2", "3"],
+			 ["host", "3", "4"], ["host", "4", "5"], ["host", "5"]],
+			[[reference["reference_key"] for reference in shot["references"]] for shot in shots],
+		)
+
+	def test_short_property_tour_keeps_all_areas_in_order(self):
+		references = [
+			{"reference_key": "host", "media_type": "Image", "asset_category": "Character", "reference_role": "General"},
+			*[
+				{"reference_key": str(index), "media_type": "Image", "asset_category": "Reference", "reference_role": "Environment"}
+				for index in range(1, 6)
+			],
+		]
+		shots = [{"generation_prompt": "The woman presents the property.", "references": []} for _ in range(2)]
+
+		film_director.normalize_story_references(shots, references, "person")
+
+		self.assertEqual(
+			[["host", "1", "2", "3"], ["host", "3", "4", "5"]],
+			[[reference["reference_key"] for reference in shot["references"]] for shot in shots],
+		)
 
 	def test_planning_role_map_keeps_second_product_slot_distinct(self):
 		from joymedia.services.qwen_client import _story_reference_roles

@@ -125,6 +125,13 @@ def resolve_shot_render_route(default_workflow, references, *, handoff_type="", 
 	keyframe_key = FLUX2_KEYFRAME_KEY if strategy == "flux2_multireference_i2v" else FLUX_KEYFRAME_KEY
 	final_key = f"h3_i2v_{tier}"
 	pipeline = _pipeline_for(keyframe_key, final_key)
+	# Flux 2 is an optional composition stage. Installations commonly have one
+	# validated Flux 2 pipeline paired with the production I2V workflow even when
+	# their default direct workflow is turbo. A valid composition route is safer
+	# than rejecting a multi-reference shot solely because the preferred tier is
+	# absent; preserve the requested tier whenever it is available.
+	if not pipeline and strategy == "flux2_multireference_i2v":
+		pipeline = _pipeline_for(keyframe_key, None)
 	if not pipeline:
 		frappe.throw(
 			frappe._("No executable {0} pipeline is configured for the selected delivery tier.").format(strategy)
@@ -178,8 +185,8 @@ def _latest_workflow(workflow_key):
 	return get_latest_valid_workflow(workflow_key)
 
 
-def _pipeline_for(keyframe_key, final_key):
-	"""Find the newest compatible immutable pipeline by its actual step keys."""
+def _pipeline_for(keyframe_key, final_key=None):
+	"""Find the newest compatible immutable pipeline, preferring a requested I2V tier."""
 	from joymedia.services.generation_pipeline_service import get_pipeline_steps
 
 	for row in frappe.get_all(
@@ -193,6 +200,12 @@ def _pipeline_for(keyframe_key, final_key):
 			continue
 		first = frappe.get_doc("Generation Workflow", steps[0].workflow)
 		last = frappe.get_doc("Generation Workflow", steps[-1].workflow)
-		if first.workflow_key == keyframe_key and last.workflow_key == final_key:
+		if first.workflow_key != keyframe_key:
+			continue
+		if final_key and last.workflow_key != final_key:
+			continue
+		if not final_key and not str(last.workflow_key or "").startswith("h3_i2v_"):
+			continue
+		if first.workflow_key == keyframe_key:
 			return pipeline
 	return None

@@ -1,7 +1,11 @@
+from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.workflow_routing import (
 	automatic_planning_input_contract,
+	resolve_shot_render_route,
 	route_shot_references,
 	strategy_for_references,
 )
@@ -50,6 +54,14 @@ class TestWorkflowRouting(FrappeTestCase):
 			[item["reference_role"] for item in items],
 		)
 
+	def test_person_and_adjacent_locations_use_flux2_with_the_destination_preserved(self):
+		strategy, items, _reason = strategy_for_references([
+			_reference("Character", 1), _reference("Environment", 2), _reference("Environment", 3),
+		])
+
+		self.assertEqual("flux2_multireference_i2v", strategy)
+		self.assertEqual(["person", "environment", "reference_board"], [item["reference_role"] for item in items])
+
 	def test_product_switch_uses_composition_even_for_a_simple_pair(self):
 		strategy, _items, _reason = strategy_for_references(
 			[_reference("Product", 1), _reference("Product", 2)],
@@ -62,3 +74,21 @@ class TestWorkflowRouting(FrappeTestCase):
 			_reference("product_reference", 1), _reference("product_reference", 2),
 		])
 		self.assertEqual("direct_r2v", strategy)
+
+	@patch("joymedia.services.workflow_routing.frappe.get_doc")
+	@patch("joymedia.services.workflow_routing._pipeline_for")
+	def test_flux2_falls_back_to_an_installed_i2v_tier(self, pipeline_for, get_doc):
+		default = MagicMock(workflow_key="h3_r2v_turbo")
+		fallback = SimpleNamespace(name="PIPE-FLUX2", steps=[SimpleNamespace(workflow="WF-KEY"), SimpleNamespace(workflow="WF-VIDEO")])
+		pipeline_for.side_effect = [None, fallback]
+		get_doc.return_value = MagicMock(name="WF-VIDEO")
+
+		route = resolve_shot_render_route(
+			default, [_reference("Character", 1), _reference("Environment", 2), _reference("Environment", 3)]
+		)
+
+		self.assertEqual("PIPE-FLUX2", route["generation_pipeline"])
+		self.assertEqual(
+			[("flux2_klein_multireference_keyframe", "h3_i2v_turbo"), ("flux2_klein_multireference_keyframe", None)],
+			[call.args for call in pipeline_for.call_args_list],
+		)

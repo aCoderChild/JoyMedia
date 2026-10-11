@@ -4,6 +4,19 @@ import frappe
 from frappe import _
 
 
+DEFAULT_TIMELINE_FPS = 24
+
+
+def _timeline_fps(workflow):
+	"""Use a video-safe FPS when a project still points at an image workflow.
+
+	Storyboarding happens before routing to the final video workflow. Image workflows
+	legitimately declare 0 FPS, but that must never make the editable timeline fail.
+	"""
+	fps = float(getattr(workflow, "output_fps", 0) or 0)
+	return fps if fps > 0 else DEFAULT_TIMELINE_FPS
+
+
 def ensure_shot_planning_editable(media_project_name: str):
 	if frappe.db.exists(
 		"Generation Run",
@@ -29,9 +42,7 @@ def rebalance_shot_duration(media_project_name: str, shot_name: str, target_dura
 	if not settings.workflow:
 		frappe.throw(_("Media Project must have a Workflow."))
 	workflow = frappe.get_doc("Generation Workflow", settings.workflow)
-	fps = float(workflow.output_fps or 0)
-	if fps <= 0:
-		frappe.throw(_("Workflow output FPS must be greater than zero."))
+	fps = _timeline_fps(workflow)
 
 	total_frames = round(float(settings.total_duration_seconds or 0) * fps)
 	if total_frames < len(shots):
@@ -102,9 +113,7 @@ def recalculate_shot_durations(media_project_name: str):
 		"Generation Workflow",
 		settings.workflow,
 	)
-	fps = float(workflow.output_fps or 0)
-	if fps <= 0:
-		frappe.throw(_("Workflow output FPS must be greater than zero."))
+	fps = _timeline_fps(workflow)
 
 	total_frames = round(float(settings.total_duration_seconds or 0) * fps)
 	if total_frames < len(shots):

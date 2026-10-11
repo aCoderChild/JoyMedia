@@ -346,13 +346,14 @@ class MediaProject(Document):
 			)
 			validate_generation_preflight(self, workflow, shots, check_comfyui=True)
 			project_snapshot_json, project_snapshot_hash = build_project_snapshot(self)
+			snapshot = frappe.parse_json(project_snapshot_json)
 			run = frappe.get_doc({
 				"doctype": "Generation Run",
 				"media_project": self.name,
 				"project_snapshot_json": project_snapshot_json,
 				"project_snapshot_hash": project_snapshot_hash,
 				"workflow": settings.workflow,
-				"generation_pipeline": settings.generation_pipeline or None,
+				"generation_pipeline": snapshot.get("generation_pipeline") or None,
 				"requested_by": frappe.session.user,
 				"status": "Draft",
 			}).insert(ignore_permissions=True)

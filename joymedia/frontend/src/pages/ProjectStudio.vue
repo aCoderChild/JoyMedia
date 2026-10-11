@@ -615,15 +615,19 @@ onUnmounted(() => {
 
 async function exportAndRefresh() {
   try {
+    // Download is deliberately a separate direct click once an export exists.
+    // Safari blocks downloads initiated after a long asynchronous export.
+    if (currentOutputAssetVersion.value && !hasUnexportedEdits.value && finalVideo.value?.file) {
+      await downloadFile(finalVideo.value.file);
+      return;
+    }
     const result = await exportTimeline();
     if (!result) return;
     // The export replaces the project's final video, which only the workspace reports.
     await fetchWorkspace();
-    if (!finalVideo.value?.file) return;
-    await downloadFile(finalVideo.value.file);
     notify({
       title: currentLang.value === "vi" ? "Đã xuất video" : "Video exported",
-      text: currentLang.value === "vi" ? "Video đang được tải xuống." : "The video is downloading.",
+      text: currentLang.value === "vi" ? "Bấm Tải video để lưu toàn bộ video." : "Click Download video to save the complete video.",
       type: "success",
     });
   } catch (err) {

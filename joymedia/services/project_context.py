@@ -214,6 +214,17 @@ def _active_project_shots(project_name, fields=None):
 
 def build_project_snapshot(project):
 	settings = _project_settings(project)
+	configured_pipeline = settings.generation_pipeline or ""
+	# A project may keep an older/default workflow while individual shots are
+	# automatically routed through another pipeline. The run-level pipeline is
+	# only valid when its final step is the project's default workflow; per-shot
+	# routes below carry every automatic Flux/Flux 2 pipeline explicitly.
+	if configured_pipeline:
+		from joymedia.services.generation_pipeline_service import get_pipeline_steps
+
+		steps = get_pipeline_steps(configured_pipeline)
+		if not steps or steps[-1].workflow != settings.workflow:
+			configured_pipeline = ""
 	workflow_fps = frappe.db.get_value("Generation Workflow", settings.workflow, "output_fps") if settings.workflow else None
 	default_workflow = (
 		frappe.get_doc("Generation Workflow", settings.workflow)
@@ -235,7 +246,7 @@ def build_project_snapshot(project):
 		"generation_mode": settings.generation_mode or "Continuous",
 		"global_instructions": settings.global_instructions or "",
 		"workflow": settings.workflow or "",
-		"generation_pipeline": settings.generation_pipeline or "",
+		"generation_pipeline": configured_pipeline,
 		"references": [
 			{
 				"asset_version": row.asset_version,

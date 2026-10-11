@@ -2,8 +2,9 @@
 
 A "story film" is a project whose references contain at least one character
 (talent) image and at least one place image. It is planned as a few long,
-continuous takes rendered by a workflow with two reference slots, where every take
-receives the character as <Picture 1> and a location as <Picture 2>.
+continuous takes rendered from the character and the specific locations used in
+each take. A take can carry adjacent locations when its action transitions between
+them.
 """
 
 import math
@@ -60,8 +61,10 @@ STRUCTURE
 - Plan exactly {take_count} long continuous takes of {min_take}-{max_take} seconds each.
 - Use a different place in each take, choosing the places that best tell the story;
   only the main place may appear twice (to open and to close the film).
-- Each take is ONE unbroken camera shot in ONE place: no cuts, no montage, no
-  second location inside the take.
+- Each take is ONE unbroken camera shot. A take may make one motivated visual
+  transition between two supplied places (for example through a doorway or a
+  foreground wipe) only when it lists both place references. Never use a
+  montage or invent an unrelated in-between room.
 - TIMING: use the opening moments (about 0-5%) to establish composition, carry out
   the main action in the first 85-90% of the take, then leave a natural handoff.
   Do not save the action for the end.
@@ -106,10 +109,10 @@ EVERY generation_prompt states, in this order:
    people or face/structure deformation.
 
 REFERENCES
-- Every take lists exactly two references: first the character key, then one place
-  key. A take without the character lists its place key twice.
-- Use only the supplied keys. Keys are names, not picture numbers: in the prompt the
-  character is always <Picture 1> and the place is always <Picture 2>.
+- Every take lists the character first, then one or more place keys in the order
+  they are used. A second place means a single motivated transition from
+  <Picture 2> to <Picture 3>. Use only supplied keys; keys are names, not picture
+  numbers.
 """.strip()
 
 PRODUCT_DIRECTOR_RULES = """
@@ -434,9 +437,9 @@ def build_property_director_instruction(reference_contexts, total_seconds, refer
 	return (
 		"Plan a truthful real-estate commercial from the user's VIDEO IDEA. The person actively presents the property and makes it feel livable. "
 		f"Return exactly {count} continuous takes totaling {float(total_seconds):g} seconds. Follow OPENING, BUILD, CLIMAX, RESOLUTION, CLOSING. "
-		"Use the same person and outfit in every take. Each take stays in one selected property area; show only visible features, invent no rooms or amenities. "
+		"Use the same person and outfit in every take. Each take may use one property area or make one motivated continuous transition between adjacent selected areas when that helps cover the tour; show only visible features and invent no rooms or amenities. "
 		"Keep each generation_prompt under 35 words, image_prompt under 20 words, use two short motion actions, and keep all other fields brief. "
-		"Every take uses exactly two references in order: person, then its property area. Use only the supplied reference keys. "
+		"Every take lists the person first, then its property area or areas in travel order. Two area references mean a single continuous transition from the first area to the second. Use only the supplied reference keys. "
 		f'Use role "{roles.get(CHARACTER, "person")}" for the person and "{roles.get(PLACE, "environment")}" for areas.\n'
 		f'PERSON\n{_roster_line(roster[CHARACTER][0], person=True)}\nPROPERTY AREAS IN SELECTED ORDER\n{areas}'
 	)
@@ -519,7 +522,12 @@ def enforce_property_marketing_brief(shots, video_idea, reference_contexts):
 		if not isinstance(shot, dict):
 			continue
 		refs = shot.get("references") or []
-		place_key = str(refs[1].get("reference_key") or "") if len(refs) > 1 else ""
+		place_keys = [
+			str(reference.get("reference_key") or "").strip()
+			for reference in refs[1:]
+			if str(reference.get("reference_key") or "").strip()
+		]
+		place_key = place_keys[0] if place_keys else ""
 		place = next(
 			(item for item in roster[PLACE] if item.get("reference_key") == place_key),
 			roster[PLACE][index % len(roster[PLACE])],
@@ -530,23 +538,45 @@ def enforce_property_marketing_brief(shots, video_idea, reference_contexts):
 			if place_detail else
 			"Use the exact layout and features visible in <Picture 2>; invent no room type, amenity, furnishing, or architecture"
 		)
-		prompt = (
-			f"The woman from <Picture 1>, wearing {outfit}, {verbs[index % len(verbs)]} in the property area shown in <Picture 2>. "
-			f"{visual_guard}. Her warm, confident presentation makes the property feel welcoming and livable. "
-			f"Use {cameras[index % len(cameras)]}, flattering natural light, and a polished real-estate commercial look. "
-			"Preserve her identity and the property's visible appearance. One continuous shot, photorealistic, no cuts, no added text or invented logos."
-		)
+		if len(place_keys) > 1:
+			destination = next(
+				(item for item in roster[PLACE] if item.get("reference_key") == place_keys[1]), None
+			)
+			destination_detail = str((destination or {}).get("analysis", {}).get("description") or "").strip()
+			destination_guard = (
+				f"Preserve these destination details from <Picture 3>: {destination_detail[:180]}"
+				if destination_detail else
+				"Preserve the exact visible layout and features from <Picture 3> at the end of the move"
+			)
+			prompt = (
+				f"The woman from <Picture 1>, wearing {outfit}, begins by {verbs[index % len(verbs)]} in the property area shown in <Picture 2>. "
+				f"{visual_guard}. She then makes one motivated continuous move through a doorway, foreground wipe, or matching architectural line into the property area shown in <Picture 3>. "
+				f"{destination_guard}. Her warm, confident presentation makes the property feel welcoming and livable. "
+				f"Use {cameras[index % len(cameras)]}, flattering natural light, and a polished real-estate commercial look. "
+				"Preserve her identity and both properties' visible appearance. One continuous shot, photorealistic, no hard cut, no added text or invented logos."
+			)
+		else:
+			prompt = (
+				f"The woman from <Picture 1>, wearing {outfit}, {verbs[index % len(verbs)]} in the property area shown in <Picture 2>. "
+				f"{visual_guard}. Her warm, confident presentation makes the property feel welcoming and livable. "
+				f"Use {cameras[index % len(cameras)]}, flattering natural light, and a polished real-estate commercial look. "
+				"Preserve her identity and the property's visible appearance. One continuous shot, photorealistic, no cuts, no added text or invented logos."
+			)
 		shot["generation_prompt"] = prompt
 		shot["image_prompt"] = prompt
 		shot["shot_name"] = f"{beats[index]}: {titles[beats[index]]}"
 		shot["start_state"] = "Người dẫn giới thiệu không gian" if _has_vietnamese(video_idea) else "Host presents the space"
-		shot["end_state"] = "Không gian hiện rõ trong khung hình" if _has_vietnamese(video_idea) else "Space stays clear in frame"
+		shot["end_state"] = (
+			"Không gian đích hiện rõ trong khung hình" if len(place_keys) > 1 and _has_vietnamese(video_idea) else
+			"Destination space stays clear in frame" if len(place_keys) > 1 else
+			"Không gian hiện rõ trong khung hình" if _has_vietnamese(video_idea) else "Space stays clear in frame"
+		)
 		shot["handoff_type"] = "ending" if index == len(shots) - 1 else "camera_transition"
 		duration = float(shot.get("duration_seconds") or 5)
 		cut = duration * 0.85
 		shot["motion_plan"] = {"actions": [
 			{"start": 0.0, "end": cut, "action": verbs[index % len(verbs)]},
-			{"start": cut, "end": duration, "action": "settles into a welcoming pose"},
+			{"start": cut, "end": duration, "action": "arrives in the next visible area" if len(place_keys) > 1 else "settles into a welcoming pose"},
 		]}
 		shot["caption"] = (
 			("Chào đón tổ ấm mới", "Không gian cho gia đình", "Tiện nghi mỗi ngày", "Sống thoải mái hơn", "Nơi thuộc về bạn", "Một nơi đáng sống")[index % 6]
@@ -639,13 +669,13 @@ def _product_director_instruction(roster, reference_role, take_count, reference_
 
 
 def normalize_story_references(shots, reference_contexts, reference_role, reference_roles=None):
-	"""Make every shot reference exactly two images, in <Picture 1>/<Picture 2> order.
+	"""Assign ordered, purposeful references without discarding multi-place shots.
 
-	The order is load-bearing: the first reference is bound to <Picture 1> and the
-	second to <Picture 2> by the Reference-to-Video workflow bindings. The planner's
-	prompt text decides the order, because models often omit or reorder keys:
-	a take that shows a person gets [character, place]; otherwise the described
-	place fills both slots.
+	For a tagged property tour, selected areas are traversed in order. Extra scenes
+	become bridge scenes with two adjacent areas, so every selected area is used and
+	the Flux multi-reference route is chosen automatically. Other story films retain
+	the established person-plus-place behavior unless the planner explicitly listed
+	more than one place.
 	"""
 	roster = build_roster(reference_contexts)
 	reference_roles = reference_roles or {}
@@ -661,6 +691,7 @@ def normalize_story_references(shots, reference_contexts, reference_role, refere
 		str((place.get("analysis") or {}).get("description") or place.get("label") or "").strip()
 		for place in places
 	)
+	property_tour = any(str(place.get("reference_role") or "").lower() == "environment" for place in places)
 	for index, shot in enumerate(shots):
 		if not isinstance(shot, dict):
 			continue
@@ -670,20 +701,28 @@ def normalize_story_references(shots, reference_contexts, reference_role, refere
 			for reference in shot.get("references") or []
 		]
 		candidates = [context for context in places if context["reference_key"] in listed] or places
+		listed_places = [key for key in listed if any(place["reference_key"] == key for place in places)]
+		if property_tour:
+			listed_places = _property_tour_places(index, len(shots), places, listed_places)
+		else:
+			# Preserve the mature single-location story-film behavior outside a
+			# tagged property tour. Multi-reference composition is intentionally
+			# introduced only where the selected area sequence makes it meaningful.
+			listed_places = []
 		best_place = (
 			_best_matching_place(prompt, candidates)
 			if places_have_descriptions
 			else places[index % len(places)]["reference_key"]
 		)
 		if PERSON_PATTERN.search(prompt):
-			ordered = [character_key, best_place]
+			ordered = [character_key, *(listed_places or [best_place])]
 		else:
 			# The model follows <Picture 1> most strongly; a second, different place
 			# there replaced the described one, so both slots carry it.
 			ordered = [best_place, best_place]
 		shot["references"] = [
-			{"reference_key": key, "usage_role": character_role if index == 0 and PERSON_PATTERN.search(prompt) else place_role}
-			for index, key in enumerate(ordered)
+			{"reference_key": key, "usage_role": character_role if key == character_key else place_role}
+			for key in ordered
 		]
 		prompt = _clamp_picture_tags(prompt, len(ordered)).strip()
 		if "no cuts" not in prompt.lower():
@@ -691,6 +730,33 @@ def normalize_story_references(shots, reference_contexts, reference_role, refere
 			prompt = f"{prompt} {TAKE_CONSTRAINTS}".strip()
 		shot["generation_prompt"] = prompt
 	return shots
+
+
+def _property_tour_places(index, shot_count, places, explicit_keys):
+	"""Return one route segment for a property tour, retaining explicit selections.
+
+	When the film has more scenes than areas, fractional route positions naturally
+	create adjacent-area bridge scenes. When it has fewer scenes, each scene carries
+	the contiguous area range it must cover. This avoids silently dropping selected
+	areas while keeping references ordered and bounded by the shot's purpose.
+	"""
+	# A planner can explicitly request a multi-area transition. A lone area from
+	# the old two-reference prompt is not a reason to discard the rest of a tagged
+	# property tour, so it follows the deterministic route below.
+	if len(explicit_keys) > 1:
+		return list(dict.fromkeys(explicit_keys))
+	keys = [place["reference_key"] for place in places]
+	if not keys:
+		return []
+	if shot_count == len(keys):
+		return [keys[min(index, len(keys) - 1)]]
+	if shot_count > len(keys):
+		position = index * (len(keys) - 1) / max(shot_count - 1, 1)
+		start, end = math.floor(position), math.ceil(position)
+		return list(dict.fromkeys(keys[start:end + 1]))
+	start = math.floor(index * len(keys) / shot_count)
+	end = math.ceil((index + 1) * len(keys) / shot_count)
+	return keys[start:max(start + 1, end)]
 
 
 def enforce_requested_product_presentation(shots, video_idea, reference_contexts):
@@ -876,7 +942,7 @@ def reference_preamble(shot_reference_versions, project_references):
 		if reference.get("asset_version")
 	}
 	parts = []
-	location = None
+	locations = []
 	for index, asset_version in enumerate(shot_reference_versions[:9], start=1):
 		reference = by_version.get(asset_version) or {}
 		label = str(reference.get("label") or "").strip()
@@ -891,7 +957,7 @@ def reference_preamble(shot_reference_versions, project_references):
 				"identical, but use only the person, never the background of that photo."
 			)
 		elif kind == PLACE:
-			location = location or index
+			locations.append(index)
 			# Spell the place out: when a take's own text barely describes where it is,
 			# the model drifts to the setting of the character's photo instead.
 			seen = _first_sentence((context.get("analysis") or {}).get("description"))
@@ -908,8 +974,13 @@ def reference_preamble(shot_reference_versions, project_references):
 			parts.append(
 				f"<Picture {index}> is a reference subject{suffix}: keep its shape, colours and details exactly."
 			)
-	if location:
-		parts.append(f"The video opens directly in the location from <Picture {location}>.")
+	if locations:
+		parts.append(f"The video opens directly in the location from <Picture {locations[0]}>.")
+	if len(locations) > 1:
+		parts.append(
+			f"Make one motivated continuous transition from <Picture {locations[0]}> to <Picture {locations[1]}>; "
+			"preserve both locations and do not invent an unrelated room."
+		)
 	return " ".join(parts)
 
 

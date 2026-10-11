@@ -30,10 +30,14 @@ class GenerationRun(Document):
 			if not self.generation_pipeline:
 				from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow
 
-				pipeline = (
-					frappe.get_doc("Generation Pipeline", project.generation_pipeline)
-					if project.generation_pipeline else pipeline_for_final_workflow(self.workflow)
-				)
+				pipeline = pipeline_for_final_workflow(self.workflow)
+				if project.generation_pipeline:
+					candidate = frappe.get_doc("Generation Pipeline", project.generation_pipeline)
+					# A project-level pipeline is only a run default when it ends with
+					# the run workflow. Auto-routed shots record their own pipeline in
+					# the immutable snapshot and must not inherit an incompatible one.
+					if candidate.steps and candidate.steps[-1].workflow == self.workflow:
+						pipeline = candidate
 				if pipeline:
 					self.generation_pipeline = pipeline.name
 		else:

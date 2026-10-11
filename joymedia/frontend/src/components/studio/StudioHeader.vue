@@ -200,7 +200,9 @@
         <span>
           {{ isExporting
             ? (currentLang === 'vi' ? 'Đang xuất video...' : 'Exporting...')
-            : (currentLang === 'vi' ? 'Xuất & tải xuống' : 'Export & download') }}
+            : (!hasUnexportedEdits && currentOutputAssetVersion
+              ? (currentLang === 'vi' ? 'Tải video' : 'Download video')
+              : (currentLang === 'vi' ? 'Xuất video' : 'Export video')) }}
         </span>
       </button>
 

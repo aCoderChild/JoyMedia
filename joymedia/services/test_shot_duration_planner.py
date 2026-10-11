@@ -58,6 +58,18 @@ class TestShotDurationPlanner(FrappeTestCase):
 		self.assertEqual(192, set_value.call_args.args[2]["planned_frame_count"])
 		self.assertEqual(8, set_value.call_args.args[2]["duration_seconds"])
 
+	@patch("joymedia.services.shot_duration_planner.frappe.db.set_value")
+	@patch("joymedia.services.shot_duration_planner.frappe.get_all")
+	@patch("joymedia.services.shot_duration_planner.frappe.get_doc")
+	def test_image_workflow_uses_video_safe_timeline_fps(self, get_doc, get_all, set_value):
+		get_doc.return_value = _specification(total_duration_seconds=10, output_fps=0)
+		get_all.return_value = [_shot(1), _shot(2)]
+
+		result = recalculate_shot_durations("SPEC-00001")
+
+		self.assertEqual({"total_frames": 240, "shots": 2}, result)
+		self.assertEqual([120, 120], [call.args[2]["planned_frame_count"] for call in set_value.call_args_list])
+
 
 def _specification(**values):
 	return type(
