@@ -10,8 +10,8 @@ def customer_workflow_key(reference_mode, quality_mode):
 
 
 def choose_shot_workflow(snapshot, shot):
-	"""Use the exact workflow frozen into the project snapshot."""
-	workflow_name = snapshot.get("workflow")
+	"""Use the exact per-shot workflow frozen into the project snapshot."""
+	workflow_name = shot.get("workflow") or snapshot.get("workflow")
 	if not workflow_name or not frappe.db.exists("Generation Workflow", workflow_name):
 		frappe.throw(_("The project snapshot has no executable Generation Workflow."))
 	return frappe.get_doc("Generation Workflow", workflow_name)

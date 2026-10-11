@@ -61,6 +61,22 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(["keyframe", "video"], [stage[0].step_key for stage in stages])
 		self.assertIsNone(stages[0][1])
 
+	def test_multireference_recomposition_never_skips_its_keyframe_stage(self):
+		steps = [
+			frappe._dict(step_key="keyframe", consumes_artifact_role=None),
+			frappe._dict(step_key="video", consumes_artifact_role="Primary Image"),
+		]
+
+		stages = generation_orchestrator._pipeline_steps_for_segment(
+			steps,
+			previous_shot_tail_job="TASK-PREVIOUS-VIDEO",
+			cross_shot_continuity=True,
+			force_full_pipeline=True,
+		)
+
+		self.assertEqual(["keyframe", "video"], [stage[0].step_key for stage in stages])
+		self.assertTrue(stages[0][3])
+
 	@patch("joymedia.services.generation_orchestrator.workflow_supports_continuation", return_value=True)
 	def test_long_shot_uses_workflow_declared_continuation_contract(self, supports_continuation):
 		workflow = frappe._dict(

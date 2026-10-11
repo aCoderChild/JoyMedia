@@ -53,3 +53,4 @@ joymedia.patches.repair_scalar_file_path_bindings
 joymedia.patches.normalize_project_export_quality
 joymedia.patches.remove_end_card_fields
 joymedia.patches.remove_end_card_columns
+joymedia.patches.upgrade_flux2_multireference_workflow

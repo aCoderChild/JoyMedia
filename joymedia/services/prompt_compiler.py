@@ -145,6 +145,14 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 			f"{global_instructions}"
 		)
 
+	if getattr(shot, "references", None):
+		prompt = (
+			f"{prompt}\n\n"
+			"Reference fidelity: market only the intended referenced product. Preserve its exact "
+			"shape, material, color, proportions, and every visible logo or label; do not swap, "
+			"merge, deform, or invent products, packaging, text, or logos."
+		)
+
 	generation_mode = project.get("generation_mode")
 	if prompt_source == "motion" and generation_mode in ("Continuous", "Consistency"):
 		if int(shot.shot_number or 0) > 1:

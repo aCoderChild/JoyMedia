@@ -33,6 +33,83 @@ def parse_video_plan(plan_json: str):
 		frappe.throw(_("Invalid video plan JSON."))
 
 
+def _assign_reference_pool_auto(plan, project_references):
+	"""Give an omitted shot the selected image ingredients for automatic routing.
+
+	The AI Director normally returns a purposeful subset.  Falling back to the
+	whole selected pool is safer than silently dropping a product or environment;
+	the router will select Flux 2 and compose overflow references when needed.
+	"""
+	for shot in plan.get("shots") or []:
+		if shot.get("references"):
+			continue
+		shot["references"] = [
+			{"reference_key": key, "usage_role": row.reference_role or "General"}
+			for key, row in project_references.items()
+			if frappe.db.get_value(
+				"Media Asset", frappe.db.get_value("Asset Version", row.asset_version, "media_asset"), "media_type"
+			) == "Image"
+		]
+
+
+def _route_and_validate_plan_shot(shot, project_references, default_workflow):
+	from joymedia.services.generation_pipeline_service import get_pipeline_steps
+	from joymedia.services.workflow_resolver import get_workflow_input_contract
+	from joymedia.services.workflow_routing import resolve_shot_render_route
+
+	references = []
+	for reference in shot.get("references") or []:
+		project_reference = project_references.get(reference.get("reference_key"))
+		if not project_reference or not project_reference.asset_version:
+			frappe.throw(_("Unknown Project Reference key '{0}'.").format(reference.get("reference_key")))
+		references.append({
+			"reference_key": reference["reference_key"],
+			# Project Reference roles carry durable product/person/environment
+			# semantics. Planner roles are only a fallback for legacy imports.
+			"reference_role": project_reference.reference_role or reference.get("usage_role") or "General",
+			"asset_version": project_reference.asset_version,
+		})
+	route = resolve_shot_render_route(
+		default_workflow,
+		references,
+		handoff_type=shot.get("handoff_type") or "",
+		motion_plan_json=frappe.as_json(shot.get("motion_plan") or {}),
+	)
+	shot["references"] = [
+		{"reference_key": item["reference_key"], "usage_role": item["reference_role"]}
+		for item in route["references"]
+	]
+	shot["render_strategy"] = route["strategy"]
+	shot["workflow"] = route["workflow"]
+	shot["generation_pipeline"] = route["generation_pipeline"]
+	shot["routing_reason"] = route["reason"]
+	shot["requires_recomposition"] = route["requires_recomposition"]
+
+	input_workflow = frappe.get_doc("Generation Workflow", route["workflow"])
+	if route["generation_pipeline"]:
+		input_workflow = frappe.get_doc(
+			"Generation Workflow", get_pipeline_steps(route["generation_pipeline"])[0].workflow
+		)
+	contract = {item["role"]: item for item in get_workflow_input_contract(input_workflow)}
+	counts = {}
+	for reference in shot["references"]:
+		role = frappe.scrub(reference["usage_role"])
+		if role not in contract:
+			frappe.throw(_("Automatic route does not support Shot Reference role '{0}'.").format(role))
+		counts[role] = counts.get(role, 0) + 1
+	for role, item in contract.items():
+		count = counts.get(role, 0)
+		if count < int(item.get("min_count") or 0):
+			frappe.throw(_("Shot {0} needs {1} input(s) for role '{2}'.").format(
+				shot.get("shot_number"), item["min_count"], role
+			))
+		maximum = int(item.get("max_count") or 0)
+		if maximum and count > maximum:
+			frappe.throw(_("Shot {0} supports at most {1} input(s) for role '{2}'.").format(
+				shot.get("shot_number"), maximum, role
+			))
+
+
 def apply_video_plan(media_project_name: str = None, plan: dict = None):
 	project = frappe.get_doc("Media Project", media_project_name)
 	from joymedia.services.project_context import _project_settings
@@ -53,68 +130,12 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 		for row in project.selected_media or []
 		if getattr(row, "reference_key", None)
 	}
-	workflow_contract = None
-	if settings.workflow:
-		from joymedia.services.workflow_profiles import planning_input_contract
-		workflow_contract = planning_input_contract(
-			frappe.get_doc("Generation Workflow", settings.workflow), settings.generation_pipeline
-		)
-	contract_by_role = {item["role"]: item for item in (workflow_contract or [])}
-	_assign_reference_pool(plan, project, settings, contract_by_role, project_references, mode)
+	if not settings.workflow:
+		frappe.throw(_("The Media Project requires a Workflow."))
+	default_workflow = frappe.get_doc("Generation Workflow", settings.workflow)
+	_assign_reference_pool_auto(plan, project_references)
 	for shot in plan["shots"]:
-		role_counts = {}
-		for reference in shot.get("references") or []:
-			role = frappe.scrub(reference.get("usage_role") or "")
-			contract = contract_by_role.get(role)
-			if workflow_contract is not None and not contract:
-				frappe.throw(_("Workflow does not support Shot Reference role '{0}'.").format(role))
-			role_counts[role] = role_counts.get(role, 0) + 1
-			if (
-				contract
-				and role_counts[role] > 1
-				and not contract.get("allow_multiple")
-				and int(contract.get("max_count") or 1) <= 1
-			):
-				frappe.throw(_("Workflow input role '{0}' accepts exactly one reference.").format(role))
-			if contract and contract.get("max_count") and role_counts[role] > contract["max_count"]:
-				frappe.throw(
-					_("Workflow input role '{0}' accepts at most {1} references.").format(
-						role, contract["max_count"]
-					)
-				)
-			if contract and contract["accepted_media_type"] != "Any":
-				project_reference = project_references.get(reference.get("reference_key"))
-				media_type = (
-					frappe.db.get_value("Media Asset", frappe.db.get_value(
-						"Asset Version", project_reference.asset_version, "media_asset"
-					), "media_type")
-					if project_reference else None
-				)
-				if media_type != contract["accepted_media_type"]:
-					frappe.throw(
-						_("Workflow input role '{0}' accepts {1} media, not {2}.").format(
-							role, contract["accepted_media_type"], media_type or "unknown"
-						)
-					)
-		for contract in workflow_contract or []:
-			# In Continuous mode, only Shot 1 has a static first frame. Later shots
-			# receive the previous shot's generated Last Frame at runtime.
-			if (
-				mode == "Continuous"
-				and shot.get("shot_number", 0) > 1
-				and contract["role"] == "first_frame"
-			):
-				continue
-			count = role_counts.get(contract["role"], 0)
-			if count < contract.get("min_count", 0):
-				frappe.throw(
-					_(
-						"Shot {0} needs {1} reference image(s) for the selected workflow. "
-						"Add the required references or select a workflow with a compatible input contract."
-					).format(
-						shot.get("shot_number"), contract["min_count"]
-					)
-				)
+		_route_and_validate_plan_shot(shot, project_references, default_workflow)
 
 	shot_numbers = [shot["shot_number"] for shot in plan["shots"]]
 	if len(shot_numbers) != len(set(shot_numbers)):
@@ -360,44 +381,21 @@ def append_video_plan(
 	mode = normalize_generation_mode(settings.generation_mode)
 	if mode not in ("Multi-shot", "Continuous"):
 		frappe.throw(_("Select Continuous or Multi-shot generation mode."))
-	workflow_contract = None
-	if settings.workflow:
-		from joymedia.services.workflow_profiles import planning_input_contract
-		workflow_contract = planning_input_contract(
-			frappe.get_doc("Generation Workflow", settings.workflow), settings.generation_pipeline
-		)
-	contract_by_role = {item["role"]: item for item in (workflow_contract or [])}
+	if not settings.workflow:
+		frappe.throw(_("The Media Project requires a Workflow."))
+	default_workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 	project_references = {
 		getattr(row, "reference_key", None): row
 		for row in project.selected_media or []
 		if getattr(row, "reference_key", None)
 	}
 	base_shot_number = int(start_after_shot_number or 0)
+	_assign_reference_pool_auto(plan, project_references)
+	for shot in plan["shots"]:
+		_route_and_validate_plan_shot(shot, project_references, default_workflow)
 
 	created_shots = []
 	for offset, shot in enumerate(plan["shots"], start=1):
-		for reference in shot.get("references") or []:
-			key = reference["reference_key"]
-			project_reference = project_references.get(key)
-			if not project_reference or not project_reference.asset_version:
-				frappe.throw(_("Unknown Project Reference key '{0}'.").format(key))
-			role = frappe.scrub(reference.get("usage_role") or "general")
-			contract = contract_by_role.get(role)
-			if workflow_contract is not None and not contract:
-				frappe.throw(_("Workflow does not support Shot Reference role '{0}'.").format(role))
-			if contract and contract["accepted_media_type"] != "Any":
-				media_type = frappe.db.get_value(
-					"Media Asset",
-					frappe.db.get_value("Asset Version", project_reference.asset_version, "media_asset"),
-					"media_type",
-				)
-				if media_type != contract["accepted_media_type"]:
-					frappe.throw(
-						_("Workflow input role '{0}' accepts {1} media, not {2}.").format(
-							role, contract["accepted_media_type"], media_type or "unknown"
-						)
-					)
-
 		doc = frappe.get_doc(
 			{
 				"doctype": "Shot",

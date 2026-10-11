@@ -215,6 +215,11 @@ def _active_project_shots(project_name, fields=None):
 def build_project_snapshot(project):
 	settings = _project_settings(project)
 	workflow_fps = frappe.db.get_value("Generation Workflow", settings.workflow, "output_fps") if settings.workflow else None
+	default_workflow = (
+		frappe.get_doc("Generation Workflow", settings.workflow)
+		if settings.workflow and frappe.db.exists("Generation Workflow", settings.workflow)
+		else None
+	)
 	snapshot = {
 		"media_project": project.name,
 		"project_name": project.project_name or "",
@@ -252,8 +257,7 @@ def build_project_snapshot(project):
 		],
 	):
 		shot_doc = frappe.get_doc("Shot", shot.name)
-		snapshot["shots"].append(
-			{
+		shot_snapshot = {
 				"shot": shot.name,
 				"shot_number": shot.shot_number,
 				"duration_seconds": float(shot.duration_seconds or 0),
@@ -273,7 +277,24 @@ def build_project_snapshot(project):
 					if row.reference_role and row.asset_version
 				],
 			}
-		)
+		if default_workflow:
+			from joymedia.services.workflow_routing import resolve_shot_render_route
+
+			route = resolve_shot_render_route(
+				default_workflow,
+				shot_snapshot["references"],
+				handoff_type=shot_snapshot["handoff_type"],
+				motion_plan_json=shot_snapshot["motion_plan_json"],
+			)
+			shot_snapshot.update({
+				"workflow": route["workflow"],
+				"generation_pipeline": route["generation_pipeline"],
+				"render_strategy": route["strategy"],
+				"routing_reason": route["reason"],
+				"requires_recomposition": route["requires_recomposition"],
+				"references": route["references"],
+			})
+		snapshot["shots"].append(shot_snapshot)
 	serialized = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
 	return serialized, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 

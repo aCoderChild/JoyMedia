@@ -217,6 +217,9 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 	def finalize_workflow(self, workflow, workflow_version, staged_inputs):
 		preprocessing = self.execution_spec.get("input_preprocessing") or {}
 		self._finalize_optional_reference_branches(workflow, preprocessing, staged_inputs)
+		composed_roles = {
+			str(role) for role in preprocessing.get("compose_image_roles") or []
+		}
 		# File Paths are staged as lists throughout the runner, but a ComfyUI
 		# LoadImage.image input is a scalar filename. Respect the workflow's
 		# declared cardinality instead of requiring model-specific preprocessing.
@@ -224,7 +227,10 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 			role = getattr(binding, "required_input_role", None)
 			if not role or getattr(binding, "value_type", None) != "File Paths":
 				continue
-			if str(getattr(binding, "allow_multiple", False)).strip().lower() in {"1", "true", "yes"}:
+			is_multiple = str(getattr(binding, "allow_multiple", False)).strip().lower() in {"1", "true", "yes"}
+			# A composed board starts as many references but is staged as exactly
+			# one PNG for a normal ComfyUI LoadImage node.
+			if is_multiple and str(role) not in composed_roles:
 				continue
 			values = staged_inputs.get(role) or []
 			if not isinstance(values, (list, tuple)):

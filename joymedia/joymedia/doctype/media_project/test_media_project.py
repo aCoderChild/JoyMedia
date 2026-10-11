@@ -145,10 +145,9 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			[(row.reference_role, row.asset_version) for row in shot.generation_inputs if row.reference_role == "product_reference"],
 			[("product_reference", first_version.name), ("product_reference", second_version.name)],
 		)
-		self.assertEqual(
-			[(row.reference_role, row.asset_version) for row in shot.generation_inputs if row.reference_role == "first_frame"],
-			[("first_frame", first_version.name)],
-		)
+		# This is now a direct R2V shot: the two product references are its complete
+		# input contract, so no redundant pipeline first-frame reference is stored.
+		self.assertFalse([row for row in shot.generation_inputs if row.reference_role == "first_frame"])
 
 	def test_planning_context_tracks_prompt_assets_settings_and_global_instructions(self):
 		from joymedia.services.project_context import _build_planning_context

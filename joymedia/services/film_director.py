@@ -36,7 +36,7 @@ PERSON_PATTERN = re.compile(
 WORD_PATTERN = re.compile(r"[a-z]+")
 PICTURE_TAG_PATTERN = re.compile(r"<Picture\s*(\d+)>", re.I)
 TAKE_CONSTRAINTS = (
-	"One continuous shot with no cuts, photorealistic, smooth stabilized motion, no text, no logos, "
+	"One continuous shot with no cuts, photorealistic, smooth stabilized motion, no added text or invented logos, "
 	"no deformation."
 )
 
@@ -91,7 +91,7 @@ EVERY generation_prompt (English, 60-110 words) states, in this order:
    shot, crane or drone move.
 4. Light, grade and depth of field.
 5. The transition, if any, then the constraints: one continuous shot with no cuts,
-   photorealistic, smooth stabilized motion, no text, no logos, no extra people, no
+   photorealistic, smooth stabilized motion, no added text or invented logos, no extra people, no
    face or structure deformation.
 
 REFERENCES
@@ -156,7 +156,7 @@ EVERY generation_prompt (English, 60-110 words) states, in this order:
 3. The setting, in words.
 4. One clear camera move, then light, grade and depth of field.
 5. The constraints: one continuous shot with no cuts, photorealistic, smooth stabilized
-   motion, no text, no logos, no extra people, no deformation.
+   motion, no added text or invented logos, no extra people, no deformation.
 
 REFERENCES
 - Every take lists exactly two references: first the character key, then the product
@@ -172,7 +172,7 @@ PRODUCT_FEW_SHOT_EXAMPLE = (
 	"product in this beat]. The product from <Picture 2>, [where it is and its exact look], keeps "
 	"its exact shape, colours and details. [The setting, in words]. Keep their face and hair "
 	"identical to <Picture 1>. [One camera move]. [Light, grade and depth of field]. One continuous "
-	"shot with no cuts, photorealistic, smooth stabilized motion, no text, no logos, no deformation."
+	"shot with no cuts, photorealistic, smooth stabilized motion, no added text or invented logos, no deformation."
 )
 
 FEW_SHOT_EXAMPLE = (
@@ -181,7 +181,7 @@ FEW_SHOT_EXAMPLE = (
 	"this take's beat] in the place from <Picture 2>, [what of that place is seen]. Keep their face "
 	"and hair identical to <Picture 1> and the exact layout and materials of <Picture 2>. [One "
 	"camera move]. [Light, grade and depth of field]. [How the take ends]. One continuous shot with "
-	"no cuts, photorealistic, smooth stabilized motion, no text, no logos, no deformation."
+	"no cuts, photorealistic, smooth stabilized motion, no added text or invented logos, no deformation."
 )
 
 
@@ -570,7 +570,7 @@ def enforce_explicit_product_brief(shots, video_idea):
 		shot["generation_prompt"] = (
 			f"The woman in the selected traditional ao dai {action}. {anchor} "
 			"Use an elegant dining table, warm upscale lighting, and a shallow depth of field. "
-			"One continuous shot with no cuts, photorealistic, smooth stabilized motion, no text, no logos, no deformation."
+			"One continuous shot with no cuts, photorealistic, smooth stabilized motion, no added text or invented logos, no deformation."
 		)
 		# Flux and video must start from the same shot description. The video
 		# prompt already contains the product, action, setting and camera intent.

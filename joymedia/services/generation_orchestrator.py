@@ -79,7 +79,7 @@ def _segment_plan(workflow, frame_count, continuation_workflow=None):
 def _pipeline_reference_inputs(shot, workflow):
 	"""Map a Shot's ordered references into the pipeline's first image stage."""
 	from .workflow_resolver import get_workflow_input_contract
-	from .reference_compositor import normalize_reference_role
+	from .workflow_routing import normalize_reference_role
 
 	contract = get_workflow_input_contract(workflow)
 	roles = {item["role"] for item in contract if item.get("role")}
@@ -119,6 +119,7 @@ def _pipeline_steps_for_segment(
 	previous_segment_job=None,
 	previous_shot_tail_job=None,
 	cross_shot_continuity=False,
+	force_full_pipeline=False,
 ):
 	"""Return executable stages, chaining later continuous segments from Last Frame.
 
@@ -129,9 +130,9 @@ def _pipeline_steps_for_segment(
 	"""
 	if not pipeline_steps:
 		return []
-	continuation_source = previous_segment_job or (
+	continuation_source = None if force_full_pipeline else (previous_segment_job or (
 		previous_shot_tail_job if cross_shot_continuity else None
-	)
+	))
 	if continuation_source:
 		return [(pipeline_steps[-1], continuation_source, "Last Frame", False)]
 
@@ -209,7 +210,6 @@ def prepare_run(run_name: str):
 		"Generation Workflow",
 		run.workflow,
 	)
-	pipeline_steps = get_pipeline_steps(run.generation_pipeline) if run.generation_pipeline else []
 	continuation_workflow = _continuation_workflow(workflow)
 	shots = snapshot.get("shots") or []
 	try:
@@ -228,10 +228,6 @@ def prepare_run(run_name: str):
 	try:
 		validate_workflow_for_execution(workflow)
 		validate_workflow_bindings(workflow)
-		for pipeline_step in pipeline_steps:
-			pipeline_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
-			validate_workflow_for_execution(pipeline_workflow)
-			validate_workflow_bindings(pipeline_workflow)
 		if continuation_workflow:
 			validate_workflow_for_execution(continuation_workflow)
 			validate_workflow_bindings(continuation_workflow)
@@ -246,7 +242,16 @@ def prepare_run(run_name: str):
 		for shot in shots:
 			shot_name = shot.get("shot")
 			shot_workflow = choose_shot_workflow(snapshot, shot)
-			shot_pipeline_steps = pipeline_steps if pipeline_steps and pipeline_steps[-1].workflow == shot_workflow.name else []
+			shot_pipeline_name = shot.get("generation_pipeline") or run.generation_pipeline
+			shot_pipeline_steps = get_pipeline_steps(shot_pipeline_name) if shot_pipeline_name else []
+			if shot_pipeline_steps and shot_pipeline_steps[-1].workflow != shot_workflow.name:
+				raise frappe.ValidationError(
+					_("Shot {0} pipeline does not end with its routed workflow.").format(shot_name)
+				)
+			for pipeline_step in shot_pipeline_steps:
+				pipeline_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
+				validate_workflow_for_execution(pipeline_workflow)
+				validate_workflow_bindings(pipeline_workflow)
 			shot_continuation_workflow = _continuation_workflow(shot_workflow)
 			validate_workflow_for_execution(shot_workflow)
 			validate_workflow_bindings(shot_workflow)
@@ -265,6 +270,7 @@ def prepare_run(run_name: str):
 						previous_segment_job=previous_segment_job,
 						previous_shot_tail_job=previous_shot_tail_job,
 						cross_shot_continuity=cross_shot_continuity,
+						force_full_pipeline=bool(shot.get("requires_recomposition")),
 					)
 					for pipeline_step, dependency_override, artifact_role_override, is_first_pipeline_step in pipeline_stages:
 						step_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
@@ -289,6 +295,7 @@ def prepare_run(run_name: str):
 								motion_plan_json=shot.get("motion_plan_json"),
 								start_state=shot.get("start_state"), end_state=shot.get("end_state"),
 								handoff_type=shot.get("handoff_type"),
+								references=shot.get("references") or [],
 							),
 							frappe._dict(snapshot), segment["segment_index"], len(segments),
 							prompt_source=prompt_source_for_workflow(step_workflow, pipeline_step.prompt_source),
@@ -371,6 +378,7 @@ def prepare_run(run_name: str):
 						motion_plan_json=shot.get("motion_plan_json"),
 						start_state=shot.get("start_state"), end_state=shot.get("end_state"),
 						handoff_type=shot.get("handoff_type"),
+						references=shot.get("references") or [],
 					),
 					frappe._dict(snapshot),
 					segment["segment_index"],
@@ -473,7 +481,8 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 			],
 		})
 		shot_workflow = choose_shot_workflow(snapshot, shot_snapshot)
-		shot_pipeline = pipeline_for_final_workflow(shot_workflow.name)
+		shot_pipeline_name = shot_snapshot.get("generation_pipeline")
+		shot_pipeline = frappe.get_doc("Generation Pipeline", shot_pipeline_name) if shot_pipeline_name else None
 		pipeline_steps = get_pipeline_steps(shot_pipeline.name) if shot_pipeline else []
 		validate_workflow_for_execution(shot_workflow)
 		validate_workflow_bindings(shot_workflow)
@@ -484,9 +493,13 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 		if continuation_workflow:
 			validate_workflow_for_execution(continuation_workflow)
 			validate_workflow_bindings(continuation_workflow)
+		input_workflow = (
+			frappe.get_doc("Generation Workflow", pipeline_steps[0].workflow)
+			if pipeline_steps else shot_workflow
+		)
 		required_roles = {
 			frappe.scrub(binding.required_input_role)
-			for binding in shot_workflow.bindings
+			for binding in input_workflow.bindings
 			if binding.required and binding.required_input_role
 		}
 		if not (shot.generation_prompt or "").strip():
@@ -499,10 +512,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 		# Match the exact binding behaviour used when the Generation Task is
 		# prepared.  This also lets an older multi-reference storyboard fall back
 		# to its first image when the optional Ref2V backend is not installed.
-		mappings = {}
-		for reference in references_for_workflow(shot_workflow, shot_snapshot.get("references")):
-			if reference.get("asset_version"):
-				mappings.setdefault(input_role_for_workflow(shot_workflow), []).append(reference["asset_version"])
+		mappings = _pipeline_reference_inputs(frappe._dict(references=shot_snapshot.get("references") or []), input_workflow)
 		for role in required_roles:
 			if pipeline_steps and role == "first_frame":
 				# The pipeline's upstream image workflow creates this input.
@@ -526,7 +536,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 						shot.name, role
 					)
 				)
-			validate_role_input_count(shot_workflow, role, len(asset_versions))
+			validate_role_input_count(input_workflow, role, len(asset_versions))
 
 		segments = _segment_plan(shot_workflow, shot_row.planned_frame_count, continuation_workflow)
 		if not segments:

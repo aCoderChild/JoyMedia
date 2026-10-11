@@ -145,3 +145,25 @@ class TestGenericComfyUIAdapter(FrappeTestCase):
 		from joymedia.services.reference_compositor import normalize_reference_role
 		self.assertEqual("person", normalize_reference_role("People"))
 		self.assertEqual("environment", normalize_reference_role("background"))
+
+	def test_flux2_expanded_workflow_accepts_second_product_and_reference_board(self):
+		from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
+		from joymedia.services.workflow_resolver import build_execution_workflow
+
+		workflow = get_latest_valid_workflow("flux2_klein_multireference_keyframe")
+		self.assertTrue(workflow)
+		roles = {binding.required_input_role for binding in workflow.bindings}
+		self.assertTrue({"product_2", "reference_board"}.issubset(roles))
+		resolved = build_execution_workflow(
+			workflow,
+			inputs={
+				"generation_prompt": "A presenter markets both products clearly.",
+				"person": ["person.png"], "product": ["product-a.png"],
+				"product_2": ["product-b.png"],
+				"reference_board": ["overflow-board.png"],
+			},
+			seed=1, width=1344, height=768, fps=24, frame_count=1, output_prefix="test",
+		)
+		self.assertEqual("product-b.png", resolved["product_2_image"]["inputs"]["image"])
+		self.assertEqual("overflow-board.png", resolved["reference_board_image"]["inputs"]["image"])
+		self.assertEqual(["reference_board_positive", 0], resolved["guider"]["inputs"]["positive"])

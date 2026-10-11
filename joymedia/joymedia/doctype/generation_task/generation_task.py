@@ -149,7 +149,7 @@ class GenerationTask(Document):
 			from joymedia.services.workflow_profiles import allowed_workflows_for_shot
 
 			allowed_workflows = allowed_workflows_for_shot(snapshot, shot_snapshot)
-			pipeline_workflows = self._pipeline_workflows(run)
+			pipeline_workflows = self._pipeline_workflows(run, shot_snapshot)
 			if workflow.name not in {candidate.name for candidate in allowed_workflows} and workflow.name not in pipeline_workflows:
 				frappe.throw(
 					_("Generation Task Workflow {0} is not valid for Shot {1} in this run.").format(
@@ -164,11 +164,15 @@ class GenerationTask(Document):
 		return workflow
 
 	@staticmethod
-	def _pipeline_workflows(run):
-		if not getattr(run, "generation_pipeline", None):
+	def _pipeline_workflows(run, shot_snapshot=None):
+		pipeline_name = (
+			(shot_snapshot or {}).get("generation_pipeline")
+			or getattr(run, "generation_pipeline", None)
+		)
+		if not pipeline_name:
 			return set()
 		return set(frappe.get_all(
-			"Generation Pipeline Step", filters={"parent": run.generation_pipeline}, pluck="workflow"
+			"Generation Pipeline Step", filters={"parent": pipeline_name}, pluck="workflow"
 		))
 
 	def get_shot_input_snapshot(self):

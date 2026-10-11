@@ -205,7 +205,7 @@ class MediaProject(Document):
 		reference_images=None, reference_media=None):
 		"""Single entry point to the AI Director; shared by first-plan and revision."""
 		from joymedia.services.qwen_client import generate_video_plan
-		from joymedia.services.workflow_profiles import planning_input_contract
+		from joymedia.services.workflow_routing import automatic_planning_input_contract
 		settings = _project_settings(self)
 		return generate_video_plan(
 			product_name=_meaningful_project_value(self.product_name, "The supplied product"),
@@ -219,7 +219,7 @@ class MediaProject(Document):
 			generation_mode=_normalize_generation_mode(settings.generation_mode),
 			global_instructions=settings.global_instructions,
 			format_preset=settings.delivery_preset,
-			workflow_input_contract=planning_input_contract(workflow, settings.generation_pipeline),
+			workflow_input_contract=automatic_planning_input_contract(),
 		)
 
 	def generate_video_plan(self):
@@ -233,8 +233,6 @@ class MediaProject(Document):
 		if not settings.workflow:
 			frappe.throw(_("Configure Video Settings before generating a storyboard."))
 		image_inputs = self._get_project_image_inputs()
-		if not image_inputs:
-			frappe.throw(_("Add at least one image reference before creating a storyboard."))
 		workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 		reference_contexts, story_film = _story_film_planning_context(self)
 		return self._plan_video(
@@ -243,7 +241,7 @@ class MediaProject(Document):
 			story_film=story_film,
 			shot_count=(
 				None if story_film
-				else len(image_inputs)
+				else len(image_inputs) or None
 				if settings.generation_mode == "Multi-shot"
 				else _planning_shot_count(settings.total_duration_seconds)
 			),
@@ -283,8 +281,6 @@ class MediaProject(Document):
 	@frappe.whitelist()
 	def generate_end_to_end(self):
 		self._require_write_access()
-		if not self._get_project_image_inputs():
-			frappe.throw(_("The active generation workflow requires at least one image reference."))
 		if not self.workflow:
 			frappe.throw(_("Configure Video Settings before generating a storyboard."))
 		_, current_snapshot_hash = build_project_snapshot(self)
@@ -364,7 +360,7 @@ class MediaProject(Document):
 		from joymedia.services.artifact_service import get_attempt_artifact
 		from joymedia.services.generation_pipeline_service import get_pipeline_steps, pipeline_for_final_workflow
 		from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
-		from joymedia.services.workflow_profiles import planning_input_contract
+		from joymedia.services.workflow_routing import automatic_planning_input_contract
 		settings = _project_settings(self)
 
 		with filelock(f"joymedia-append-scenes-{self.name}"):
@@ -422,8 +418,6 @@ class MediaProject(Document):
 					self.save(ignore_permissions=True)
 			target_frames = _plan_append_scene_frames(duration_seconds, workflow.output_fps)
 			image_inputs = self._get_project_image_inputs()
-			if not image_inputs:
-				frappe.throw(_("The active generation workflow requires at least one image reference."))
 			plan = generate_video_plan(
 				product_name=_meaningful_project_value(self.product_name, "The supplied product"),
 				video_idea=_meaningful_project_value(self.video_idea, "Create a premium cinematic product showcase."),
@@ -435,10 +429,7 @@ class MediaProject(Document):
 				generation_mode="Continuous" if continuity else self.generation_mode,
 				global_instructions=self.global_instructions,
 				format_preset=self.delivery_preset,
-				workflow_input_contract=planning_input_contract(
-					workflow,
-					settings.generation_pipeline if settings.workflow == workflow.name else None,
-				),
+				workflow_input_contract=automatic_planning_input_contract(),
 				continuation_context={
 					"previous_prompt": last_shot.generation_prompt,
 					"instruction": str(instruction or "").strip(),

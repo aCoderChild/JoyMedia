@@ -60,3 +60,14 @@ class TestPromptCompiler(FrappeTestCase):
 		self.assertEqual(image, "The hand lifts the bottle toward camera.")
 		self.assertIn("The hand lifts the bottle", motion)
 		self.assertIn("0-4s: lift the bottle", motion)
+
+	def test_referenced_product_prompts_require_fidelity(self):
+		project = frappe._dict(generation_mode="Multi-shot", global_instructions="")
+		shot = frappe._dict(
+			name="SHOT-TEST", shot_number=1,
+			generation_prompt="A presenter holds the product toward camera.",
+			references=[{"reference_role": "product", "asset_version": "ASTV-TEST"}],
+		)
+		prompt = compile_prompt_for_documents(shot, project, prompt_source="motion")
+		self.assertIn("market only the intended referenced product", prompt)
+		self.assertIn("do not swap, merge, deform", prompt)

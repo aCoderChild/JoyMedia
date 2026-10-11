@@ -12,9 +12,13 @@ ROLE_ALIASES = {
 	"character": "person",
 	"talent": "person",
 	"product": "product",
+	"product_reference": "product",
+	"product_1": "product",
+	"product_2": "product",
 	"environment": "environment",
 	"place": "environment",
 	"background": "environment",
+	"reference_board": "general",
 }
 
 
