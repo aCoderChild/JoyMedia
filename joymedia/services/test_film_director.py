@@ -521,6 +521,7 @@ class TestProjectNaming(FrappeTestCase):
 		from joymedia.api.projects import archive_project
 
 		project = self._project("Dự án mới")
+		project.db_set("export_quality", "Standard 1080p", update_modified=False)
 
 		self.assertTrue(archive_project(project.name)["archived"])
 		self.assertEqual("Archived", frappe.db.get_value("Media Project", project.name, "status"))

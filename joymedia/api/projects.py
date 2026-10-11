@@ -99,8 +99,9 @@ def archive_project(project_name):
 		frappe.throw(_("Stop the active generation before archiving this project."))
 	if project.status == "Archived":
 		return {"archived": True, "already_archived": True, "project": project.name}
-	project.status = "Archived"
-	project.save(ignore_permissions=True)
+	# Archiving changes only the lifecycle state. Use a targeted update so an
+	# older project with a now-removed Select value can still be archived.
+	project.db_set("status", "Archived", update_modified=True)
 	return {"archived": True, "project": project.name}
 
 
