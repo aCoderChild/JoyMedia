@@ -647,6 +647,7 @@ const {
   syncAtFrame: syncTimelineAudio,
   playAtFrame: playTimelineAudio,
   pauseAll: pauseTimelineAudio,
+  syncTimelineVideo,
 } = useTimelinePreviewEngine({
   videoClips,
   audioClips,
@@ -958,10 +959,14 @@ const studioPreview = computed(() => {
 
 watch(
   () => [studioPreview.value?.type, studioPreview.value?.url],
-  ([type], [previousType] = []) => {
+  async ([type], [previousType] = []) => {
     previewDuration.value = 0;
     mediaCurrentSeconds.value = 0;
     if (type !== "timeline-clip" || previousType !== "timeline-clip") isPlaying.value = false;
+    if (type === "timeline-clip") {
+      await nextTick();
+      syncTimelineVideo(playheadFrame.value);
+    }
   }
 );
 
@@ -978,6 +983,12 @@ function getShotFirstFrame(shot) {
 }
 
 function estimateShotDuration(shot) {
+  const timelineClip = timeline.value?.clips?.find(
+    (clip) => clip.track_type === "Video" && (clip.shot === shot?.name || clip.shot_number === shot?.shot_number),
+  );
+  if (timelineClip && fps.value > 0) {
+    return Number(timelineClip.duration_frames || 0) / fps.value;
+  }
   if (shot?.planned_frame_count && fps.value) {
     return Number(shot.planned_frame_count) / Number(fps.value);
   }
@@ -1039,6 +1050,7 @@ function syncActiveSceneFromFrame(frame) {
       (item) => currentFrame >= Number(item.timeline_start_frame || 0) && currentFrame < Number(item.timeline_end_frame || 0)
     );
     if (clip) {
+      if (studioMode.value === "edit") selectedClipName.value = clip.name;
       const index = storyboardShots.value.findIndex(
         (shot) => shot.name === clip.shot || shot.shot_number === clip.shot_number
       );

@@ -182,13 +182,15 @@ class MediaProject(Document):
 
 	def _use_reference_video_for_story_film(self):
 		"""Character + location projects need Reference-to-Video to keep identity and places."""
-		from joymedia.services.film_director import is_story_film
+		from joymedia.services.film_director import infer_product_reference_contexts, is_story_film
 		from joymedia.services.vision_analysis import ensure_project_image_analysis
 
 		if getattr(self, "reference_mode", None) == "Multi-reference":
 			return
 		ensure_project_image_analysis(self)
-		if not is_story_film(_get_project_reference_contexts(self)):
+		references = _get_project_reference_contexts(self)
+		references = infer_product_reference_contexts(references, self.video_idea)
+		if not is_story_film(references):
 			return
 		self.save_video_settings(
 			self.total_duration_seconds,

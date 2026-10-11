@@ -185,6 +185,17 @@ def refresh_project_studio(name):
 	project = frappe.get_doc("Media Project", name)
 	project._require_read_access()
 	production = _get_latest_project_generation_run(project.name)
+	# The browser polls this endpoint while a render is in progress. Reconcile
+	# ComfyUI here as a recovery path as well as in the scheduler: if the worker
+	# that normally polls ComfyUI was delayed or restarted, the UI otherwise keeps
+	# returning stale task rows (for example 0/2) and the next chained task is
+	# never dispatched until the next scheduler tick.
+	if production and production.status in ("Queued", "Running"):
+		from frappe.utils.synchronization import filelock
+		from joymedia.services.generation_orchestrator import refresh_run
+
+		with filelock(f"joymedia-refresh-run-{production.name}"):
+			refresh_run(production.name)
 	return get_project_workspace(project.name)
 
 

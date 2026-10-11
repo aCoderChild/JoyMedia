@@ -334,11 +334,12 @@ def _story_film_planning_context(project):
 	reference_mode is a rendering/input setting and can be stale while a project is
 	being edited; it must not route a person+product brief to the generic planner.
 	"""
-	from joymedia.services.film_director import is_story_film
+	from joymedia.services.film_director import infer_product_reference_contexts, is_story_film
 	from joymedia.services.vision_analysis import ensure_project_image_analysis
 
 	ensure_project_image_analysis(project)
 	reference_contexts = _get_project_reference_contexts(project)
+	reference_contexts = infer_product_reference_contexts(reference_contexts, project.video_idea)
 	story_film = is_story_film(reference_contexts)
 	return reference_contexts, story_film
 

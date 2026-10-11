@@ -69,6 +69,7 @@ def compose_shot_segments(generation_run_name, shot_name):
 						profile,
 						int(segments[0][0].segment_frame_count or 0),
 						drop_first=False,
+						preserve_audio=True,
 					)
 					_validate_normalized_video(normalized_path, profile, expected_frames=expected_frames)
 					video_bytes = normalized_path.read_bytes()
@@ -121,6 +122,7 @@ def compose_shot_segments(generation_run_name, shot_name):
 						profile,
 						generated_frames,
 						drop_first=overlap_frames,
+						preserve_audio=True,
 					)
 					_validate_normalized_video(normalized_path, profile, expected_frames=effective_frames)
 					normalized_paths.append(normalized_path)
@@ -552,9 +554,12 @@ def _concatenate_normalized_shots(paths, output_path, profile):
 			str(concat_file),
 			"-map",
 			"0:v:0",
-			"-an",
+			"-map",
+			"0:a?",
 			"-c:v",
 			"libx264",
+			"-c:a",
+			"aac",
 			"-profile:v",
 			"high",
 			"-pix_fmt",

@@ -4,7 +4,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import now
+from frappe.utils import get_datetime, now, time_diff_in_seconds
 from frappe.utils.synchronization import filelock
 
 from .artifact_service import get_attempt_artifact
@@ -20,6 +20,13 @@ from .reference_compositor import compose_reference_board
 from .result_ingestor import sync_attempt_result
 from .workflow_resolver import resolve_attempt
 from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
+
+
+# A submission is committed as ``Submitting`` before the network request so a
+# worker crash cannot silently duplicate a ComfyUI prompt. If the prompt is
+# still not discoverable after this window, the request did not reach ComfyUI
+# and the attempt may safely be returned to the dispatcher.
+SUBMISSION_RECONCILE_TIMEOUT_SECONDS = 60
 
 
 def submit_attempt_from_ui(attempt_name: str):
@@ -225,6 +232,14 @@ def reconcile_attempt_submission(attempt_name: str):
 			attempt.submission_token, base_url=attempt.comfyui_endpoint_url
 		)
 		if not prompt_id:
+			age_seconds = time_diff_in_seconds(
+				now(), get_datetime(attempt.modified or attempt.creation)
+			)
+			if age_seconds >= SUBMISSION_RECONCILE_TIMEOUT_SECONDS:
+				attempt.status = "Pending"
+				attempt.submission_state = "Retrying"
+				attempt.save(ignore_permissions=True)
+				return {"retryable": True, "submission_token": attempt.submission_token}
 			return {"reconciling": True, "submission_token": attempt.submission_token}
 		attempt.external_job_id = prompt_id
 		attempt.submission_state = "Submitted"

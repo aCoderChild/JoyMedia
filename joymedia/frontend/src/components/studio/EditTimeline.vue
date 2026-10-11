@@ -26,7 +26,11 @@
     </div>
 
     <div class="timeline-shared-scroll rounded-xl border border-outline-border bg-surface-muted/40 p-2">
-      <div class="timeline-shared-canvas space-y-3" :style="{ width: `${timelineCanvasWidth}px` }">
+      <div
+        class="timeline-shared-canvas space-y-3"
+        :style="{ width: `${timelineCanvasWidth}px` }"
+        @pointerdown.self="seekTimelineCanvas"
+      >
         <div>
 
           <EditTimelineTrack
@@ -184,5 +188,14 @@ function forwardOpenInspector(clip) {
 
 function forwardSetAudioClipEnabled(...args) {
   emit("setAudioClipEnabled", ...args);
+}
+
+function seekTimelineCanvas(event) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const frame = Math.round(
+    Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) *
+      Number(props.canvasTotalFrames || props.totalFrames || 0),
+  );
+  emit("update:playheadFrame", frame);
 }
 </script>

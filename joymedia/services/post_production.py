@@ -570,6 +570,9 @@ def _video_workflow(project_name, first_frame, prompt, seconds, last_frame=None)
 		frappe.throw(_("Select a video generation workflow before finishing the film."))
 	workflow_version = frappe.get_doc("Generation Workflow", project.workflow)
 	contract = {item["role"]: item for item in get_workflow_input_contract(workflow_version)}
+	if "first_frame" not in contract and workflow_version.continuation_workflow:
+		workflow_version = frappe.get_doc("Generation Workflow", workflow_version.continuation_workflow)
+		contract = {item["role"]: item for item in get_workflow_input_contract(workflow_version)}
 	if workflow_version.output_media_type != "Video" or "first_frame" not in contract:
 		frappe.throw(_("The selected workflow cannot render video from a first frame."))
 	inputs = {

@@ -23,6 +23,11 @@ PRODUCT_ROLES = {"product"}
 CHARACTER_CATEGORIES = {"character"}
 PLACE_CATEGORIES = {"background"}
 PRODUCT_CATEGORIES = {"product"}
+PRODUCT_BRIEF_PATTERN = re.compile(
+	r"\b(advertis|promot|market|showcase|product|plate|dish|object|sell)\b|"
+	r"qu[aả]ng\s*c[aá]o|gi[oớ]i\s*thi[eệ]u|c[aá]i\s*đĩa",
+	re.I,
+)
 
 PERSON_PATTERN = re.compile(
 	r"\b(she|her|hers|he|his|him|woman|man|girl|boy|person|character|couple|family)\b|\b(?:a|the|female|male|fashion)\s+model\b",
@@ -361,6 +366,26 @@ def is_product_film(reference_contexts):
 	return bool(roster[CHARACTER] and roster[PRODUCT])
 
 
+def infer_product_reference_contexts(reference_contexts, video_idea):
+	"""Classify one non-person image as the product when the brief is explicit.
+
+	Image analysis is useful context, but a failed analysis must not turn a clear
+	product brief into a location/story-film plan. The explicit brief is the
+	safe fallback; only an unambiguous character + one other image is promoted.
+	"""
+	if not PRODUCT_BRIEF_PATTERN.search(str(video_idea or "")):
+		return reference_contexts
+	roster = build_roster(reference_contexts)
+	if not roster[CHARACTER] or roster[PRODUCT] or len(roster[OTHER]) != 1:
+		return reference_contexts
+	product_key = roster[OTHER][0].get("reference_key")
+	return [
+		{**context, "reference_role": "Product"}
+		if context.get("reference_key") == product_key else context
+		for context in reference_contexts
+	]
+
+
 def build_director_instruction(reference_contexts, reference_role, total_seconds, reference_roles=None):
 	"""Return the planner instruction for a story film, including the reference roster."""
 	roster = build_roster(reference_contexts)
@@ -504,6 +529,55 @@ def enforce_requested_product_presentation(shots, video_idea, reference_contexts
 				"tilts it to reveal its design while addressing the viewer."
 			)
 		shot["generation_prompt"] = f"{prompt} {action}".strip()
+	return shots
+
+
+def explicit_product_brief_anchor(video_idea):
+	"""Return a deterministic English anchor for an unambiguous product brief."""
+	idea = str(video_idea or "").lower()
+	advertising = re.search(r"quảng cáo|quang cao|giới thiệu|gioi thieu|promot|advertis|market|showcase", idea)
+	plate = re.search(r"cái\s*đĩa|cai\s*dia|\bplate\b|\bdish\b", idea)
+	if not advertising or not plate:
+		return ""
+	setting = product_brief_setting(video_idea)
+	return (
+		f"The woman advertises and presents the plate to camera in {setting}; "
+		"the plate is the only advertised product, never cosmetics, food preparation, or another object."
+	)
+
+
+def product_brief_setting(video_idea):
+	idea = str(video_idea or "").lower()
+	if re.search(r"nhà hàng|nha hang|\brestaurant\b", idea):
+		return "a luxurious restaurant"
+	if re.search(r"khách sạn|khach san|\bhotel\b", idea):
+		return "a luxurious five-star hotel"
+	return "an elegant commercial setting"
+
+
+def enforce_explicit_product_brief(shots, video_idea):
+	"""Prevent a model plan from contradicting a clear product brief."""
+	anchor = explicit_product_brief_anchor(video_idea)
+	if not anchor:
+		return shots
+	image_anchor = anchor.replace("advertises and presents", "presents")
+	setting = product_brief_setting(video_idea)
+	for index, shot in enumerate(shots or [], start=1):
+		if not isinstance(shot, dict):
+			continue
+		if index == 1:
+			action = "holds the plate securely with both hands and turns its decorated front toward the camera"
+		else:
+			action = "keeps the plate presented to camera and gently tilts it to reveal its design"
+		shot["generation_prompt"] = (
+			f"The woman in the selected traditional ao dai {action}. {anchor} "
+			"Use an elegant dining table, warm upscale lighting, and a shallow depth of field. "
+			"One continuous shot with no cuts, photorealistic, smooth stabilized motion, no text, no logos, no deformation."
+		)
+		shot["image_prompt"] = (
+			f"The woman in the selected traditional ao dai presents the selected plate to camera in {setting}, "
+			"with the plate clearly visible on an elegant dining table and warm upscale lighting."
+		)
 	return shots
 
 

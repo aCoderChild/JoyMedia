@@ -255,7 +255,7 @@ def default_captions(shots):
 
 
 def _idea_for_planner(video_idea):
-	"""The idea in English, which the fine-tuned planner follows far better, plus the original.
+	"""Keep the marketer's exact brief authoritative while offering an English aid.
 
 	Titles and captions must still come back in the idea's own language.
 	"""
@@ -264,7 +264,8 @@ def _idea_for_planner(video_idea):
 	if english == idea:
 		return idea
 	return (
-		f"{english}\n(Original, in the marketer's language: {idea})\n"
+		f"ORIGINAL MARKETER BRIEF (SOURCE OF TRUTH): {idea}\n"
+		f"English translation for convenience only (do not replace the original brief): {english}\n"
 		"Write film_title, shot_name titles and captions in the language of the original."
 	)
 
@@ -634,6 +635,8 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		)
 		from joymedia.services.film_director import enforce_requested_product_presentation
 		enforce_requested_product_presentation(result["shots"], video_idea, story_reference_contexts)
+		from joymedia.services.film_director import enforce_explicit_product_brief
+		enforce_explicit_product_brief(result["shots"], video_idea)
 
 	film_title = clean_title(result.get("film_title")) if isinstance(result, dict) else ""
 	result = _normalize_qwen_plan(

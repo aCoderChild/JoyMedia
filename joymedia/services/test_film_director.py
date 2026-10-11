@@ -102,6 +102,25 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertIn("source of truth", sent["messages"][1]["content"])
 		self.assertIn("five-star restaurant", sent["messages"][1]["content"])
 
+	def test_explicit_product_brief_anchor_replaces_conflicting_image_prompt(self):
+		shots = [{
+			"generation_prompt": "The woman cooks noodles in a kitchen.",
+			"image_prompt": "A cosmetic cream in a bathroom.",
+		}]
+		film_director.enforce_explicit_product_brief(
+			shots,
+			"Người phụ nữ quảng cáo cái đĩa trong bối cảnh khách sạn 5 sao sang trọng",
+		)
+		self.assertIn("presents the plate", shots[0]["generation_prompt"])
+		self.assertIn("luxurious five-star hotel", shots[0]["generation_prompt"])
+		self.assertIn("plate", shots[0]["image_prompt"])
+		self.assertNotIn("bathroom", shots[0]["image_prompt"])
+
+	def test_explicit_product_brief_anchor_does_not_change_unrelated_brief(self):
+		shots = [{"generation_prompt": "A woman walks through a garden.", "image_prompt": "A garden."}]
+		film_director.enforce_explicit_product_brief(shots, "A woman walks through a garden")
+		self.assertEqual("A woman walks through a garden.", shots[0]["generation_prompt"])
+
 	def test_roster_uses_analysis_category_and_role(self):
 		roster = film_director.build_roster(REFERENCES)
 

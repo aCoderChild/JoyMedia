@@ -622,6 +622,28 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 			_raise_run_error(run, message)
 			return _run_summary(run)
 
+	# Recover submissions interrupted after the attempt was durably marked
+	# ``Submitting`` but before ComfyUI returned a prompt ID. Without this pass,
+	# the task owns an attempt forever, so ``_has_submittable_work`` refuses to
+	# dispatch the next shot even though the GPU is idle.
+	job_names = _get_run_job_names(run.name)
+	if job_names:
+		from .generation_runner import reconcile_attempt_submission
+
+		for attempt_name in frappe.get_all(
+			"Generation Attempt",
+			filters={"generation_task": ["in", job_names], "status": "Submitting"},
+			pluck="name",
+		):
+			try:
+				reconcile_attempt_submission(attempt_name)
+			except Exception:
+				frappe.logger("joymedia.generation_run").exception(
+					"Unable to reconcile submitting Generation Attempt %s for Run %s",
+					attempt_name,
+					run.name,
+				)
+
 	for attempt_name in _get_active_attempt_names(run.name):
 		try:
 			sync_attempt_result(attempt_name)

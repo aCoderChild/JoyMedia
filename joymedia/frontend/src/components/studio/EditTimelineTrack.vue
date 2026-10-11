@@ -62,7 +62,7 @@
       ref="ruler"
       class="timeline-ruler"
       :style="{ width: `${timelineCanvasWidth}px` }"
-      @click="seekTimeline"
+      @pointerdown="seekTimeline"
     >
       <div class="ruler-labels">
         <span
@@ -77,7 +77,11 @@
 
     <!-- Clip Track -->
     <div v-if="clips.length" class="clip-track">
-      <div class="timeline-canvas" :style="{ width: `${timelineCanvasWidth}px` }">
+      <div
+        class="timeline-canvas"
+        :style="{ width: `${timelineCanvasWidth}px` }"
+        @pointerdown.self="seekTimelineCanvas"
+      >
         <template v-for="(clip, index) in clips" :key="clip.name">
           <article
             class="timeline-clip"
@@ -326,8 +330,17 @@ function deleteSelected() {
 
 function seekTimeline(event) {
   if (!ruler.value || !props.clips.length) return;
-  const rect = ruler.value.getBoundingClientRect();
-  const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  seekToClientX(event.clientX, ruler.value);
+}
+
+function seekTimelineCanvas(event) {
+  if (!props.clips.length) return;
+  seekToClientX(event.clientX, event.currentTarget);
+}
+
+function seekToClientX(clientX, element) {
+  const rect = element.getBoundingClientRect();
+  const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
   const target = Math.round(percent * Number(effectiveTotalFrames.value || 0));
   emit("update:playhead-frame", target);
 
