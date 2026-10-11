@@ -8,6 +8,7 @@ receives the character as <Picture 1> and a location as <Picture 2>.
 
 import math
 import re
+import unicodedata
 
 import frappe
 
@@ -28,6 +29,9 @@ PRODUCT_BRIEF_PATTERN = re.compile(
 	r"qu[aả]ng\s*c[aá]o|gi[oớ]i\s*thi[eệ]u|c[aá]i\s*đĩa",
 	re.I,
 )
+PROPERTY_BRIEF_PATTERN = re.compile(r"\b(real estate|property|apartment|housing|realty|bat dong san|can ho|nha dat)\b", re.I)
+PROPERTY_AREA_PATTERN = re.compile(r"\b(part|area|section|room|space|zone|khu vuc|phan|cac phan)\b", re.I)
+PROPERTY_MARKETING_PATTERN = re.compile(r"\b(advertis|promot|market|showcase|present|sell)\b|quang\s+cao|gioi\s+thieu", re.I)
 
 PERSON_PATTERN = re.compile(
 	r"\b(she|her|hers|he|his|him|woman|man|girl|boy|person|character|couple|family)\b|\b(?:a|the|female|male|fashion)\s+model\b",
@@ -81,7 +85,14 @@ STRUCTURE
   in English; write the short title in the language of the VIDEO IDEA (Vietnamese for a
   Vietnamese idea, e.g. "OPENING: Dạo bước buổi sớm").
 
-EVERY generation_prompt (English, 60-110 words) states, in this order:
+OUTPUT SIZE: Keep the complete storyboard compact enough to fit one JSON response.
+- generation_prompt: English, 35-55 words per take.
+- image_prompt: 20-35 words describing only the starting frame.
+- motion_plan: exactly two chronological actions, each no more than 10 words.
+- start_state, end_state, shot_name and caption: short phrases, no more than 8 words each.
+- Do not repeat the same sentence across fields. Return no extra fields.
+
+EVERY generation_prompt states, in this order:
 1. The person from <Picture 1>: their outfit and their performance in this take.
    Keep their face, hair and body identical to <Picture 1>.
 2. The place from <Picture 2>: keep its exact layout, architecture, furniture and
@@ -91,8 +102,8 @@ EVERY generation_prompt (English, 60-110 words) states, in this order:
    shot, crane or drone move.
 4. Light, grade and depth of field.
 5. The transition, if any, then the constraints: one continuous shot with no cuts,
-   photorealistic, smooth stabilized motion, no added text or invented logos, no extra people, no
-   face or structure deformation.
+   photorealistic, smooth stabilized motion, no added text or invented logos, no extra
+   people or face/structure deformation.
 
 REFERENCES
 - Every take lists exactly two references: first the character key, then one place
@@ -386,6 +397,175 @@ def infer_product_reference_contexts(reference_contexts, video_idea):
 	]
 
 
+def infer_property_area_references(reference_contexts, video_idea):
+	"""Use explicit @tags to classify property component photos as places."""
+	idea = _ascii_text(video_idea)
+	if not PROPERTY_BRIEF_PATTERN.search(idea) or not PROPERTY_AREA_PATTERN.search(idea):
+		return reference_contexts
+	updated = []
+	for context in reference_contexts or []:
+		item = dict(context)
+		key = str(item.get("reference_key") or "").strip()
+		role = str(item.get("reference_role") or "").strip().lower()
+		category = str(item.get("asset_category") or "").strip().lower()
+		mentioned = bool(key and re.search(rf"(?<![\w])@{re.escape(key)}(?![\w])", str(video_idea or ""), re.I))
+		if (
+			mentioned
+			and (item.get("media_type") or "Image") == "Image"
+			and role in {"", "general"}
+			and category in {"", "reference", "other"}
+		):
+			item["reference_role"] = "Environment"
+		updated.append(item)
+	return updated
+
+
+def is_property_marketing_brief(video_idea):
+	idea = _ascii_text(video_idea)
+	return bool(PROPERTY_BRIEF_PATTERN.search(idea) and PROPERTY_MARKETING_PATTERN.search(idea))
+
+
+def build_property_director_instruction(reference_contexts, total_seconds, reference_roles=None):
+	"""Keep the planner request small for a location-led property campaign."""
+	roster = build_roster(reference_contexts)
+	roles = reference_roles or {}
+	count = story_take_count(total_seconds, reference_contexts)
+	areas = "\n".join(_roster_line(place) for place in roster[PLACE])
+	return (
+		"Plan a truthful real-estate commercial from the user's VIDEO IDEA. The person actively presents the property and makes it feel livable. "
+		f"Return exactly {count} continuous takes totaling {float(total_seconds):g} seconds. Follow OPENING, BUILD, CLIMAX, RESOLUTION, CLOSING. "
+		"Use the same person and outfit in every take. Each take stays in one selected property area; show only visible features, invent no rooms or amenities. "
+		"Keep each generation_prompt under 35 words, image_prompt under 20 words, use two short motion actions, and keep all other fields brief. "
+		"Every take uses exactly two references in order: person, then its property area. Use only the supplied reference keys. "
+		f'Use role "{roles.get(CHARACTER, "person")}" for the person and "{roles.get(PLACE, "environment")}" for areas.\n'
+		f'PERSON\n{_roster_line(roster[CHARACTER][0], person=True)}\nPROPERTY AREAS IN SELECTED ORDER\n{areas}'
+	)
+
+
+def build_property_marketing_fallback(video_idea, reference_contexts, total_seconds, reference_roles=None):
+	"""Create a safe property storyboard if Qwen twice returns incomplete JSON."""
+	roster = build_roster(reference_contexts)
+	if not roster[CHARACTER] or not roster[PLACE]:
+		return None
+	roles = reference_roles or {}
+	count = story_take_count(total_seconds, reference_contexts)
+	duration = float(total_seconds) / count
+	beats = story_beats(count)
+	person_key = roster[CHARACTER][0]["reference_key"]
+	character_role = roles.get(CHARACTER, "person")
+	place_role = roles.get(PLACE, "environment")
+	vietnamese = _has_vietnamese(video_idea)
+	shots = []
+	for index in range(count):
+		place = roster[PLACE][index % len(roster[PLACE])]
+		place_key = place["reference_key"]
+		start = duration * 0.85
+		shots.append({
+			"shot_number": index + 1,
+			"shot_name": f"{beats[index]}: {'Khám phá không gian' if vietnamese else 'Explore the space'}",
+			"duration_seconds": duration,
+			"generation_prompt": f"The woman from <Picture 1> presents the exact property area shown in <Picture 2>, showing only its visible features and welcoming viewers to imagine everyday life there. No invented rooms or amenities.",
+			"image_prompt": f"The woman from <Picture 1> presenting the exact property area shown in <Picture 2>.",
+			"start_state": "The host begins presenting the space",
+			"end_state": "A welcoming view of the space",
+			"handoff_type": "ending" if index == count - 1 else "camera_transition",
+			"motion_plan": {"actions": [
+				{"start": 0.0, "end": start, "action": "Presents the visible property area"},
+				{"start": start, "end": duration, "action": "Settles into a welcoming pose"},
+			]},
+			"caption": "Một nơi đáng sống" if vietnamese else "A place to belong",
+			"references": [
+				{"reference_key": person_key, "usage_role": character_role},
+				{"reference_key": place_key, "usage_role": place_role},
+			],
+		})
+	return {
+		"film_title": "Không Gian Đáng Sống" if vietnamese else "A Place to Call Home",
+		"shots": shots,
+	}
+
+
+def enforce_property_marketing_brief(shots, video_idea, reference_contexts):
+	"""Ground property ads in the selected area photos and advertised benefit."""
+	idea = _ascii_text(video_idea)
+	if not PROPERTY_BRIEF_PATTERN.search(idea) or not PROPERTY_MARKETING_PATTERN.search(idea):
+		return shots
+	roster = build_roster(reference_contexts)
+	if not roster[CHARACTER] or not roster[PLACE]:
+		return shots
+	person = roster[CHARACTER][0]
+	outfit = str((person.get("analysis") or {}).get("outfit") or "the same outfit shown in <Picture 1>").strip()
+	verbs = (
+		"welcomes viewers and opens the tour",
+		"walks through the space, presenting only its visible features",
+		"gestures to the visible layout and its everyday comfort",
+		"shows how the visible space supports daily living",
+		"invites viewers to imagine making this place their home",
+		"closes the tour with a confident, welcoming gesture",
+	)
+	cameras = (
+		"a gentle forward tracking move", "a smooth side tracking move", "a slow steady push-in",
+		"a restrained camera orbit", "a smooth pull-back revealing the space", "a calm wide pull-back",
+	)
+	beats = story_beats(len(shots or []))
+	titles = {
+		"OPENING": "Chào đón tổ ấm" if _has_vietnamese(video_idea) else "Welcome home",
+		"BUILD": "Khám phá không gian" if _has_vietnamese(video_idea) else "Explore the space",
+		"CLIMAX": "Tiện nghi nổi bật" if _has_vietnamese(video_idea) else "Comfort at its best",
+		"RESOLUTION": "Sống thư thái" if _has_vietnamese(video_idea) else "Room to unwind",
+		"CLOSING": "Một nơi đáng sống" if _has_vietnamese(video_idea) else "A place to belong",
+	}
+	for index, shot in enumerate(shots or []):
+		if not isinstance(shot, dict):
+			continue
+		refs = shot.get("references") or []
+		place_key = str(refs[1].get("reference_key") or "") if len(refs) > 1 else ""
+		place = next(
+			(item for item in roster[PLACE] if item.get("reference_key") == place_key),
+			roster[PLACE][index % len(roster[PLACE])],
+		)
+		place_detail = str((place.get("analysis") or {}).get("description") or "").strip()
+		visual_guard = (
+			f"Show only these visible property details: {place_detail[:180]}"
+			if place_detail else
+			"Use the exact layout and features visible in <Picture 2>; invent no room type, amenity, furnishing, or architecture"
+		)
+		prompt = (
+			f"The woman from <Picture 1>, wearing {outfit}, {verbs[index % len(verbs)]} in the property area shown in <Picture 2>. "
+			f"{visual_guard}. Her warm, confident presentation makes the property feel welcoming and livable. "
+			f"Use {cameras[index % len(cameras)]}, flattering natural light, and a polished real-estate commercial look. "
+			"Preserve her identity and the property's visible appearance. One continuous shot, photorealistic, no cuts, no added text or invented logos."
+		)
+		shot["generation_prompt"] = prompt
+		shot["image_prompt"] = prompt
+		shot["shot_name"] = f"{beats[index]}: {titles[beats[index]]}"
+		shot["start_state"] = "Người dẫn giới thiệu không gian" if _has_vietnamese(video_idea) else "Host presents the space"
+		shot["end_state"] = "Không gian hiện rõ trong khung hình" if _has_vietnamese(video_idea) else "Space stays clear in frame"
+		shot["handoff_type"] = "ending" if index == len(shots) - 1 else "camera_transition"
+		duration = float(shot.get("duration_seconds") or 5)
+		cut = duration * 0.85
+		shot["motion_plan"] = {"actions": [
+			{"start": 0.0, "end": cut, "action": verbs[index % len(verbs)]},
+			{"start": cut, "end": duration, "action": "settles into a welcoming pose"},
+		]}
+		shot["caption"] = (
+			("Chào đón tổ ấm mới", "Không gian cho gia đình", "Tiện nghi mỗi ngày", "Sống thoải mái hơn", "Nơi thuộc về bạn", "Một nơi đáng sống")[index % 6]
+			if _has_vietnamese(video_idea) else
+			("Welcome home", "Room for your life", "Comfort every day", "A place to unwind", "Make it yours", "A place to belong")[index % 6]
+		)
+	return shots
+
+
+def _ascii_text(value):
+	text = unicodedata.normalize("NFKD", str(value or ""))
+	text = "".join(char for char in text if not unicodedata.combining(char))
+	return text.replace("đ", "d").replace("Đ", "d").lower()
+
+
+def _has_vietnamese(value):
+	return bool(re.search(r"[\u00C0-\u024F]", str(value or "")))
+
+
 def build_director_instruction(reference_contexts, reference_role, total_seconds, reference_roles=None):
 	"""Return the planner instruction for a story film, including the reference roster."""
 	roster = build_roster(reference_contexts)
@@ -477,7 +657,11 @@ def normalize_story_references(shots, reference_contexts, reference_role, refere
 	character_role = reference_roles.get(CHARACTER, reference_role)
 	place_role = reference_roles.get(PLACE, reference_role)
 	places = roster[PLACE]
-	for shot in shots:
+	places_have_descriptions = any(
+		str((place.get("analysis") or {}).get("description") or place.get("label") or "").strip()
+		for place in places
+	)
+	for index, shot in enumerate(shots):
 		if not isinstance(shot, dict):
 			continue
 		prompt = str(shot.get("generation_prompt") or "")
@@ -486,7 +670,11 @@ def normalize_story_references(shots, reference_contexts, reference_role, refere
 			for reference in shot.get("references") or []
 		]
 		candidates = [context for context in places if context["reference_key"] in listed] or places
-		best_place = _best_matching_place(prompt, candidates)
+		best_place = (
+			_best_matching_place(prompt, candidates)
+			if places_have_descriptions
+			else places[index % len(places)]["reference_key"]
+		)
 		if PERSON_PATTERN.search(prompt):
 			ordered = [character_key, best_place]
 		else:
@@ -615,10 +803,12 @@ PLACE_WORDS = (
 def place_text(context):
 	"""Everything known about what a place reference shows."""
 	analysis = context.get("analysis") if isinstance(context.get("analysis"), dict) else {}
+	values = (context.get("reference_key"), context.get("label"), context.get("asset_name"), analysis.get("description"))
 	return " ".join(
-		str(value or "")
-		for value in (context.get("reference_key"), context.get("label"), context.get("asset_name"), analysis.get("description"))
-	).replace("_", " ").lower()
+		str(value).replace("_", " ").strip().lower()
+		for value in values
+		if re.search(r"[a-zA-Z]", str(value or ""))
+	)
 
 
 def invented_places(prompt, place_description):

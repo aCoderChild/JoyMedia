@@ -22,8 +22,9 @@ from .film_director import (
 
 DEFAULT_TIMEOUT = 600
 PLAN_CUT_OFF = (
-	"Your previous answer was cut off before the JSON ended. Keep every generation_prompt "
-	"under 70 words so the whole plan fits."
+	"The previous JSON did not fit. Return a compact complete JSON plan: generation_prompt "
+	"under 50 words, image_prompt under 30 words, exactly two motion actions of at most "
+	"8 words each, and short state/title/caption fields. Do not omit shots or required fields."
 )
 DEFAULT_MAX_MODEL_LEN = 4096
 MIN_PLAN_COMPLETION_TOKENS = 700
@@ -427,6 +428,14 @@ def generate_video_plan(
 	story_reference_roles = _story_reference_roles(workflow_input_contract)
 	story_reference_contexts = reference_media
 	workflow_input_contract_for_prompt = workflow_input_contract
+	from joymedia.services.film_director import (
+		build_property_director_instruction,
+		build_property_marketing_fallback,
+		infer_property_area_references,
+		is_property_marketing_brief,
+	)
+	if story_film:
+		story_reference_contexts = infer_property_area_references(story_reference_contexts, video_idea)
 
 	instruction = """
 You are the creative planner for JoyMedia product videos.
@@ -441,9 +450,14 @@ Project reference media are named ingredients/context. Use their reference_key w
 a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 """.strip()
 	if story_film:
-		instruction = build_director_instruction(
-			reference_media, story_reference_role, total_video_duration, story_reference_roles
-		)
+		if is_property_marketing_brief(video_idea):
+			instruction = build_property_director_instruction(
+				story_reference_contexts, total_video_duration, story_reference_roles
+			)
+		else:
+			instruction = build_director_instruction(
+				story_reference_contexts, story_reference_role, total_video_duration, story_reference_roles
+			)
 		# The director roster replaces the generic reference, image and contract lists.
 		reference_images = None
 		reference_media = None
@@ -623,10 +637,20 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		}
 		retry_payload["max_tokens"] = _completion_budget(base_url, retry_payload)
 		retry_result = _request_plan(base_url, retry_payload, timeout)
-		if retry_result is not None and len(problems_of(retry_result)) <= len(problems):
-			result = retry_result
+		if retry_result is not None:
+			retry_problems = problems_of(retry_result)
+			if not retry_problems or len(retry_problems) < len(problems):
+				result = retry_result
 	if result is None:
-		frappe.throw(_("The AI director's answer was cut off. Please try again."))
+		result = (
+			build_property_marketing_fallback(
+				video_idea, story_reference_contexts, total_video_duration, story_reference_roles
+			)
+			if story_film and is_property_marketing_brief(video_idea)
+			else None
+		)
+		if result is None:
+			frappe.throw(_("The AI director's answer was cut off. Please try again."))
 	if story_film and is_product_film(story_reference_contexts):
 		result = _review_product_plan(
 			base_url=base_url,
@@ -673,6 +697,12 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	if words.get("film_title"):
 		film_title = words["film_title"]
 	default_captions(result["shots"])
+	if story_film:
+		from joymedia.services.film_director import enforce_property_marketing_brief
+		result["shots"] = enforce_property_marketing_brief(
+			result["shots"], video_idea, story_reference_contexts
+		)
+		close_the_film(result["shots"])
 	# A title that was only the planner's numbering (or one word left of it) falls back
 	# to the climax's title.
 	if len(film_title.split()) < 2:
@@ -699,13 +729,20 @@ def _request_plan(base_url, payload, timeout):
 	if not response.ok:
 		frappe.throw(_("Qwen request failed ({0}): {1}").format(response.status_code, response.text))
 	try:
-		content = response.json()["choices"][0]["message"]["content"]
+		body = response.json()
+		choice = body["choices"][0]
+		content = choice["message"]["content"]
 	except (KeyError, IndexError, TypeError, ValueError) as exc:
 		frappe.throw(_("Qwen returned an invalid response: {0}").format(str(exc)))
 	try:
 		return json.loads(content)
 	except (TypeError, ValueError):
-		# Usually the plan ran past max_tokens; the caller retries with shorter prompts.
+		# Keep operational evidence without logging the brief or reference data.
+		frappe.logger("joymedia.qwen").warning(
+			"Planner returned invalid JSON (finish_reason=%s, output_chars=%s, max_tokens=%s).",
+			choice.get("finish_reason"), len(str(content or "")), payload.get("max_tokens"),
+		)
+		# Usually the plan ran past max_tokens; the caller retries with compact output limits.
 		return None
 
 
