@@ -98,12 +98,11 @@ def strategy_for_references(references, *, handoff_type="", motion_plan_json="")
 	))
 	if count == 0:
 		return "flux_keyframe_i2v", items, "No image reference: create a Flux keyframe, then animate it."
-	# R2V's actual binding contract has two required scalar image inputs.  It is
-	# the fastest path only for a simple pair, not a generic 1–3-reference path.
-	if count == 2 and (
-		all(role == "product_reference" for role in raw_roles)
-		or product_count < 2
-	) and not product_change:
+	# R2V exposes two anonymous scalar image slots. It can only be selected when
+	# the caller already supplied that exact direct-R2V contract; a person plus an
+	# environment (or any semantic role) needs a composition stage that exposes
+	# those roles explicitly.
+	if count == 2 and all(role == "product_reference" for role in raw_roles) and not product_change:
 		return "direct_r2v", items, "Two simple references fit the direct R2V contract."
 	if count == 1:
 		return "flux_keyframe_i2v", items, "One reference is composed into a Flux keyframe before animation."

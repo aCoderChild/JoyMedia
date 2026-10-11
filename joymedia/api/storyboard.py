@@ -47,12 +47,13 @@ def update_project_shot(project_name, shot_name, values):
 		if prompt != shot.generation_prompt and shot.name in _busy_shots(project.name):
 			frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))
 		changed = prompt != shot.generation_prompt
-		image_prompt_changed = hasattr(shot, "image_prompt") and prompt != (shot.image_prompt or "")
 		shot.generation_prompt = prompt
-		# A shot has one creative description. Keep the image and motion
-		# generators on that same description so their outputs cannot diverge.
-		if hasattr(shot, "image_prompt"):
-			shot.image_prompt = prompt
+	if "image_prompt" in values and hasattr(shot, "image_prompt"):
+		image_prompt = str(values["image_prompt"] or "").strip()
+		if image_prompt != (shot.image_prompt or "") and shot.name in _busy_shots(project.name):
+			frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))
+		image_prompt_changed = image_prompt != (shot.image_prompt or "")
+		shot.image_prompt = image_prompt
 	caption_changed = False
 	if "caption" in values:
 		# Captions are drawn at export time, so they can change at any moment.

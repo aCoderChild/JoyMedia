@@ -303,7 +303,13 @@ def prepare_run(run_name: str):
 							),
 							frappe._dict(snapshot), segment["segment_index"], len(segments),
 							prompt_source=prompt_source_for_workflow(step_workflow, pipeline_step.prompt_source),
-							is_final=shot.get("shot_number") == len(snapshot.get("shots") or []),
+							is_final=(
+								shot.get("shot_number") == len(snapshot.get("shots") or [])
+								and segment["segment_index"] == len(segments)
+							),
+							segment_start_frame=segment["segment_start_frame"],
+							segment_effective_frames=segment["segment_effective_frames"],
+							fps=snapshot.get("output_fps") or 24,
 						)
 						job = frappe.get_doc({
 							"doctype": "Generation Task",
@@ -388,7 +394,13 @@ def prepare_run(run_name: str):
 					segment["segment_index"],
 					len(segments),
 					prompt_source=prompt_source_for_workflow(segment_workflow),
-					is_final=shot.get("shot_number") == len(snapshot.get("shots") or []),
+					is_final=(
+						shot.get("shot_number") == len(snapshot.get("shots") or [])
+						and segment["segment_index"] == len(segments)
+					),
+					segment_start_frame=segment["segment_start_frame"],
+					segment_effective_frames=segment["segment_effective_frames"],
+					fps=snapshot.get("output_fps") or 24,
 				)
 				job = frappe.get_doc(
 					{

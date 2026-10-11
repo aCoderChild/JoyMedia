@@ -563,7 +563,9 @@ def enforce_property_marketing_brief(shots, video_idea, reference_contexts):
 				"Preserve her identity and the property's visible appearance. One continuous shot, photorealistic, no cuts, no added text or invented logos."
 			)
 		shot["generation_prompt"] = prompt
-		image_subject = "the destination property area shown in <Picture 3>" if len(place_keys) > 1 else "the property area shown in <Picture 2>"
+		# A keyframe is frame zero of the take. For a location transition it must
+		# depict the origin (<Picture 2>), never the destination (<Picture 3>).
+		image_subject = "the starting property area shown in <Picture 2>"
 		shot["image_prompt"] = (
 			f"The woman from <Picture 1>, wearing {outfit}, presents {image_subject}; "
 			"show only the supplied visible layout, photorealistic commercial frame."

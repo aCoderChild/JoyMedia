@@ -2,7 +2,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.prompt_compiler import (
-	_build_source_snapshot, compile_prompt_for_documents, segment_action_timing_instruction,
+	_build_source_snapshot, compile_prompt_for_documents, compile_segment_prompt_from_snapshot, segment_action_timing_instruction,
 )
 from joymedia.workflow_adapters.comfyui_generic import GenericComfyUIAdapter
 
@@ -47,7 +47,7 @@ class TestPromptCompiler(FrappeTestCase):
 
 		self.assertEqual(prompt, "A premium bottle reveal with a slow dolly-in.")
 
-	def test_scene_description_is_compiled_for_image_and_motion(self):
+	def test_image_and_motion_stages_compile_their_own_prompts(self):
 		project = frappe._dict(generation_mode="Continuous", global_instructions="")
 		shot = frappe._dict(
 			name="SHOT-TEST", shot_number=1, generation_prompt="The hand lifts the bottle toward camera.",
@@ -57,8 +57,9 @@ class TestPromptCompiler(FrappeTestCase):
 		)
 		image = compile_prompt_for_documents(shot, project, prompt_source="image")
 		motion = compile_prompt_for_documents(shot, project, prompt_source="motion")
-		self.assertEqual(image, "The hand lifts the bottle toward camera.")
+		self.assertEqual(image, "Compose the bottle on a marble table.")
 		self.assertIn("The hand lifts the bottle", motion)
+		self.assertNotIn("Compose the bottle on a marble table.", motion)
 		self.assertIn("0-4s: lift the bottle", motion)
 
 	def test_referenced_product_prompts_require_fidelity(self):
@@ -71,3 +72,18 @@ class TestPromptCompiler(FrappeTestCase):
 		prompt = compile_prompt_for_documents(shot, project, prompt_source="motion")
 		self.assertIn("market only the intended referenced product", prompt)
 		self.assertIn("do not swap, merge, deform", prompt)
+
+	def test_continuation_only_receives_its_own_action_window(self):
+		project = frappe._dict(references=[], generation_mode="Multi-shot", global_instructions="")
+		shot = frappe._dict(
+			name="SHOT-TEST", shot_number=1, generation_prompt="A presenter tours the property.",
+			motion_plan_json='{"actions":[{"start":0,"end":5,"action":"show the lobby"},{"start":5,"end":10,"action":"walk into the pool area"}]}',
+			end_state="pool area visible", handoff_type="ending", references=[],
+		)
+
+		prompt = compile_segment_prompt_from_snapshot(
+			shot, project, 2, 2, segment_start_frame=120, segment_effective_frames=120, fps=24, is_final=True,
+		)
+
+		self.assertIn("0-5s: walk into the pool area", prompt)
+		self.assertNotIn("show the lobby", prompt)

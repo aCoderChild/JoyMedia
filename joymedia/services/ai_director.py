@@ -49,8 +49,8 @@ def apply_project_shot_ai_revision(project_name, shot_name, values, regenerate=F
 		frappe.throw(_("AI shot changes must be a JSON object."))
 	clean_values = {
 		"generation_prompt": str(values.get("generation_prompt") or values.get("image_prompt") or "").strip(),
+		"image_prompt": str(values.get("image_prompt") or values.get("generation_prompt") or "").strip(),
 	}
-	clean_values["image_prompt"] = clean_values["generation_prompt"]
 	from joymedia.api.storyboard import update_project_shot, regenerate_project_shot
 
 	result = update_project_shot(project_name, shot_name, clean_values)

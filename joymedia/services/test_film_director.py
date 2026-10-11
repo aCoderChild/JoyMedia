@@ -623,6 +623,23 @@ class TestDirectorGuards(FrappeTestCase):
 		self.assertIn("photorealistic commercial frame", shots[0]["image_prompt"])
 		self.assertEqual(5, shots[0]["motion_plan"]["actions"][-1]["end"])
 
+	def test_property_transition_keyframe_uses_the_starting_environment(self):
+		references = [
+			{"reference_key": "person", "reference_role": "General", "asset_category": "Character",
+			 "analysis": {"kind": "person", "outfit": "white ao dai"}},
+			{"reference_key": "lobby", "reference_role": "Environment", "asset_category": "Reference"},
+			{"reference_key": "pool", "reference_role": "Environment", "asset_category": "Reference"},
+		]
+		shots = [{"duration_seconds": 5, "generation_prompt": "The woman crosses from lobby to pool.",
+			"references": [{"reference_key": "person"}, {"reference_key": "lobby"}, {"reference_key": "pool"}]}]
+
+		film_director.enforce_property_marketing_brief(
+			shots, "@person quảng cáo bất động sản @lobby @pool là các phần của ngôi nhà", references
+		)
+
+		self.assertIn("starting property area shown in <Picture 2>", shots[0]["image_prompt"])
+		self.assertNotIn("destination property area", shots[0]["image_prompt"])
+
 	def test_compact_property_plan_prompt_includes_all_selected_areas(self):
 		references = [
 			{"reference_key": "host", "reference_role": "General", "asset_category": "Character"},

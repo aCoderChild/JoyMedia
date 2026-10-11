@@ -28,7 +28,7 @@ class TestWorkflowRouting(FrappeTestCase):
 		cases = (
 			([], "flux_keyframe_i2v"),
 			([_reference("Product", 1)], "flux_keyframe_i2v"),
-			([_reference("Character", 1), _reference("Product", 2)], "direct_r2v"),
+			([_reference("Character", 1), _reference("Product", 2)], "flux2_multireference_i2v"),
 			([
 				_reference("Character", 1), _reference("Product", 2), _reference("Environment", 3),
 			], "flux2_multireference_i2v"),
@@ -74,6 +74,12 @@ class TestWorkflowRouting(FrappeTestCase):
 			_reference("product_reference", 1), _reference("product_reference", 2),
 		])
 		self.assertEqual("direct_r2v", strategy)
+
+	def test_character_and_environment_do_not_use_anonymous_r2v_slots(self):
+		strategy, _items, _reason = strategy_for_references([
+			_reference("Character", 1), _reference("Environment", 2),
+		])
+		self.assertEqual("flux2_multireference_i2v", strategy)
 
 	@patch("joymedia.services.workflow_routing.frappe.get_doc")
 	@patch("joymedia.services.workflow_routing._pipeline_for")

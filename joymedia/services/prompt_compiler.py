@@ -30,7 +30,7 @@ def _motion_plan(shot):
 	return value if isinstance(value, list) else []
 
 
-def temporal_timing_instruction(shot, is_final=False):
+def temporal_timing_instruction(shot, is_final=False, start_seconds=None, end_seconds=None):
 	"""Compile a stored seconds-based plan into concise model guidance.
 
 	Seconds are the creative contract.  Frame counts remain execution details in
@@ -46,7 +46,16 @@ def temporal_timing_instruction(shot, is_final=False):
 		except (KeyError, TypeError, ValueError):
 			continue
 		text = str(action.get("action") or "").strip()
-		if text:
+		if not text:
+			continue
+		if start_seconds is not None or end_seconds is not None:
+			window_start = float(start_seconds or 0)
+			window_end = float(end_seconds) if end_seconds is not None else end
+			start, end = max(start, window_start), min(end, window_end)
+			if end <= start:
+				continue
+			parts.append(f"{start - window_start:g}-{end - window_start:g}s: {text}")
+		else:
 			parts.append(f"{start:g}-{end:g}s: {text}")
 	if not parts:
 		return ""
@@ -97,14 +106,28 @@ def compile_segment_prompt(shot: str, segment_index: int, segment_count: int, pr
 	).strip()
 
 
-def compile_segment_prompt_from_snapshot(shot, project, segment_index: int, segment_count: int, prompt_source="motion", is_final=False):
+def compile_segment_prompt_from_snapshot(
+	shot,
+	project,
+	segment_index: int,
+	segment_count: int,
+	prompt_source="motion",
+	is_final=False,
+	segment_start_frame=None,
+	segment_effective_frames=None,
+	fps=24,
+):
 	asset_versions = _reference_asset_versions_from_snapshot(shot, project)
 	# Multi-reference prompts are written by the director planner, which already
 	# folded the global instructions into each take. Appending the whole-film
 	# brief again makes the model render every place in one take as a montage.
+	# Segment timing is appended below after clipping it to this segment's time
+	# window. Compiling the full motion prompt here would leak the entire shot's
+	# action plan into every continuation.
+	base_prompt_source = "creative" if prompt_source == "motion" and segment_count > 1 else prompt_source
 	base = compile_prompt_for_documents(
 		shot, project, include_global_instructions=not asset_versions,
-		prompt_source=prompt_source, is_final=is_final,
+		prompt_source=base_prompt_source, is_final=is_final,
 	)
 	if asset_versions:
 		from .film_director import reference_preamble
@@ -113,28 +136,45 @@ def compile_segment_prompt_from_snapshot(shot, project, segment_index: int, segm
 		base = f"{reference_preamble(asset_versions, project.get('references') or [])}\n\n{base}"
 	if segment_count == 1:
 		return base
+	start_seconds = None
+	end_seconds = None
+	if segment_start_frame is not None and segment_effective_frames is not None:
+		try:
+			fps = float(fps)
+			if fps > 0:
+				start_seconds = float(segment_start_frame) / fps
+				end_seconds = start_seconds + float(segment_effective_frames) / fps
+		except (TypeError, ValueError):
+			pass
+	timing = temporal_timing_instruction(
+		shot, is_final=is_final, start_seconds=start_seconds, end_seconds=end_seconds
+	)
 	if segment_index == 1:
 		return (
 			f"{base}\n\nThis is segment 1 of {segment_count}. "
 			"Begin the planned action naturally.\n\n"
-			f"{temporal_timing_instruction(shot, is_final=is_final)}"
+			f"{timing}"
 		).strip()
 	return (
 		f"{base}\n\nThis is continuation segment {segment_index} of {segment_count}. "
 		"Continue seamlessly from the previous clip's exact last frame with the same motion, light and sound. "
 		"Do not restart or reintroduce the action.\n\n"
-		f"{temporal_timing_instruction(shot, is_final=is_final)}"
+		f"{timing}"
 	).strip()
 
 
 def compile_prompt_for_documents(shot, project, include_global_instructions=True, prompt_source="motion", is_final=False):
 	prompt_source = prompt_source if prompt_source in PROMPT_SOURCES else "creative"
-	# The scene description is the source of truth for every generation phase.
-	# Keep the image field as a legacy fallback, but never let it silently diverge.
-	prompt = (getattr(shot, "generation_prompt", None) or getattr(shot, "image_prompt", None) or "").strip()
+	# A keyframe stage needs the still composition while a video stage needs the
+	# motion-aware scene. Either field can be absent on an older storyboard, so
+	# retain a deterministic fallback without overwriting the stored prompts.
+	if prompt_source == "image":
+		prompt = (getattr(shot, "image_prompt", None) or getattr(shot, "generation_prompt", None) or "").strip()
+	else:
+		prompt = (getattr(shot, "generation_prompt", None) or getattr(shot, "image_prompt", None) or "").strip()
 	if not prompt:
 		frappe.throw(
-			_("Shot {0} has no Qwen-generated generation_prompt.").format(shot.name)
+			_("Shot {0} has no generation prompt.").format(shot.name)
 		)
 
 	global_instructions = str(project.get("global_instructions") or "").strip()
