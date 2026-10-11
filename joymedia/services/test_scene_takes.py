@@ -59,14 +59,17 @@ class TestSceneTakes(FrappeTestCase):
 		scope = json.dumps({"shot_names": [self.shot.name], "replace_selection": True})
 		started_later = frappe._dict(execution_scope_json=scope, creation=add_to_date(now_datetime(), minutes=1))
 		started_earlier = frappe._dict(execution_scope_json=scope, creation=add_to_date(now_datetime(), minutes=-1))
-		full_run = frappe._dict(execution_scope_json="{}", creation=add_to_date(now_datetime(), minutes=1))
+		whole_regeneration = frappe._dict(
+			execution_scope_json=json.dumps({"replace_selection": True}),
+			creation=add_to_date(now_datetime(), minutes=1),
+		)
 
 		# The take was selected before the run started: the run's new take replaces it.
 		self.assertFalse(_keeps_selected_output(started_later, self.shot.name))
 		# The run already replaced it: keep the new take.
 		self.assertTrue(_keeps_selected_output(started_earlier, self.shot.name))
-		# A normal run never replaces a chosen take.
-		self.assertTrue(_keeps_selected_output(full_run, self.shot.name))
+		# Whole-video regeneration also replaces its prior chosen take.
+		self.assertFalse(_keeps_selected_output(whole_regeneration, self.shot.name))
 
 	@patch("joymedia.services.project_context._busy_shots")
 	def test_only_a_scene_that_is_rendering_is_blocked(self, busy):

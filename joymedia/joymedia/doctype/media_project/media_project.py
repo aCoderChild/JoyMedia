@@ -347,11 +347,18 @@ class MediaProject(Document):
 			validate_generation_preflight(self, workflow, shots, check_comfyui=True)
 			project_snapshot_json, project_snapshot_hash = build_project_snapshot(self)
 			snapshot = frappe.parse_json(project_snapshot_json)
+			# A whole-video request replaces existing selected takes once its new
+			# renders complete. A first render has no selection and remains unchanged.
+			replace_selection = any(
+				frappe.db.get_value("Shot", shot.name, "selected_output_asset_version")
+				for shot in shots
+			)
 			run = frappe.get_doc({
 				"doctype": "Generation Run",
 				"media_project": self.name,
 				"project_snapshot_json": project_snapshot_json,
 				"project_snapshot_hash": project_snapshot_hash,
+				"execution_scope_json": json.dumps({"replace_selection": replace_selection}),
 				"workflow": settings.workflow,
 				"generation_pipeline": snapshot.get("generation_pipeline") or None,
 				"requested_by": frappe.session.user,
