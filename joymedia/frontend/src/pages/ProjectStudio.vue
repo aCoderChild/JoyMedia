@@ -275,7 +275,7 @@
 
     <!-- Contextual Inspector Drawer -->
     <StudioInspector
-      v-if="inspectorOpen && hasInspectorSelection"
+      v-if="studioMode !== 'edit' && inspectorOpen && hasInspectorSelection"
       v-model:open="inspectorOpen"
       :studio-mode="studioMode"
       :selected-target="selectedTarget"
