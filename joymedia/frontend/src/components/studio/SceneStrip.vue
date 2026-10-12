@@ -16,7 +16,7 @@
       </div>
 
       <!-- Right Actions: Lightweight AI Director revision prompt -->
-      <div v-if="hasStoryboard" class="flex items-center gap-2">
+      <div v-if="hasStoryboard" class="flex flex-col items-end gap-1">
         <form class="flex items-center gap-1.5" @submit.prevent="submitAiRevision">
           <div class="relative flex items-center">
             <span class="absolute left-2.5 text-xs text-indigo-400">✨</span>
@@ -24,6 +24,7 @@
               v-model="aiRevisionInput"
               type="text"
               :placeholder="currentLang === 'vi' ? 'Nhờ AI sửa kịch bản... (vd: thêm một cảnh cận sản phẩm)' : 'Ask the AI to change the storyboard... (e.g. add a product close-up)'"
+              :aria-label="currentLang === 'vi' ? 'Yêu cầu AI chỉnh sửa storyboard' : 'Ask AI to revise the storyboard'"
               class="bg-surface-muted border border-outline-border focus:border-indigo-500 rounded-xl pl-7 pr-3 py-1 text-xs text-ink-primary placeholder:text-ink-muted w-48 sm:w-72 focus:outline-none transition-all"
               :disabled="isRevising || isGenerating"
             />
@@ -31,12 +32,20 @@
           <button
             type="submit"
             class="px-3 py-1 rounded-xl text-xs font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 transition-all cursor-pointer shadow-xs disabled:opacity-50"
-            :disabled="isRevising || isGenerating"
+            :disabled="isRevising || isGenerating || !aiRevisionInput.trim()"
           >
             <span v-if="isRevising" class="lucide-refresh-cw size-3 animate-spin inline-block" />
-            <span v-else>{{ currentLang === 'vi' ? 'Áp dụng' : 'Apply' }}</span>
+            <span v-else>{{ currentLang === 'vi' ? 'Cập nhật cảnh' : 'Update scenes' }}</span>
           </button>
         </form>
+        <p v-if="revisionError" class="max-w-[360px] text-right text-[10px] text-rose-400">
+          {{ revisionError }}
+        </p>
+        <p v-else class="max-w-[360px] text-right text-[10px] text-ink-muted">
+          {{ isRevising
+            ? (currentLang === 'vi' ? 'AI đang cập nhật storyboard…' : 'AI is updating the storyboard…')
+            : (currentLang === 'vi' ? 'Chỉ cập nhật phân cảnh; bấm Tạo bản mới để render.' : 'Updates scenes only; generate a new version to render.') }}
+        </p>
       </div>
     </div>
 
@@ -308,7 +317,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import MediaThumbnail from "../MediaThumbnail.vue";
 
 const props = defineProps({
@@ -320,6 +329,7 @@ const props = defineProps({
   hasStoryboard: { type: Boolean, default: false },
   isGenerating: { type: Boolean, default: false },
   isRevising: { type: Boolean, default: false },
+  revisionError: { type: String, default: "" },
   expectedShotCount: { type: Number, default: 0 },
   production: { type: Object, default: null },
   generationPhase: { type: String, default: "idle" },
@@ -357,13 +367,17 @@ function toggleSceneMenu(index) {
 }
 
 function submitAiRevision() {
-  if (!aiRevisionInput.value?.trim()) {
-    emit("reviseStoryboard");
-    return;
-  }
   emit("reviseStoryboard", aiRevisionInput.value.trim());
-  aiRevisionInput.value = "";
 }
+
+watch(
+  () => props.isRevising,
+  (isRevising, wasRevising) => {
+    if (wasRevising && !isRevising && !props.revisionError) {
+      aiRevisionInput.value = "";
+    }
+  },
+);
 
 const draggedIndex = ref(null);
 

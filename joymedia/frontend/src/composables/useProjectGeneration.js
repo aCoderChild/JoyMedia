@@ -6,9 +6,12 @@ import { errorMessage } from "../utils/errors";
 export function useProjectGeneration(projectName, onRefresh) {
   const isGenerating = ref(false);
   const isRevising = ref(false);
+  const revisionError = ref("");
   const aiRevisionLoading = ref(false);
   const productionError = ref("");
   const videoIdeaPrompt = ref("");
+  const isSavingIdea = ref(false);
+  let lastSavedIdea = null;
   const currentRun = ref(null);
   let pollTimeout = null;
   let polling = false;
@@ -19,6 +22,29 @@ export function useProjectGeneration(projectName, onRefresh) {
 
   function project() {
     return unref(projectName);
+  }
+
+  async function saveVideoIdea(currentIdea = videoIdeaPrompt.value) {
+    const idea = String(currentIdea || "").trim();
+    if (idea === lastSavedIdea || isSavingIdea.value) return true;
+    isSavingIdea.value = true;
+    try {
+      await call("joymedia.api.projects.update_project_brief", {
+        project_name: project(),
+        video_idea: idea,
+      });
+      lastSavedIdea = idea;
+      return true;
+    } catch (err) {
+      notify({
+        title: "Video idea",
+        text: errorMessage(err, "Unable to save your video idea."),
+        type: "error",
+      });
+      return false;
+    } finally {
+      isSavingIdea.value = false;
+    }
   }
 
   function stopPolling() {
@@ -110,14 +136,10 @@ export function useProjectGeneration(projectName, onRefresh) {
     isGenerating.value = true;
     productionError.value = "";
     try {
-      // If there is an idea prompt, we can save it to the project before generating
-      if (videoIdeaPrompt.value?.trim()) {
-        try {
-          await call("joymedia.api.projects.update_project_brief", {
-            project_name: project(),
-            video_idea: videoIdeaPrompt.value.trim(),
-          });
-        } catch (_) {}
+      // Save the current creative brief before planning the storyboard.
+      if (videoIdeaPrompt.value?.trim() && !(await saveVideoIdea())) {
+        isGenerating.value = false;
+        return;
       }
 
       const res = await call("joymedia.api.projects.generate_project_video", {
@@ -199,17 +221,27 @@ export function useProjectGeneration(projectName, onRefresh) {
   }
 
   async function reviseStoryboard(instruction = "") {
+    const request = String(instruction || "").trim();
+    if (!request) {
+      revisionError.value = "Describe the storyboard change you want the AI to make.";
+      notify({ title: "Storyboard revision", text: revisionError.value, type: "error" });
+      return false;
+    }
     isRevising.value = true;
+    revisionError.value = "";
     try {
       await call("joymedia.api.storyboard.revise_project_storyboard", {
         project_name: project(),
-        instruction,
+        instruction: request,
         use_current_workflow_defaults: true,
       });
       if (onRefresh) await onRefresh();
-      notify({ title: "Storyboard revised", text: "AI updated the storyboard scenes.", type: "success" });
+      notify({ title: "Storyboard revised", text: "AI updated the scenes. Generate a new version to render them.", type: "success" });
+      return true;
     } catch (err) {
-      notify({ title: "Error", text: errorMessage(err, "Failed to revise storyboard."), type: "error" });
+      revisionError.value = errorMessage(err, "Failed to revise storyboard.");
+      notify({ title: "Storyboard revision", text: revisionError.value, type: "error" });
+      return false;
     } finally {
       isRevising.value = false;
     }
@@ -263,12 +295,7 @@ export function useProjectGeneration(projectName, onRefresh) {
       );
       if (res?.improved_idea) {
         videoIdeaPrompt.value = res.improved_idea;
-        try {
-          await call("joymedia.api.projects.update_project_brief", {
-            project_name: project(),
-            video_idea: res.improved_idea,
-          });
-        } catch (_) {}
+        await saveVideoIdea(res.improved_idea);
         notify({
           title: "Idea elevated ✨",
           text: "Qwen enhanced your concept with cinematic directions and ingredient references.",
@@ -374,11 +401,13 @@ export function useProjectGeneration(projectName, onRefresh) {
   return {
     isGenerating,
     isRevising,
+    revisionError,
     aiRevisionLoading,
     improvingIdea,
     productionError,
     getFrappeErrorMessage,
     videoIdeaPrompt,
+    isSavingIdea,
     currentRun,
     isProductionActive,
     generationPhase,
@@ -393,6 +422,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     reviseStoryboard,
     reviseShotWithAi,
     improveVideoIdea,
+    saveVideoIdea,
     stopPolling,
     reviewLoading,
     reviewError,

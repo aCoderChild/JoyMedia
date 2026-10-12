@@ -186,6 +186,7 @@
             :generation-phase="generationPhase"
             :sync-error="syncError"
             :is-improving-prompt="improvingIdea"
+            :is-saving-prompt="isSavingIdea"
             :has-storyboard="Boolean(storyboardShots.length)"
             :duration-seconds="videoSettings.duration || 15"
             :delivery-preset="videoSettings.delivery_preset || 'Landscape'"
@@ -194,6 +195,7 @@
             @open-media-picker="openPicker"
             @open-settings="showSettings = true"
             @improve-prompt="improveVideoIdea"
+            @save-prompt="saveVideoIdea"
             @remove-reference="removeReference"
           />
 
@@ -209,6 +211,7 @@
             :generation-phase="generationPhase"
             :sync-error="syncError"
             :is-revising="isRevising"
+            :revision-error="revisionError"
             :expected-shot-count="storyboardShots.length || currentRun?.total_tasks || 0"
             :production="currentRun"
             :current-lang="currentLang"
@@ -459,7 +462,9 @@ async function onMediaAssetUpdated() {
 const {
   isGenerating,
   isRevising,
+  revisionError,
   improvingIdea,
+  isSavingIdea,
   aiRevisionLoading,
   productionError,
   getFrappeErrorMessage,
@@ -477,6 +482,7 @@ const {
   reviseStoryboard,
   reviseShotWithAi,
   improveVideoIdea,
+  saveVideoIdea,
   stopPolling,
   reviewLoading,
   reviewError,

@@ -51,7 +51,16 @@
 
     <!-- Main Textarea Composer with @mention Autocomplete -->
     <div class="relative">
+      <div class="mb-1.5 flex items-center justify-between gap-3 px-0.5">
+        <label for="video-idea" class="text-xs font-semibold text-ink-primary">
+          {{ currentLang === 'vi' ? 'Ý tưởng video' : 'Video idea' }}
+        </label>
+        <span class="text-[10px] text-ink-muted text-right">
+          {{ currentLang === 'vi' ? 'Mô tả này là brief cho AI lập cảnh và tạo video.' : 'This brief guides AI storyboard planning and video generation.' }}
+        </span>
+      </div>
       <textarea
+        id="video-idea"
         ref="textareaRef"
         v-model="modelPrompt"
         rows="2"
@@ -62,6 +71,7 @@
         :disabled="isGenerating"
         @input="handleInput"
         @keydown="handleKeydown"
+        @blur="savePrompt"
       />
 
       <!-- Autocomplete Dropdown for @mention -->
@@ -99,11 +109,11 @@
         <button
           type="button"
           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 transition-all cursor-pointer shadow-xs"
-          :disabled="isImprovingPrompt || isImprovingLocal || isGenerating || !modelPrompt?.trim()"
+          :disabled="isImprovingPrompt || isGenerating || !modelPrompt?.trim()"
           :title="currentLang === 'vi' ? 'Qwen AI nâng tầm ý tưởng thành kịch bản điện ảnh' : 'Refine and enrich your idea with Qwen AI'"
           @click="improvePromptWithAi"
         >
-          <span v-if="isImprovingPrompt || isImprovingLocal" class="lucide-refresh-cw size-3 animate-spin" />
+          <span v-if="isImprovingPrompt" class="lucide-refresh-cw size-3 animate-spin" />
           <span v-else>✨</span>
           <span>{{ currentLang === 'vi' ? 'Hoàn thiện ý tưởng' : 'Improve Idea' }}</span>
         </button>
@@ -122,6 +132,9 @@
 
       <!-- Right: Main Generate Button -->
       <div class="flex items-center gap-2">
+        <span v-if="isSavingPrompt" class="text-[10px] text-ink-muted">
+          {{ currentLang === 'vi' ? 'Đang lưu…' : 'Saving…' }}
+        </span>
         <button
           type="button"
           class="jm-btn-primary !py-2 !px-4 text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/25 transition-all cursor-pointer"
@@ -146,16 +159,16 @@ const props = defineProps({
   projectAssets: { type: Array, default: () => [] },
   isGenerating: { type: Boolean, default: false },
   isImprovingPrompt: { type: Boolean, default: false },
+  isSavingPrompt: { type: Boolean, default: false },
   hasStoryboard: { type: Boolean, default: false },
   durationSeconds: { type: [Number, String], default: 15 },
   deliveryPreset: { type: String, default: "Landscape" },
   currentLang: { type: String, default: "en" },
 });
 
-const emit = defineEmits(["update:prompt", "generate", "openMediaPicker", "openSettings", "improvePrompt", "removeReference"]);
+const emit = defineEmits(["update:prompt", "generate", "openMediaPicker", "openSettings", "improvePrompt", "savePrompt", "removeReference"]);
 
 const textareaRef = ref(null);
-const isImprovingLocal = ref(false);
 const showMentionMenu = ref(false);
 const mentionQuery = ref("");
 const mentionActiveIndex = ref(0);
@@ -290,15 +303,14 @@ function onCtrlEnter() {
   }
 }
 
-async function improvePromptWithAi() {
-  if (props.isImprovingPrompt || isImprovingLocal.value || !modelPrompt.value?.trim()) return;
-  isImprovingLocal.value = true;
-  try {
-    emit("improvePrompt", modelPrompt.value);
-  } finally {
-    setTimeout(() => {
-      isImprovingLocal.value = false;
-    }, 1500);
+function savePrompt() {
+  if (!props.isGenerating) {
+    emit("savePrompt", modelPrompt.value);
   }
+}
+
+function improvePromptWithAi() {
+  if (props.isImprovingPrompt || !modelPrompt.value?.trim()) return;
+  emit("improvePrompt", modelPrompt.value);
 }
 </script>
