@@ -7,6 +7,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.timeline_composer import (
+	_assert_timeline_unchanged,
 	_apply_ending,
 	_get_generated_audio_sources,
 	_normalize_clip,
@@ -16,6 +17,11 @@ from joymedia.services.video_composer import _get_video_duration, _validate_norm
 
 
 class TestTimelineComposer(FrappeTestCase):
+	def test_changed_timeline_is_not_promoted_by_an_old_export(self):
+		with patch("joymedia.services.post_production.timeline_signature", return_value="newer-edit"):
+			with self.assertRaises(frappe.ValidationError):
+				_assert_timeline_unchanged("PROJECT-TEST", "render-start")
+
 	def test_generated_audio_sources_preserve_video_audio_timing(self):
 		clip = frappe._dict(
 			name="CLIP-1",

@@ -128,8 +128,8 @@ class TestShotReviewLoop(FrappeTestCase):
 		self.assertEqual("Queued", result["finishing"])
 		resume.assert_called_once_with(self.project.name)
 
-	@patch("joymedia.services.post_production.resume_post_production_if_approved")
-	def test_repeated_human_approval_does_not_request_finishing_again(self, resume):
+	@patch("joymedia.services.post_production.resume_post_production_if_approved", return_value={"status": "Queued"})
+	def test_repeated_human_approval_retries_a_deferred_finishing_request(self, resume):
 		frappe.get_doc({
 			"doctype": "Shot Review", "shot": self.shot.name, "reviewer": "Administrator",
 			"review_kind": "Human", "verdict": "Approved", "output_asset_version": self.output.name,
@@ -137,8 +137,8 @@ class TestShotReviewLoop(FrappeTestCase):
 
 		result = submit_shot_review(self.project.name, self.shot.name, "Approved")
 
-		self.assertIsNone(result["finishing"])
-		resume.assert_not_called()
+		self.assertEqual("Queued", result["finishing"])
+		resume.assert_called_once_with(self.project.name)
 
 	@patch("joymedia.services.post_production.resume_post_production_if_approved", side_effect=RuntimeError("worker unavailable"))
 	def test_approval_is_saved_when_finishing_cannot_be_requested(self, resume):

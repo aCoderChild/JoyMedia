@@ -35,9 +35,13 @@ TRANSITION_FILTERS = {
 
 def compose_project_timeline_internal(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
+	from joymedia.services.post_production import timeline_signature
 	from joymedia.services.timeline_editor import _ensure_source_audio_clips, _timeline_clip_rows
 	_timeline_rows = _timeline_clip_rows(project.name)
 	_ensure_source_audio_clips(project, _timeline_rows)
+	# Source-audio backfill can make a legitimate first-time edit.  Snapshot only
+	# after that setup, then refuse to promote a render if the editor changes.
+	started_timeline_signature = timeline_signature(project.name)
 	clips = frappe.get_all(
 		"Timeline Clip",
 		filters={"media_project": project.name, "enabled": 1},
@@ -147,6 +151,7 @@ def compose_project_timeline_internal(project_name: str):
 				_validate_normalized_video(delivery_path, output_profile, expected_frames=output_frames)
 
 			video_duration = _get_video_duration(delivery_path)
+			_assert_timeline_unchanged(project.name, started_timeline_signature)
 			# Studio exports exceed the upload size limit, which is meant for user
 			# uploads; the rendered file is moved into place instead of re-read.
 			file_name = f"{project.name}-edited-{frappe.generate_hash(length=8)}.mp4"
@@ -204,6 +209,14 @@ def compose_project_timeline_internal(project_name: str):
 		"timeline_frames": expected_frames,
 		"fps": output_profile["fps"],
 	}
+
+
+def _assert_timeline_unchanged(project_name, expected_signature):
+	"""Prevent an old render from becoming the project's current delivery."""
+	from joymedia.services.post_production import timeline_signature
+
+	if timeline_signature(project_name) != expected_signature:
+		frappe.throw(_("The timeline changed during export. Export the latest edit instead."))
 
 
 def _caption_cues(project, video_clips, clip_frames, transition_frames, positioned, fps):

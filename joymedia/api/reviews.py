@@ -16,7 +16,6 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 	suggested prompt revision from the structured feedback.
 	"""
 	from joymedia.services.ai_director import generate_review_revision
-	from joymedia.services.review_authority import latest_human_review_verdict
 
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
@@ -28,7 +27,6 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 		frappe.throw(_("Generate and select a shot output before reviewing it."))
 
 	output_asset_version = shot.selected_output_asset_version
-	previous_human_verdict = latest_human_review_verdict(shot.name, output_asset_version)
 	source_attempt = frappe.db.get_value(
 		"Asset Version", output_asset_version, "source_generation_attempt"
 	)
@@ -92,7 +90,7 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 	frappe.db.set_value("Shot", shot_name, "review_status", verdict, update_modified=False)
 	frappe.db.commit()
 	finishing = None
-	if verdict == "Approved" and previous_human_verdict != "Approved":
+	if verdict == "Approved":
 		from joymedia.services.post_production import resume_post_production_if_approved
 
 		try:

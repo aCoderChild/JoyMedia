@@ -109,6 +109,33 @@ def queue_post_production_internal(project_name):
 	return {"status": "Queued"}
 
 
+def resume_queued_post_productions():
+	"""Retry persisted finish requests whose enqueue operation did not reach a worker.
+
+	``post_production_requested_at`` is committed before enqueueing, so an approved
+	review remains actionable even during a transient Redis/worker outage.  Only
+	Queued jobs without a live RQ job are retried; failed renders still require an
+	explicit user retry instead of looping indefinitely.
+	"""
+	projects = frappe.get_all(
+		"Media Project",
+		filters={"post_production_status": "Queued"},
+		fields=["name", "post_production_requested_at"],
+	)
+	for project in projects:
+		if not project.post_production_requested_at or is_render_alive(_job_id(project.name)):
+			continue
+		# A newly selected, unapproved take must never be rendered by an old request.
+		if _unapproved_shots(project.name) or _finishing_is_current(project.name):
+			continue
+		try:
+			queue_post_production_internal(project.name)
+		except Exception:
+			frappe.logger("joymedia.post_production").exception(
+				"Unable to resume queued finishing for %s", project.name
+			)
+
+
 def resume_post_production_if_approved(project_name):
 	"""Resume finishing only when every active selected take has human approval.
 
@@ -146,11 +173,18 @@ def run_post_production(project_name: str):
 	try:
 		# Recheck inside the worker to prevent a stale queued job from finishing
 		# after an editor selects an unreviewed replacement take.
-		_require_approved_shots(project_name)
+		if _unapproved_shots(project_name):
+			_set_status(project_name, "Idle", step="", error="")
+			return {"status": "Awaiting QA"}
 		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", "", update_modified=False)
 		# Scenes regenerated or takes switched while this ran need another pass.
+		last_round_started = None
 		for _round in range(MAX_FINISHING_ROUNDS):
 			started = now_datetime()
+			last_round_started = started
+			if _unapproved_shots(project_name):
+				_set_status(project_name, "Idle", step="", error="")
+				return {"status": "Awaiting QA"}
 			if _edited_by_hand(project_name):
 				# Keep the user's edits: swap new takes in and redo only their transitions.
 				_patch_changed_scenes(project_name)
@@ -164,7 +198,22 @@ def run_post_production(project_name: str):
 			if not requested or get_datetime(requested) <= started:
 				break
 		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", "", update_modified=False)
+		# Do not publish a Completed state if the last permitted pass missed a
+		# newer request, or if its selected takes no longer match the timeline.
+		# The scheduler resumes this persisted Queued request once this RQ job ends.
+		if _unapproved_shots(project_name):
+			_set_status(project_name, "Idle", step="", error="")
+			return {"status": "Awaiting QA"}
+		requested = frappe.db.get_value("Media Project", project_name, "post_production_requested_at")
+		if (
+			last_round_started
+			and requested
+			and get_datetime(requested) > last_round_started
+		) or not _selected_outputs_are_incorporated(project_name):
+			_set_status(project_name, "Queued", step="", error="")
+			return {"status": "Queued"}
 		_set_status(project_name, "Completed", step="")
+		return {"status": "Completed"}
 	except Exception as exc:
 		frappe.db.rollback()
 		if frappe.db.get_value("Media Project", project_name, "post_production_status") == "Cancelled":
@@ -193,15 +242,23 @@ def _unapproved_shots(project_name):
 
 
 def _finishing_is_current(project_name):
-	"""Whether the completed timeline already contains every selected take."""
+	"""Whether a completed timeline still contains its selected take versions."""
 	project = frappe.db.get_value(
 		"Media Project", project_name,
-		["post_production_status", "finished_timeline_signature"], as_dict=True,
+		["post_production_status"], as_dict=True,
 	)
 	if not project or project.post_production_status != "Completed":
 		return False
-	if not project.finished_timeline_signature or project.finished_timeline_signature != timeline_signature(project_name):
-		return False
+	return _selected_outputs_are_incorporated(project_name)
+
+
+def _selected_outputs_are_incorporated(project_name):
+	"""Check selected takes independently of manual timeline-edit detection.
+
+	``finished_timeline_signature`` deliberately remains the pre-edit baseline
+	used by ``_edited_by_hand``.  Treating it as proof of selected-output
+	incorporation made a successful patch pass look stale forever.
+	"""
 	selected = dict(frappe.get_all(
 		"Shot", filters={"media_project": project_name, "is_removed": 0},
 		fields=["name", "selected_output_asset_version"], as_list=True,

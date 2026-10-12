@@ -170,6 +170,18 @@ class TestTimelineEditor(FrappeTestCase):
 		self.shot.db_set("selected_output_asset_version", version_2.name, update_modified=False)
 		self.assertFalse(_finishing_is_current(self.project.name))
 
+	def test_completed_finishing_stays_current_after_a_manual_timeline_edit(self):
+		from joymedia.services.post_production import _finishing_is_current
+
+		# The signature intentionally differs after an editorial trim.  Selected
+		# output incorporation is proven by the clip source, not that signature.
+		self.project.db_set({
+			"post_production_status": "Completed",
+			"finished_timeline_signature": "before-editorial-trim",
+		})
+
+		self.assertTrue(_finishing_is_current(self.project.name))
+
 	def test_trim_updates_range_and_invalidates_project_output(self):
 		frappe.db.set_value("Media Project", self.project.name, "current_output_asset_version", self.version_1.name)
 		trim_timeline_clip(self.project.name, self.clip_1.name, 10, 80)

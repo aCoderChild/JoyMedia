@@ -56,6 +56,8 @@ jobs:
         with:
           node-version: 24
           check-latest: true
+          cache: npm
+          cache-dependency-path: joymedia/frontend/package-lock.json
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -65,18 +67,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
             ${{ runner.os }}-
-
-      - name: Get yarn cache directory path
-        id: yarn-cache-dir-path
-        run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
-
-      - uses: actions/cache@v4
-        id: yarn-cache
-        with:
-          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-
 
       - name: Install system dependencies
         run: |
@@ -112,5 +102,5 @@ jobs:
       - name: Build frontend
         working-directory: /home/runner/frappe-bench/apps/joymedia/joymedia/frontend
         run: |
-          yarn install --frozen-lockfile
-          yarn build
+          npm ci
+          npm run build

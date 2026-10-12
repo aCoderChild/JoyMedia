@@ -106,6 +106,42 @@ class TestPostProductionStatus(FrappeTestCase):
 		self.assertEqual(2, len(rounds))
 		self.assertEqual("Completed", frappe.db.get_value("Media Project", self.project.name, "post_production_status"))
 
+	@patch("joymedia.services.post_production._selected_outputs_are_incorporated", return_value=True)
+	@patch("joymedia.services.post_production.frappe.db.commit")
+	def test_finishing_stays_queued_when_the_final_allowed_round_is_stale(self, commit, incorporated):
+		started = datetime(2026, 10, 12, 9, 0, 0)
+		rounds = []
+
+		def finish_once(project_name):
+			rounds.append(project_name)
+			# Every pass receives a newer request, including the third and final pass.
+			frappe.db.set_value(
+				"Media Project", project_name, "post_production_requested_at",
+				datetime(2026, 10, 12, 9, 1, 0),
+			)
+
+		with patch("joymedia.services.post_production.now_datetime", return_value=started), patch(
+			"joymedia.services.post_production._finish_once", side_effect=finish_once
+		):
+			post_production.run_post_production(self.project.name)
+
+		self.assertEqual(post_production.MAX_FINISHING_ROUNDS, len(rounds))
+		self.assertEqual("Queued", frappe.db.get_value("Media Project", self.project.name, "post_production_status"))
+
+	@patch("joymedia.services.post_production._finishing_is_current", return_value=False)
+	@patch("joymedia.services.post_production._unapproved_shots", return_value=[])
+	@patch("joymedia.services.post_production.is_render_alive", return_value=False)
+	@patch("joymedia.services.post_production.queue_post_production_internal")
+	def test_scheduler_requeues_a_persisted_request_without_a_live_job(self, queue, alive, unapproved, current):
+		self.project.db_set({
+			"post_production_status": "Queued",
+			"post_production_requested_at": datetime(2026, 10, 12, 9, 0, 0),
+		})
+
+		post_production.resume_queued_post_productions()
+
+		queue.assert_called_once_with(self.project.name)
+
 
 class TestMusicEnding(FrappeTestCase):
 	def test_film_ends_on_the_quietest_moment_of_the_music(self):

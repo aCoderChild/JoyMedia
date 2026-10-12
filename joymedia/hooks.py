@@ -180,6 +180,7 @@ scheduler_events = {
 		"* * * * *": [
 			"joymedia.services.result_ingestor.sync_active_attempts",
 			"joymedia.services.generation_orchestrator.refresh_active_runs",
+			"joymedia.services.post_production.resume_queued_post_productions",
 		],
 	},
 }
