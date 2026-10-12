@@ -43,6 +43,9 @@ jobs:
           echo "Finding tests"
           grep -rn "def test" > /dev/null
 
+      - name: Verify application layout
+        run: python scripts/verify_app_layout.py
+
       - name: Setup Python
         uses: actions/setup-python@v6
         with:

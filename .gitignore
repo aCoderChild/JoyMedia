@@ -2,6 +2,7 @@ env/
 sites/
 logs/
 config/
+/apps/
 Procfile
 patches.txt
 config/pids/
