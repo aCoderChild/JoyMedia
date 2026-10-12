@@ -432,6 +432,11 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			generation_orchestrator.finalize_run("RUN-00001")
 
+	@patch("joymedia.services.post_production.resume_post_production_if_approved", return_value={"status": "Awaiting QA"})
+	def test_generation_completion_treats_pending_human_qa_as_expected(self, resume):
+		self.assertEqual({"status": "Awaiting QA"}, generation_orchestrator._finish_film("PRJ-00001"))
+		resume.assert_called_once_with("PRJ-00001")
+
 	@patch("joymedia.services.generation_orchestrator._finish_film")
 	@patch("joymedia.services.generation_orchestrator.sync_media_project_status_for_run")
 	@patch("joymedia.services.generation_orchestrator._refresh_run_counters")

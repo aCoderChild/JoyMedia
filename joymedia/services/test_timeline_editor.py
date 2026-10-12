@@ -85,7 +85,10 @@ class TestTimelineEditor(FrappeTestCase):
 			"duration_seconds": 4.0,
 		}).insert(ignore_permissions=True)
 		self.shot.db_set("selected_output_asset_version", self.version_1.name, update_modified=False)
-		self.shot.db_set("review_status", "Approved", update_modified=False)
+		frappe.get_doc({
+			"doctype": "Shot Review", "shot": self.shot.name, "reviewer": "Administrator",
+			"review_kind": "Human", "verdict": "Approved", "output_asset_version": self.version_1.name,
+		}).insert(ignore_permissions=True)
 		self.clip_1 = frappe.get_doc({
 			"doctype": "Timeline Clip",
 			"media_project": self.project.name,
@@ -127,18 +130,45 @@ class TestTimelineEditor(FrappeTestCase):
 			queue_project_timeline_export(self.project.name)
 		enqueue.assert_not_called()
 
-	def test_final_export_requires_approved_selected_shots(self):
-		self.shot.db_set("review_status", "Pending Review", update_modified=False)
+	def test_final_export_requires_human_approval_for_the_clip_source(self):
+		frappe.db.set_value("Shot Review", {"shot": self.shot.name, "output_asset_version": self.version_1.name}, "review_kind", "Automated")
+		# A stale badge must not be accepted as an approval decision.
+		self.shot.db_set("review_status", "Approved", update_modified=False)
 		with self.assertRaises(frappe.ValidationError):
 			queue_project_timeline_export(self.project.name)
 
-	def test_removed_unapproved_shot_does_not_block_final_export(self):
+	def test_unincluded_unapproved_shot_does_not_block_final_export(self):
 		frappe.get_doc({
 			"doctype": "Shot", "media_project": self.project.name, "shot_number": 2,
-			"generation_prompt": "Removed scene.", "duration_seconds": 1, "is_removed": 1,
+			"generation_prompt": "Excluded scene.", "duration_seconds": 1,
 		}).insert(ignore_permissions=True)
 		with patch("joymedia.services.timeline_editor.enqueue_render"):
 			self.assertEqual("Queued", queue_project_timeline_export(self.project.name)["export_status"])
+
+	def test_export_rejects_an_unapproved_older_clip_even_when_the_current_take_is_approved(self):
+		_version_asset, version_2 = _create_output_version(self.project, "test-v2.mp4", 4, self.asset)
+		self.shot.db_set("selected_output_asset_version", version_2.name, update_modified=False)
+		frappe.get_doc({
+			"doctype": "Shot Review", "shot": self.shot.name, "reviewer": "Administrator",
+			"review_kind": "Human", "verdict": "Approved", "output_asset_version": version_2.name,
+		}).insert(ignore_permissions=True)
+		frappe.db.set_value("Shot Review", {"shot": self.shot.name, "output_asset_version": self.version_1.name}, "review_kind", "Automated")
+
+		with self.assertRaises(frappe.ValidationError):
+			queue_project_timeline_export(self.project.name)
+
+	def test_completed_finishing_is_stale_when_a_selected_take_changes(self):
+		from joymedia.services.post_production import _finishing_is_current, timeline_signature
+
+		self.project.db_set({
+			"post_production_status": "Completed",
+			"finished_timeline_signature": timeline_signature(self.project.name),
+		})
+		self.assertTrue(_finishing_is_current(self.project.name))
+
+		_version_asset, version_2 = _create_output_version(self.project, "test-v2.mp4", 4, self.asset)
+		self.shot.db_set("selected_output_asset_version", version_2.name, update_modified=False)
+		self.assertFalse(_finishing_is_current(self.project.name))
 
 	def test_trim_updates_range_and_invalidates_project_output(self):
 		frappe.db.set_value("Media Project", self.project.name, "current_output_asset_version", self.version_1.name)

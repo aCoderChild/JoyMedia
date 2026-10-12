@@ -100,7 +100,9 @@ def select_scene_take(project_name, shot_name, take_index):
 	take_index = int(take_index)
 	if not 1 <= take_index <= len(takes):
 		frappe.throw(_("This scene has no take {0}.").format(take_index))
-	shot.db_set("selected_output_asset_version", takes[take_index - 1].name, update_modified=False)
+	selected_output = takes[take_index - 1].name
+	selection_changed = shot.selected_output_asset_version != selected_output
+	shot.db_set("selected_output_asset_version", selected_output, update_modified=False)
 	from joymedia.api.reviews import sync_shot_review_status
 	sync_shot_review_status(shot.name)
 	from joymedia.services.post_production import resume_post_production_if_approved
@@ -108,7 +110,12 @@ def select_scene_take(project_name, shot_name, take_index):
 	frappe.db.commit()
 	# An unapproved take is still a legitimate editorial selection. Keep it
 	# selected for review, and only resume finishing once QA permits delivery.
-	finishing = resume_post_production_if_approved(project.name)
+	try:
+		finishing = resume_post_production_if_approved(project.name) if selection_changed else {"status": "Unchanged"}
+	except Exception:
+		# The take selection is durable. Finishing can be retried independently.
+		frappe.logger("joymedia.scene_takes").exception("Unable to resume finishing for %s", project.name)
+		finishing = {"status": "Deferred"}
 	count, position = take_position(project.name, shot)
 	return {"shot_name": shot.name, "take_count": count, "take_index": position, "finishing": finishing["status"]}
 

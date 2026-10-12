@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import patch
 
 import frappe
@@ -63,13 +64,28 @@ class TestPostProductionStatus(FrappeTestCase):
 		self.assertTrue(status["error"])
 
 	@patch("joymedia.services.post_production.frappe.db.commit")
+	@patch("joymedia.services.post_production._require_approved_shots")
+	@patch("joymedia.services.post_production._shot_video_clips", return_value=[frappe._dict(name="CLIP-1")])
+	@patch("joymedia.services.post_production.now_datetime", return_value=datetime(2026, 10, 12, 9, 0, 0))
 	@patch("joymedia.services.post_production.is_render_alive", return_value=True)
-	def test_running_finishing_is_not_queued_twice(self, alive, commit):
+	def test_running_finishing_records_refresh_without_queueing_twice(self, alive, now, clips, approved, commit):
 		self.project.db_set("post_production_status", "Running")
 
 		with patch("joymedia.services.post_production.enqueue_render") as enqueue:
 			self.assertEqual({"status": "Running"}, post_production.queue_post_production_internal(self.project.name))
 		enqueue.assert_not_called()
+		self.assertEqual(
+			datetime(2026, 10, 12, 9, 0, 0),
+			frappe.db.get_value("Media Project", self.project.name, "post_production_requested_at"),
+		)
+
+	@patch("joymedia.services.post_production._finishing_is_current", return_value=True)
+	@patch("joymedia.services.post_production._unapproved_shots", return_value=[])
+	@patch("joymedia.services.post_production._shot_video_clips", return_value=[frappe._dict(name="CLIP-1")])
+	@patch("joymedia.services.post_production.queue_post_production_internal")
+	def test_unchanged_approved_project_does_not_refinish(self, queue, clips, unapproved, current):
+		self.assertEqual({"status": "Completed"}, post_production.resume_post_production_if_approved(self.project.name))
+		queue.assert_not_called()
 
 	@patch("joymedia.services.post_production.frappe.db.commit")
 	def test_finishing_repeats_when_a_scene_changes_while_it_runs(self, commit):

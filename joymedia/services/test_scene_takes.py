@@ -55,6 +55,13 @@ class TestSceneTakes(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			scene_takes.select_scene_take(self.project.name, self.shot.name, 3)
 
+	@patch("joymedia.services.post_production.resume_post_production_if_approved")
+	def test_selecting_the_already_selected_take_does_not_request_finishing(self, resume):
+		result = scene_takes.select_scene_take(self.project.name, self.shot.name, 2)
+
+		self.assertEqual("Unchanged", result["finishing"])
+		resume.assert_not_called()
+
 	def test_regenerate_run_replaces_the_take_selected_before_it_started_once(self):
 		scope = json.dumps({"shot_names": [self.shot.name], "replace_selection": True})
 		started_later = frappe._dict(execution_scope_json=scope, creation=add_to_date(now_datetime(), minutes=1))

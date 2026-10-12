@@ -50,14 +50,15 @@ def get_attempt_analytics(filters=None):
 	}
 	review_status_by_shot = {shot.name: shot.review_status for shot in shots}
 
-	# Collect recorded human and automated QA verdicts from Shot Review records
-	# keyed by generation_attempt. Both are traceable review records; selection
-	# itself remains an editorial choice, never an approval proxy.
+	# Approval analytics use human verdicts only. Automated visual QA remains
+	# traceable on the review record but is never a delivery-quality outcome.
 	attempt_names = [attempt.name for attempt in attempts]
 	shot_reviews = frappe.get_all(
 		"Shot Review",
-		filters={"generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
 		fields=["generation_attempt", "verdict"],
+		filters={
+			"generation_attempt": ["in", attempt_names], "review_kind": "Human",
+		} if attempt_names else {"name": ["in", [""]]},
 		order_by="reviewed_at desc",
 	)
 	# Most recent review per attempt wins.

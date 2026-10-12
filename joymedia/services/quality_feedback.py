@@ -13,12 +13,31 @@ def prompt_guidance_for_workflow(workflow_name):
 	This deliberately augments the immutable prompt snapshot for a new run rather
 	than editing global templates or silently changing a user's chosen workflow.
 	"""
-	rows = frappe.get_all(
+	# Automated QA is advisory. Use the final explicit human verdict for each
+	# immutable output, so a later approval supersedes an earlier rejection and
+	# repeated reviews cannot over-weight one take.
+	reviews = frappe.get_all(
 		"Shot Review",
-		filters={"verdict": ["in", ["Rejected", "Needs Revision"]]},
-		fields=["rejection_category", "generation_attempt"],
+		filters={"review_kind": "Human"},
+		fields=["shot", "output_asset_version", "rejection_category", "generation_attempt", "verdict"],
+		order_by="reviewed_at desc, creation desc",
 		limit_page_length=500,
 	)
+	rows = [
+		review for review in _latest_human_reviews(reviews)
+		if review.verdict in ("Rejected", "Needs Revision")
+	]
+	missing_attempt_outputs = [row.output_asset_version for row in rows if not row.generation_attempt]
+	source_attempt_by_output = {
+		row.name: row.source_generation_attempt
+		for row in frappe.get_all(
+			"Asset Version",
+			filters={"name": ["in", missing_attempt_outputs]} if missing_attempt_outputs else {"name": ["in", [""]]},
+			fields=["name", "source_generation_attempt"],
+		)
+	}
+	for row in rows:
+		row.generation_attempt = row.generation_attempt or source_attempt_by_output.get(row.output_asset_version)
 	attempts = [row.generation_attempt for row in rows if row.generation_attempt]
 	if not attempts:
 		return []
@@ -44,6 +63,16 @@ def prompt_guidance_for_workflow(workflow_name):
 		_guidance(category) for category, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
 		if count >= MIN_SAMPLES
 	][:MAX_GUIDANCE_ITEMS]
+
+
+def _latest_human_reviews(reviews):
+	"""Collapse review history to the final explicit human decision per output."""
+	latest = {}
+	for review in reviews:
+		key = (review.shot, review.output_asset_version)
+		if key not in latest and all(key):
+			latest[key] = review
+	return list(latest.values())
 
 
 def append_quality_guidance(prompt, workflow_name):

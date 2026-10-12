@@ -16,6 +16,7 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 	suggested prompt revision from the structured feedback.
 	"""
 	from joymedia.services.ai_director import generate_review_revision
+	from joymedia.services.review_authority import latest_human_review_verdict
 
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
@@ -27,6 +28,7 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 		frappe.throw(_("Generate and select a shot output before reviewing it."))
 
 	output_asset_version = shot.selected_output_asset_version
+	previous_human_verdict = latest_human_review_verdict(shot.name, output_asset_version)
 	source_attempt = frappe.db.get_value(
 		"Asset Version", output_asset_version, "source_generation_attempt"
 	)
@@ -82,6 +84,7 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 	review.ai_suggested_image_prompt = ai_suggested_image_prompt
 	review.image_prompt_before_revision = shot.image_prompt
 	review.output_asset_version = output_asset_version
+	review.review_kind = "Human"
 	if generation_attempt:
 		review.generation_attempt = generation_attempt
 	review.insert(ignore_permissions=True)
@@ -89,10 +92,16 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 	frappe.db.set_value("Shot", shot_name, "review_status", verdict, update_modified=False)
 	frappe.db.commit()
 	finishing = None
-	if verdict == "Approved":
+	if verdict == "Approved" and previous_human_verdict != "Approved":
 		from joymedia.services.post_production import resume_post_production_if_approved
 
-		finishing = resume_post_production_if_approved(project.name).get("status")
+		try:
+			finishing = resume_post_production_if_approved(project.name).get("status")
+		except Exception:
+			# The review was committed before this best-effort convenience action.
+			# A worker outage must not make a valid human review look unsaved.
+			frappe.logger("joymedia.reviews").exception("Unable to resume finishing for %s", project.name)
+			finishing = "Deferred"
 
 	return {
 		"review_name": review.name,
@@ -105,21 +114,15 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 
 
 def sync_shot_review_status(shot_name):
-	"""Set a Shot's badge to the latest verdict for its selected immutable output.
+	"""Set a Shot's badge to the latest human verdict for its selected immutable output.
 
 	A Shot can switch among several takes. A verdict is meaningful only for the
 	exact Asset Version the reviewer watched, never for every take of the Shot.
 	"""
 	shot = frappe.get_doc("Shot", shot_name)
-	verdict = None
-	if shot.selected_output_asset_version:
-		verdict = frappe.db.get_value(
-			"Shot Review",
-			{"shot": shot.name, "output_asset_version": shot.selected_output_asset_version},
-			"verdict",
-			order_by="reviewed_at desc, creation desc",
-		)
-	status = verdict or "Pending Review"
+	from joymedia.services.review_authority import human_review_status
+
+	status = human_review_status(shot.name, shot.selected_output_asset_version)
 	frappe.db.set_value("Shot", shot.name, "review_status", status, update_modified=False)
 	return status
 

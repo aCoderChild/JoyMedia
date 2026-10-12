@@ -37,6 +37,7 @@ class TestShotReviewLoop(FrappeTestCase):
 			"media_project": self.project.name,
 		}).insert(ignore_permissions=True)
 		self.output = _create_output_version(self.project, "review-output.mp4", 1, asset)[1]
+		self.asset = asset
 		self.shot.db_set("selected_output_asset_version", self.output.name, update_modified=False)
 
 	def tearDown(self):
@@ -93,10 +94,58 @@ class TestShotReviewLoop(FrappeTestCase):
 		self.shot.db_set("selected_output_asset_version", None, update_modified=False)
 		self.assertEqual("Pending Review", sync_shot_review_status(self.shot.name))
 
+	def test_automated_approval_never_restores_delivery_approval_when_a_take_is_reselected(self):
+		other_output = _create_output_version(self.project, "other-review-output.mp4", 1, self.asset)[1]
+		frappe.get_doc({
+			"doctype": "Shot Review",
+			"shot": self.shot.name,
+			"reviewer": "Administrator",
+			"review_kind": "Automated",
+			"verdict": "Approved",
+			"output_asset_version": self.output.name,
+		}).insert(ignore_permissions=True)
+
+		self.shot.db_set("selected_output_asset_version", other_output.name, update_modified=False)
+		self.assertEqual("Pending Review", sync_shot_review_status(self.shot.name))
+		self.shot.db_set("selected_output_asset_version", self.output.name, update_modified=False)
+		self.assertEqual("Pending Review", sync_shot_review_status(self.shot.name))
+
+	def test_automated_approval_cannot_satisfy_the_finishing_gate(self):
+		from joymedia.services.post_production import _require_approved_shots
+
+		frappe.get_doc({
+			"doctype": "Shot Review", "shot": self.shot.name, "reviewer": "Administrator",
+			"review_kind": "Automated", "verdict": "Approved", "output_asset_version": self.output.name,
+		}).insert(ignore_permissions=True)
+		self.shot.db_set("review_status", "Approved", update_modified=False)
+
+		with self.assertRaises(frappe.ValidationError):
+			_require_approved_shots(self.project.name)
+
 	@patch("joymedia.services.post_production.resume_post_production_if_approved", return_value={"status": "Queued"})
 	def test_human_approval_resumes_eligible_finishing(self, resume):
 		result = submit_shot_review(self.project.name, self.shot.name, "Approved")
 		self.assertEqual("Queued", result["finishing"])
+		resume.assert_called_once_with(self.project.name)
+
+	@patch("joymedia.services.post_production.resume_post_production_if_approved")
+	def test_repeated_human_approval_does_not_request_finishing_again(self, resume):
+		frappe.get_doc({
+			"doctype": "Shot Review", "shot": self.shot.name, "reviewer": "Administrator",
+			"review_kind": "Human", "verdict": "Approved", "output_asset_version": self.output.name,
+		}).insert(ignore_permissions=True)
+
+		result = submit_shot_review(self.project.name, self.shot.name, "Approved")
+
+		self.assertIsNone(result["finishing"])
+		resume.assert_not_called()
+
+	@patch("joymedia.services.post_production.resume_post_production_if_approved", side_effect=RuntimeError("worker unavailable"))
+	def test_approval_is_saved_when_finishing_cannot_be_requested(self, resume):
+		result = submit_shot_review(self.project.name, self.shot.name, "Approved")
+
+		self.assertEqual("Deferred", result["finishing"])
+		self.assertEqual("Approved", sync_shot_review_status(self.shot.name))
 		resume.assert_called_once_with(self.project.name)
 
 	def test_review_rejects_attempt_not_owned_by_shot(self):

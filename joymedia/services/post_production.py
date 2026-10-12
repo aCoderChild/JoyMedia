@@ -87,16 +87,17 @@ def cancel_post_production(project_name: str):
 
 def queue_post_production_internal(project_name):
 	"""Queue Finish film for a project whose caller is already authorized."""
-	status = frappe.db.get_value("Media Project", project_name, "post_production_status")
-	if status in ("Queued", "Running") and is_render_alive(_job_id(project_name)):
-		return {"status": status}
 	if not _shot_video_clips(project_name, create=True):
 		frappe.throw(_("Generate the scenes before finishing the film."))
 	_require_approved_shots(project_name)
 	# A finish already running repeats when it sees a request newer than its start.
-	# Do this only after all validation succeeds so a rejected take selection does
-	# not persist a phantom finishing request.
+	# Do this after validation but before checking for a live job: a newly approved
+	# take must request another pass even while a previous finish is rendering.
 	frappe.db.set_value("Media Project", project_name, "post_production_requested_at", now_datetime(), update_modified=False)
+	status = frappe.db.get_value("Media Project", project_name, "post_production_status")
+	if status in ("Queued", "Running") and is_render_alive(_job_id(project_name)):
+		frappe.db.commit()
+		return {"status": status}
 	_set_status(project_name, "Queued", step="", error="")
 	enqueue_render(
 		"joymedia.services.post_production.run_post_production",
@@ -118,6 +119,8 @@ def resume_post_production_if_approved(project_name):
 		return {"status": "Awaiting Scenes"}
 	if _unapproved_shots(project_name):
 		return {"status": "Awaiting QA"}
+	if _finishing_is_current(project_name):
+		return {"status": "Completed"}
 	return queue_post_production_internal(project_name)
 
 
@@ -177,19 +180,40 @@ def run_post_production(project_name: str):
 
 def _require_approved_shots(project_name):
 	"""Delivery may use only selected takes that have passed QA."""
-	pending = _unapproved_shots(project_name)
-	if pending:
-		details = ", ".join(f"{row.shot_number} ({row.review_status or 'Pending Review'})" for row in pending)
-		frappe.throw(_("QA approval is required before finishing the film. Review shots: {0}").format(details))
+	from joymedia.services.review_authority import require_approved_selected_shots
+
+	require_approved_selected_shots(project_name)
 
 
 def _unapproved_shots(project_name):
 	"""Return active storyboard shots that are not eligible for final delivery."""
-	return frappe.get_all(
-		"Shot",
-		filters={"media_project": project_name, "is_removed": 0, "review_status": ["!=", "Approved"]},
-		fields=["shot_number", "review_status"],
-		order_by="shot_number asc",
+	from joymedia.services.review_authority import unapproved_selected_shots
+
+	return unapproved_selected_shots(project_name)
+
+
+def _finishing_is_current(project_name):
+	"""Whether the completed timeline already contains every selected take."""
+	project = frappe.db.get_value(
+		"Media Project", project_name,
+		["post_production_status", "finished_timeline_signature"], as_dict=True,
+	)
+	if not project or project.post_production_status != "Completed":
+		return False
+	if not project.finished_timeline_signature or project.finished_timeline_signature != timeline_signature(project_name):
+		return False
+	selected = dict(frappe.get_all(
+		"Shot", filters={"media_project": project_name, "is_removed": 0},
+		fields=["name", "selected_output_asset_version"], as_list=True,
+	))
+	clips = frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project_name, "track_type": "Video", "enabled": 1},
+		fields=["shot", "source_asset_version"],
+	)
+	return all(
+		not clip.shot or clip.source_asset_version == selected.get(clip.shot)
+		for clip in clips
 	)
 
 

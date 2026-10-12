@@ -723,13 +723,10 @@ def _advance_run(run, enqueue_finalization=True):
 
 
 def _finish_film(project_name):
-	"""Add transitions and the soundtrack as soon as every scene has rendered."""
-	from .post_production import queue_post_production_internal
+	"""Request finishing only after the selected takes have passed human QA."""
+	from .post_production import resume_post_production_if_approved
 
-	try:
-		queue_post_production_internal(project_name)
-	except Exception:
-		frappe.logger("joymedia.generation_run").exception("Unable to queue Finish film for %s", project_name)
+	return resume_post_production_if_approved(project_name)
 
 
 def enqueue_finalization_if_ready(run_name: str):

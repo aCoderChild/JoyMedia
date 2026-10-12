@@ -85,7 +85,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		# ``keyframe_reference``); a legacy fallback receives ``first_frame``.
 		# Either is valid only when it agrees with the selected route contract.
 		route = resolve_shot_render_route(
-			self.workflow,
+			frappe.get_doc("Generation Workflow", self.workflow),
 			[{"asset_version": version.name, "reference_role": "General"}],
 		)
 		self.assertEqual(
