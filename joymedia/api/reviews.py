@@ -45,6 +45,7 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 		frappe.throw(_("Invalid verdict. Must be Approved, Rejected, or Needs Revision."))
 
 	ai_suggested_revision = None
+	ai_suggested_image_prompt = None
 	if verdict in ("Rejected", "Needs Revision"):
 		instruction_parts = []
 		if rejection_category:
@@ -61,7 +62,12 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 				product_name=project.product_name,
 				video_idea=project.video_idea,
 			)
+			# These are separate prompt contracts: the image prompt drives the
+			# starting-frame stage while the generation prompt drives motion/video.
+			# Saving only the latter made a QA regeneration silently reuse stale
+			# imagery.
 			ai_suggested_revision = result.get("generation_prompt")
+			ai_suggested_image_prompt = result.get("image_prompt")
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "Shot Review AI revision failed")
 
@@ -73,6 +79,8 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 	review.feedback_notes = (feedback_notes or "").strip() or None
 	review.ai_suggested_revision = ai_suggested_revision
 	review.prompt_before_revision = shot.generation_prompt
+	review.ai_suggested_image_prompt = ai_suggested_image_prompt
+	review.image_prompt_before_revision = shot.image_prompt
 	review.output_asset_version = output_asset_version
 	if generation_attempt:
 		review.generation_attempt = generation_attempt
@@ -86,6 +94,7 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 		"shot_name": shot_name,
 		"verdict": verdict,
 		"ai_suggested_revision": ai_suggested_revision,
+		"ai_suggested_image_prompt": ai_suggested_image_prompt,
 	}
 
 
@@ -132,7 +141,18 @@ def apply_shot_review_revision(project_name, shot_name, review_name, regenerate=
 	if review.output_asset_version and review.output_asset_version != shot.selected_output_asset_version:
 		frappe.throw(_("Select the output reviewed by this feedback before applying its revision."))
 
-	frappe.db.set_value("Shot", shot_name, "generation_prompt", review.ai_suggested_revision)
+	frappe.db.set_value(
+		"Shot",
+		shot_name,
+		{
+			"generation_prompt": review.ai_suggested_revision,
+			# Old reviews have no separate image prompt.  Falling back to the
+			# revised video prompt is compatible with legacy storyboards, while
+			# every new Qwen review preserves the dedicated image prompt.
+			"image_prompt": review.ai_suggested_image_prompt or review.ai_suggested_revision,
+		},
+		update_modified=False,
+	)
 	frappe.db.set_value("Shot Review", review_name, "ai_revision_applied", 1, update_modified=False)
 
 	result = {"shot_name": shot_name, "review_name": review_name, "applied": True}
@@ -161,9 +181,9 @@ def get_shot_reviews(project_name, shot_name):
 	reviews = frappe.get_all(
 		"Shot Review",
 		filters={"shot": shot_name},
-		fields=["name", "verdict", "rejection_category", "feedback_notes", "ai_suggested_revision",
+		fields=["name", "verdict", "rejection_category", "feedback_notes", "ai_suggested_revision", "ai_suggested_image_prompt",
 		        "ai_revision_applied", "regeneration_triggered", "reviewer", "reviewed_at", "generation_attempt",
-		        "output_asset_version"],
+		        "output_asset_version", "review_kind", "quality_scores_json", "qa_model"],
 		order_by="reviewed_at desc",
 	)
 	return {

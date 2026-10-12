@@ -97,10 +97,7 @@ def compose_shot_segments(generation_run_name, shot_name):
 					"source_generation_attempt": segments[-1][1].generation_attempt,
 				}
 			).insert(ignore_permissions=True)
-			shot.db_set(
-				{"selected_output_asset_version": asset_version.name, "review_status": "Pending Review"},
-				update_modified=False,
-			)
+			_select_output_for_review(shot, asset_version.name)
 			return asset_version.name
 
 		profile = _get_delivery_profile(project, generation_run_name)
@@ -157,10 +154,7 @@ def compose_shot_segments(generation_run_name, shot_name):
 				"source_generation_attempt": segments[-1][1].generation_attempt,
 			}
 		).insert(ignore_permissions=True)
-		shot.db_set(
-			{"selected_output_asset_version": asset_version.name, "review_status": "Pending Review"},
-			update_modified=False,
-		)
+		_select_output_for_review(shot, asset_version.name)
 		return asset_version.name
 
 
@@ -229,11 +223,23 @@ def promote_cumulative_shot_output(generation_run_name, shot_name):
 				"source_generation_attempt": attempt,
 			}
 		).insert(ignore_permissions=True)
-		shot.db_set(
-			{"selected_output_asset_version": asset_version.name, "review_status": "Pending Review"},
-			update_modified=False,
-		)
+		_select_output_for_review(shot, asset_version.name)
 		return asset_version.name
+
+
+def _select_output_for_review(shot, asset_version_name):
+	"""Select a new immutable take and immediately run configured visual QA.
+
+	The QA service is fail-closed: an unavailable model leaves the take pending for
+	a human; it never converts availability problems into an approval.
+	"""
+	shot.db_set(
+		{"selected_output_asset_version": asset_version_name, "review_status": "Pending Review"},
+		update_modified=False,
+	)
+	from .visual_quality import run_automated_shot_review
+
+	run_automated_shot_review(shot.name, asset_version_name)
 
 
 def _promote_artifact_file(artifact, media_asset, file_name):

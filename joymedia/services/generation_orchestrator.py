@@ -37,10 +37,12 @@ ACTIVE_ATTEMPT_STATUSES = ("Pending", "Submitting", "Queued", "Running")
 TERMINAL_ATTEMPT_STATUSES = ("Completed", "Failed", "Cancelled")
 TERMINAL_JOB_STATUSES = ("Completed", "Failed", "Cancelled")
 MAX_AUTOMATIC_RETRIES = 1
-# Keep each generation run strictly ordered.  This is required for chained
-# shots: the next shot must not enter ComfyUI until the previous shot has
-# produced the Last Frame artifact used as its first frame.
-MAX_JOBS_IN_FLIGHT_PER_RUN = 1
+# Dependency edges, rather than an unconditional serial queue, preserve
+# continuity.  Projects in Continuous/Consistency mode retain a capacity of
+# one; independent Multi-shot work can use the configured bounded capacity.
+# Keep the existing single-GPU behavior until an operator explicitly raises
+# ``joymedia_max_independent_jobs_per_run`` together with endpoint capacity.
+DEFAULT_MAX_INDEPENDENT_JOBS_IN_FLIGHT = 1
 
 
 def _continuation_settings(workflow):
@@ -311,6 +313,8 @@ def prepare_run(run_name: str):
 							segment_effective_frames=segment["segment_effective_frames"],
 							fps=snapshot.get("output_fps") or 24,
 						)
+						from .quality_feedback import append_quality_guidance
+						prompt_text = append_quality_guidance(prompt_text, step_workflow.name)
 						job = frappe.get_doc({
 							"doctype": "Generation Task",
 							"generation_run": run.name,
@@ -403,6 +407,8 @@ def prepare_run(run_name: str):
 					segment_effective_frames=segment["segment_effective_frames"],
 					fps=snapshot.get("output_fps") or 24,
 				)
+				from .quality_feedback import append_quality_guidance
+				prompt_text = append_quality_guidance(prompt_text, segment_workflow.name)
 				job = frappe.get_doc(
 					{
 						"doctype": "Generation Task",
@@ -1336,9 +1342,10 @@ def _has_submittable_work(run_name):
 def _has_submission_capacity(run):
 	"""Whether this run may put another job into ComfyUI's queue.
 
-	Only one attempt may be queued or running for a run at a time.  The result
-	ingestor calls ``refresh_run`` after completion, which then releases the next
-	job and lets chained-frame validation attach the completed Last Frame.
+	Tasks with an explicit dependency remain blocked by their dependency state.
+	Independent multi-shot tasks may use a small configured pool; continuous
+	projects remain serial so the next shot can consume its predecessor's Last
+	Frame artifact.
 	"""
 	job_names = _get_run_job_names(run.name)
 	if not job_names:
@@ -1347,7 +1354,19 @@ def _has_submission_capacity(run):
 		"Generation Attempt",
 		{"generation_task": ["in", job_names], "status": ["in", ["Submitting", "Queued", "Running"]]},
 	)
-	return in_flight < MAX_JOBS_IN_FLIGHT_PER_RUN
+	return in_flight < _run_submission_limit(run)
+
+
+def _run_submission_limit(run):
+	generation_mode = frappe.db.get_value("Media Project", run.media_project, "generation_mode") or "Multi-shot"
+	if generation_mode in ("Continuous", "Consistency"):
+		return 1
+	try:
+		return max(1, int(frappe.conf.get(
+			"joymedia_max_independent_jobs_per_run", DEFAULT_MAX_INDEPENDENT_JOBS_IN_FLIGHT
+		)))
+	except (TypeError, ValueError):
+		return DEFAULT_MAX_INDEPENDENT_JOBS_IN_FLIGHT
 
 
 def _global_submission_limit():

@@ -50,7 +50,9 @@ def get_attempt_analytics(filters=None):
 	}
 	review_status_by_shot = {shot.name: shot.review_status for shot in shots}
 
-	# Collect human QA verdicts from Shot Review records keyed by generation_attempt.
+	# Collect recorded human and automated QA verdicts from Shot Review records
+	# keyed by generation_attempt. Both are traceable review records; selection
+	# itself remains an editorial choice, never an approval proxy.
 	attempt_names = [attempt.name for attempt in attempts]
 	shot_reviews = frappe.get_all(
 		"Shot Review",
@@ -105,7 +107,7 @@ def _is_selected_output(attempt_name, shot_name, selected_outputs_by_shot, sourc
 
 
 def _review_outcome(qa_verdict, selected_output=None):
-	"""Return only explicit human QA outcomes (selection is not approval)."""
+	"""Return only explicit QA outcomes (selection is not approval)."""
 	if qa_verdict:
 		return qa_verdict == "Approved", True
 	return False, False

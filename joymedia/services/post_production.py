@@ -95,6 +95,7 @@ def queue_post_production_internal(project_name):
 		return {"status": status}
 	if not _shot_video_clips(project_name, create=True):
 		frappe.throw(_("Generate the scenes before finishing the film."))
+	_require_approved_shots(project_name)
 	_set_status(project_name, "Queued", step="", error="")
 	enqueue_render(
 		"joymedia.services.post_production.run_post_production",
@@ -126,6 +127,9 @@ def _job_id(project_name):
 
 def run_post_production(project_name: str):
 	try:
+		# Recheck inside the worker to prevent a stale queued job from finishing
+		# after an editor selects an unreviewed replacement take.
+		_require_approved_shots(project_name)
 		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", "", update_modified=False)
 		# Scenes regenerated or takes switched while this ran need another pass.
 		for _round in range(MAX_FINISHING_ROUNDS):
@@ -155,6 +159,19 @@ def run_post_production(project_name: str):
 		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", "", update_modified=False)
 		_set_status(project_name, "Failed", step="", error=friendly_failure(classify_failure(exc, "Generation")))
 		raise
+
+
+def _require_approved_shots(project_name):
+	"""Delivery may use only selected takes that have passed QA."""
+	pending = frappe.get_all(
+		"Shot",
+		filters={"media_project": project_name, "review_status": ["!=", "Approved"]},
+		fields=["shot_number", "review_status"],
+		order_by="shot_number asc",
+	)
+	if pending:
+		details = ", ".join(f"{row.shot_number} ({row.review_status or 'Pending Review'})" for row in pending)
+		frappe.throw(_("QA approval is required before finishing the film. Review shots: {0}").format(details))
 
 
 def timeline_signature(project_name):

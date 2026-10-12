@@ -467,3 +467,15 @@ class TestGenerationOrchestrator(FrappeTestCase):
 			"Generation Attempt",
 			{"generation_task": ["in", ["T1", "T2"]], "status": ["in", ["Submitting", "Queued", "Running"]]},
 		)
+
+	@patch("joymedia.services.generation_orchestrator.frappe.db.get_value", return_value="Multi-shot")
+	def test_independent_jobs_can_use_configured_parallel_capacity(self, get_value):
+		run = frappe._dict(name="RUN-1", media_project="PRJ-1")
+		with patch.dict(frappe.conf, {"joymedia_max_independent_jobs_per_run": 3}):
+			self.assertEqual(3, generation_orchestrator._run_submission_limit(run))
+
+	@patch("joymedia.services.generation_orchestrator.frappe.db.get_value", return_value="Continuous")
+	def test_continuous_jobs_remain_serial_despite_parallel_configuration(self, get_value):
+		run = frappe._dict(name="RUN-1", media_project="PRJ-1")
+		with patch.dict(frappe.conf, {"joymedia_max_independent_jobs_per_run": 3}):
+			self.assertEqual(1, generation_orchestrator._run_submission_limit(run))

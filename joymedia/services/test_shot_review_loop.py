@@ -45,7 +45,10 @@ class TestShotReviewLoop(FrappeTestCase):
 
 	@patch("joymedia.services.ai_director.generate_review_revision")
 	def test_rejection_is_bound_to_selected_output_and_can_apply_revision(self, generate_revision):
-		generate_revision.return_value = {"generation_prompt": "Correct product geometry and smooth motion."}
+		generate_revision.return_value = {
+			"generation_prompt": "Correct product geometry and smooth motion.",
+			"image_prompt": "The exact product with its correct cap geometry on a clean pedestal.",
+		}
 
 		result = submit_shot_review(
 			self.project.name,
@@ -59,6 +62,10 @@ class TestShotReviewLoop(FrappeTestCase):
 		self.assertEqual(self.output.name, review.output_asset_version)
 		self.assertEqual("Rejected", frappe.db.get_value("Shot", self.shot.name, "review_status"))
 		self.assertEqual("Correct product geometry and smooth motion.", review.ai_suggested_revision)
+		self.assertEqual(
+			"The exact product with its correct cap geometry on a clean pedestal.",
+			review.ai_suggested_image_prompt,
+		)
 
 		applied = apply_shot_review_revision(
 			self.project.name, self.shot.name, review.name, regenerate=False
@@ -67,6 +74,10 @@ class TestShotReviewLoop(FrappeTestCase):
 		self.assertEqual(
 			"Correct product geometry and smooth motion.",
 			frappe.db.get_value("Shot", self.shot.name, "generation_prompt"),
+		)
+		self.assertEqual(
+			"The exact product with its correct cap geometry on a clean pedestal.",
+			frappe.db.get_value("Shot", self.shot.name, "image_prompt"),
 		)
 
 	def test_switching_take_restores_only_that_take_review_verdict(self):

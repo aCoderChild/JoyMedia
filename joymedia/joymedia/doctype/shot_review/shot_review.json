@@ -11,13 +11,18 @@
   "output_asset_version",
   "reviewer",
   "reviewed_at",
+  "review_kind",
+  "qa_model",
+  "quality_scores_json",
   "verdict_section",
   "verdict",
   "rejection_category",
   "feedback_notes",
   "revision_section",
   "prompt_before_revision",
+  "image_prompt_before_revision",
   "ai_suggested_revision",
+  "ai_suggested_image_prompt",
   "ai_revision_applied",
   "regeneration_triggered"
  ],
@@ -65,6 +70,30 @@
    "label": "Reviewed At"
   },
   {
+   "default": "Human",
+   "fieldname": "review_kind",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Review Kind",
+   "options": "Human\nAutomated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qa_model",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Automated QA Model",
+   "read_only": 1
+  },
+  {
+   "fieldname": "quality_scores_json",
+   "fieldtype": "Code",
+   "hidden": 1,
+   "label": "Quality Scores",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
    "fieldname": "verdict_section",
    "fieldtype": "Section Break",
    "label": "Verdict"
@@ -107,6 +136,19 @@
    "fieldname": "ai_suggested_revision",
    "fieldtype": "Long Text",
    "label": "AI Suggested Revision"
+  },
+  {
+   "fieldname": "image_prompt_before_revision",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Image Prompt Before Revision",
+   "read_only": 1
+  },
+  {
+   "description": "AI-generated replacement for the starting-frame image prompt.",
+   "fieldname": "ai_suggested_image_prompt",
+   "fieldtype": "Long Text",
+   "label": "AI Suggested Image Prompt"
   },
   {
    "default": "0",
