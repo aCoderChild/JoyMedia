@@ -603,6 +603,9 @@ def set_timeline_transition(project_name: str, clip_name: str, transition: str, 
 def queue_project_timeline_export(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
 	_require_project_write(project)
+	from joymedia.services.post_production import _require_approved_shots
+
+	_require_approved_shots(project.name)
 	if getattr(project, "export_status", None) in ("Queued", "Running") and is_render_alive(
 		_export_job_id(project.name)
 	):
@@ -651,8 +654,10 @@ def _fail_dead_export(project):
 def run_project_timeline_export(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
 	from joymedia.services.timeline_composer import compose_project_timeline_internal
+	from joymedia.services.post_production import _require_approved_shots
 
 	try:
+		_require_approved_shots(project.name)
 		project.db_set("export_status", "Running")
 		project.db_set("export_started_at", frappe.utils.now())
 		frappe.db.commit()
@@ -699,7 +704,9 @@ def compose_project_timeline(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
 	_require_project_write(project)
 	from joymedia.services.timeline_composer import compose_project_timeline_internal
+	from joymedia.services.post_production import _require_approved_shots
 
+	_require_approved_shots(project.name)
 	project.db_set("export_status", "Running")
 	project.db_set("export_started_at", frappe.utils.now())
 	try:

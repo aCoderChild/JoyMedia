@@ -85,6 +85,7 @@ class TestTimelineEditor(FrappeTestCase):
 			"duration_seconds": 4.0,
 		}).insert(ignore_permissions=True)
 		self.shot.db_set("selected_output_asset_version", self.version_1.name, update_modified=False)
+		self.shot.db_set("review_status", "Approved", update_modified=False)
 		self.clip_1 = frappe.get_doc({
 			"doctype": "Timeline Clip",
 			"media_project": self.project.name,
@@ -125,6 +126,19 @@ class TestTimelineEditor(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			queue_project_timeline_export(self.project.name)
 		enqueue.assert_not_called()
+
+	def test_final_export_requires_approved_selected_shots(self):
+		self.shot.db_set("review_status", "Pending Review", update_modified=False)
+		with self.assertRaises(frappe.ValidationError):
+			queue_project_timeline_export(self.project.name)
+
+	def test_removed_unapproved_shot_does_not_block_final_export(self):
+		frappe.get_doc({
+			"doctype": "Shot", "media_project": self.project.name, "shot_number": 2,
+			"generation_prompt": "Removed scene.", "duration_seconds": 1, "is_removed": 1,
+		}).insert(ignore_permissions=True)
+		with patch("joymedia.services.timeline_editor.enqueue_render"):
+			self.assertEqual("Queued", queue_project_timeline_export(self.project.name)["export_status"])
 
 	def test_trim_updates_range_and_invalidates_project_output(self):
 		frappe.db.set_value("Media Project", self.project.name, "current_output_asset_version", self.version_1.name)

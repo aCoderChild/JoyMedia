@@ -103,12 +103,14 @@ def select_scene_take(project_name, shot_name, take_index):
 	shot.db_set("selected_output_asset_version", takes[take_index - 1].name, update_modified=False)
 	from joymedia.api.reviews import sync_shot_review_status
 	sync_shot_review_status(shot.name)
-	from joymedia.services.post_production import queue_post_production_internal
+	from joymedia.services.post_production import resume_post_production_if_approved
 
-	queue_post_production_internal(project.name)
 	frappe.db.commit()
+	# An unapproved take is still a legitimate editorial selection. Keep it
+	# selected for review, and only resume finishing once QA permits delivery.
+	finishing = resume_post_production_if_approved(project.name)
 	count, position = take_position(project.name, shot)
-	return {"shot_name": shot.name, "take_count": count, "take_index": position}
+	return {"shot_name": shot.name, "take_count": count, "take_index": position, "finishing": finishing["status"]}
 
 
 def _project_shot(project_name, shot_name):

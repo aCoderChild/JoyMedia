@@ -1,6 +1,7 @@
 from frappe.tests.utils import FrappeTestCase
+from unittest.mock import patch
 
-from joymedia.services.visual_quality import normalize_visual_qa
+from joymedia.services.visual_quality import normalize_visual_qa, queue_automated_shot_review
 
 
 class TestVisualQuality(FrappeTestCase):
@@ -20,3 +21,11 @@ class TestVisualQuality(FrappeTestCase):
 		})
 		self.assertEqual("Approved", result["verdict"])
 		self.assertEqual(80, result["scores"]["prompt_adherence"])
+
+	@patch("joymedia.services.visual_quality.enqueue_render")
+	@patch("joymedia.services.visual_quality._already_reviewed", return_value=False)
+	@patch("joymedia.services.visual_quality.is_configured", return_value=True)
+	def test_visual_qa_is_queued_not_run_inline(self, configured, reviewed, enqueue):
+		self.assertTrue(queue_automated_shot_review("SHOT-1", "ASTV-1"))
+		enqueue.assert_called_once()
+		self.assertEqual("joymedia.services.visual_quality.run_automated_shot_review", enqueue.call_args.args[0])

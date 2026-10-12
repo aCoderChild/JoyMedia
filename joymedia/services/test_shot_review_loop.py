@@ -93,6 +93,12 @@ class TestShotReviewLoop(FrappeTestCase):
 		self.shot.db_set("selected_output_asset_version", None, update_modified=False)
 		self.assertEqual("Pending Review", sync_shot_review_status(self.shot.name))
 
+	@patch("joymedia.services.post_production.resume_post_production_if_approved", return_value={"status": "Queued"})
+	def test_human_approval_resumes_eligible_finishing(self, resume):
+		result = submit_shot_review(self.project.name, self.shot.name, "Approved")
+		self.assertEqual("Queued", result["finishing"])
+		resume.assert_called_once_with(self.project.name)
+
 	def test_review_rejects_attempt_not_owned_by_shot(self):
 		with self.assertRaises(frappe.ValidationError):
 			submit_shot_review(

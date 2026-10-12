@@ -87,15 +87,16 @@ def cancel_post_production(project_name: str):
 
 def queue_post_production_internal(project_name):
 	"""Queue Finish film for a project whose caller is already authorized."""
-	# A finish already running repeats when it sees a request newer than its start.
-	frappe.db.set_value("Media Project", project_name, "post_production_requested_at", now_datetime(), update_modified=False)
-	frappe.db.commit()
 	status = frappe.db.get_value("Media Project", project_name, "post_production_status")
 	if status in ("Queued", "Running") and is_render_alive(_job_id(project_name)):
 		return {"status": status}
 	if not _shot_video_clips(project_name, create=True):
 		frappe.throw(_("Generate the scenes before finishing the film."))
 	_require_approved_shots(project_name)
+	# A finish already running repeats when it sees a request newer than its start.
+	# Do this only after all validation succeeds so a rejected take selection does
+	# not persist a phantom finishing request.
+	frappe.db.set_value("Media Project", project_name, "post_production_requested_at", now_datetime(), update_modified=False)
 	_set_status(project_name, "Queued", step="", error="")
 	enqueue_render(
 		"joymedia.services.post_production.run_post_production",
@@ -105,6 +106,19 @@ def queue_post_production_internal(project_name):
 	)
 	frappe.db.commit()
 	return {"status": "Queued"}
+
+
+def resume_post_production_if_approved(project_name):
+	"""Resume finishing only when every active selected take has human approval.
+
+	Selecting a take and recording QA are valid independent operations. This helper
+	keeps those actions non-throwing while still enforcing approval at delivery.
+	"""
+	if not _shot_video_clips(project_name, create=True):
+		return {"status": "Awaiting Scenes"}
+	if _unapproved_shots(project_name):
+		return {"status": "Awaiting QA"}
+	return queue_post_production_internal(project_name)
 
 
 @frappe.whitelist()
@@ -163,15 +177,20 @@ def run_post_production(project_name: str):
 
 def _require_approved_shots(project_name):
 	"""Delivery may use only selected takes that have passed QA."""
-	pending = frappe.get_all(
-		"Shot",
-		filters={"media_project": project_name, "review_status": ["!=", "Approved"]},
-		fields=["shot_number", "review_status"],
-		order_by="shot_number asc",
-	)
+	pending = _unapproved_shots(project_name)
 	if pending:
 		details = ", ".join(f"{row.shot_number} ({row.review_status or 'Pending Review'})" for row in pending)
 		frappe.throw(_("QA approval is required before finishing the film. Review shots: {0}").format(details))
+
+
+def _unapproved_shots(project_name):
+	"""Return active storyboard shots that are not eligible for final delivery."""
+	return frappe.get_all(
+		"Shot",
+		filters={"media_project": project_name, "is_removed": 0, "review_status": ["!=", "Approved"]},
+		fields=["shot_number", "review_status"],
+		order_by="shot_number asc",
+	)
 
 
 def timeline_signature(project_name):

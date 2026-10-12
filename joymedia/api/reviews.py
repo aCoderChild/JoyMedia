@@ -88,6 +88,11 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 
 	frappe.db.set_value("Shot", shot_name, "review_status", verdict, update_modified=False)
 	frappe.db.commit()
+	finishing = None
+	if verdict == "Approved":
+		from joymedia.services.post_production import resume_post_production_if_approved
+
+		finishing = resume_post_production_if_approved(project.name).get("status")
 
 	return {
 		"review_name": review.name,
@@ -95,6 +100,7 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 		"verdict": verdict,
 		"ai_suggested_revision": ai_suggested_revision,
 		"ai_suggested_image_prompt": ai_suggested_image_prompt,
+		"finishing": finishing,
 	}
 
 

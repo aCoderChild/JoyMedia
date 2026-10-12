@@ -45,13 +45,13 @@ class TestSceneTakes(FrappeTestCase):
 	def test_storyboard_card_knows_its_takes(self):
 		self.assertEqual((2, 2), scene_takes.take_position(self.project.name, self.shot))
 
-	@patch("joymedia.services.post_production.queue_post_production_internal")
-	def test_selecting_an_earlier_take_uses_it_and_refinishes_the_film(self, finish):
+	@patch("joymedia.services.post_production.resume_post_production_if_approved", return_value={"status": "Awaiting QA"})
+	def test_selecting_an_unapproved_take_keeps_selection_and_waits_for_qa(self, resume):
 		result = scene_takes.select_scene_take(self.project.name, self.shot.name, 1)
 
 		self.assertEqual(self.takes[0].name, frappe.db.get_value("Shot", self.shot.name, "selected_output_asset_version"))
-		self.assertEqual({"shot_name": self.shot.name, "take_count": 2, "take_index": 1}, result)
-		finish.assert_called_once_with(self.project.name)
+		self.assertEqual({"shot_name": self.shot.name, "take_count": 2, "take_index": 1, "finishing": "Awaiting QA"}, result)
+		resume.assert_called_once_with(self.project.name)
 		with self.assertRaises(frappe.ValidationError):
 			scene_takes.select_scene_take(self.project.name, self.shot.name, 3)
 
@@ -78,5 +78,5 @@ class TestSceneTakes(FrappeTestCase):
 			scene_takes.select_scene_take(self.project.name, self.shot.name, 1)
 
 		busy.return_value = ["SHOT-OTHER"]
-		with patch("joymedia.services.post_production.queue_post_production_internal"):
+		with patch("joymedia.services.post_production.resume_post_production_if_approved", return_value={"status": "Awaiting QA"}):
 			self.assertEqual(1, scene_takes.select_scene_take(self.project.name, self.shot.name, 1)["take_index"])

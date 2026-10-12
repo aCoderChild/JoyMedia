@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.workflow_routing import (
+	_references_for_legacy_workflow,
 	automatic_planning_input_contract,
 	_route,
 	resolve_shot_render_route,
@@ -17,6 +18,14 @@ def _reference(role, number):
 
 
 class TestWorkflowRouting(FrappeTestCase):
+	def test_legacy_fallback_fills_required_first_frame_before_optional_product_slots(self):
+		workflow = SimpleNamespace(bindings=[
+			SimpleNamespace(required_input_role="first_frame", required=1, accepted_media_type="Image", allow_multiple=0),
+			SimpleNamespace(required_input_role="product_reference", required=0, accepted_media_type="Image", allow_multiple=1),
+		])
+		mapped = _references_for_legacy_workflow(workflow, [_reference("Product", 1), _reference("Product", 2)])
+		self.assertEqual(["first_frame", "product_reference"], [item["reference_role"] for item in mapped])
+
 	def test_planner_receives_semantic_roles_not_a_default_graph_contract(self):
 		contract = automatic_planning_input_contract()
 		self.assertEqual(

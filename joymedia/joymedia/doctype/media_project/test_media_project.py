@@ -63,6 +63,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 	def test_workspace_exposes_business_data_not_raw_artifacts(self):
 		from joymedia.api.projects import get_project_workspace
 		from joymedia.services.video_plan_service import apply_video_plan
+		from joymedia.services.workflow_routing import resolve_shot_render_route
 
 		project, _ = _create_project("Workspace", self.workflow)
 		asset, version = _create_asset_version(project, "Image", "png")
@@ -76,8 +77,21 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			}]
 		})
 		workspace = get_project_workspace(project.name)
+		shot = frappe.get_doc("Shot", workspace["storyboard"][0]["name"])
 		self.assertEqual(workspace["project"]["video_idea"], project.video_idea)
 		self.assertEqual(workspace["storyboard"][0]["generation_prompt"], "A clean product reveal.")
+		# The persisted inputs must match the executable route.  A configured
+		# keyframe pipeline correctly receives its input-stage role (for example
+		# ``keyframe_reference``); a legacy fallback receives ``first_frame``.
+		# Either is valid only when it agrees with the selected route contract.
+		route = resolve_shot_render_route(
+			self.workflow,
+			[{"asset_version": version.name, "reference_role": "General"}],
+		)
+		self.assertEqual(
+			[item["reference_role"] for item in route["references"]],
+			[row.reference_role for row in shot.generation_inputs],
+		)
 		self.assertNotIn("outputs", workspace)
 		self.assertEqual(workspace["assets"][0]["asset_version"], version.name)
 

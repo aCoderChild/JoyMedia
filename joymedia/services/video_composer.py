@@ -237,9 +237,9 @@ def _select_output_for_review(shot, asset_version_name):
 		{"selected_output_asset_version": asset_version_name, "review_status": "Pending Review"},
 		update_modified=False,
 	)
-	from .visual_quality import run_automated_shot_review
+	from .visual_quality import queue_automated_shot_review
 
-	run_automated_shot_review(shot.name, asset_version_name)
+	queue_automated_shot_review(shot.name, asset_version_name)
 
 
 def _promote_artifact_file(artifact, media_asset, file_name):

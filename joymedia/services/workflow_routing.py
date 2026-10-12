@@ -201,11 +201,32 @@ def _references_for_legacy_workflow(workflow, references):
 	]
 	if not image_roles:
 		return references
-	role = "product_reference" if any(
-		item["role"] == "product_reference" and item.get("allow_multiple")
-		for item in contract
-	) else image_roles[0]
-	return [{**reference, "reference_role": role} for reference in references]
+	# A legacy graph can expose an optional product-reference collection beside a
+	# required first-frame slot. Prefer the required slot(s) first; choosing the
+	# convenient optional collection leaves the graph impossible to execute even
+	# though the plan contains a usable image.
+	required_roles = [
+		item["role"] for item in contract
+		if item.get("accepted_media_type") in {"Image", "Any"} and int(item.get("min_count") or 0)
+	]
+	role_counts = {role: 0 for role in image_roles}
+	mapped = []
+	for reference in references:
+		role = next(
+			(
+				candidate for candidate in required_roles
+				if role_counts[candidate] < next(item for item in contract if item["role"] == candidate)["min_count"]
+			),
+			None,
+		)
+		if not role:
+			role = "product_reference" if any(
+				item["role"] == "product_reference" and item.get("allow_multiple")
+				for item in contract
+			) else image_roles[0]
+		mapped.append({**reference, "reference_role": role})
+		role_counts[role] = role_counts.get(role, 0) + 1
+	return mapped
 
 
 def _latest_workflow(workflow_key):

@@ -15,6 +15,7 @@ import requests
 from frappe.utils import now_datetime
 
 from joymedia.services.vision_analysis import is_configured
+from joymedia.services.render_queue import enqueue_render
 
 
 QA_PROMPT = """You are a strict video-production QA reviewer. Inspect this contact sheet of the
@@ -27,6 +28,24 @@ Score reference fidelity and product identity against the reference description,
 are stable and preserve object/person identity, adherence to image/video prompts, and continuity
 of the single shot. Approve only when every score is at least 75 and no visible severe defect.
 """
+
+
+def queue_automated_shot_review(shot_name, output_asset_version):
+	"""Schedule visual QA separately from generation finalization.
+
+	The output is available immediately for human review. A slow vision provider
+	cannot hold the render orchestrator or delay dependent scene completion.
+	"""
+	if not is_configured() or _already_reviewed(shot_name, output_asset_version):
+		return False
+	enqueue_render(
+		"joymedia.services.visual_quality.run_automated_shot_review",
+		f"joymedia:visual-qa:{shot_name}:{output_asset_version}",
+		timeout=int(frappe.conf.get("qwen_vl_timeout") or 120) + 30,
+		shot_name=shot_name,
+		output_asset_version=output_asset_version,
+	)
+	return True
 
 
 def run_automated_shot_review(shot_name, output_asset_version):
@@ -63,13 +82,9 @@ def run_automated_shot_review(shot_name, output_asset_version):
 		"quality_scores_json": json.dumps(result["scores"], sort_keys=True),
 		"qa_model": frappe.conf.get("qwen_vl_model"),
 	}).insert(ignore_permissions=True)
-	# Never overwrite an explicit human decision.  A human review can be more
-	# nuanced than frame sampling and remains the final override.
-	latest_human = frappe.db.exists("Shot Review", {
-		"shot": shot.name, "output_asset_version": output_asset_version, "review_kind": ["in", ["", "Human"]],
-	})
-	if not latest_human:
-		frappe.db.set_value("Shot", shot.name, "review_status", verdict, update_modified=False)
+	# Sampling three frames is useful triage, not a replacement for the human
+	# acceptance gate. Keep the selected take Pending Review until a reviewer
+	# explicitly approves it, even when the automated assessment is positive.
 	return review.name
 
 
