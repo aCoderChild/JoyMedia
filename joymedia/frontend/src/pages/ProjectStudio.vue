@@ -317,7 +317,7 @@
       @toggle-generation-mode="toggleContinuityMode"
       @change-shot-duration="changeShotDuration"
       @regenerate-current-shot="regenerateCurrentShot"
-      @save-active-shot="saveActiveShot"
+      @save-scene-description="saveActiveShot"
       @ask-ai="onAskAiRewriteShot"
       @submit-review="onSubmitReview"
       @apply-review-revision="onApplyReviewRevision"
@@ -1369,17 +1369,24 @@ async function toggleContinuityMode() {
   });
 }
 
-async function saveActiveShot() {
-  const shot = activeSelectedShot.value;
-  if (!shot?.name) return;
+async function saveActiveShot(shotName, generationPrompt, done = () => {}) {
+  const shot = storyboardShots.value.find((item) => item.name === shotName) || activeSelectedShot.value;
+  if (!shot?.name || !String(generationPrompt || '').trim()) { done(); return; }
   try {
-    await call("joymedia.api.storyboard.update_project_shot", {
+    const prompt = String(generationPrompt).trim();
+    const result = await call("joymedia.api.storyboard.update_project_shot", {
       project_name: projectName.value,
       shot_name: shot.name,
-      values: { generation_prompt: shot.generation_prompt },
+      // This inspector exposes one scene description used by both Flux and
+      // video generation, so a manual edit must update both contracts.
+      values: { generation_prompt: prompt, image_prompt: prompt },
     });
+    Object.assign(shot, result);
+    notify({ title: currentLang.value === 'vi' ? 'Đã lưu mô tả cảnh' : 'Scene description saved', text: currentLang.value === 'vi' ? 'Tạo lại cảnh để dùng mô tả mới.' : 'Regenerate the scene to use the new description.', type: 'success' });
   } catch (err) {
     notify({ title: "Error", text: errorMessage(err, "Failed to save scene."), type: "error" });
+  } finally {
+    done();
   }
 }
 

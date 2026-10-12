@@ -508,8 +508,28 @@
               {{ currentLang === 'vi' ? 'Dùng cho ảnh Flux và video' : 'Used for Flux images and video' }}
             </span>
           </div>
-          <div class="w-full min-h-32 px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary whitespace-pre-wrap leading-relaxed">
-            {{ activeSelectedShot?.generation_prompt || (currentLang === 'vi' ? 'Chưa có mô tả cảnh.' : 'No scene description yet.') }}
+          <textarea
+            v-model="sceneDescriptionDraft"
+            :disabled="isProductionActive || savingSceneDescription"
+            :placeholder="currentLang === 'vi' ? 'Nhập mô tả cảnh…' : 'Describe this scene…'"
+            rows="6"
+            class="w-full min-h-32 px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary leading-relaxed focus:outline-none focus:border-indigo-500 disabled:opacity-60 resize-y"
+            @keydown.ctrl.enter.prevent="saveSceneDescription"
+            @keydown.meta.enter.prevent="saveSceneDescription"
+          />
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[10px] text-ink-muted">
+              {{ currentLang === 'vi' ? 'Sửa mô tả rồi lưu trước khi tạo lại. Ctrl/⌘ + Enter để lưu.' : 'Edit the description, then save before regenerating. Ctrl/⌘ + Enter saves.' }}
+            </span>
+            <button
+              type="button"
+              class="shrink-0 px-2.5 py-1 rounded-lg bg-surface-card border border-outline-border text-[10px] font-semibold text-ink-secondary hover:text-ink-primary hover:border-indigo-400 cursor-pointer disabled:opacity-50"
+              :disabled="isProductionActive || savingSceneDescription || !sceneDescriptionChanged"
+              @click="saveSceneDescription"
+            >
+              <span v-if="savingSceneDescription" class="lucide-refresh-cw size-3 animate-spin inline-block" />
+              <span v-else>{{ currentLang === 'vi' ? 'Lưu mô tả' : 'Save description' }}</span>
+            </button>
           </div>
           <div v-if="!usesKeyframes && shotReferences.length" class="text-[10px] text-ink-muted leading-relaxed">
             <span v-for="(reference, index) in shotReferences" :key="`legend-${index}`" class="mr-2 inline-block">
@@ -587,6 +607,7 @@
                 : 'bg-surface-card border-outline-border text-ink-secondary hover:border-amber-400 hover:text-amber-400'"
               :disabled="reviewLoading"
               @click="openRejectForm('Needs Revision')"
+              :title="currentLang === 'vi' ? 'Giữ cảnh hiện tại nhưng yêu cầu AI sửa prompt để tạo phiên bản mới.' : 'Keep this take, but ask AI to revise its prompt for a new version.'"
             >
               {{ currentLang === 'vi' ? '~ Sửa lại' : '~ Revise' }}
             </button>
@@ -598,6 +619,7 @@
                 : 'bg-surface-card border-outline-border text-ink-secondary hover:border-rose-400 hover:text-rose-400'"
               :disabled="reviewLoading"
               @click="openRejectForm('Rejected')"
+              :title="currentLang === 'vi' ? 'Đánh dấu cảnh này không đạt; tạo lại chỉ sau khi áp dụng một prompt mới.' : 'Mark this take unacceptable; regenerate only after applying a new prompt.'"
             >
               {{ currentLang === 'vi' ? '✕ Từ chối' : '✕ Reject' }}
             </button>
@@ -611,6 +633,11 @@
               </span>
               <button type="button" class="text-ink-muted hover:text-ink-primary text-[10px] cursor-pointer" @click="showRejectForm = false">✕</button>
             </div>
+            <p class="text-[10px] text-ink-muted leading-relaxed">
+              {{ pendingVerdict === 'Rejected'
+                ? (currentLang === 'vi' ? 'Từ chối dùng khi cảnh không thể chấp nhận. Nó loại cảnh khỏi quá trình duyệt và yêu cầu một bản thay thế.' : 'Reject is for an unacceptable take. It blocks approval and requires a replacement.')
+                : (currentLang === 'vi' ? 'Sửa lại dùng khi ý tưởng đúng nhưng cần điều chỉnh prompt hoặc chất lượng trước khi tạo bản mới.' : 'Revise is for a salvageable take: keep the intent, adjust the prompt or quality, then create a new version.') }}
+            </p>
             <select
               v-model="rejectCategory"
               class="w-full px-2 py-1.5 rounded-lg bg-surface-card border border-outline-border text-[11px] text-ink-primary cursor-pointer"
@@ -724,6 +751,7 @@ const emit = defineEmits([
   "toggleGenerationMode",
   "changeShotDuration",
   "regenerateCurrentShot",
+  "saveSceneDescription",
   "askAi",
   "submitReview",
   "applyReviewRevision",
@@ -735,6 +763,20 @@ const showRejectForm = ref(false);
 const pendingVerdict = ref("");
 const rejectCategory = ref("");
 const rejectNotes = ref("");
+const sceneDescriptionDraft = ref("");
+const savingSceneDescription = ref(false);
+const sceneDescriptionChanged = computed(() =>
+  sceneDescriptionDraft.value.trim() !== String(props.activeSelectedShot?.generation_prompt || "").trim()
+);
+
+function saveSceneDescription() {
+  const description = sceneDescriptionDraft.value.trim();
+  if (!description || !sceneDescriptionChanged.value || savingSceneDescription.value) return;
+  savingSceneDescription.value = true;
+  emit("saveSceneDescription", props.activeSelectedShot?.name, description, () => {
+    savingSceneDescription.value = false;
+  });
+}
 
 function submitAiRewrite() {
   const instruction = props.currentLang === "vi"
@@ -805,6 +847,12 @@ watch(
     rejectCategory.value = "";
     rejectNotes.value = "";
   },
+  { immediate: true }
+);
+
+watch(
+  () => props.activeSelectedShot?.generation_prompt,
+  (prompt) => { sceneDescriptionDraft.value = String(prompt || ""); },
   { immediate: true }
 );
 
