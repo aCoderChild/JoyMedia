@@ -336,11 +336,18 @@ def _story_reference_roles(workflow_input_contract):
 	"""Map semantic director slots to the selected workflow's declared input roles."""
 	from joymedia.services.reference_compositor import normalize_reference_role
 
-	roles = {
-		normalize_reference_role(str(item.get("role") or "")): str(item.get("role") or "").strip()
-		for item in workflow_input_contract or []
-		if str(item.get("role") or "").strip()
-	}
+	# Keep numbered product slots distinct while resolving aliases such as
+	# ``character`` and ``product_reference``. Normalizing every role into one
+	# dictionary key would let ``product_2`` overwrite the primary ``product``
+	# slot, which changes the director's stable prompt contract.
+	roles = {}
+	for item in workflow_input_contract or []:
+		declared = str(item.get("role") or "").strip()
+		if not declared:
+			continue
+		semantic = normalize_reference_role(declared)
+		roles.setdefault(semantic, declared)
+		roles.setdefault(declared, declared)
 	fallback = _example_reference_role(workflow_input_contract)
 	return {
 		"character": roles.get("person") or roles.get("character") or fallback,

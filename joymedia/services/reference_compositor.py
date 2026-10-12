@@ -14,7 +14,7 @@ ROLE_ALIASES = {
 	"product": "product",
 	"product_reference": "product",
 	"product_1": "product",
-	"product_2": "product",
+	"product_2": "product_2",
 	"environment": "environment",
 	"place": "environment",
 	"background": "environment",

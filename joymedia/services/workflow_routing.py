@@ -132,6 +132,13 @@ def resolve_shot_render_route(default_workflow, references, *, handoff_type="", 
 	if not pipeline and strategy == "flux2_multireference_i2v":
 		pipeline = _pipeline_for(keyframe_key, None)
 	if not pipeline:
+		# Older/custom installations may still point at a user-owned workflow
+		# without the optional automatic keyframe pipelines. Preserve that
+		# workflow for compatibility; production model workflows must still have
+		# an explicit pipeline and continue to fail loudly below.
+		if not str(getattr(default_workflow, "workflow_key", "")).startswith(("h3_", "flux")):
+			fallback_references = _references_for_legacy_workflow(default_workflow, normalized)
+			return _route(strategy, default_workflow, None, fallback_references, reason)
 		frappe.throw(
 			frappe._("No executable {0} pipeline is configured for the selected delivery tier.").format(strategy)
 		)
@@ -181,6 +188,24 @@ def _as_flux_keyframe_references(references, pipeline):
 	if not role:
 		frappe.throw(frappe._("Flux keyframe workflow has no image input role."))
 	return [{**reference, "reference_role": role} for reference in references[:1]]
+
+
+def _references_for_legacy_workflow(workflow, references):
+	"""Map automatic references onto a legacy workflow's image input contract."""
+	from joymedia.services.workflow_resolver import get_workflow_input_contract
+
+	contract = get_workflow_input_contract(workflow)
+	image_roles = [
+		item["role"] for item in contract
+		if item.get("accepted_media_type") in {"Image", "Any"}
+	]
+	if not image_roles:
+		return references
+	role = "product_reference" if any(
+		item["role"] == "product_reference" and item.get("allow_multiple")
+		for item in contract
+	) else image_roles[0]
+	return [{**reference, "reference_role": role} for reference in references]
 
 
 def _latest_workflow(workflow_key):

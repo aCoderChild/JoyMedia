@@ -89,7 +89,7 @@
    "fieldname": "submission_state",
    "fieldtype": "Select",
    "label": "Submission State",
-   "options": "Not Submitted\nSubmitting\nSubmitted",
+   "options": "Not Submitted\nSubmitting\nSubmitted\nRejected",
    "read_only": 1
   },
   {

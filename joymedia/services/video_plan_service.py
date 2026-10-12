@@ -104,6 +104,11 @@ def _route_and_validate_plan_shot(shot, project_references, default_workflow):
 			frappe.throw(_("Automatic route does not support Shot Reference role '{0}'.").format(role))
 		counts[role] = counts.get(role, 0) + 1
 	for role, item in contract.items():
+		# Direct R2V references are the complete visual input for the shot. A
+		# legacy workflow may also declare a first-frame binding for continuation,
+		# but requiring that extra input here would reject a valid direct-R2V plan.
+		if route["strategy"] == "direct_r2v" and role == "first_frame":
+			continue
 		count = counts.get(role, 0)
 		if count < int(item.get("min_count") or 0):
 			frappe.throw(_("Shot {0} needs {1} input(s) for role '{2}'.").format(
