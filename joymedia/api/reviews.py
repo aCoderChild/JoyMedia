@@ -178,12 +178,23 @@ def get_shot_reviews(project_name, shot_name):
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
 
+	# During a rolling deploy the web process can run newer code for a brief
+	# period before ``bench migrate`` has added newly introduced columns. Do not
+	# turn a non-essential review panel into a 500 that breaks generation polling.
+	requested_fields = [
+		"name", "verdict", "rejection_category", "feedback_notes", "ai_suggested_revision",
+		"ai_suggested_image_prompt", "ai_revision_applied", "regeneration_triggered", "reviewer",
+		"reviewed_at", "generation_attempt", "output_asset_version", "review_kind",
+		"quality_scores_json", "qa_model",
+	]
+	review_fields = [
+		field for field in requested_fields
+		if field in {"name", "reviewed_at"} or frappe.db.has_column("Shot Review", field)
+	]
 	reviews = frappe.get_all(
 		"Shot Review",
 		filters={"shot": shot_name},
-		fields=["name", "verdict", "rejection_category", "feedback_notes", "ai_suggested_revision", "ai_suggested_image_prompt",
-		        "ai_revision_applied", "regeneration_triggered", "reviewer", "reviewed_at", "generation_attempt",
-		        "output_asset_version", "review_kind", "quality_scores_json", "qa_model"],
+		fields=review_fields,
 		order_by="reviewed_at desc",
 	)
 	return {

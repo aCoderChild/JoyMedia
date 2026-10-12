@@ -1089,10 +1089,13 @@ def _update_job_summary(job):
 			and (effective_attempt.get("error_details") or failure_summary)
 			else _("All execution attempts failed.")
 		)
-	# Job counters are derived from immutable Attempt history. A retry creates an
-	# Attempt immediately after moving its Job to Queued, so a normal ORM save can
-	# race with that state transition and roll the retry transaction back.
-	job.db_set(
+	# Job counters are derived from immutable Attempt history. Avoid Document.db_set
+	# here: it reloads the row with ``FOR UPDATE`` and can collide with the result
+	# ingestor while the browser polls progress. A direct idempotent update has no
+	# stale document/version state to reconcile.
+	frappe.db.set_value(
+		"Generation Task",
+		job.name,
 		{
 			"progress": getattr(job, "progress", 0),
 			"status": job.status,
@@ -1101,7 +1104,7 @@ def _update_job_summary(job):
 			"failure_class": job.failure_class,
 			"error_summary": job.error_summary,
 		},
-		notify=True,
+		update_modified=False,
 	)
 
 

@@ -358,10 +358,10 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(run.status, "Completed")
 		self.assertIsNotNone(run.completed_at)
 
+	@patch("joymedia.services.generation_orchestrator.frappe.db.set_value")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_failed_attempt_followed_by_completed_attempt_completes_job(self, get_all):
+	def test_failed_attempt_followed_by_completed_attempt_completes_job(self, get_all, set_value):
 		job = frappe._dict(name="JOB-00001", completed_at=None)
-		job.db_set = MagicMock()
 		get_all.return_value = [
 			frappe._dict(name="ATT-00001", status="Failed", retry_of=None),
 			frappe._dict(name="ATT-00002", status="Completed", retry_of="ATT-00001"),
@@ -372,12 +372,13 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(job.progress, 100)
 		self.assertEqual(job.status, "Completed")
 		self.assertIsNone(job.error_summary)
-		job.db_set.assert_called_once()
+		self.assertEqual("Generation Task", set_value.call_args.args[0])
+		self.assertEqual("Completed", set_value.call_args.args[2]["status"])
 
+	@patch("joymedia.services.generation_orchestrator.frappe.db.set_value")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_manual_regeneration_replaces_the_rejected_completed_attempt(self, get_all):
+	def test_manual_regeneration_replaces_the_rejected_completed_attempt(self, get_all, set_value):
 		job = frappe._dict(name="JOB-00001", completed_at=None)
-		job.db_set = MagicMock()
 		get_all.return_value = [
 			frappe._dict(
 				name="ATT-00001", status="Completed", retry_of=None, retry_reason=None
@@ -394,10 +395,10 @@ class TestGenerationOrchestrator(FrappeTestCase):
 
 		self.assertEqual(job.status, "Queued")
 
+	@patch("joymedia.services.generation_orchestrator.frappe.db.set_value")
 	@patch("joymedia.services.generation_orchestrator.frappe.get_all")
-	def test_job_summary_uses_the_latest_failed_attempt_details(self, get_all):
+	def test_job_summary_uses_the_latest_failed_attempt_details(self, get_all, set_value):
 		job = frappe._dict(name="JOB-00001", completed_at=None)
-		job.db_set = MagicMock()
 		get_all.return_value = [
 			frappe._dict(
 				name="ATT-00001",
@@ -413,7 +414,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual("Failed", job.status)
 		self.assertEqual("Input", job.failure_class)
 		self.assertEqual("No staged input was available.", job.error_summary)
-		job.db_set.assert_called_once()
+		self.assertEqual("Failed", set_value.call_args.args[2]["status"])
 
 	@patch("joymedia.services.generation_orchestrator._refresh_run_counters")
 	@patch("joymedia.services.generation_orchestrator._enqueue")

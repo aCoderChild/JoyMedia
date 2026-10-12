@@ -16,6 +16,7 @@ export function useProjectGeneration(projectName, onRefresh) {
   let pollTimeout = null;
   let polling = false;
   let consecutivePollFailures = 0;
+	let syncFailureNotified = false;
   const syncError = ref("");
 
   const getFrappeErrorMessage = errorMessage;
@@ -63,6 +64,7 @@ export function useProjectGeneration(projectName, onRefresh) {
         { name: project() }
       );
       consecutivePollFailures = 0;
+		 syncFailureNotified = false;
       syncError.value = "";
       if (snap) {
         const planning = snap.project?.planning_status;
@@ -97,12 +99,18 @@ export function useProjectGeneration(projectName, onRefresh) {
     } catch (err) {
       consecutivePollFailures += 1;
       if (consecutivePollFailures >= 3) {
-        syncError.value = "Connection lost while checking generation. Generation may still be running.";
-        notify({ title: "Generation sync", text: syncError.value, type: "error" });
+		 syncError.value = "Generation status is temporarily unavailable. Generation may still be running.";
+		 // A failed poll is recoverable. Show one actionable notice per outage,
+		 // rather than adding a toast every three seconds until the API recovers.
+		 if (!syncFailureNotified) {
+			 notify({ title: "Generation sync", text: syncError.value, type: "error" });
+			 syncFailureNotified = true;
+		 }
       }
     } finally {
       if (polling && ["Queued", "Running"].includes(currentRun.value?.status)) {
-        pollTimeout = setTimeout(pollRun, 3000);
+		 const retryDelay = consecutivePollFailures ? Math.min(15000, 3000 * consecutivePollFailures) : 3000;
+		 pollTimeout = setTimeout(pollRun, retryDelay);
       }
     }
   }
