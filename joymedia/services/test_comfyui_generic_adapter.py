@@ -169,3 +169,56 @@ class TestGenericComfyUIAdapter(FrappeTestCase):
 		self.assertEqual("product-b.png", resolved["product_2_image"]["inputs"]["image"])
 		self.assertEqual("overflow-board.png", resolved["reference_board_image"]["inputs"]["image"])
 		self.assertEqual(["reference_board_positive", 0], resolved["guider"]["inputs"]["positive"])
+
+
+class TestOptionalInputChains(FrappeTestCase):
+	def _graph(self):
+		return {
+			"base": {"class_type": "Base", "inputs": {}},
+			"a": {"class_type": "Link", "inputs": {"in": None}},
+			"b": {"class_type": "Link", "inputs": {"in": None}},
+			"a_aux": {"class_type": "Aux", "inputs": {}},
+			"target": {"class_type": "Target", "inputs": {"x": None}},
+		}
+
+	def _adapter(self):
+		adapter = GenericComfyUIAdapter()
+		adapter.execution_spec = {"input_preprocessing": {"optional_input_chains": [{
+			"target": {"node_key": "target", "input_name": "x"}, "base": ["base", 0],
+			"links": [
+				{"role": "a", "nodes": ["a", "a_aux"], "node": "a", "input": "in"},
+				{"role": "b", "nodes": ["b"], "node": "b", "input": "in"},
+			],
+		}]}}
+		return adapter
+
+	def test_present_links_chain_in_order_and_absent_nodes_are_removed(self):
+		workflow = self._graph()
+		adapter = self._adapter()
+		adapter._finalize_optional_input_chains(
+			workflow, adapter.execution_spec["input_preprocessing"], {"a": ["f"], "b": ["g"]}
+		)
+		self.assertEqual(["base", 0], workflow["a"]["inputs"]["in"])
+		self.assertEqual(["a", 0], workflow["b"]["inputs"]["in"])
+		self.assertEqual(["b", 0], workflow["target"]["inputs"]["x"])
+
+	def test_with_no_references_target_reads_the_base(self):
+		workflow = self._graph()
+		adapter = self._adapter()
+		adapter._finalize_optional_input_chains(workflow, adapter.execution_spec["input_preprocessing"], {})
+		self.assertEqual(["base", 0], workflow["target"]["inputs"]["x"])
+		self.assertEqual({"base", "target"}, set(workflow))
+
+	def test_skipping_a_middle_link_keeps_the_chain_connected(self):
+		workflow = self._graph()
+		adapter = self._adapter()
+		adapter._finalize_optional_input_chains(workflow, adapter.execution_spec["input_preprocessing"], {"b": ["g"]})
+		self.assertEqual(["base", 0], workflow["b"]["inputs"]["in"])
+		self.assertNotIn("a", workflow)
+
+	def test_specification_rejects_links_to_unknown_nodes(self):
+		adapter = self._adapter()
+		workflow = self._graph()
+		del workflow["a_aux"]
+		with self.assertRaises(ValueError):
+			adapter._validate_input_chain(workflow, adapter.execution_spec["input_preprocessing"]["optional_input_chains"][0])

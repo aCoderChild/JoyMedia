@@ -148,6 +148,8 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 					"node_key": target.get("node_key"),
 					"input_name": target.get("input_name"),
 				})
+		for chain in preprocessing.get("optional_input_chains") or []:
+			self._validate_input_chain(workflow_data, chain)
 		for operation in spec.get("conditional_inputs") or []:
 			if not isinstance(operation, dict) or not operation.get("role"):
 				raise ValueError("Each conditional_inputs entry requires a role")
@@ -165,6 +167,45 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 			self._validate_node_input(workflow_data, operation)
 			if not isinstance(operation.get("remove_patterns", []), list):
 				raise ValueError("prompt_transforms.remove_patterns must be a list")
+
+	def _validate_input_chain(self, workflow_data, chain):
+		if not isinstance(chain, dict) or not isinstance(chain.get("links"), list) or not chain["links"]:
+			raise ValueError("Each optional_input_chains entry requires a non-empty links list")
+		self._validate_node_input(workflow_data, {"semantic": "input chain target", **(chain.get("target") or {})})
+		base = chain.get("base")
+		if not isinstance(base, list) or len(base) != 2 or str(base[0]) not in workflow_data:
+			raise ValueError("Input chain base must be [node_key, output_index] of an existing node")
+		for link in chain["links"]:
+			if not isinstance(link, dict) or not link.get("role"):
+				raise ValueError("Each input chain link requires a role")
+			nodes = link.get("nodes")
+			if not isinstance(nodes, list) or any(str(node) not in workflow_data for node in nodes or []):
+				raise ValueError("Input chain link nodes must list existing nodes")
+			self._validate_node_input(
+				workflow_data,
+				{"semantic": "input chain link", "node_key": link.get("node"), "input_name": link.get("input")},
+			)
+
+	@staticmethod
+	def _finalize_optional_input_chains(workflow, preprocessing, staged_inputs):
+		"""Splice each present link into a single-stream chain; drop the nodes of absent links.
+
+		The chain starts at ``base`` and every present link consumes the previous
+		source through ``link.input`` and exposes ``link.node``'s output; the final
+		source is wired into ``target``. Any graph input (conditioning, model, ...) can
+		be chained this way, so absent references never leave dangling nodes.
+		"""
+		for chain in preprocessing.get("optional_input_chains") or []:
+			source = [str(chain["base"][0]), int(chain["base"][1])]
+			for link in chain["links"]:
+				if not staged_inputs.get(link["role"]):
+					for node_key in link["nodes"]:
+						workflow.pop(str(node_key), None)
+					continue
+				workflow[str(link["node"])]["inputs"][str(link["input"])] = source
+				source = [str(link["node"]), int(link.get("output", 0))]
+			target = chain["target"]
+			workflow[str(target["node_key"])]["inputs"][str(target["input_name"])] = source
 
 	def extract_execution_metadata(self, workflow_data):
 		self.validate_specification(workflow_data)
@@ -217,6 +258,7 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 	def finalize_workflow(self, workflow, workflow_version, staged_inputs):
 		preprocessing = self.execution_spec.get("input_preprocessing") or {}
 		self._finalize_optional_reference_branches(workflow, preprocessing, staged_inputs)
+		self._finalize_optional_input_chains(workflow, preprocessing, staged_inputs)
 		composed_roles = {
 			str(role) for role in preprocessing.get("compose_image_roles") or []
 		}

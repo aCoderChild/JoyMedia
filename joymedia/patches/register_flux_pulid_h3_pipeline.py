@@ -23,37 +23,8 @@ def execute():
 	h3 = _register_h3()
 	if not h3:
 		return
-	flux = frappe.db.get_value("Generation Workflow", {"workflow_key": WORKFLOW_KEY}, "name")
-	if not flux:
-		spec = {
-			"parameters": [
-				{"semantic": "seed", "node_key": "25", "input_name": "noise_seed"},
-				{"semantic": "width", "node_key": "27", "input_name": "width"},
-				{"semantic": "height", "node_key": "27", "input_name": "height"},
-				{"semantic": "output_prefix", "node_key": "50", "input_name": "filename_prefix"},
-			],
-			"outputs": {"primary": {"node_key": "50", "media_type": "Image"}},
-			"metadata": {"frame_count": 1, "produces_video": 0, "produces_audio": 0},
-		}
-		doc = frappe.get_doc({
-			"doctype": "Generation Workflow",
-			"workflow_key": WORKFLOW_KEY,
-			"adapter_key": "comfyui_generic",
-			"workflow_json": GRAPH.read_text(),
-			"execution_spec": json.dumps(spec),
-		})
-		doc.append("bindings", {
-			"binding_key": "generation_prompt", "node_key": "6", "input_name": "text",
-			"value_type": "Text", "required": 1,
-		})
-		doc.append("bindings", {
-			"binding_key": "face_reference", "node_key": "54", "input_name": "image",
-			"required_input_role": "person", "value_type": "File Path", "required": 1,
-			"accepted_media_type": "Image", "allow_multiple": 0,
-		})
-		doc.insert(ignore_permissions=True)
-		flux = doc.name
-	if not frappe.db.exists("Generation Pipeline Step", {"parenttype": "Generation Pipeline", "workflow": h3}):
+	flux = _register_keyframe()
+	if not frappe.db.exists("Generation Pipeline Step", {"parenttype": "Generation Pipeline", "workflow": flux}):
 		frappe.get_doc({
 			"doctype": "Generation Pipeline",
 			"pipeline_key": PIPELINE_KEY,
@@ -110,5 +81,56 @@ def _insert_h3(workflow_key, continuation=None):
 		"required_input_role": "first_frame", "value_type": "File Path", "required": 1,
 		"accepted_media_type": "Image", "allow_multiple": 0,
 	})
+	doc.insert(ignore_permissions=True)
+	return doc.name
+
+
+def _register_keyframe():
+	"""Keyframe workflow whose face, product and environment references are all optional."""
+	name = frappe.db.get_value(
+		"Generation Workflow", {"workflow_key": WORKFLOW_KEY}, "name", order_by="version_number desc"
+	)
+	if name and "optional_input_chains" in (frappe.db.get_value("Generation Workflow", name, "execution_spec") or ""):
+		return name
+	spec = {
+		"parameters": [
+			{"semantic": "seed", "node_key": "25", "input_name": "noise_seed"},
+			{"semantic": "width", "node_key": "27", "input_name": "width"},
+			{"semantic": "height", "node_key": "27", "input_name": "height"},
+			{"semantic": "output_prefix", "node_key": "50", "input_name": "filename_prefix"},
+		],
+		"outputs": {"primary": {"node_key": "50", "media_type": "Image"}},
+		"metadata": {"frame_count": 1, "produces_video": 0, "produces_audio": 0},
+		"input_preprocessing": {"optional_input_chains": [
+			{   # Face identity (PuLID) patches the model used by the guider.
+				"target": {"node_key": "47", "input_name": "model"}, "base": ["63", 0],
+				"links": [{"role": "person", "nodes": ["54", "53", "51", "45", "62"], "node": "62", "input": "model"}],
+			},
+			{   # Product and environment images (Redux) are chained onto the text conditioning.
+				"target": {"node_key": "47", "input_name": "conditioning"}, "base": ["26", 0],
+				"links": [
+					{"role": role, "nodes": [f"{role}_image", f"{role}_encode", f"{role}_redux"],
+					 "node": f"{role}_redux", "input": "conditioning"}
+					for role in ("product", "environment")
+				],
+			},
+		]},
+	}
+	doc = frappe.get_doc({
+		"doctype": "Generation Workflow",
+		"workflow_key": WORKFLOW_KEY,
+		"adapter_key": "comfyui_generic",
+		"workflow_json": GRAPH.read_text(),
+		"execution_spec": json.dumps(spec),
+	})
+	doc.append("bindings", {
+		"binding_key": "generation_prompt", "node_key": "6", "input_name": "text", "value_type": "Text", "required": 1,
+	})
+	for role, node_key in (("person", "54"), ("product", "product_image"), ("environment", "environment_image")):
+		doc.append("bindings", {
+			"binding_key": f"{role}_reference", "node_key": node_key, "input_name": "image",
+			"required_input_role": role, "value_type": "File Path", "required": 0,
+			"accepted_media_type": "Image", "allow_multiple": 0,
+		})
 	doc.insert(ignore_permissions=True)
 	return doc.name
