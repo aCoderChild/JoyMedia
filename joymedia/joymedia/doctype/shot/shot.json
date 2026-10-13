@@ -148,7 +148,7 @@
    "fieldname": "character_mode",
    "fieldtype": "Select",
    "label": "Characters",
-   "options": "\\nDraw in scene\\nPaste exact art"
+   "options": "\nDraw in scene\nPaste exact art"
   },
   {
    "fieldname": "keyframe_artifact",

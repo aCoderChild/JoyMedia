@@ -344,3 +344,11 @@ class TestAudioLineLast(FrappeTestCase):
 		with patch("joymedia.services.subject_overlay._cutout_path", return_value="/p.png"):
 			project = frappe._dict(references=[{"asset_version": "AV1", "label": "Tissue pack"}])
 			self.assertEqual({"packaging": True, "zoom": True}, _scrub_options(shot, project))
+
+	def test_an_unknown_character_mode_never_overrides_the_projects(self):
+		from joymedia.services.project_context import _valid_character_mode
+
+		self.assertEqual("Draw in scene", _valid_character_mode("Draw in scene"))
+		self.assertIsNone(_valid_character_mode("\\nDraw in scene\\nPaste exact art"))
+		self.assertIsNone(_valid_character_mode(""))
+		self.assertIsNone(_valid_character_mode(None))
