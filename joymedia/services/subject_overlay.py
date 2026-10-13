@@ -124,35 +124,51 @@ def _fit(width, height, max_width, max_height):
 def layout(canvas, sizes_by_role):
 	"""Place each subject: boxes (x, y, width, height) with the asset's aspect ratio unchanged.
 
-	`sizes_by_role` is a list of (role, width, height) of the real assets. Characters stand evenly spaced on a
-	baseline, products sit in front along the bottom edge, logos in the top corners.
+	`sizes_by_role` is a list of (role, width, height[, scale]) of the real assets; scale is the subject's size
+	relative to the others. Characters stand evenly spaced on a baseline, products stand in front as one family
+	beside or between them, logos sit in the top corners.
 	"""
 	canvas_width, canvas_height = canvas
 	boxes = [None] * len(sizes_by_role)
 	groups = {role: [i for i, item in enumerate(sizes_by_role) if item[0] == role] for role in ("character", "product", "logo")}
 	for rank, index in enumerate(groups["character"]):
-		_role_name, width, height = sizes_by_role[index]
+		_role_name, width, height, *rest = sizes_by_role[index]
 		count = len(groups["character"])
 		box_width, box_height = _fit(
-			width, height, CHARACTER_WIDTH * canvas_width / count, CHARACTER_HEIGHT * canvas_height
+			width, height, CHARACTER_WIDTH * canvas_width / count * (rest[0] if rest else 1),
+			CHARACTER_HEIGHT * canvas_height * (rest[0] if rest else 1),
 		)
 		center = (rank + 1) * canvas_width / (count + 1)
 		boxes[index] = (round(center - box_width / 2), round(CHARACTER_BASELINE * canvas_height) - box_height, box_width, box_height)
 	hero = boxes[groups["character"][0]] if groups["character"] else None
+	count = len(groups["product"])
+	family_x = 0.0
 	for rank, index in enumerate(groups["product"]):
-		_role_name, width, height = sizes_by_role[index]
-		count = len(groups["product"])
-		box_width, box_height = _fit(width, height, PRODUCT_WIDTH * canvas_width / count, PRODUCT_HEIGHT * canvas_height)
+		_role_name, width, height, *rest = sizes_by_role[index]
+		scale = rest[0] if rest else 1
+		box_width, box_height = _fit(
+			width, height, PRODUCT_WIDTH * canvas_width / max(1, count * 0.75) * scale, PRODUCT_HEIGHT * canvas_height * scale
+		)
 		if hero and count == 1:
 			center = hero[0] + hero[2] / 2 + PRODUCT_OFFSET * canvas_width
-			bottom = hero[1] + hero[3] + PRODUCT_NEAR * canvas_height
+		elif count == 1:
+			center = 0.5 * canvas_width
 		else:
-			center = (rank + 1) * canvas_width / (count + 1)
-			bottom = (hero[1] + hero[3] + PRODUCT_NEAR * canvas_height) if hero else PRODUCT_BASELINE * canvas_height
+			# Several products stand together in the middle of the frame, each overlapping its neighbour a little.
+			center = canvas_width / 2 + family_x
+			family_x += box_width * 0.75
+		boxes[index] = [center, box_width, box_height]
+	if count > 1:
+		# Centre the family: shift every product left by half the spread.
+		spread = (family_x - boxes[groups["product"][-1]][1] * 0.75) / 2
+		for index in groups["product"]:
+			boxes[index][0] -= spread
+	for index in groups["product"]:
+		center, box_width, box_height = boxes[index]
+		bottom = (hero[1] + hero[3] + PRODUCT_NEAR * canvas_height) if hero else PRODUCT_BASELINE * canvas_height
 		margin = EDGE_MARGIN * canvas_width
 		x = min(max(center - box_width / 2, margin), canvas_width - margin - box_width)
-		bottom = min(bottom, 0.97 * canvas_height)
-		boxes[index] = (round(x), round(bottom) - box_height, box_width, box_height)
+		boxes[index] = (round(x), round(min(bottom, 0.97 * canvas_height)) - box_height, box_width, box_height)
 	for rank, index in enumerate(groups["logo"]):
 		_role_name, width, height = sizes_by_role[index]
 		box_width, box_height = _fit(width, height, LOGO_MAX_WIDTH * canvas_width, LOGO_MAX_HEIGHT * canvas_height)
@@ -188,7 +204,7 @@ def composite_subjects(background_bytes, subjects):
 			asset = source.convert("RGBA")
 		# Sizes and placement follow the visible subject, not the transparent margin around it.
 		assets.append(asset.crop(asset.getchannel("A").point(lambda a: 255 if a > 8 else 0).getbbox()))
-	boxes = layout(canvas.size, [(s["role"], a.width, a.height) for s, a in zip(subjects, assets)])
+	boxes = layout(canvas.size, [(s["role"], a.width, a.height, s.get("scale", 1)) for s, a in zip(subjects, assets)])
 	for subject, asset, (x, y, width, height) in zip(subjects, assets, boxes):
 		resized = asset.resize((width, height), Image.Resampling.LANCZOS)
 		# A softer edge and a touch of the room's colour make the cutout sit in the scene instead of on it.
@@ -219,4 +235,7 @@ def paste_subjects_into_keyframe(attempt, image_bytes):
 		snapshot = {}
 	shot_snapshot = next((row for row in (snapshot or {}).get("shots") or [] if row.get("shot") == shot), {})
 	subjects = pasted_references(shot_snapshot.get("references"))
+	scales = {row.get("asset_version"): row.get("scale") or 1 for row in (snapshot or {}).get("references") or []}
+	for subject in subjects:
+		subject["scale"] = scales.get(subject["asset_version"], 1)
 	return composite_subjects(image_bytes, subjects) if subjects else image_bytes

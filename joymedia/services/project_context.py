@@ -255,6 +255,7 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 				"reference_key": getattr(row, "reference_key", None) or "",
 				"reference_role": row.reference_role or "General",
 				"label": row.label or "",
+				"scale": float(getattr(row, "relative_size", None) or 1),
 			}
 			for row in project.selected_media or []
 			if row.asset_version in visual_asset_versions

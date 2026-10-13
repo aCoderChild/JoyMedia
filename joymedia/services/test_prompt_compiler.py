@@ -188,3 +188,22 @@ class TestAudioLineLast(FrappeTestCase):
 		self.assertIn("The only character in this scene is Shera mascot (mostly cream", prompt)
 		self.assertIn("keep exactly these colours", prompt)
 		self.assertIn("every hand, arm or paw is theirs", prompt)
+
+	def test_every_segment_of_a_long_scene_carries_the_cast_and_the_audio_rules(self):
+		from joymedia.services.prompt_compiler import compile_segment_prompt_from_snapshot
+
+		shot = frappe._dict(
+			name="S", shot_number=1, generation_prompt="Mother bear pulls tissue.\n\nAudio: sound effects: paper tearing.",
+			image_prompt="", motion_plan_json="", handoff_type="", end_state="",
+			references=[{"reference_role": "Character", "asset_version": "AV1"}],
+		)
+		project = frappe._dict(
+			generation_mode="Multi-shot", global_instructions="", soundtrack_mode="Sound effects only",
+			references=[{"asset_version": "AV1", "label": "Shera mascot"}],
+		)
+		for index in (1, 2):
+			with patch("joymedia.services.subject_overlay.describe_colours", return_value="mostly cream"):
+				prompt = compile_segment_prompt_from_snapshot(shot, project, index, 2, fps=24, segment_start_frame=0, segment_effective_frames=48)
+			self.assertIn("The only character in this scene is Shera mascot", prompt)
+			self.assertIn("Add no text, letters", prompt)
+			self.assertTrue(prompt.split("\n\n")[-1].startswith("Audio:"), prompt[-300:])

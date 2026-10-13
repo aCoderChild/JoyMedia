@@ -7,7 +7,8 @@
   "reference_key",
   "asset_version",
   "reference_role",
-  "label"
+  "label",
+  "relative_size"
  ],
  "fields": [
   {
@@ -39,6 +40,13 @@
    "fieldname": "label",
    "fieldtype": "Data",
    "label": "Label"
+  },
+  {
+   "default": "1",
+   "description": "How large this character or product appears next to the others when its real image is pasted in (1 = normal, 0.5 = half size).",
+   "fieldname": "relative_size",
+   "fieldtype": "Float",
+   "label": "Relative Size"
   }
  ],
  "istable": 1,

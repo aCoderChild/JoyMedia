@@ -29,6 +29,21 @@ class TestLayout(FrappeTestCase):
 		self.assertLessEqual(abs((product[1] + product[3]) - (character[1] + character[3])), 0.05 * 1280)
 		self.assertLess(product[3], character[3])
 
+	def test_a_smaller_character_is_drawn_smaller_with_the_same_proportions(self):
+		mother, baby = layout((720, 1280), [("character", 464, 560, 1), ("character", 464, 560, 0.5)])
+		self.assertLessEqual(baby[3], 0.55 * mother[3])
+		self.assertLessEqual(abs(baby[2] / baby[3] - mother[2] / mother[3]), 0.02)
+
+	def test_several_products_stand_together_in_the_middle(self):
+		boxes = layout((720, 1280), [("character", 464, 560)] + [("product", 1076, 717)] * 3)[1:]
+		for left, right in zip(boxes, boxes[1:]):
+			self.assertLess(right[0], left[0] + left[2])  # each overlaps its neighbour a little
+		centre = sum(x + w / 2 for x, _y, w, _h in boxes) / 3
+		self.assertAlmostEqual(360, centre, delta=40)
+		for x, y, w, h in boxes:
+			self.assertGreaterEqual(x, 0)
+			self.assertLessEqual(x + w, 720)
+
 	def test_logos_sit_in_opposite_top_corners(self):
 		first, second = layout((1000, 1000), [("logo", 200, 100), ("logo", 200, 100)])
 		self.assertLess(first[0], 500)

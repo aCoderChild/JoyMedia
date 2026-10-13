@@ -130,6 +130,16 @@ def compile_segment_prompt_from_snapshot(
 		shot, project, include_global_instructions=not asset_versions,
 		prompt_source=base_prompt_source, is_final=is_final,
 	)
+	def finish(text):
+		# Continuation segments are written from the creative text, so they need the cast and audio rules too.
+		if prompt_source != "motion" or segment_count == 1:
+			return text
+		if shot.get("references") if hasattr(shot, "get") else getattr(shot, "references", None):
+			text = f"{text}\n\n{_identity_guard(shot, project)}"
+		return _audio_line_last(
+			text, sound_effects_only=project.get("soundtrack_mode") in ("Sound effects only", "Separate effects layer")
+		)
+
 	if asset_versions:
 		from .film_director import reference_preamble
 
@@ -152,17 +162,17 @@ def compile_segment_prompt_from_snapshot(
 		shot, is_final=is_final, start_seconds=start_seconds, end_seconds=end_seconds
 	)
 	if segment_index == 1:
-		return (
+		return finish((
 			f"{base}\n\nThis is segment 1 of {segment_count}. "
 			"Begin the planned action naturally.\n\n"
 			f"{timing}"
-		).strip()
-	return (
+		).strip())
+	return finish((
 		f"{base}\n\nThis is continuation segment {segment_index} of {segment_count}. "
 		"Continue seamlessly from the previous clip's exact last frame with the same motion, light and sound. "
 		"Do not restart or reintroduce the action.\n\n"
 		f"{timing}"
-	).strip()
+	).strip())
 
 
 def compile_prompt_for_documents(shot, project, include_global_instructions=True, prompt_source="motion", is_final=False):
@@ -214,31 +224,38 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 				"the product from scratch."
 			)
 	if prompt_source == "motion" and getattr(shot, "references", None):
-		# The video model keeps no identity of its own beyond the supplied frame and tends to redesign a
-		# character the moment the camera moves in close, or to invent another one for any animal or person the
-		# text names. State the cast once, then resolve every name and body part against it.
-		names = _character_names(shot, project)
-		who = (
-			f"The only character{'s' if len(names) > 1 else ''} in this scene {'are' if len(names) > 1 else 'is'} "
-			f"{' and '.join(names)}. Every bear, cub, mother, baby, person or other character named in this prompt "
-			"is one of them, and every hand, arm or paw is theirs (their own body), never a separate person's. "
-			"No other character, animal, person or human hand appears. "
-		) if names else (
-			"Every character, animal or person named in this prompt is the one character shown in the supplied "
-			"first frame, and every hand or paw is that character's own. "
-		)
-		prompt = (
-			f"{prompt}\n\n"
-			f"Identity consistency: {who}Every product is the one shown in the first frame; never add another or a "
-			"second copy. Keep them exactly as shown (same colours, fur or material, face and proportions) in every "
-			"camera angle, including close-ups; never redesign or recolour them."
-		)
+		prompt = f"{prompt}\n\n{_identity_guard(shot, project)}"
 	if prompt_source == "motion":
 		timing = temporal_timing_instruction(shot, is_final=is_final)
 		if timing:
 			prompt = f"{prompt}\n\n{timing}"
 		prompt = _audio_line_last(prompt, sound_effects_only=project.get("soundtrack_mode") in ("Sound effects only", "Separate effects layer"))
 	return prompt.strip()
+
+
+def _identity_guard(shot, project):
+	"""The cast, colour and no-extras rules every video segment of a scene with references must carry.
+
+	The video model keeps no identity of its own beyond the supplied frame and tends to redesign a character the
+	moment the camera moves in close, or to invent another one for any animal, person or product the text names.
+	State the cast once, then resolve every name and body part against it.
+	"""
+	names = _character_names(shot, project)
+	who = (
+		f"The only character{'s' if len(names) > 1 else ''} in this scene {'are' if len(names) > 1 else 'is'} "
+		f"{' and '.join(names)}. Every bear, cub, mother, baby, person or other character named in this prompt "
+		"is one of them, and every hand, arm or paw is theirs (their own body), never a separate person's. "
+		"No other character, animal, person or human hand appears. "
+	) if names else (
+		"Every character, animal or person named in this prompt is the one character shown in the supplied "
+		"first frame, and every hand or paw is that character's own. "
+	)
+	return (
+		f"Identity consistency: {who}Every product is the one shown in the first frame; never add another product, "
+		"carton or packaging, or a second copy. Add no text, letters, numbers or captions anywhere except the brand "
+		"logo. Keep everything exactly as shown (same colours, fur or material, face and proportions) in every "
+		"camera angle, including close-ups; never redesign or recolour it."
+	)
 
 
 NO_VOICE_OR_MUSIC = (
