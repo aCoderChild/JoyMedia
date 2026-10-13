@@ -352,6 +352,8 @@ class MediaProject(Document):
 		self._require_video_idea()
 		if frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}) and self.storyboard_approval_status != "Approved":
 			frappe.throw(_("Review and approve the storyboard before starting generation."))
+		from joymedia.services.plan_signature import assert_plan_matches_approval
+		assert_plan_matches_approval(self)
 		if not self.workflow:
 			frappe.throw(_("Configure Video Settings before generating a storyboard."))
 		_, current_snapshot_hash = build_project_snapshot(self)
@@ -395,6 +397,11 @@ class MediaProject(Document):
 				frappe.throw(_("This project has no active Generation Workflow."))
 			workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 			recalculate_shot_durations(self.name)
+			# Duration rebalancing is deterministic for the approved plan, so re-seal it.
+			from joymedia.services.plan_signature import compute_plan_signature
+			plan_signature = compute_plan_signature(self.name)
+			if self.approved_plan_signature:
+				self.db_set("approved_plan_signature", plan_signature, update_modified=False)
 			shots = _active_project_shots(
 				self.name,
 				fields=["name", "shot_number", "planned_frame_count"],
@@ -413,7 +420,7 @@ class MediaProject(Document):
 				"media_project": self.name,
 				"project_snapshot_json": project_snapshot_json,
 				"project_snapshot_hash": project_snapshot_hash,
-				"execution_scope_json": json.dumps({"replace_selection": replace_selection}),
+				"execution_scope_json": json.dumps({"replace_selection": replace_selection, "plan_signature": plan_signature}),
 				"workflow": settings.workflow,
 				"generation_pipeline": snapshot.get("generation_pipeline") or None,
 				"requested_by": frappe.session.user,

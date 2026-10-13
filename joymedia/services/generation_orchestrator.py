@@ -770,12 +770,26 @@ def retry_failed_jobs_from_ui(run_name: str):
 	return retry_failed_jobs_internal(run_name)
 
 
+def _require_run_plan_unchanged(run):
+	"""Retry repeats the frozen attempt; a changed plan must be regenerated instead."""
+	from .plan_signature import compute_plan_signature
+
+	scope = frappe.parse_json(run.execution_scope_json or "{}")
+	signature = scope.get("plan_signature") if isinstance(scope, dict) else None
+	if signature and signature != compute_plan_signature(run.media_project):
+		frappe.throw(
+			_("The storyboard changed after this run started. Retry would repeat the old plan; "
+			  "regenerate to render the current approved plan.")
+		)
+
+
 def retry_failed_jobs_internal(run_name: str):
 	"""Retry failed Jobs after the owning Campaign has authorized the operation."""
 	with filelock(f"joymedia-retry-run-{run_name}"):
 		run = frappe.get_doc("Generation Run", run_name)
 		if run.status != "Failed":
 			frappe.throw(_("Only Failed runs can be retried."))
+		_require_run_plan_unchanged(run)
 
 		job_names = frappe.get_all(
 			"Generation Task",
@@ -811,6 +825,7 @@ def retry_generation_task_from_ui(job_name: str, reason: str = "Execution Failur
 		_require_project_generation_authorization(frappe.get_doc("Media Project", run.media_project))
 		if job.status != "Failed":
 			frappe.throw(_("Only Failed Generation Tasks can be retried."))
+		_require_run_plan_unchanged(run)
 
 		results = _retry_and_submit_latest_failed_attempts(job, reason)
 		if not results:

@@ -58,6 +58,9 @@ def _start_takes_run(project, shot_names, retry_reason=None):
 		frappe.throw(_("Review and approve the storyboard before generating another take."))
 	from joymedia.services.project_context import build_project_snapshot
 	from joymedia.services.generation_orchestrator import start_run_internal
+	from joymedia.services.plan_signature import assert_plan_matches_approval, compute_plan_signature
+
+	assert_plan_matches_approval(project)
 
 	snapshot_json, snapshot_hash = build_project_snapshot(project, require_production_pipeline=True)
 	# The snapshot selected the production pipeline once. Reuse that immutable
@@ -78,6 +81,7 @@ def _start_takes_run(project, shot_names, retry_reason=None):
 				"replace_selection": True,
 				"retry_reason": retry_reason or None,
 				"continuation_from_task": continuation_from_task,
+				"plan_signature": compute_plan_signature(project.name),
 			}),
 			"workflow": project.workflow,
 			"generation_pipeline": pipeline_name,

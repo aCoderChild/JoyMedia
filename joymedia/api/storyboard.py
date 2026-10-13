@@ -100,9 +100,13 @@ def approve_project_storyboard(project_name, acknowledge_timing_warnings=False, 
 	warnings = frappe.parse_json(project.storyboard_timing_warnings or "[]")
 	if warnings and str(acknowledge_timing_warnings).lower() not in {"1", "true", "yes", "on"}:
 		frappe.throw(_("Resolve or explicitly acknowledge the storyboard timing warnings before approval."))
-	_assign_shot_references(project, frappe.parse_json(shot_references) if shot_references else {})
-	_bind_unassigned_project_references(project)
+	assigned = _assign_shot_references(project, frappe.parse_json(shot_references) if shot_references else {})
+	_bind_unassigned_project_references(project, skip=assigned)
+	_validate_shot_reference_contracts(project)
+	from joymedia.services.plan_signature import compute_plan_signature
+
 	project.storyboard_approval_status = "Approved"
+	project.approved_plan_signature = compute_plan_signature(project.name)
 	project.save(ignore_permissions=True)
 	return {"project": project.name, "approval_status": project.storyboard_approval_status}
 
@@ -140,9 +144,54 @@ def _assign_shot_references(project, assignments):
 				"reference_role": rows[key].reference_role or "General", "asset_version": rows[key].asset_version,
 			})
 		shot.save(ignore_permissions=True)
+	return set(assignments)
 
 
-def _bind_unassigned_project_references(project):
+def _validate_shot_reference_contracts(project):
+	"""Reject, before any GPU time, shots whose references the first pipeline stage cannot take.
+
+	Every problem across the storyboard is reported together so the user can fix the
+	assignments in one pass.
+	"""
+	if not project.workflow:
+		return
+	from joymedia.services.generation_orchestrator import _pipeline_reference_inputs
+	from joymedia.services.workflow_resolver import get_workflow_input_contract
+	from joymedia.services.workflow_routing import resolve_shot_render_route
+
+	default_workflow = frappe.get_doc("Generation Workflow", project.workflow)
+	errors = []
+	for shot_name in frappe.get_all(
+		"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name", order_by="shot_number asc"
+	):
+		shot = frappe.get_doc("Shot", shot_name)
+		references = [
+			{"reference_role": row.reference_role, "asset_version": row.asset_version}
+			for row in shot.generation_inputs or []
+		]
+		try:
+			route = resolve_shot_render_route(
+				default_workflow, references, handoff_type=shot.handoff_type or "",
+				pipeline_name=project.generation_pipeline or None,
+			)
+			if not route["generation_pipeline"]:
+				continue
+			first_stage = frappe.get_doc(
+				"Generation Workflow", frappe.get_doc("Generation Pipeline", route["generation_pipeline"]).steps[0].workflow
+			)
+			mapped = _pipeline_reference_inputs(frappe._dict(references=route["references"]), first_stage)
+			# A continuing shot starts from its predecessor's last frame, not from a keyframe.
+			continues = shot.continuity_mode == "Continue" and shot.shot_number > 1
+			for item in [] if continues else get_workflow_input_contract(first_stage):
+				if item.get("required") and item["role"] != "first_frame" and not mapped.get(item["role"]):
+					frappe.throw(_("no reference is assigned for the required role '{0}'.").format(item["role"]))
+		except frappe.ValidationError as exc:
+			errors.append(f"{shot.shot_name or shot.name}: {frappe.utils.strip_html(str(exc))}")
+	if errors:
+		frappe.throw("<br>".join([_("Fix these shot reference assignments before approval:")] + errors))
+
+
+def _bind_unassigned_project_references(project, skip=()):
 	"""Persist selected image references on imported shots that have none yet.
 
 	The importer cannot infer creative meaning from an arbitrary workbook. This
@@ -158,7 +207,7 @@ def _bind_unassigned_project_references(project):
 		return
 	for shot_name in frappe.get_all("Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"):
 		shot = frappe.get_doc("Shot", shot_name)
-		if shot.generation_inputs:
+		if shot_name in skip or shot.generation_inputs:
 			continue
 		for role, asset_version in references:
 			shot.append("generation_inputs", {"reference_role": role, "asset_version": asset_version})
@@ -225,6 +274,8 @@ def update_project_shot(project_name, shot_name, values):
 		continuity_changed = False
 	if changed or image_prompt_changed or caption_changed or continuity_changed:
 		shot.save(ignore_permissions=True)
+	# Captions are finishing-only; the approved plan signature already covers generation inputs.
+	if changed or image_prompt_changed or continuity_changed:
 		_mark_storyboard_needs_review(project)
 	if caption_changed:
 		from joymedia.services.timeline_editor import _invalidate_project_output
