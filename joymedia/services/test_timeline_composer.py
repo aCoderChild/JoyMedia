@@ -9,6 +9,7 @@ from frappe.tests.utils import FrappeTestCase
 from joymedia.services.timeline_composer import (
 	_assert_timeline_unchanged,
 	_apply_ending,
+	_caption_cues,
 	_get_generated_audio_sources,
 	_normalize_clip,
 	_render_sequence,
@@ -184,6 +185,26 @@ def _mean_luma(path, seconds):
 
 
 class TestSceneCaptions(FrappeTestCase):
+	def test_caption_cues_cover_every_captioned_scene(self):
+		project = frappe._dict(show_captions=1)
+		clips = [
+			frappe._dict(shot="SHOT-1", timeline_start_frame=0),
+			frappe._dict(shot="SHOT-2", timeline_start_frame=48),
+		]
+		with patch(
+			"joymedia.services.timeline_composer.frappe.get_all",
+			return_value=[
+				frappe._dict(name="SHOT-1", caption="DÀY DẶN 4 LỚP"),
+				frappe._dict(name="SHOT-2", caption="100% BỘT GỖ TỰ NHIÊN"),
+			],
+		):
+			cues = _caption_cues(project, clips, [48, 72], [0, 0], True, 24)
+
+		self.assertEqual(
+			[(0.0, 2.0, "DÀY DẶN 4 LỚP"), (2.0, 5.0, "100% BỘT GỖ TỰ NHIÊN")],
+			cues,
+		)
+
 	def test_caption_shows_in_the_lower_third_during_its_scene(self):
 		with tempfile.TemporaryDirectory(prefix="joymedia-caption-") as temp_dir:
 			temp_path = Path(temp_dir)

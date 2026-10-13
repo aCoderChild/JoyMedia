@@ -29,13 +29,14 @@ class TestStoryboardJob(FrappeTestCase):
 
 	@patch("joymedia.services.video_plan_service.apply_video_plan")
 	@patch("joymedia.services.shot_duration_planner.recalculate_shot_durations")
-	def test_planning_then_rendering_clears_the_status(self, recalculate, apply_plan):
+	def test_planning_requires_storyboard_review_before_rendering(self, recalculate, apply_plan):
 		project = MagicMock(name=self.project.name)
 		project.name = self.project.name
 
 		self.assertEqual(("Idle", ""), self._run(project))
 		apply_plan.assert_called_once()
-		project.generate_video.assert_called_once()
+		project.generate_video.assert_not_called()
+		self.assertEqual("Ready for Review", project.storyboard_approval_status)
 
 	def test_user_facing_problems_are_shown_as_written(self):
 		project = MagicMock()

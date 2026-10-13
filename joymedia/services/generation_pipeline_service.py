@@ -9,23 +9,30 @@ import frappe
 from frappe import _
 
 
-def pipeline_for_final_workflow(workflow_name):
-	"""Return the newest production-default pipeline, preferring candidates only as fallback.
+def get_active_generation_pipeline():
+	"""Return the one pipeline deliberately promoted by the site administrator.
 
-	Candidate pipelines remain explicitly selectable in project settings but must
-	not silently replace an established default merely because they were registered
-	later.
+	A workflow/pipeline version is immutable, but its creation is not a promotion.
+	Using the latest row here would let an unvalidated candidate alter customer
+	renders. Configure ``joymedia_active_generation_pipeline`` in site_config or
+	as a global default after a smoke test has passed.
 	"""
-	rows = frappe.get_all(
-		"Generation Pipeline", fields=["name", "pipeline_key"],
-		order_by="version_number desc, modified desc",
+	name = frappe.conf.get("joymedia_active_generation_pipeline") or frappe.defaults.get_global_default(
+		"joymedia_active_generation_pipeline"
 	)
-	rows.sort(key=lambda row: "candidate" in str(row.pipeline_key or "").lower())
-	for row in rows:
-		pipeline = frappe.get_doc("Generation Pipeline", row.name)
-		if pipeline.steps and pipeline.steps[-1].workflow == workflow_name:
-			return pipeline
-	return None
+	if not name:
+		frappe.throw(_("No active Generation Pipeline is configured. Set joymedia_active_generation_pipeline."))
+	if not frappe.db.exists("Generation Pipeline", name):
+		frappe.throw(_("Configured active Generation Pipeline {0} does not exist.").format(name))
+	pipeline = frappe.get_doc("Generation Pipeline", name)
+	get_pipeline_steps(pipeline.name)
+	return pipeline
+
+
+def pipeline_for_final_workflow(workflow_name):
+	"""Return the configured pipeline only when its immutable final step matches."""
+	pipeline = get_active_generation_pipeline()
+	return pipeline if pipeline.steps[-1].workflow == workflow_name else None
 
 
 def get_pipeline_steps(pipeline_name):

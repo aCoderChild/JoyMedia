@@ -270,6 +270,23 @@ def validate_workflow_for_execution(workflow_version, workflow=None):
 	return workflow
 
 
+def validate_workflow_node_types_available(workflow_version, object_info):
+	"""Fail before queueing when the target server lacks a graph node type."""
+	workflow = validate_workflow_for_execution(workflow_version)
+	missing = sorted({
+		node.get("class_type")
+		for node in workflow.values()
+		if node.get("class_type") not in object_info
+	})
+	if missing:
+		frappe.throw(
+			_("Workflow {0} references node type(s) not installed on the configured ComfyUI server: {1}. ").format(
+				workflow_version.name, ", ".join(missing)
+			)
+			+ _("Export a server-compatible API workflow or install the required nodes before generating.")
+		)
+
+
 def _validate_node_references(workflow):
 	missing_references = []
 	for node_key, node in workflow.items():

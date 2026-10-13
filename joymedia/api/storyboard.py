@@ -2,7 +2,10 @@
 # For license information, please see license.txt
 
 
-"""HTTP endpoints for storyboard revision, shots, scenes and reordering."""
+"""HTTP endpoints for storyboard import, revision, shots, scenes and reordering."""
+
+import json
+from pathlib import Path
 
 import frappe
 from frappe import _
@@ -12,6 +15,102 @@ from joymedia.services.project_context import (
 	_renumber_active_shots,
 	_update_project_duration_from_active_shots,
 )
+
+
+@frappe.whitelist()
+def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
+	"""Import one editable demo from an uploaded XLSX; never start rendering."""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	if frappe.db.exists("Generation Run", {"media_project": project.name}):
+		frappe.throw(_("A storyboard with generation history cannot be replaced. Create a new project revision."))
+	file_doc = frappe.get_doc("File", workbook_file)
+	if Path(file_doc.file_name or "").suffix.lower() != ".xlsx":
+		frappe.throw(_("Storyboard import requires an .xlsx workbook."))
+	from joymedia.services.storyboard_workbook import parse_storyboard_workbook
+	try:
+		parsed = parse_storyboard_workbook(file_doc.get_full_path())
+	except (OSError, ValueError) as exc:
+		frappe.throw(_("Could not read the storyboard workbook: {0}").format(str(exc)))
+	demo = next(
+		(item for item in parsed["demos"] if item["name"].casefold() == str(demo_name or "Demo 1").casefold()),
+		None,
+	)
+	if not demo:
+		available = ", ".join(item["name"] for item in parsed["demos"])
+		frappe.throw(_("Storyboard demo '{0}' was not found. Available sheets: {1}.").format(demo_name, available))
+	for shot_name in frappe.get_all("Shot", filters={"media_project": project.name}, pluck="name"):
+		frappe.delete_doc("Shot", shot_name, ignore_permissions=True)
+	for position, scene in enumerate(demo["scenes"], start=1):
+		prompt = _imported_scene_prompt(scene)
+		frappe.get_doc({
+			"doctype": "Shot",
+			"media_project": project.name,
+			"shot_number": position,
+			"shot_name": scene["beat_name"],
+			"storyboard_beat": scene["beat_name"],
+			"source_timing": scene["source_timing"],
+			"source_start_seconds": scene["start_seconds"],
+			"source_end_seconds": scene["end_seconds"],
+			"duration_seconds": scene["duration_seconds"],
+			"continuity_mode": scene["continuity_mode"],
+			"generation_prompt": prompt,
+			"image_prompt": _imported_image_prompt(scene),
+			"caption": scene["on_screen_text"][:120],
+			"voice_over": scene["voice_over"],
+			"audio_cues": scene["audio_cues"],
+		}).insert(ignore_permissions=True)
+	metadata = demo["metadata"]
+	project.storyboard_source_file = file_doc.name
+	project.storyboard_source_json = json.dumps({"selected_demo": demo, "all_demos": parsed["demos"]}, ensure_ascii=False)
+	project.storyboard_timing_warnings = json.dumps(demo["timing_warnings"], ensure_ascii=False)
+	project.storyboard_approval_status = "Ready for Review"
+	project.product_name = metadata.get("product_name") or project.product_name
+	if not (project.video_idea or "").strip():
+		project.video_idea = "\n".join(filter(None, (metadata.get("objective"), metadata.get("tone_mood"))))
+	if metadata.get("duration"):
+		from joymedia.services.storyboard_workbook import parse_duration_seconds
+		project.total_duration_seconds = parse_duration_seconds(metadata["duration"]) or project.total_duration_seconds
+	project.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {
+		"project": project.name,
+		"demo": demo["name"],
+		"shot_count": len(demo["scenes"]),
+		"timing_warnings": demo["timing_warnings"],
+		"approval_status": project.storyboard_approval_status,
+	}
+
+
+@frappe.whitelist()
+def approve_project_storyboard(project_name, acknowledge_timing_warnings=False):
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	if not frappe.db.exists("Shot", {"media_project": project.name, "is_removed": 0}):
+		frappe.throw(_("Import or create a storyboard before approval."))
+	if not str(project.video_idea or "").strip():
+		frappe.throw(_("A non-empty video idea is required before approving a storyboard."))
+	warnings = frappe.parse_json(project.storyboard_timing_warnings or "[]")
+	if warnings and str(acknowledge_timing_warnings).lower() not in {"1", "true", "yes", "on"}:
+		frappe.throw(_("Resolve or explicitly acknowledge the storyboard timing warnings before approval."))
+	project.storyboard_approval_status = "Approved"
+	project.save(ignore_permissions=True)
+	return {"project": project.name, "approval_status": project.storyboard_approval_status}
+
+
+def _imported_scene_prompt(scene):
+	return "\n".join(filter(None, (scene.get("visual_camera"), scene.get("action"), scene.get("audio_cues")))).strip()
+
+
+def _imported_image_prompt(scene):
+	return "\n".join(filter(None, (scene.get("visual_camera"), scene.get("action")))).strip()
+
+
+def _mark_storyboard_needs_review(project):
+	"""Invalidate a prior approval whenever an editable storyboard changes."""
+	if project.storyboard_approval_status == "Approved":
+		project.db_set("storyboard_approval_status", "Ready for Review", update_modified=False)
+		project.storyboard_approval_status = "Ready for Review"
 
 
 @frappe.whitelist()
@@ -62,6 +161,7 @@ def update_project_shot(project_name, shot_name, values):
 		shot.caption = caption
 	if changed or image_prompt_changed or caption_changed:
 		shot.save(ignore_permissions=True)
+		_mark_storyboard_needs_review(project)
 	if caption_changed:
 		from joymedia.services.timeline_editor import _invalidate_project_output
 
@@ -103,6 +203,7 @@ def set_project_shot_keyframe(project_name, shot_name, frame_role, asset_version
 	])
 	shot.append("generation_inputs", {"reference_role": frame_role, "asset_version": asset.name})
 	shot.save(ignore_permissions=True)
+	_mark_storyboard_needs_review(project)
 	return {
 		"shot_name": shot.name,
 		"shot_number": shot.shot_number,
@@ -126,6 +227,7 @@ def update_project_shot_timing(project_name, shot_name, duration_seconds):
 		frappe.throw(_("Shot does not belong to this project."))
 	from joymedia.services.shot_duration_planner import rebalance_shot_duration
 	result = rebalance_shot_duration(project.name, shot.name, duration_seconds)
+	_mark_storyboard_needs_review(project)
 	return {"shot_name": shot.name, "shot_number": shot.shot_number, **result}
 
 
@@ -181,6 +283,7 @@ def remove_project_scene(project_name, shot_name, confirm_continuation=False):
 	frappe.db.set_value("Shot", shot.name, "is_removed", 1, update_modified=False)
 	_renumber_active_shots(project.name)
 	_update_project_duration_from_active_shots(project)
+	_mark_storyboard_needs_review(project)
 	return {"removed": True}
 
 
@@ -206,6 +309,7 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 		frappe.db.set_value("Shot", row.name, "shot_number", -index, update_modified=False)
 	for index, row in enumerate(ordered, start=1):
 		frappe.db.set_value("Shot", row.name, "shot_number", index, update_modified=False)
+	_mark_storyboard_needs_review(project)
 	frappe.db.commit()
 	return {"shot_name": shot.name, "shot_number": target_shot_number}
 

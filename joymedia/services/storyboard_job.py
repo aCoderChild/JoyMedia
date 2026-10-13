@@ -1,4 +1,4 @@
-"""Plan the storyboard and start rendering in the background.
+"""Plan the storyboard in the background.
 
 Image analysis and the AI director together take one to three minutes, longer
 than a web request may run in production, so the Generate button only queues
@@ -12,7 +12,7 @@ from joymedia.services.render_queue import is_render_alive
 
 
 def queue_storyboard(project_name):
-	"""Queue planning + rendering for a project with no storyboard yet."""
+	"""Queue planning only; human approval is required before rendering."""
 	if planning_status(project_name) == "Running":
 		return {"status": "Planning"}
 	_set(project_name, "Running", "")
@@ -54,7 +54,10 @@ def plan_and_generate(project_name):
 			recalculate_shot_durations(project.name)
 			frappe.db.commit()
 			project.reload()
-		project.generate_video()
+		# Never consume GPU time merely because an AI plan was returned. The editor
+		# must review source timing, prompts, continuity, claims and references first.
+		project.storyboard_approval_status = "Ready for Review"
+		project.db_set("storyboard_approval_status", "Ready for Review", update_modified=False)
 		_set(project_name, "Idle", "")
 	except Exception as exc:
 		frappe.db.rollback()

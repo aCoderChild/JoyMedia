@@ -140,8 +140,8 @@ export function useProjectReferences(projectName, onRefresh) {
       for (const file of files) {
         const uploaded = await uploadFile(file, { private: true });
         if (!uploaded?.file_url || !uploaded?.name) throw new Error("Upload failed");
-        const isAudio = file.type.startsWith("audio");
-        const category = isAudio ? "Audio" : "Reference";
+		const isAudio = file.type.startsWith("audio");
+		const category = isAudio ? "Audio" : "Reference";
         const created = await call("joymedia.services.media_asset_service.create_media_asset", {
           asset_name: file.name.replace(/\.[^/.]+$/, ""),
           asset_category: category,

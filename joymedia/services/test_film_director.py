@@ -857,6 +857,19 @@ class TestProductFilm(FrappeTestCase):
 			[[ref["reference_key"] for ref in shot["references"]] for shot in shots],
 		)
 
+	def test_product_planning_preserves_two_characters(self):
+		references = [
+			{"reference_key": "mother", "media_type": "Image", "reference_role": "Character"},
+			{"reference_key": "baby", "media_type": "Image", "reference_role": "Character"},
+			{"reference_key": "shera_pack", "media_type": "Image", "reference_role": "Product"},
+		]
+		shots = [{"generation_prompt": "The mother polar bear reassures her baby while presenting Shera.", "references": []}]
+		film_director.normalize_story_references(shots, references, "reference_board")
+		self.assertEqual(
+			["mother", "baby", "shera_pack"],
+			[reference["reference_key"] for reference in shots[0]["references"]],
+		)
+
 
 class TestGroundedWords(FrappeTestCase):
 	@patch("joymedia.services.qwen_client._qwen_config", return_value=("http://qwen/v1", "m", 60))

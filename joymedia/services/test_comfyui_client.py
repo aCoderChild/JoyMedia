@@ -11,6 +11,7 @@ from frappe.tests.utils import FrappeTestCase
 from joymedia.services.comfyui_client import (
 	download_output,
 	get_history,
+	get_object_info,
 	get_queue_state,
 	get_request_auth,
 	get_system_stats,
@@ -84,9 +85,10 @@ class TestComfyUIClient(FrappeTestCase):
 
 		get_history("prompt-1", base_url="http://comfyui")
 		get_system_stats(base_url="http://comfyui")
+		get_object_info(base_url="http://comfyui")
 		download_output("video.mp4", base_url="http://comfyui")
 
-		self.assertEqual(3, get.call_count)
+		self.assertEqual(4, get.call_count)
 		for call in get.call_args_list:
 			self.assertEqual(("comfy-user", "comfy-pass"), call.kwargs["auth"])
 

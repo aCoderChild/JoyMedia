@@ -105,6 +105,14 @@
     <div class="flex items-center justify-between gap-3 mt-2.5 pt-2 border-t border-outline-border/60">
       <!-- Left: AI Contextual Assistant & Settings Shortcut -->
       <div class="flex items-center gap-2">
+		<label
+		  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-ink-primary hover:text-indigo-400 bg-surface-muted hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer"
+		  :title="currentLang === 'vi' ? 'Nhập file kịch bản Excel' : 'Import storyboard workbook'"
+		>
+		  <span>⇧</span>
+		  <span>{{ currentLang === 'vi' ? 'Nhập kịch bản' : 'Import storyboard' }}</span>
+		  <input class="hidden" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="importStoryboard" />
+		</label>
         <!-- Contextual AI Action: Improve Idea with Qwen -->
         <button
           type="button"
@@ -135,12 +143,15 @@
         <span v-if="isSavingPrompt" class="text-[10px] text-ink-muted">
           {{ currentLang === 'vi' ? 'Đang lưu…' : 'Saving…' }}
         </span>
+		<span v-else-if="!modelPrompt?.trim()" class="text-[10px] text-amber-400">
+		  {{ currentLang === 'vi' ? 'Nhập ý tưởng video để tiếp tục.' : 'Enter a video idea to continue.' }}
+		</span>
         <button
           type="button"
           class="jm-btn-primary !py-2 !px-4 text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/25 transition-all cursor-pointer"
           :class="{ 'animate-pulse': isGenerating }"
-          :disabled="isGenerating"
-          @click="$emit('generate')"
+          :disabled="isGenerating || !modelPrompt?.trim()"
+          @click="primaryAction"
         >
           <span v-if="isGenerating" class="lucide-refresh-cw size-3.5 animate-spin" />
           <span v-else class="text-sm">✦</span>
@@ -161,12 +172,13 @@ const props = defineProps({
   isImprovingPrompt: { type: Boolean, default: false },
   isSavingPrompt: { type: Boolean, default: false },
   hasStoryboard: { type: Boolean, default: false },
+	storyboardApprovalStatus: { type: String, default: "Draft" },
   durationSeconds: { type: [Number, String], default: 15 },
   deliveryPreset: { type: String, default: "Landscape" },
   currentLang: { type: String, default: "en" },
 });
 
-const emit = defineEmits(["update:prompt", "generate", "openMediaPicker", "openSettings", "improvePrompt", "savePrompt", "removeReference"]);
+const emit = defineEmits(["update:prompt", "generate", "approveStoryboard", "importStoryboard", "openMediaPicker", "openSettings", "improvePrompt", "savePrompt", "removeReference"]);
 
 const textareaRef = ref(null);
 const showMentionMenu = ref(false);
@@ -183,10 +195,27 @@ const generateButtonLabel = computed(() => {
     return props.currentLang === "vi" ? "Đang tạo video..." : "Generating...";
   }
   if (props.hasStoryboard) {
-    return props.currentLang === "vi" ? "Tạo bản mới ✦" : "Generate Version ✦";
+	if (props.storyboardApprovalStatus !== "Approved") {
+	  return props.currentLang === "vi" ? "Duyệt kịch bản ✦" : "Approve Storyboard ✦";
+	}
+	return props.currentLang === "vi" ? "Tạo video đã duyệt ✦" : "Generate Approved Video ✦";
   }
   return props.currentLang === "vi" ? "Tạo Video ✦" : "Generate Video ✦";
 });
+
+function primaryAction() {
+	if (props.hasStoryboard && props.storyboardApprovalStatus !== "Approved") {
+		emit("approveStoryboard");
+		return;
+	}
+	emit("generate");
+}
+
+function importStoryboard(event) {
+	const file = event.target?.files?.[0];
+	if (file) emit("importStoryboard", file);
+	event.target.value = "";
+}
 
 function getCleanKey(asset) {
   if (asset?.reference_key) return asset.reference_key;
@@ -299,7 +328,7 @@ function insertReferenceTag(asset) {
 
 function onCtrlEnter() {
   if (!props.isGenerating) {
-    emit("generate");
+    primaryAction();
   }
 }
 

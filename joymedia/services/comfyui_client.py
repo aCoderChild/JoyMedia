@@ -217,6 +217,23 @@ def get_system_stats(*, base_url: str | None = None) -> dict:
 	return response.json()
 
 
+def get_object_info(*, base_url: str | None = None) -> dict:
+	"""Return the node types actually registered by the target ComfyUI server."""
+	try:
+		response = requests.get(
+			f"{get_base_url(base_url)}/object_info",
+			auth=get_request_auth(),
+			timeout=DEFAULT_TIMEOUT,
+		)
+	except requests.ConnectionError as exc:
+		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
+	_raise_for_comfyui_error(response)
+	result = response.json()
+	if not isinstance(result, dict):
+		frappe.throw(_("ComfyUI returned invalid node metadata."))
+	return result
+
+
 def download_output(
 	filename: str, subfolder: str = "", file_type: str = "output", *, base_url: str | None = None
 ) -> bytes:

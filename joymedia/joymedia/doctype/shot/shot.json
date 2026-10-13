@@ -10,6 +10,11 @@
   "media_project",
   "shot_number",
   "shot_name",
+	"storyboard_beat",
+	"source_timing",
+	"source_start_seconds",
+	"source_end_seconds",
+	"continuity_mode",
   "is_removed",
   "planned_frame_count",
   "duration_seconds",
@@ -20,6 +25,8 @@
   "end_state",
   "handoff_type",
   "caption",
+	"voice_over",
+	"audio_cues",
   "generation_inputs",
   "selected_output_section",
   "selected_output_asset_version",
@@ -53,6 +60,36 @@
    "in_list_view": 1,
    "label": "Shot Name"
   },
+	{
+	 "fieldname": "storyboard_beat",
+	 "fieldtype": "Data",
+	 "label": "Storyboard Beat"
+	},
+	{
+	 "fieldname": "source_timing",
+	 "fieldtype": "Data",
+	 "label": "Source Timing",
+	 "read_only": 1
+	},
+	{
+	 "fieldname": "source_start_seconds",
+	 "fieldtype": "Float",
+	 "label": "Source Start (Seconds)",
+	 "read_only": 1
+	},
+	{
+	 "fieldname": "source_end_seconds",
+	 "fieldtype": "Float",
+	 "label": "Source End (Seconds)",
+	 "read_only": 1
+	},
+	{
+	 "default": "New Scene",
+	 "fieldname": "continuity_mode",
+	 "fieldtype": "Select",
+	 "label": "Continuity Mode",
+	 "options": "Continue\nNew Scene"
+	},
   {
    "default": "0",
    "fieldname": "is_removed",
@@ -128,6 +165,18 @@
    "label": "On-screen Caption",
    "length": 120
   },
+	{
+	 "description": "Source-provided narration. It is preserved for review and is not treated as generated speech.",
+	 "fieldname": "voice_over",
+	 "fieldtype": "Long Text",
+	 "label": "Voice-over"
+	},
+	{
+	 "description": "Source-provided sound effects and music direction.",
+	 "fieldname": "audio_cues",
+	 "fieldtype": "Long Text",
+	 "label": "Audio Cues"
+	},
   {
    "description": "Assets assigned to workflow input roles for this shot, such as first_frame, last_frame, mask, or product_reference.",
    "fieldname": "generation_inputs",

@@ -15,7 +15,7 @@ from frappe import _
 
 from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
 
-SUPPORTED_PROJECT_MEDIA_TYPES = {"Image", "Video", "Audio"}
+SUPPORTED_PROJECT_MEDIA_TYPES = {"Image", "Video", "Audio", "Document"}
 # Used until enough render jobs have finished to measure the real average.
 DEFAULT_RENDER_JOB_MINUTES = 4.5
 DEFAULT_EXPORT_QUALITY = "Draft 720p"
@@ -54,23 +54,15 @@ def _normalize_generation_mode(value):
 
 
 def _get_customer_workflow(workflow_reference=None):
-	"""Resolve an explicitly selected workflow or the configured video default."""
+	"""Resolve only a configured workflow document, never the newest candidate."""
 	reference = workflow_reference or frappe.conf.get("joymedia_default_generation_workflow")
 	if reference and frappe.db.exists("Generation Workflow", reference):
 		return frappe.get_doc("Generation Workflow", reference)
 	if reference:
-		workflow = get_latest_valid_workflow(reference)
-		if workflow:
-			return workflow
-		frappe.throw(_("No executable Generation Workflow is configured for {0}.").format(reference))
-	for row in frappe.get_all(
-		"Generation Workflow", filters={"output_media_type": "Video"}, fields=["workflow_key"],
-		order_by="modified desc", limit_page_length=100,
-	):
-		workflow = get_latest_valid_workflow(row.workflow_key)
-		if workflow:
-			return workflow
-	frappe.throw(_("No executable video Generation Workflow is configured."))
+		frappe.throw(_("Configured Generation Workflow {0} does not exist.").format(reference))
+	from joymedia.services.generation_pipeline_service import get_active_generation_pipeline
+
+	return frappe.get_doc("Generation Workflow", get_active_generation_pipeline().steps[-1].workflow)
 
 
 def normalize_export_quality(value):
@@ -80,18 +72,8 @@ def normalize_export_quality(value):
 
 
 def _get_customer_workflow_for_export_quality(export_quality=None):
-	"""Resolve a server-configured workflow for a customer-facing delivery tier.
-
-	Workflow identity and pipeline details remain backend concerns. Sites may map
-	any compatible workflow key or document name through their configuration;
-	the general default remains the safe fallback during rollout.
-	"""
-	quality = normalize_export_quality(export_quality)
-	config_key = {
-		"Draft 720p": "joymedia_draft_generation_workflow",
-		"Studio 1440p60": "joymedia_studio_generation_workflow",
-	}[quality]
-	return _get_customer_workflow(frappe.conf.get(config_key))
+	"""Delivery quality changes export settings, never the FLUX/H3 pipeline."""
+	return _get_customer_workflow()
 
 
 def _get_continuation_workflow(workflow):
@@ -104,13 +86,6 @@ def _get_continuation_workflow(workflow):
 		return workflow
 	if workflow_supports_continuation(workflow):
 		return workflow
-	for row in frappe.get_all(
-		"Generation Workflow", filters={"output_media_type": "Video"}, fields=["workflow_key"],
-		order_by="modified desc", limit_page_length=100,
-	):
-		candidate = get_latest_valid_workflow(row.workflow_key)
-		if candidate and workflow_supports_continuation(candidate):
-			return candidate
 	frappe.throw(_("Continuous generation requires a configured continuation-capable workflow."))
 
 
@@ -215,10 +190,9 @@ def _active_project_shots(project_name, fields=None):
 def build_project_snapshot(project):
 	settings = _project_settings(project)
 	configured_pipeline = settings.generation_pipeline or ""
-	# A project may keep an older/default workflow while individual shots are
-	# automatically routed through another pipeline. The run-level pipeline is
-	# only valid when its final step is the project's default workflow; per-shot
-	# routes below carry every automatic Flux/Flux 2 pipeline explicitly.
+	# A run may carry a project-level pipeline only when its immutable final stage
+	# matches the project's configured H3 workflow. Per-shot snapshots validate the
+	# same promoted FLUX → H3 pipeline and record their reference bindings.
 	if configured_pipeline:
 		from joymedia.services.generation_pipeline_service import get_pipeline_steps
 
@@ -231,6 +205,10 @@ def build_project_snapshot(project):
 		if settings.workflow and frappe.db.exists("Generation Workflow", settings.workflow)
 		else None
 	)
+	visual_asset_versions = {
+		asset.asset_version for asset in _get_project_selected_assets(project)
+		if asset.media_type == "Image"
+	}
 	snapshot = {
 		"media_project": project.name,
 		"project_name": project.project_name or "",
@@ -255,7 +233,7 @@ def build_project_snapshot(project):
 				"label": row.label or "",
 			}
 			for row in project.selected_media or []
-			if row.asset_version
+			if row.asset_version in visual_asset_versions
 		],
 	}
 	snapshot["shots"] = []
@@ -264,7 +242,7 @@ def build_project_snapshot(project):
 		fields=[
 			"name", "shot_number", "duration_seconds", "planned_frame_count", "generation_prompt",
 			"image_prompt", "motion_plan_json",
-			"start_state", "end_state", "handoff_type",
+			"start_state", "end_state", "handoff_type", "continuity_mode",
 		],
 	):
 		shot_doc = frappe.get_doc("Shot", shot.name)
@@ -279,6 +257,7 @@ def build_project_snapshot(project):
 				"start_state": shot.start_state or "",
 				"end_state": shot.end_state or "",
 				"handoff_type": shot.handoff_type or "",
+			"continuity_mode": getattr(shot, "continuity_mode", None) or "New Scene",
 				"references": [
 					{
 						"reference_role": row.reference_role or "",
@@ -294,7 +273,9 @@ def build_project_snapshot(project):
 			route = resolve_shot_render_route(
 				default_workflow,
 				shot_snapshot["references"],
-				handoff_type=shot_snapshot["handoff_type"],
+				handoff_type=(
+					"new_scene" if shot_snapshot["continuity_mode"] == "New Scene" else shot_snapshot["handoff_type"]
+				),
 				motion_plan_json=shot_snapshot["motion_plan_json"],
 			)
 			shot_snapshot.update({
@@ -411,6 +392,13 @@ def _storyboard_payload(specification):
 			"shot_number",
 			"shot_name",
 			"generation_prompt",
+			"storyboard_beat",
+			"source_timing",
+			"source_start_seconds",
+			"source_end_seconds",
+			"continuity_mode",
+			"voice_over",
+			"audio_cues",
 			"caption",
 			"duration_seconds",
 			"planned_frame_count",

@@ -159,6 +159,8 @@ def get_project_workspace(name):
 			"planning_status": planning_status(project.name),
 			"busy_shots": _busy_shots(project.name),
 			"planning_error": project.planning_error or "",
+			"storyboard_approval_status": project.storyboard_approval_status or "Draft",
+			"storyboard_timing_warnings": frappe.parse_json(project.storyboard_timing_warnings or "[]"),
 		},
 		"assets": _get_project_selected_assets(project),
 		"video_settings": ({

@@ -188,10 +188,13 @@
             :is-improving-prompt="improvingIdea"
             :is-saving-prompt="isSavingIdea"
             :has-storyboard="Boolean(storyboardShots.length)"
+			:storyboard-approval-status="workspace?.project?.storyboard_approval_status || 'Draft'"
             :duration-seconds="videoSettings.duration || 15"
             :delivery-preset="videoSettings.delivery_preset || 'Landscape'"
             :current-lang="currentLang"
             @generate="generateVideo"
+			@approve-storyboard="approveStoryboard"
+			@import-storyboard="importStoryboardWorkbook"
             @open-media-picker="openPicker"
             @open-settings="showSettings = true"
             @improve-prompt="improveVideoIdea"
@@ -375,7 +378,7 @@
 import { cachedClipUrl } from "../composables/useClipCache";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { call } from "frappe-ui";
+import { call, upload as uploadFile } from "frappe-ui";
 import { notify } from "../utils/notify";
 import { errorMessage } from "../utils/errors";
 import { useSession } from "../stores/session";
@@ -492,6 +495,55 @@ const {
 } = useProjectGeneration(projectName, refreshStudioGenerationState);
 
 const appendSceneError = ref("");
+
+async function approveStoryboard() {
+	const warnings = workspace.value?.project?.storyboard_timing_warnings || [];
+	const acknowledge = !warnings.length || window.confirm(
+		currentLang.value === "vi"
+			? `Kịch bản có ${warnings.length} khoảng trống/chồng chéo thời lượng. Xác nhận duyệt để giữ các cảnh nguồn không thay đổi?`
+			: `This storyboard has ${warnings.length} timing gap/overlap warning(s). Approve while preserving the authored scenes?`
+	);
+	if (!acknowledge) return;
+	try {
+		await call("joymedia.api.storyboard.approve_project_storyboard", {
+			project_name: projectName.value,
+			acknowledge_timing_warnings: Boolean(warnings.length),
+		});
+		await fetchWorkspace();
+		notify({
+			title: currentLang.value === "vi" ? "Đã duyệt kịch bản" : "Storyboard approved",
+			text: currentLang.value === "vi" ? "Bạn có thể bắt đầu render các cảnh đã duyệt." : "You can now render the approved scenes.",
+			type: "success",
+		});
+	} catch (err) {
+		notify({ title: "Storyboard", text: errorMessage(err, "Unable to approve storyboard."), type: "error" });
+	}
+}
+
+async function importStoryboardWorkbook(file) {
+	const demoName = window.prompt(
+		currentLang.value === "vi" ? "Nhập sheet nào? (Demo 1 hoặc Demo 2)" : "Which sheet should be imported? (Demo 1 or Demo 2)",
+		"Demo 1",
+	);
+	if (!demoName) return;
+	try {
+		const uploaded = await uploadFile(file, { private: true });
+		if (!uploaded?.name) throw new Error("Storyboard upload failed.");
+		const result = await call("joymedia.api.storyboard.import_storyboard_workbook", {
+			project_name: projectName.value,
+			workbook_file: uploaded.name,
+			demo_name: demoName,
+		});
+		await fetchWorkspace();
+		notify({
+			title: currentLang.value === "vi" ? "Đã nhập kịch bản" : "Storyboard imported",
+			text: `${result.shot_count} scene(s) imported. Review and approve before generation.`,
+			type: "success",
+		});
+	} catch (err) {
+		notify({ title: "Storyboard", text: errorMessage(err, "Unable to import storyboard."), type: "error" });
+	}
+}
 
 // Workspace polling is the source of truth for terminal run state.  A local
 // optimistic flag can survive a browser refresh or a worker finishing between

@@ -37,8 +37,9 @@ def _assign_reference_pool_auto(plan, project_references):
 	"""Give an omitted shot the selected image ingredients for automatic routing.
 
 	The AI Director normally returns a purposeful subset.  Falling back to the
-	whole selected pool is safer than silently dropping a product or environment;
-	the router will select Flux 2 and compose overflow references when needed.
+	whole selected pool is safer than silently dropping a product or environment.
+	The fixed production pipeline then validates that its declared FLUX bindings
+	can accept every selected reference.
 	"""
 	for shot in plan.get("shots") or []:
 		if shot.get("references"):
@@ -104,11 +105,6 @@ def _route_and_validate_plan_shot(shot, project_references, default_workflow):
 			frappe.throw(_("Automatic route does not support Shot Reference role '{0}'.").format(role))
 		counts[role] = counts.get(role, 0) + 1
 	for role, item in contract.items():
-		# Direct R2V references are the complete visual input for the shot. A
-		# legacy workflow may also declare a first-frame binding for continuation,
-		# but requiring that extra input here would reject a valid direct-R2V plan.
-		if route["strategy"] == "direct_r2v" and role == "first_frame":
-			continue
 		count = counts.get(role, 0)
 		if count < int(item.get("min_count") or 0):
 			frappe.throw(_("Shot {0} needs {1} input(s) for role '{2}'.").format(

@@ -39,6 +39,10 @@ class MediaProject(Document):
 		self._require_owner_access()
 		self.check_permission("write")
 
+	def _require_video_idea(self):
+		if not str(self.video_idea or "").strip():
+			frappe.throw(_("Enter a non-empty video idea before creating or rendering a storyboard."))
+
 	def _require_owner_access(self):
 		if frappe.session.user == "Administrator" or "System Manager" in frappe.get_roles():
 			return
@@ -243,6 +247,7 @@ class MediaProject(Document):
 
 	def generate_video_plan(self):
 		self._require_read_access()
+		self._require_video_idea()
 		from joymedia.services.vision_analysis import ensure_project_image_analysis
 
 		# Pictures added or analysed with an older prompt are (re)described first.
@@ -256,7 +261,7 @@ class MediaProject(Document):
 		reference_contexts, story_film = _story_film_planning_context(self)
 		return self._plan_video(
 			workflow=workflow,
-			video_idea=_meaningful_project_value(self.video_idea, "Create a premium cinematic product showcase."),
+			video_idea=self.video_idea.strip(),
 			story_film=story_film,
 			shot_count=(
 				None if story_film
@@ -295,11 +300,14 @@ class MediaProject(Document):
 			reference_media=reference_contexts if story_film else _get_project_selected_assets(self),
 		)
 		created = apply_video_plan(self.name, plan)
+		self.storyboard_approval_status = "Ready for Review"
+		self.save(ignore_permissions=True)
 		return {"media_project": self.name, "shots": created}
 
 	@frappe.whitelist()
 	def generate_end_to_end(self):
 		self._require_write_access()
+		self._require_video_idea()
 		if not self.workflow:
 			frappe.throw(_("Configure Video Settings before generating a storyboard."))
 		_, current_snapshot_hash = build_project_snapshot(self)
@@ -318,11 +326,16 @@ class MediaProject(Document):
 			from joymedia.services.storyboard_job import queue_storyboard
 
 			return queue_storyboard(self.name)
+		if self.storyboard_approval_status != "Approved":
+			frappe.throw(_("Review and approve the storyboard before starting generation."))
 		return self.generate_video()
 
 	@frappe.whitelist()
 	def generate_video(self):
 		self._require_write_access()
+		self._require_video_idea()
+		if self.storyboard_approval_status != "Approved":
+			frappe.throw(_("Review and approve the storyboard before starting generation."))
 		from joymedia.services.generation_orchestrator import start_run_internal, validate_generation_preflight
 		from joymedia.services.shot_duration_planner import recalculate_shot_durations
 		with filelock(f"joymedia-generate-video-{self.name}"):
@@ -381,11 +394,9 @@ class MediaProject(Document):
 			frappe.throw(_("Add Scene currently supports up to 120 seconds at a time."))
 		continuity = str(continuity).lower() in ("1", "true", "yes", "on")
 
-		from joymedia.services.generation_orchestrator import start_run_internal, validate_generation_preflight
 		from joymedia.services.qwen_client import generate_video_plan
 		from joymedia.services.video_plan_service import append_video_plan
 		from joymedia.services.artifact_service import get_attempt_artifact
-		from joymedia.services.generation_pipeline_service import get_pipeline_steps, pipeline_for_final_workflow
 		from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
 		from joymedia.services.workflow_routing import automatic_planning_input_contract
 		settings = _project_settings(self)
@@ -474,50 +485,12 @@ class MediaProject(Document):
 				start_after_shot_number=int(last_shot.shot_number),
 			)
 			self.total_duration_seconds = float(self.total_duration_seconds or 0) + duration_seconds
+			# Appending is a storyboard change, not permission to spend GPU time.  The
+			# editor must explicitly review and re-approve the updated plan.
+			self.storyboard_approval_status = "Ready for Review"
 			self.save(ignore_permissions=True)
-			project_snapshot_json, project_snapshot_hash = build_project_snapshot(self)
-			scope = {
-				"shot_names": new_shot_names,
-				"continuity": continuity,
-				"continuation_from_task": continuation_from_task if continuity else None,
-			}
-			compatible_pipeline = self.generation_pipeline or None
-			if compatible_pipeline and get_pipeline_steps(compatible_pipeline)[-1].workflow != self.workflow:
-				compatible_pipeline = None
-			if not compatible_pipeline:
-				pipeline = pipeline_for_final_workflow(self.workflow)
-				compatible_pipeline = pipeline.name if pipeline else None
-			run = frappe.get_doc(
-				{
-					"doctype": "Generation Run",
-					"media_project": self.name,
-					"project_snapshot_json": project_snapshot_json,
-					"project_snapshot_hash": project_snapshot_hash,
-					"execution_scope_json": json.dumps(scope, sort_keys=True),
-					"workflow": self.workflow,
-					# A continuation profile may not have a compatible keyframe pipeline.
-					# Resolve that relationship from registered metadata rather than a
-					# Flux/H3 name check.
-					"generation_pipeline": compatible_pipeline,
-					"requested_by": frappe.session.user,
-					"status": "Draft",
-				}
-			).insert(ignore_permissions=True)
-			new_shots = frappe.get_all(
-				"Shot",
-				filters={"name": ["in", new_shot_names]},
-				fields=["name", "shot_number", "planned_frame_count"],
-			)
-			validate_generation_preflight(
-				self,
-				workflow,
-				new_shots,
-				check_comfyui=True,
-				execution_scope=scope,
-			)
-			result = start_run_internal(run.name)
 			frappe.db.commit()
-			return {"run": run.name, "status": result["status"], "shots": new_shot_names}
+			return {"status": "Ready for Review", "shots": new_shot_names}
 
 	@frappe.whitelist()
 	def retry_failed_jobs(self):

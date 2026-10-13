@@ -12,7 +12,7 @@
           <p class="text-xs text-ink-muted mt-0.5">
             {{ isKeyframeTarget
               ? (currentLang === 'vi' ? 'Chọn ảnh làm frame đầu hoặc cuối cho cảnh này.' : 'Choose an image to guide start or end of this scene.')
-              : (currentLang === 'vi' ? 'Chọn ảnh, video hoặc âm thanh để AI làm tư liệu tham chiếu.' : 'Select image, video, or audio for AI reference context.') }}
+              : (currentLang === 'vi' ? 'Chọn ảnh, video, âm thanh hoặc tài liệu để làm tư liệu tham chiếu.' : 'Select image, video, audio, or a document for reference context.') }}
           </p>
         </div>
         <button
@@ -32,7 +32,7 @@
           <!-- Type Filter -->
           <div class="flex items-center gap-1 p-0.5 rounded-lg bg-surface-card border border-outline-border">
             <button
-              v-for="t in ['All', 'Image', 'Video', 'Audio']"
+              v-for="t in ['All', 'Image', 'Video', 'Audio', 'Document']"
               :key="t"
               type="button"
               class="px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer"
@@ -58,7 +58,7 @@
           <span>{{ currentLang === 'vi' ? 'Tải tệp lên' : 'Upload file' }}</span>
           <input
             type="file"
-            accept="image/*,video/*,audio/*"
+            accept="image/*,video/*,audio/*,application/pdf,text/plain"
             multiple
             class="hidden"
             :disabled="uploading"

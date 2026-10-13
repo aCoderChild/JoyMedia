@@ -478,10 +478,12 @@ def prepare_run(run_name: str):
 def validate_generation_preflight(project, workflow, shots, *, check_comfyui=False, execution_scope=None):
 	if not frappe.conf.get("comfyui_base_url"):
 		frappe.throw(_("comfyui_base_url is not configured."))
+	object_info = None
 	if check_comfyui:
-		from .comfyui_client import get_system_stats
+		from .comfyui_client import get_object_info, get_system_stats
 
 		get_system_stats()
+		object_info = get_object_info()
 
 	from joymedia.services.project_context import build_project_snapshot
 	from .workflow_profiles import choose_shot_workflow
@@ -509,9 +511,16 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 		pipeline_steps = get_pipeline_steps(shot_pipeline.name) if shot_pipeline else []
 		validate_workflow_for_execution(shot_workflow)
 		validate_workflow_bindings(shot_workflow)
+		if object_info is not None:
+			from .workflow_resolver import validate_workflow_node_types_available
+
+			validate_workflow_node_types_available(shot_workflow, object_info)
 		for pipeline_step in pipeline_steps:
-			validate_workflow_for_execution(frappe.get_doc("Generation Workflow", pipeline_step.workflow))
-			validate_workflow_bindings(frappe.get_doc("Generation Workflow", pipeline_step.workflow))
+			pipeline_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
+			validate_workflow_for_execution(pipeline_workflow)
+			validate_workflow_bindings(pipeline_workflow)
+			if object_info is not None:
+				validate_workflow_node_types_available(pipeline_workflow, object_info)
 		continuation_workflow = _continuation_workflow(shot_workflow)
 		if continuation_workflow:
 			validate_workflow_for_execution(continuation_workflow)

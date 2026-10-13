@@ -14,6 +14,7 @@ from joymedia.services.workflow_resolver import (
 	get_workflow_input_contract,
 	validate_workflow_bindings,
 	validate_workflow_for_execution,
+	validate_workflow_node_types_available,
 )
 
 
@@ -121,3 +122,11 @@ class TestWorkflowResolver(FrappeTestCase):
 		workflow.workflow_json = '{"load":{"inputs":{"image":""}}}'
 		with self.assertRaises(frappe.ValidationError):
 			validate_workflow_for_execution(workflow)
+
+	def test_server_missing_node_type_is_rejected_before_queueing(self):
+		workflow = frappe._dict(
+			name="WF-MISSING-NODE",
+			workflow_json='{"node":{"class_type":"UnavailableNode","inputs":{}}}',
+		)
+		with self.assertRaises(frappe.ValidationError):
+			validate_workflow_node_types_available(workflow, {"LoadImage": {}})

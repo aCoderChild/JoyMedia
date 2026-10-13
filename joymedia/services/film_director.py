@@ -665,7 +665,7 @@ def _product_director_instruction(roster, reference_role, take_count, reference_
 		"CHARACTER",
 		*(_roster_line(context, person=True) for context in roster[CHARACTER]),
 		"PRODUCT",
-		*(_roster_line(context, product=True) for context in roster[PRODUCT][:1]),
+		*(_roster_line(context, product=True) for context in roster[PRODUCT]),
 	]
 	if roster[PLACE]:
 		lines.append("PLACES")
@@ -840,19 +840,26 @@ def enforce_explicit_product_brief(shots, video_idea):
 
 
 def _normalize_product_references(shots, roster, reference_role, reference_roles=None):
-	"""[character, product] for takes with the person, [product, product] for hero takes."""
+	"""Keep every selected character/product identity instead of taking the first."""
 	reference_roles = reference_roles or {}
-	character_key = roster[CHARACTER][0]["reference_key"]
-	product_key = roster[PRODUCT][0]["reference_key"]
+	character_keys = [item["reference_key"] for item in roster[CHARACTER]]
+	product_keys = [item["reference_key"] for item in roster[PRODUCT]]
 	character_role = reference_roles.get(CHARACTER, reference_role)
 	product_role = reference_roles.get(PRODUCT, reference_role)
 	for shot in shots:
 		if not isinstance(shot, dict):
 			continue
 		prompt = str(shot.get("generation_prompt") or "")
-		ordered = [character_key, product_key] if PERSON_PATTERN.search(prompt) else [product_key, product_key]
+		# A relationship shot needs both bears (or all selected characters), while
+		# an end-card/product hero may omit people.  Preserve a legacy duplicated
+		# product only for the old single-product two-slot graph contract.
+		ordered = (
+			[*character_keys, *product_keys]
+			if PERSON_PATTERN.search(prompt)
+			else (product_keys * 2 if len(product_keys) == 1 else product_keys)
+		)
 		shot["references"] = [
-			{"reference_key": key, "usage_role": character_role if key == character_key else product_role}
+			{"reference_key": key, "usage_role": character_role if key in character_keys else product_role}
 			for key in ordered
 		]
 		prompt = _clamp_picture_tags(prompt, len(ordered)).strip()

@@ -220,29 +220,26 @@ def _assert_timeline_unchanged(project_name, expected_signature):
 
 
 def _caption_cues(project, video_clips, clip_frames, transition_frames, positioned, fps):
-	"""(start, end, text) for the last scene's caption, shown at the end of the video."""
+	"""Return timed (start, end, text) cues for every captioned source shot."""
 	if not int(project.get("show_captions") or 0):
 		return []
 	if not video_clips:
 		return []
-	last_clip = video_clips[-1]
-	last_shot = last_clip.get("shot")
-	if not last_shot:
-		return []
-	rows = frappe.get_all(
-		"Shot", filters={"name": last_shot}, fields=["caption"], as_list=True
-	)
-	text = str(rows[0][0] or "").strip() if rows else ""
-	if not text:
-		return []
-	last_frames = clip_frames[-1]
-	if last_frames / fps < MIN_CAPTION_SECONDS:
-		return []
-	if positioned:
-		start = int(last_clip.timeline_start_frame or 0)
-	else:
-		start = sum(f - t for f, t in zip(clip_frames[:-1], transition_frames[:-1]))
-	return [(start / fps, (start + last_frames) / fps, text)]
+	shot_names = [clip.get("shot") for clip in video_clips if clip.get("shot")]
+	captions = {
+		row.name: str(row.caption or "").strip()
+		for row in frappe.get_all("Shot", filters={"name": ["in", shot_names]}, fields=["name", "caption"])
+	}
+	cues = []
+	cursor = 0
+	for index, (clip, frame_count) in enumerate(zip(video_clips, clip_frames)):
+		text = captions.get(clip.get("shot"), "")
+		start = int(clip.timeline_start_frame or 0) if positioned else cursor
+		if text and frame_count / fps >= MIN_CAPTION_SECONDS:
+			cues.append((start / fps, (start + frame_count) / fps, text))
+		if not positioned:
+			cursor += frame_count - int(transition_frames[index] if index < len(transition_frames) else 0)
+	return cues
 
 
 def _apply_ending(source_path, output_path, profile, temp_path, captions=()):
