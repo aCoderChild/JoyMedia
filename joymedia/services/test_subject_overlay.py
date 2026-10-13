@@ -44,6 +44,10 @@ class TestLayout(FrappeTestCase):
 			self.assertGreaterEqual(x, 0)
 			self.assertLessEqual(x + w, 720)
 
+	def test_every_role_accepts_a_size_entry(self):
+		boxes = layout((720, 1280), [("character", 464, 560, 1), ("product", 1076, 717, 1), ("logo", 600, 150, 1)])
+		self.assertTrue(all(box is not None for box in boxes))
+
 	def test_logos_sit_in_opposite_top_corners(self):
 		first, second = layout((1000, 1000), [("logo", 200, 100), ("logo", 200, 100)])
 		self.assertLess(first[0], 500)
@@ -71,7 +75,7 @@ class TestComposite(FrappeTestCase):
 			x, y, width, height = layout((400, 800), [("character", 200, 300)])[0]
 			self.assertEqual(result.size, (400, 800))
 			# Pasted pixels keep the asset's colour apart from a slight match to the room.
-			self.assertLess(sum(abs(a - b) for a, b in zip((255, 0, 0), result.getpixel((x + width - 5, y + height - 5)))), 90)
+			self.assertLess(sum(abs(a - b) for a, b in zip((255, 0, 0), result.getpixel((x + width - 5, y + height // 2)))), 90)
 			self.assertEqual((0, 0, 255), result.getpixel((x + 2, y + 2)))
 
 
