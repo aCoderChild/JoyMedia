@@ -232,7 +232,7 @@ class TestAudioLineLast(FrappeTestCase):
 		from joymedia.services.prompt_compiler import _scrub_printable
 
 		self.assertEqual(
-			"Products beside the big box. The mother says.",
+			"Products beside the product pack. The mother says.",
 			_scrub_printable('Products in the centre beside the big box (30 packs per box). The mother says "Buy now".'),
 		)
 
@@ -262,3 +262,14 @@ class TestAudioLineLast(FrappeTestCase):
 				"the brand logo at the top left",
 				first_frame_inventory(shot, project),
 			)
+
+	def test_boxes_become_the_product_packs_and_zooms_are_removed(self):
+		from joymedia.services.prompt_compiler import _scrub_printable
+
+		self.assertEqual(
+			"The kid pulls tissue from the product pack. The mother winks.",
+			_scrub_printable(
+				"The kid pulls tissue from the large box. The mother winks at top right corner. "
+				"The camera slowly zooms in on emotional expressions."
+			),
+		)

@@ -305,15 +305,27 @@ def _kinship_hint(names):
 PRINTABLE = re.compile(
 	r"\(\s*\d[^)]*\)|\b\d+\s*(?:packs?|boxes|box|sheets?|ply|layers?|rolls?|pcs|pieces)\b|[\"“”][^\"“”]*[\"“”]"
 	# Where things stand is fixed by the first frame; a placement in the text makes the model draw a second copy.
-	r"|\b(?:at|in|on|to|from)\s+the\s+(?:(?:top|bottom|upper|lower)[ -]*)?(?:left|right|centre|center)"
+	r"|\b(?:at|in|on|to|from)\s+(?:the\s+)?(?:(?:top|bottom|upper|lower)[ -]*)?(?:left|right|centre|center)"
 	r"(?:[ -]*(?:hand\s+)?(?:corner|side|of the (?:frame|screen)))?(?:\s+of the (?:frame|screen))?",
 	re.I,
 )
 
 
+PACKAGING = re.compile(r"\b(?:(?:large|big|huge|giant|bulk)\s+)?(boxes|box|cartons?|cases?|crates?)\b|\bbulk packaging\b", re.I)
+CAMERA_ZOOM = re.compile(r"[^.!?]*\b(?:zoom\w*|push(?:es|ing)?[ -]in|dolly\w* in)\b[^.!?]*[.!?]?", re.I)
+
+
 def _scrub_printable(text):
-	"""Remove quantities and quoted words: the video model prints whatever words it is given onto objects."""
-	text = re.sub(r"\s{2,}", " ", PRINTABLE.sub("", str(text or "")))
+	"""Make movement text safe for a first frame: no printed quantities or quoted words, no placement, no extras.
+
+	The video model prints whatever words it is given onto objects, draws a second copy of anything placed
+	somewhere new, invents any box or carton the text names (the only packaging is the products in the frame),
+	and a zoom enlarges the pasted products until their printing is redrawn.
+	"""
+	text = PRINTABLE.sub("", str(text or ""))
+	text = PACKAGING.sub(lambda m: "product packs" if (m.group(1) or "").lower() in ("boxes",) else "product pack", text)
+	text = CAMERA_ZOOM.sub("", text)
+	text = re.sub(r"\s{2,}", " ", text)
 	return re.sub(r"\s+([.,;:!?])", r"\1", text).strip()
 
 
