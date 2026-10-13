@@ -44,6 +44,11 @@ class TestLayout(FrappeTestCase):
 			self.assertGreaterEqual(x, 0)
 			self.assertLessEqual(x + w, 720)
 
+	def test_a_lone_small_character_fills_the_frame_like_a_lone_large_one(self):
+		alone = layout((720, 1280), [("character", 464, 560, 0.5)])[0]
+		normal = layout((720, 1280), [("character", 464, 560, 1)])[0]
+		self.assertEqual(normal[2:], alone[2:])
+
 	def test_every_role_accepts_a_size_entry(self):
 		boxes = layout((720, 1280), [("character", 464, 560, 1), ("product", 1076, 717, 1), ("logo", 600, 150, 1)])
 		self.assertTrue(all(box is not None for box in boxes))

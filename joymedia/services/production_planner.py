@@ -224,9 +224,10 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		"- Name a character only as the same subject its reference shows (for example 'the mascot'); never use a "
 		"generic animal or person word such as 'bear cub' or 'woman', which makes the video model invent a "
 		"different one.",
-		"- The listed Character references are the whole cast. A bear, cub, mother, baby or person in the beat is one "
-		"of them, and a hand, arm or paw in the beat is that character's own (never a separate person's, and never "
-		"a different animal); keep every action in the beat, even those before or after the main action.",
+		"- The listed Character references are the whole cast, and each is a different individual. A mother, mom or "
+		"mama in the beat is the listed mother; a baby, kid, child or cub is the listed kid; a hand, arm or paw is "
+		"that character's own (never a separate person's, never a different animal). Keep every action in the beat, "
+		"even those before or after the main action.",
 		"- reference_keys: include the key of EVERY listed character or product that is visible in the first frame "
 		"(the advertised product's pack whenever the product itself is shown). Empty only if none is visible.",
 		'- continuity_mode: "Continue" only if this beat continues the same scene, subject and setting from the '

@@ -187,7 +187,7 @@ class TestAudioLineLast(FrappeTestCase):
 			prompt = compile_prompt_for_documents(shot, project, prompt_source="motion")
 		self.assertIn("The only character in this scene is Shera mascot (mostly cream", prompt)
 		self.assertIn("keep exactly these colours", prompt)
-		self.assertIn("every hand, arm or paw is theirs", prompt)
+		self.assertIn("every hand, arm or paw is its own", prompt)
 
 	def test_every_segment_of_a_long_scene_carries_the_cast_and_the_audio_rules(self):
 		from joymedia.services.prompt_compiler import compile_segment_prompt_from_snapshot
@@ -208,3 +208,20 @@ class TestAudioLineLast(FrappeTestCase):
 			self.assertIn("Add no text, letters", prompt)
 			self.assertIn("first frame is the truth for the place, the lighting", prompt)
 			self.assertTrue(prompt.split("\n\n")[-1].startswith("Audio:"), prompt[-300:])
+
+	def test_a_mother_and_a_kid_are_kept_apart(self):
+		from joymedia.services.prompt_compiler import compile_prompt_for_documents
+
+		shot = frappe._dict(
+			name="S", shot_number=1, generation_prompt="Mother lifts the paper while the baby watches.", image_prompt="",
+			motion_plan_json="", handoff_type="", end_state="", references=[
+				{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Character", "asset_version": "AV2"},
+			],
+		)
+		project = frappe._dict(generation_mode="Multi-shot", global_instructions="", references=[
+			{"asset_version": "AV1", "label": "Gấu mẹ (mother mascot)"}, {"asset_version": "AV2", "label": "Gấu con (kid mascot)"},
+		])
+		with patch("joymedia.services.subject_overlay.describe_colours", return_value=""):
+			prompt = compile_prompt_for_documents(shot, project, prompt_source="motion")
+		self.assertIn("different individuals", prompt)
+		self.assertIn("A mother, mom or mama named in the text is Gấu mẹ; a baby, kid, child or cub named in the text is Gấu con", prompt)

@@ -241,15 +241,24 @@ def _identity_guard(shot, project):
 	State the cast once, then resolve every name and body part against it.
 	"""
 	names = _character_names(shot, project)
-	who = (
-		f"The only character{'s' if len(names) > 1 else ''} in this scene {'are' if len(names) > 1 else 'is'} "
-		f"{' and '.join(names)}. Every bear, cub, mother, baby, person or other character named in this prompt "
-		"is one of them, and every hand, arm or paw is theirs (their own body), never a separate person's. "
-		"No other character, animal, person or human hand appears. "
-	) if names else (
-		"Every character, animal or person named in this prompt is the one character shown in the supplied "
-		"first frame, and every hand or paw is that character's own. "
-	)
+	if len(names) > 1:
+		who = (
+			f"The only characters in this scene are {' and '.join(names)}. They are different individuals: never "
+			"merge them, swap them, or draw one of them twice. "
+			f"{_kinship_hint(names)}Every hand, arm or paw is its own character's body, never a separate person's. "
+			"No other character, animal, person or human hand appears. "
+		)
+	elif names:
+		who = (
+			f"The only character in this scene is {names[0]}. Every bear, cub, mother, baby, person or other "
+			"character named in this prompt is this one, and every hand, arm or paw is its own, never a separate "
+			"person's. No other character, animal, person or human hand appears. "
+		)
+	else:
+		who = (
+			"Every character, animal or person named in this prompt is the one character shown in the supplied "
+			"first frame, and every hand or paw is that character's own. "
+		)
 	return (
 		"Scene fidelity: the supplied first frame is the truth for the place, the lighting, the time of day, the "
 		"characters and every object. Keep them for the whole clip; this text describes only what moves, and any "
@@ -266,6 +275,22 @@ NO_VOICE_OR_MUSIC = (
 	"no background music."
 )
 VOCAL_SOUND = re.compile(r"\b(laugh\w*|giggl\w*|voice\w*|speak\w*|speech|talk\w*|sing\w*|song|cry\w*|scream\w*|shout\w*|whisper\w*|say\w*|hum\w*|gasp\w*)\b", re.I)
+
+
+MOTHER_WORDS = re.compile(r"\b(mẹ|mom|mum|mother|mama)\b", re.I)
+KID_WORDS = re.compile(r"\b(con|kid|baby|child|cub|boy|girl)\b", re.I)
+
+
+def _kinship_hint(names):
+	"""Which name a mother and which a kid refers to, when the names say so."""
+	mother = next((n for n in names if MOTHER_WORDS.search(n)), None)
+	kid = next((n for n in names if KID_WORDS.search(n) and n != mother), None)
+	if not (mother and kid):
+		return ""
+	return (
+		f"A mother, mom or mama named in the text is {mother.split(' (')[0]}; a baby, kid, child or cub named in "
+		f"the text is {kid.split(' (')[0]}. "
+	)
 
 
 def _character_names(shot, project):

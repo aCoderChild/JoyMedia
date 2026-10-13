@@ -135,9 +135,11 @@ def layout(canvas, sizes_by_role):
 	for rank, index in enumerate(groups["character"]):
 		_role_name, width, height, *rest = sizes_by_role[index]
 		count = len(groups["character"])
-		scale = rest[0] if rest else 1
+		scales = [(sizes_by_role[i][3] if len(sizes_by_role[i]) > 3 else 1) for i in groups["character"]]
+		# Sizes are relative to the largest character present, so a lone baby fills the frame like a lone mother.
+		scale = (rest[0] if rest else 1) / max(scales)
 		# The width budget is shared in proportion to each character's relative size.
-		share = scale / sum((sizes_by_role[i][3] if len(sizes_by_role[i]) > 3 else 1) for i in groups["character"])
+		share = scale / sum(value / max(scales) for value in scales)
 		box_width, box_height = _fit(
 			width, height, CHARACTER_WIDTH * canvas_width * share, CHARACTER_HEIGHT * canvas_height * scale
 		)
