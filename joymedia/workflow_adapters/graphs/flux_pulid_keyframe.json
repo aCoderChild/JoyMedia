@@ -235,8 +235,8 @@
     "product_encode",
     0
    ],
-   "strength": 1,
-   "strength_type": "multiply"
+   "strength": 0.5,
+   "strength_type": "attn_bias"
   }
  },
  "environment_image": {
@@ -274,8 +274,41 @@
     "environment_encode",
     0
    ],
-   "strength": 1,
-   "strength_type": "multiply"
+   "strength": 0.5,
+   "strength_type": "attn_bias"
+  }
+ },
+ "character_encode": {
+  "class_type": "CLIPVisionEncode",
+  "inputs": {
+   "clip_vision": [
+    "clip_vision_loader",
+    0
+   ],
+   "image": [
+    "54",
+    0
+   ],
+   "crop": "center"
+  }
+ },
+ "character_redux": {
+  "class_type": "StyleModelApply",
+  "inputs": {
+   "conditioning": [
+    "26",
+    0
+   ],
+   "style_model": [
+    "style_model_loader",
+    0
+   ],
+   "clip_vision_output": [
+    "character_encode",
+    0
+   ],
+   "strength": 0.5,
+   "strength_type": "attn_bias"
   }
  }
 }

@@ -222,3 +222,32 @@ class TestOptionalInputChains(FrappeTestCase):
 		del workflow["a_aux"]
 		with self.assertRaises(ValueError):
 			adapter._validate_input_chain(workflow, adapter.execution_spec["input_preprocessing"]["optional_input_chains"][0])
+
+
+class TestShippedKeyframeWorkflow(FrappeTestCase):
+	def _adapter_and_graph(self):
+		from pathlib import Path
+
+		from joymedia.patches.register_flux_pulid_h3_pipeline import GRAPH, _keyframe_spec
+
+		adapter = GenericComfyUIAdapter()
+		adapter.execution_spec = _keyframe_spec()
+		return adapter, json.loads(Path(GRAPH).read_text())
+
+	def test_the_shipped_graph_satisfies_its_specification(self):
+		adapter, graph = self._adapter_and_graph()
+		adapter.validate_specification(graph)
+
+	def test_one_character_image_feeds_both_identity_paths(self):
+		_adapter, graph = self._adapter_and_graph()
+		# PuLID reads node 54; the Redux encoder must read the same node, not a separate placeholder.
+		self.assertEqual(["54", 0], graph["62"]["inputs"]["image"])
+		self.assertEqual(["54", 0], graph["character_encode"]["inputs"]["image"])
+		self.assertNotIn("character_image", graph)
+
+	def test_a_character_alone_leaves_a_complete_graph(self):
+		adapter, graph = self._adapter_and_graph()
+		adapter._finalize_optional_input_chains(graph, adapter.execution_spec["input_preprocessing"], {"person": ["x.png"]})
+		self.assertEqual(["product_redux" if "product_redux" in graph else "character_redux", 0], graph["47"]["inputs"]["conditioning"])
+		self.assertNotIn("product_image", graph)
+		self.assertEqual(["character_redux", 0], graph["47"]["inputs"]["conditioning"])

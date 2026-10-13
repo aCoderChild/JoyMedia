@@ -85,19 +85,8 @@ def _insert_h3(workflow_key, continuation=None):
 	return doc.name
 
 
-def _register_keyframe():
-	"""Keyframe workflow whose face, product and environment references are all optional."""
-	name = frappe.db.get_value(
-		"Generation Workflow", {"workflow_key": WORKFLOW_KEY}, "name", order_by="version_number desc"
-	)
-	if name:
-		stored = frappe.db.get_value("Generation Workflow", name, ["execution_spec", "workflow_json"], as_dict=True)
-		# Reuse only a version whose graph is exactly the shipped one (steps, nodes, wiring).
-		if "optional_input_chains" in (stored.execution_spec or "") and json.loads(stored.workflow_json) == json.loads(
-			GRAPH.read_text()
-		):
-			return name
-	spec = {
+def _keyframe_spec():
+	return {
 		"parameters": [
 			{"semantic": "seed", "node_key": "25", "input_name": "noise_seed"},
 			{"semantic": "width", "node_key": "27", "input_name": "width"},
@@ -107,20 +96,36 @@ def _register_keyframe():
 		"outputs": {"primary": {"node_key": "50", "media_type": "Image"}},
 		"metadata": {"frame_count": 1, "produces_video": 0, "produces_audio": 0},
 		"input_preprocessing": {"optional_input_chains": [
-			{   # Face identity (PuLID) patches the model used by the guider.
+			{   # Human face identity (PuLID) patches the model used by the guider.
 				"target": {"node_key": "47", "input_name": "model"}, "base": ["63", 0],
 				"links": [{"role": "person", "nodes": ["54", "53", "51", "45", "62"], "node": "62", "input": "model"}],
 			},
-			{   # Product and environment images (Redux) are chained onto the text conditioning.
+			{   # Image conditioning (Redux), in priority order: the character's identity is applied first,
+				# then product and environment references at a gentler strength. The character's image
+				# is the same image node that feeds PuLID above (node 54), which only acts on a human face.
 				"target": {"node_key": "47", "input_name": "conditioning"}, "base": ["26", 0],
 				"links": [
-					{"role": role, "nodes": [f"{role}_image", f"{role}_encode", f"{role}_redux"],
-					 "node": f"{role}_redux", "input": "conditioning"}
-					for role in ("product", "environment")
+					{"role": role, "nodes": [f"{name}_encode", f"{name}_redux"] if name == "character"
+					 else [f"{name}_image", f"{name}_encode", f"{name}_redux"],
+					 "node": f"{name}_redux", "input": "conditioning"}
+					for role, name in (("person", "character"), ("product", "product"), ("environment", "environment"))
 				],
 			},
 		]},
 	}
+
+
+def _register_keyframe():
+	"""Keyframe workflow whose character, product and environment references are all optional."""
+	name = frappe.db.get_value(
+		"Generation Workflow", {"workflow_key": WORKFLOW_KEY}, "name", order_by="version_number desc"
+	)
+	spec = _keyframe_spec()
+	if name:
+		stored = frappe.db.get_value("Generation Workflow", name, ["execution_spec", "workflow_json"], as_dict=True)
+		# Reuse only a version whose graph and specification are exactly the shipped ones.
+		if json.loads(stored.workflow_json) == json.loads(GRAPH.read_text()) and json.loads(stored.execution_spec) == spec:
+			return name
 	doc = frappe.get_doc({
 		"doctype": "Generation Workflow",
 		"workflow_key": WORKFLOW_KEY,
@@ -131,9 +136,12 @@ def _register_keyframe():
 	doc.append("bindings", {
 		"binding_key": "generation_prompt", "node_key": "6", "input_name": "text", "value_type": "Text", "required": 1,
 	})
-	for role, node_key in (("person", "54"), ("product", "product_image"), ("environment", "environment_image")):
+	for binding_key, role, node_key in (
+		("person_reference", "person", "54"),
+		("product_reference", "product", "product_image"), ("environment_reference", "environment", "environment_image"),
+	):
 		doc.append("bindings", {
-			"binding_key": f"{role}_reference", "node_key": node_key, "input_name": "image",
+			"binding_key": binding_key, "node_key": node_key, "input_name": "image",
 			"required_input_role": role, "value_type": "File Path", "required": 0,
 			"accepted_media_type": "Image", "allow_multiple": 0,
 		})
