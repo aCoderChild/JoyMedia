@@ -115,3 +115,10 @@ class TestKeyframeIngest(FrappeTestCase):
 			subject_overlay, "_cutout_path", side_effect=lambda av: "/x.png" if av == "AV1" else None
 		):
 			self.assertEqual({"product": ["AV3"]}, _pipeline_reference_inputs(references, workflow))
+
+
+class TestUsableSetting(FrappeTestCase):
+	def test_a_setting_that_names_a_subject_is_replaced_by_the_default(self):
+		self.assertEqual(subject_overlay.DEFAULT_SETTING, subject_overlay.usable_setting("Macro close-up on hand pulling tissue."))
+		self.assertEqual(subject_overlay.DEFAULT_SETTING, subject_overlay.usable_setting(""))
+		self.assertEqual("A warm kitchen with window light.", subject_overlay.usable_setting("A warm kitchen with window light."))

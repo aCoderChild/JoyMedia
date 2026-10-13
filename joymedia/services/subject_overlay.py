@@ -8,6 +8,7 @@ transparency cannot be pasted and still guides the image model as before.
 """
 
 import io
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -21,10 +22,20 @@ LOGO_MAX_WIDTH, LOGO_MAX_HEIGHT, LOGO_MARGIN = 0.22, 0.08, 0.04
 OPAQUE_BELOW = 250
 
 DEFAULT_SETTING = "A bright, softly lit interior with a window and a clean floor, shallow depth of field."
-EMPTY_SETTING = (
-	"Show only the empty setting, with clear open floor or table space in the lower middle of the frame. "
-	"Do not draw any character, mascot, animal, product, packaging, logo or text."
+SUBJECT_WORDS = re.compile(
+	r"\b(hands?|fingers?|arms?|paws?|person|people|man|woman|child|kids?|babys?|bears?|cubs?|animals?|mascots?|"
+	r"characters?|products?|packs?|packets?|boxe?s?|bottles?|tissues?|paper|napkins?|logos?|text|close-?ups?)\b",
+	re.I,
 )
+EMPTY_SETTING = (
+	"An empty, uninhabited room with open, clear floor space in the lower middle of the frame and nothing standing on it."
+)
+
+
+def usable_setting(text):
+	"""The planner's setting if it describes only a place; any subject in it would be drawn into the empty setting."""
+	text = str(text or "").strip()
+	return text if text and not SUBJECT_WORDS.search(text) else DEFAULT_SETTING
 
 
 def _role(reference):

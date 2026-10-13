@@ -116,6 +116,18 @@ class TestApply(FrappeTestCase):
 		self.assertTrue(prompt.startswith(RAW["video_prompt"]))
 		self.assertTrue(prompt.endswith("Audio: sound effects: a pop."))
 
+	def test_a_plan_that_drops_the_beat_falls_back_to_the_beats_english_wording(self):
+		beat = {"summary": "Mother bear spills the milk.", "camera": "", "action": "", "audio": "", "voice_over": "", "on_screen_text": "", "raw": "x"}
+		with patch.object(planner, "_ask_planner", return_value=RAW), patch.object(
+			planner, "creative_beat", return_value=beat
+		), patch.object(planner, "beat_coverage", return_value=(0.1, ["milk"])), patch.object(
+			planner, "ground_reference_keys", return_value=([], [])
+		):
+			plan = planner.plan_production_shot(self.project, self.shot, references=[])
+		self.assertEqual("Mother bear spills the milk.", plan["video_prompt"])
+		self.assertEqual(1, len(plan["motion_plan"]["actions"]))
+		self.assertFalse(plan["held_back"])
+
 	def test_held_back_plans_are_not_applied_through_the_api(self):
 		from joymedia.api import storyboard
 

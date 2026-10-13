@@ -88,6 +88,18 @@ class TestPromptCompiler(FrappeTestCase):
 		self.assertIn("0-5s: walk into the pool area", prompt)
 		self.assertNotIn("show the lobby", prompt)
 
+	def test_a_keyframe_image_prompt_never_receives_segment_or_action_text(self):
+		project = frappe._dict(references=[], generation_mode="Multi-shot", global_instructions="")
+		shot = frappe._dict(
+			name="SHOT-TEST", shot_number=1, generation_prompt="Video.", image_prompt="A bright room.",
+			motion_plan_json='{"actions":[{"start":0,"end":5,"action":"the bear gives a thumbs up"}]}',
+			end_state="thumbs up", handoff_type="ending", references=[],
+		)
+
+		prompt = compile_segment_prompt_from_snapshot(shot, project, 1, 2, prompt_source="image", fps=24)
+
+		self.assertEqual("A bright room.", prompt)
+
 
 class TestIdentityConsistency(FrappeTestCase):
 	def _shot(self, references):
@@ -154,3 +166,17 @@ class TestAudioLineLast(FrappeTestCase):
 		self.assertIn("mascot artwork and brand logo", prompt)
 		self.assertIn("unreadable texture", prompt)
 		self.assertNotIn("every visible logo or label", prompt)
+
+	def test_the_cast_is_named_so_bears_and_hands_resolve_to_the_mascot(self):
+		from joymedia.services.prompt_compiler import compile_prompt_for_documents
+
+		shot = frappe._dict(
+			name="S", shot_number=1, generation_prompt="Mother bear pulls tissue with her hand.", image_prompt="", motion_plan_json="",
+			handoff_type="", end_state="", references=[{"reference_role": "Character", "asset_version": "AV1"}],
+		)
+		project = frappe._dict(
+			generation_mode="Multi-shot", global_instructions="", references=[{"asset_version": "AV1", "label": "Shera mascot"}]
+		)
+		prompt = compile_prompt_for_documents(shot, project, prompt_source="motion")
+		self.assertIn("The only character in this scene is Shera mascot", prompt)
+		self.assertIn("every hand, arm or paw is theirs", prompt)

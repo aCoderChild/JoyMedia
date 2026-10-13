@@ -135,7 +135,8 @@ def compile_segment_prompt_from_snapshot(
 
 		# Continuations receive the same reference images as the first segment.
 		base = f"{reference_preamble(asset_versions, project.get('references') or [])}\n\n{base}"
-	if segment_count == 1:
+	if segment_count == 1 or prompt_source == "image":
+		# A still image has no segments or timing; the action plan belongs to the video stage.
 		return base
 	start_seconds = None
 	end_seconds = None
@@ -179,11 +180,12 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 		)
 
 	if prompt_source == "image":
-		from .subject_overlay import DEFAULT_SETTING, EMPTY_SETTING, pasted_references
+		from .subject_overlay import EMPTY_SETTING, pasted_references, usable_setting
 
 		if pasted_references(getattr(shot, "references", None)):
 			# The real characters and products are pasted in afterwards, so the image model gets the place only.
-			prompt = f"{getattr(shot, 'setting_prompt', None) or DEFAULT_SETTING}\n\n{EMPTY_SETTING}"
+			# Anything else in the prompt (names, actions, fidelity rules) would be drawn into it.
+			return f"{usable_setting(getattr(shot, 'setting_prompt', None))}\n\n{EMPTY_SETTING}"
 
 	global_instructions = str(project.get("global_instructions") or "").strip()
 	if global_instructions and include_global_instructions:
@@ -213,14 +215,22 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 			)
 	if prompt_source == "motion" and getattr(shot, "references", None):
 		# The video model keeps no identity of its own beyond the supplied frame and tends to redesign a
-		# character the moment the camera moves in close, or to invent a second one for any animal or person the
-		# text names. Say so explicitly.
+		# character the moment the camera moves in close, or to invent another one for any animal or person the
+		# text names. State the cast once, then resolve every name and body part against it.
+		names = _character_names(shot, project)
+		who = (
+			f"The only character{'s' if len(names) > 1 else ''} in this scene {'are' if len(names) > 1 else 'is'} "
+			f"{' and '.join(names)}. Every bear, cub, mother, baby, person or other character named in this prompt "
+			"is one of them, and every hand, arm or paw is theirs (their own body), never a separate person's. "
+			"No other character, animal, person or human hand appears. "
+		) if names else (
+			"Every character, animal or person named in this prompt is the one character shown in the supplied "
+			"first frame, and every hand or paw is that character's own. "
+		)
 		prompt = (
 			f"{prompt}\n\n"
-			"Identity consistency: every character, animal or person named in this prompt is the one character "
-			"shown in the supplied first frame, and every product is the one shown there; never add another or a "
-			"second copy. Anything held, poured or pulled is handled by the character itself, with its own hands or "
-			"paws, never by an additional person's hands or body. Keep them exactly as shown (same colours, fur or material, face and proportions) in every "
+			f"Identity consistency: {who}Every product is the one shown in the first frame; never add another or a "
+			"second copy. Keep them exactly as shown (same colours, fur or material, face and proportions) in every "
 			"camera angle, including close-ups; never redesign or recolour them."
 		)
 	if prompt_source == "motion":
@@ -236,6 +246,24 @@ NO_VOICE_OR_MUSIC = (
 	"no background music."
 )
 VOCAL_SOUND = re.compile(r"\b(laugh\w*|giggl\w*|voice\w*|speak\w*|speech|talk\w*|sing\w*|song|cry\w*|scream\w*|shout\w*|whisper\w*|say\w*|hum\w*|gasp\w*)\b", re.I)
+
+
+def _character_names(shot, project):
+	"""Labels of the Character references the scene uses, from the project's reference list."""
+	def field(row, key):
+		return row.get(key) if hasattr(row, "get") else getattr(row, key, None)
+
+	labels = {
+		field(row, "asset_version"): field(row, "label")
+		for row in (project.get("references") or project.get("selected_media") or [])
+	}
+	names = []
+	for reference in getattr(shot, "references", None) or []:
+		role = frappe.scrub(field(reference, "reference_role") or field(reference, "input_role") or "")
+		label = labels.get(field(reference, "asset_version"))
+		if role in ("character", "person", "people", "talent") and label and label not in names:
+			names.append(label)
+	return names
 
 
 def _audio_line_last(prompt, sound_effects_only=False):

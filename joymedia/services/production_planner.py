@@ -47,12 +47,15 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 	plan["notes"].extend(added_notes)
 	coverage, missing = beat_coverage(beat["summary"], plan["image_prompt"], plan["video_prompt"])
 	plan["coverage"] = round(coverage, 2)
-	# A plan that dropped much of the beat must not replace the advertiser's description unreviewed.
-	plan["held_back"] = coverage < MIN_COVERAGE
+	plan["held_back"] = False
 	if coverage < REVIEW_COVERAGE and missing:
 		plan["notes"].append(f"May omit from the beat: {', '.join(missing[:12])}.")
-	if plan["held_back"]:
-		plan["notes"].append("Plan covers too little of the beat, so the original prompts were kept.")
+	if coverage < MIN_COVERAGE and beat["summary"]:
+		# A plan that dropped much of the beat must not replace the advertiser's description. The beat's own
+		# English wording becomes the video prompt, so the model never receives the raw foreign-language text.
+		plan["video_prompt"] = beat["summary"]
+		plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": beat["summary"]}]}
+		plan["notes"].append("Plan covers too little of the beat, so the beat's own English wording is used as the video prompt.")
 	return plan
 
 
@@ -116,7 +119,8 @@ def translate(text, project):
 	context = (
 		f"This is a storyboard for an advertisement for: {project.product_name or project.project_name}. "
 		f"Characters and products shown: {references or 'not specified'}. Product words refer to the advertised "
-		"product (for example 'giấy' means its tissue paper sheets)."
+		"product (for example 'giấy' means its tissue paper sheets); any bear, mother or baby in the text is the "
+		"listed character, and 'tay' (hand) is that character's own paw."
 	)
 	prompt = (
 		f"{context}\nTranslate this storyboard text into English. Be literal and complete; do not add, remove or "
@@ -183,6 +187,9 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		"- Name a character only as the same subject its reference shows (for example 'the mascot'); never use a "
 		"generic animal or person word such as 'bear cub' or 'woman', which makes the video model invent a "
 		"different one.",
+		"- The listed Character references are the whole cast. A bear, cub, mother, baby or person in the beat is one "
+		"of them, and a hand, arm or paw in the beat is that character's own (never a separate person's, and never "
+		"a different animal); keep every action in the beat, even those before or after the main action.",
 		"- reference_keys: include the key of EVERY listed character or product that is visible in the first frame "
 		"(the advertised product's pack whenever the product itself is shown). Empty only if none is visible.",
 		'- continuity_mode: "Continue" only if this beat continues the same scene, subject and setting from the '
