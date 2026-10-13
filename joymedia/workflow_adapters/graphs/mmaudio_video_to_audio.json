@@ -11,7 +11,7 @@
   "inputs": {
    "vae_model": "v1-44.pth",
    "synchformer_model": "synchformer_state_dict.pth",
-   "clip_model": "apple_DFN5B-CLIP-ViT-H-14-384_fp16.safetensors",
+   "clip_model": "apple_DFN5B-CLIP-ViT-H-14-384_hfcache_fp32.bin",
    "mode": "44k",
    "precision": "fp16"
   }
