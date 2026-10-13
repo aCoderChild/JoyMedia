@@ -23,7 +23,7 @@ SUPPORTED_PARAMETERS = {
 	"last_frame_index",
 }
 SUPPORTED_TRANSFORMS = {
-	"identity", "frames_to_seconds", "aspect_ratio_option", "nearest_size_dimension"
+	"identity", "frames_to_seconds", "aspect_ratio_option", "nearest_size_dimension", "round_to_multiple"
 }
 METADATA_FIELDS = {
 	"frame_count",
@@ -80,6 +80,12 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 					for size in options
 				):
 					raise ValueError("nearest_size_dimension options need positive width and height values")
+			if transform == "round_to_multiple":
+				try:
+					if int(mapping["multiple"]) < 1:
+						raise ValueError
+				except (KeyError, TypeError, ValueError) as exc:
+					raise ValueError("round_to_multiple requires a positive integer 'multiple'") from exc
 			if transform == "frames_to_seconds" and mapping.get("fps") is not None:
 				try:
 					if float(mapping["fps"]) <= 0:
@@ -348,6 +354,11 @@ def _transform_value(mapping, value, values):
 	transform = mapping.get("transform", "identity")
 	if transform == "identity":
 		return value
+	if transform == "round_to_multiple":
+		# A model whose latent grid needs sizes divisible by N (for example 32) rejects anything else, so a
+		# delivery size such as 720 (22.5 x 32) is rounded to the nearest valid size (half rounds up).
+		multiple = int(mapping["multiple"])
+		return max(multiple, int(float(value) / multiple + 0.5) * multiple)
 	if transform == "frames_to_seconds":
 		fps = float(mapping.get("fps") or values.get("fps") or 24)
 		if fps <= 0:

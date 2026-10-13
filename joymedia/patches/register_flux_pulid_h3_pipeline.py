@@ -52,15 +52,18 @@ def _pipeline_with(keyframe_workflow, video_workflow):
 def _current_version(workflow_key):
 	"""Latest version of a workflow whose graph is exactly the shipped H3 graph, else None."""
 	name = frappe.db.get_value("Generation Workflow", {"workflow_key": workflow_key}, "name", order_by="version_number desc")
-	if name and json.loads(frappe.db.get_value("Generation Workflow", name, "workflow_json")) == json.loads(
-		(GRAPHS / "minimax_h3_i2v.json").read_text()
-	):
+	if not name:
+		return None
+	stored = frappe.db.get_value("Generation Workflow", name, ["workflow_json", "execution_spec"], as_dict=True)
+	if json.loads(stored.workflow_json) == json.loads((GRAPHS / "minimax_h3_i2v.json").read_text()) and json.loads(
+		stored.execution_spec
+	) == _h3_spec():
 		return name
 	return None
 
 
 def _register_h3():
-	"""Latest H3 workflow, creating a version that can continue a shot from its last frame."""
+	"""Latest H3 workflow with the shipped graph and specification, creating a version when it differs."""
 	name = _current_version(H3_WORKFLOW_KEY)
 	if name and frappe.db.get_value("Generation Workflow", name, "continuation_workflow"):
 		return name
@@ -68,18 +71,24 @@ def _register_h3():
 	return _insert_h3(H3_WORKFLOW_KEY, continuation)
 
 
-def _insert_h3(workflow_key, continuation=None):
-	spec = {
+def _h3_spec():
+	return {
 		"parameters": [
 			{"semantic": "seed", "node_key": "15", "input_name": "noise_seed"},
-			{"semantic": "width", "node_key": "104", "input_name": "width"},
-			{"semantic": "height", "node_key": "104", "input_name": "height"},
+			# H3's latent grid needs sizes divisible by 32 (the shipped workflow's Resolution Selector rounds to
+			# a multiple of 32 for the same reason); 720 is not, and fails inside the sampler.
+			{"semantic": "width", "node_key": "104", "input_name": "width", "transform": "round_to_multiple", "multiple": 32},
+			{"semantic": "height", "node_key": "104", "input_name": "height", "transform": "round_to_multiple", "multiple": 32},
 			{"semantic": "frame_count", "node_key": "111", "input_name": "value", "transform": "frames_to_seconds", "fps": 24},
 			{"semantic": "output_prefix", "node_key": "92", "input_name": "filename_prefix"},
 		],
 		"outputs": {"primary": {"node_key": "92", "media_type": "Video"}},
 		"metadata": {"frame_count": 124, "output_fps": 24, "produces_video": 1, "produces_audio": 1},
 	}
+
+
+def _insert_h3(workflow_key, continuation=None):
+	spec = _h3_spec()
 	doc = frappe.get_doc({
 		"doctype": "Generation Workflow",
 		"workflow_key": workflow_key,

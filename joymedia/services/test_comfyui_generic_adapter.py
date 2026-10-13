@@ -251,3 +251,38 @@ class TestShippedKeyframeWorkflow(FrappeTestCase):
 		self.assertEqual(["product_redux" if "product_redux" in graph else "character_redux", 0], graph["47"]["inputs"]["conditioning"])
 		self.assertNotIn("product_image", graph)
 		self.assertEqual(["character_redux", 0], graph["47"]["inputs"]["conditioning"])
+
+
+class TestRoundToMultiple(FrappeTestCase):
+	def _round(self, value, multiple=32):
+		from joymedia.workflow_adapters.comfyui_generic import _transform_value
+
+		return _transform_value({"transform": "round_to_multiple", "multiple": multiple}, value, {})
+
+	def test_sizes_are_rounded_to_the_nearest_valid_multiple_and_half_rounds_up(self):
+		self.assertEqual(736, self._round(720))  # 22.5 x 32 is not a valid latent size
+		self.assertEqual(1280, self._round(1280))
+		self.assertEqual(992, self._round(1000))
+		self.assertEqual(32, self._round(5))  # never below one step
+
+	def test_a_multiple_must_be_a_positive_integer(self):
+		adapter = GenericComfyUIAdapter()
+		adapter.execution_spec = {
+			"parameters": [{"semantic": "width", "node_key": "n", "input_name": "w", "transform": "round_to_multiple", "multiple": 0}],
+			"outputs": {"primary": {"node_key": "n", "media_type": "Video"}},
+			"metadata": {"frame_count": 24, "produces_video": True},
+		}
+		with self.assertRaises(ValueError):
+			adapter.validate_specification({"n": {"class_type": "X", "inputs": {"w": 1}}})
+
+	def test_the_h3_specification_declares_the_multiple_of_32_and_validates(self):
+		from pathlib import Path
+
+		from joymedia.patches.register_flux_pulid_h3_pipeline import GRAPHS, _h3_spec
+
+		adapter = GenericComfyUIAdapter()
+		adapter.execution_spec = _h3_spec()
+		graph = json.loads(Path(GRAPHS / "minimax_h3_i2v.json").read_text())
+		adapter.validate_specification(graph)
+		sizes = {p["semantic"]: p for p in _h3_spec()["parameters"] if p["semantic"] in ("width", "height")}
+		self.assertEqual({32}, {p["multiple"] for p in sizes.values()})
