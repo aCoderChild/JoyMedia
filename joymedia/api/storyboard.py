@@ -143,7 +143,7 @@ def _plan_project(project, wanted, apply, progress=None):
 	]
 	references = production_planner.project_reference_options(project)
 	total = len([shot for shot in shots if not wanted or shot.name in wanted])
-	results, previous_end_state = [], ""
+	results, previous_end_state, previous_setting = [], "", ""
 	for shot in shots:
 		if wanted and shot.name not in wanted:
 			previous_end_state = shot.end_state or ""
@@ -151,8 +151,9 @@ def _plan_project(project, wanted, apply, progress=None):
 		if shot.name in busy:
 			frappe.throw(_("Scene {0} is still being rendered. Please wait until it is ready.").format(shot.shot_name))
 		plan = production_planner.plan_production_shot(
-			project, shot, previous_end_state=previous_end_state, references=references
+			project, shot, previous_end_state=previous_end_state, references=references, previous_setting=previous_setting
 		)
+		previous_setting = plan.get("setting_prompt") or previous_setting
 		if apply and not plan["held_back"]:
 			production_planner.apply_production_shot(project, shot, plan)
 		previous_end_state = plan["end_state"]

@@ -335,3 +335,23 @@ class TestFollowTheSheet(FrappeTestCase):
 		self.assertEqual("The characters act out the scene.", plan["video_prompt"])
 		self.assertTrue(plan["audio"].startswith("Audio:"))
 		self.assertFalse(plan["held_back"])
+
+	def test_english_is_judged_by_letters_not_punctuation(self):
+		self.assertTrue(planner.looks_english("Top-down → macro close-up — “fast” motion…"))
+		self.assertFalse(planner.looks_english("Gấu mẹ cầm tờ giấy"))
+		self.assertFalse(planner.looks_english("đổ"))
+
+	def test_a_beat_with_no_place_keeps_the_previous_scenes_place(self):
+		project = frappe._dict(product_name="Soft tissue", name="P", planning_mode="Follow the sheet")
+		beat = {"raw": "x", "summary": "The mother waves.", "camera": "", "action": "", "audio": "", "voice_over": "", "on_screen_text": ""}
+		with patch.object(planner, "motion_only", return_value="The mother waves."), patch.object(planner, "_place", return_value=""), patch.object(
+			frappe.db, "count", return_value=6
+		), patch.object(planner, "translate", side_effect=lambda t, p: t):
+			plan = planner.follow_the_sheet(project, frappe._dict(shot_number=2, duration_seconds=5), beat, TestFollowTheSheet.REFS, "A sunny kitchen.")
+		self.assertEqual("A sunny kitchen.", plan["setting_prompt"])
+
+	def test_an_action_sentence_is_not_accepted_as_a_place(self):
+		with patch.object(planner, "_ask_planner", return_value={"place": "Water stain on table is immediately absorbed clean."}):
+			self.assertEqual("", planner._place(frappe._dict(), {"summary": "Water on the table is absorbed."}))
+		with patch.object(planner, "_ask_planner", return_value={"place": "A warm family kitchen with sunlight."}):
+			self.assertEqual("A warm family kitchen with sunlight.", planner._place(frappe._dict(), {"summary": "In the kitchen she waves."}))

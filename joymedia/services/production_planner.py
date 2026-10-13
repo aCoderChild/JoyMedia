@@ -27,12 +27,12 @@ SYSTEM_PROMPT = (
 )
 
 
-def plan_production_shot(project, shot, *, previous_end_state="", references=None):
+def plan_production_shot(project, shot, *, previous_end_state="", references=None, previous_setting=""):
 	"""Ask the planner for one shot's production plan and return it validated (nothing is saved)."""
 	references = references if references is not None else project_reference_options(project)
 	beat = creative_beat(project, shot)
 	if project.get("planning_mode") == "Follow the sheet":
-		return follow_the_sheet(project, shot, beat, references)
+		return follow_the_sheet(project, shot, beat, references, previous_setting)
 	prompt = build_planning_prompt(project, shot, beat, references, previous_end_state)
 	raw = _ask_planner(prompt)
 	if len(str((raw or {}).get("image_prompt") or "").split()) > MAX_IMAGE_WORDS:
@@ -46,7 +46,7 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 		duration=float(shot.duration_seconds or 0),
 		is_first=int(shot.shot_number or 0) <= 1,
 	)
-	if not plan["video_prompt"].isascii():
+	if not looks_english(plan["video_prompt"]):
 		# A video prompt that copied the beat's language, or mixed it with a translation, is not usable: the
 		# movement of the beat's English translation replaces it.
 		plan["video_prompt"] = motion_only(project, beat["summary"], references) or beat["summary"]
@@ -107,12 +107,23 @@ PRODUCT_WORDS = re.compile(r"\b(tissue|tissues|paper|napkin|napkins|pack|packs|b
 MANY_PRODUCTS = re.compile(r"\b(products|all (?:the )?products|range|lineup|collection)\b|các sản phẩm", re.I)
 
 
+def looks_english(text):
+	"""Whether text is in English (Latin script without the accented letters of Vietnamese and similar languages).
+
+	Punctuation such as arrows, dashes and curly quotes does not count against it: only letters do.
+	"""
+	import unicodedata
+
+	decomposed = unicodedata.normalize("NFD", str(text or ""))
+	return not any(unicodedata.combining(c) or c in "đĐ" or (c.isalpha() and ord(c) > 0x24F) for c in decomposed)
+
+
 def _name_phrase(label):
 	"""A character label's own name ("Gấu mẹ" from "Gấu mẹ (mother mascot…)"), as the sheet writes it."""
 	return label.split(" (")[0].strip()
 
 
-def follow_the_sheet(project, shot, beat, references):
+def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 	"""A production plan taken from the storyboard's own text, with the language model used only to translate.
 
 	The advertiser wrote the scene; nothing is invented. Characters are the ones the beat names (by the exact name
@@ -137,16 +148,18 @@ def follow_the_sheet(project, shot, beat, references):
 	if not keys:
 		keys = [r["key"] for r in references if r["role"] == "Character"][:1]
 	plan = {
-		"image_prompt": beat["summary"][:300], "setting_prompt": _place(project, beat),
+		"image_prompt": beat["summary"][:300],
+		# A beat that names no place stays where the film already is.
+		"setting_prompt": _place(project, beat) or previous_setting,
 		"video_prompt": "", "reference_keys": keys, "continuity_mode": "New Scene", "start_state": "", "end_state": "",
 		"motion_plan": {"actions": []}, "notes": ["Taken from the sheet; the planner only translated it."], "sound_effects": "",
 	}
 	by_key = {r["key"]: r for r in references}
 	inventory = "; ".join(by_key[k]["label"].split(" (")[0] for k in keys if k in by_key)
 	movement = motion_only(project, beat["summary"], references, inventory) or beat["summary"]
-	if not movement.isascii():
+	if not looks_english(movement):
 		movement = translate(movement, project)
-	if not movement.isascii():
+	if not looks_english(movement):
 		movement = "The characters act out the scene."
 	plan["video_prompt"] = movement
 	plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": movement}]}
@@ -170,7 +183,9 @@ def _place(project, beat):
 	)
 	raw = _ask_planner(prompt, system="You extract the setting from storyboard text. Return JSON only.", max_tokens=80)
 	place = " ".join(str((raw or {}).get("place") or "").split())
-	return place if place.isascii() and len(place.split()) <= 25 else ""
+	# A place has no verbs: an action sentence ("Water stain ... is absorbed") is not one.
+	is_action = re.search(r"\b(is|are|was|were|being|absorb\w*|plac\w*|pull\w*|lift\w*|hold\w*|pour\w*|spill\w*)\b", place, re.I)
+	return place if looks_english(place) and len(place.split()) <= 25 and not is_action else ""
 
 
 def project_reference_options(project):
@@ -227,7 +242,7 @@ def translate(text, project):
 	Without context the planner model mistranslates product words ("giay" as leaves, "rut giay" as drawing).
 	"""
 	text = str(text or "").strip()
-	if not text or text.isascii():
+	if not text or looks_english(text):
 		return text
 	references = ", ".join(row.label for row in project.selected_media or [] if row.label)
 	context = (
@@ -246,7 +261,7 @@ def translate(text, project):
 			system="You translate storyboard text faithfully. Return JSON only.", max_tokens=600,
 		)
 		english = str((raw or {}).get("english") or "").strip()
-		if english and english.isascii():
+		if english and looks_english(english):
 			return english
 	return text
 
