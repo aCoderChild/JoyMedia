@@ -72,9 +72,12 @@ def _get_duplicate_version(
 			AND ma.media_type = %s
 			AND ma.asset_category = %s
 			AND ma.status = 'Active'
+			AND ma.owner = %s
 		LIMIT 1
 		""",
-		(content_hash, version_name, media_type, asset_category),
+		# A person's upload may only be matched with their own earlier upload, never with another
+		# person's asset (which they cannot use and which would expose its record).
+		(content_hash, version_name, media_type, asset_category, frappe.session.user),
 		as_dict=True,
 	)
 	return rows[0] if rows else None

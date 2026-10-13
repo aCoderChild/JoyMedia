@@ -70,32 +70,50 @@ def create_project_from_brief(project_name=None, video_idea=None, workbook_file=
 	references = frappe.parse_json(references) if isinstance(references, str) else (references or [])
 	if not isinstance(references, list):
 		frappe.throw(_("References must be a list."))
+	if format and format not in ("Landscape", "Portrait", "Square") and not format_preset(format):
+		frappe.throw(_("Choose Landscape, Portrait or Square."))
 	project = create_project(project_name or _("Untitled Project"), "", video_idea or None)
-	if workbook_file:
-		import_storyboard_workbook(project.name, workbook_file, demo_name)
-		project.reload()
-	if format:
-		preset = format if format in ("Landscape", "Portrait", "Square") else format_preset(format)
-		if not preset:
-			frappe.throw(_("Choose Landscape, Portrait or Square."))
-		project.save_video_settings(total_duration_seconds=project.total_duration_seconds or 15, delivery_preset=preset)
-	added = []
-	for item in references:
-		label = str(item.get("label") or "").strip() or str(item.get("file_name") or "reference")
-		# Without a role the Project Reference controller classifies the image from its label.
-		role = item.get("role") if item.get("role") in ROLES else infer_reference_role(label)
-		file_doc = frappe.get_doc("File", item["file_name"])
-		asset = create_media_asset(label, ROLE_CATEGORY[role], file_url=file_doc.file_url, file_name=file_doc.name)
-		select_project_asset(project.name, asset["media_asset"], role if item.get("role") in ROLES else "General", label)
-		added.append({"label": label, "role": role})
+	try:
+		if workbook_file:
+			summary = import_storyboard_workbook(project.name, workbook_file, demo_name)
+			project.reload()
+			if not project_name and project.product_name:
+				# Name the project after the product and the sheet it was built from.
+				project.db_set("project_name", f"{project.product_name} — {summary['demo']}"[:140], update_modified=False)
+		if format:
+			preset = format if format in ("Landscape", "Portrait", "Square") else format_preset(format)
+			project.save_video_settings(total_duration_seconds=project.total_duration_seconds or 15, delivery_preset=preset)
+		added = []
+		for item in references:
+			label = str(item.get("label") or "").strip() or str(item.get("file_name") or "reference")
+			# Without a role the Project Reference controller classifies the image from its label.
+			role = item.get("role") if item.get("role") in ROLES else infer_reference_role(label)
+			file_doc = frappe.get_doc("File", item["file_name"])
+			asset = create_media_asset(label, ROLE_CATEGORY[role], file_url=file_doc.file_url, file_name=file_doc.name)
+			select_project_asset(project.name, asset["media_asset"], role if item.get("role") in ROLES else "General", label)
+			added.append({"label": label, "role": role})
+	except Exception:
+		# The workbook import commits, so a failure later would leave a half-built project behind.
+		frappe.db.rollback()
+		for shot in frappe.get_all("Shot", filters={"media_project": project.name}, pluck="name"):
+			frappe.delete_doc("Shot", shot, force=True, ignore_permissions=True)
+		frappe.delete_doc("Media Project", project.name, force=True, ignore_permissions=True)
+		frappe.db.commit()
+		raise
 	frappe.db.commit()
 	return {"project": project.name, "references": added, "readiness": get_project_readiness(project.name)}
 
 
 @frappe.whitelist()
-def get_project_readiness(project_name):
-	"""What is still needed before this project can be generated, one item per requirement."""
+def get_project_readiness(project_name, lang=None):
+	"""What is still needed before this project can be generated, one item per requirement.
+
+	`lang` follows the studio's own language switch (the server only knows the user's saved language).
+	"""
 	from joymedia.api.storyboard import shot_reference_problems
+
+	if lang in ("vi", "en"):
+		frappe.local.lang = lang
 
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_read_access()

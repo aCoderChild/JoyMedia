@@ -222,6 +222,7 @@
       </button>
     </div>
   </div>
+  <NewProjectDialog v-model="showNewProject" @created="onProjectCreated" />
 </template>
 
 <script setup>
@@ -232,6 +233,7 @@ import { notify } from "../utils/notify";
 import { errorMessage } from "../utils/errors";
 import { useI18n } from "../stores/i18n";
 import MediaThumbnail from "../components/MediaThumbnail.vue";
+import NewProjectDialog from "../components/NewProjectDialog.vue";
 
 const { currentLang } = useI18n();
 const router = useRouter();
@@ -239,6 +241,7 @@ const router = useRouter();
 const statusFilter = ref("all");
 const searchQuery = ref("");
 const creatingProject = ref(false);
+const showNewProject = ref(false);
 
 const projectsResource = createResource({
   url: "joymedia.api.projects.get_project_cards",
@@ -267,30 +270,12 @@ function openStudio(projectName) {
   router.push(`/projects/${projectName}`);
 }
 
-async function handleNewProject() {
-  if (creatingProject.value) return;
-  creatingProject.value = true;
-  try {
-    const created = await call("joymedia.api.projects.create_project", {
-      project_name: currentLang.value === "vi" ? "Dự án mới" : "Untitled Project",
-      product_name: "",
-      video_idea: null,
-    });
-    const targetName = created?.name || created?.project;
-    if (targetName) {
-      router.push(`/projects/${targetName}`);
-    } else {
-      await projectsResource.fetch();
-    }
-  } catch (err) {
-    notify({
-      title: "Error",
-      text: errorMessage(err, "Failed to create project."),
-      type: "error",
-    });
-  } finally {
-    creatingProject.value = false;
-  }
+function handleNewProject() {
+  showNewProject.value = true;
+}
+
+function onProjectCreated(name) {
+  router.push(`/projects/${name}`);
 }
 
 async function archiveProject(project) {

@@ -90,3 +90,53 @@ class TestCreateFromBrief(FrappeTestCase):
 	def test_a_bad_format_is_rejected(self):
 		with self.assertRaises(frappe.ValidationError):
 			project_intake.create_project_from_brief("Bad format", format="sideways")
+
+
+class TestIntakeIsAtomicAndPrivate(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def test_a_failure_after_the_import_leaves_no_half_built_project(self):
+		file_doc = frappe.get_doc({"doctype": "File", "file_name": "w.xlsx", "content": _workbook_bytes(), "is_private": 1}).insert(ignore_permissions=True)
+		before = frappe.db.count("Media Project")
+		with patch("joymedia.services.media_asset_service.create_media_asset", side_effect=frappe.ValidationError("boom")):
+			with self.assertRaises(frappe.ValidationError):
+				project_intake.create_project_from_brief(
+					"Will fail", workbook_file=file_doc.name, references=[{"file_name": file_doc.name, "label": "x"}]
+				)
+		self.assertEqual(before, frappe.db.count("Media Project"))
+
+	def test_duplicate_detection_never_returns_another_users_asset(self):
+		from joymedia.services.media_asset_service import _get_duplicate_version
+
+		with patch("joymedia.services.media_asset_service.frappe.db.sql", return_value=[]) as sql:
+			_get_duplicate_version("hash", "AV", "Image", "Product")
+		self.assertIn("ma.owner = %s", sql.call_args.args[0])
+		self.assertEqual(frappe.session.user, sql.call_args.args[1][-1])
+
+
+class TestNamingAndLanguage(FrappeTestCase):
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def test_a_project_without_a_name_is_named_from_its_workbook(self):
+		frappe.set_user("Administrator")
+		workbook = frappe.get_doc({"doctype": "File", "file_name": "n.xlsx", "content": _workbook_bytes(), "is_private": 1}).insert(ignore_permissions=True)
+		with patch.object(frappe.db, "commit"):
+			result = project_intake.create_project_from_brief(workbook_file=workbook.name)
+		self.assertEqual("Khăn giấy Shera — Demo 1", frappe.db.get_value("Media Project", result["project"], "project_name"))
+
+	def test_readiness_follows_the_requested_language(self):
+		frappe.set_user("Administrator")
+		with patch.object(frappe.db, "commit"):
+			project = project_intake.create_project_from_brief("Lang test")["project"]
+		vi = {s["key"]: s["label"] for s in project_intake.get_project_readiness(project, lang="vi")["steps"]}
+		en = {s["key"]: s["label"] for s in project_intake.get_project_readiness(project, lang="en")["steps"]}
+		self.assertEqual("Định dạng video", vi["format"])
+		self.assertEqual("Video format", en["format"])

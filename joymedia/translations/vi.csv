@@ -139,3 +139,16 @@ Rendering was stopped.,Đã dừng dựng video.
 The scene could not be completed. Please try again.,Chưa hoàn tất được cảnh. Vui lòng thử lại.
 Generation was stopped by the user.,Bạn đã dừng việc dựng video.
 Some scenes need attention while other scenes are still rendering.,Một số cảnh bị lỗi trong khi các cảnh khác vẫn đang dựng.
+Story or storyboard,Kịch bản hoặc storyboard
+Import a storyboard workbook or generate a storyboard from the brief.,Nhập bảng kịch bản hoặc để AI tạo storyboard từ mô tả.
+Video format,Định dạng video
+"Choose Landscape, Portrait or Square.","Chọn Ngang, Dọc hoặc Vuông."
+Reference images,Hình ảnh tham chiếu
+"Add the images the film must show (a character, a product…).","Thêm các hình ảnh phải xuất hiện trong phim (nhân vật, sản phẩm…)."
+Each scene's references,Tham chiếu của từng cảnh
+Storyboard timing,Thời gian kịch bản
+{0} timing gap(s) were found; they are closed on export.,Phát hiện {0} khoảng trống thời gian; chúng được nối lại khi xuất video.
+Storyboard approved,Đã duyệt kịch bản
+"Review the scenes, then approve.",Hãy xem lại các cảnh rồi duyệt.
+Untitled Project,Dự án chưa đặt tên
+References must be a list.,Danh sách tham chiếu không hợp lệ.

@@ -202,6 +202,9 @@
             @remove-reference="removeReference"
           />
 
+          <!-- What is still needed before generating; refreshes from Frappe realtime events -->
+          <ReadinessChecklist :project-name="projectName" @changed="fetchWorkspace" />
+
           <!-- Scene Filmstrip / Storyboard Track -->
           <SceneStrip
             :shots="storyboardShots"
@@ -400,6 +403,7 @@ import MediaDrawer from "../components/studio/MediaDrawer.vue";
 import GenerationComposer from "../components/studio/GenerationComposer.vue";
 import StudioPreview from "../components/studio/StudioPreview.vue";
 import SceneStrip from "../components/studio/SceneStrip.vue";
+import ReadinessChecklist from "../components/studio/ReadinessChecklist.vue";
 import EditTimeline from "../components/studio/EditTimeline.vue";
 import StudioInspector from "../components/studio/StudioInspector.vue";
 import MediaPicker from "../components/studio/MediaPicker.vue";
