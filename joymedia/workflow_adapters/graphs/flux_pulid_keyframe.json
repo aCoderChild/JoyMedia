@@ -307,7 +307,7 @@
     "character_encode",
     0
    ],
-   "strength": 0.5,
+   "strength": 0.22,
    "strength_type": "attn_bias"
   }
  }

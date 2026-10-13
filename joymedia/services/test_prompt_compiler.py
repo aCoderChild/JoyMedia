@@ -301,11 +301,12 @@ class TestAudioLineLast(FrappeTestCase):
 		project = frappe._dict(references=[
 			{"asset_version": "AV1", "label": "Gấu mẹ (mother mascot, flower on head)"}, {"asset_version": "AV2", "label": "Gấu con (kid mascot)"},
 		])
-		prompt = compile_prompt_for_documents(shot, project, prompt_source="image")
+		with patch("joymedia.services.subject_overlay.describe_colours", return_value="mostly cream"):
+			prompt = compile_prompt_for_documents(shot, project, prompt_source="image")
 		self.assertTrue(prompt.startswith("A warm wooden kitchen. The mother lifts a glass of milk. The kid sits on the floor."))
 		self.assertNotIn("Then she pours", prompt)
 		self.assertIn("act exactly like human people", prompt)
-		self.assertIn("mother mascot, flower on head; kid mascot", prompt)
+		self.assertIn("mother mascot, flower on head (mostly cream); kid mascot (mostly cream)", prompt)
 		self.assertNotIn("Audio", prompt)
 
 	def test_a_planned_image_description_is_made_safe_for_drawing_mascots(self):

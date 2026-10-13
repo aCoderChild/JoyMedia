@@ -447,11 +447,26 @@ def _draw_prompt(shot, project):
 	"""
 	from .subject_overlay import usable_setting
 
+	from .subject_overlay import describe_colours
+
 	action = _first_actions(shot) or _scrub_for_drawing(getattr(shot, "image_prompt", None) or "")
-	cast = "; ".join(dict.fromkeys(_describe_character(label) for label in _character_labels(shot, project)))
+	labels = {
+		(row.get("asset_version") if hasattr(row, "get") else getattr(row, "asset_version", None)):
+		(row.get("label") if hasattr(row, "get") else getattr(row, "label", None))
+		for row in (project.get("references") or project.get("selected_media") or [])
+	}
+	briefs = []
+	for reference in getattr(shot, "references", None) or []:
+		if _role_of(reference) != "character":
+			continue
+		version = reference.get("asset_version") if hasattr(reference, "get") else getattr(reference, "asset_version", None)
+		if labels.get(version):
+			colours = describe_colours(version)
+			briefs.append(_describe_character(labels[version]) + (f" ({colours})" if colours else ""))
+	cast = "; ".join(dict.fromkeys(briefs))
 	return (
 		f"{usable_setting(getattr(shot, 'setting_prompt', None))} {action}\n\n"
-		"The characters are cartoon bear mascots who act exactly like human people: they stand upright on two legs, "
+		"The characters are cartoon mascot characters who act exactly like human people: they stand upright on two legs, "
 		"sit on chairs or the floor, walk, hold things in their paws and gesture the way people do, in a real, "
 		"lived-in home with furniture around them"
 		+ (f": {cast}" if cast else "")
