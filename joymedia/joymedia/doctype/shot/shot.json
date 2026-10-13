@@ -27,6 +27,7 @@
   "caption",
 	"voice_over",
 	"audio_cues",
+	"planner_notes",
   "generation_inputs",
   "selected_output_section",
   "selected_output_asset_version",
@@ -176,6 +177,13 @@
 	 "fieldname": "audio_cues",
 	 "fieldtype": "Long Text",
 	 "label": "Audio Cues"
+	},
+	{
+	 "description": "Notes from the production planner, such as what a single clip cannot show.",
+	 "fieldname": "planner_notes",
+	 "fieldtype": "Small Text",
+	 "label": "Planner Notes",
+	 "read_only": 1
 	},
   {
    "description": "Assets assigned to workflow input roles for this shot, such as first_frame, last_frame, mask, or product_reference.",

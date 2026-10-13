@@ -127,6 +127,49 @@ def _mark_storyboard_needs_review(project):
 
 
 @frappe.whitelist()
+def plan_project_production(project_name, shot_names=None, apply=True):
+	"""Turn the storyboard's creative beats into production shots (prompts, continuity, references).
+
+	Timing, voice-over, on-screen text and the imported source stay as written. The result is a
+	proposal for the user to review before approval; with apply=False nothing is saved.
+	"""
+	from joymedia.services import production_planner
+
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
+	ensure_shot_planning_editable(project.name)
+	apply = str(apply).lower() in {"1", "true", "yes", "on"}
+	wanted = set(frappe.parse_json(shot_names)) if isinstance(shot_names, str) and shot_names else set(shot_names or [])
+	busy = _busy_shots(project.name)
+	shots = [
+		frappe.get_doc("Shot", name)
+		for name in frappe.get_all(
+			"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name", order_by="shot_number asc"
+		)
+	]
+	references = production_planner.project_reference_options(project)
+	results, previous_end_state = [], ""
+	for shot in shots:
+		if wanted and shot.name not in wanted:
+			previous_end_state = shot.end_state or ""
+			continue
+		if shot.name in busy:
+			frappe.throw(_("Scene {0} is still being rendered. Please wait until it is ready.").format(shot.shot_name))
+		plan = production_planner.plan_production_shot(
+			project, shot, previous_end_state=previous_end_state, references=references
+		)
+		if apply and not plan["held_back"]:
+			production_planner.apply_production_shot(project, shot, plan)
+		previous_end_state = plan["end_state"]
+		results.append({"shot": shot.name, "shot_name": shot.shot_name, **plan})
+	if apply and any(not result["held_back"] for result in results):
+		_mark_storyboard_needs_review(project)
+		frappe.db.commit()
+	return results
+
+
+@frappe.whitelist()
 def set_project_shot_references(project_name, shot_name, reference_keys):
 	"""Choose which project references one scene is generated from."""
 	project = frappe.get_doc("Media Project", project_name)
