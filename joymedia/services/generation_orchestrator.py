@@ -136,6 +136,7 @@ def _pipeline_steps_for_segment(
 	previous_shot_tail_job=None,
 	cross_shot_continuity=False,
 	force_full_pipeline=False,
+	keyframe_job=None,
 ):
 	"""Return executable stages, chaining later continuous segments from Last Frame.
 
@@ -146,6 +147,9 @@ def _pipeline_steps_for_segment(
 	"""
 	if not pipeline_steps:
 		return []
+	if keyframe_job and not previous_segment_job:
+		# The scene's approved keyframe replaces the pipeline's image stage.
+		return [(pipeline_steps[-1], keyframe_job, "Primary Image", False)]
 	continuation_source = None if force_full_pipeline else (previous_segment_job or (
 		previous_shot_tail_job if cross_shot_continuity else None
 	))
@@ -254,6 +258,7 @@ def prepare_run(run_name: str):
 		cross_shot_continuity = False
 		jobs_to_prepare = []
 		previous_shot_tail_job = execution_scope.get("continuation_from_task")
+		keyframe_stage = execution_scope.get("stage") == "keyframe"
 		for shot in shots:
 			cross_shot_continuity = str(shot.get("continuity_mode") or "").casefold() == "continue"
 			shot_name = shot.get("shot")
@@ -278,7 +283,7 @@ def prepare_run(run_name: str):
 				shot_workflow, shot.get("planned_frame_count"), shot_continuation_workflow
 			)
 			previous_segment_job = None
-			for segment in segments:
+			for segment in segments[:1] if keyframe_stage else segments:
 				if shot_pipeline_steps:
 					previous_pipeline_job = None
 					pipeline_stages = _pipeline_steps_for_segment(
@@ -289,7 +294,10 @@ def prepare_run(run_name: str):
 						# A scene reset needs a fresh keyframe only for its first
 						# technical segment. Later H3 segments must use Last Frame.
 						force_full_pipeline=bool(shot.get("requires_recomposition")) and segment["segment_index"] == 1,
+						keyframe_job=None if keyframe_stage else shot.get("keyframe_task"),
 					)
+					if keyframe_stage:
+						pipeline_stages = pipeline_stages[:1]
 					for pipeline_step, dependency_override, artifact_role_override, is_first_pipeline_step in pipeline_stages:
 						step_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
 						existing_job = frappe.db.get_value(
@@ -741,7 +749,7 @@ def _advance_run(run, enqueue_finalization=True):
 	previous_status = run.status
 	_refresh_run_counters(run)
 	sync_media_project_status_for_run(run.name)
-	if run.status == "Completed" and previous_status != "Completed":
+	if run.status == "Completed" and previous_status != "Completed" and not _is_keyframe_run(run):
 		_finish_film(run.media_project)
 	return _run_summary(run)
 
@@ -1245,7 +1253,16 @@ def _refresh_run_counters(run):
 	)
 
 
+def _is_keyframe_run(run):
+	try:
+		return (frappe.parse_json(run.execution_scope_json or "{}") or {}).get("stage") == "keyframe"
+	except (TypeError, ValueError, AttributeError):
+		return False
+
+
 def _run_outputs_are_selected(run_name):
+	if _is_keyframe_run(frappe.get_doc("Generation Run", run_name)):
+		return True  # a keyframe run selects no video
 	for job in frappe.get_all(
 		"Generation Task",
 		filters={"generation_run": run_name},
@@ -1262,6 +1279,12 @@ def _finalize_completed_shots(run):
 		filters={"generation_run": run.name},
 		pluck="shot",
 	)
+	if _is_keyframe_run(run):
+		from .keyframes import record_keyframe
+
+		for shot_name in dict.fromkeys(shot_names):
+			record_keyframe(run.name, shot_name)
+		return
 	for shot_name in dict.fromkeys(shot_names):
 		if _keeps_selected_output(run, shot_name):
 			continue

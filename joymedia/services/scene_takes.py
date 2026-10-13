@@ -52,8 +52,10 @@ def regenerate_scene_with_reason(project_name, shot_name, retry_reason="Manual R
 	return {**result, "shot_name": shot.name}
 
 
-def _start_takes_run(project, shot_names, retry_reason=None):
-	"""A run that renders new takes of these scenes, replacing each one's take when ready."""
+def _start_takes_run(project, shot_names, retry_reason=None, stage=None):
+	"""A run that renders new takes of these scenes, replacing each one's take when ready.
+
+	With stage="keyframe" it draws only the scenes' first frames, for review before any video."""
 	if project.storyboard_approval_status != "Approved":
 		frappe.throw(_("Review and approve the storyboard before generating another take."))
 	from joymedia.services.project_context import build_project_snapshot
@@ -68,7 +70,7 @@ def _start_takes_run(project, shot_names, retry_reason=None):
 	pipeline_name = (frappe.parse_json(snapshot_json) or {}).get("generation_pipeline")
 	if not pipeline_name:
 		frappe.throw(_("Generation requires an explicitly promoted Generation Pipeline."))
-	continuation_from_task = _continuation_source_task(project, shot_names)
+	continuation_from_task = None if stage == "keyframe" else _continuation_source_task(project, shot_names)
 	run = frappe.get_doc(
 		{
 			"doctype": "Generation Run",
@@ -78,7 +80,8 @@ def _start_takes_run(project, shot_names, retry_reason=None):
 			# replace_selection: each new take replaces the current one once it is ready.
 			"execution_scope_json": json.dumps({
 				"shot_names": shot_names,
-				"replace_selection": True,
+				"replace_selection": stage != "keyframe",
+				"stage": stage,
 				"retry_reason": retry_reason or None,
 				"continuation_from_task": continuation_from_task,
 				"plan_signature": compute_plan_signature(project.name),

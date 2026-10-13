@@ -196,9 +196,9 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 	if getattr(shot, "references", None):
 		prompt = (
 			f"{prompt}\n\n"
-			"Reference fidelity: market only the intended referenced product. Preserve its exact "
-			"shape, material, color, proportions, and every visible logo or label; do not swap, "
-			"merge, deform, or invent products, packaging, text, or logos."
+			"Reference fidelity: show only the intended referenced product. Keep its exact shape, material, "
+			"colours, proportions, mascot artwork and brand logo; do not swap, merge, deform or invent products or "
+			"logos. Do not write or redraw words: small print and label text stay a soft, unreadable texture."
 		)
 
 	generation_mode = project.get("generation_mode")
@@ -219,7 +219,8 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 			f"{prompt}\n\n"
 			"Identity consistency: every character, animal or person named in this prompt is the one character "
 			"shown in the supplied first frame, and every product is the one shown there; never add another or a "
-			"second copy. Keep them exactly as shown (same colours, fur or material, face and proportions) in every "
+			"second copy. Anything held, poured or pulled is handled by the character itself, with its own hands or "
+			"paws, never by an additional person's hands or body. Keep them exactly as shown (same colours, fur or material, face and proportions) in every "
 			"camera angle, including close-ups; never redesign or recolour them."
 		)
 	if prompt_source == "motion":

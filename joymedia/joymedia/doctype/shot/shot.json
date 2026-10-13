@@ -21,6 +21,9 @@
   "generation_prompt",
   "image_prompt",
   "setting_prompt",
+  "keyframe_artifact",
+  "keyframe_status",
+  "keyframe_signature",
   "motion_plan_json",
   "start_state",
   "end_state",
@@ -138,6 +141,32 @@
    "fieldname": "setting_prompt",
    "fieldtype": "Small Text",
    "label": "Setting Prompt"
+  },
+  {
+   "fieldname": "keyframe_artifact",
+   "fieldtype": "Link",
+   "label": "Keyframe",
+   "options": "Generation Artifact",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "The approved or pending first frame of this scene, drawn before its video."
+  },
+  {
+   "fieldname": "keyframe_status",
+   "fieldtype": "Select",
+   "label": "Keyframe Status",
+   "options": "\nPending Review\nApproved",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "keyframe_signature",
+   "fieldtype": "Data",
+   "label": "Keyframe Signature",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1,
+   "description": "What the keyframe was drawn from; a different value means it is out of date."
   },
   {
    "description": "Validated, model-independent action schedule in seconds.",

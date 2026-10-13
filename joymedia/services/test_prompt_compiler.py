@@ -70,7 +70,7 @@ class TestPromptCompiler(FrappeTestCase):
 			references=[{"reference_role": "product", "asset_version": "ASTV-TEST"}],
 		)
 		prompt = compile_prompt_for_documents(shot, project, prompt_source="motion")
-		self.assertIn("market only the intended referenced product", prompt)
+		self.assertIn("show only the intended referenced product", prompt)
 		self.assertIn("do not swap, merge, deform", prompt)
 
 	def test_continuation_only_receives_its_own_action_window(self):
@@ -143,3 +143,14 @@ class TestAudioLineLast(FrappeTestCase):
 
 		result = _audio_line_last("Audio: sound effects: Paper tearing. Baby giggling laughter.", sound_effects_only=True)
 		self.assertEqual(f"Audio: sound effects: Paper tearing. {NO_VOICE_OR_MUSIC}", result)
+
+	def test_references_ask_for_shape_colour_mascot_and_logo_not_for_label_text(self):
+		from joymedia.services.prompt_compiler import compile_prompt_for_documents
+
+		shot = frappe._dict(
+			name="S", shot_number=1, generation_prompt="A scene.", image_prompt="", references=[{"reference_role": "Product"}]
+		)
+		prompt = compile_prompt_for_documents(shot, {}, prompt_source="image")
+		self.assertIn("mascot artwork and brand logo", prompt)
+		self.assertIn("unreadable texture", prompt)
+		self.assertNotIn("every visible logo or label", prompt)

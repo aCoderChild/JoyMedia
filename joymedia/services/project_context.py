@@ -270,6 +270,8 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 		],
 	):
 		shot_doc = frappe.get_doc("Shot", shot.name)
+		from joymedia.services.keyframes import approved_keyframe_task
+
 		shot_snapshot = {
 				"shot": shot.name,
 				"shot_number": shot.shot_number,
@@ -277,6 +279,8 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 				"planned_frame_count": int(shot.planned_frame_count or 0),
 				"image_prompt": shot.image_prompt or "",
 				"setting_prompt": getattr(shot, "setting_prompt", None) or "",
+				# An approved, current keyframe is the scene's first frame; its image stage is not repeated.
+				"keyframe_task": approved_keyframe_task(shot_doc),
 				"generation_prompt": shot.generation_prompt or "",
 				"motion_plan_json": shot.motion_plan_json or "",
 				"start_state": shot.start_state or "",

@@ -92,9 +92,13 @@ class GenerationTask(Document):
 					scope = frappe.parse_json(run.execution_scope_json or "{}")
 				except (TypeError, ValueError):
 					scope = {}
-				if not (isinstance(scope, dict) and scope.get("continuation_from_task") == dependency.name):
+				if self.dependency_artifact_role == "Primary Image" and dependency.shot == self.shot:
+					# The scene's reviewed keyframe, drawn by an earlier keyframe run.
+					self._validate_keyframe_dependency(dependency)
+				elif not (isinstance(scope, dict) and scope.get("continuation_from_task") == dependency.name):
 					frappe.throw(_("A chained Generation Task dependency must belong to the same Generation Run."))
-				self._validate_cross_run_dependency(dependency, project)
+				else:
+					self._validate_cross_run_dependency(dependency, project)
 			if dependency.name == self.name:
 				frappe.throw(_("A Generation Task cannot depend on itself."))
 		# Serialize the identity check with concurrent task preparation. The
@@ -124,6 +128,17 @@ class GenerationTask(Document):
 		if duplicate:
 			frappe.throw(_("Only one Generation Task may exist for each pipeline step of a shot segment in a run."))
 		return workflow
+
+	def _validate_keyframe_dependency(self, dependency):
+		"""The upstream task must be this scene's keyframe with its image stored."""
+		from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
+
+		attempt = get_effective_attempt(dependency.name)
+		if not attempt or not frappe.db.exists(
+			"Generation Artifact",
+			{"generation_attempt": attempt.name, "artifact_role": "Primary Image", "frappe_file": ["is", "set"]},
+		):
+			frappe.throw(_("The keyframe dependency has no stored image."))
 
 	def _validate_cross_run_dependency(self, dependency, project):
 		"""A predecessor from another run must be this project's approved, selected take."""
