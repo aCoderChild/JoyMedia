@@ -128,6 +128,13 @@ class TestApply(FrappeTestCase):
 		self.assertEqual("Mother bear spills the milk.", plan["video_prompt"])
 		self.assertEqual(1, len(plan["motion_plan"]["actions"]))
 
+	def test_a_translation_that_stays_in_the_original_language_is_retried(self):
+		answers = iter([{"english": "Gấu mẹ nháy mắt."}, {"english": "Mother bear winks."}])
+		with patch.object(planner, "_ask_planner", side_effect=lambda *a, **k: next(answers)) as ask:
+			result = planner.translate("Gấu mẹ nháy mắt.", self.project)
+		self.assertEqual("Mother bear winks.", result)
+		self.assertEqual(2, ask.call_count)
+
 	def test_motion_only_asks_for_movement_and_not_for_place_or_light(self):
 		with patch.object(planner, "_ask_planner", return_value={"motion": "  The mother lifts a tissue. "}) as ask:
 			result = planner.motion_only(self.project, "Candlelight. Mother lifts a tissue.", [{"label": "Mama", "role": "Character"}])

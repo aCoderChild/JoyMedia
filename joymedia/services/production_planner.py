@@ -151,8 +151,15 @@ def translate(text, project):
 		f"{context}\nTranslate this storyboard text into English. Be literal and complete; do not add, remove or "
 		f"change any detail.\nTEXT: {text}\nReturn {{\"english\": \"...\"}}"
 	)
-	raw = _ask_planner(prompt, system="You translate storyboard text faithfully. Return JSON only.", max_tokens=600)
-	return str((raw or {}).get("english") or "").strip() or text
+	for attempt in range(2):
+		raw = _ask_planner(
+			prompt + ("\nThe answer must be written in English only, not in the original language." if attempt else ""),
+			system="You translate storyboard text faithfully. Return JSON only.", max_tokens=600,
+		)
+		english = str((raw or {}).get("english") or "").strip()
+		if english and english.isascii():
+			return english
+	return text
 
 
 def audio_direction(project, beat, foley=None):
