@@ -104,6 +104,27 @@ class TestTimelineEditor(FrappeTestCase):
 			"transition_frames": 0,
 		}).insert(ignore_permissions=True)
 
+	def test_scenes_rendered_separately_all_reach_the_timeline_in_storyboard_order(self):
+		# Scene 1 already has its clip. Scenes 3 then 2 finish later, each as its own take (no full run ever built the
+		# timeline for them): both must be placed, in storyboard order, not in the order they finished.
+		shots = {}
+		for number in (2, 3):
+			asset, version = _create_output_version(self.project, f"scene-{number}.mp4", 4)
+			shot = frappe.get_doc({
+				"doctype": "Shot", "media_project": self.project.name, "shot_number": number, "shot_name": f"Scene {number}",
+				"generation_prompt": "A scene.", "duration_seconds": 4.0,
+			}).insert(ignore_permissions=True)
+			shot.db_set("selected_output_asset_version", version.name, update_modified=False)
+			shots[number] = shot
+		update_timeline_source_for_shot(self.project.name, shots[3].name)
+		update_timeline_source_for_shot(self.project.name, shots[2].name)
+
+		clips = frappe.get_all(
+			"Timeline Clip", filters={"media_project": self.project.name, "track_type": ["in", ["Video", None, ""]]},
+			fields=["shot", "clip_order"], order_by="clip_order asc",
+		)
+		self.assertEqual([self.shot.name, shots[2].name, shots[3].name], [c.shot for c in clips])
+
 	def tearDown(self):
 		frappe.db.rollback()
 		super().tearDown()

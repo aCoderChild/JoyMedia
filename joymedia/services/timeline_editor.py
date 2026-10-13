@@ -864,7 +864,21 @@ def _sync_missing_generated_shots_to_timeline(project):
 		next_order += 1
 		created = True
 	if created:
+		_order_clips_by_shot(project.name)
 		frappe.db.commit()
+
+
+def _order_clips_by_shot(project_name):
+	"""Number the clips in storyboard order, whatever order the scenes finished rendering in."""
+	numbers = {
+		row.name: row.shot_number
+		for row in frappe.get_all("Shot", filters={"media_project": project_name}, fields=["name", "shot_number"])
+	}
+	for clip in frappe.get_all(
+		"Timeline Clip", filters={"media_project": project_name}, fields=["name", "shot"]
+	):
+		if clip.shot in numbers:
+			frappe.db.set_value("Timeline Clip", clip.name, "clip_order", int(numbers[clip.shot] or 0), update_modified=False)
 
 
 def _get_or_create_source_audio_version(video_asset_version_name):
@@ -1245,6 +1259,14 @@ def update_timeline_source_for_shot(project_name: str, shot_name: str):
 		frappe.throw(_("Shot does not belong to this project."))
 	if not shot.selected_output_asset_version:
 		frappe.throw(_("Shot has no selected output Asset Version."))
+	if not frappe.db.exists("Timeline Clip", {"media_project": project.name, "shot": shot.name}):
+		# A scene rendered on its own (an approved frame rendered as a video, or a regenerated take) before the
+		# film had a timeline: place it, and every other scene that already has an output, in storyboard order.
+		_sync_missing_generated_shots_to_timeline(project)
+		_normalize_transitions(project.name)
+		_invalidate_project_output(project.name)
+		frappe.db.commit()
+		return _serialize_timeline(project, _timeline_clip_rows(project.name))
 	for clip_name in frappe.get_all(
 		"Timeline Clip", filters={"media_project": project.name, "shot": shot.name}, pluck="name"
 	):
