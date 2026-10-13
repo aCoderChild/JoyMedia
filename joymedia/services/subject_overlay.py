@@ -192,7 +192,7 @@ def _fit(width, height, max_width, max_height):
 	return round(width * scale), round(height * scale)
 
 
-def layout(canvas, sizes_by_role):
+def layout(canvas, sizes_by_role, product_center=None):
 	"""Place each subject: boxes (x, y, width, height) with the asset's aspect ratio unchanged.
 
 	`sizes_by_role` is a list of (role, width, height[, scale]) of the real assets; scale is the subject's size
@@ -227,10 +227,10 @@ def layout(canvas, sizes_by_role):
 		if hero and count == 1:
 			center = hero[0] + hero[2] / 2 + PRODUCT_OFFSET * canvas_width
 		elif count == 1:
-			center = 0.5 * canvas_width
+			center = (product_center or 0.5) * canvas_width
 		else:
-			# Several products stand together in the middle of the frame, each overlapping its neighbour a little.
-			center = canvas_width / 2 + family_x
+			# Several products stand together, each overlapping its neighbour a little.
+			center = (product_center or 0.5) * canvas_width + family_x
 			family_x += box_width * 0.75
 		boxes[index] = [center, box_width, box_height]
 	if count > 1:
@@ -268,6 +268,20 @@ def _contact_shadow(canvas, x, y, width, height):
 		canvas.paste(Image.new("RGBA", canvas.size, (0, 0, 0, 255)), (0, 0), layer)
 
 
+def _emptier_side(canvas):
+	"""Where a product can stand when the characters are already drawn: the side of the floor with less detail.
+
+	Returns the horizontal centre as a fraction of the width (0.27 or 0.73).
+	"""
+	from PIL import ImageFilter, ImageStat
+
+	width, height = canvas.size
+	floor = canvas.convert("L").crop((0, round(0.6 * height), width, height)).filter(ImageFilter.FIND_EDGES)
+	left = ImageStat.Stat(floor.crop((0, 0, width // 2, floor.height))).mean[0]
+	right = ImageStat.Stat(floor.crop((width // 2, 0, width, floor.height))).mean[0]
+	return 0.27 if left <= right else 0.73
+
+
 def composite_subjects(background_bytes, subjects, shadows=True):
 	"""PNG bytes of the background with the subjects pasted at their exact aspect ratio."""
 	from PIL import Image, ImageFilter
@@ -279,7 +293,11 @@ def composite_subjects(background_bytes, subjects, shadows=True):
 			asset = source.convert("RGBA")
 		# Sizes and placement follow the visible subject, not the transparent margin around it.
 		assets.append(asset.crop(asset.getchannel("A").point(lambda a: 255 if a > 8 else 0).getbbox()))
-	boxes = layout(canvas.size, [(s["role"], a.width, a.height, s.get("scale", 1)) for s, a in zip(subjects, assets)])
+	has_character = any(s["role"] == "character" for s in subjects)
+	boxes = layout(
+		canvas.size, [(s["role"], a.width, a.height, s.get("scale", 1)) for s, a in zip(subjects, assets)],
+		product_center=None if has_character else _emptier_side(canvas),
+	)
 	for subject, asset, (x, y, width, height) in zip(subjects, assets, boxes):
 		resized = asset.resize((width, height), Image.Resampling.LANCZOS)
 		# A softer edge and a touch of the room's colour make the cutout sit in the scene instead of on it.

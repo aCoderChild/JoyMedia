@@ -201,3 +201,17 @@ class TestCharacterMode(FrappeTestCase):
 			column = lambda x: [y for y in range(image.height) if image.getpixel((x, y)) != (236, 232, 226)]
 			mother_x, kid_x = 40 + 60, image.width - 40 - 30
 			self.assertGreater(len(column(mother_x)), 1.8 * len(column(kid_x)))
+
+
+
+class TestEmptierSide(FrappeTestCase):
+	def test_the_product_goes_to_the_side_of_the_floor_with_less_detail(self):
+		from PIL import ImageDraw
+
+		image = Image.new("RGBA", (400, 800), (200, 190, 170, 255))
+		draw = ImageDraw.Draw(image)
+		for x in range(0, 200, 6):  # detail (a figure) on the left half of the floor
+			draw.line([(x, 500), (x, 780)], fill=(40, 30, 20, 255), width=2)
+		self.assertEqual(0.73, subject_overlay._emptier_side(image))
+		mirrored = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+		self.assertEqual(0.27, subject_overlay._emptier_side(mirrored))
