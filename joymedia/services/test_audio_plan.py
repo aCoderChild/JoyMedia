@@ -322,3 +322,22 @@ class TestCheckSceneAudio(FrappeTestCase):
 			report = check_scene_audio(self.project.name)
 		delete.assert_called_once()
 		self.assertEqual(["kept"], [row["action"] for row in report])
+
+	def test_placing_a_layer_replaces_the_scenes_earlier_layer(self):
+		from joymedia.services.audio_plan import _place_best_effects_layer
+
+		shot, _clip = self._source_clip(1)
+		old = frappe.get_doc({
+			"doctype": "Timeline Clip", "media_project": self.project.name, "shot": shot.name, "clip_order": 1,
+			"track_type": "Audio", "track_index": 1, "timeline_start_frame": 0, "initial_timeline_start_frame": 0, "enabled": 1,
+			"source_asset_version": _clip.source_asset_version, "source_in_frame": 0, "source_out_frame": 48,
+			"initial_source_in_frame": 0, "initial_source_out_frame": 48, "audio_role": "SFX",
+		}).insert(ignore_permissions=True)
+		with patch("joymedia.services.video_composer._get_asset_version_path", side_effect=lambda name: name), patch(
+			"joymedia.services.audio_check.effects_score", return_value=0.2
+		), patch("joymedia.services.audio_plan.generate_cue_audio", return_value={"asset_version": "A1"}), patch(
+			"joymedia.services.audio_plan.place_cue_audio"
+		) as place:
+			_place_best_effects_layer(self.project.name, shot.name)
+		self.assertFalse(frappe.db.exists("Timeline Clip", old.name))
+		place.assert_called_once()

@@ -298,6 +298,11 @@ def _place_best_effects_layer(project_name, shot_name):
 	# A layer that clearly passes is used. One in the borderline band is still better than a silent scene, and is
 	# flagged to be listened to; below that the scene stays silent rather than carry music or a voice.
 	if best[1] is not None and best[1] >= tune("effects_layer_accept_min"):
+		# One layer per scene: a re-run replaces the scene's earlier layer instead of stacking another on it.
+		for stale in frappe.get_all(
+			"Timeline Clip", filters={"media_project": project_name, "shot": shot_name, "audio_role": "SFX"}, pluck="name"
+		):
+			frappe.delete_doc("Timeline Clip", stale, force=True, ignore_permissions=True)
 		place_cue_audio(project_name, shot_name, "SFX", best[0])
 	return best[1]
 
