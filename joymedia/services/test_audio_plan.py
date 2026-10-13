@@ -148,3 +148,48 @@ class TestGenerateCueAudioGuards(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			generate_cue_audio(self.project.name, self.shot.name, "SFX")
+
+
+class TestUseSoundEffectsOnly(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		commit = patch.object(frappe.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
+		frappe.set_user("Administrator")
+		self.project = frappe.get_doc({
+			"doctype": "Media Project", "project_name": "SFX only", "workflow": _create_workflow(),
+			"total_duration_seconds": 4, "delivery_preset": "Landscape",
+		}).insert(ignore_permissions=True)
+		self.hook = self._shot(1, "SFX: pop\nBGM: cheerful")
+		self.plain = self._shot(2, "")
+
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def _shot(self, number, cues):
+		shot = frappe.get_doc({
+			"doctype": "Shot", "media_project": self.project.name, "shot_number": number, "generation_prompt": "A scene.",
+			"duration_seconds": 2.0, "audio_cues": cues,
+		}).insert(ignore_permissions=True)
+		_asset, video = _create_output_version(self.project, f"s{number}.mp4", 2)
+		frappe.get_doc({
+			"doctype": "Timeline Clip", "media_project": self.project.name, "shot": shot.name, "clip_order": number,
+			"track_type": "Video", "track_index": 0, "timeline_start_frame": (number - 1) * 48, "initial_timeline_start_frame": 0,
+			"enabled": 1, "source_asset_version": video.name, "source_in_frame": 0, "source_out_frame": 48,
+			"initial_source_in_frame": 0, "initial_source_out_frame": 48,
+		}).insert(ignore_permissions=True)
+		return shot
+
+	def test_only_scenes_with_an_sfx_cue_get_an_effect_and_the_mode_is_switched(self):
+		from joymedia.services.audio_plan import use_sound_effects_only
+
+		with patch(
+			"joymedia.services.audio_plan.generate_cue_audio", return_value={"asset_version": "ASTV-1"}
+		) as generate:
+			result = use_sound_effects_only(self.project.name, prompts={self.hook.name: "a crisp pop"})
+
+		generate.assert_called_once_with(self.project.name, self.hook.name, "SFX", prompt="a crisp pop")
+		self.assertEqual(["ASTV-1"], [g["asset_version"] for g in result["generated"]])
+		self.assertEqual("Sound effects only", frappe.db.get_value("Media Project", self.project.name, "soundtrack_mode"))

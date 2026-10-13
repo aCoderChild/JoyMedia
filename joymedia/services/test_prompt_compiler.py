@@ -112,3 +112,21 @@ class TestIdentityConsistency(FrappeTestCase):
 		self.assertNotIn(
 			"Identity consistency", compile_prompt_for_documents(self._shot([]), self._project(), prompt_source="motion")
 		)
+
+
+class TestAudioLineLast(FrappeTestCase):
+	def test_the_audio_paragraph_ends_the_video_prompt_after_all_other_text(self):
+		shot = frappe._dict(
+			name="S", shot_number=1, image_prompt="A bear.", references=[{"asset_version": "AV"}], handoff_type="", end_state="",
+			generation_prompt="The bear pulls tissue.\n\nAudio: sound effects: rip, rip, rip.",
+			motion_plan_json='{"actions": [{"start": 0, "end": 3, "action": "pulls tissue"}]}',
+		)
+		prompt = compile_prompt_for_documents(shot, frappe._dict(generation_mode="Multi-shot", global_instructions=""), prompt_source="motion")
+		self.assertTrue(prompt.endswith("Audio: sound effects: rip, rip, rip."))
+		self.assertEqual(1, prompt.count("Audio:"))
+		self.assertIn("Identity consistency", prompt)
+
+	def test_a_prompt_without_sound_direction_is_unchanged(self):
+		from joymedia.services.prompt_compiler import _audio_line_last
+
+		self.assertEqual("One.\n\nTwo.", _audio_line_last("One.\n\nTwo."))

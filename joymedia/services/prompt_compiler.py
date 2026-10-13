@@ -216,7 +216,22 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 		timing = temporal_timing_instruction(shot, is_final=is_final)
 		if timing:
 			prompt = f"{prompt}\n\n{timing}"
+		prompt = _audio_line_last(prompt)
 	return prompt.strip()
+
+
+def _audio_line_last(prompt):
+	"""Move the scene's `Audio:` paragraph to the end of the video prompt.
+
+	The video workflow's own sample prompt ends with its `Audio:` line. Left in the middle of a long prompt
+	(followed by fidelity, identity and timing text) the sound direction is easily ignored.
+	"""
+	paragraphs = str(prompt).split("\n\n")
+	audio = [p for p in paragraphs if p.lstrip().startswith("Audio:")]
+	if not audio:
+		return prompt
+	rest = [p for p in paragraphs if not p.lstrip().startswith("Audio:")]
+	return "\n\n".join(rest + audio)
 
 
 def _reference_asset_versions_from_snapshot(shot, snapshot):

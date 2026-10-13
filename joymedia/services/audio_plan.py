@@ -154,6 +154,35 @@ def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflo
 	return {"asset_version": version, "workflow": workflow_version.name, "prompt": cue_text, **placed}
 
 
+@frappe.whitelist()
+def use_sound_effects_only(project_name, prompts=None):
+	"""Make the soundtrack only the storyboard's sound effects.
+
+	Generates an effect layer for every scene that has an SFX cue and no effect placed yet, then switches
+	the project to "Sound effects only" so the video model's own audio (voice, background music) is left
+	out of the export. `prompts` optionally maps a shot name to the sound description to use instead of the
+	storyboard cue. Scenes without an SFX cue stay silent.
+	"""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	overrides = frappe.parse_json(prompts) if isinstance(prompts, str) and prompts else (prompts or {})
+	generated, skipped = [], []
+	for cue in build_audio_plan(project.name):
+		if cue["role"] != "SFX":
+			continue
+		if cue["scheduled"]:
+			skipped.append(cue["shot_name"])
+			continue
+		result = generate_cue_audio(project.name, cue["shot"], "SFX", prompt=overrides.get(cue["shot"]))
+		generated.append({"shot_name": cue["shot_name"], "asset_version": result["asset_version"]})
+	project.db_set("soundtrack_mode", "Sound effects only")
+	from joymedia.services.timeline_editor import _invalidate_project_output
+
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return {"generated": generated, "already_placed": skipped, "mode": "Sound effects only"}
+
+
 def _shot_frame_range(project_name, shot_name):
 	clip = frappe.db.get_value(
 		"Timeline Clip",

@@ -362,6 +362,7 @@ def _get_shot_output_path(shot):
 	return path
 
 
+SOUND_EFFECTS_ONLY = "Sound effects only"
 SCENE_LOUDNESS_LUFS = -18
 # Below this mean level (dBFS) a source counts as silent.
 AUDIBLE_FLOOR_DB = -55
@@ -387,7 +388,12 @@ def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
 	fps = float(fps or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))
+	sound_effects_only = (project.get("soundtrack_mode") if project else None) == SOUND_EFFECTS_ONLY
 	for clip in timeline_clips:
+		# The video model's own audio mixes voice, effects and music in one stream and cannot be split.
+		# "Sound effects only" drops it entirely, leaving just the generated sound-effect layer.
+		if sound_effects_only and clip.audio_role == "Source":
+			continue
 		start_seconds = float(clip.timeline_start_frame or 0) / fps
 		clip_frames = int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0)
 		end_seconds = min(start_seconds + clip_frames / fps, video_duration)
@@ -651,7 +657,9 @@ def _mix_audio(silent_master_path, audio_sources, delivery_path, ending=None):
 	output_label = "[mixed]"
 	if ending:
 		start, seconds = ending
-		filter_parts.append(f"[mixed]afade=t=out:st={start:.6f}:d={seconds:.6f}[ending]")
+		# The audio must span the whole film even when the only sound is a short effect; players handle a
+		# stream that ends early badly.
+		filter_parts.append(f"[mixed]apad=whole_dur={start + seconds:.6f},afade=t=out:st={start:.6f}:d={seconds:.6f}[ending]")
 		output_label = "[ending]"
 	command.extend(
 		[
