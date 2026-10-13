@@ -126,6 +126,22 @@ def _mark_storyboard_needs_review(project):
 		project.storyboard_approval_status = "Ready for Review"
 
 
+@frappe.whitelist()
+def set_project_shot_references(project_name, shot_name, reference_keys):
+	"""Choose which project references one scene is generated from."""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	if shot_name in _busy_shots(project.name):
+		frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))
+	keys = frappe.parse_json(reference_keys) if isinstance(reference_keys, str) else reference_keys
+	if not isinstance(keys, list):
+		frappe.throw(_("Reference keys must be a list."))
+	_assign_shot_references(project, {shot_name: keys})
+	_mark_storyboard_needs_review(project)
+	frappe.db.commit()
+	return {"shot_name": shot_name, "reference_keys": keys}
+
+
 def _assign_shot_references(project, assignments):
 	"""Replace the references of the named shots with the explicitly chosen project references."""
 	if not isinstance(assignments, dict):

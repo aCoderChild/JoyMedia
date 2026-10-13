@@ -49,3 +49,57 @@ class TestStoryboardReferenceContracts(FrappeTestCase):
 			self._validate(shots, {}, [{"role": "person", "required": True}])
 		self.assertIn("First", str(caught.exception))
 		self.assertIn("Second", str(caught.exception))
+
+
+class TestSetShotReferences(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		from joymedia.services.e2e_setup import _generate_image_bytes
+		from joymedia.services.test_timeline_editor import _create_workflow
+
+		commit = patch.object(frappe.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
+		self.project = frappe.get_doc({
+			"doctype": "Media Project", "project_name": "Shot Refs", "workflow": _create_workflow(),
+			"total_duration_seconds": 2, "delivery_preset": "Landscape",
+		}).insert(ignore_permissions=True)
+		asset = frappe.get_doc({
+			"doctype": "Media Asset", "asset_name": "Hero", "media_type": "Image", "asset_category": "Product",
+			"asset_scope": "Library",
+		}).insert(ignore_permissions=True)
+		file_doc = frappe.get_doc({
+			"doctype": "File", "file_name": "hero.png", "content": _generate_image_bytes(), "is_private": 1,
+			"attached_to_doctype": "Media Asset", "attached_to_name": asset.name,
+		}).insert(ignore_permissions=True)
+		self.version = frappe.get_doc({
+			"doctype": "Asset Version", "media_asset": asset.name, "file": file_doc.file_url, "source": "Uploaded",
+		}).insert(ignore_permissions=True)
+		self.project.append("selected_media", {
+			"reference_key": "hero", "asset_version": self.version.name, "reference_role": "Product", "label": "Hero",
+		})
+		self.project.save(ignore_permissions=True)
+		self.shot = frappe.get_doc({
+			"doctype": "Shot", "media_project": self.project.name, "shot_number": 1, "generation_prompt": "A scene.",
+			"duration_seconds": 2.0,
+		}).insert(ignore_permissions=True)
+
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def test_assignment_replaces_the_scene_references_and_clears_approval(self):
+		self.project.db_set("storyboard_approval_status", "Approved")
+		storyboard.set_project_shot_references(self.project.name, self.shot.name, '["hero"]')
+
+		rows = frappe.get_doc("Shot", self.shot.name).generation_inputs
+		self.assertEqual([("Product", self.version.name)], [(r.reference_role, r.asset_version) for r in rows])
+		self.assertEqual(
+			"Ready for Review", frappe.db.get_value("Media Project", self.project.name, "storyboard_approval_status")
+		)
+		storyboard.set_project_shot_references(self.project.name, self.shot.name, "[]")
+		self.assertEqual([], frappe.get_doc("Shot", self.shot.name).generation_inputs)
+
+	def test_unknown_reference_key_is_rejected(self):
+		with self.assertRaises(frappe.ValidationError):
+			storyboard.set_project_shot_references(self.project.name, self.shot.name, '["ghost"]')

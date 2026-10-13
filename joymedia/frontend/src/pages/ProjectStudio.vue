@@ -235,6 +235,8 @@
             @select-take="selectShotTake"
             @update-caption="updateShotCaption"
 			@update-continuity="updateShotContinuity"
+			@update-references="updateShotReferences"
+			:project-references="projectReferences"
           />
         </template>
 
@@ -1415,6 +1417,25 @@ async function toggleContinuityMode() {
     ...videoSettings.value,
     generation_mode: nextMode,
   });
+}
+
+// Visual project references that can be assigned to a scene.
+const projectReferences = computed(() =>
+	(workspace.value?.assets || []).filter((asset) => asset.media_type === "Image" && asset.reference_key)
+);
+
+async function updateShotReferences(shot, referenceKeys) {
+	if (!shot?.name) return;
+	try {
+		await call("joymedia.api.storyboard.set_project_shot_references", {
+			project_name: projectName.value,
+			shot_name: shot.name,
+			reference_keys: JSON.stringify(referenceKeys),
+		});
+		await fetchWorkspace();
+	} catch (err) {
+		notify({ title: "Error", text: errorMessage(err, "Failed to update scene references."), type: "error" });
+	}
 }
 
 async function updateShotContinuity(shot, continuityMode) {

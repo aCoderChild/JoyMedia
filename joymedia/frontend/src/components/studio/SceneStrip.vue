@@ -269,7 +269,7 @@
               </button>
               <div
                 v-if="menuOpenIndex === index"
-                class="absolute right-0 bottom-8 z-30 w-36 rounded-xl border border-outline-border bg-surface-card p-1.5 shadow-xl"
+                class="absolute right-0 bottom-8 z-30 w-52 rounded-xl border border-outline-border bg-surface-card p-1.5 shadow-xl"
                 @click.stop
               >
                 <button
@@ -288,6 +288,25 @@
 				    ? (currentLang === 'vi' ? 'Bắt đầu cảnh mới' : 'Start new scene')
 				    : (currentLang === 'vi' ? 'Nối từ cảnh trước' : 'Continue previous scene') }}
 				</button>
+                <div v-if="projectReferences.length" class="border-t border-outline-border mt-1 pt-1" data-test="shot-references">
+                  <p class="px-2.5 py-1 text-[10px] uppercase tracking-wide text-ink-muted">
+                    {{ currentLang === 'vi' ? 'Tham chiếu cho cảnh' : 'Scene references' }}
+                  </p>
+                  <label
+                    v-for="reference in projectReferences"
+                    :key="reference.reference_key"
+                    class="flex items-center gap-2 rounded-lg px-2.5 py-1 text-[11px] text-ink-primary hover:bg-surface-hover cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      class="accent-indigo-600"
+                      :checked="shotUsesReference(shot, reference)"
+                      :disabled="isGenerating"
+                      @change="toggleReference(shot, reference)"
+                    />
+                    <span class="truncate">{{ reference.label || reference.asset_name }}</span>
+                  </label>
+                </div>
                 <button
                   type="button"
                   class="w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-rose-400 hover:bg-rose-500/10 cursor-pointer disabled:opacity-50"
@@ -349,6 +368,8 @@ const props = defineProps({
   formatShotKeyframeTime: { type: Function, default: () => "0.0s" },
   getShotVideoFile: { type: Function, default: () => "" },
   getShotFirstFrame: { type: Function, default: () => ({}) },
+  // Visual project references a scene can be generated from.
+  projectReferences: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([
@@ -365,10 +386,23 @@ const emit = defineEmits([
   "selectTake",
   "updateCaption",
 	"updateContinuity",
+  "updateReferences",
 ]);
 
 const aiRevisionInput = ref("");
 const menuOpenIndex = ref(null);
+
+function shotUsesReference(shot, reference) {
+  return (shot.references || []).some((item) => item.reference_key === reference.reference_key);
+}
+
+function toggleReference(shot, reference) {
+  const current = (shot.references || []).map((item) => item.reference_key).filter(Boolean);
+  const next = current.includes(reference.reference_key)
+    ? current.filter((key) => key !== reference.reference_key)
+    : [...current, reference.reference_key];
+  emit("updateReferences", shot, next);
+}
 
 function toggleSceneMenu(index) {
   menuOpenIndex.value = menuOpenIndex.value === index ? null : index;

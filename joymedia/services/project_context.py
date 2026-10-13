@@ -465,6 +465,7 @@ def _storyboard_payload(specification):
 				"asset_version": row.asset_version,
 				"file": _get_asset_version_file_url(row.asset_version),
 				"input_role": row.reference_role,
+				"reference_key": getattr(project_references.get(row.asset_version), "reference_key", None) or "",
 				"reference_role": getattr(project_references.get(row.asset_version), "reference_role", None),
 				"label": getattr(project_references.get(row.asset_version), "label", None)
 				or _asset_version_name(row.asset_version),
