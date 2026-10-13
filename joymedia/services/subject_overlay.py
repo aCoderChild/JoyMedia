@@ -107,13 +107,13 @@ def scene_mode(references, character_mode=PASTE):
 def pasted_references(references, character_mode=PASTE, context=None):
 	"""The references that are pasted rather than shown to the image model, in the given order.
 
-	Logos are always pasted when they are cutouts. Characters and products are pasted in "Paste exact art" mode and
-	in a scene with no cast; in a "Draw in scene" scene the image model draws them from reference boards instead,
-	so a product sits in the scene (shape and colour kept) rather than being laid over it. `context` is the whole
+	Products and logos are pasted when they are cutouts, always. Characters are pasted in "Paste exact art" mode
+	and in a scene with no cast; in a "Draw in scene" scene the image model draws them from a reference board.
+	(A product cannot be a reference there: the model paints it onto the characters.) `context` is the whole
 	scene's references when `references` is only some of them.
 	"""
 	mode = scene_mode(context if context is not None else references, character_mode)
-	roles = PASTE_ROLES if mode != DRAW else PASTE_ROLES - {"character", "product"}
+	roles = PASTE_ROLES if mode != DRAW else PASTE_ROLES - {"character"}
 	pasted = []
 	for reference in references or []:
 		asset_version = reference.get("asset_version")
@@ -172,7 +172,7 @@ def character_board(references, scales=None, role="character"):
 
 
 def boards_for_task(job):
-	"""Reference boards for a keyframe task in "Draw in scene" mode: {"character": path, "product": path}.
+	"""Reference boards for a keyframe task in "Draw in scene" mode: {"character": path}.
 
 	Built from the run's frozen snapshot; a role with no picture has no board, and a scene in "Paste exact art"
 	mode has none at all.
@@ -182,12 +182,8 @@ def boards_for_task(job):
 	if scene_mode(shot.get("references"), shot.get("character_mode") or PASTE) != DRAW:
 		return {}
 	scales = {row.get("asset_version"): row.get("scale") or 1 for row in snapshot.get("references") or []}
-	boards = {}
-	for role in ("character", "product"):
-		path = character_board(shot.get("references"), scales if role == "character" else None, role)
-		if path:
-			boards[role] = path
-	return boards
+	path = character_board(shot.get("references"), scales, "character")
+	return {"character": path} if path else {}
 
 
 def _run_snapshot(run_name):
@@ -203,7 +199,7 @@ def _fit(width, height, max_width, max_height):
 	return round(width * scale), round(height * scale)
 
 
-def layout(canvas, sizes_by_role, product_center=None):
+def layout(canvas, sizes_by_role, product_center=None, drawn=False):
 	"""Place each subject: boxes (x, y, width, height) with the asset's aspect ratio unchanged.
 
 	`sizes_by_role` is a list of (role, width, height[, scale]) of the real assets; scale is the subject's size
@@ -232,12 +228,18 @@ def layout(canvas, sizes_by_role, product_center=None):
 	for rank, index in enumerate(groups["product"]):
 		_role_name, width, height, *rest = sizes_by_role[index]
 		scale = rest[0] if rest else 1
-		size_key = "product" if hero else "hero_product"
+		size_key = "drawn_product" if drawn else "product" if hero else "hero_product"
 		box_width, box_height = _fit(
-			width, height, tune(f"{size_key}_width") * canvas_width / max(1, count * 0.75) * scale,
+			width, height, (tune("product_width") if size_key == "drawn_product" else tune(f"{size_key}_width")) * canvas_width / max(1, count * 0.75) * scale,
 			tune(f"{size_key}_height") * canvas_height * scale,
 		)
-		if hero and count == 1:
+		if drawn:
+			# A corner of the floor the prompt kept clear; several products stand together there.
+			corner = 0.80 if tune("drawn_product_corner") == "right" else 0.20
+			center = corner * canvas_width + (family_x if count > 1 else 0)
+			if count > 1:
+				family_x += box_width * 0.75
+		elif hero and count == 1:
 			center = hero[0] + hero[2] / 2 + tune("product_offset") * canvas_width
 		elif count == 1:
 			center = (product_center or 0.5) * canvas_width
@@ -253,7 +255,9 @@ def layout(canvas, sizes_by_role, product_center=None):
 			boxes[index][0] -= spread
 	for index in groups["product"]:
 		center, box_width, box_height = boxes[index]
-		bottom = (hero[1] + hero[3] + tune("product_near") * canvas_height) if hero else tune("product_baseline") * canvas_height
+		bottom = 0.965 * canvas_height if drawn else (
+			(hero[1] + hero[3] + tune("product_near") * canvas_height) if hero else tune("product_baseline") * canvas_height
+		)
 		margin = tune("edge_margin") * canvas_width
 		x = min(max(center - box_width / 2, margin), canvas_width - margin - box_width)
 		boxes[index] = (round(x), round(min(bottom, 0.97 * canvas_height)) - box_height, box_width, box_height)
@@ -295,7 +299,7 @@ def _emptier_side(canvas):
 	return 0.27 if left <= right else 0.73
 
 
-def composite_subjects(background_bytes, subjects, shadows=True):
+def composite_subjects(background_bytes, subjects, shadows=True, drawn=False):
 	"""PNG bytes of the background with the subjects pasted at their exact aspect ratio."""
 	from PIL import Image, ImageFilter
 
@@ -309,7 +313,7 @@ def composite_subjects(background_bytes, subjects, shadows=True):
 	has_character = any(s["role"] == "character" for s in subjects)
 	boxes = layout(
 		canvas.size, [(s["role"], a.width, a.height, s.get("scale", 1)) for s, a in zip(subjects, assets)],
-		product_center=None if has_character else _emptier_side(canvas),
+		product_center=None if has_character else _emptier_side(canvas), drawn=drawn,
 	)
 	for subject, asset, (x, y, width, height) in zip(subjects, assets, boxes):
 		resized = asset.resize((width, height), Image.Resampling.LANCZOS)
@@ -349,4 +353,5 @@ def paste_subjects_into_keyframe(attempt, image_bytes):
 	scales = {row.get("asset_version"): row.get("scale") or 1 for row in (snapshot or {}).get("references") or []}
 	for subject in subjects:
 		subject["scale"] = scales.get(subject["asset_version"], 1)
-	return composite_subjects(image_bytes, subjects) if subjects else image_bytes
+	drawn = scene_mode(shot_snapshot.get("references"), shot_snapshot.get("character_mode") or PASTE) == DRAW
+	return composite_subjects(image_bytes, subjects, drawn=drawn) if subjects else image_bytes

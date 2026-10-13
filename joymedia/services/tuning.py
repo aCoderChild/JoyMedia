@@ -12,6 +12,8 @@ DEFAULTS = {
 	"product_height": 0.15, "product_width": 0.40, "product_baseline": 0.90,
 	# A product with no character in the frame is the hero: it is drawn larger.
 	"hero_product_height": 0.42, "hero_product_width": 0.55,
+	# With drawn characters the product is pasted small into a corner the prompt keeps clear ("right" or "left").
+	"drawn_product_height": 0.11, "drawn_product_corner": "right",
 	"product_near": 0.03, "product_offset": 0.22, "edge_margin": 0.02,
 	"logo_max_width": 0.22, "logo_max_height": 0.08, "logo_margin": 0.04,
 	"colour_match": 0.16,

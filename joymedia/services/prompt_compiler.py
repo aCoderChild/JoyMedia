@@ -486,6 +486,34 @@ def _size_sentence(sized):
 	return ("Scale matters: " + "; ".join(parts) + ". ") if parts else ""
 
 
+def _clear_corner_note(shot):
+	"""Keep one corner of the floor empty: the real product is pasted there after drawing, never over the characters."""
+	from .subject_overlay import pasted_references
+	from .tuning import tune
+
+	references = getattr(shot, "references", None) or []
+	if not any(p["role"] == "product" for p in pasted_references(references, "Draw in scene")):
+		return ""
+	return f"Keep the bottom-{tune('drawn_product_corner')} corner of the floor clear and empty, with nothing on it. "
+
+
+def _size_sentence(sized):
+	"""Say how much taller the largest character is than each smaller one: the image model ignores the board's sizes."""
+	if len(sized) < 2:
+		return ""
+	largest = max(scale for _name, scale in sized)
+	big = next(name for name, scale in sized if scale == largest)
+	parts = []
+	for name, scale in sized:
+		if scale < largest * 0.85 and name != big:
+			times = largest / scale
+			parts.append(
+				f"{name} is much smaller: {big} is about {times:.1f} times taller, stands upright on two legs and "
+				f"towers over {name}, who comes up only to {big}'s waist"
+			)
+	return ("Scale matters: " + "; ".join(parts) + ". ") if parts else ""
+
+
 def _product_note(shot, project):
 	"""Where the products are in a drawn scene: placed naturally in it, with no printed words."""
 	from .subject_overlay import describe_colours
@@ -558,7 +586,7 @@ def _draw_prompt(shot, project):
 			   "doing what the scene describes, seen in a medium or wide shot. " if has_person else "")
 			+ "Natural light, realistic composition."
 		)
-	product_note = _product_note(shot, project)
+	product_note = _clear_corner_note(shot)
 	return (
 		f"{usable_setting(getattr(shot, 'setting_prompt', None))} {action}\n\n"
 		"The characters are cartoon mascot characters who act exactly like human people: they stand upright on two legs, "
