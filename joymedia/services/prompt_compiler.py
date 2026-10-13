@@ -237,7 +237,7 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 		timing = temporal_timing_instruction(shot, is_final=is_final)
 		if timing:
 			prompt = f"{prompt}\n\n{timing}"
-		prompt = _audio_line_last(prompt, sound_effects_only=project.get("soundtrack_mode") == "Sound effects only")
+		prompt = _audio_line_last(prompt, sound_effects_only=project.get("soundtrack_mode") in ("Sound effects only", "Separate effects layer"))
 	return prompt.strip()
 
 

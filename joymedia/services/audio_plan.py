@@ -155,11 +155,28 @@ def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflo
 
 
 @frappe.whitelist()
-def use_sound_effects_only(project_name, prompts=None):
-	"""Make the soundtrack only sound effects: no voice, no music.
+def use_sound_effects_only(project_name):
+	"""Ask the video model for sound effects only: no voice, no background music.
 
-	The video model's own audio mixes voice, effects and music in one stream that cannot be split, so it is
-	dropped. Every rendered scene instead gets an effect layer generated from its own video (the storyboard's
+	The model makes its soundtrack together with the picture, from the prompt's `Audio:` line. Switching the
+	mode only changes what the prompts ask for, so scenes must be rendered again to take effect. Scenes that
+	still come out with music or voice can use `use_separate_effects_layer` instead.
+	"""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	project.db_set("soundtrack_mode", "Sound effects only")
+	from joymedia.services.timeline_editor import _invalidate_project_output
+
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return {"mode": "Sound effects only"}
+
+
+@frappe.whitelist()
+def use_separate_effects_layer(project_name, prompts=None):
+	"""Guarantee a soundtrack of sound effects only, by replacing the video model's own audio.
+
+	That audio mixes voice, effects and music in one stream that cannot be split, so it is dropped. Every rendered scene instead gets an effect layer generated from its own video (the storyboard's
 	SFX cue, else the sound described in the scene's prompt, else what the video shows), with speech and music
 	excluded. `prompts` optionally maps a shot name to the sound description to use.
 	"""
@@ -180,12 +197,12 @@ def use_sound_effects_only(project_name, prompts=None):
 		prompt = overrides.get(shot.name) or scene_sound_prompt(shot)
 		result = generate_cue_audio(project.name, shot.name, "SFX", prompt=prompt)
 		generated.append({"shot_name": shot.shot_name, "asset_version": result["asset_version"], "prompt": prompt})
-	project.db_set("soundtrack_mode", "Sound effects only")
+	project.db_set("soundtrack_mode", "Separate effects layer")
 	from joymedia.services.timeline_editor import _invalidate_project_output
 
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
-	return {"generated": generated, "already_placed": skipped, "mode": "Sound effects only"}
+	return {"generated": generated, "already_placed": skipped, "mode": "Separate effects layer"}
 
 
 def scene_sound_prompt(shot):

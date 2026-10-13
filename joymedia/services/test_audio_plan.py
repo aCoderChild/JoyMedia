@@ -183,8 +183,16 @@ class TestUseSoundEffectsOnly(FrappeTestCase):
 		}).insert(ignore_permissions=True)
 		return shot
 
-	def test_every_rendered_scene_gets_an_effect_and_the_mode_is_switched(self):
+	def test_sound_effects_only_only_switches_the_mode(self):
 		from joymedia.services.audio_plan import use_sound_effects_only
+
+		with patch("joymedia.services.audio_plan.generate_cue_audio") as generate:
+			use_sound_effects_only(self.project.name)
+		generate.assert_not_called()
+		self.assertEqual("Sound effects only", frappe.db.get_value("Media Project", self.project.name, "soundtrack_mode"))
+
+	def test_every_rendered_scene_gets_an_effect_and_the_mode_is_switched(self):
+		from joymedia.services.audio_plan import use_separate_effects_layer as use_sound_effects_only
 
 		with patch(
 			"joymedia.services.audio_plan.generate_cue_audio", return_value={"asset_version": "ASTV-1"}
@@ -196,7 +204,7 @@ class TestUseSoundEffectsOnly(FrappeTestCase):
 			[(c.args[1], c.kwargs["prompt"]) for c in generate.call_args_list],
 		)
 		self.assertEqual(2, len(result["generated"]))
-		self.assertEqual("Sound effects only", frappe.db.get_value("Media Project", self.project.name, "soundtrack_mode"))
+		self.assertEqual("Separate effects layer", frappe.db.get_value("Media Project", self.project.name, "soundtrack_mode"))
 
 	def test_a_vocal_sentence_is_left_out_of_the_effect_description(self):
 		from joymedia.services.audio_plan import scene_sound_prompt

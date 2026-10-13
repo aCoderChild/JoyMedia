@@ -270,8 +270,11 @@ class TestSoundEffectsOnlyMode(FrappeTestCase):
 	def test_full_soundtrack_keeps_the_video_models_audio(self):
 		self.assertEqual(2, len(self._sources("Full soundtrack")))
 
-	def test_sound_effects_only_drops_scene_audio_and_keeps_the_effects(self):
-		sources = self._sources("Sound effects only")
+	def test_sound_effects_only_keeps_the_video_models_prompted_audio(self):
+		self.assertEqual(2, len(self._sources("Sound effects only")))
+
+	def test_separate_effects_layer_drops_scene_audio_and_keeps_the_effects(self):
+		sources = self._sources("Separate effects layer")
 		self.assertEqual(1, len(sources))
 		self.assertFalse(sources[0]["normalize_loudness"])
 

@@ -362,7 +362,7 @@ def _get_shot_output_path(shot):
 	return path
 
 
-SOUND_EFFECTS_ONLY = "Sound effects only"
+SEPARATE_EFFECTS_LAYER = "Separate effects layer"
 SCENE_LOUDNESS_LUFS = -18
 # Below this mean level (dBFS) a source counts as silent.
 AUDIBLE_FLOOR_DB = -55
@@ -388,11 +388,11 @@ def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
 	fps = float(fps or 0)
 	if fps <= 0:
 		frappe.throw(_("Workflow output FPS must be greater than zero."))
-	sound_effects_only = (project.get("soundtrack_mode") if project else None) == SOUND_EFFECTS_ONLY
+	separate_layer = (project.get("soundtrack_mode") if project else None) == SEPARATE_EFFECTS_LAYER
 	for clip in timeline_clips:
 		# The video model's own audio mixes voice, effects and music in one stream and cannot be split.
-		# "Sound effects only" drops it entirely, leaving just the generated sound-effect layer.
-		if sound_effects_only and clip.audio_role == "Source":
+		# "Separate effects layer" drops it entirely, leaving just the generated sound-effect layer.
+		if separate_layer and clip.audio_role == "Source":
 			continue
 		start_seconds = float(clip.timeline_start_frame or 0) / fps
 		clip_frames = int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0)
