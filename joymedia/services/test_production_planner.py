@@ -332,7 +332,7 @@ class TestFollowTheSheet(FrappeTestCase):
 
 	def test_the_movement_is_english_and_the_sheets_own_sound_is_kept(self):
 		plan = self._plan("Gấu mẹ", "The mother waves.", motion="Gấu mẹ vẫy tay.")
-		self.assertEqual("The characters act out the scene.", plan["video_prompt"])
+		self.assertEqual("The mother waves.", plan["video_prompt"])  # the beat's own English, not the failed rewrite
 		self.assertTrue(plan["audio"].startswith("Audio:"))
 		self.assertFalse(plan["held_back"])
 
