@@ -90,6 +90,70 @@ def place_cue_audio(project_name, shot_name, role, asset_version_name):
 	return {"clip": new_clip, "start_frame": start, "timeline": result}
 
 
+GENERATED_AUDIO_ROLES = ("SFX", "BGM")
+AUDIO_WORKFLOW_KEY = "mmaudio_video_to_audio"
+
+
+@frappe.whitelist()
+def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflow_key=AUDIO_WORKFLOW_KEY):
+	"""Generate audio for a scene from its selected video with a video-to-audio workflow, then place it.
+
+	``prompt`` overrides the storyboard cue text; such models usually respond best to a short
+	English description of the sound. Narration is not generated this way (it needs speech synthesis).
+	"""
+	import hashlib
+	import math
+
+	from joymedia.services.comfyui_client import run_workflow_to_bytes, upload_local_file
+	from joymedia.services.post_production import _save_output
+	from joymedia.services.workflow_resolver import build_execution_workflow
+	from joymedia.workflow_adapters import get_workflow_adapter
+
+	if role not in GENERATED_AUDIO_ROLES:
+		frappe.throw(_("Audio can be generated for {0}; narration needs a recording or speech synthesis.").format(", ".join(GENERATED_AUDIO_ROLES)))
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	shot = frappe.get_doc("Shot", shot_name)
+	if shot.media_project != project.name:
+		frappe.throw(_("Shot does not belong to this project."))
+	if not shot.selected_output_asset_version:
+		frappe.throw(_("Render this scene before generating audio for it."))
+	cue_text = str(prompt or "").strip() or next(
+		(cue["text"] for cue in build_audio_plan(project.name) if cue["shot"] == shot.name and cue["role"] == role), ""
+	)
+	if not cue_text:
+		frappe.throw(_("This scene has no {0} cue; give a prompt describing the sound.").format(role))
+	workflow_name = frappe.db.get_value(
+		"Generation Workflow", {"workflow_key": workflow_key}, "name", order_by="version_number desc"
+	)
+	if not workflow_name:
+		frappe.throw(_("No audio generation workflow '{0}' is registered.").format(workflow_key))
+	workflow_version = frappe.get_doc("Generation Workflow", workflow_name)
+	if workflow_version.output_media_type != "Audio":
+		frappe.throw(_("Workflow {0} does not produce audio.").format(workflow_version.name))
+
+	video_url = frappe.db.get_value("Asset Version", shot.selected_output_asset_version, "file")
+	video_path = frappe.get_doc("File", {"file_url": video_url}).get_full_path()
+	fps = float(workflow_version.output_fps or 24)
+	start, end = _shot_frame_range(project.name, shot.name)
+	frames = (end - start) if start is not None else math.ceil(float(shot.duration_seconds or 0) * fps)
+	frames = max(1, min(int(frames), int(workflow_version.frame_count or frames)))
+	seed = int(hashlib.sha256(f"{shot.name}|{role}|{cue_text}".encode()).hexdigest()[:12], 16)
+	workflow = build_execution_workflow(
+		workflow_version,
+		inputs={"generation_prompt": cue_text, "source_video": upload_local_file(video_path)["server_path"]},
+		seed=seed, width=int(project.delivery_width or 640), height=int(project.delivery_height or 360),
+		fps=fps, frame_count=frames, output_prefix=f"joymedia/audio/{frappe.generate_hash(length=10)}",
+	)
+	output_node = get_workflow_adapter(workflow_version).extract_execution_metadata(workflow)["primary_output_node_key"]
+	content = run_workflow_to_bytes(workflow, output_node, timeout=900, forget=True)
+	# The job ran for a while; commit so later writes see current rows.
+	frappe.db.commit()
+	version = _save_output(project.name, f"{shot.name} {role} audio", "Audio", f"{shot.name}-{role.lower()}.flac", content)
+	placed = place_cue_audio(project.name, shot.name, role, version)
+	return {"asset_version": version, "workflow": workflow_version.name, "prompt": cue_text, **placed}
+
+
 def _shot_frame_range(project_name, shot_name):
 	clip = frappe.db.get_value(
 		"Timeline Clip",

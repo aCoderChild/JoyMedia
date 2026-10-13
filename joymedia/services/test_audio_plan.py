@@ -116,3 +116,35 @@ class TestCloseTimelineGaps(FrappeTestCase):
 		self.assertEqual([0, 48], [frappe.db.get_value("Timeline Clip", c.name, "timeline_start_frame") for c in self.clips])
 		self.assertEqual(48, frappe.db.get_value("Timeline Clip", narration, "timeline_start_frame"))
 		self.assertEqual(4, frappe.db.get_value("Media Project", self.project.name, "total_duration_seconds"))
+
+
+class TestGenerateCueAudioGuards(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		commit = patch.object(frappe.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
+		self.project = frappe.get_doc({
+			"doctype": "Media Project", "project_name": "Gen Audio", "workflow": _create_workflow(),
+			"total_duration_seconds": 2, "delivery_preset": "Landscape",
+		}).insert(ignore_permissions=True)
+		self.shot = frappe.get_doc({
+			"doctype": "Shot", "media_project": self.project.name, "shot_number": 1, "generation_prompt": "A scene.",
+			"duration_seconds": 2.0, "audio_cues": "SFX: pop",
+		}).insert(ignore_permissions=True)
+
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def test_narration_cannot_be_generated_from_video(self):
+		from joymedia.services.audio_plan import generate_cue_audio
+
+		with self.assertRaises(frappe.ValidationError):
+			generate_cue_audio(self.project.name, self.shot.name, "Voiceover")
+
+	def test_an_unrendered_scene_has_nothing_to_listen_to(self):
+		from joymedia.services.audio_plan import generate_cue_audio
+
+		with self.assertRaises(frappe.ValidationError):
+			generate_cue_audio(self.project.name, self.shot.name, "SFX")

@@ -284,7 +284,7 @@ def run_workflow_to_bytes(
 				]
 				frappe.throw(_("ComfyUI job failed: {0}").format("; ".join(errors) or prompt_id))
 			saved = (history.get("outputs") or {}).get(output_node, {})
-			for item in saved.get("images", []) + saved.get("videos", []) + saved.get("gifs", []):
+			for item in saved.get("images", []) + saved.get("videos", []) + saved.get("gifs", []) + saved.get("audio", []):
 				content = download_output(item["filename"], item.get("subfolder", ""), item.get("type", "output"), base_url=base_url)
 				if forget:
 					delete_history([prompt_id], base_url=base_url)
