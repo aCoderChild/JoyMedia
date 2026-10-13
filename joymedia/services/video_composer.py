@@ -126,7 +126,7 @@ def compose_shot_segments(generation_run_name, shot_name):
 					expected_frames += effective_frames
 
 				assembled_path = temporary_path / f"{shot.name}.mp4"
-				_concatenate_normalized_shots(normalized_paths, assembled_path, profile)
+				_concatenate_normalized_shots(normalized_paths, assembled_path, profile, expected_frames=expected_frames)
 				_validate_normalized_video(assembled_path, profile, expected_frames=expected_frames)
 				video_bytes = assembled_path.read_bytes()
 				video_duration = _get_video_duration(assembled_path)
@@ -545,7 +545,8 @@ def _get_artifact_path(artifact):
 	return path
 
 
-def _concatenate_normalized_shots(paths, output_path, profile):
+def _concatenate_normalized_shots(paths, output_path, profile, expected_frames=None):
+	"""Join normalized clips; expected_frames caps the output so audio padding cannot lengthen it."""
 	concat_file = output_path.with_suffix(".txt")
 	concat_file.write_text("\n".join(f"file '{_escape_concat_path(path)}'" for path in paths) + "\n")
 	_run_ffmpeg(
@@ -572,6 +573,7 @@ def _concatenate_normalized_shots(paths, output_path, profile):
 			"yuv420p",
 			"-r",
 			f"{profile['fps']:g}",
+			*(["-t", f"{expected_frames / profile['fps']:.6f}"] if expected_frames else []),
 			"-movflags",
 			"+faststart",
 			str(output_path),

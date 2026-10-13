@@ -174,3 +174,27 @@ class TestVideoComposer(FrappeTestCase):
 
 def _run_ffmpeg(*arguments):
 	subprocess.run(["ffmpeg", "-v", "error", "-y", *arguments], check=True)
+
+
+class TestSegmentAssemblyWithAudio(FrappeTestCase):
+	def _clip_with_audio(self, path, frames):
+		seconds = frames / 24
+		_run_ffmpeg(
+			"-f", "lavfi", "-i", f"color=c=white:s=320x240:r=24:d={seconds}",
+			"-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds + 0.05}",
+			"-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-c:a", "aac", "-r", "24", str(path),
+		)
+
+	def test_joined_segments_with_audio_keep_the_exact_frame_count(self):
+		from joymedia.services.video_composer import _concatenate_normalized_shots, _validate_normalized_video
+
+		profile = {"width": 320, "height": 240, "fps": 24.0}
+		with tempfile.TemporaryDirectory(prefix="joymedia-concat-") as temp_dir:
+			temp = Path(temp_dir)
+			first, second = temp / "a.mp4", temp / "b.mp4"
+			self._clip_with_audio(first, 124)
+			self._clip_with_audio(second, 44)
+			joined = temp / "joined.mp4"
+			_concatenate_normalized_shots([first, second], joined, profile, expected_frames=168)
+
+			_validate_normalized_video(joined, profile, expected_frames=168)
