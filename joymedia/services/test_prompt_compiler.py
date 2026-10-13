@@ -224,4 +224,14 @@ class TestAudioLineLast(FrappeTestCase):
 		with patch("joymedia.services.subject_overlay.describe_colours", return_value=""):
 			prompt = compile_prompt_for_documents(shot, project, prompt_source="motion")
 		self.assertIn("different individuals", prompt)
-		self.assertIn("A mother, mom or mama named in the text is Gấu mẹ; a baby, kid, child or cub named in the text is Gấu con", prompt)
+		self.assertNotIn("Gấu", prompt.split("Identity consistency")[-1])
+		self.assertIn("at most a very slight, slow push-in", prompt)
+		self.assertIn("A mother, mom or mama named in the text is the mother mascot; a baby, kid, child or cub named in the text is the kid mascot", prompt)
+
+	def test_quantities_and_quoted_words_are_not_sent_to_the_video_model(self):
+		from joymedia.services.prompt_compiler import _scrub_printable
+
+		self.assertEqual(
+			"Products in the centre beside the big box. The mother says .",
+			_scrub_printable('Products in the centre beside the big box (30 packs per box). The mother says "Buy now".'),
+		)

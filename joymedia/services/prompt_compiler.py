@@ -189,6 +189,10 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 			_("Shot {0} has no generation prompt.").format(shot.name)
 		)
 
+	if prompt_source == "motion" and getattr(shot, "references", None):
+		prompt = "\n\n".join(
+			_scrub_printable(part) if not part.lstrip().startswith("Audio:") else part for part in prompt.split("\n\n")
+		)
 	if prompt_source == "image":
 		from .subject_overlay import EMPTY_SETTING, pasted_references, usable_setting
 
@@ -262,7 +266,9 @@ def _identity_guard(shot, project):
 	return (
 		"Scene fidelity: the supplied first frame is the truth for the place, the lighting, the time of day, the "
 		"characters and every object. Keep them for the whole clip; this text describes only what moves, and any "
-		"description of a different place, lighting or object in it is ignored. "
+		"description of a different place, lighting or object in it is ignored. Keep the camera framing of the "
+		"first frame: allow at most a very slight, slow push-in, so that every character and product stays in view "
+		"and unchanged. Never print quantities, names or words on any object. "
 		f"Identity consistency: {who}Every product is the one shown in the first frame; never add another product, "
 		"carton or packaging, or a second copy. Add no text, letters, numbers or captions anywhere except the brand "
 		"logo. Keep everything exactly as shown (same colours, fur or material, face and proportions) in every "
@@ -283,14 +289,35 @@ KID_WORDS = re.compile(r"\b(con|kid|baby|child|cub|boy|girl)\b", re.I)
 
 def _kinship_hint(names):
 	"""Which name a mother and which a kid refers to, when the names say so."""
-	mother = next((n for n in names if MOTHER_WORDS.search(n)), None)
-	kid = next((n for n in names if KID_WORDS.search(n) and n != mother), None)
+	mother = next((n for n in names if n.startswith("the mother mascot")), None)
+	kid = next((n for n in names if n.startswith("the kid mascot")), None)
 	if not (mother and kid):
 		return ""
 	return (
-		f"A mother, mom or mama named in the text is {mother.split(' (')[0]}; a baby, kid, child or cub named in "
-		f"the text is {kid.split(' (')[0]}. "
+		"A mother, mom or mama named in the text is the mother mascot; a baby, kid, child or cub named in the text "
+		"is the kid mascot. "
 	)
+
+
+PRINTABLE = re.compile(
+	r"\(\s*\d[^)]*\)|\b\d+\s*(?:packs?|boxes|box|sheets?|ply|layers?|rolls?|pcs|pieces)\b|[\"“”][^\"“”]*[\"“”]", re.I
+)
+
+
+def _scrub_printable(text):
+	"""Remove quantities and quoted words: the video model prints whatever words it is given onto objects."""
+	text = re.sub(r"\s{2,}", " ", PRINTABLE.sub("", str(text or "")))
+	return re.sub(r"\s+([.,;:!?])", r"\1", text).strip()
+
+
+def _display_name(label, number):
+	"""A plain English name for a character: its role when the label gives one, else the ASCII label, else a number."""
+	if MOTHER_WORDS.search(label):
+		return "the mother mascot"
+	if KID_WORDS.search(label):
+		return "the kid mascot"
+	base = label.split(" (")[0].strip()
+	return base if base.isascii() and base else f"character {number}"
 
 
 def _character_names(shot, project):
@@ -306,11 +333,15 @@ def _character_names(shot, project):
 	for reference in getattr(shot, "references", None) or []:
 		role = frappe.scrub(field(reference, "reference_role") or field(reference, "input_role") or "")
 		label = labels.get(field(reference, "asset_version"))
-		if role in ("character", "person", "people", "talent") and label and label not in names:
+		if role in ("character", "person", "people", "talent") and label:
 			from .subject_overlay import describe_colours
 
-			colours = describe_colours(field(reference, "asset_version"))
-			names.append(f"{label} ({colours}; keep exactly these colours)" if colours else label)
+			# The video model prints words it is given onto objects, so the cast is named in plain English,
+			# never by a label in the advertiser's language.
+			name = _display_name(label, len(names) + 1)
+			if name not in names:
+				colours = describe_colours(field(reference, "asset_version"))
+				names.append(f"{name} ({colours}; keep exactly these colours)" if colours else name)
 	return names
 
 

@@ -77,7 +77,8 @@ def motion_only(project, text, references):
 	prompt = (
 		"Rewrite this storyboard beat as ONLY what moves: the actions of the characters and the camera, in time "
 		"order, in at most 60 words of English. Remove every description of the place, lighting, time of day, "
-		f"colours and objects that are not moving. Characters: {cast or 'as in the beat'}; every bear, mother or "
+		"colours and objects that are not moving, and every quantity, name or word that would print as text on an "
+		f"object. Characters: {cast or 'as in the beat'}; every bear, mother or "
 		f"baby named is one of them.\nBEAT: {text}\nReturn {{\"motion\": \"...\"}}"
 	)
 	raw = _ask_planner(prompt, system="You rewrite storyboard beats faithfully. Return JSON only.", max_tokens=300)
@@ -217,6 +218,8 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		"no character, animal, hand, product, object in action or text.",
 		"- sound_effects: English, at most 15 words: the physical, non-vocal sounds this action makes (rustling, "
 		"tearing, a thud, pouring). Never speech, laughter, singing or music.",
+		"- Never write quantities, prices, product names or any words that would appear as printed text on an "
+		"object (for example a number of packs): the image and video models would draw them as letters.",
 		"- video_prompt: English, at most 80 words. What moves and how the camera moves, in time order, as one "
 		"continuous shot. Keep every action the beat requires; invent no claims or extra characters.",
 		"- image_prompt is ONE still frame, never a sequence of events. When a reference shows a pose, keep the "
