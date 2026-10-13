@@ -9,8 +9,10 @@ on rendered clips, but it is a screen, not proof: a clip near the line should be
 import re
 import subprocess
 
-# Measured on rendered clips: effects-like clips scored 0.48 to 0.59, music-like ones 0.09 to 0.25.
-EFFECTS_FLATNESS_MIN = 0.45
+# Measured on rendered clips: effects-like clips scored 0.43 to 0.59, music-like ones 0.09 to 0.28. Scores from
+# the minimum to BORDERLINE_MAX are accepted but should be listened to.
+EFFECTS_FLATNESS_MIN = 0.40
+BORDERLINE_MAX = 0.50
 
 
 def effects_score(path):
