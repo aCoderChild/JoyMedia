@@ -73,3 +73,46 @@ class TestAudioPlan(FrappeTestCase):
 	def test_unknown_role_is_rejected(self):
 		with self.assertRaises(frappe.ValidationError):
 			place_cue_audio(self.project.name, self.shot.name, "Laugh", "AV")
+
+
+class TestCloseTimelineGaps(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		commit = patch.object(frappe.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
+		self.project = frappe.get_doc({
+			"doctype": "Media Project", "project_name": "Close Gaps", "workflow": _create_workflow(),
+			"total_duration_seconds": 10, "delivery_preset": "Landscape",
+		}).insert(ignore_permissions=True)
+		self.clips = []
+		for number, start in ((1, 0), (2, 96)):
+			shot = frappe.get_doc({
+				"doctype": "Shot", "media_project": self.project.name, "shot_number": number,
+				"generation_prompt": "A scene.", "duration_seconds": 2.0,
+			}).insert(ignore_permissions=True)
+			_asset, video = _create_output_version(self.project, f"s{number}.mp4", 2)
+			self.clips.append(frappe.get_doc({
+				"doctype": "Timeline Clip", "media_project": self.project.name, "shot": shot.name, "clip_order": number,
+				"track_type": "Video", "track_index": 0, "timeline_start_frame": start,
+				"initial_timeline_start_frame": start, "enabled": 1, "source_asset_version": video.name,
+				"source_in_frame": 0, "source_out_frame": 48, "initial_source_in_frame": 0, "initial_source_out_frame": 48,
+			}).insert(ignore_permissions=True))
+		self.second_shot = self.clips[1].shot
+
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def test_scenes_cut_directly_and_narration_moves_with_its_scene(self):
+		from joymedia.services.timeline_editor import close_timeline_gaps
+
+		version = TestAudioPlan._audio_version(self)
+		narration = place_cue_audio(self.project.name, self.second_shot, "Voiceover", version.name)["clip"]
+		self.assertEqual(96, frappe.db.get_value("Timeline Clip", narration, "timeline_start_frame"))
+
+		close_timeline_gaps(self.project.name)
+
+		self.assertEqual([0, 48], [frappe.db.get_value("Timeline Clip", c.name, "timeline_start_frame") for c in self.clips])
+		self.assertEqual(48, frappe.db.get_value("Timeline Clip", narration, "timeline_start_frame"))
+		self.assertEqual(4, frappe.db.get_value("Media Project", self.project.name, "total_duration_seconds"))

@@ -521,6 +521,46 @@ def _remove_shot_timeline_clips(project_name, shot_name):
 	_invalidate_project_output(project_name)
 
 
+@frappe.whitelist()
+def close_timeline_gaps(project_name: str):
+	"""Butt the video clips together so scenes cut directly into each other.
+
+	Authored timing gaps are usually slack in the storyboard, not intended pauses.
+	Free-standing audio (narration, effects) moves with the scene it starts in, and
+	the project's duration becomes the edited timeline's actual length.
+	"""
+	project = frappe.get_doc("Media Project", project_name)
+	_require_project_write(project)
+	fps = _project_fps(project.name)
+	clips = _timeline_clip_rows(project.name)
+	videos = sorted(
+		(row for row in clips if (row.track_type or "Video") == "Video" and row.enabled),
+		key=lambda row: (int(row.timeline_start_frame or 0), int(row.clip_order or 0)),
+	)
+	ranges = [
+		(row, int(row.timeline_start_frame or 0), int(row.timeline_start_frame or 0) + _clip_length(row))
+		for row in videos
+	]
+	cursor = 0
+	shifts = []
+	for row, start, end in ranges:
+		shifts.append((start, end, cursor - start))
+		cursor += end - start
+	_reflow_video_track(project.name)
+	for row in clips:
+		if row.track_type != "Audio" or row.linked_video_clip:
+			continue
+		start = int(row.timeline_start_frame or 0)
+		delta = next((shift for first, last, shift in shifts if first <= start < last), 0)
+		if delta:
+			frappe.db.set_value("Timeline Clip", row.name, "timeline_start_frame", max(0, start + delta), update_modified=False)
+	if cursor:
+		frappe.db.set_value("Media Project", project.name, "total_duration_seconds", round(cursor / fps, 3))
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
 def _reflow_video_track(project_name):
 	"""Rebuild the single visual track's order and frame positions without resizing clips."""
 	video_clips = frappe.get_all(
