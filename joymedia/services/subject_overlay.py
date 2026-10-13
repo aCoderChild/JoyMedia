@@ -214,8 +214,10 @@ def layout(canvas, sizes_by_role, product_center=None):
 	for rank, index in enumerate(groups["product"]):
 		_role_name, width, height, *rest = sizes_by_role[index]
 		scale = rest[0] if rest else 1
+		size_key = "product" if hero else "hero_product"
 		box_width, box_height = _fit(
-			width, height, tune("product_width") * canvas_width / max(1, count * 0.75) * scale, tune("product_height") * canvas_height * scale
+			width, height, tune(f"{size_key}_width") * canvas_width / max(1, count * 0.75) * scale,
+			tune(f"{size_key}_height") * canvas_height * scale,
 		)
 		if hero and count == 1:
 			center = hero[0] + hero[2] / 2 + tune("product_offset") * canvas_width

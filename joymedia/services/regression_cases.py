@@ -139,15 +139,31 @@ def evaluate(name, image_bytes, project_name):
 	if pasted:
 		from PIL import Image as PILImage
 
-		assets = [PILImage.open(p["path"]).convert("RGBA") for p in pasted]
-		crops = [a.crop(a.getchannel("A").point(lambda v: 255 if v > 8 else 0).getbbox()) for a in assets]
-		boxes = layout(image.size, [(p["role"], c.width, c.height, 1) for p, c in zip(pasted, crops)])
-		for p, crop, (x, y, w, h) in zip(pasted, crops, boxes):
-			region = image.crop((x + w // 4, y + h // 4, x + 3 * w // 4, y + 3 * h // 4))
-			opaque = crop.resize((max(1, w), max(1, h))).crop((w // 4, h // 4, 3 * w // 4, 3 * h // 4))
-			mean = lambda im: [sum(c) / max(1, len(c)) for c in zip(*[px[:3] for px in im.getdata() if len(px) < 4 or px[3] > 128])]
-			distance = sum(abs(a - b) for a, b in zip(mean(region), mean(opaque)))
-			results.append((f"{labels[p['asset_version']]} keeps its colours", distance < 90, f"colour distance {distance:.0f}"))
+		for p in pasted:
+			asset = PILImage.open(p["path"]).convert("RGBA")
+			crop = asset.crop(asset.getchannel("A").point(lambda v: 255 if v > 8 else 0).getbbox())
+			# The asset's own dominant colour, and how many pixels of the frame are close to it: a pasted subject
+			# shows up as a block of that colour, a missing or recoloured one does not.
+			palette = crop.resize((24, 24)).getdata()
+			colours = {}
+			for r, g, b, a in palette:
+				if a > 200:
+					colours[(r // 32, g // 32, b // 32)] = colours.get((r // 32, g // 32, b // 32), 0) + 1
+			dominant = max(colours, key=colours.get)
+			close = sum(1 for r, g, b in image.getdata() if (r // 32, g // 32, b // 32) == dominant)
+			share = close / (image.width * image.height)
+			results.append((f"{labels[p['asset_version']]} appears in its own colours", share > 0.004, f"{share:.3%} of the frame"))
+	# The movement text must keep a box the scene's own product is, and drop a zoom that would enlarge a pasted product.
+	from joymedia.services.prompt_compiler import compile_prompt_for_documents
+
+	shot_doc = frappe.get_doc("Shot", shot.name)
+	shot_doc.references = [{"reference_role": r.reference_role, "asset_version": r.asset_version} for r in shot_doc.generation_inputs]
+	motion = compile_prompt_for_documents(shot_doc, frappe._dict(
+		generation_mode="Multi-shot", global_instructions="", references=[{"asset_version": v, "label": l} for v, l in labels.items()]
+	), prompt_source="motion")
+	if case["expect"]["keeps_box_noun"]:
+		results.append(("a box product keeps its box in the movement text", "opens the box" in motion, ""))
+		results.append(("a zoom is removed when a product is pasted", "zooms in" not in motion, ""))
 	return results
 
 

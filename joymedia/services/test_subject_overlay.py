@@ -53,6 +53,12 @@ class TestLayout(FrappeTestCase):
 		boxes = layout((720, 1280), [("character", 464, 560, 1), ("product", 1076, 717, 1), ("logo", 600, 150, 1)])
 		self.assertTrue(all(box is not None for box in boxes))
 
+	def test_a_lone_product_is_the_hero_and_much_larger_than_one_beside_a_character(self):
+		alone = layout((1280, 720), [("product", 420, 560)])[0]
+		beside = layout((1280, 720), [("character", 464, 560), ("product", 420, 560)])[1]
+		self.assertGreater(alone[3], 2 * beside[3])
+		self.assertLessEqual(abs(alone[2] / alone[3] - 420 / 560), 0.02)
+
 	def test_logos_sit_in_opposite_top_corners(self):
 		first, second = layout((1000, 1000), [("logo", 200, 100), ("logo", 200, 100)])
 		self.assertLess(first[0], 500)
