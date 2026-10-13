@@ -431,15 +431,32 @@ def _scrub_for_drawing(text):
 	return re.sub(r"\s+([.,;:!?])", r"\1", text).strip()
 
 
+def _first_actions(shot):
+	"""The first sentences of the scene's movement text: what the characters are doing at the start."""
+	text = getattr(shot, "generation_prompt", None) or ""
+	paragraphs = [p for p in text.split("\n\n") if p.strip() and not p.lstrip().startswith("Audio:")]
+	sentences = re.split(r"(?<=[.!?])\s+", " ".join(paragraphs[:1]))
+	return _scrub_for_drawing(" ".join(sentences[:2]))[:260]
+
+
 def _draw_prompt(shot, project):
-	"""The keyframe prompt for "Draw in scene": the scene's action with the characters behaving like people."""
-	image = _scrub_for_drawing(getattr(shot, "image_prompt", None) or getattr(shot, "generation_prompt", None) or "")
+	"""The keyframe prompt for "Draw in scene": the place, the action, and the mascots behaving like people.
+
+	The reference board shows the characters on a plain background, so the place must be named first or the
+	plain background becomes the scene; the posture sentence stops the model copying the seated reference pose.
+	"""
+	from .subject_overlay import usable_setting
+
+	action = _first_actions(shot) or _scrub_for_drawing(getattr(shot, "image_prompt", None) or "")
 	cast = "; ".join(dict.fromkeys(_describe_character(label) for label in _character_labels(shot, project)))
 	return (
-		f"{image}\n\nThe characters are cartoon mascots who behave like people in a real home"
+		f"{usable_setting(getattr(shot, 'setting_prompt', None))} {action}\n\n"
+		"The characters are cartoon bear mascots who act exactly like human people: they stand upright on two legs, "
+		"sit on chairs or the floor, walk, hold things in their paws and gesture the way people do, in a real, "
+		"lived-in home with furniture around them"
 		+ (f": {cast}" if cast else "")
-		+ ". They look like the characters in the reference picture. Natural light, realistic composition. "
-		"Keep a clear patch of floor in the lower foreground."
+		+ ". They look like the characters in the reference picture, but not in its seated pose. Natural window "
+		"light, realistic wide composition, a clear patch of floor in the lower foreground."
 	)
 
 

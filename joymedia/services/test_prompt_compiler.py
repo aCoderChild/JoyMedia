@@ -289,21 +289,24 @@ class TestAudioLineLast(FrappeTestCase):
 		for unwanted in ("30 packs", "large box", "zooms", "top right"):
 			self.assertNotIn(unwanted, movement)
 
-	def test_draw_mode_gives_the_image_model_the_action_and_the_characters(self):
+	def test_draw_mode_names_the_place_then_the_action_then_human_behaviour(self):
 		from joymedia.services.prompt_compiler import compile_prompt_for_documents
 
 		shot = frappe._dict(
-			name="S", shot_number=1, image_prompt="The mother stands at the counter holding a glass of milk.", generation_prompt="x",
-			setting_prompt="A kitchen.", character_mode="Draw in scene",
+			name="S", shot_number=1, image_prompt="Macro close-up of a hand.",
+			generation_prompt="The mother lifts a glass of milk. The kid sits on the floor. Then she pours.\n\nAudio: sound effects: pour.",
+			setting_prompt="A warm wooden kitchen.", character_mode="Draw in scene",
 			references=[{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Character", "asset_version": "AV2"}],
 		)
 		project = frappe._dict(references=[
 			{"asset_version": "AV1", "label": "Gấu mẹ (mother mascot, flower on head)"}, {"asset_version": "AV2", "label": "Gấu con (kid mascot)"},
 		])
 		prompt = compile_prompt_for_documents(shot, project, prompt_source="image")
-		self.assertTrue(prompt.startswith("The mother stands at the counter holding a glass of milk."))
-		self.assertIn("behave like people in a real home: mother mascot, flower on head; kid mascot", prompt)
-		self.assertNotIn("empty", prompt)
+		self.assertTrue(prompt.startswith("A warm wooden kitchen. The mother lifts a glass of milk. The kid sits on the floor."))
+		self.assertNotIn("Then she pours", prompt)
+		self.assertIn("act exactly like human people", prompt)
+		self.assertIn("mother mascot, flower on head; kid mascot", prompt)
+		self.assertNotIn("Audio", prompt)
 
 	def test_a_planned_image_description_is_made_safe_for_drawing_mascots(self):
 		from joymedia.services.prompt_compiler import _scrub_for_drawing
