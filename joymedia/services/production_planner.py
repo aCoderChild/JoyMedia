@@ -42,7 +42,7 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 		duration=float(shot.duration_seconds or 0),
 		is_first=int(shot.shot_number or 0) <= 1,
 	)
-	plan["audio"] = audio_direction(project, beat)
+	plan["audio"] = audio_direction(project, beat, plan.get("sound_effects"))
 	plan["reference_keys"], added_notes = ground_reference_keys(project, beat, plan["reference_keys"], references)
 	plan["notes"].extend(added_notes)
 	coverage, missing = beat_coverage(beat["summary"], plan["image_prompt"], plan["video_prompt"])
@@ -130,7 +130,7 @@ def translate(text, project):
 	return str((raw or {}).get("english") or "").strip() or text
 
 
-def audio_direction(project, beat):
+def audio_direction(project, beat, foley=None):
 	"""The beat's sound direction as the H3 workflow's own `Audio:` line.
 
 	The H3 workflow generates its soundtrack (effects, music) from the prompt, in the form its own sample
@@ -143,6 +143,9 @@ def audio_direction(project, beat):
 		f"{'sound effects' if role == 'SFX' else 'music'}: {translate(text, project)}"
 		for role, text in parse_audio_cues(beat.get("audio"))
 	]
+	if not parts and foley:
+		# The beat names no sound: use the planner's description of the physical sounds of the action.
+		parts = [f"sound effects: {foley.rstrip('. ')}"]
 	return f"Audio: {'; '.join(parts)}." if parts else ""
 
 
@@ -180,6 +183,8 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		"lighting. Include only what must appear. No text, captions or logos.",
 		"- setting_prompt: English, at most 30 words. Only the place, light and camera framing of the first frame: "
 		"no character, animal, hand, product, object in action or text.",
+		"- sound_effects: English, at most 15 words: the physical, non-vocal sounds this action makes (rustling, "
+		"tearing, a thud, pouring). Never speech, laughter, singing or music.",
 		"- video_prompt: English, at most 80 words. What moves and how the camera moves, in time order, as one "
 		"continuous shot. Keep every action the beat requires; invent no claims or extra characters.",
 		"- image_prompt is ONE still frame, never a sequence of events. When a reference shows a pose, keep the "
@@ -202,7 +207,7 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		'table, holding a glass of orange juice, soft daylight, shallow depth of field." video_prompt "The mascot '
 		'tips the glass and juice spills across the table; the camera slowly pushes in as the mascot gasps."',
 		"",
-		'Return {"image_prompt":"","setting_prompt":"","video_prompt":"","reference_keys":[],"continuity_mode":"New Scene",'
+		'Return {"image_prompt":"","setting_prompt":"","sound_effects":"","video_prompt":"","reference_keys":[],"continuity_mode":"New Scene",'
 		'"start_state":"","end_state":"","motion_plan":{"actions":[{"start":0,"end":0,"action":""}]},'
 		'"needs_editing":""}',
 	]
@@ -313,6 +318,7 @@ def normalize_production_shot(raw, *, reference_keys, duration, is_first):
 	return {
 		"image_prompt": image_prompt, "video_prompt": video_prompt, "reference_keys": keys,
 		"setting_prompt": " ".join(str(raw.get("setting_prompt") or "").split())[:300],
+		"sound_effects": " ".join(str(raw.get("sound_effects") or "").split())[:160],
 		"continuity_mode": "New Scene" if is_first else mode,
 		"start_state": " ".join(str(raw.get("start_state") or "").split())[:300],
 		"end_state": " ".join(str(raw.get("end_state") or "").split())[:300],

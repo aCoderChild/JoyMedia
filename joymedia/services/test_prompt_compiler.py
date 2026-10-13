@@ -1,3 +1,4 @@
+from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -150,7 +151,8 @@ class TestAudioLineLast(FrappeTestCase):
 		self.assertEqual(f"More.\n\nAudio: sound effects: pop. {NO_VOICE_OR_MUSIC}", result)
 		# With no effect cue left, the sounds of the scene's own action are described instead.
 		self.assertEqual(
-			f"Mother pours milk.\n\nAudio: the natural sounds of this action: Mother pours milk. {NO_VOICE_OR_MUSIC}",
+			"Mother pours milk.\n\nAudio: soft natural foley of the movements shown: rustling, light touches and gentle "
+			f"impacts. {NO_VOICE_OR_MUSIC}",
 			_audio_line_last("Mother pours milk.\n\nAudio: music: jazz.", sound_effects_only=True),
 		)
 
@@ -181,6 +183,8 @@ class TestAudioLineLast(FrappeTestCase):
 		project = frappe._dict(
 			generation_mode="Multi-shot", global_instructions="", references=[{"asset_version": "AV1", "label": "Shera mascot"}]
 		)
-		prompt = compile_prompt_for_documents(shot, project, prompt_source="motion")
-		self.assertIn("The only character in this scene is Shera mascot", prompt)
+		with patch("joymedia.services.subject_overlay.describe_colours", return_value="mostly cream"):
+			prompt = compile_prompt_for_documents(shot, project, prompt_source="motion")
+		self.assertIn("The only character in this scene is Shera mascot (mostly cream", prompt)
+		self.assertIn("keep exactly these colours", prompt)
 		self.assertIn("every hand, arm or paw is theirs", prompt)

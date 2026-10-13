@@ -116,6 +116,14 @@ class TestApply(FrappeTestCase):
 		self.assertTrue(prompt.startswith(RAW["video_prompt"]))
 		self.assertTrue(prompt.endswith("Audio: sound effects: a pop."))
 
+	def test_the_planners_foley_is_used_when_the_beat_names_no_sound(self):
+		project = frappe._dict(selected_media=[], product_name="P", project_name="P")
+		self.assertEqual(
+			"Audio: sound effects: soft tissue rustling.",
+			planner.audio_direction(project, {"audio": ""}, "soft tissue rustling."),
+		)
+		self.assertEqual("", planner.audio_direction(project, {"audio": ""}))
+
 	def test_a_plan_that_drops_the_beat_falls_back_to_the_beats_english_wording(self):
 		beat = {"summary": "Mother bear spills the milk.", "camera": "", "action": "", "audio": "", "voice_over": "", "on_screen_text": "", "raw": "x"}
 		with patch.object(planner, "_ask_planner", return_value=RAW), patch.object(

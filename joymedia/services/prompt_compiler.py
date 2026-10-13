@@ -262,7 +262,10 @@ def _character_names(shot, project):
 		role = frappe.scrub(field(reference, "reference_role") or field(reference, "input_role") or "")
 		label = labels.get(field(reference, "asset_version"))
 		if role in ("character", "person", "people", "talent") and label and label not in names:
-			names.append(label)
+			from .subject_overlay import describe_colours
+
+			colours = describe_colours(field(reference, "asset_version"))
+			names.append(f"{label} ({colours}; keep exactly these colours)" if colours else label)
 	return names
 
 
@@ -288,11 +291,8 @@ def _audio_line_last(prompt, sound_effects_only=False):
 		]
 		cues = [cue.rstrip(". ") for cue in cues if cue]
 		if not cues:
-			# With nothing concrete to make, the model fills the soundtrack with music. Describe the sounds of the
-			# scene's own action instead.
-			action = next((p for p in paragraphs if p.strip() and not p.lstrip().startswith("Audio:")), "")
-			sentences = [x for x in re.split(r"(?<=[.!])\s+", " ".join(action.split())) if not VOCAL_SOUND.search(x)]
-			cues = [f"the natural sounds of this action: {' '.join(sentences)[:160].rstrip('. ')}"] if sentences else []
+			# With nothing concrete to make, the model fills the soundtrack with music.
+			cues = ["soft natural foley of the movements shown: rustling, light touches and gentle impacts"]
 		audio = [f"Audio: {'; '.join(cues)}. {NO_VOICE_OR_MUSIC}" if cues else f"Audio: {NO_VOICE_OR_MUSIC}"]
 	if not audio:
 		return prompt

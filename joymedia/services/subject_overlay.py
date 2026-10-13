@@ -67,6 +67,42 @@ def _cutout_path(asset_version):
 	return str(path)
 
 
+PALETTE = {
+	"white": (245, 245, 245), "cream": (240, 225, 200), "beige": (225, 200, 170), "light brown": (190, 140, 100),
+	"brown": (120, 80, 50), "dark brown": (60, 40, 30), "grey": (140, 140, 140), "black": (20, 20, 20),
+	"red": (200, 40, 40), "orange": (230, 130, 40), "yellow": (240, 210, 60), "green": (60, 160, 90),
+	"teal": (60, 170, 160), "blue": (50, 100, 190), "pink": (240, 150, 180), "purple": (130, 80, 170),
+}
+
+
+@lru_cache(maxsize=256)
+def describe_colours(asset_version):
+	"""The main colours of an Asset Version's visible pixels, in words ("mostly cream, with brown details")."""
+	from PIL import Image
+
+	file_url = frappe.db.get_value("Asset Version", asset_version, "file")
+	if not file_url:
+		return ""
+	try:
+		with Image.open(frappe.get_doc("File", {"file_url": file_url}).get_full_path()) as image:
+			image = image.convert("RGBA")
+	except OSError:
+		return ""
+	image.thumbnail((64, 64))
+	counts = {}
+	for red, green, blue, alpha in image.getdata():
+		if alpha > 128:
+			name = min(PALETTE, key=lambda n: sum((a - b) ** 2 for a, b in zip(PALETTE[n], (red, green, blue))))
+			counts[name] = counts.get(name, 0) + 1
+	total = sum(counts.values())
+	if not total:
+		return ""
+	ranked = [name for name, count in sorted(counts.items(), key=lambda item: -item[1]) if count / total >= 0.08]
+	main = [name for name in ranked if counts[name] / total >= 0.25] or ranked[:1]
+	details = [name for name in ranked if name not in main][:2]
+	return f"mostly {' and '.join(main)}" + (f", with {' and '.join(details)} details" if details else "")
+
+
 def pasted_references(references):
 	"""The references that are pasted rather than shown to the image model, in the given order."""
 	pasted = []

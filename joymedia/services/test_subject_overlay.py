@@ -129,3 +129,22 @@ class TestUsableSetting(FrappeTestCase):
 		self.assertEqual(subject_overlay.DEFAULT_SETTING, subject_overlay.usable_setting("Macro close-up on hand pulling tissue."))
 		self.assertEqual(subject_overlay.DEFAULT_SETTING, subject_overlay.usable_setting(""))
 		self.assertEqual("A warm kitchen with window light.", subject_overlay.usable_setting("A warm kitchen with window light."))
+
+
+class TestDescribeColours(FrappeTestCase):
+	def test_the_main_colours_are_named_and_transparency_is_ignored(self):
+		with tempfile.TemporaryDirectory() as folder:
+			image = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
+			for x in range(40):
+				for y in range(40):
+					if y < 30:
+						image.putpixel((x, y), (240, 225, 200, 255))
+					elif y < 36:
+						image.putpixel((x, y), (120, 80, 50, 255))
+			path = Path(folder) / "a.png"
+			image.save(path)
+			subject_overlay.describe_colours.cache_clear()
+			with patch.object(frappe.db, "get_value", return_value="/f.png"), patch.object(
+				frappe, "get_doc", return_value=frappe._dict(get_full_path=lambda: str(path))
+			):
+				self.assertEqual("mostly cream, with brown details", subject_overlay.describe_colours("AV-COLOUR"))
