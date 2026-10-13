@@ -98,13 +98,22 @@ def describe_colours(asset_version):
 	return f"mostly {' and '.join(main)}" + (f", with {' and '.join(details)} details" if details else "")
 
 
-def pasted_references(references, character_mode=PASTE):
+def scene_mode(references, character_mode=PASTE):
+	"""The mode a scene really runs in: drawing needs someone to draw, so a scene with no character or person is pasted."""
+	has_cast = any(_role(r) in ("character", "person") for r in references or [])
+	return DRAW if character_mode == DRAW and has_cast else PASTE
+
+
+def pasted_references(references, character_mode=PASTE, context=None):
 	"""The references that are pasted rather than shown to the image model, in the given order.
 
-	Products and logos are always pasted when they are cutouts. Characters are pasted only in "Paste exact art"
-	mode; in "Draw in scene" mode the image model draws them from the reference board instead.
+	Logos are always pasted when they are cutouts. Characters and products are pasted in "Paste exact art" mode and
+	in a scene with no cast; in a "Draw in scene" scene the image model draws them from reference boards instead,
+	so a product sits in the scene (shape and colour kept) rather than being laid over it. `context` is the whole
+	scene's references when `references` is only some of them.
 	"""
-	roles = PASTE_ROLES if character_mode != DRAW else PASTE_ROLES - {"character"}
+	mode = scene_mode(context if context is not None else references, character_mode)
+	roles = PASTE_ROLES if mode != DRAW else PASTE_ROLES - {"character", "product"}
 	pasted = []
 	for reference in references or []:
 		asset_version = reference.get("asset_version")
@@ -120,7 +129,7 @@ def _any_image_path(asset_version):
 	return str(frappe.get_doc("File", {"file_url": file_url}).get_full_path()) if file_url else None
 
 
-def character_board(references, scales=None):
+def character_board(references, scales=None, role="character"):
 	"""A flat-background picture of a scene's characters side by side, as the image model's character reference.
 
 	Each character keeps its own proportions and its relative size (the mother larger than the kid), standing on
@@ -132,7 +141,7 @@ def character_board(references, scales=None):
 
 	items = []
 	for reference in references or []:
-		path = _any_image_path(reference.get("asset_version")) if _role(reference) == "character" else None
+		path = _any_image_path(reference.get("asset_version")) if _role(reference) == role else None
 		if path:
 			with Image.open(path) as source:
 				image = source.convert("RGBA")
@@ -155,21 +164,30 @@ def character_board(references, scales=None):
 	folder = Path(frappe.get_site_path("private", "joymedia-boards"))
 	folder.mkdir(parents=True, exist_ok=True)
 	digest = hashlib.sha256(
-		"|".join(f"{r.get('asset_version')}:{(scales or {}).get(r.get('asset_version'), 1)}" for r in references).encode()
+		(f"{role}|" + "|".join(f"{r.get('asset_version')}:{(scales or {}).get(r.get('asset_version'), 1)}" for r in references)).encode()
 	).hexdigest()[:16]
-	output = folder / f"characters-{digest}.png"
+	output = folder / f"{role}s-{digest}.png"
 	board.save(output, "PNG")
 	return str(output)
 
 
-def character_board_for_task(job):
-	"""The character board for a keyframe task in "Draw in scene" mode, from its run's frozen snapshot, else None."""
+def boards_for_task(job):
+	"""Reference boards for a keyframe task in "Draw in scene" mode: {"character": path, "product": path}.
+
+	Built from the run's frozen snapshot; a role with no picture has no board, and a scene in "Paste exact art"
+	mode has none at all.
+	"""
 	snapshot = _run_snapshot(job.generation_run)
 	shot = next((row for row in snapshot.get("shots") or [] if row.get("shot") == job.shot), {})
-	if (shot.get("character_mode") or PASTE) != DRAW:
-		return None
+	if scene_mode(shot.get("references"), shot.get("character_mode") or PASTE) != DRAW:
+		return {}
 	scales = {row.get("asset_version"): row.get("scale") or 1 for row in snapshot.get("references") or []}
-	return character_board(shot.get("references"), scales)
+	boards = {}
+	for role in ("character", "product"):
+		path = character_board(shot.get("references"), scales if role == "character" else None, role)
+		if path:
+			boards[role] = path
+	return boards
 
 
 def _run_snapshot(run_name):

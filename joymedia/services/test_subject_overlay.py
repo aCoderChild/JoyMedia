@@ -144,7 +144,7 @@ class TestKeyframeIngest(FrappeTestCase):
 
 		workflow = frappe._dict(name="W")
 		contract = [{"role": "product", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False}]
-		references = frappe._dict(references=[
+		references = frappe._dict(character_mode="Paste exact art", references=[
 			{"reference_role": "Product", "asset_version": "AV1"}, {"reference_role": "Logo", "asset_version": "AV2"},
 			{"reference_role": "Product", "asset_version": "AV3"},
 		])
@@ -181,14 +181,14 @@ class TestDescribeColours(FrappeTestCase):
 
 
 class TestCharacterMode(FrappeTestCase):
-	def test_characters_are_pasted_only_in_paste_mode_but_products_and_logos_always(self):
+	def test_characters_and_products_are_pasted_only_in_paste_mode_but_logos_always(self):
 		references = [
 			{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Product", "asset_version": "AV2"},
 			{"reference_role": "Logo", "asset_version": "AV3"},
 		]
 		with patch.object(subject_overlay, "_cutout_path", return_value="/a.png"):
 			self.assertEqual(["character", "product", "logo"], [p["role"] for p in pasted_references(references, "Paste exact art")])
-			self.assertEqual(["product", "logo"], [p["role"] for p in pasted_references(references, "Draw in scene")])
+			self.assertEqual(["logo"], [p["role"] for p in pasted_references(references, "Draw in scene")])
 
 	def test_the_character_board_keeps_each_picture_uncropped_and_the_mother_larger(self):
 		with tempfile.TemporaryDirectory() as folder:
@@ -235,3 +235,27 @@ class TestTuning(FrappeTestCase):
 		with patch.object(frappe, "conf", frappe._dict(joymedia_tuning={"character_height": 0.5})):
 			large = layout((720, 1280), [("character", 464, 560)])[0]
 		self.assertGreater(large[3], small[3])
+
+
+class TestProductBoard(FrappeTestCase):
+	def test_products_get_their_own_board_in_draw_mode_and_the_prompt_places_them_in_the_scene(self):
+		from joymedia.services.prompt_compiler import _product_note
+
+		shot = frappe._dict(references=[
+			{"reference_role": "Product", "asset_version": "AV1"}, {"reference_role": "Product", "asset_version": "AV2"},
+		])
+		project = frappe._dict(references=[
+			{"asset_version": "AV1", "label": "Green pack"}, {"asset_version": "AV2", "label": "Pink pack"},
+		])
+		with patch.object(subject_overlay, "describe_colours", side_effect=lambda v: {"AV1": "mostly green", "AV2": "mostly pink"}[v]):
+			note = _product_note(shot, project)
+		self.assertIn("The products from the product reference (green; pink) sit naturally in the scene", note)
+		self.assertIn("never held in front of anyone's feet", note)
+		self.assertEqual("", _product_note(frappe._dict(references=[]), project))
+
+	def test_a_scene_with_no_cast_pastes_its_product_even_in_draw_mode(self):
+		references = [{"reference_role": "Product", "asset_version": "AV1"}]
+		with patch.object(subject_overlay, "_cutout_path", return_value="/p.png"):
+			self.assertEqual(["product"], [p["role"] for p in pasted_references(references, "Draw in scene")])
+			self.assertEqual([], pasted_references(references, "Draw in scene", context=references + [{"reference_role": "Character", "asset_version": "AV2"}]))
+		self.assertEqual("Paste exact art", subject_overlay.scene_mode(references, "Draw in scene"))

@@ -544,7 +544,7 @@ class TestDrawModeInputs(FrappeTestCase):
 
 		contract = [
 			{"role": "character", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False},
-			{"role": "person", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False},
+			{"role": "product", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False},
 		]
 		shot = frappe._dict(character_mode="Draw in scene", references=[
 			{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Character", "asset_version": "AV2"},
@@ -553,7 +553,8 @@ class TestDrawModeInputs(FrappeTestCase):
 		with patch("joymedia.services.workflow_resolver.get_workflow_input_contract", return_value=contract), patch.object(
 			subject_overlay, "_cutout_path", return_value="/x.png"
 		):
-			self.assertEqual({"character": ["AV1"]}, _pipeline_reference_inputs(shot, frappe._dict(name="W")))
+			# One picture per role goes in (the boards combine the rest); the logo is pasted, never an input.
+			self.assertEqual({"character": ["AV1"], "product": ["AV3"]}, _pipeline_reference_inputs(shot, frappe._dict(name="W")))
 
 	def test_a_real_person_and_a_mascot_are_different_inputs_of_the_image_stage(self):
 		from unittest.mock import patch

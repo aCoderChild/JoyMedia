@@ -81,7 +81,7 @@ def _segment_plan(workflow, frame_count, continuation_workflow=None):
 
 def _pipeline_reference_inputs(shot, workflow):
 	"""Map a Shot's ordered references into the pipeline's first image stage."""
-	from .subject_overlay import DRAW, pasted_references
+	from .subject_overlay import DRAW, pasted_references, scene_mode
 	from .workflow_resolver import get_workflow_input_contract
 	from .workflow_routing import normalize_reference_role
 
@@ -108,10 +108,10 @@ def _pipeline_reference_inputs(shot, workflow):
 		if not asset_version:
 			continue
 		raw_role = frappe.scrub(reference.get("input_role") or reference.get("reference_role") or "")
-		if raw_role == "logo" or pasted_references([reference], character_mode):
+		if raw_role == "logo" or pasted_references([reference], character_mode, context=shot.get("references")):
 			continue  # cutouts are pasted over the keyframe, never an input of the image model
-		if character_mode == DRAW and raw_role == "character" and inputs.get("character"):
-			# One character picture goes in; every character of the scene is combined into its reference board.
+		if scene_mode(shot.get("references"), character_mode) == DRAW and raw_role in ("character", "product") and inputs.get(raw_role):
+			# One picture goes in per role; every character, and every product, of the scene is combined into a board.
 			continue
 		# Keep an already-concrete workflow role intact.  In particular, direct
 		# R2V uses ``product_reference`` for two scalar image slots; converting it

@@ -486,6 +486,33 @@ def _size_sentence(sized):
 	return ("Scale matters: " + "; ".join(parts) + ". ") if parts else ""
 
 
+def _product_note(shot, project):
+	"""Where the products are in a drawn scene: placed naturally in it, with no printed words."""
+	from .subject_overlay import describe_colours
+
+	labels = {
+		(row.get("asset_version") if hasattr(row, "get") else getattr(row, "asset_version", None)):
+		(row.get("label") if hasattr(row, "get") else getattr(row, "label", None))
+		for row in (project.get("references") or project.get("selected_media") or [])
+	}
+	colours = []
+	for reference in getattr(shot, "references", None) or []:
+		if _role_of(reference) != "product":
+			continue
+		version = reference.get("asset_version") if hasattr(reference, "get") else getattr(reference, "asset_version", None)
+		if version in labels:
+			colours.append(describe_colours(version).replace("mostly ", "") or "")
+	if not colours:
+		return ""
+	count = len(colours)
+	return (
+		f"The {'products' if count > 1 else 'product'} from the product reference "
+		f"({'; '.join(c for c in colours if c)}) {'sit' if count > 1 else 'sits'} naturally in the scene, on a table, "
+		"a counter or the floor within the characters' reach, resting on a surface and never held in front of anyone's feet, "
+		"with only soft, unreadable label texture. "
+	)
+
+
 def _draw_prompt(shot, project):
 	"""The keyframe prompt for "Draw in scene": the place, the action, and the mascots behaving like people.
 
@@ -531,6 +558,7 @@ def _draw_prompt(shot, project):
 			   "doing what the scene describes, seen in a medium or wide shot. " if has_person else "")
 			+ "Natural light, realistic composition."
 		)
+	product_note = _product_note(shot, project)
 	return (
 		f"{usable_setting(getattr(shot, 'setting_prompt', None))} {action}\n\n"
 		"The characters are cartoon mascot characters who act exactly like human people: they stand upright on two legs, "
@@ -539,7 +567,8 @@ def _draw_prompt(shot, project):
 		+ (f": {cast}" if cast else "")
 		+ ". They look like the characters in the reference picture, but not in its seated pose. "
 		+ size_rule
-		+ "Natural window light, realistic wide composition, a clear patch of floor in the lower foreground."
+		+ product_note
+		+ "Natural window light, realistic wide composition."
 	)
 
 
