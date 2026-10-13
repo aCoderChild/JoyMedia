@@ -352,3 +352,15 @@ class TestAudioLineLast(FrappeTestCase):
 		self.assertIsNone(_valid_character_mode("\\nDraw in scene\\nPaste exact art"))
 		self.assertIsNone(_valid_character_mode(""))
 		self.assertIsNone(_valid_character_mode(None))
+
+	def test_similes_and_texture_words_do_not_reach_the_video_model(self):
+		from joymedia.services.prompt_compiler import _scrub_printable
+
+		self.assertEqual(
+			"The mother presses a tissue to the kid's cheek. The kid laughs with eyes closed.",
+			_scrub_printable(
+				"The mother presses a tissue to the kid's cheek. The kid laughs with eyes closed as if leaning into "
+				"the fluffy cloud-like fur of the mother."
+			),
+		)
+		self.assertEqual("It is soft.", _scrub_printable("It is soft, like a cloud."))

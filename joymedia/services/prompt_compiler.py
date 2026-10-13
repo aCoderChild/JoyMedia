@@ -338,7 +338,8 @@ def _scrub_printable(text, packaging=True, zoom=True):
 	invents one otherwise); `zoom` removes zoom sentences (a zoom enlarges pasted products until their printing is
 	redrawn). Both are decided per scene by `_scrub_options`.
 	"""
-	text = PRINTABLE.sub("", str(text or ""))
+	text = SIMILE.sub("", PRINTABLE.sub("", str(text or "")))
+	text = TEXTURE_WORDS.sub("", text)
 	if packaging:
 		text = PACKAGING.sub(lambda m: "product packs" if (m.group(1) or "").lower() in ("boxes",) else "product pack", text)
 	if zoom:
@@ -346,6 +347,11 @@ def _scrub_printable(text, packaging=True, zoom=True):
 	text = re.sub(r"\s{2,}", " ", text)
 	return re.sub(r"\s+([.,;:!?])", r"\1", text).strip()
 
+
+# Similes and texture words describe how something looks, and the video model takes them literally ("as if leaning
+# into cloud-soft fur" grows fur on a smooth mascot). The first frame already shows how everything looks.
+SIMILE = re.compile(r"[,;]?\s*\b(?:as if|as though|as (?:a|an|the)\b|like (?:a|an|the)\b|resembling)\b[^.;!?]*", re.I)
+TEXTURE_WORDS = re.compile(r"\b(?:fluffy|furry|fuzzy|cloud[- ]?like|cloud[- ]?soft|woolly|velvety|silky|plush)\b[ -]*", re.I)
 
 PACKAGING_WORDS = re.compile(r"\b(box|boxes|carton|cartons|case|cases|crate|crates|hộp|thùng)\b", re.I)
 
