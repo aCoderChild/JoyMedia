@@ -11,6 +11,8 @@ import re
 import frappe
 from frappe import _
 
+from .tuning import tune
+
 CUE_PREFIXES = {"sfx": "SFX", "bgm": "BGM", "music": "BGM", "nhạc": "BGM", "âm thanh": "SFX"}
 CUE_LINE = re.compile(r"^\s*([^\W\d_]+(?: [^\W\d_]+)?)\s*[:：]\s*(.+)$", re.UNICODE)
 
@@ -214,7 +216,7 @@ def check_scene_audio(project_name, apply=True):
 	timeline; scenes that pass keep their own audio. Returns one row per scene with its score and what was done.
 	With apply=0 nothing is changed.
 	"""
-	from joymedia.services.audio_check import BORDERLINE_MAX, EFFECTS_FLATNESS_MIN, effects_score
+	from joymedia.services.audio_check import effects_score
 	from joymedia.services.timeline_editor import _invalidate_project_output
 	from joymedia.services.video_composer import _get_asset_version_path
 
@@ -241,13 +243,13 @@ def check_scene_audio(project_name, apply=True):
 			frappe.db.set_value("Timeline Clip", clip.name, "enabled", 1, update_modified=False)
 		score = effects_score(_get_asset_version_path(clip.source_asset_version))
 		row = {"shot": clip.shot, "shot_name": frappe.db.get_value("Shot", clip.shot, "shot_name"), "score": score, "action": "kept"}
-		if score is not None and EFFECTS_FLATNESS_MIN <= score < BORDERLINE_MAX:
+		if score is not None and tune("effects_flatness_min") <= score < tune("effects_borderline_max"):
 			row["listen"] = True  # accepted, but close to the line
-		if score is not None and score < EFFECTS_FLATNESS_MIN:
+		if score is not None and score < tune("effects_flatness_min"):
 			row["action"] = "replaced"
 			if apply:
 				row["layer_score"] = _place_best_effects_layer(project.name, clip.shot)
-				if row["layer_score"] is None or row["layer_score"] < EFFECTS_FLATNESS_MIN:
+				if row["layer_score"] is None or row["layer_score"] < tune("effects_flatness_min"):
 					row["action"] = "silenced"
 				frappe.db.set_value("Timeline Clip", clip.name, "enabled", 0, update_modified=False)
 		report.append(row)
@@ -257,7 +259,6 @@ def check_scene_audio(project_name, apply=True):
 	return report
 
 
-EFFECT_LAYER_ATTEMPTS = 3
 
 
 def _layer_is_stale(layer_clip, video_version):
@@ -273,7 +274,7 @@ def _place_best_effects_layer(project_name, shot_name):
 	seed). A layer that never passes is not placed: a silent scene is safer than one with music or a voice.
 	Returns the best score reached.
 	"""
-	from joymedia.services.audio_check import EFFECTS_FLATNESS_MIN, effects_score
+	from joymedia.services.audio_check import effects_score
 	from joymedia.services.video_composer import _get_asset_version_path
 
 	base = scene_sound_prompt(frappe.get_doc("Shot", shot_name))
@@ -283,16 +284,16 @@ def _place_best_effects_layer(project_name, shot_name):
 		"rustling, crinkling and soft impacts only, dry, no tones, no humming",
 	]
 	best = None
-	for attempt in range(EFFECT_LAYER_ATTEMPTS):
+	for attempt in range(int(tune("effect_layer_attempts"))):
 		version = generate_cue_audio(
 			project_name, shot_name, "SFX", prompt=prompts[attempt % len(prompts)], seed_offset=attempt, place=False
 		)["asset_version"]
 		score = effects_score(_get_asset_version_path(version))
 		if best is None or (score or 0) > (best[1] or 0):
 			best = (version, score)
-		if score is not None and score >= EFFECTS_FLATNESS_MIN:
+		if score is not None and score >= tune("effects_flatness_min"):
 			break
-	if best[1] is not None and best[1] >= EFFECTS_FLATNESS_MIN:
+	if best[1] is not None and best[1] >= tune("effects_flatness_min"):
 		place_cue_audio(project_name, shot_name, "SFX", best[0])
 	return best[1]
 

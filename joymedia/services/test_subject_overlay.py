@@ -215,3 +215,17 @@ class TestEmptierSide(FrappeTestCase):
 		self.assertEqual(0.73, subject_overlay._emptier_side(image))
 		mirrored = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
 		self.assertEqual(0.27, subject_overlay._emptier_side(mirrored))
+
+
+class TestTuning(FrappeTestCase):
+	def test_a_site_can_override_a_tunable_and_unknown_keys_are_ignored(self):
+		from joymedia.services.tuning import DEFAULTS, tune
+
+		self.assertEqual(DEFAULTS["character_height"], tune("character_height"))
+		with patch.object(frappe, "conf", frappe._dict(joymedia_tuning={"character_height": 0.5, "nonsense": 1})):
+			self.assertEqual(0.5, tune("character_height"))
+			self.assertEqual(DEFAULTS["product_height"], tune("product_height"))
+		small = layout((720, 1280), [("character", 464, 560)])[0]
+		with patch.object(frappe, "conf", frappe._dict(joymedia_tuning={"character_height": 0.5})):
+			large = layout((720, 1280), [("character", 464, 560)])[0]
+		self.assertGreater(large[3], small[3])

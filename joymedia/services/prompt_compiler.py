@@ -151,7 +151,7 @@ def compile_segment_prompt_from_snapshot(
 		return base
 	has_references = bool(shot.get("references") if hasattr(shot, "get") else getattr(shot, "references", None))
 	if prompt_source == "motion" and has_references:
-		base = _scrub_paragraphs(base)
+		base = _scrub_paragraphs(base, **_scrub_options(shot, project))
 	start_seconds = None
 	end_seconds = None
 	if segment_start_frame is not None and segment_effective_frames is not None:
@@ -167,7 +167,7 @@ def compile_segment_prompt_from_snapshot(
 	)
 	if prompt_source == "motion" and has_references:
 		# The action plan is written from the beat's own text, so it needs the same treatment.
-		timing = _scrub_printable(timing)
+		timing = _scrub_printable(timing, **_scrub_options(shot, project))
 	if segment_index == 1:
 		return finish((
 			f"{base}\n\nThis is segment 1 of {segment_count}. "
@@ -198,7 +198,8 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 
 	if prompt_source == "motion" and getattr(shot, "references", None):
 		prompt = "\n\n".join(
-			_scrub_printable(part) if not part.lstrip().startswith("Audio:") else part for part in prompt.split("\n\n")
+			_scrub_printable(part, **_scrub_options(shot, project)) if not part.lstrip().startswith("Audio:") else part
+			for part in prompt.split("\n\n")
 		)
 	if prompt_source == "image":
 		from .subject_overlay import DRAW, EMPTY_SETTING, PASTE, pasted_references, usable_setting
@@ -329,24 +330,52 @@ PACKAGING = re.compile(r"\b(?:(?:large|big|huge|giant|bulk)\s+)?(boxes|box|carto
 CAMERA_ZOOM = re.compile(r"[^.!?]*\b(?:zoom\w*|push(?:es|ing)?[ -]in|dolly\w* in)\b[^.!?]*[.!?]?", re.I)
 
 
-def _scrub_printable(text):
+def _scrub_printable(text, packaging=True, zoom=True):
 	"""Make movement text safe for a first frame: no printed quantities or quoted words, no placement, no extras.
 
-	The video model prints whatever words it is given onto objects, draws a second copy of anything placed
-	somewhere new, invents any box or carton the text names (the only packaging is the products in the frame),
-	and a zoom enlarges the pasted products until their printing is redrawn.
+	The video model prints whatever words it is given onto objects and draws a second copy of anything placed
+	somewhere new. `packaging` turns a box or carton the text names into the product packs in the frame (the model
+	invents one otherwise); `zoom` removes zoom sentences (a zoom enlarges pasted products until their printing is
+	redrawn). Both are decided per scene by `_scrub_options`.
 	"""
 	text = PRINTABLE.sub("", str(text or ""))
-	text = PACKAGING.sub(lambda m: "product packs" if (m.group(1) or "").lower() in ("boxes",) else "product pack", text)
-	text = CAMERA_ZOOM.sub("", text)
+	if packaging:
+		text = PACKAGING.sub(lambda m: "product packs" if (m.group(1) or "").lower() in ("boxes",) else "product pack", text)
+	if zoom:
+		text = CAMERA_ZOOM.sub("", text)
 	text = re.sub(r"\s{2,}", " ", text)
 	return re.sub(r"\s+([.,;:!?])", r"\1", text).strip()
 
 
-def _scrub_paragraphs(text):
+PACKAGING_WORDS = re.compile(r"\b(box|boxes|carton|cartons|case|cases|crate|crates|hộp|thùng)\b", re.I)
+
+
+def _scrub_options(shot, project):
+	"""Which of the optional scrub rules suit this scene.
+
+	Packaging nouns are left alone when the scene's own product is a box or carton (its label says so), and zooms
+	are left alone unless a real product image is pasted into the first frame.
+	"""
+	from .subject_overlay import pasted_references
+
+	references = (shot.get("references") if hasattr(shot, "get") else getattr(shot, "references", None)) or []
+	labels = {
+		(row.get("asset_version") if hasattr(row, "get") else getattr(row, "asset_version", None)):
+		(row.get("label") if hasattr(row, "get") else getattr(row, "label", None)) or ""
+		for row in (project.get("references") or project.get("selected_media") or [])
+	}
+	product_labels = " ".join(
+		labels.get(r.get("asset_version") if hasattr(r, "get") else getattr(r, "asset_version", None), "")
+		for r in references if _role_of(r) == "product"
+	)
+	pasted_product = any(p["role"] == "product" for p in pasted_references(references, "Paste exact art"))
+	return {"packaging": not PACKAGING_WORDS.search(product_labels), "zoom": pasted_product}
+
+
+def _scrub_paragraphs(text, **options):
 	"""Scrub the movement paragraphs of a prompt; the audio line is left as it is."""
 	return "\n\n".join(
-		part if part.lstrip().startswith("Audio:") else _scrub_printable(part) for part in str(text).split("\n\n")
+		part if part.lstrip().startswith("Audio:") else _scrub_printable(part, **options) for part in str(text).split("\n\n")
 	)
 
 

@@ -283,7 +283,9 @@ class TestAudioLineLast(FrappeTestCase):
 			motion_plan_json='{"actions":[{"start":0,"end":7,"action":"Camera zooms in. The mother winks at top right corner."}]}',
 		)
 		project = frappe._dict(generation_mode="Multi-shot", global_instructions="", references=[{"asset_version": "AV1", "label": "Mascot"}])
-		with patch("joymedia.services.subject_overlay.describe_colours", return_value=""):
+		with patch("joymedia.services.subject_overlay.describe_colours", return_value=""), patch(
+			"joymedia.services.prompt_compiler._scrub_options", return_value={"packaging": True, "zoom": True}
+		):
 			prompt = compile_segment_prompt_from_snapshot(shot, project, 1, 2, fps=24, segment_start_frame=0, segment_effective_frames=124)
 		movement = prompt.split("Identity consistency")[0].split("The first frame contains")[0]
 		for unwanted in ("30 packs", "large box", "zooms", "top right"):
@@ -327,3 +329,18 @@ class TestAudioLineLast(FrappeTestCase):
 		)
 		self.assertEqual("", _size_sentence([("a", 1.0), ("b", 0.95)]))
 		self.assertEqual("", _size_sentence([("a", 1.0)]))
+
+	def test_a_box_shaped_product_keeps_its_box_and_a_zoom_stays_unless_a_product_is_pasted(self):
+		from joymedia.services.prompt_compiler import _scrub_options, _scrub_printable
+
+		shot = frappe._dict(references=[{"reference_role": "Product", "asset_version": "AV1"}])
+		project = frappe._dict(references=[{"asset_version": "AV1", "label": "Cereal box"}])
+		with patch("joymedia.services.subject_overlay._cutout_path", return_value=None):
+			options = _scrub_options(shot, project)
+		self.assertEqual({"packaging": False, "zoom": False}, options)
+		self.assertEqual(
+			"She opens the box. The camera slowly zooms in.", _scrub_printable("She opens the box. The camera slowly zooms in.", **options)
+		)
+		with patch("joymedia.services.subject_overlay._cutout_path", return_value="/p.png"):
+			project = frappe._dict(references=[{"asset_version": "AV1", "label": "Tissue pack"}])
+			self.assertEqual({"packaging": True, "zoom": True}, _scrub_options(shot, project))

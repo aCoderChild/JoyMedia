@@ -14,17 +14,10 @@ from pathlib import Path
 
 import frappe
 
+from .tuning import tune
+
 PASTE_ROLES = frozenset({"character", "product", "logo"})
 DRAW, PASTE = "Draw in scene", "Paste exact art"
-# Fractions of the canvas: a character is the hero of the frame, a product sits in front of it.
-CHARACTER_HEIGHT, CHARACTER_WIDTH, CHARACTER_BASELINE = 0.36, 0.70, 0.86
-PRODUCT_HEIGHT, PRODUCT_WIDTH, PRODUCT_BASELINE = 0.15, 0.40, 0.90
-# With a character, a product stands beside it on the same floor, slightly nearer the camera.
-PRODUCT_NEAR, PRODUCT_OFFSET, EDGE_MARGIN = 0.03, 0.22, 0.02
-COLOUR_MATCH = 0.16
-LOGO_MAX_WIDTH, LOGO_MAX_HEIGHT, LOGO_MARGIN = 0.22, 0.08, 0.04
-OPAQUE_BELOW = 250
-
 DEFAULT_SETTING = "A bright, softly lit interior with a window and a clean floor, shallow depth of field."
 SUBJECT_WORDS = re.compile(
 	r"\b(hands?|fingers?|arms?|paws?|person|people|man|woman|child|kids?|babys?|bears?|cubs?|animals?|mascots?|"
@@ -62,7 +55,7 @@ def _cutout_path(asset_version):
 		with Image.open(path) as image:
 			if image.mode not in ("RGBA", "LA", "P") and "transparency" not in image.info:
 				return None
-			if image.convert("RGBA").getchannel("A").getextrema()[0] >= OPAQUE_BELOW:
+			if image.convert("RGBA").getchannel("A").getextrema()[0] >= tune("opaque_below"):
 				return None
 	except OSError:
 		return None
@@ -211,10 +204,10 @@ def layout(canvas, sizes_by_role, product_center=None):
 		# The width budget is shared in proportion to each character's relative size.
 		share = scale / sum(value / max(scales) for value in scales)
 		box_width, box_height = _fit(
-			width, height, CHARACTER_WIDTH * canvas_width * share, CHARACTER_HEIGHT * canvas_height * scale
+			width, height, tune("character_width") * canvas_width * share, tune("character_height") * canvas_height * scale
 		)
 		center = (rank + 1) * canvas_width / (count + 1)
-		boxes[index] = (round(center - box_width / 2), round(CHARACTER_BASELINE * canvas_height) - box_height, box_width, box_height)
+		boxes[index] = (round(center - box_width / 2), round(tune("character_baseline") * canvas_height) - box_height, box_width, box_height)
 	hero = boxes[groups["character"][0]] if groups["character"] else None
 	count = len(groups["product"])
 	family_x = 0.0
@@ -222,10 +215,10 @@ def layout(canvas, sizes_by_role, product_center=None):
 		_role_name, width, height, *rest = sizes_by_role[index]
 		scale = rest[0] if rest else 1
 		box_width, box_height = _fit(
-			width, height, PRODUCT_WIDTH * canvas_width / max(1, count * 0.75) * scale, PRODUCT_HEIGHT * canvas_height * scale
+			width, height, tune("product_width") * canvas_width / max(1, count * 0.75) * scale, tune("product_height") * canvas_height * scale
 		)
 		if hero and count == 1:
-			center = hero[0] + hero[2] / 2 + PRODUCT_OFFSET * canvas_width
+			center = hero[0] + hero[2] / 2 + tune("product_offset") * canvas_width
 		elif count == 1:
 			center = (product_center or 0.5) * canvas_width
 		else:
@@ -240,14 +233,14 @@ def layout(canvas, sizes_by_role, product_center=None):
 			boxes[index][0] -= spread
 	for index in groups["product"]:
 		center, box_width, box_height = boxes[index]
-		bottom = (hero[1] + hero[3] + PRODUCT_NEAR * canvas_height) if hero else PRODUCT_BASELINE * canvas_height
-		margin = EDGE_MARGIN * canvas_width
+		bottom = (hero[1] + hero[3] + tune("product_near") * canvas_height) if hero else tune("product_baseline") * canvas_height
+		margin = tune("edge_margin") * canvas_width
 		x = min(max(center - box_width / 2, margin), canvas_width - margin - box_width)
 		boxes[index] = (round(x), round(min(bottom, 0.97 * canvas_height)) - box_height, box_width, box_height)
 	for rank, index in enumerate(groups["logo"]):
 		_role_name, width, height, *_scale = sizes_by_role[index]
-		box_width, box_height = _fit(width, height, LOGO_MAX_WIDTH * canvas_width, LOGO_MAX_HEIGHT * canvas_height)
-		margin = round(LOGO_MARGIN * canvas_width)
+		box_width, box_height = _fit(width, height, tune("logo_max_width") * canvas_width, tune("logo_max_height") * canvas_height)
+		margin = round(tune("logo_margin") * canvas_width)
 		boxes[index] = (margin if rank % 2 == 0 else canvas_width - margin - box_width, margin, box_width, box_height)
 	return boxes
 
@@ -305,7 +298,7 @@ def composite_subjects(background_bytes, subjects, shadows=True):
 		if subject["role"] != "logo":
 			room = canvas.crop((max(0, x), max(0, y), min(canvas.width, x + width), min(canvas.height, y + height)))
 			tint = Image.new("RGB", resized.size, room.convert("RGB").resize((1, 1), Image.Resampling.BOX).getpixel((0, 0)))
-			rgb = Image.blend(resized.convert("RGB"), tint, COLOUR_MATCH)
+			rgb = Image.blend(resized.convert("RGB"), tint, tune("colour_match"))
 			# Light falls off toward the floor: darken the lowest quarter a little, as in contact with the ground.
 			ramp = Image.linear_gradient("L").resize(rgb.size).point(lambda v: round((v - 190) * 0.6) if v > 190 else 0)
 			rgb = Image.composite(Image.new("RGB", rgb.size, (0, 0, 0)), rgb, ramp)
