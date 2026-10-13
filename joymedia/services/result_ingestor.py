@@ -149,6 +149,10 @@ def _log_sync_failure(attempt, message, *args):
 	)
 
 
+# Why a dependent task was cancelled when its predecessor failed; retrying the predecessor revives exactly these.
+CASCADE_CANCEL_SUMMARY = "Skipped because the previous scene segment failed."
+
+
 def _will_retry_automatically(attempt):
 	"""Mirror the orchestrator's automatic retry rule for a just-failed attempt."""
 	from .generation_orchestrator import MAX_AUTOMATIC_RETRIES
@@ -196,7 +200,7 @@ def _fail_attempt(attempt, error_summary, error_details, failure_class):
 			{
 				"status": "Cancelled",
 				"failure_class": "Cancelled",
-				"error_summary": "Skipped because the previous scene segment failed.",
+				"error_summary": CASCADE_CANCEL_SUMMARY,
 			},
 			update_modified=False,
 		)

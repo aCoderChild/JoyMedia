@@ -1019,8 +1019,32 @@ def _create_retry_attempt(run, jobs):
 	return False
 
 
+def _revive_cancelled_dependents(job_name):
+	"""Return the tasks cancelled only because `job_name` failed to Ready, recursively.
+
+	A failure cancels everything that depends on it. Retrying the failed task must undo that, or the
+	retry succeeds and the run still cannot finish. Tasks cancelled for any other reason are left alone.
+	"""
+	from .result_ingestor import CASCADE_CANCEL_SUMMARY
+
+	revived = []
+	for dependent in frappe.get_all(
+		"Generation Task",
+		filters={"depends_on_task": job_name, "status": "Cancelled", "error_summary": CASCADE_CANCEL_SUMMARY},
+		pluck="name",
+	):
+		frappe.db.set_value(
+			"Generation Task", dependent, {"status": "Ready", "failure_class": None, "error_summary": None},
+			update_modified=False,
+		)
+		revived.append(dependent)
+		revived.extend(_revive_cancelled_dependents(dependent))
+	return revived
+
+
 def _retry_and_submit_latest_failed_attempts(job, reason):
 	"""Create and submit exactly one successor for each terminal failed attempt chain."""
+	_revive_cancelled_dependents(job.name)
 	attempts = _get_job_attempts(job.name)
 	if not job.get("inputs") and callable(
 		getattr(job, "get_shot_input_snapshot", None)

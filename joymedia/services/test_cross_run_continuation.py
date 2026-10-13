@@ -146,3 +146,21 @@ class TestCrossRunContinuation(FrappeTestCase):
 		self.assertTrue(result["retryable"])
 		attempt.reload()
 		self.assertEqual(("Pending", "Not Submitted"), (attempt.status, attempt.submission_state))
+
+	def test_retrying_a_task_revives_only_the_dependents_its_failure_cancelled(self):
+		from joymedia.services.generation_orchestrator import _revive_cancelled_dependents
+		from joymedia.services.result_ingestor import CASCADE_CANCEL_SUMMARY
+
+		run = self._run({})
+		parent = self._task(run, self.shot1)
+		cascaded = self._task(run, self.shot2, depends_on=parent.name)
+		cascaded.db_set({"status": "Cancelled", "error_summary": CASCADE_CANCEL_SUMMARY})
+		other_shot = self._shot(3, "New Scene")
+		by_hand = self._task(run, other_shot, depends_on=parent.name)
+		by_hand.db_set({"status": "Cancelled", "error_summary": "Cancelled by the user."})
+
+		revived = _revive_cancelled_dependents(parent.name)
+
+		self.assertEqual([cascaded.name], revived)
+		self.assertEqual("Ready", frappe.db.get_value("Generation Task", cascaded.name, "status"))
+		self.assertEqual("Cancelled", frappe.db.get_value("Generation Task", by_hand.name, "status"))
