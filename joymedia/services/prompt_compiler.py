@@ -300,7 +300,11 @@ def _kinship_hint(names):
 
 
 PRINTABLE = re.compile(
-	r"\(\s*\d[^)]*\)|\b\d+\s*(?:packs?|boxes|box|sheets?|ply|layers?|rolls?|pcs|pieces)\b|[\"“”][^\"“”]*[\"“”]", re.I
+	r"\(\s*\d[^)]*\)|\b\d+\s*(?:packs?|boxes|box|sheets?|ply|layers?|rolls?|pcs|pieces)\b|[\"“”][^\"“”]*[\"“”]"
+	# Where things stand is fixed by the first frame; a placement in the text makes the model draw a second copy.
+	r"|\b(?:at|in|on|to|from)\s+the\s+(?:(?:top|bottom|upper|lower)[ -]*)?(?:left|right|centre|center)"
+	r"(?:[ -]*(?:hand\s+)?(?:corner|side|of the (?:frame|screen)))?(?:\s+of the (?:frame|screen))?",
+	re.I,
 )
 
 

@@ -232,6 +232,15 @@ class TestAudioLineLast(FrappeTestCase):
 		from joymedia.services.prompt_compiler import _scrub_printable
 
 		self.assertEqual(
-			"Products in the centre beside the big box. The mother says.",
+			"Products beside the big box. The mother says.",
 			_scrub_printable('Products in the centre beside the big box (30 packs per box). The mother says "Buy now".'),
 		)
+
+	def test_placement_phrases_are_not_sent_to_the_video_model(self):
+		from joymedia.services.prompt_compiler import _scrub_printable
+
+		self.assertEqual(
+			"The mother winks and gives a thumbs up.",
+			_scrub_printable("The mother winks and gives a thumbs up at the top right corner of the frame."),
+		)
+		self.assertEqual("The kid sits.", _scrub_printable("The kid sits on the left side of the screen."))
