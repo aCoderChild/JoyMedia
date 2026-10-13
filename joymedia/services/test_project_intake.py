@@ -185,3 +185,25 @@ class TestSchedulerTickWarning(FrappeTestCase):
 
 	def test_a_one_minute_tick_is_fine(self):
 		self.assertEqual("done", self._steps(60)["scheduler"]["status"])
+
+
+class TestPdfImages(FrappeTestCase):
+	def test_pictures_are_extracted_with_alpha_and_page_text_and_small_ones_are_skipped(self):
+		import tempfile
+		from pathlib import Path
+
+		from PIL import Image
+
+		from joymedia.services.project_intake import extract_pdf_images
+
+		with tempfile.TemporaryDirectory() as folder:
+			path = Path(folder) / "catalogue.pdf"
+			big = Image.new("RGB", (300, 400), (200, 30, 30))
+			icon = Image.new("RGB", (40, 40), (0, 0, 0))
+			big.save(path, "PDF", save_all=True, append_images=[big, icon])
+			found = extract_pdf_images(path)
+		# The same picture on two pages is reported once; the icon is skipped.
+		self.assertEqual(1, len(found))
+		self.assertEqual((300, 400), (found[0]["width"], found[0]["height"]))
+		self.assertFalse(found[0]["has_alpha"])
+		self.assertTrue(found[0]["png"].startswith(b"\x89PNG"))

@@ -180,3 +180,78 @@ def get_project_readiness(project_name, lang=None):
 	)
 	blocking = [step for step in steps if step["status"] == "todo"]
 	return {"ready": not blocking, "steps": steps, "next": blocking[0]["key"] if blocking else None}
+
+
+
+def extract_pdf_images(pdf_path, min_side=200, max_images=150):
+	"""The usable pictures of a PDF (a product catalogue, a brand book): one dict per picture.
+
+	Each has its page, size, PNG bytes, whether it has real transparency (a cutout can be pasted into a frame;
+	an opaque photo can only guide the image model) and the text of its page, which names what it shows.
+	Tiny pictures (icons, bullets) and repeats of the same pixels are skipped.
+	"""
+	import hashlib
+	import io
+
+	from PIL import Image
+	from pypdf import PdfReader
+
+	reader = PdfReader(str(pdf_path))
+	seen, found = set(), []
+	for number, page in enumerate(reader.pages, 1):
+		try:
+			text = " ".join((page.extract_text() or "").split())[:200]
+		except Exception:  # an unreadable text layer must not stop the pictures
+			text = ""
+		for picture in page.images:
+			try:
+				image = Image.open(io.BytesIO(picture.data))
+				image.load()
+			except Exception:
+				continue
+			if min(image.size) < min_side:
+				continue
+			rgba = image.convert("RGBA")
+			digest = hashlib.sha256(rgba.tobytes()).hexdigest()
+			if digest in seen:
+				continue
+			seen.add(digest)
+			output = io.BytesIO()
+			rgba.save(output, "PNG")
+			found.append({
+				"page": number, "name": picture.name, "width": rgba.width, "height": rgba.height,
+				"has_alpha": rgba.getchannel("A").getextrema()[0] < 250, "page_text": text, "png": output.getvalue(),
+			})
+			if len(found) >= max_images:
+				return found
+	return found
+
+
+@frappe.whitelist()
+def add_pdf_images_to_project(project_name, file_name, pages=None):
+	"""Add the pictures of an uploaded PDF to a project as references, with roles guessed from each page's text.
+
+	`pages` optionally limits which pages (a list or comma-separated numbers). Returns what was added so the
+	client can correct a role in the studio.
+	"""
+	from joymedia.api.assets import select_project_asset
+	from joymedia.services.media_asset_service import create_media_asset
+
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	wanted = {int(n) for n in (frappe.parse_json(pages) if isinstance(pages, str) and pages.startswith("[") else str(pages or "").split(",")) if str(n).strip()}
+	pdf = frappe.get_doc("File", file_name)
+	added = []
+	for item in extract_pdf_images(pdf.get_full_path()):
+		if wanted and item["page"] not in wanted:
+			continue
+		label = f"{pdf.file_name.rsplit('.', 1)[0][:40]} p{item['page']} {item['name'].rsplit('.', 1)[0]}"
+		role = infer_reference_role(item["page_text"]) if item["has_alpha"] else "General"
+		image_file = frappe.get_doc({
+			"doctype": "File", "file_name": f"{label}.png".replace("/", "-"), "content": item["png"], "is_private": 1,
+		}).insert(ignore_permissions=True)
+		asset = create_media_asset(label, ROLE_CATEGORY[role], file_url=image_file.file_url, file_name=image_file.name)
+		select_project_asset(project.name, asset["media_asset"], role if role != "General" else "General", label)
+		added.append({"label": label, "page": item["page"], "role": role, "has_alpha": item["has_alpha"]})
+	frappe.db.commit()
+	return added
