@@ -27,7 +27,7 @@ class Shot(Document):
 		fields = (
 			"shot_number", "duration_seconds", "planned_frame_count", "generation_prompt",
 			"image_prompt", "motion_plan_json",
-			"start_state", "end_state", "handoff_type", "generation_inputs",
+			"start_state", "end_state", "handoff_type", "continuity_mode", "generation_inputs",
 		)
 		if any(self.has_value_changed(fieldname) for fieldname in fields):
 			frappe.throw("Generation-affecting Shot fields are read-only while a Generation Run is active.")

@@ -926,14 +926,11 @@ const activeTimelineVideoClip = computed(() => {
   ) || videoClips.value.at(-1) || null;
 });
 
-// The caption is only shown on the last scene, matching the export behavior.
+// Use the same per-scene caption source as the export cue builder.
 const previewCaption = computed(() => {
   if (!Number(videoSettings.value?.show_captions ?? 1)) return "";
-  const lastShot = storyboardShots.value[storyboardShots.value.length - 1];
-  if (!lastShot) return "";
   const shotName = studioMode.value === "edit" ? activeTimelineVideoClip.value?.shot : activeSelectedShot.value?.name;
-  if (shotName !== lastShot.name) return "";
-  return lastShot.caption || "";
+  return storyboardShots.value.find((shot) => shot.name === shotName)?.caption || "";
 });
 
 const selectedShotFrame = computed(() => {

@@ -187,7 +187,7 @@ def _active_project_shots(project_name, fields=None):
 	)
 
 
-def build_project_snapshot(project):
+def build_project_snapshot(project, *, require_production_pipeline=False):
 	settings = _project_settings(project)
 	configured_pipeline = settings.generation_pipeline or ""
 	# A run may carry a project-level pipeline only when its immutable final stage
@@ -199,6 +199,29 @@ def build_project_snapshot(project):
 		steps = get_pipeline_steps(configured_pipeline)
 		if not steps or steps[-1].workflow != settings.workflow:
 			configured_pipeline = ""
+	if not configured_pipeline and settings.workflow:
+		# A project without an explicit pin inherits the pipeline once, when its
+		# snapshot is created. Every route in that run then receives this same
+		# immutable pipeline version rather than resolving the active setting again.
+		from joymedia.services.generation_pipeline_service import get_active_generation_pipeline, get_pipeline_steps
+
+		try:
+			active_pipeline = get_active_generation_pipeline()
+		except frappe.ValidationError as exc:
+			if require_production_pipeline or "No active Generation Pipeline is configured" not in str(exc):
+				raise
+			active_pipeline = None
+		if not active_pipeline:
+			# Draft planning intentionally has no executable route until an
+			# operator promotes a pipeline.
+			active_pipeline = None
+		else:
+			steps = get_pipeline_steps(active_pipeline.name)
+			if not steps or steps[-1].workflow != settings.workflow:
+				frappe.throw(
+					_("The active Generation Pipeline does not end with this project's Generation Workflow.")
+				)
+			configured_pipeline = active_pipeline.name
 	workflow_fps = frappe.db.get_value("Generation Workflow", settings.workflow, "output_fps") if settings.workflow else None
 	default_workflow = (
 		frappe.get_doc("Generation Workflow", settings.workflow)
@@ -277,6 +300,7 @@ def build_project_snapshot(project):
 					"new_scene" if shot_snapshot["continuity_mode"] == "New Scene" else shot_snapshot["handoff_type"]
 				),
 				motion_plan_json=shot_snapshot["motion_plan_json"],
+				pipeline_name=configured_pipeline or None,
 			)
 			shot_snapshot.update({
 				"workflow": route["workflow"],

@@ -65,6 +65,27 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			(row.asset_version, row.reference_role) for row in shot.generation_inputs
 		])
 
+	def test_changing_a_used_project_reference_role_requires_reapproval(self):
+		project, _ = _create_project("Reference Approval Invalidation", self.workflow)
+		_asset, version = _create_asset_version(project, "Image", "png")
+		project.append("selected_media", {"asset_version": version.name, "reference_role": "Product"})
+		project.save(ignore_permissions=True)
+		shot = frappe.get_doc({
+			"doctype": "Shot",
+			"media_project": project.name,
+			"shot_number": 1,
+			"duration_seconds": 5,
+			"generation_prompt": "A product close-up.",
+			"generation_inputs": [{"asset_version": version.name, "reference_role": "Product"}],
+		}).insert(ignore_permissions=True)
+		project.storyboard_approval_status = "Approved"
+		project.save(ignore_permissions=True)
+
+		project.selected_media[0].reference_role = "Environment"
+		project.save(ignore_permissions=True)
+
+		self.assertEqual("Ready for Review", project.storyboard_approval_status)
+
 	def test_selected_media_supports_image_video_and_audio(self):
 		from joymedia.services.project_context import _get_project_selected_assets
 
@@ -315,7 +336,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			events.append("recalculate")
 			return recalculate_shot_durations(media_project_name)
 
-		def snapshot(current_project):
+		def snapshot(current_project, **_kwargs):
 			events.append("snapshot")
 			return build_project_snapshot(current_project)
 

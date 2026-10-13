@@ -74,3 +74,22 @@ class TestWorkflowRouting(FrappeTestCase):
 		self.assertEqual("unpromoted_workflow", route["strategy"])
 		self.assertFalse(route["generation_pipeline"])
 		self.assertEqual(["person"], [item["reference_role"] for item in route["references"]])
+
+	@patch("joymedia.services.workflow_routing.frappe.get_doc")
+	@patch("joymedia.services.workflow_resolver.get_workflow_input_contract", return_value=[])
+	@patch("joymedia.services.generation_pipeline_service.get_pipeline_steps")
+	@patch("joymedia.services.generation_pipeline_service.get_active_generation_pipeline")
+	def test_explicit_pipeline_pin_is_not_replaced_by_current_active_pipeline(
+		self, active_pipeline, pipeline_steps, _input_contract, get_doc
+	):
+		pipeline_steps.return_value = [SimpleNamespace(workflow="WF-IMAGE"), SimpleNamespace(workflow="WF-VIDEO")]
+		get_doc.side_effect = lambda doctype, name: (
+			SimpleNamespace(name=name) if doctype == "Generation Pipeline" else SimpleNamespace(name=name)
+		)
+
+		route = resolve_shot_render_route(
+			SimpleNamespace(name="WF-VIDEO"), [], pipeline_name="PIPE-PINNED"
+		)
+
+		self.assertEqual("PIPE-PINNED", route["generation_pipeline"])
+		active_pipeline.assert_not_called()

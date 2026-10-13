@@ -78,6 +78,37 @@ class TestSceneTakes(FrappeTestCase):
 		# Whole-video regeneration also replaces its prior chosen take.
 		self.assertFalse(_keeps_selected_output(whole_regeneration, self.shot.name))
 
+	@patch("joymedia.services.scene_takes.frappe.db.exists", return_value=True)
+	@patch("joymedia.services.scene_takes.frappe.db.get_value")
+	@patch("joymedia.services.scene_takes.frappe.get_all")
+	@patch("joymedia.services.scene_takes.frappe.get_doc")
+	def test_continuation_regeneration_uses_selected_predecessor_lineage(
+		self, get_doc, get_all, get_value, exists
+	):
+		continuing = frappe._dict(name="SHOT-00003", shot_number=3, continuity_mode="Continue")
+		get_doc.return_value = continuing
+		get_all.return_value = [frappe._dict(
+			name="SHOT-00002", selected_output_asset_version="ASTV-00002", review_status="Approved"
+		)]
+		get_value.side_effect = ["ATT-00002", "TASK-00002"]
+
+		result = scene_takes._continuation_source_task(frappe._dict(name="PROJ-00001"), [continuing.name])
+
+		self.assertEqual("TASK-00002", result)
+		exists.assert_called_once_with(
+			"Generation Artifact",
+			{"generation_attempt": "ATT-00002", "artifact_role": "Last Frame", "frappe_file": ["is", "set"]},
+		)
+
+	def test_continuation_regeneration_requires_approved_predecessor_output(self):
+		with patch("joymedia.services.scene_takes.frappe.get_doc", return_value=frappe._dict(
+			name="SHOT-00003", shot_number=3, continuity_mode="Continue"
+		)), patch("joymedia.services.scene_takes.frappe.get_all", return_value=[frappe._dict(
+			name="SHOT-00002", selected_output_asset_version=None, review_status="Pending Review"
+		)]):
+			with self.assertRaises(frappe.ValidationError):
+				scene_takes._continuation_source_task(frappe._dict(name="PROJ-00001"), ["SHOT-00003"])
+
 	@patch("joymedia.services.project_context._busy_shots")
 	def test_only_a_scene_that_is_rendering_is_blocked(self, busy):
 		busy.return_value = [self.shot.name]

@@ -190,7 +190,11 @@ def update_project_shot(project_name, shot_name, values):
 		continuity_mode = str(values["continuity_mode"] or "").strip()
 		if continuity_mode not in {"Continue", "New Scene"}:
 			frappe.throw(_("Continuity mode must be Continue or New Scene."))
+		if continuity_mode == "Continue" and int(shot.shot_number or 0) <= 1:
+			frappe.throw(_("The first scene cannot continue from a previous scene."))
 		continuity_changed = continuity_mode != (shot.continuity_mode or "New Scene")
+		if continuity_changed and shot.name in _busy_shots(project.name):
+			frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))
 		shot.continuity_mode = continuity_mode
 	else:
 		continuity_changed = False

@@ -43,7 +43,7 @@ def normalize_reference_role(value):
 	return aliases.get(role, role or "general")
 
 
-def resolve_shot_render_route(default_workflow, references, *, handoff_type="", motion_plan_json=""):
+def resolve_shot_render_route(default_workflow, references, *, handoff_type="", motion_plan_json="", pipeline_name=None):
 	"""Return the one configured production pipeline for a shot.
 
 	Reference quantity never selects a model.  The first stage's declared binding
@@ -54,12 +54,12 @@ def resolve_shot_render_route(default_workflow, references, *, handoff_type="", 
 	from joymedia.services.workflow_resolver import get_workflow_input_contract
 
 	try:
-		pipeline = get_active_generation_pipeline()
+		pipeline = frappe.get_doc("Generation Pipeline", pipeline_name) if pipeline_name else get_active_generation_pipeline()
 	except frappe.ValidationError as exc:
 		# Storyboards remain editable before an operator promotes a pipeline. This
 		# is not a rendering fallback: MediaProject.generate_video requires the
 		# promoted pipeline before it can create a Generation Run.
-		if "No active Generation Pipeline is configured" not in str(exc):
+		if pipeline_name or "No active Generation Pipeline is configured" not in str(exc):
 			raise
 		contract = {item["role"]: item for item in get_workflow_input_contract(default_workflow)}
 		return {

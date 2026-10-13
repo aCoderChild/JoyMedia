@@ -58,18 +58,14 @@ def _start_takes_run(project, shot_names, retry_reason=None):
 		frappe.throw(_("Review and approve the storyboard before generating another take."))
 	from joymedia.services.project_context import build_project_snapshot
 	from joymedia.services.generation_orchestrator import start_run_internal
-	from joymedia.services.generation_pipeline_service import get_pipeline_steps, pipeline_for_final_workflow
 
-	snapshot_json, snapshot_hash = build_project_snapshot(project)
-	# Regeneration must use the same selected keyframe→video pipeline as the
-	# original run.  Re-resolve only when a project was changed to a compatible
-	# workflow, never by model-name convention.
-	pipeline_name = project.generation_pipeline or None
-	if pipeline_name and get_pipeline_steps(pipeline_name)[-1].workflow != project.workflow:
-		pipeline_name = None
+	snapshot_json, snapshot_hash = build_project_snapshot(project, require_production_pipeline=True)
+	# The snapshot selected the production pipeline once. Reuse that immutable
+	# choice rather than re-reading the active setting after a possible promotion.
+	pipeline_name = (frappe.parse_json(snapshot_json) or {}).get("generation_pipeline")
 	if not pipeline_name:
-		pipeline = pipeline_for_final_workflow(project.workflow)
-		pipeline_name = pipeline.name if pipeline else None
+		frappe.throw(_("Generation requires an explicitly promoted Generation Pipeline."))
+	continuation_from_task = _continuation_source_task(project, shot_names)
 	run = frappe.get_doc(
 		{
 			"doctype": "Generation Run",
@@ -81,6 +77,7 @@ def _start_takes_run(project, shot_names, retry_reason=None):
 				"shot_names": shot_names,
 				"replace_selection": True,
 				"retry_reason": retry_reason or None,
+				"continuation_from_task": continuation_from_task,
 			}),
 			"workflow": project.workflow,
 			"generation_pipeline": pipeline_name,
@@ -91,6 +88,47 @@ def _start_takes_run(project, shot_names, retry_reason=None):
 	result = start_run_internal(run.name)
 	frappe.db.commit()
 	return {"run": run.name, "status": result["status"]}
+
+
+def _continuation_source_task(project, shot_names):
+	"""Freeze an independently regenerated continuing shot to its selected predecessor.
+
+	A continuation cannot safely invent a new first frame. Its predecessor must
+	have an approved selected output backed by a completed Generation Attempt and
+	a durable Last Frame artifact.
+	"""
+	if len(shot_names) != 1:
+		return None
+	shot = frappe.get_doc("Shot", shot_names[0])
+	if shot.continuity_mode != "Continue":
+		return None
+	previous = frappe.get_all(
+		"Shot",
+		filters={
+			"media_project": project.name,
+			"is_removed": 0,
+			"shot_number": ["<", shot.shot_number],
+		},
+		fields=["name", "selected_output_asset_version", "review_status"],
+		order_by="shot_number desc, name desc",
+		limit=1,
+	)
+	if not previous:
+		frappe.throw(_("A continuing scene needs a preceding scene."))
+	previous = previous[0]
+	if not previous.selected_output_asset_version or previous.review_status != "Approved":
+		frappe.throw(_("The preceding scene needs an approved selected output before this continuation can regenerate."))
+	attempt_name = frappe.db.get_value(
+		"Asset Version", previous.selected_output_asset_version, "source_generation_attempt"
+	)
+	if not attempt_name:
+		frappe.throw(_("The preceding scene output has no generation lineage for frame continuation."))
+	task_name = frappe.db.get_value("Generation Attempt", attempt_name, "generation_task")
+	if not task_name or not frappe.db.exists(
+		"Generation Artifact", {"generation_attempt": attempt_name, "artifact_role": "Last Frame", "frappe_file": ["is", "set"]}
+	):
+		frappe.throw(_("The preceding scene has no usable Last Frame artifact for continuation."))
+	return task_name
 
 
 @frappe.whitelist()

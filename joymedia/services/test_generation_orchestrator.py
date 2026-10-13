@@ -160,6 +160,27 @@ class TestGenerationOrchestrator(FrappeTestCase):
 			result,
 		)
 
+	@patch(
+		"joymedia.services.workflow_resolver.get_workflow_input_contract",
+		return_value=[{
+			"role": "product_reference",
+			"accepted_media_type": "Image",
+			"allow_multiple": False,
+			"max_count": 2,
+		}],
+	)
+	def test_pipeline_reference_inputs_reject_excess_references(self, _get_contract):
+		with self.assertRaises(frappe.ValidationError):
+			generation_orchestrator._pipeline_reference_inputs(
+				{"references": [
+					{"asset_version": "ASTV-00001", "reference_role": "product_reference"},
+					{"asset_version": "ASTV-00002", "reference_role": "product_reference"},
+					{"asset_version": "ASTV-00003", "reference_role": "product_reference"},
+				]},
+				frappe._dict(name="WF-LIMITED"),
+			)
+
+	@patch("joymedia.services.generation_orchestrator._require_project_generation_authorization")
 	@patch("joymedia.services.generation_orchestrator.filelock", return_value=nullcontext())
 	@patch("joymedia.services.generation_orchestrator.frappe.db.commit")
 	@patch("joymedia.services.generation_orchestrator.refresh_generation_state_for_attempt")
@@ -178,10 +199,11 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		refresh_state,
 		commit,
 		filelock,
+		authorize,
 	):
 		job = frappe._dict(name="JOB-00001", status="Failed")
 		created_attempt = frappe._dict(name="ATT-00003", status="Queued")
-		get_doc.side_effect = [job, created_attempt]
+		get_doc.side_effect = [job, frappe._dict(media_project="PROJ-00001"), frappe._dict(), created_attempt]
 		get_job_attempts.return_value = [
 			frappe._dict(name="ATT-00001", status="Failed", retry_of=None),
 			frappe._dict(name="ATT-00002", status="Failed", retry_of="ATT-00001"),
@@ -198,6 +220,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		commit.assert_called_once_with()
 		self.assertEqual(result["attempts"], [{"name": "ATT-00003", "status": "Queued", "deferred": False}])
 
+	@patch("joymedia.services.generation_orchestrator._require_project_generation_authorization")
 	@patch("joymedia.services.generation_orchestrator.filelock", return_value=nullcontext())
 	@patch("joymedia.services.generation_orchestrator.frappe.db.commit")
 	@patch("joymedia.services.generation_orchestrator._retry_and_submit_latest_failed_attempts")
@@ -212,13 +235,14 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		retry_and_submit,
 		commit,
 		filelock,
+		authorize,
 	):
 		run = MagicMock(name="RUN-00001", status="Failed", completed_at="2026-09-08")
 		run.name = "RUN-00001"
 		run.status = "Failed"
 		job = MagicMock(name="JOB-00002", status="Failed", completed_at="2026-09-08")
 		job.name = "JOB-00002"
-		get_doc.side_effect = [run, job]
+		get_doc.side_effect = [frappe._dict(media_project="PROJ-00001"), run, job]
 		get_all.return_value = ["JOB-00002"]
 		retry_and_submit.return_value = [
 			{"name": "ATT-00002", "status": "Queued", "deferred": False}
@@ -246,6 +270,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 			deduplicate=True,
 		)
 
+	@patch("joymedia.services.generation_orchestrator._require_project_generation_authorization")
 	@patch("joymedia.services.generation_orchestrator._enqueue")
 	@patch("joymedia.services.generation_orchestrator.validate_generation_preflight")
 	@patch("joymedia.services.generation_orchestrator.frappe.has_permission")
@@ -258,6 +283,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		has_permission,
 		validate_generation_preflight,
 		enqueue,
+		authorize,
 	):
 		run = MagicMock()
 		run.name = "RUN-00001"

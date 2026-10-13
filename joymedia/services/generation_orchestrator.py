@@ -114,8 +114,14 @@ def _pipeline_reference_inputs(shot, workflow):
 		values = inputs.setdefault(role, [])
 		max_count = role_limits.get(role)
 		# The workflow contract uses zero for an unbounded File Paths role.
-		if not max_count or len(values) < max_count:
-			values.append(asset_version)
+		if max_count and len(values) >= max_count:
+			frappe.throw(
+				_("Workflow {0} accepts at most {1} reference input(s) for role '{2}', but Shot supplies more. "
+				  "Assign a supported reference board or remove the extra reference explicitly.").format(
+					workflow.name, max_count, role
+				)
+			)
+		values.append(asset_version)
 	return inputs
 
 
@@ -159,6 +165,7 @@ def start_run_internal(run_name: str):
 		frappe.throw(_("Generation Run {0} must be Draft to start.").format(run.name))
 
 	project = frappe.get_doc("Media Project", run.media_project)
+	_require_project_generation_authorization(project)
 	if not project.workflow:
 		frappe.throw(_("Media Project {0} has no Generation Workflow.").format(project.name))
 
@@ -478,11 +485,6 @@ def prepare_run(run_name: str):
 def validate_generation_preflight(project, workflow, shots, *, check_comfyui=False, execution_scope=None):
 	if not frappe.conf.get("comfyui_base_url"):
 		frappe.throw(_("comfyui_base_url is not configured."))
-	# Planning may use an unpromoted workflow, but a render must always resolve
-	# through an explicitly promoted production pipeline.
-	from joymedia.services.generation_pipeline_service import get_active_generation_pipeline
-
-	get_active_generation_pipeline()
 	object_info = None
 	if check_comfyui:
 		from .comfyui_client import get_object_info, get_system_stats
@@ -493,10 +495,12 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 	from joymedia.services.project_context import build_project_snapshot
 	from .workflow_profiles import choose_shot_workflow
 	try:
-		snapshot = json.loads(build_project_snapshot(project)[0])
+		snapshot = json.loads(build_project_snapshot(project, require_production_pipeline=True)[0])
 	except (TypeError, ValueError):
 		frappe.throw(_("The project snapshot could not be prepared for preflight."))
 	snapshot_shots = {row.get("shot"): row for row in snapshot.get("shots") or []}
+	if not snapshot.get("generation_pipeline"):
+		frappe.throw(_("Generation requires an explicitly promoted Generation Pipeline."))
 
 	for shot_row in shots:
 		shot = frappe.get_doc("Shot", shot_row.name)
@@ -760,6 +764,7 @@ def finalize_run_from_ui(run_name: str):
 def retry_failed_jobs_from_ui(run_name: str):
 	"""Retry and submit the latest failed Attempt chain for every failed Job in a Run."""
 	frappe.has_permission("Generation Run", "write", run_name, throw=True)
+	_require_project_generation_authorization(frappe.get_doc("Media Project", frappe.db.get_value("Generation Run", run_name, "media_project")))
 	return retry_failed_jobs_internal(run_name)
 
 
@@ -800,6 +805,8 @@ def retry_generation_task_from_ui(job_name: str, reason: str = "Execution Failur
 	frappe.has_permission("Generation Task", "write", job_name, throw=True)
 	with filelock(f"joymedia-retry-job-{job_name}"):
 		job = frappe.get_doc("Generation Task", job_name)
+		run = frappe.get_doc("Generation Run", job.generation_run)
+		_require_project_generation_authorization(frappe.get_doc("Media Project", run.media_project))
 		if job.status != "Failed":
 			frappe.throw(_("Only Failed Generation Tasks can be retried."))
 
@@ -809,6 +816,13 @@ def retry_generation_task_from_ui(job_name: str, reason: str = "Execution Failur
 
 		frappe.db.commit()
 		return {"generation_task": job.name, "attempts": results}
+
+
+def _require_project_generation_authorization(project):
+	"""Apply project access and storyboard approval at every GPU-work boundary."""
+	project._require_write_access()
+	if project.storyboard_approval_status != "Approved":
+		frappe.throw(_("Review and approve the storyboard before starting or retrying generation."))
 
 
 def finalize_run(run_name: str):

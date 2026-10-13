@@ -76,6 +76,35 @@ class MediaProject(Document):
 		)
 		if previous and any(self.get(fieldname) != previous.get(fieldname) for fieldname in previous):
 			self.storyboard_approval_status = "Ready for Review"
+			return
+		# Adding material to the project library does not alter an approved shot.
+		# Removing or re-roling an image already assigned to a Shot does, so make
+		# that dependency explicit instead of invalidating every library edit.
+		previous_doc = self.get_doc_before_save()
+		if not previous_doc:
+			return
+		previous_roles = {
+			row.asset_version: row.reference_role or "General"
+			for row in previous_doc.selected_media or []
+			if row.asset_version
+		}
+		current_roles = {
+			row.asset_version: row.reference_role or "General"
+			for row in self.selected_media or []
+			if row.asset_version
+		}
+		shot_names = frappe.get_all(
+			"Shot", filters={"media_project": self.name, "is_removed": 0}, pluck="name"
+		)
+		used_versions = set(
+			frappe.get_all(
+				"Shot Reference",
+				filters={"parenttype": "Shot", "parent": ["in", shot_names]},
+				pluck="asset_version",
+			)
+		) if shot_names else set()
+		if any(current_roles.get(version) != previous_roles.get(version) for version in used_versions):
+			self.storyboard_approval_status = "Ready for Review"
 
 	def _validate_generation_affecting_changes(self):
 		if self.is_new() or not frappe.db.exists("Media Project", self.name):
@@ -371,7 +400,7 @@ class MediaProject(Document):
 				fields=["name", "shot_number", "planned_frame_count"],
 			)
 			validate_generation_preflight(self, workflow, shots, check_comfyui=True)
-			project_snapshot_json, project_snapshot_hash = build_project_snapshot(self)
+			project_snapshot_json, project_snapshot_hash = build_project_snapshot(self, require_production_pipeline=True)
 			snapshot = frappe.parse_json(project_snapshot_json)
 			# A whole-video request replaces existing selected takes once its new
 			# renders complete. A first render has no selection and remains unchanged.

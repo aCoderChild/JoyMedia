@@ -735,6 +735,14 @@ def _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps):
 	source_out = min(planned_frames, max_frames) if max_frames else planned_frames
 	if source_out <= 0:
 		return timeline_cursor
+	# Imported source timing is an approved editorial placement, not a duration
+	# hint.  Preserve explicit gaps so they can be resolved visibly with a hold,
+	# transition, end card, or an additional shot instead of being silently closed.
+	imported_start = getattr(shot, "source_start_seconds", None)
+	if getattr(shot, "source_timing", None) and imported_start is not None:
+		timeline_start = max(0, round(float(imported_start) * fps))
+	else:
+		timeline_start = timeline_cursor
 	video_clip = frappe.get_doc(
 		{
 			"doctype": "Timeline Clip",
@@ -743,8 +751,8 @@ def _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps):
 			"clip_order": order,
 			"track_type": "Video",
 			"track_index": 0,
-			"timeline_start_frame": timeline_cursor,
-			"initial_timeline_start_frame": timeline_cursor,
+			"timeline_start_frame": timeline_start,
+			"initial_timeline_start_frame": timeline_start,
 			"enabled": 1,
 			"source_asset_version": shot.selected_output_asset_version,
 			"source_in_frame": 0,
@@ -766,8 +774,8 @@ def _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps):
 				"track_type": "Audio",
 				"track_index": 0,
 				"linked_video_clip": video_clip.name,
-				"timeline_start_frame": timeline_cursor,
-				"initial_timeline_start_frame": timeline_cursor,
+				"timeline_start_frame": timeline_start,
+				"initial_timeline_start_frame": timeline_start,
 				"enabled": 1,
 				"source_asset_version": audio_version,
 				"source_in_frame": 0,
@@ -779,7 +787,7 @@ def _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps):
 				"transition_frames": 0,
 			}
 		).insert(ignore_permissions=True)
-	return timeline_cursor + source_out
+	return max(timeline_cursor, timeline_start + source_out)
 
 
 def _sync_missing_generated_shots_to_timeline(project):
@@ -802,7 +810,10 @@ def _sync_missing_generated_shots_to_timeline(project):
 	shots = frappe.get_all(
 		"Shot",
 		filters={"media_project": project.name, "is_removed": 0},
-		fields=["name", "shot_number", "planned_frame_count", "duration_seconds", "selected_output_asset_version"],
+		fields=[
+			"name", "shot_number", "planned_frame_count", "duration_seconds", "selected_output_asset_version",
+			"source_timing", "source_start_seconds", "source_end_seconds",
+		],
 		order_by="shot_number asc, name asc",
 	)
 	created = False
