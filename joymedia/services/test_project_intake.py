@@ -207,3 +207,34 @@ class TestPdfImages(FrappeTestCase):
 		self.assertEqual((300, 400), (found[0]["width"], found[0]["height"]))
 		self.assertFalse(found[0]["has_alpha"])
 		self.assertTrue(found[0]["png"].startswith(b"\x89PNG"))
+
+
+class TestStudioSettings(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+		from joymedia.api.projects import create_project
+
+		self.project = create_project("Studio settings", "", "A film.")
+		self.addCleanup(frappe.db.rollback)
+
+	def test_the_three_modes_are_saved_validated_and_returned(self):
+		from joymedia.api.projects import save_project_video_settings
+
+		with patch.object(frappe.db, "commit"):
+			saved = save_project_video_settings(
+				self.project.name, 10, "Portrait", character_mode="Paste exact art", soundtrack_mode="Sound effects only",
+				planning_mode="Follow the sheet",
+			)
+		self.assertEqual(("Paste exact art", "Sound effects only", "Follow the sheet"), (
+			saved["character_mode"], saved["soundtrack_mode"], saved["planning_mode"]))
+		with self.assertRaises(frappe.ValidationError), patch.object(frappe.db, "commit"):
+			save_project_video_settings(self.project.name, 10, "Portrait", character_mode="Nonsense")
+
+	def test_a_reference_size_is_validated_and_saved(self):
+		from joymedia.api.assets import set_reference_size
+
+		with self.assertRaises(frappe.ValidationError):
+			set_reference_size(self.project.name, "AV-NONE", 0.5)
+		with self.assertRaises(frappe.ValidationError):
+			set_reference_size(self.project.name, "AV-NONE", 9)

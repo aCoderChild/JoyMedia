@@ -325,6 +325,7 @@
       @apply-asset-to-shot="applyAssetToShot"
       @remove-asset="removeReference"
       @update-asset-role="updateReferenceRole"
+      @update-asset-size="updateReferenceSize"
       @select-keyframe-target="onSelectKeyframe"
       @toggle-generation-mode="toggleContinuityMode"
       @change-shot-duration="changeShotDuration"
@@ -460,6 +461,7 @@ const {
   openPicker,
   addReference,
   updateReferenceRole,
+  updateReferenceSize,
   removeReference,
   archiveMediaAsset,
   setShotKeyframe,

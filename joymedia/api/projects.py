@@ -174,6 +174,9 @@ def get_project_workspace(name):
 			"show_captions": int(settings.show_captions or 0),
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
 			"export_quality": normalize_export_quality(settings.export_quality),
+			"character_mode": project.character_mode or "Draw in scene",
+			"soundtrack_mode": project.soundtrack_mode or "Full soundtrack",
+			"planning_mode": project.planning_mode or "Creative",
 			**_customer_style_details(settings),
 		} if settings.workflow else None),
 		"storyboard": storyboard,
@@ -313,6 +316,7 @@ def save_project_video_settings(
 	generation_mode=None, global_instructions=None, reference_mode=None,
 	quality_mode=None, soundtrack_prompt=None,
 	export_quality=None, show_captions=None, workflow=None, generation_pipeline=None,
+	character_mode=None, soundtrack_mode=None, planning_mode=None,
 ):
 	project = frappe.get_doc("Media Project", project_name)
 	return project.save_video_settings(
@@ -327,6 +331,9 @@ def save_project_video_settings(
 		show_captions=show_captions,
 		workflow=workflow,
 		generation_pipeline=generation_pipeline,
+		character_mode=character_mode,
+		soundtrack_mode=soundtrack_mode,
+		planning_mode=planning_mode,
 	)
 
 

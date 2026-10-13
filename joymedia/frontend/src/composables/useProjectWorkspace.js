@@ -76,6 +76,9 @@ export function useProjectWorkspace(projectName) {
         show_captions: settingsPayload.show_captions === false ? 0 : 1,
         workflow: settingsPayload.workflow || undefined,
         generation_pipeline: settingsPayload.generation_pipeline || "",
+        character_mode: settingsPayload.character_mode || undefined,
+        soundtrack_mode: settingsPayload.soundtrack_mode || undefined,
+        planning_mode: settingsPayload.planning_mode || undefined,
       });
       await fetchWorkspace();
       showSettings.value = false;

@@ -75,6 +75,21 @@ export function useProjectReferences(projectName, onRefresh) {
     }
   }
 
+  async function updateReferenceSize(asset, size) {
+    if (!asset?.asset_version) return;
+    try {
+      await call("joymedia.api.assets.set_reference_size", {
+        media_project: project(),
+        asset_version: asset.asset_version,
+        relative_size: size,
+      });
+      if (onRefresh) await onRefresh();
+      notify({ title: "Size updated", text: tr(`Relative size set to ${size}.`, `Đã đặt kích thước tương đối ${size}.`), type: "success" });
+    } catch (err) {
+      notify({ title: "Error", text: errorMessage(err, "Failed to update size."), type: "error" });
+    }
+  }
+
   async function removeReference(asset) {
     const version = asset?.asset_version;
     if (!version) return;
@@ -174,6 +189,7 @@ export function useProjectReferences(projectName, onRefresh) {
     openPicker,
     addReference,
     updateReferenceRole,
+    updateReferenceSize,
     removeReference,
     archiveMediaAsset,
     setShotKeyframe,

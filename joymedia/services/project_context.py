@@ -362,6 +362,7 @@ def _get_project_selected_assets(project):
 				reference_key=getattr(selection, "reference_key", None) or "",
 				reference_role=selection.reference_role or "General",
 				label=selection.label or "",
+				relative_size=float(getattr(selection, "relative_size", None) or 1),
 				asset_name=asset.asset_name,
 				media_type=asset.media_type,
 				asset_category=asset.asset_category,

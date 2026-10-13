@@ -323,6 +323,20 @@
             </select>
           </div>
 
+          <!-- How large a character or product appears next to the others -->
+          <div v-if="['Character', 'Person', 'Product'].includes(selectedAsset.reference_role)" class="space-y-1.5 pt-1">
+            <label class="block text-[11px] font-semibold text-ink-secondary">
+              {{ currentLang === 'vi' ? 'Kích thước tương đối (1 = bình thường, 0.4 = bé con):' : 'Relative size (1 = normal, 0.4 = a child beside a parent):' }}
+            </label>
+            <input
+              type="number" min="0.1" max="2" step="0.05"
+              :value="selectedAsset.relative_size ?? 1"
+              data-test="relative-size"
+              class="w-24 px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
+              @change="$emit('updateAssetSize', selectedAsset, Number($event.target.value))"
+            />
+          </div>
+
           <!-- Actions -->
           <div class="pt-2 border-t border-outline-border flex flex-col gap-2">
             <button
@@ -749,6 +763,7 @@ const emit = defineEmits([
   "applyAssetToShot",
   "removeAsset",
   "updateAssetRole",
+  "updateAssetSize",
   "selectKeyframeTarget",
   "toggleGenerationMode",
   "changeShotDuration",

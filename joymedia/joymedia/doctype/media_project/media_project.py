@@ -153,6 +153,9 @@ class MediaProject(Document):
 			"show_captions": int(settings.show_captions or 0),
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
 			"export_quality": normalize_export_quality(settings.export_quality),
+			"character_mode": self.character_mode or "Draw in scene",
+			"soundtrack_mode": self.soundtrack_mode or "Full soundtrack",
+			"planning_mode": self.planning_mode or "Creative",
 			**_customer_style_details(settings),
 		}
 
@@ -162,6 +165,7 @@ class MediaProject(Document):
 		generation_mode=None, global_instructions=None, reference_mode=None,
 		quality_mode=None, soundtrack_prompt=None,
 		export_quality=None, show_captions=None, workflow=None, generation_pipeline=None,
+		character_mode=None, soundtrack_mode=None, planning_mode=None,
 	):
 		self._require_write_access()
 		try:
@@ -200,6 +204,16 @@ class MediaProject(Document):
 			self.show_captions = 1 if str(show_captions).lower() in ("1", "true", "yes", "on") else 0
 		if soundtrack_prompt is not None:
 			self.soundtrack_prompt = str(soundtrack_prompt).strip()
+		for fieldname, value, allowed in (
+			("character_mode", character_mode, ("Draw in scene", "Paste exact art")),
+			("soundtrack_mode", soundtrack_mode, ("Full soundtrack", "Sound effects only", "Separate effects layer")),
+			("planning_mode", planning_mode, ("Creative", "Follow the sheet")),
+		):
+			if value in (None, ""):
+				continue
+			if value not in allowed:
+				frappe.throw(_("{0} must be one of: {1}.").format(self.meta.get_label(fieldname), ", ".join(allowed)))
+			setattr(self, fieldname, value)
 		self.export_quality = export_quality
 		self.workflow = workflow.name
 		self.generation_pipeline = pipeline_name

@@ -118,5 +118,25 @@ def select_project_reference(media_project, asset_name, reference_role="Product"
 
 
 @frappe.whitelist()
+def set_reference_size(media_project, asset_version, relative_size):
+	"""How large a character or product appears next to the others (1 = normal); a kid beside a parent is about 0.4."""
+	project = frappe.get_doc("Media Project", media_project)
+	project._require_write_access()
+	try:
+		size = float(relative_size)
+	except (TypeError, ValueError):
+		frappe.throw(_("Relative size must be a number."))
+	if not 0.1 <= size <= 2:
+		frappe.throw(_("Relative size must be between 0.1 and 2."))
+	row = next((r for r in project.selected_media or [] if r.asset_version == asset_version), None)
+	if not row:
+		frappe.throw(_("This image is not a reference of the project."))
+	row.relative_size = size
+	project.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {"asset_version": asset_version, "relative_size": size}
+
+
+@frappe.whitelist()
 def remove_project_reference(media_project, asset_version):
 	return remove_project_asset(media_project, asset_version)

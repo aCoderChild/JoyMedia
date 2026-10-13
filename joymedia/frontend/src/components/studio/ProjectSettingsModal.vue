@@ -118,6 +118,27 @@
           />
         </div>
 
+        <!-- How scenes are planned, how characters appear, what the soundtrack contains -->
+        <div v-for="choice in modeChoices" :key="choice.key" class="space-y-1.5">
+          <label class="block font-bold text-ink-primary">{{ choice.label }}</label>
+          <div class="grid gap-2" :class="choice.options.length > 2 ? 'grid-cols-3' : 'grid-cols-2'">
+            <button
+              v-for="option in choice.options"
+              :key="option.value"
+              type="button"
+              class="text-left px-3 py-2 rounded-xl border text-xs cursor-pointer"
+              :class="form[choice.key] === option.value
+                ? 'border-indigo-500 bg-indigo-500/20 text-ink-primary'
+                : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
+              :data-test="`${choice.key}-${option.value}`"
+              @click="form[choice.key] = option.value"
+            >
+              <span class="block font-semibold">{{ option.label }}</span>
+              <span class="block text-[10.5px] text-ink-muted mt-0.5">{{ option.hint }}</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Export quality -->
         <div class="space-y-1.5">
           <label class="block font-bold text-ink-primary">
@@ -205,7 +226,38 @@ const form = reactive({
   soundtrack_prompt: "",
   export_quality: "Draft 720p",
   show_captions: true,
+  character_mode: "Draw in scene",
+  soundtrack_mode: "Full soundtrack",
+  planning_mode: "Creative",
 });
+
+const modeChoices = computed(() => [
+  {
+    key: "planning_mode",
+    label: currentLang.value === "vi" ? "Lập kế hoạch cảnh:" : "Scene planning:",
+    options: [
+      { value: "Follow the sheet", label: currentLang.value === "vi" ? "Theo đúng kịch bản" : "Follow the sheet", hint: currentLang.value === "vi" ? "Giữ nguyên cảnh, nhân vật, âm thanh trong kịch bản; chỉ dịch." : "Keep the sheet's scenes, characters and sounds; only translate." },
+      { value: "Creative", label: currentLang.value === "vi" ? "Sáng tạo (AI)" : "Creative (AI)", hint: currentLang.value === "vi" ? "AI viết cảnh từ ý tưởng." : "The AI writes scenes from the idea." },
+    ],
+  },
+  {
+    key: "character_mode",
+    label: currentLang.value === "vi" ? "Nhân vật:" : "Characters:",
+    options: [
+      { value: "Draw in scene", label: currentLang.value === "vi" ? "Vẽ trong cảnh" : "Draw in scene", hint: currentLang.value === "vi" ? "Nhân vật hành động tự nhiên như người thật." : "Characters act naturally, like people." },
+      { value: "Paste exact art", label: currentLang.value === "vi" ? "Dán đúng ảnh gốc" : "Paste exact art", hint: currentLang.value === "vi" ? "Giữ nguyên tuyệt đối ảnh mascot, tư thế cố định." : "The mascot picture is placed unchanged, in its own pose." },
+    ],
+  },
+  {
+    key: "soundtrack_mode",
+    label: currentLang.value === "vi" ? "Âm thanh:" : "Sound:",
+    options: [
+      { value: "Full soundtrack", label: currentLang.value === "vi" ? "Đầy đủ" : "Full", hint: currentLang.value === "vi" ? "Giọng, hiệu ứng và nhạc do mô hình tạo." : "Voice, effects and music from the video model." },
+      { value: "Sound effects only", label: currentLang.value === "vi" ? "Chỉ hiệu ứng" : "Effects only", hint: currentLang.value === "vi" ? "Yêu cầu chỉ có hiệu ứng, không giọng, không nhạc nền." : "Asks for effects only: no voice, no background music." },
+      { value: "Separate effects layer", label: currentLang.value === "vi" ? "Lớp hiệu ứng riêng" : "Separate effects layer", hint: currentLang.value === "vi" ? "Thay âm thanh của mô hình bằng lớp hiệu ứng tạo riêng." : "Replaces the model's audio with a generated effects layer." },
+    ],
+  },
+]);
 
 const exportQualities = [
   { value: "Draft 720p", vi: "Nhanh · 720p", en: "Fast · 720p", viSub: "Tạo nhanh, phù hợp bản nháp", enSub: "Fast generation for drafts" },
@@ -225,6 +277,9 @@ watch(
       form.soundtrack_prompt = s.soundtrack_prompt || "";
       form.export_quality = s.export_quality === "Standard 1080p" ? "Draft 720p" : (s.export_quality || "Draft 720p");
       form.show_captions = Boolean(Number(s.show_captions ?? 1));
+      form.character_mode = s.character_mode || "Draw in scene";
+      form.soundtrack_mode = s.soundtrack_mode || "Full soundtrack";
+      form.planning_mode = s.planning_mode || "Creative";
     }
   },
   { immediate: true }
