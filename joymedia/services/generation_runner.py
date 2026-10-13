@@ -236,8 +236,10 @@ def reconcile_attempt_submission(attempt_name: str):
 				now(), get_datetime(attempt.modified or attempt.creation)
 			)
 			if age_seconds >= SUBMISSION_RECONCILE_TIMEOUT_SECONDS:
+				# Back to Pending so the dispatcher submits it again. The durable submission token is kept, so
+				# a prompt ComfyUI did accept in the meantime is still found and never duplicated.
 				attempt.status = "Pending"
-				attempt.submission_state = "Retrying"
+				attempt.submission_state = "Not Submitted"
 				attempt.save(ignore_permissions=True)
 				return {"retryable": True, "submission_token": attempt.submission_token}
 			return {"reconciling": True, "submission_token": attempt.submission_token}

@@ -123,3 +123,26 @@ class TestCrossRunContinuation(FrappeTestCase):
 		self.shot1.db_set("review_status", "Pending Review")
 		with self.assertRaises(frappe.ValidationError):
 			scene_takes._continuation_source_task(self.project, [self.shot2.name])
+
+
+	def test_a_submission_cut_short_becomes_submittable_again(self):
+		"""A restart between marking an attempt Submitting and ComfyUI answering must not strand the run."""
+		from joymedia.services.generation_runner import reconcile_attempt_submission
+
+		task = self._task(self._run({}), self.shot2)
+		task.db_set("status", "Queued")
+		attempt = frappe.get_doc({
+			"doctype": "Generation Attempt", "generation_task": task.name, "attempt_number": 1, "status": "Pending", "seed": 1,
+		}).insert(ignore_permissions=True)
+		frappe.db.set_value(
+			"Generation Attempt", attempt.name,
+			{"status": "Submitting", "submission_state": "Submitting", "submission_token": f"joymedia:{attempt.name}",
+			 "comfyui_endpoint_url": "http://127.0.0.1:8188", "modified": frappe.utils.add_to_date(None, minutes=-10)},
+			update_modified=False,
+		)
+		with patch("joymedia.services.generation_runner.find_prompt_by_client_id", return_value=None):
+			result = reconcile_attempt_submission(attempt.name)
+
+		self.assertTrue(result["retryable"])
+		attempt.reload()
+		self.assertEqual(("Pending", "Not Submitted"), (attempt.status, attempt.submission_state))
