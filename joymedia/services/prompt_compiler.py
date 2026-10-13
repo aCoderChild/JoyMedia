@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 
 import frappe
 
@@ -178,10 +179,11 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 		)
 
 	if prompt_source == "image":
-		from .subject_overlay import EMPTY_SETTING, pasted_references
+		from .subject_overlay import DEFAULT_SETTING, EMPTY_SETTING, pasted_references
 
 		if pasted_references(getattr(shot, "references", None)):
-			prompt = f"{prompt}\n\n{EMPTY_SETTING}"
+			# The real characters and products are pasted in afterwards, so the image model gets the place only.
+			prompt = f"{getattr(shot, 'setting_prompt', None) or DEFAULT_SETTING}\n\n{EMPTY_SETTING}"
 
 	global_instructions = str(project.get("global_instructions") or "").strip()
 	if global_instructions and include_global_instructions:
@@ -211,12 +213,14 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 			)
 	if prompt_source == "motion" and getattr(shot, "references", None):
 		# The video model keeps no identity of its own beyond the supplied frame and tends to redesign a
-		# character the moment the camera moves in close. Say so explicitly.
+		# character the moment the camera moves in close, or to invent a second one for any animal or person the
+		# text names. Say so explicitly.
 		prompt = (
 			f"{prompt}\n\n"
-			"Identity consistency: keep every character and object exactly as shown in the supplied first "
-			"frame (same colours, fur or material, face and proportions) in every camera angle, including "
-			"close-ups; never redesign or recolour them."
+			"Identity consistency: every character, animal or person named in this prompt is the one character "
+			"shown in the supplied first frame, and every product is the one shown there; never add another or a "
+			"second copy. Keep them exactly as shown (same colours, fur or material, face and proportions) in every "
+			"camera angle, including close-ups; never redesign or recolour them."
 		)
 	if prompt_source == "motion":
 		timing = temporal_timing_instruction(shot, is_final=is_final)
@@ -226,7 +230,11 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 	return prompt.strip()
 
 
-NO_VOICE_OR_MUSIC = "Sound effects only: no speech, no dialogue, no narration, no singing, no background music."
+NO_VOICE_OR_MUSIC = (
+	"Sound effects only: no speech, no dialogue, no narration, no singing, no laughing or other vocal sounds, "
+	"no background music."
+)
+VOCAL_SOUND = re.compile(r"\b(laugh\w*|giggl\w*|voice\w*|speak\w*|speech|talk\w*|sing\w*|song|cry\w*|scream\w*|shout\w*|whisper\w*|say\w*|hum\w*|gasp\w*)\b", re.I)
 
 
 def _audio_line_last(prompt, sound_effects_only=False):
@@ -244,6 +252,12 @@ def _audio_line_last(prompt, sound_effects_only=False):
 			part.strip() for line in audio for part in line.lstrip()[len("Audio:"):].strip().rstrip(".").split(";")
 			if part.strip() and not part.strip().casefold().startswith("music")
 		]
+		# A vocal sound inside a cue ("... Baby bear's giggling laughter.") is dropped with its sentence.
+		cues = [
+			" ".join(sentence for sentence in re.split(r"(?<=[.!])\s+", cue) if not VOCAL_SOUND.search(sentence))
+			for cue in cues
+		]
+		cues = [cue.rstrip(". ") for cue in cues if cue]
 		audio = [f"Audio: {'; '.join(cues)}. {NO_VOICE_OR_MUSIC}" if cues else f"Audio: {NO_VOICE_OR_MUSIC}"]
 	if not audio:
 		return prompt

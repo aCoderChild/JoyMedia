@@ -174,6 +174,8 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		"for it (paper, bottle, bag...) mean this product; never substitute a different product.",
 		"- image_prompt: English, at most 60 words. Describe only the first frame: subjects, setting, framing, "
 		"lighting. Include only what must appear. No text, captions or logos.",
+		"- setting_prompt: English, at most 30 words. Only the place, light and camera framing of the first frame: "
+		"no character, animal, hand, product, object in action or text.",
 		"- video_prompt: English, at most 80 words. What moves and how the camera moves, in time order, as one "
 		"continuous shot. Keep every action the beat requires; invent no claims or extra characters.",
 		"- image_prompt is ONE still frame, never a sequence of events. When a reference shows a pose, keep the "
@@ -193,7 +195,7 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		'table, holding a glass of orange juice, soft daylight, shallow depth of field." video_prompt "The mascot '
 		'tips the glass and juice spills across the table; the camera slowly pushes in as the mascot gasps."',
 		"",
-		'Return {"image_prompt":"","video_prompt":"","reference_keys":[],"continuity_mode":"New Scene",'
+		'Return {"image_prompt":"","setting_prompt":"","video_prompt":"","reference_keys":[],"continuity_mode":"New Scene",'
 		'"start_state":"","end_state":"","motion_plan":{"actions":[{"start":0,"end":0,"action":""}]},'
 		'"needs_editing":""}',
 	]
@@ -303,6 +305,7 @@ def normalize_production_shot(raw, *, reference_keys, duration, is_first):
 		notes.append(f"Needs editing: {needs_editing}")
 	return {
 		"image_prompt": image_prompt, "video_prompt": video_prompt, "reference_keys": keys,
+		"setting_prompt": " ".join(str(raw.get("setting_prompt") or "").split())[:300],
 		"continuity_mode": "New Scene" if is_first else mode,
 		"start_state": " ".join(str(raw.get("start_state") or "").split())[:300],
 		"end_state": " ".join(str(raw.get("end_state") or "").split())[:300],
@@ -315,6 +318,7 @@ def apply_production_shot(project, shot, plan):
 	from joymedia.api.storyboard import _assign_shot_references
 
 	shot.image_prompt = plan["image_prompt"]
+	shot.setting_prompt = plan.get("setting_prompt", "")
 	shot.generation_prompt = plan["video_prompt"] + (f"\n\n{plan['audio']}" if plan.get("audio") else "")
 	shot.motion_plan_json = frappe.as_json(plan["motion_plan"])
 	shot.start_state, shot.end_state = plan["start_state"], plan["end_state"]

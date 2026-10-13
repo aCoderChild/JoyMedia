@@ -252,6 +252,30 @@ class TestSilentScenesAreNotAmplified(FrappeTestCase):
 			self.assertTrue(_is_audible(quiet, 2))
 
 
+class TestSoundEffectsOnlyMode(FrappeTestCase):
+	def _sources(self, mode):
+		from joymedia.services.video_composer import _get_audio_sources
+
+		clips = [
+			frappe._dict(name="SRC", audio_role="Source", timeline_start_frame=0, source_in_frame=0, source_out_frame=48,
+				fade_in_frames=0, fade_out_frames=0, gain_db=0, duck_others=0),
+			frappe._dict(name="FX", audio_role="SFX", timeline_start_frame=0, source_in_frame=0, source_out_frame=48,
+				fade_in_frames=0, fade_out_frames=0, gain_db=0, duck_others=0),
+		]
+		with patch("joymedia.services.video_composer._get_timeline_audio_path", return_value="/x.wav"), patch(
+			"joymedia.services.video_composer._is_audible", return_value=True
+		):
+			return _get_audio_sources(frappe._dict(soundtrack_mode=mode), 10, clips, 24)
+
+	def test_full_soundtrack_keeps_the_video_models_audio(self):
+		self.assertEqual(2, len(self._sources("Full soundtrack")))
+
+	def test_sound_effects_only_drops_scene_audio_and_keeps_the_effects(self):
+		sources = self._sources("Sound effects only")
+		self.assertEqual(1, len(sources))
+		self.assertFalse(sources[0]["normalize_loudness"])
+
+
 class TestAudioSpansTheWholeFilm(FrappeTestCase):
 	def test_a_short_effect_is_padded_so_the_audio_track_is_as_long_as_the_video(self):
 		with tempfile.TemporaryDirectory(prefix="joymedia-pad-") as temp_dir:

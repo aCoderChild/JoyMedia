@@ -310,6 +310,7 @@ def prepare_run(run_name: str):
 								name=shot_name, shot_number=shot.get("shot_number"),
 								generation_prompt=shot.get("generation_prompt"),
 								image_prompt=shot.get("image_prompt"),
+								setting_prompt=shot.get("setting_prompt"),
 								motion_plan_json=shot.get("motion_plan_json"),
 								start_state=shot.get("start_state"), end_state=shot.get("end_state"),
 								handoff_type=shot.get("handoff_type"),

@@ -265,7 +265,7 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 		project.name,
 		fields=[
 			"name", "shot_number", "duration_seconds", "planned_frame_count", "generation_prompt",
-			"image_prompt", "motion_plan_json",
+			"image_prompt", "setting_prompt", "motion_plan_json",
 			"start_state", "end_state", "handoff_type", "continuity_mode",
 		],
 	):
@@ -276,6 +276,7 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 				"duration_seconds": float(shot.duration_seconds or 0),
 				"planned_frame_count": int(shot.planned_frame_count or 0),
 				"image_prompt": shot.image_prompt or "",
+				"setting_prompt": getattr(shot, "setting_prompt", None) or "",
 				"generation_prompt": shot.generation_prompt or "",
 				"motion_plan_json": shot.motion_plan_json or "",
 				"start_state": shot.start_state or "",

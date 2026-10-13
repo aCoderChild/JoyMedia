@@ -14,13 +14,13 @@ from pathlib import Path
 import frappe
 
 PASTE_ROLES = frozenset({"character", "product", "logo"})
-# Fractions of the canvas height, except logos which are bounded by both width and height.
-SUBJECT_HEIGHT = {"character": 0.62, "product": 0.40}
-BASELINE = 0.94
-SPACING_MARGIN = 0.90
+# Fractions of the canvas: a character is the hero of the frame, a product sits in front of it.
+CHARACTER_HEIGHT, CHARACTER_WIDTH, CHARACTER_BASELINE = 0.58, 0.85, 0.90
+PRODUCT_HEIGHT, PRODUCT_WIDTH, PRODUCT_BASELINE = 0.20, 0.45, 0.97
 LOGO_MAX_WIDTH, LOGO_MAX_HEIGHT, LOGO_MARGIN = 0.22, 0.08, 0.04
 OPAQUE_BELOW = 250
 
+DEFAULT_SETTING = "A bright, softly lit interior with a window and a clean floor, shallow depth of field."
 EMPTY_SETTING = (
 	"Show only the empty setting, with clear open floor or table space in the lower middle of the frame. "
 	"Do not draw any character, mascot, animal, product, packaging, logo or text."
@@ -65,30 +65,41 @@ def pasted_references(references):
 	return pasted
 
 
+def _fit(width, height, max_width, max_height):
+	"""One uniform scale factor, so the aspect ratio is the asset's own."""
+	scale = min(max_width / width, max_height / height)
+	return round(width * scale), round(height * scale)
+
+
 def layout(canvas, sizes_by_role):
 	"""Place each subject: boxes (x, y, width, height) with the asset's aspect ratio unchanged.
 
-	`sizes_by_role` is a list of (role, width, height) of the real assets. Characters and products stand on a
-	common baseline, evenly spaced; logos sit in the top corners.
+	`sizes_by_role` is a list of (role, width, height) of the real assets. Characters stand evenly spaced on a
+	baseline, products sit in front along the bottom edge, logos in the top corners.
 	"""
 	canvas_width, canvas_height = canvas
-	subjects = [i for i, (role, _w, _h) in enumerate(sizes_by_role) if role != "logo"]
 	boxes = [None] * len(sizes_by_role)
-	for rank, index in enumerate(subjects):
-		role, width, height = sizes_by_role[index]
-		slot = SPACING_MARGIN * canvas_width / (len(subjects) + 1)
-		scale = min(SUBJECT_HEIGHT[role] * canvas_height / height, slot / width)
-		box_width, box_height = round(width * scale), round(height * scale)
-		center = (rank + 1) * canvas_width / (len(subjects) + 1)
-		boxes[index] = (round(center - box_width / 2), round(BASELINE * canvas_height - box_height), box_width, box_height)
-	logos = [i for i, (role, _w, _h) in enumerate(sizes_by_role) if role == "logo"]
-	for rank, index in enumerate(logos):
+	groups = {role: [i for i, item in enumerate(sizes_by_role) if item[0] == role] for role in ("character", "product", "logo")}
+	for rank, index in enumerate(groups["character"]):
 		_role_name, width, height = sizes_by_role[index]
-		scale = min(LOGO_MAX_WIDTH * canvas_width / width, LOGO_MAX_HEIGHT * canvas_height / height)
-		box_width, box_height = round(width * scale), round(height * scale)
+		count = len(groups["character"])
+		box_width, box_height = _fit(
+			width, height, CHARACTER_WIDTH * canvas_width / count, CHARACTER_HEIGHT * canvas_height
+		)
+		center = (rank + 1) * canvas_width / (count + 1)
+		boxes[index] = (round(center - box_width / 2), round(CHARACTER_BASELINE * canvas_height) - box_height, box_width, box_height)
+	for rank, index in enumerate(groups["product"]):
+		_role_name, width, height = sizes_by_role[index]
+		count = len(groups["product"])
+		box_width, box_height = _fit(width, height, PRODUCT_WIDTH * canvas_width / count, PRODUCT_HEIGHT * canvas_height)
+		# A lone product sits right of the characters' centre; several spread across the width.
+		center = 0.70 * canvas_width if count == 1 else (rank + 1) * canvas_width / (count + 1)
+		boxes[index] = (round(center - box_width / 2), round(PRODUCT_BASELINE * canvas_height) - box_height, box_width, box_height)
+	for rank, index in enumerate(groups["logo"]):
+		_role_name, width, height = sizes_by_role[index]
+		box_width, box_height = _fit(width, height, LOGO_MAX_WIDTH * canvas_width, LOGO_MAX_HEIGHT * canvas_height)
 		margin = round(LOGO_MARGIN * canvas_width)
-		x = margin if rank % 2 == 0 else canvas_width - margin - box_width
-		boxes[index] = (x, margin, box_width, box_height)
+		boxes[index] = (margin if rank % 2 == 0 else canvas_width - margin - box_width, margin, box_width, box_height)
 	return boxes
 
 

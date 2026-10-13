@@ -155,16 +155,52 @@ def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflo
 
 
 @frappe.whitelist()
-def use_sound_effects_only(project_name):
-	"""Ask the video workflow for sound effects only (no voice, no background music) in every scene.
+def use_sound_effects_only(project_name, prompts=None):
+	"""Make the soundtrack only sound effects: no voice, no music.
 
-	The workflow generates its soundtrack with the video from the prompt's `Audio:` line, so this only
-	switches the project's soundtrack mode; scenes must be rendered again for it to take effect.
+	The video model's own audio mixes voice, effects and music in one stream that cannot be split, so it is
+	dropped. Every rendered scene instead gets an effect layer generated from its own video (the storyboard's
+	SFX cue, else the sound described in the scene's prompt, else what the video shows), with speech and music
+	excluded. `prompts` optionally maps a shot name to the sound description to use.
 	"""
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
+	overrides = frappe.parse_json(prompts) if isinstance(prompts, str) and prompts else (prompts or {})
+	placed = {cue["shot"] for cue in build_audio_plan(project.name) if cue["role"] == "SFX" and cue["scheduled"]}
+	generated, skipped = [], []
+	for shot in frappe.get_all(
+		"Shot",
+		filters={"media_project": project.name, "is_removed": 0, "selected_output_asset_version": ["is", "set"]},
+		fields=["name", "shot_name", "generation_prompt", "audio_cues"],
+		order_by="shot_number asc",
+	):
+		if shot.name in placed:
+			skipped.append(shot.shot_name)
+			continue
+		prompt = overrides.get(shot.name) or scene_sound_prompt(shot)
+		result = generate_cue_audio(project.name, shot.name, "SFX", prompt=prompt)
+		generated.append({"shot_name": shot.shot_name, "asset_version": result["asset_version"], "prompt": prompt})
 	project.db_set("soundtrack_mode", "Sound effects only")
-	return {"mode": "Sound effects only"}
+	from joymedia.services.timeline_editor import _invalidate_project_output
+
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return {"generated": generated, "already_placed": skipped, "mode": "Sound effects only"}
+
+
+def scene_sound_prompt(shot):
+	"""Describe the effects of a scene: its SFX cue, else its prompt's audio line, else its action.
+
+	Vocal sounds (laughter, voices) are left out, since only sound effects are wanted.
+	"""
+	from joymedia.services.prompt_compiler import VOCAL_SOUND
+
+	cue = next((text for role, text in parse_audio_cues(shot.audio_cues) if role == "SFX"), None)
+	paragraphs = [p.strip() for p in str(shot.generation_prompt or "").split("\n\n") if p.strip()]
+	audio = next((p.split(":", 1)[1].strip() for p in paragraphs if p.casefold().startswith("audio:")), None)
+	text = cue or audio or (paragraphs[0][:200] if paragraphs else "")
+	sentences = [s for s in re.split(r"(?<=[.!])\s+", text) if not VOCAL_SOUND.search(s)]
+	return " ".join(sentences) or "natural foley sound effects of the action"
 
 
 def _shot_frame_range(project_name, shot_name):

@@ -69,11 +69,16 @@ class TestPastedReferences(FrappeTestCase):
 		from joymedia.services.prompt_compiler import compile_prompt_for_documents
 
 		shot = frappe._dict(
-			name="S", shot_number=1, image_prompt="A room.", generation_prompt="A room.",
+			name="S", shot_number=1, image_prompt="A room with a hand.", setting_prompt="A bright room.", generation_prompt="A room.",
 			references=[{"reference_role": "Character", "asset_version": "AV1"}],
 		)
 		with patch.object(subject_overlay, "_cutout_path", return_value="/a.png"):
-			self.assertIn(subject_overlay.EMPTY_SETTING, compile_prompt_for_documents(shot, {}, prompt_source="image"))
+			prompt = compile_prompt_for_documents(shot, {}, prompt_source="image")
+			self.assertIn(subject_overlay.EMPTY_SETTING, prompt)
+			self.assertNotIn("hand", prompt.split(subject_overlay.EMPTY_SETTING)[0])
+		shot.setting_prompt = ""
+		with patch.object(subject_overlay, "_cutout_path", return_value="/a.png"):
+			self.assertIn(subject_overlay.DEFAULT_SETTING, compile_prompt_for_documents(shot, {}, prompt_source="image"))
 		with patch.object(subject_overlay, "_cutout_path", return_value=None):
 			self.assertNotIn(subject_overlay.EMPTY_SETTING, compile_prompt_for_documents(shot, {}, prompt_source="image"))
 
