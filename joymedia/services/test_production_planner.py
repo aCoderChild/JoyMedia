@@ -384,3 +384,15 @@ class TestFollowTheSheet(FrappeTestCase):
 		self.assertTrue(motion.call_args.kwargs["single_view"])
 		self.assertEqual("A kitchen.", plan["setting_prompt"])
 		self.assertTrue(any("Needs editing" in n for n in plan["notes"]))
+
+	def test_a_text_the_model_will_not_translate_whole_is_translated_by_sentence(self):
+		project = frappe._dict(product_name="Tissue", project_name="P", selected_media=[])
+		answers = {
+			"Gấu con làm đổ cốc nước. Gấu con hoảng hốt.": {"english": "Gấu con làm đổ cốc nước. Gấu con hoảng hốt."},
+			"Gấu con làm đổ cốc nước.": {"english": "The kid knocks over the glass."},
+			"Gấu con hoảng hốt.": {"english": "The kid panics."},
+		}
+		with patch.object(planner, "_ask_planner", side_effect=lambda prompt, **k: next(
+			(v for key, v in answers.items() if f"TEXT: {key}" in prompt), {"english": ""}
+		)):
+			self.assertEqual("The kid knocks over the glass. The kid panics.", planner.translate("Gấu con làm đổ cốc nước. Gấu con hoảng hốt.", project))

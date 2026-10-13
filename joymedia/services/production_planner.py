@@ -106,8 +106,8 @@ def motion_only(project, text, references, inventory="", single_view=False, atte
 
 
 PLACE_WORDS = re.compile(
-	r"\b(kitchen|dining|table|room|home|house|garden|park|picnic|office|bathroom|bedroom|living|outdoor|street|beach|shop|store|"
-	r"studio|desk|car|bag|handbag)\b", re.I,
+	r"\b(kitchen|dining|room|home|house|garden|park|picnic|office|bathroom|bedroom|living|outdoor|outdoors|street|beach|shop|"
+	r"store|studio|restaurant|cafe|school|hospital|hotel)\b", re.I,
 )
 PRODUCT_WORDS = re.compile(r"\b(tissue|tissues|paper|napkin|napkins|pack|packs|bag|product|products|towel)\b", re.I)
 MANY_PRODUCTS = re.compile(r"\b(products|all (?:the )?products|range|lineup|collection)\b|các sản phẩm", re.I)
@@ -168,6 +168,9 @@ def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 	source = beat.get("action") if beat.get("action") and looks_english(beat.get("action")) else beat["summary"]
 	if not looks_english(source):
 		source = translate(source, project)
+	if split_screen:
+		# One clip cannot show several panels: keep the text up to the second listed view.
+		source = re.split(r"\s*(?:\b2[.)]|;\s*(?:2|two))\s*", source)[0].strip() or source
 	movement = ""
 	for attempt in range(2):
 		movement = motion_only(project, source, references, inventory, single_view=split_screen, attempt=attempt)
@@ -202,7 +205,7 @@ def _place(project, beat, attempt=0):
 	place = " ".join(str((raw or {}).get("place") or "").split())
 	# A place has no verbs: an action sentence ("Water stain ... is absorbed") is not one.
 	is_action = re.search(r"\b(is|are|was|were|being|absorb\w*|plac\w*|pull\w*|lift\w*|hold\w*|pour\w*|spill\w*)\b", place, re.I)
-	return place if looks_english(place) and len(place.split()) <= 25 and not is_action else ""
+	return place if looks_english(place) and len(place.split()) <= 25 and not is_action and PLACE_WORDS.search(place) else ""
 
 
 def project_reference_options(project):
@@ -280,6 +283,19 @@ def translate(text, project):
 		english = str((raw or {}).get("english") or "").strip()
 		if english and looks_english(english):
 			return english
+	# A long text the model would not translate is translated a sentence at a time; a sentence it still cannot
+	# translate is left out rather than sent to the video model in Vietnamese.
+	sentences = [x.strip() for x in re.split(r"(?<=[.!?;])\s+|\n+", text) if x.strip()]
+	if len(sentences) > 1:
+		done = [translate(sentence, project) for sentence in sentences]
+		kept = [x for x in done if looks_english(x)]
+		if kept:
+			return " ".join(kept)
+	elif sentences:
+		# One sentence: try again without its parenthesised aside, which often confuses the translation.
+		bare = re.sub(r"\s*\([^)]*\)", "", sentences[0]).strip()
+		if bare and bare != sentences[0]:
+			return translate(bare, project)
 	return text
 
 
