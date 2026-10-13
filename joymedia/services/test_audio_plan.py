@@ -277,3 +277,22 @@ class TestCheckSceneAudio(FrappeTestCase):
 		self.assertEqual(0.6, score)
 		self.assertEqual([0, 1], [call.kwargs["seed_offset"] for call in generate.call_args_list])
 		place.assert_called_once_with(self.project.name, shot.name, "SFX", "A2")
+
+	def test_a_layer_made_for_an_earlier_take_is_replaced_and_a_current_one_is_kept(self):
+		from joymedia.services.audio_plan import check_scene_audio
+
+		shot, clip = self._source_clip(1)
+		with patch("joymedia.services.audio_plan.build_audio_plan", return_value=[
+			{"shot": shot.name, "role": "SFX", "scheduled": True, "clip": "LAYER", "text": "x", "shot_name": "s", "start_frame": 0}
+		]), patch("joymedia.services.audio_plan._layer_is_stale", return_value=False):
+			report = check_scene_audio(self.project.name)
+		self.assertEqual(["layer kept"], [row["action"] for row in report])
+
+		with patch("joymedia.services.audio_plan.build_audio_plan", return_value=[
+			{"shot": shot.name, "role": "SFX", "scheduled": True, "clip": "LAYER", "text": "x", "shot_name": "s", "start_frame": 0}
+		]), patch("joymedia.services.audio_plan._layer_is_stale", return_value=True), patch(
+			"joymedia.services.video_composer._get_asset_version_path", side_effect=lambda name: name
+		), patch("joymedia.services.audio_check.effects_score", return_value=0.9), patch.object(frappe, "delete_doc") as delete:
+			report = check_scene_audio(self.project.name)
+		delete.assert_called_once()
+		self.assertEqual(["kept"], [row["action"] for row in report])

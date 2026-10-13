@@ -221,20 +221,30 @@ def check_scene_audio(project_name, apply=True):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
 	apply = str(apply).lower() in {"1", "true", "yes", "on"}
-	placed = {cue["shot"] for cue in build_audio_plan(project.name) if cue["role"] == "SFX" and cue["scheduled"]}
+	layers = {cue["shot"]: cue["clip"] for cue in build_audio_plan(project.name) if cue["role"] == "SFX" and cue["scheduled"]}
 	report = []
 	for clip in frappe.get_all(
 		"Timeline Clip",
-		filters={"media_project": project.name, "track_type": "Audio", "audio_role": "Source", "enabled": 1, "shot": ["is", "set"]},
-		fields=["name", "shot", "source_asset_version"],
+		filters={"media_project": project.name, "track_type": "Audio", "audio_role": "Source", "shot": ["is", "set"]},
+		fields=["name", "shot", "source_asset_version", "enabled"],
 	):
+		layer_clip = layers.get(clip.shot)
+		if layer_clip and not _layer_is_stale(layer_clip, clip.source_asset_version):
+			# A layer made for this scene's current video stays; its own audio stays muted.
+			report.append({"shot": clip.shot, "shot_name": frappe.db.get_value("Shot", clip.shot, "shot_name"), "score": None, "action": "layer kept"})
+			continue
+		if layer_clip and apply:
+			frappe.delete_doc("Timeline Clip", layer_clip, force=True, ignore_permissions=True)
+			layers.pop(clip.shot)
+		if not clip.enabled and apply:
+			# A new take of the scene: judge its own audio again.
+			frappe.db.set_value("Timeline Clip", clip.name, "enabled", 1, update_modified=False)
 		score = effects_score(_get_asset_version_path(clip.source_asset_version))
 		row = {"shot": clip.shot, "shot_name": frappe.db.get_value("Shot", clip.shot, "shot_name"), "score": score, "action": "kept"}
 		if score is not None and score < EFFECTS_FLATNESS_MIN:
 			row["action"] = "replaced"
 			if apply:
-				if clip.shot not in placed:
-					row["layer_score"] = _place_best_effects_layer(project.name, clip.shot)
+				row["layer_score"] = _place_best_effects_layer(project.name, clip.shot)
 				frappe.db.set_value("Timeline Clip", clip.name, "enabled", 0, update_modified=False)
 		report.append(row)
 	if apply:
@@ -244,6 +254,12 @@ def check_scene_audio(project_name, apply=True):
 
 
 EFFECT_LAYER_ATTEMPTS = 3
+
+
+def _layer_is_stale(layer_clip, video_version):
+	"""A generated layer older than the scene's current video was made for an earlier take."""
+	layer_version = frappe.db.get_value("Timeline Clip", layer_clip, "source_asset_version")
+	return frappe.db.get_value("Asset Version", layer_version, "creation") < frappe.db.get_value("Asset Version", video_version, "creation")
 
 
 def _place_best_effects_layer(project_name, shot_name):
