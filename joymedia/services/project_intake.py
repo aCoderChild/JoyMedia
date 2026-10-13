@@ -170,6 +170,16 @@ def get_project_readiness(project_name, lang=None):
 	add("assignments", _("Each scene's references"), not problems, "; ".join(problems[:3]) if problems else "")
 	warnings = frappe.parse_json(project.storyboard_timing_warnings or "[]")
 	add("timing", _("Storyboard timing"), not warnings, _("{0} timing gap(s) were found; they are closed on export.").format(len(warnings)) if warnings else "", blocking=False)
+	from joymedia.services.keyframes import get_project_keyframes
+
+	frames = [row for row in get_project_keyframes(project.name) if row["needs_keyframe"]] if shots else []
+	approved = sum(1 for row in frames if row["status"] == "Approved" and not row["stale"])
+	add(
+		"keyframes", _("Scene frames approved"), bool(frames) and approved == len(frames),
+		_("{0} of {1} scene frames approved. Draw the frames and approve them before the videos are made.").format(approved, len(frames))
+		if frames and approved != len(frames) else "",
+		blocking=False,
+	)
 	add("approval", _("Storyboard approved"), project.storyboard_approval_status == "Approved", "" if project.storyboard_approval_status == "Approved" else _("Review the scenes, then approve."))
 	# Finished renders are noticed by a cron that runs every minute, but only as often as Frappe's scheduler
 	# ticks (4 minutes by default). A slow tick leaves the GPU idle between tasks.
