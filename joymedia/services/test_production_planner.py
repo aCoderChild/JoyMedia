@@ -116,6 +116,17 @@ class TestApply(FrappeTestCase):
 		self.assertTrue(prompt.startswith(RAW["video_prompt"]))
 		self.assertTrue(prompt.endswith("Audio: sound effects: a pop."))
 
+	def test_a_planner_answer_in_the_beats_language_is_translated(self):
+		beat = {"summary": "Mother bear spills the milk.", "camera": "", "action": "", "audio": "", "voice_over": "", "on_screen_text": "", "raw": "x"}
+		raw = {**RAW, "video_prompt": "Gấu mẹ đánh đổ cốc sữa."}
+		with patch.object(planner, "_ask_planner", return_value=raw), patch.object(planner, "creative_beat", return_value=beat), patch.object(
+			planner, "beat_coverage", return_value=(0.9, [])
+		), patch.object(planner, "ground_reference_keys", return_value=([], [])), patch.object(
+			planner, "translate", side_effect=lambda text, project: "Mother bear spills the milk." if not str(text).isascii() else text
+		):
+			plan = planner.plan_production_shot(self.project, self.shot, references=[])
+		self.assertEqual("Mother bear spills the milk.", plan["video_prompt"])
+
 	def test_motion_only_asks_for_movement_and_not_for_place_or_light(self):
 		with patch.object(planner, "_ask_planner", return_value={"motion": "  The mother lifts a tissue. "}) as ask:
 			result = planner.motion_only(self.project, "Candlelight. Mother lifts a tissue.", [{"label": "Mama", "role": "Character"}])

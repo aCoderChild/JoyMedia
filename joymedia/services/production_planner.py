@@ -42,6 +42,9 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 		duration=float(shot.duration_seconds or 0),
 		is_first=int(shot.shot_number or 0) <= 1,
 	)
+	for key in ("image_prompt", "setting_prompt", "video_prompt", "sound_effects"):
+		# The models read English; a planner answer that copied the beat's own language is translated.
+		plan[key] = translate(plan.get(key), project)
 	plan["audio"] = audio_direction(project, beat, plan.get("sound_effects"))
 	plan["reference_keys"], added_notes = ground_reference_keys(project, beat, plan["reference_keys"], references)
 	plan["notes"].extend(added_notes)
