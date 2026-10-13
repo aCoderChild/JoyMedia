@@ -62,9 +62,15 @@ def project_reference_options(project):
 		asset = frappe.db.get_value("Asset Version", row.asset_version, "media_asset")
 		if not asset or frappe.db.get_value("Media Asset", asset, "media_type") != "Image":
 			continue
-		options.append({
-			"key": row.reference_key, "label": row.label or row.reference_key, "role": row.reference_role or "General",
-		})
+		option = {"key": row.reference_key, "label": row.label or row.reference_key, "role": row.reference_role or "General"}
+		try:
+			analysis = frappe.parse_json(frappe.db.get_value("Asset Version", row.asset_version, "analysis_json") or "{}")
+		except (TypeError, ValueError):
+			analysis = {}
+		# What the picture actually shows (pose, framing) lets the prompt agree with it.
+		if isinstance(analysis, dict) and analysis.get("description"):
+			option["description"] = " ".join(str(analysis["description"]).split())[:200]
+		options.append(option)
 	return options
 
 
@@ -122,7 +128,10 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		f"PROJECT: {project.product_name or project.project_name}. Format: {aspect}.",
 		f"BRIEF: {' '.join(str(project.video_idea or '').split())[:300]}",
 		"AVAILABLE REFERENCES (use only these keys):",
-		*(f"- {ref['key']}: {ref['label']} ({ref['role']})" for ref in references),
+		*(
+			f"- {ref['key']}: {ref['label']} ({ref['role']})" + (f". It shows: {ref['description']}" if ref.get("description") else "")
+			for ref in references
+		),
 	] if references else [
 		f"PROJECT: {project.product_name or project.project_name}. Format: {aspect}.",
 		f"BRIEF: {' '.join(str(project.video_idea or '').split())[:300]}",
@@ -144,7 +153,8 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		"lighting. Include only what must appear. No text, captions or logos.",
 		"- video_prompt: English, at most 80 words. What moves and how the camera moves, in time order, as one "
 		"continuous shot. Keep every action the beat requires; invent no claims or extra characters.",
-		"- image_prompt is ONE still frame, never a sequence of events.",
+		"- image_prompt is ONE still frame, never a sequence of events. When a reference shows a pose, keep the "
+		"character's pose in the prompt consistent with it.",
 		"- reference_keys: include the key of EVERY listed character or product that is visible in the first frame "
 		"(the advertised product's pack whenever the product itself is shown). Empty only if none is visible.",
 		'- continuity_mode: "Continue" only if this beat continues the same scene, subject and setting from the '

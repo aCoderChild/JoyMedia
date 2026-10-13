@@ -966,9 +966,13 @@ def reference_preamble(shot_reference_versions, project_references):
 		if kind == CHARACTER:
 			# Reference-to-Video can open on a reference photo as it is; the character's
 			# photo must lend only the person, never its background.
+			# Not every character is a person (a mascot has no hair or outfit), and the model draws the
+			# pose it is given: say what the reference shows so the text and the picture agree.
+			seen = _first_sentence((context.get("analysis") or {}).get("description"))
+			seen = f" It shows {seen[0].lower()}{seen[1:]}" if seen else ""
 			parts.append(
-				f"<Picture {index}> is the main character{suffix}: keep the face, hair, body and outfit "
-				"identical, but use only the person, never the background of that photo."
+				f"<Picture {index}> is the main character{suffix}: keep its face, body and appearance "
+				f"identical to the reference, but use only the character, never the background of that photo.{seen}"
 			)
 		elif kind == PLACE:
 			locations.append(index)
