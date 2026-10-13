@@ -288,6 +288,22 @@
 				    ? (currentLang === 'vi' ? 'Bắt đầu cảnh mới' : 'Start new scene')
 				    : (currentLang === 'vi' ? 'Nối từ cảnh trước' : 'Continue previous scene') }}
 				</button>
+                <div v-if="cuesFor(shot).length" class="border-t border-outline-border mt-1 pt-1" data-test="shot-audio-cues">
+                  <p class="px-2.5 py-1 text-[10px] uppercase tracking-wide text-ink-muted">
+                    {{ currentLang === 'vi' ? 'Âm thanh theo kịch bản' : 'Audio cues' }}
+                  </p>
+                  <button
+                    v-for="cue in cuesFor(shot)"
+                    :key="cue.role + cue.text"
+                    type="button"
+                    class="flex w-full items-start gap-2 rounded-lg px-2.5 py-1 text-left text-[11px] text-ink-primary hover:bg-surface-hover cursor-pointer"
+                    :title="cue.text"
+                    @click="emit('placeCueAudio', shot, cue.role); menuOpenIndex = null"
+                  >
+                    <span :class="cue.scheduled ? 'text-emerald-400' : 'text-amber-400'">{{ cue.scheduled ? '✓' : '+' }}</span>
+                    <span class="min-w-0"><b>{{ cue.role }}</b> <span class="truncate block text-ink-muted">{{ cue.text }}</span></span>
+                  </button>
+                </div>
                 <div v-if="projectReferences.length" class="border-t border-outline-border mt-1 pt-1" data-test="shot-references">
                   <p class="px-2.5 py-1 text-[10px] uppercase tracking-wide text-ink-muted">
                     {{ currentLang === 'vi' ? 'Tham chiếu cho cảnh' : 'Scene references' }}
@@ -370,6 +386,7 @@ const props = defineProps({
   getShotFirstFrame: { type: Function, default: () => ({}) },
   // Visual project references a scene can be generated from.
   projectReferences: { type: Array, default: () => [] },
+  audioPlan: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([
@@ -387,10 +404,15 @@ const emit = defineEmits([
   "updateCaption",
 	"updateContinuity",
   "updateReferences",
+  "placeCueAudio",
 ]);
 
 const aiRevisionInput = ref("");
 const menuOpenIndex = ref(null);
+
+function cuesFor(shot) {
+  return props.audioPlan.filter((cue) => cue.shot === shot.name);
+}
 
 function shotUsesReference(shot, reference) {
   return (shot.references || []).some((item) => item.reference_key === reference.reference_key);

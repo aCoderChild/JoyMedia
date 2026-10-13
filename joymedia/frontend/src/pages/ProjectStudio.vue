@@ -236,6 +236,8 @@
             @update-caption="updateShotCaption"
 			@update-continuity="updateShotContinuity"
 			@update-references="updateShotReferences"
+			@place-cue-audio="startCueAudio"
+			:audio-plan="audioPlan"
 			:project-references="projectReferences"
           />
         </template>
@@ -829,6 +831,26 @@ watch(
 
 const pendingAudioRole = ref(null);
 
+// Storyboard voice-over / sound cues and whether audio is scheduled for each.
+const audioPlan = ref([]);
+const pendingCue = ref(null);
+
+async function fetchAudioPlan() {
+  try {
+    audioPlan.value = await call("joymedia.services.audio_plan.get_audio_plan", { project_name: projectName.value });
+  } catch (err) {
+    audioPlan.value = [];
+  }
+}
+
+watch(() => workspace.value, fetchAudioPlan);
+
+function startCueAudio(shot, role) {
+  pendingCue.value = { shot: shot.name, role };
+  mediaPickerFilter.value = "Audio";
+  openPicker();
+}
+
 function openAudioPicker(role = "BGM") {
   pendingAudioRole.value = role;
   mediaPickerFilter.value = "Audio";
@@ -861,6 +883,23 @@ async function onSetAudioClipEnabled(clip, enabled) {
 }
 
 async function handleSelectReference({ asset, role }) {
+  if (pendingCue.value) {
+    const cue = pendingCue.value;
+    pendingCue.value = null;
+    try {
+      await call("joymedia.services.audio_plan.place_cue_audio", {
+        project_name: projectName.value,
+        shot_name: cue.shot,
+        role: cue.role,
+        asset_version_name: asset.asset_version || asset.name,
+      });
+      await fetchAudioPlan();
+    } catch (err) {
+      notify({ title: "Error", text: errorMessage(err, "Failed to place audio for this cue."), type: "error" });
+    }
+    showMediaPicker.value = false;
+    return;
+  }
   // If user opened picker specifically to add an audio clip to a timeline track:
   if (pendingAudioRole.value) {
     const chosenRole = pendingAudioRole.value;
