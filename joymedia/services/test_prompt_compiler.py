@@ -232,6 +232,6 @@ class TestAudioLineLast(FrappeTestCase):
 		from joymedia.services.prompt_compiler import _scrub_printable
 
 		self.assertEqual(
-			"Products in the centre beside the big box. The mother says .",
+			"Products in the centre beside the big box. The mother says.",
 			_scrub_printable('Products in the centre beside the big box (30 packs per box). The mother says "Buy now".'),
 		)
