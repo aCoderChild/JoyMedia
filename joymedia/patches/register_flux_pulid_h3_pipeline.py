@@ -24,7 +24,7 @@ def execute():
 	if not h3:
 		return
 	flux = _register_keyframe()
-	if not frappe.db.exists("Generation Pipeline Step", {"parenttype": "Generation Pipeline", "workflow": flux}):
+	if not _pipeline_with(flux, h3):
 		frappe.get_doc({
 			"doctype": "Generation Pipeline",
 			"pipeline_key": PIPELINE_KEY,
@@ -39,16 +39,32 @@ def execute():
 		}).insert(ignore_permissions=True)
 
 
+def _pipeline_with(keyframe_workflow, video_workflow):
+	"""A pipeline whose steps are exactly these two workflows, if one is registered."""
+	for name in frappe.get_all("Generation Pipeline", pluck="name"):
+		if set(frappe.get_all("Generation Pipeline Step", filters={"parent": name}, pluck="workflow")) == {
+			keyframe_workflow, video_workflow,
+		}:
+			return name
+	return None
+
+
+def _current_version(workflow_key):
+	"""Latest version of a workflow whose graph is exactly the shipped H3 graph, else None."""
+	name = frappe.db.get_value("Generation Workflow", {"workflow_key": workflow_key}, "name", order_by="version_number desc")
+	if name and json.loads(frappe.db.get_value("Generation Workflow", name, "workflow_json")) == json.loads(
+		(GRAPHS / "minimax_h3_i2v.json").read_text()
+	):
+		return name
+	return None
+
+
 def _register_h3():
 	"""Latest H3 workflow, creating a version that can continue a shot from its last frame."""
-	name = frappe.db.get_value(
-		"Generation Workflow", {"workflow_key": H3_WORKFLOW_KEY}, "name", order_by="version_number desc"
-	)
+	name = _current_version(H3_WORKFLOW_KEY)
 	if name and frappe.db.get_value("Generation Workflow", name, "continuation_workflow"):
 		return name
-	continuation = frappe.db.get_value(
-		"Generation Workflow", {"workflow_key": H3_WORKFLOW_KEY + "_continuation"}, "name"
-	) or _insert_h3(H3_WORKFLOW_KEY + "_continuation")
+	continuation = _current_version(H3_WORKFLOW_KEY + "_continuation") or _insert_h3(H3_WORKFLOW_KEY + "_continuation")
 	return _insert_h3(H3_WORKFLOW_KEY, continuation)
 
 
