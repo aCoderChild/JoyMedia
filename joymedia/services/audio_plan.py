@@ -245,6 +245,8 @@ def check_scene_audio(project_name, apply=True):
 			row["action"] = "replaced"
 			if apply:
 				row["layer_score"] = _place_best_effects_layer(project.name, clip.shot)
+				if row["layer_score"] is None or row["layer_score"] < EFFECTS_FLATNESS_MIN:
+					row["action"] = "silenced"
 				frappe.db.set_value("Timeline Clip", clip.name, "enabled", 0, update_modified=False)
 		report.append(row)
 	if apply:
@@ -263,20 +265,33 @@ def _layer_is_stale(layer_clip, video_version):
 
 
 def _place_best_effects_layer(project_name, shot_name):
-	"""Generate an effect layer, retrying other seeds until one passes the effects screen; place the best."""
+	"""Generate an effect layer that passes the effects screen and place it; None when none does.
+
+	Each retry changes the seed and the wording (a laughing face makes the model hum or voice, whatever the
+	seed). A layer that never passes is not placed: a silent scene is safer than one with music or a voice.
+	Returns the best score reached.
+	"""
 	from joymedia.services.audio_check import EFFECTS_FLATNESS_MIN, effects_score
 	from joymedia.services.video_composer import _get_asset_version_path
 
-	prompt = scene_sound_prompt(frappe.get_doc("Shot", shot_name))
+	base = scene_sound_prompt(frappe.get_doc("Shot", shot_name))
+	prompts = [
+		base,
+		f"dry close-up foley recording of {base.rstrip('.')}, no ambience, no tones",
+		"rustling, crinkling and soft impacts only, dry, no tones, no humming",
+	]
 	best = None
 	for attempt in range(EFFECT_LAYER_ATTEMPTS):
-		version = generate_cue_audio(project_name, shot_name, "SFX", prompt=prompt, seed_offset=attempt, place=False)["asset_version"]
+		version = generate_cue_audio(
+			project_name, shot_name, "SFX", prompt=prompts[attempt % len(prompts)], seed_offset=attempt, place=False
+		)["asset_version"]
 		score = effects_score(_get_asset_version_path(version))
 		if best is None or (score or 0) > (best[1] or 0):
 			best = (version, score)
 		if score is not None and score >= EFFECTS_FLATNESS_MIN:
 			break
-	place_cue_audio(project_name, shot_name, "SFX", best[0])
+	if best[1] is not None and best[1] >= EFFECTS_FLATNESS_MIN:
+		place_cue_audio(project_name, shot_name, "SFX", best[0])
 	return best[1]
 
 

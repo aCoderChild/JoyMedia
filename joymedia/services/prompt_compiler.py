@@ -137,7 +137,8 @@ def compile_segment_prompt_from_snapshot(
 		if shot.get("references") if hasattr(shot, "get") else getattr(shot, "references", None):
 			text = f"{text}\n\n{_identity_guard(shot, project)}"
 		return _audio_line_last(
-			text, sound_effects_only=project.get("soundtrack_mode") in ("Sound effects only", "Separate effects layer")
+			text, sound_effects_only=project.get("soundtrack_mode") in ("Sound effects only", "Separate effects layer"),
+			duration=(float(segment_effective_frames) / float(fps)) if segment_effective_frames and fps else 5.0,
 		)
 
 	if asset_versions:
@@ -239,7 +240,10 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 		timing = temporal_timing_instruction(shot, is_final=is_final)
 		if timing:
 			prompt = f"{prompt}\n\n{timing}"
-		prompt = _audio_line_last(prompt, sound_effects_only=project.get("soundtrack_mode") in ("Sound effects only", "Separate effects layer"))
+		prompt = _audio_line_last(
+			prompt, sound_effects_only=project.get("soundtrack_mode") in ("Sound effects only", "Separate effects layer"),
+			duration=float(getattr(shot, "duration_seconds", None) or 5.0),
+		)
 	return prompt.strip()
 
 
@@ -404,7 +408,18 @@ def _character_names(shot, project):
 	return names
 
 
-def _audio_line_last(prompt, sound_effects_only=False):
+def _timed_events(cues, duration):
+	"""Concrete sound events with a time each, the way the video workflow's own sample writes its `Audio:` line.
+
+	"paper rustling, a tap" becomes "paper rustling at 1.2s, a tap at 3.7s": a timed list of events steers the
+	model to those sounds and leaves gaps between them, where a vague description gets a continuous bed.
+	"""
+	events = [e.strip(" .") for cue in cues for e in re.split(r"[,;]|\band\b", cue) if e.strip(" .")][:5]
+	step = max(0.5, float(duration or 5.0)) / len(events)
+	return ", ".join(f"{event} at {round(step * (index + 0.5), 1)}s" for index, event in enumerate(events))
+
+
+def _audio_line_last(prompt, sound_effects_only=False, duration=5.0):
 	"""Move the scene's `Audio:` paragraph to the end of the video prompt.
 
 	The video workflow's own sample prompt ends with its `Audio:` line. Left in the middle of a long prompt
@@ -427,8 +442,8 @@ def _audio_line_last(prompt, sound_effects_only=False):
 		cues = [cue.rstrip(". ") for cue in cues if cue]
 		if not cues:
 			# With nothing concrete to make, the model fills the soundtrack with music.
-			cues = ["soft natural foley of the movements shown: rustling, light touches and gentle impacts"]
-		audio = [f"Audio: {'; '.join(cues)}. {NO_VOICE_OR_MUSIC}" if cues else f"Audio: {NO_VOICE_OR_MUSIC}"]
+			cues = ["a soft paper rustle, a light tap, a gentle crinkle"]
+		audio = [f"Audio: {_timed_events(cues, duration)}; silence between the sounds. {NO_VOICE_OR_MUSIC}"]
 	if not audio:
 		return prompt
 	rest = [p for p in paragraphs if not p.lstrip().startswith("Audio:")]

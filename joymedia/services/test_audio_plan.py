@@ -248,7 +248,7 @@ class TestCheckSceneAudio(FrappeTestCase):
 
 		clean_shot, clean_clip = self._source_clip(1)
 		music_shot, music_clip = self._source_clip(2)
-		scores = {clean_clip.source_asset_version: 0.6, music_clip.source_asset_version: 0.1, "ASTV-L": 0.1}
+		scores = {clean_clip.source_asset_version: 0.6, music_clip.source_asset_version: 0.1, "ASTV-L": 0.6}
 		with patch("joymedia.services.video_composer._get_asset_version_path", side_effect=lambda name: name), patch(
 			"joymedia.services.audio_check.effects_score", side_effect=lambda path: scores[path]
 		), patch("joymedia.services.audio_plan.generate_cue_audio", return_value={"asset_version": "ASTV-L"}) as generate, patch(
@@ -276,7 +276,22 @@ class TestCheckSceneAudio(FrappeTestCase):
 
 		self.assertEqual(0.6, score)
 		self.assertEqual([0, 1], [call.kwargs["seed_offset"] for call in generate.call_args_list])
+		self.assertNotEqual(generate.call_args_list[0].kwargs["prompt"], generate.call_args_list[1].kwargs["prompt"])
 		place.assert_called_once_with(self.project.name, shot.name, "SFX", "A2")
+
+	def test_a_scene_stays_silent_when_no_layer_passes(self):
+		from joymedia.services.audio_plan import _place_best_effects_layer
+
+		shot, _clip = self._source_clip(1)
+		with patch("joymedia.services.video_composer._get_asset_version_path", side_effect=lambda name: name), patch(
+			"joymedia.services.audio_check.effects_score", return_value=0.1
+		), patch("joymedia.services.audio_plan.generate_cue_audio", return_value={"asset_version": "A1"}), patch(
+			"joymedia.services.audio_plan.place_cue_audio"
+		) as place:
+			score = _place_best_effects_layer(self.project.name, shot.name)
+
+		self.assertEqual(0.1, score)
+		place.assert_not_called()
 
 	def test_a_layer_made_for_an_earlier_take_is_replaced_and_a_current_one_is_kept(self):
 		from joymedia.services.audio_plan import check_scene_audio

@@ -148,11 +148,11 @@ class TestAudioLineLast(FrappeTestCase):
 		from joymedia.services.prompt_compiler import NO_VOICE_OR_MUSIC, _audio_line_last
 
 		result = _audio_line_last("Audio: sound effects: pop; music: jazz.\n\nMore.", sound_effects_only=True)
-		self.assertEqual(f"More.\n\nAudio: sound effects: pop. {NO_VOICE_OR_MUSIC}", result)
+		self.assertEqual(f"More.\n\nAudio: sound effects: pop at 2.5s; silence between the sounds. {NO_VOICE_OR_MUSIC}", result)
 		# With no effect cue left, the sounds of the scene's own action are described instead.
 		self.assertEqual(
-			"Mother pours milk.\n\nAudio: soft natural foley of the movements shown: rustling, light touches and gentle "
-			f"impacts. {NO_VOICE_OR_MUSIC}",
+			"Mother pours milk.\n\nAudio: a soft paper rustle at 0.8s, a light tap at 2.5s, a gentle crinkle at 4.2s; "
+			f"silence between the sounds. {NO_VOICE_OR_MUSIC}",
 			_audio_line_last("Mother pours milk.\n\nAudio: music: jazz.", sound_effects_only=True),
 		)
 
@@ -160,7 +160,7 @@ class TestAudioLineLast(FrappeTestCase):
 		from joymedia.services.prompt_compiler import NO_VOICE_OR_MUSIC, _audio_line_last
 
 		result = _audio_line_last("Audio: sound effects: Paper tearing. Baby giggling laughter.", sound_effects_only=True)
-		self.assertEqual(f"Audio: sound effects: Paper tearing. {NO_VOICE_OR_MUSIC}", result)
+		self.assertEqual(f"Audio: sound effects: Paper tearing at 2.5s; silence between the sounds. {NO_VOICE_OR_MUSIC}", result)
 
 	def test_references_ask_for_shape_colour_mascot_and_logo_not_for_label_text(self):
 		from joymedia.services.prompt_compiler import compile_prompt_for_documents
