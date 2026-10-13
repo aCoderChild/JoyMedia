@@ -76,3 +76,37 @@ class TestPastedReferences(FrappeTestCase):
 			self.assertIn(subject_overlay.EMPTY_SETTING, compile_prompt_for_documents(shot, {}, prompt_source="image"))
 		with patch.object(subject_overlay, "_cutout_path", return_value=None):
 			self.assertNotIn(subject_overlay.EMPTY_SETTING, compile_prompt_for_documents(shot, {}, prompt_source="image"))
+
+
+class TestKeyframeIngest(FrappeTestCase):
+	def test_the_run_snapshot_decides_what_is_pasted(self):
+		snapshot = {"shots": [{"shot": "S1", "references": [{"reference_role": "person", "asset_version": "AV1"}]}]}
+		values = {
+			("Generation Attempt", "ATT"): frappe._dict(generation_task="TASK"),
+			("Generation Task", "TASK"): ("S1", "RUN"),
+			("Generation Run", "RUN"): frappe.as_json(snapshot),
+		}
+		with patch.object(frappe.db, "get_value", side_effect=lambda doctype, name, *a, **k: values[(doctype, name)]), patch.object(
+			subject_overlay, "_cutout_path", return_value="/a.png"
+		), patch.object(subject_overlay, "composite_subjects", return_value=b"done") as composite:
+			result = subject_overlay.paste_subjects_into_keyframe(frappe._dict(name="ATT"), b"raw")
+		self.assertEqual(b"done", result)
+		self.assertEqual("character", composite.call_args.args[1][0]["role"])
+
+	def test_a_shot_without_cutouts_is_left_untouched(self):
+		with patch.object(frappe.db, "get_value", side_effect=[frappe._dict(generation_task="T"), ("S1", "R"), "{}"]):
+			self.assertEqual(b"raw", subject_overlay.paste_subjects_into_keyframe(frappe._dict(name="A"), b"raw"))
+
+	def test_pasted_references_are_not_inputs_of_the_image_stage(self):
+		from joymedia.services.generation_orchestrator import _pipeline_reference_inputs
+
+		workflow = frappe._dict(name="W")
+		contract = [{"role": "product", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False}]
+		references = frappe._dict(references=[
+			{"reference_role": "Product", "asset_version": "AV1"}, {"reference_role": "Logo", "asset_version": "AV2"},
+			{"reference_role": "Product", "asset_version": "AV3"},
+		])
+		with patch("joymedia.services.workflow_resolver.get_workflow_input_contract", return_value=contract), patch.object(
+			subject_overlay, "_cutout_path", side_effect=lambda av: "/x.png" if av == "AV1" else None
+		):
+			self.assertEqual({"product": ["AV3"]}, _pipeline_reference_inputs(references, workflow))

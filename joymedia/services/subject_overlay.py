@@ -119,12 +119,16 @@ def composite_subjects(background_bytes, subjects):
 
 
 def paste_subjects_into_keyframe(attempt, image_bytes):
-	"""A keyframe attempt's image with its shot's cutout references pasted in (unchanged when it has none)."""
-	task = frappe.db.get_value("Generation Attempt", attempt.name, "generation_task")
-	shot = frappe.db.get_value("Generation Task", task, "shot")
-	rows = frappe.get_all(
-		"Shot Reference", filters={"parent": shot, "parenttype": "Shot"},
-		fields=["reference_role", "asset_version"], order_by="idx asc",
-	)
-	subjects = pasted_references(rows)
+	"""A keyframe attempt's image with its shot's cutout references pasted in (unchanged when it has none).
+
+	The references come from the run's frozen snapshot, so editing the shot later cannot change a render in flight.
+	"""
+	task = frappe.db.get_value("Generation Attempt", attempt.name, ["generation_task"], as_dict=True)
+	shot, run = frappe.db.get_value("Generation Task", task.generation_task, ["shot", "generation_run"])
+	try:
+		snapshot = frappe.parse_json(frappe.db.get_value("Generation Run", run, "project_snapshot_json") or "{}")
+	except (TypeError, ValueError):
+		snapshot = {}
+	shot_snapshot = next((row for row in (snapshot or {}).get("shots") or [] if row.get("shot") == shot), {})
+	subjects = pasted_references(shot_snapshot.get("references"))
 	return composite_subjects(image_bytes, subjects) if subjects else image_bytes
