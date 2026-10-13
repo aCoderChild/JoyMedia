@@ -37,6 +37,23 @@ def _logo_cutout():
 	return image
 
 
+def _generated_face():
+	"""A presenter's face made by the keyframe workflow from text alone: a real face for the identity step to lock."""
+	from PIL import Image
+
+	from joymedia.services.comfyui_client import run_workflow_to_bytes
+	from joymedia.services.workflow_resolver import build_execution_workflow
+
+	name = frappe.db.get_value("Generation Workflow", {"workflow_key": "flux_pulid_keyframe"}, "name", order_by="version_number desc")
+	workflow = build_execution_workflow(
+		frappe.get_doc("Generation Workflow", name),
+		inputs={"generation_prompt": "A studio portrait photograph of a friendly woman in her thirties with short dark hair, "
+			"facing the camera, neutral grey background, soft light, sharp focus."},
+		seed=4242, width=768, height=1024, fps=24, frame_count=1, output_prefix="joymedia/regression_face",
+	)
+	return Image.open(io.BytesIO(run_workflow_to_bytes(workflow, "50", timeout=900, forget=True))).convert("RGB")
+
+
 def _png(image):
 	output = io.BytesIO()
 	image.save(output, "PNG")
@@ -62,6 +79,14 @@ CASES = {
 		"setting": "A sunny kitchen counter in the morning.",
 		"video_prompt": "She opens the box and pours cereal. The camera slowly zooms in.",
 		"expect": {"pasted": ["Cereal box", "Brand logo"], "keeps_box_noun": True},
+	},
+	"human-presenter-portrait": {
+		"preset": "Portrait",
+		"idea": "A presenter explains a product.",
+		"references": [("Presenter", "Character", "Character", _generated_face)],
+		"setting": "A modern office with a large window and plants.",
+		"video_prompt": "The presenter stands by the window and gestures while talking to the camera.",
+		"expect": {"pasted": [], "keeps_box_noun": False},
 	},
 	"text-only-portrait": {
 		"preset": "Portrait",

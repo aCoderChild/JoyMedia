@@ -16,7 +16,8 @@ class TestCaseAssets(FrappeTestCase):
 		for name, case in cases.CASES.items():
 			self.assertIn(case["preset"], cases.SHAPES, name)
 			self.assertIn("pasted", case["expect"], name)
-			self.assertEqual(len(case["references"]) > 0, bool(case["expect"]["pasted"]), name)
+			# Only transparent cutouts are pasted; an opaque photo guides the image model instead.
+			self.assertLessEqual(len(case["expect"]["pasted"]), len(case["references"]), name)
 
 	def test_a_missing_keyframe_fails_the_check(self):
 		self.assertEqual([("keyframe rendered", False, "no image")], cases.evaluate("text-only-portrait", None, "x"))
