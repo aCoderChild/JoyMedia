@@ -153,7 +153,8 @@ def _plan_project(project, wanted, apply, progress=None):
 		plan = production_planner.plan_production_shot(
 			project, shot, previous_end_state=previous_end_state, references=references, previous_setting=previous_setting
 		)
-		previous_setting = plan.get("setting_prompt") or previous_setting
+		if not any("Needs editing" in note for note in plan.get("notes") or []):
+			previous_setting = plan.get("setting_prompt") or previous_setting
 		if apply and not plan["held_back"]:
 			production_planner.apply_production_shot(project, shot, plan)
 		previous_end_state = plan["end_state"]

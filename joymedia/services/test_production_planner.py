@@ -310,7 +310,7 @@ class TestFollowTheSheet(FrappeTestCase):
 		project = frappe._dict(product_name="Soft tissue", name="P", planning_mode="Follow the sheet")
 		beat = {"raw": raw, "summary": summary, "camera": "", "action": "", "audio": "SFX: pop", "voice_over": "", "on_screen_text": ""}
 		shot = frappe._dict(shot_number=number, duration_seconds=5)
-		with patch.object(planner, "motion_only", return_value=motion), patch.object(planner, "_place", return_value="A kitchen."), patch.object(
+		with patch.object(planner, "motion_only", side_effect=lambda *a, **k: motion), patch.object(planner, "_place", return_value="A kitchen."), patch.object(
 			frappe.db, "count", return_value=total
 		), patch.object(planner, "translate", side_effect=lambda text, project: text):
 			return planner.follow_the_sheet(project, shot, beat, self.REFS)
@@ -355,3 +355,23 @@ class TestFollowTheSheet(FrappeTestCase):
 			self.assertEqual("", planner._place(frappe._dict(), {"summary": "Water on the table is absorbed."}))
 		with patch.object(planner, "_ask_planner", return_value={"place": "A warm family kitchen with sunlight."}):
 			self.assertEqual("A warm family kitchen with sunlight.", planner._place(frappe._dict(), {"summary": "In the kitchen she waves."}))
+
+	def test_a_failed_rewrite_falls_back_to_the_beats_english_translation_not_a_placeholder(self):
+		project = frappe._dict(product_name="Tissue", name="P", planning_mode="Follow the sheet")
+		beat = {"raw": "Gấu mẹ", "summary": "The mother lifts the wet sheet.", "camera": "", "action": "", "audio": "", "voice_over": "", "on_screen_text": ""}
+		with patch.object(planner, "motion_only", return_value="Gấu mẹ nhấc tờ giấy"), patch.object(planner, "_place", return_value=""), patch.object(
+			frappe.db, "count", return_value=6
+		), patch.object(planner, "translate", side_effect=lambda t, p: t):
+			plan = planner.follow_the_sheet(project, frappe._dict(shot_number=3, duration_seconds=8), beat, TestFollowTheSheet.REFS)
+		self.assertEqual("The mother lifts the wet sheet.", plan["video_prompt"])
+
+	def test_a_split_screen_beat_becomes_one_view_and_does_not_set_the_films_place(self):
+		project = frappe._dict(product_name="Tissue", name="P", planning_mode="Follow the sheet")
+		beat = {"raw": "Split-screen", "summary": "Three views.", "camera": "Split-screen of 3 views", "action": "", "audio": "", "voice_over": "", "on_screen_text": ""}
+		with patch.object(planner, "motion_only", return_value="One view.") as motion, patch.object(planner, "_place", return_value="Dining table, picnic, handbag."), patch.object(
+			frappe.db, "count", return_value=6
+		), patch.object(planner, "translate", side_effect=lambda t, p: t):
+			plan = planner.follow_the_sheet(project, frappe._dict(shot_number=5, duration_seconds=4), beat, TestFollowTheSheet.REFS, "A kitchen.")
+		self.assertTrue(motion.call_args.kwargs["single_view"])
+		self.assertEqual("A kitchen.", plan["setting_prompt"])
+		self.assertTrue(any("Needs editing" in n for n in plan["notes"]))

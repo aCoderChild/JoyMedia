@@ -75,7 +75,7 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 	return plan
 
 
-def motion_only(project, text, references, inventory=""):
+def motion_only(project, text, references, inventory="", single_view=False):
 	"""The beat's actions and camera moves only, in English, using only what the first frame contains.
 
 	`inventory` names what the first frame shows. Anything else the beat mentions (other boxes, people, products)
@@ -92,6 +92,10 @@ def motion_only(project, text, references, inventory=""):
 			f"The first frame contains exactly: {inventory}. Mention only these; drop any other object, box, person "
 			"or product, and give the actions of anything dropped to the nearest listed character. "
 			if inventory else f"Characters: {cast or 'as in the beat'}; every bear, mother or baby named is one of them. "
+		)
+		+ (
+			"The beat asks for a split screen of several views; describe ONLY the first view as one full-frame shot. "
+			if single_view else ""
 		)
 		+ f"\nBEAT: {text}\nReturn {{\"motion\": \"...\"}}"
 	)
@@ -156,17 +160,24 @@ def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 	}
 	by_key = {r["key"]: r for r in references}
 	inventory = "; ".join(by_key[k]["label"].split(" (")[0] for k in keys if k in by_key)
-	movement = motion_only(project, beat["summary"], references, inventory) or beat["summary"]
-	if not looks_english(movement):
-		movement = translate(movement, project)
+	camera = (beat.get("camera") or "") + " " + (beat.get("action") or "")
+	split_screen = bool(re.search(r"split[- ]?screen|chia \d? ?màn", camera, re.I))
+	movement = ""
+	for _attempt in range(2):
+		movement = motion_only(project, beat["summary"], references, inventory, single_view=split_screen)
+		if movement and looks_english(movement):
+			break
+	if not (movement and looks_english(movement)):
+		# The model's rewrite failed twice: the beat's own English translation is better than a placeholder.
+		movement = beat["summary"] if looks_english(beat["summary"]) else translate(beat["summary"], project)
 	if not looks_english(movement):
 		movement = "The characters act out the scene."
 	plan["video_prompt"] = movement
 	plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": movement}]}
 	plan["audio"] = audio_direction(project, beat)
-	camera = (beat.get("camera") or "") + " " + (beat.get("action") or "")
-	if re.search(r"split[- ]?screen|chia \d? ?màn", camera, re.I):
-		plan["notes"].append("Needs editing: the sheet asks for a split screen; one clip shows the main moment.")
+	if split_screen:
+		plan["notes"].append("Needs editing: the sheet asks for a split screen; one full-frame clip shows its first view.")
+		plan["setting_prompt"] = previous_setting  # the views have different places; the film's place stays
 	plan["coverage"], plan["held_back"] = 1.0, False
 	return plan
 
