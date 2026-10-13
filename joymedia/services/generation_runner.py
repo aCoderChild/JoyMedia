@@ -58,6 +58,9 @@ def prepare_generation_task(job_name: str, input_snapshot=None):
 		frappe.throw(_("Generation Task {0} cannot be prepared after attempts exist.").format(job.name))
 
 	job.validate()
+	# Inputs that are generated artifacts (such as a scene's approved keyframe) are part of the task's lineage, not of
+	# the project's reference snapshot; they survive the freeze.
+	artifact_inputs = [(row.input_role, row.generation_artifact) for row in job.get("inputs") or [] if row.generation_artifact]
 	job.set("inputs", [])
 	snapshot = input_snapshot
 	if snapshot is None:
@@ -75,6 +78,8 @@ def prepare_generation_task(job_name: str, input_snapshot=None):
 	for input_role, asset_versions in snapshot.items():
 		for asset_version in asset_versions if isinstance(asset_versions, list) else [asset_versions]:
 			job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
+	for input_role, artifact in artifact_inputs:
+		job.append("inputs", {"input_role": input_role, "generation_artifact": artifact})
 	job.inputs_frozen = 1
 	job.status = "Ready"
 	job.save(ignore_permissions=True)

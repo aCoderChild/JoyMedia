@@ -142,3 +142,22 @@ class TestGenerationRunner(FrappeTestCase):
 		self.assertEqual({"prompt_id": "comfy-recovered", "reconciled": True}, result)
 		self.assertEqual("Queued", attempt.status)
 		self.assertEqual("Submitted", attempt.submission_state)
+
+
+class TestFrozenArtifactInputs(FrappeTestCase):
+	def test_an_artifact_input_survives_freezing_the_task(self):
+		from unittest.mock import MagicMock, patch
+
+		from joymedia.services.generation_runner import prepare_generation_task
+
+		row = frappe._dict(input_role="last_frame", generation_artifact="GART-1", asset_version=None)
+		job = MagicMock(status="Draft", depends_on_task=None, name="TASK-1")
+		job.get.side_effect = lambda key, default=None: [row] if key == "inputs" else default
+		job.get_shot_input_snapshot.return_value = {}
+		appended = []
+		job.append.side_effect = lambda field, value: appended.append(value)
+		with patch("joymedia.services.generation_runner.frappe.get_doc", return_value=job), patch(
+			"joymedia.services.generation_runner.frappe.db.exists", return_value=False
+		):
+			prepare_generation_task("TASK-1", [])
+		self.assertIn({"input_role": "last_frame", "generation_artifact": "GART-1"}, appended)
