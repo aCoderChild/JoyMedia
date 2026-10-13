@@ -11,6 +11,8 @@ import hashlib
 import frappe
 from frappe import _
 
+from joymedia.services.realtime import PROJECT_UPDATED, publish_project_event
+
 PENDING, APPROVED = "Pending Review", "Approved"
 
 
@@ -65,6 +67,7 @@ def record_keyframe(run_name, shot_name):
 		frappe.db.set_value("Shot", shot_name, {
 			"keyframe_artifact": artifact.name, "keyframe_status": PENDING, "keyframe_signature": keyframe_signature(shot),
 		}, update_modified=False)
+		publish_project_event(frappe.db.get_value("Shot", shot_name, "media_project"), PROJECT_UPDATED, {"doctype": "Shot", "shot": shot_name})
 		return artifact.name
 	return None
 
@@ -113,6 +116,7 @@ def set_keyframe_approval(project_name, shot_name, approved=True):
 		if shot.keyframe_signature != keyframe_signature(shot):
 			frappe.throw(_("This scene changed after its keyframe was drawn. Render the keyframe again."))
 	frappe.db.set_value("Shot", shot.name, "keyframe_status", APPROVED if approved else PENDING, update_modified=False)
+	publish_project_event(project.name, PROJECT_UPDATED, {"doctype": "Shot", "shot": shot.name})
 	frappe.db.commit()
 	return {"shot_name": shot.name, "keyframe_status": APPROVED if approved else PENDING}
 

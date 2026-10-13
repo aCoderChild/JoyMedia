@@ -205,6 +205,9 @@
           <!-- What is still needed before generating; refreshes from Frappe realtime events -->
           <ReadinessChecklist :project-name="projectName" @changed="fetchWorkspace" />
 
+          <!-- First frame of each scene, approved before any video is made -->
+          <KeyframeReview v-if="storyboardShots.length" :project-name="projectName" @changed="fetchWorkspace" />
+
           <!-- Scene Filmstrip / Storyboard Track -->
           <SceneStrip
             :shots="storyboardShots"
@@ -404,6 +407,7 @@ import GenerationComposer from "../components/studio/GenerationComposer.vue";
 import StudioPreview from "../components/studio/StudioPreview.vue";
 import SceneStrip from "../components/studio/SceneStrip.vue";
 import ReadinessChecklist from "../components/studio/ReadinessChecklist.vue";
+import KeyframeReview from "../components/studio/KeyframeReview.vue";
 import EditTimeline from "../components/studio/EditTimeline.vue";
 import StudioInspector from "../components/studio/StudioInspector.vue";
 import MediaPicker from "../components/studio/MediaPicker.vue";

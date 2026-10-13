@@ -287,6 +287,12 @@ def _audio_line_last(prompt, sound_effects_only=False):
 			for cue in cues
 		]
 		cues = [cue.rstrip(". ") for cue in cues if cue]
+		if not cues:
+			# With nothing concrete to make, the model fills the soundtrack with music. Describe the sounds of the
+			# scene's own action instead.
+			action = next((p for p in paragraphs if p.strip() and not p.lstrip().startswith("Audio:")), "")
+			sentences = [x for x in re.split(r"(?<=[.!])\s+", " ".join(action.split())) if not VOCAL_SOUND.search(x)]
+			cues = [f"the natural sounds of this action: {' '.join(sentences)[:160].rstrip('. ')}"] if sentences else []
 		audio = [f"Audio: {'; '.join(cues)}. {NO_VOICE_OR_MUSIC}" if cues else f"Audio: {NO_VOICE_OR_MUSIC}"]
 	if not audio:
 		return prompt

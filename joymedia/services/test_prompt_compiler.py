@@ -148,7 +148,11 @@ class TestAudioLineLast(FrappeTestCase):
 
 		result = _audio_line_last("Audio: sound effects: pop; music: jazz.\n\nMore.", sound_effects_only=True)
 		self.assertEqual(f"More.\n\nAudio: sound effects: pop. {NO_VOICE_OR_MUSIC}", result)
-		self.assertEqual(f"X.\n\nAudio: {NO_VOICE_OR_MUSIC}", _audio_line_last("X.\n\nAudio: music: jazz.", sound_effects_only=True))
+		# With no effect cue left, the sounds of the scene's own action are described instead.
+		self.assertEqual(
+			f"Mother pours milk.\n\nAudio: the natural sounds of this action: Mother pours milk. {NO_VOICE_OR_MUSIC}",
+			_audio_line_last("Mother pours milk.\n\nAudio: music: jazz.", sound_effects_only=True),
+		)
 
 	def test_sound_effects_only_drops_a_vocal_sentence_of_a_cue(self):
 		from joymedia.services.prompt_compiler import NO_VOICE_OR_MUSIC, _audio_line_last
