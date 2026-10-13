@@ -46,6 +46,18 @@ class TestNormalize(FrappeTestCase):
 			self._norm({**RAW, "video_prompt": ""})
 
 
+class TestAudioDirection(FrappeTestCase):
+	def test_effects_and_music_become_the_h3_audio_line_and_narration_is_left_out(self):
+		beat = {"audio": "SFX: Tiếng cốc đổ\nBGM: Nhạc vui nhộn\nGhi chú"}
+		with patch.object(planner, "translate", side_effect=lambda text, project: {"Tiếng cốc đổ": "a glass tipping", "Nhạc vui nhộn": "playful music"}[text]):
+			line = planner.audio_direction(frappe._dict(), beat)
+		self.assertEqual("Audio: sound effects: a glass tipping; music: playful music.", line)
+
+	def test_a_beat_without_sound_direction_adds_nothing(self):
+		self.assertEqual("", planner.audio_direction(frappe._dict(), {"audio": ""}))
+		self.assertEqual("", planner.audio_direction(frappe._dict(), {}))
+
+
 class TestCoverage(FrappeTestCase):
 	BEAT = "Mommy bear carries a cup of milk and spills it on a pile of paper. The paper absorbs the milk."
 
@@ -96,6 +108,13 @@ class TestApply(FrappeTestCase):
 			("KEEP THIS CLAIM", "Keep this narration", "SFX: pop", "0:00 - 0:03", 3.0),
 			(shot.caption, shot.voice_over, shot.audio_cues, shot.source_timing, shot.duration_seconds),
 		)
+
+	def test_the_scenes_sound_direction_survives_planning(self):
+		plan = {**planner.normalize_production_shot(RAW, reference_keys=set(), duration=3.0, is_first=True), "audio": "Audio: sound effects: a pop."}
+		planner.apply_production_shot(self.project, self.shot, plan)
+		prompt = frappe.get_doc("Shot", self.shot.name).generation_prompt
+		self.assertTrue(prompt.startswith(RAW["video_prompt"]))
+		self.assertTrue(prompt.endswith("Audio: sound effects: a pop."))
 
 	def test_held_back_plans_are_not_applied_through_the_api(self):
 		from joymedia.api import storyboard

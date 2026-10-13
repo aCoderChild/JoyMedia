@@ -363,6 +363,21 @@ def _get_shot_output_path(shot):
 
 
 SCENE_LOUDNESS_LUFS = -18
+# Below this mean level (dBFS) a source counts as silent.
+AUDIBLE_FLOOR_DB = -55
+
+
+def _is_audible(path, seconds):
+	"""Whether the first `seconds` of an audio source contain real sound."""
+	result = subprocess.run(
+		["ffmpeg", "-v", "info", "-t", f"{seconds:.3f}", "-i", str(path), "-vn", "-af", "volumedetect", "-f", "null", "-"],
+		capture_output=True, text=True,
+	)
+	try:
+		return float(result.stderr.split("mean_volume:")[1].split("dB")[0]) > AUDIBLE_FLOOR_DB
+	except (IndexError, ValueError):
+		# -inf (digital silence) or an unreadable stream: nothing to level.
+		return False
 
 
 def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
@@ -395,7 +410,9 @@ def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
 				"fade_out_seconds": fade_out_seconds,
 				"duck_others": bool(clip.duck_others),
 				"loop": clip.audio_role == "BGM",
-				"normalize_loudness": clip.audio_role == "Source",
+				# Levelling lifts quiet scenes toward a common loudness; a scene with no audible sound must be
+				# left silent, not amplified into noise.
+				"normalize_loudness": clip.audio_role == "Source" and _is_audible(_get_timeline_audio_path(clip), cue_duration),
 			}
 		)
 	return sources

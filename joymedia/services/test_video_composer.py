@@ -237,3 +237,16 @@ class TestSceneLoudnessLeveling(FrappeTestCase):
 
 			self.assertGreater(raw_gap, 20)
 			self.assertLess(leveled_gap, 4)
+
+
+class TestSilentScenesAreNotAmplified(FrappeTestCase):
+	def test_silence_is_not_audible_and_a_quiet_tone_is(self):
+		from joymedia.services.video_composer import _is_audible
+
+		with tempfile.TemporaryDirectory(prefix="joymedia-silent-") as temp_dir:
+			temp = Path(temp_dir)
+			silent, quiet = temp / "silent.wav", temp / "quiet.wav"
+			_run_ffmpeg("-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "2", str(silent))
+			_run_ffmpeg("-f", "lavfi", "-i", "sine=frequency=300:duration=2,volume=-12dB", "-c:a", "pcm_s16le", str(quiet))
+			self.assertFalse(_is_audible(silent, 2))
+			self.assertTrue(_is_audible(quiet, 2))

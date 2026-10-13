@@ -42,6 +42,7 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 		duration=float(shot.duration_seconds or 0),
 		is_first=int(shot.shot_number or 0) <= 1,
 	)
+	plan["audio"] = audio_direction(project, beat)
 	plan["reference_keys"], added_notes = ground_reference_keys(project, beat, plan["reference_keys"], references)
 	plan["notes"].extend(added_notes)
 	coverage, missing = beat_coverage(beat["summary"], plan["image_prompt"], plan["video_prompt"])
@@ -123,6 +124,22 @@ def translate(text, project):
 	)
 	raw = _ask_planner(prompt, system="You translate storyboard text faithfully. Return JSON only.", max_tokens=600)
 	return str((raw or {}).get("english") or "").strip() or text
+
+
+def audio_direction(project, beat):
+	"""The beat's sound direction as the H3 workflow's own `Audio:` line.
+
+	The H3 workflow generates its soundtrack (effects, music) from the prompt, in the form its own sample
+	prompt uses: an `Audio:` line. A planned video prompt replaces the storyboard text, so without this the
+	scene's sound effects would silently disappear. Voice-over is recorded separately and is not included.
+	"""
+	from joymedia.services.audio_plan import parse_audio_cues
+
+	parts = [
+		f"{'sound effects' if role == 'SFX' else 'music'}: {translate(text, project)}"
+		for role, text in parse_audio_cues(beat.get("audio"))
+	]
+	return f"Audio: {'; '.join(parts)}." if parts else ""
 
 
 def build_planning_prompt(project, shot, beat, references, previous_end_state):
@@ -295,7 +312,7 @@ def apply_production_shot(project, shot, plan):
 	from joymedia.api.storyboard import _assign_shot_references
 
 	shot.image_prompt = plan["image_prompt"]
-	shot.generation_prompt = plan["video_prompt"]
+	shot.generation_prompt = plan["video_prompt"] + (f"\n\n{plan['audio']}" if plan.get("audio") else "")
 	shot.motion_plan_json = frappe.as_json(plan["motion_plan"])
 	shot.start_state, shot.end_state = plan["start_state"], plan["end_state"]
 	shot.continuity_mode = plan["continuity_mode"]
