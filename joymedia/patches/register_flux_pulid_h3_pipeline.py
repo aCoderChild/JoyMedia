@@ -90,8 +90,13 @@ def _register_keyframe():
 	name = frappe.db.get_value(
 		"Generation Workflow", {"workflow_key": WORKFLOW_KEY}, "name", order_by="version_number desc"
 	)
-	if name and "optional_input_chains" in (frappe.db.get_value("Generation Workflow", name, "execution_spec") or ""):
-		return name
+	if name:
+		stored = frappe.db.get_value("Generation Workflow", name, ["execution_spec", "workflow_json"], as_dict=True)
+		# Reuse only a version whose graph is exactly the shipped one (steps, nodes, wiring).
+		if "optional_input_chains" in (stored.execution_spec or "") and json.loads(stored.workflow_json) == json.loads(
+			GRAPH.read_text()
+		):
+			return name
 	spec = {
 		"parameters": [
 			{"semantic": "seed", "node_key": "25", "input_name": "noise_seed"},
