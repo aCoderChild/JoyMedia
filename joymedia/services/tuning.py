@@ -20,7 +20,7 @@ DEFAULTS = {
 	# A cutout counts as transparent when its least opaque pixel is below this alpha (0-255).
 	"opaque_below": 250,
 	# Audio screen: spectral flatness of the audible parts (0 tonal ... 1 noise).
-	"effects_flatness_min": 0.40, "effects_borderline_max": 0.50, "effect_layer_attempts": 3,
+	"effects_flatness_min": 0.40, "effects_layer_accept_min": 0.30, "effects_borderline_max": 0.50, "effect_layer_attempts": 3,
 }
 
 

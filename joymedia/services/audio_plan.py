@@ -249,8 +249,10 @@ def check_scene_audio(project_name, apply=True):
 			row["action"] = "replaced"
 			if apply:
 				row["layer_score"] = _place_best_effects_layer(project.name, clip.shot)
-				if row["layer_score"] is None or row["layer_score"] < tune("effects_flatness_min"):
+				if row["layer_score"] is None or row["layer_score"] < tune("effects_layer_accept_min"):
 					row["action"] = "silenced"
+				elif row["layer_score"] < tune("effects_flatness_min"):
+					row["listen"] = True
 				frappe.db.set_value("Timeline Clip", clip.name, "enabled", 0, update_modified=False)
 		report.append(row)
 	if apply:
@@ -293,24 +295,45 @@ def _place_best_effects_layer(project_name, shot_name):
 			best = (version, score)
 		if score is not None and score >= tune("effects_flatness_min"):
 			break
-	if best[1] is not None and best[1] >= tune("effects_flatness_min"):
+	# A layer that clearly passes is used. One in the borderline band is still better than a silent scene, and is
+	# flagged to be listened to; below that the scene stays silent rather than carry music or a voice.
+	if best[1] is not None and best[1] >= tune("effects_layer_accept_min"):
 		place_cue_audio(project_name, shot_name, "SFX", best[0])
 	return best[1]
 
 
-def scene_sound_prompt(shot):
-	"""Describe the effects of a scene: its SFX cue, else its prompt's audio line, else its action.
+DEFAULT_FOLEY = "soft natural foley: gentle paper crinkle, light rustle and small soft impacts"
 
-	Vocal sounds (laughter, voices) are left out, since only sound effects are wanted.
+
+def scene_sound_prompt(shot):
+	"""English description of a scene's sound effects for the audio model.
+
+	The sound-effect model is trained on English, so the planner's English `Audio:` line in the scene's prompt is
+	preferred over the storyboard's own cue (which may be in another language). A scene with no sound cue gets a
+	generic foley description, never its visual description. Vocal sounds (laughter, voices, exclamations) are left
+	out, since only sound effects are wanted.
 	"""
 	from joymedia.services.prompt_compiler import VOCAL_SOUND
 
-	cue = next((text for role, text in parse_audio_cues(shot.audio_cues) if role == "SFX"), None)
 	paragraphs = [p.strip() for p in str(shot.generation_prompt or "").split("\n\n") if p.strip()]
-	audio = next((p.split(":", 1)[1].strip() for p in paragraphs if p.casefold().startswith("audio:")), None)
-	text = cue or audio or (paragraphs[0][:200] if paragraphs else "")
-	sentences = [s for s in re.split(r"(?<=[.!])\s+", text) if not VOCAL_SOUND.search(s)]
-	return " ".join(sentences) or "natural foley sound effects of the action"
+	line = next((p.split(":", 1)[1].strip() for p in paragraphs if p.casefold().startswith("audio:")), "")
+	text = re.sub(r"^sound effects\s*:\s*", "", line, flags=re.I)
+	if not text or not _is_english(text):
+		# No usable English audio line: the sheet's cue, only if it is English too.
+		cue = next((t for role, t in parse_audio_cues(shot.audio_cues) if role == "SFX"), "")
+		text = cue if _is_english(cue) else ""
+	# The prompt compiler's own additions (timed events, the "no speech" sentence) are not part of the description.
+	text = re.split(r"\bSound effects only:", text)[0]
+	text = re.sub(r"\bat \d+(?:\.\d+)?s\b", "", text)
+	sentences = [x for x in re.split(r"(?<=[.!])\s+", text) if x.strip() and not VOCAL_SOUND.search(x)]
+	described = " ".join(sentences).replace("silence between the sounds", "").strip(" .;,")
+	return described or DEFAULT_FOLEY
+
+
+def _is_english(text):
+	from joymedia.services.production_planner import looks_english
+
+	return bool(text) and looks_english(text)
 
 
 def _shot_frame_range(project_name, shot_name):

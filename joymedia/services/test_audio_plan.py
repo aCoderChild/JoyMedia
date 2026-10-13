@@ -200,17 +200,28 @@ class TestUseSoundEffectsOnly(FrappeTestCase):
 			result = use_sound_effects_only(self.project.name, prompts={self.hook.name: "a crisp pop"})
 
 		self.assertEqual(
-			[(self.hook.name, "a crisp pop"), (self.plain.name, "A scene.")],
+			[(self.hook.name, "a crisp pop"), (self.plain.name, "soft natural foley: gentle paper crinkle, light rustle and small soft impacts")],
 			[(c.args[1], c.kwargs["prompt"]) for c in generate.call_args_list],
 		)
 		self.assertEqual(2, len(result["generated"]))
 		self.assertEqual("Separate effects layer", frappe.db.get_value("Media Project", self.project.name, "soundtrack_mode"))
 
-	def test_a_vocal_sentence_is_left_out_of_the_effect_description(self):
+	def test_the_effect_description_prefers_the_planners_english_line_and_drops_vocal_sentences(self):
 		from joymedia.services.audio_plan import scene_sound_prompt
 
-		shot = frappe._dict(audio_cues="SFX: Paper tearing. Baby giggling laughter.", generation_prompt="")
-		self.assertEqual("Paper tearing.", scene_sound_prompt(shot))
+		shot = frappe._dict(
+			audio_cues="SFX: Tiếng cốc đổ",
+			generation_prompt="Movement.\n\nAudio: sound effects: Sound of cup pouring at 1.2s. A happy laugh at 2.0s; silence between the sounds. "
+			"Sound effects only: no speech, no music.",
+		)
+		self.assertEqual("Sound of cup pouring", scene_sound_prompt(shot))
+
+	def test_a_foreign_language_cue_is_not_sent_to_the_audio_model_and_a_scene_without_a_cue_gets_generic_foley(self):
+		from joymedia.services.audio_plan import DEFAULT_FOLEY, scene_sound_prompt
+
+		self.assertEqual(DEFAULT_FOLEY, scene_sound_prompt(frappe._dict(audio_cues="SFX: Tiếng cốc đổ", generation_prompt="Movement.")))
+		self.assertEqual(DEFAULT_FOLEY, scene_sound_prompt(frappe._dict(audio_cues="", generation_prompt="Mother holds a tissue to the kid's cheek.")))
+		self.assertEqual("Paper tearing", scene_sound_prompt(frappe._dict(audio_cues="SFX: Paper tearing. Baby giggling laughter.", generation_prompt="")))
 
 
 class TestCheckSceneAudio(FrappeTestCase):
