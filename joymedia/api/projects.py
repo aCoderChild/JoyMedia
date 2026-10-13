@@ -253,15 +253,23 @@ def create_project(project_name, product_name, video_idea=None, campaign_brief=N
 	if not set(frappe.get_roles()).intersection({"JoyMedia User", "JoyMedia Specialist", "System Manager"}):
 		frappe.throw(_("You do not have permission to create a project."))
 	export_quality = "Draft 720p"
-	workflow = _get_customer_workflow_for_export_quality(export_quality)
+	# Creating/editing a project must remain available on a fresh development
+	# site. Rendering still fails closed later until an administrator promotes a
+	# pipeline; draft creation must not select a candidate or newest workflow.
+	try:
+		workflow = _get_customer_workflow_for_export_quality(export_quality)
+	except frappe.ValidationError as exc:
+		if "No active Generation Pipeline is configured" not in str(exc):
+			raise
+		workflow = None
 	from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow
-	pipeline = pipeline_for_final_workflow(workflow.name)
+	pipeline = pipeline_for_final_workflow(workflow.name) if workflow else None
 	project = frappe.get_doc({
 		"doctype": "Media Project",
 		"project_name": project_name,
 		"product_name": (product_name or "").strip(),
 		"video_idea": video_idea or campaign_brief,
-		"workflow": workflow.name,
+		"workflow": workflow.name if workflow else None,
 		"generation_pipeline": pipeline.name if pipeline else None,
 		"total_duration_seconds": 15,
 		"delivery_preset": "Landscape",

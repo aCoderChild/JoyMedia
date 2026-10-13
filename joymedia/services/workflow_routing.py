@@ -1,8 +1,8 @@
-"""Fixed-pipeline reference binding for storyboard shots.
+"""Promoted-pipeline reference binding for storyboard shots.
 
 Customers describe a film and select references; they never select a model.
-The site administrator promotes one immutable FLUX → H3 pipeline and this module
-only validates and binds a shot to that published contract.
+The site administrator promotes one immutable, linear production pipeline and this
+module only validates and binds a shot to that published contract.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def normalize_reference_role(value):
 
 
 def resolve_shot_render_route(default_workflow, references, *, handoff_type="", motion_plan_json=""):
-	"""Return the one configured FLUX → H3 pipeline for a shot.
+	"""Return the one configured production pipeline for a shot.
 
 	Reference quantity never selects a model.  The first stage's declared binding
 	contract decides whether the selected references can be supplied; otherwise the
@@ -53,26 +53,42 @@ def resolve_shot_render_route(default_workflow, references, *, handoff_type="", 
 	from joymedia.services.generation_pipeline_service import get_active_generation_pipeline, get_pipeline_steps
 	from joymedia.services.workflow_resolver import get_workflow_input_contract
 
-	pipeline = get_active_generation_pipeline()
+	try:
+		pipeline = get_active_generation_pipeline()
+	except frappe.ValidationError as exc:
+		# Storyboards remain editable before an operator promotes a pipeline. This
+		# is not a rendering fallback: MediaProject.generate_video requires the
+		# promoted pipeline before it can create a Generation Run.
+		if "No active Generation Pipeline is configured" not in str(exc):
+			raise
+		contract = {item["role"]: item for item in get_workflow_input_contract(default_workflow)}
+		return {
+			"strategy": "unpromoted_workflow",
+			"workflow": default_workflow.name,
+			"generation_pipeline": "",
+			"references": _map_pipeline_references(references, contract),
+			"reason": "Storyboard draft awaiting an explicitly promoted production pipeline.",
+			"requires_recomposition": str(handoff_type or "").casefold() in {"new_scene", "new scene", "scene_reset"},
+		}
 	steps = get_pipeline_steps(pipeline.name)
 	if len(steps) < 2:
-		frappe.throw(frappe._("The active Generation Pipeline must contain fixed FLUX and H3 stages."))
+		frappe.throw(frappe._("The active Generation Pipeline must contain at least two ordered stages."))
 	workflow = frappe.get_doc("Generation Workflow", steps[-1].workflow)
 	keyframe = frappe.get_doc("Generation Workflow", steps[0].workflow)
 	contract = {item["role"]: item for item in get_workflow_input_contract(keyframe)}
-	normalized = _map_fixed_pipeline_references(references, contract)
+	normalized = _map_pipeline_references(references, contract)
 	new_scene = str(handoff_type or "").casefold() in {"new_scene", "new scene", "scene_reset"}
 	return {
-		"strategy": "fixed_flux_h3_pipeline",
+		"strategy": "promoted_linear_pipeline",
 		"workflow": workflow.name,
 		"generation_pipeline": pipeline.name,
 		"references": normalized,
-		"reason": "Configured fixed FLUX → H3 production pipeline.",
+		"reason": "Configured promoted production pipeline.",
 		"requires_recomposition": new_scene,
 	}
 
 
-def _map_fixed_pipeline_references(references, contract):
+def _map_pipeline_references(references, contract):
 	"""Map every selected visual reference to a declared first-stage role."""
 	if not references:
 		return []
@@ -88,7 +104,7 @@ def _map_fixed_pipeline_references(references, contract):
 			item["reference_role"] = board_role
 		else:
 			frappe.throw(
-				frappe._("The active FLUX workflow has no binding for reference role '{0}'. ")
+				frappe._("The active pipeline's first-stage workflow has no binding for reference role '{0}'. ")
 				.format(role)
 				+ frappe._("Configure a multi-reference binding or remove that reference explicitly.")
 			)

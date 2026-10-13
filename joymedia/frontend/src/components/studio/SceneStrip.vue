@@ -279,6 +279,15 @@
                 >
                   {{ currentLang === 'vi' ? 'Sửa cảnh' : 'Edit Scene' }}
                 </button>
+				<button
+				  type="button"
+				  class="w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-ink-primary hover:bg-surface-hover cursor-pointer"
+				  @click="emit('updateContinuity', shot, shot.continuity_mode === 'Continue' ? 'New Scene' : 'Continue'); menuOpenIndex = null"
+				>
+				  {{ shot.continuity_mode === 'Continue'
+				    ? (currentLang === 'vi' ? 'Bắt đầu cảnh mới' : 'Start new scene')
+				    : (currentLang === 'vi' ? 'Nối từ cảnh trước' : 'Continue previous scene') }}
+				</button>
                 <button
                   type="button"
                   class="w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-rose-400 hover:bg-rose-500/10 cursor-pointer disabled:opacity-50"
@@ -324,7 +333,6 @@ const props = defineProps({
   shots: { type: Array, default: () => [] },
   selectedShotIndex: { type: Number, default: 0 },
   selectedTarget: { type: String, default: "scene" },
-  generationMode: { type: String, default: "Multi-shot" },
   totalDurationSeconds: { type: [Number, String], default: 15 },
   hasStoryboard: { type: Boolean, default: false },
   isGenerating: { type: Boolean, default: false },
@@ -351,12 +359,12 @@ const emit = defineEmits([
   "addScene",
   "selectKeyframe",
   "changeShotDuration",
-  "toggleContinuityMode",
   "reviseStoryboard",
   "reorderShots",
   "regenerateShot",
   "selectTake",
   "updateCaption",
+	"updateContinuity",
 ]);
 
 const aiRevisionInput = ref("");

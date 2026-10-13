@@ -30,7 +30,12 @@ class GenerationRun(Document):
 			if not self.generation_pipeline:
 				from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow
 
-				pipeline = pipeline_for_final_workflow(self.workflow)
+				try:
+					pipeline = pipeline_for_final_workflow(self.workflow)
+				except frappe.ValidationError as exc:
+					if "No active Generation Pipeline is configured" not in str(exc):
+						raise
+					pipeline = None
 				if project.generation_pipeline:
 					candidate = frappe.get_doc("Generation Pipeline", project.generation_pipeline)
 					# A project-level pipeline is only a run default when it ends with

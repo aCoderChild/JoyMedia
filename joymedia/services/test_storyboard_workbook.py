@@ -41,3 +41,21 @@ class TestStoryboardWorkbook(TestCase):
 			[(3.0, 4.0), (9.0, 10.0), (22.0, 25.0)],
 			[(warning["start_seconds"], warning["end_seconds"]) for warning in demo_2["timing_warnings"]],
 		)
+
+	def test_usp_continuation_rows_are_preserved(self):
+		book = Workbook()
+		sheet = book.active
+		sheet.append(["USP", "Lớp giấy dày dặn"])
+		sheet.append(["", "Thấm hút nhanh"])
+		sheet.append(["Thời lượng", "5s"])
+		sheet.append(["Phân cảnh", "Thời lượng", "Hình ảnh"])
+		sheet.append(["Hook", "0:00 - 0:05", "Cận cảnh"])
+		with NamedTemporaryFile(suffix=".xlsx", delete=False) as handle:
+			book.save(handle.name)
+			path = Path(handle.name)
+		try:
+			parsed = parse_storyboard_workbook(path)
+		finally:
+			path.unlink(missing_ok=True)
+
+		self.assertEqual("Lớp giấy dày dặn\nThấm hút nhanh", parsed["demos"][0]["metadata"]["usp"])

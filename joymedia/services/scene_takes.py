@@ -54,6 +54,8 @@ def regenerate_scene_with_reason(project_name, shot_name, retry_reason="Manual R
 
 def _start_takes_run(project, shot_names, retry_reason=None):
 	"""A run that renders new takes of these scenes, replacing each one's take when ready."""
+	if project.storyboard_approval_status != "Approved":
+		frappe.throw(_("Review and approve the storyboard before generating another take."))
 	from joymedia.services.project_context import build_project_snapshot
 	from joymedia.services.generation_orchestrator import start_run_internal
 	from joymedia.services.generation_pipeline_service import get_pipeline_steps, pipeline_for_final_workflow

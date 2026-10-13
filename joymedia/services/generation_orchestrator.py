@@ -237,15 +237,14 @@ def prepare_run(run_name: str):
 		if continuation_workflow:
 			validate_workflow_for_execution(continuation_workflow)
 			validate_workflow_bindings(continuation_workflow)
-		cross_shot_continuity = bool(
-			snapshot.get("generation_mode") in ("Continuous", "Consistency")
-			or execution_scope.get("continuity")
-		)
+		# Continuity is an editorial decision on the destination Shot.  A project
+		# mode may influence planning, but must never override an explicit scene
+		# reset or continuation instruction.
+		cross_shot_continuity = False
 		jobs_to_prepare = []
-		previous_shot_tail_job = (
-			execution_scope.get("continuation_from_task") if cross_shot_continuity else None
-		)
+		previous_shot_tail_job = execution_scope.get("continuation_from_task")
 		for shot in shots:
+			cross_shot_continuity = str(shot.get("continuity_mode") or "").casefold() == "continue"
 			shot_name = shot.get("shot")
 			shot_workflow = choose_shot_workflow(snapshot, shot)
 			shot_pipeline_name = shot.get("generation_pipeline") or run.generation_pipeline
@@ -276,7 +275,9 @@ def prepare_run(run_name: str):
 						previous_segment_job=previous_segment_job,
 						previous_shot_tail_job=previous_shot_tail_job,
 						cross_shot_continuity=cross_shot_continuity,
-						force_full_pipeline=bool(shot.get("requires_recomposition")),
+						# A scene reset needs a fresh keyframe only for its first
+						# technical segment. Later H3 segments must use Last Frame.
+						force_full_pipeline=bool(shot.get("requires_recomposition")) and segment["segment_index"] == 1,
 					)
 					for pipeline_step, dependency_override, artifact_role_override, is_first_pipeline_step in pipeline_stages:
 						step_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
@@ -351,8 +352,7 @@ def prepare_run(run_name: str):
 						jobs_to_prepare.append(job)
 						previous_pipeline_job = job.name
 					previous_segment_job = previous_pipeline_job
-					if cross_shot_continuity:
-						previous_shot_tail_job = previous_pipeline_job
+					previous_shot_tail_job = previous_pipeline_job
 					continue
 				existing_job = frappe.db.get_value(
 					"Generation Task",
@@ -437,7 +437,7 @@ def prepare_run(run_name: str):
 				job.save(ignore_permissions=True)
 				jobs_to_prepare.append(job)
 				previous_segment_job = job.name
-			previous_shot_tail_job = previous_segment_job if cross_shot_continuity else None
+			previous_shot_tail_job = previous_segment_job
 
 		for job in jobs_to_prepare:
 			if job.pipeline_step_key:
@@ -478,6 +478,11 @@ def prepare_run(run_name: str):
 def validate_generation_preflight(project, workflow, shots, *, check_comfyui=False, execution_scope=None):
 	if not frappe.conf.get("comfyui_base_url"):
 		frappe.throw(_("comfyui_base_url is not configured."))
+	# Planning may use an unpromoted workflow, but a render must always resolve
+	# through an explicitly promoted production pipeline.
+	from joymedia.services.generation_pipeline_service import get_active_generation_pipeline
+
+	get_active_generation_pipeline()
 	object_info = None
 	if check_comfyui:
 		from .comfyui_client import get_object_info, get_system_stats

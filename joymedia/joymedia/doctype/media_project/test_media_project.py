@@ -33,6 +33,38 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertFalse(frappe.get_meta("Media Project").has_field("campaign_brief"))
 		self.assertFalse(frappe.get_meta("Media Project").has_field("reference_template"))
 
+	def test_creative_brief_change_requires_storyboard_reapproval(self):
+		project, _ = _create_project("Approval Invalidation", self.workflow)
+		project.storyboard_approval_status = "Approved"
+		project.save(ignore_permissions=True)
+
+		project.video_idea = "A revised campaign direction."
+		project.save(ignore_permissions=True)
+
+		self.assertEqual("Ready for Review", project.storyboard_approval_status)
+
+	def test_approval_binds_project_image_references_to_unassigned_imported_shots(self):
+		from joymedia.api.storyboard import _bind_unassigned_project_references
+
+		project, _ = _create_project("Imported Reference Binding", self.workflow)
+		asset, version = _create_asset_version(project, "Image", "png")
+		project.append("selected_media", {"asset_version": version.name, "reference_role": "Product"})
+		project.save(ignore_permissions=True)
+		shot = frappe.get_doc({
+			"doctype": "Shot",
+			"media_project": project.name,
+			"shot_number": 1,
+			"duration_seconds": 5,
+			"generation_prompt": "A product close-up.",
+		}).insert(ignore_permissions=True)
+
+		_bind_unassigned_project_references(project)
+		shot.reload()
+
+		self.assertEqual([(version.name, "Product")], [
+			(row.asset_version, row.reference_role) for row in shot.generation_inputs
+		])
+
 	def test_selected_media_supports_image_video_and_audio(self):
 		from joymedia.services.project_context import _get_project_selected_assets
 
@@ -275,6 +307,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			}],
 		})
 		project.reload()
+		project.storyboard_approval_status = "Approved"
+		project.save(ignore_permissions=True)
 		events = []
 
 		def recalculate(media_project_name):

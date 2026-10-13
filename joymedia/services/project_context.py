@@ -191,8 +191,8 @@ def build_project_snapshot(project):
 	settings = _project_settings(project)
 	configured_pipeline = settings.generation_pipeline or ""
 	# A run may carry a project-level pipeline only when its immutable final stage
-	# matches the project's configured H3 workflow. Per-shot snapshots validate the
-	# same promoted FLUX → H3 pipeline and record their reference bindings.
+	# matches the project's configured final-stage workflow. Per-shot snapshots
+	# validate the same promoted pipeline and record their reference bindings.
 	if configured_pipeline:
 		from joymedia.services.generation_pipeline_service import get_pipeline_steps
 

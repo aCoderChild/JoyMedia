@@ -24,7 +24,7 @@ class TestWorkflowRouting(FrappeTestCase):
 	@patch("joymedia.services.workflow_resolver.get_workflow_input_contract")
 	@patch("joymedia.services.generation_pipeline_service.get_pipeline_steps")
 	@patch("joymedia.services.generation_pipeline_service.get_active_generation_pipeline")
-	def test_fixed_pipeline_preserves_two_bear_references_and_product(
+	def test_promoted_pipeline_preserves_multiple_character_references_and_product(
 		self, active_pipeline, pipeline_steps, input_contract, get_doc
 	):
 		active_pipeline.return_value = SimpleNamespace(name="PIPE-FLUX-H3")
@@ -44,7 +44,7 @@ class TestWorkflowRouting(FrappeTestCase):
 			handoff_type="new_scene",
 		)
 
-		self.assertEqual("fixed_flux_h3_pipeline", route["strategy"])
+		self.assertEqual("promoted_linear_pipeline", route["strategy"])
 		self.assertEqual("PIPE-FLUX-H3", route["generation_pipeline"])
 		self.assertEqual(["person", "person", "product"], [item["reference_role"] for item in route["references"]])
 		self.assertTrue(route["requires_recomposition"])
@@ -62,3 +62,15 @@ class TestWorkflowRouting(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			resolve_shot_render_route(SimpleNamespace(name="WF-H3"), [_reference("Character", 1)])
+
+	@patch("joymedia.services.workflow_resolver.get_workflow_input_contract")
+	@patch("joymedia.services.generation_pipeline_service.get_active_generation_pipeline")
+	def test_draft_route_does_not_promote_an_unconfigured_pipeline(self, active_pipeline, input_contract):
+		active_pipeline.side_effect = frappe.ValidationError("No active Generation Pipeline is configured.")
+		input_contract.return_value = [{"role": "person", "allow_multiple": True}]
+
+		route = resolve_shot_render_route(SimpleNamespace(name="WF-DRAFT"), [_reference("Character", 1)])
+
+		self.assertEqual("unpromoted_workflow", route["strategy"])
+		self.assertFalse(route["generation_pipeline"])
+		self.assertEqual(["person"], [item["reference_role"] for item in route["references"]])

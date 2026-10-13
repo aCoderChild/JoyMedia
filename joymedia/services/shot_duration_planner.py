@@ -34,7 +34,7 @@ def rebalance_shot_duration(media_project_name: str, shot_name: str, target_dura
 	shots = frappe.get_all(
 		"Shot",
 		filters={"media_project": project.name, "is_removed": 0},
-		fields=["name", "shot_number", "duration_seconds"],
+		fields=["name", "shot_number", "duration_seconds", "source_timing", "source_start_seconds", "source_end_seconds"],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
@@ -43,7 +43,6 @@ def rebalance_shot_duration(media_project_name: str, shot_name: str, target_dura
 		frappe.throw(_("Media Project must have a Workflow."))
 	workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 	fps = _timeline_fps(workflow)
-
 	total_frames = round(float(settings.total_duration_seconds or 0) * fps)
 	if total_frames < len(shots):
 		frappe.throw(_("Total Duration must provide at least one frame for each Shot."))
@@ -101,7 +100,7 @@ def recalculate_shot_durations(media_project_name: str):
 	shots = frappe.get_all(
 		"Shot",
 		filters={"media_project": project.name, "is_removed": 0},
-		fields=["name", "shot_number", "duration_seconds"],
+		fields=["name", "shot_number", "duration_seconds", "source_timing", "source_start_seconds", "source_end_seconds"],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
@@ -114,6 +113,14 @@ def recalculate_shot_durations(media_project_name: str):
 		settings.workflow,
 	)
 	fps = _timeline_fps(workflow)
+	# Imported storyboards carry approved source time ranges. Do not silently
+	# stretch their authored beats to fill editorial gaps; those gaps must be
+	# represented and resolved deliberately in the timeline.
+	if all(shot.source_timing and shot.source_end_seconds > shot.source_start_seconds for shot in shots):
+		planned_frames = [max(1, round(float(shot.duration_seconds or 0) * fps)) for shot in shots]
+		for shot, planned_frame_count in zip(shots, planned_frames):
+			frappe.db.set_value("Shot", shot.name, {"planned_frame_count": planned_frame_count}, update_modified=False)
+		return {"total_frames": sum(planned_frames), "shots": len(shots), "preserved_source_timing": True}
 
 	total_frames = round(float(settings.total_duration_seconds or 0) * fps)
 	if total_frames < len(shots):

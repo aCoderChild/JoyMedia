@@ -38,7 +38,7 @@ def _assign_reference_pool_auto(plan, project_references):
 
 	The AI Director normally returns a purposeful subset.  Falling back to the
 	whole selected pool is safer than silently dropping a product or environment.
-	The fixed production pipeline then validates that its declared FLUX bindings
+	The promoted production pipeline then validates that its declared first-stage bindings
 	can accept every selected reference.
 	"""
 	for shot in plan.get("shots") or []:
@@ -105,6 +105,11 @@ def _route_and_validate_plan_shot(shot, project_references, default_workflow):
 			frappe.throw(_("Automatic route does not support Shot Reference role '{0}'.").format(role))
 		counts[role] = counts.get(role, 0) + 1
 	for role, item in contract.items():
+		# A draft made before a production pipeline is promoted has no executable
+		# input contract yet. Keep its explicit references editable; generation is
+		# blocked later until the promoted pipeline validates them.
+		if route["strategy"] == "unpromoted_workflow":
+			continue
 		count = counts.get(role, 0)
 		if count < int(item.get("min_count") or 0):
 			frappe.throw(_("Shot {0} needs {1} input(s) for role '{2}'.").format(

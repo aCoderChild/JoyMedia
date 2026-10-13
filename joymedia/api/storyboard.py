@@ -25,8 +25,11 @@ def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
 	if frappe.db.exists("Generation Run", {"media_project": project.name}):
 		frappe.throw(_("A storyboard with generation history cannot be replaced. Create a new project revision."))
 	file_doc = frappe.get_doc("File", workbook_file)
+	file_doc.check_permission("read")
 	if Path(file_doc.file_name or "").suffix.lower() != ".xlsx":
 		frappe.throw(_("Storyboard import requires an .xlsx workbook."))
+	if int(file_doc.file_size or 0) > 10 * 1024 * 1024:
+		frappe.throw(_("Storyboard workbook must be 10 MB or smaller."))
 	from joymedia.services.storyboard_workbook import parse_storyboard_workbook
 	try:
 		parsed = parse_storyboard_workbook(file_doc.get_full_path())
@@ -93,6 +96,7 @@ def approve_project_storyboard(project_name, acknowledge_timing_warnings=False):
 	warnings = frappe.parse_json(project.storyboard_timing_warnings or "[]")
 	if warnings and str(acknowledge_timing_warnings).lower() not in {"1", "true", "yes", "on"}:
 		frappe.throw(_("Resolve or explicitly acknowledge the storyboard timing warnings before approval."))
+	_bind_unassigned_project_references(project)
 	project.storyboard_approval_status = "Approved"
 	project.save(ignore_permissions=True)
 	return {"project": project.name, "approval_status": project.storyboard_approval_status}
@@ -111,6 +115,29 @@ def _mark_storyboard_needs_review(project):
 	if project.storyboard_approval_status == "Approved":
 		project.db_set("storyboard_approval_status", "Ready for Review", update_modified=False)
 		project.storyboard_approval_status = "Ready for Review"
+
+
+def _bind_unassigned_project_references(project):
+	"""Persist selected image references on imported shots that have none yet.
+
+	The importer cannot infer creative meaning from an arbitrary workbook. This
+	general fallback keeps the project's explicit reference selections durable and
+	editable, while route validation enforces the promoted workflow's contract.
+	"""
+	references = []
+	for row in project.selected_media or []:
+		media_asset = frappe.db.get_value("Asset Version", row.asset_version, "media_asset")
+		if media_asset and frappe.db.get_value("Media Asset", media_asset, "media_type") == "Image":
+			references.append((row.reference_role or "General", row.asset_version))
+	if not references:
+		return
+	for shot_name in frappe.get_all("Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"):
+		shot = frappe.get_doc("Shot", shot_name)
+		if shot.generation_inputs:
+			continue
+		for role, asset_version in references:
+			shot.append("generation_inputs", {"reference_role": role, "asset_version": asset_version})
+		shot.save(ignore_permissions=True)
 
 
 @frappe.whitelist()
@@ -159,7 +186,15 @@ def update_project_shot(project_name, shot_name, values):
 		caption = str(values["caption"] or "").strip()[:120]
 		caption_changed = caption != (shot.caption or "")
 		shot.caption = caption
-	if changed or image_prompt_changed or caption_changed:
+	if "continuity_mode" in values:
+		continuity_mode = str(values["continuity_mode"] or "").strip()
+		if continuity_mode not in {"Continue", "New Scene"}:
+			frappe.throw(_("Continuity mode must be Continue or New Scene."))
+		continuity_changed = continuity_mode != (shot.continuity_mode or "New Scene")
+		shot.continuity_mode = continuity_mode
+	else:
+		continuity_changed = False
+	if changed or image_prompt_changed or caption_changed or continuity_changed:
 		shot.save(ignore_permissions=True)
 		_mark_storyboard_needs_review(project)
 	if caption_changed:
@@ -173,6 +208,7 @@ def update_project_shot(project_name, shot_name, values):
 		"generation_prompt": shot.generation_prompt,
 		"image_prompt": getattr(shot, "image_prompt", None) or shot.generation_prompt,
 		"caption": shot.caption or "",
+		"continuity_mode": shot.continuity_mode or "New Scene",
 		"is_outdated": bool(changed and shot.selected_output_asset_version),
 	}
 

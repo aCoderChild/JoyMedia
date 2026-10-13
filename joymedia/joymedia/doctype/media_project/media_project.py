@@ -54,6 +54,7 @@ class MediaProject(Document):
 
 	def validate(self):
 		self._validate_generation_affecting_changes()
+		self._invalidate_storyboard_approval_for_creative_changes()
 		from joymedia.joymedia.doctype.project_reference.project_reference import assign_reference_key
 		for reference in self.selected_media or []:
 			assign_reference_key(reference, self)
@@ -63,6 +64,18 @@ class MediaProject(Document):
 			frappe.throw(_("Project Name is required."))
 		if self.status not in ALLOWED_STATUSES:
 			frappe.throw(_("Invalid Media Project status."))
+
+	def _invalidate_storyboard_approval_for_creative_changes(self):
+		"""A reviewed storyboard is only valid for the creative brief it reviewed."""
+		if self.is_new() or self.storyboard_approval_status != "Approved":
+			return
+		previous = frappe.db.get_value(
+			"Media Project", self.name,
+			["video_idea", "product_name", "global_instructions", "delivery_preset", "delivery_width", "delivery_height"],
+			as_dict=True,
+		)
+		if previous and any(self.get(fieldname) != previous.get(fieldname) for fieldname in previous):
+			self.storyboard_approval_status = "Ready for Review"
 
 	def _validate_generation_affecting_changes(self):
 		if self.is_new() or not frappe.db.exists("Media Project", self.name):
@@ -308,6 +321,8 @@ class MediaProject(Document):
 	def generate_end_to_end(self):
 		self._require_write_access()
 		self._require_video_idea()
+		if frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}) and self.storyboard_approval_status != "Approved":
+			frappe.throw(_("Review and approve the storyboard before starting generation."))
 		if not self.workflow:
 			frappe.throw(_("Configure Video Settings before generating a storyboard."))
 		_, current_snapshot_hash = build_project_snapshot(self)
@@ -326,8 +341,6 @@ class MediaProject(Document):
 			from joymedia.services.storyboard_job import queue_storyboard
 
 			return queue_storyboard(self.name)
-		if self.storyboard_approval_status != "Approved":
-			frappe.throw(_("Review and approve the storyboard before starting generation."))
 		return self.generate_video()
 
 	@frappe.whitelist()

@@ -207,7 +207,6 @@
             :shots="storyboardShots"
             :selected-shot-index="selectedShotIndex"
             :selected-target="selectedTarget"
-            :generation-mode="videoSettings.generation_mode"
             :total-duration-seconds="videoSettings.duration || 15"
             :has-storyboard="Boolean(storyboardShots.length)"
             :is-generating="isGenerating || isProductionActive"
@@ -229,13 +228,13 @@
             @delete-shot="removeStoryboardShot"
             @select-keyframe="onSelectKeyframe"
             @change-shot-duration="changeShotDuration"
-            @toggle-continuity-mode="toggleContinuityMode"
             @revise-storyboard="reviseStoryboard"
             @reorder-shots="onReorderShots"
             @add-scene="openAddScenePopover"
             @regenerate-shot="regenerateCurrentShot"
             @select-take="selectShotTake"
             @update-caption="updateShotCaption"
+			@update-continuity="updateShotContinuity"
           />
         </template>
 
@@ -1419,6 +1418,21 @@ async function toggleContinuityMode() {
     ...videoSettings.value,
     generation_mode: nextMode,
   });
+}
+
+async function updateShotContinuity(shot, continuityMode) {
+	if (!shot?.name) return;
+	try {
+		const result = await call("joymedia.api.storyboard.update_project_shot", {
+			project_name: projectName.value,
+			shot_name: shot.name,
+			values: { continuity_mode: continuityMode },
+		});
+		Object.assign(shot, result);
+		await fetchWorkspace();
+	} catch (err) {
+		notify({ title: "Error", text: errorMessage(err, "Failed to update scene continuity."), type: "error" });
+	}
 }
 
 async function saveActiveShot(shotName, generationPrompt, done = () => {}) {

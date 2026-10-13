@@ -1,4 +1,4 @@
-"""Deterministic import for the Shera-style advertising storyboard workbook.
+"""Deterministic import for spreadsheet-based advertising storyboards.
 
 The importer intentionally does not ask an LLM to recover rows from a spreadsheet.
 It preserves the supplied Vietnamese or English source text and reports timing gaps for
@@ -20,6 +20,7 @@ METADATA_LABELS = {
 	"product name": "product_name",
 	"mục tiêu": "objective",
 	"objective": "objective",
+	"usp": "usp",
 	"usp chính": "usp",
 	"primary usp": "usp",
 	"thời lượng": "duration",
@@ -97,18 +98,25 @@ def _parse_sheet(sheet) -> dict:
 
 def _metadata(rows) -> dict:
 	metadata = {}
+	continuation_key = None
 	for row in rows:
 		label = _cell(row, 0).casefold()
 		key = METADATA_LABELS.get(label)
-		if not key:
-			continue
 		value = _cell(row, 1)
+		if not label and continuation_key and value:
+			metadata[continuation_key] = f"{metadata[continuation_key]}\n{value}"
+			continue
+		if not key:
+			continuation_key = None
+			continue
 		if not value:
+			continuation_key = key
 			continue
 		if key == "usp" and metadata.get(key):
 			metadata[key] = f"{metadata[key]}\n{value}"
 		else:
 			metadata[key] = value
+		continuation_key = key if key == "usp" else None
 	return metadata
 
 

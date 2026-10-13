@@ -70,6 +70,28 @@ class TestShotDurationPlanner(FrappeTestCase):
 		self.assertEqual({"total_frames": 240, "shots": 2}, result)
 		self.assertEqual([120, 120], [call.args[2]["planned_frame_count"] for call in set_value.call_args_list])
 
+	@patch("joymedia.services.shot_duration_planner.frappe.db.set_value")
+	@patch("joymedia.services.shot_duration_planner.frappe.get_all")
+	@patch("joymedia.services.shot_duration_planner.frappe.get_doc")
+	def test_source_timed_shots_keep_authored_durations(self, get_doc, get_all, set_value):
+		get_doc.return_value = _specification(total_duration_seconds=30, output_fps=24)
+		get_all.return_value = [
+			frappe._dict(
+				name="SHOT-00001", shot_number=1, duration_seconds=4,
+				source_timing="0:00 - 0:04", source_start_seconds=0, source_end_seconds=4,
+			),
+			frappe._dict(
+				name="SHOT-00002", shot_number=2, duration_seconds=8,
+				source_timing="0:07 - 0:15", source_start_seconds=7, source_end_seconds=15,
+			),
+		]
+
+		result = recalculate_shot_durations("SPEC-00001")
+
+		self.assertEqual({"total_frames": 288, "shots": 2, "preserved_source_timing": True}, result)
+		self.assertEqual([96, 192], [call.args[2]["planned_frame_count"] for call in set_value.call_args_list])
+		self.assertTrue(all("duration_seconds" not in call.args[2] for call in set_value.call_args_list))
+
 
 def _specification(**values):
 	return type(
