@@ -103,6 +103,15 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual([48, 46], [segment["segment_frame_count"] for segment in segments])
 		supports_continuation.assert_called_once_with(continuation)
 
+	@patch("joymedia.services.generation_orchestrator.workflow_supports_continuation", return_value=True)
+	def test_no_segment_exceeds_the_124_frame_cap_even_if_a_workflow_declares_more(self, _supports):
+		workflow = frappe._dict(frame_count=241, execution_spec="{}")
+		continuation = frappe._dict(name="WF-CONT", frame_count=241)
+
+		segments = generation_orchestrator._segment_plan(workflow, 300, continuation)
+
+		self.assertLessEqual(max(segment["segment_frame_count"] for segment in segments), 124)
+
 	@patch("joymedia.services.generation_orchestrator.workflow_supports_continuation", return_value=False)
 	def test_long_shot_without_continuation_contract_is_rejected(self, supports_continuation):
 		workflow = frappe._dict(frame_count=48, execution_spec="{}")

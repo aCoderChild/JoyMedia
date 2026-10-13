@@ -91,7 +91,7 @@ def _insert_h3(workflow_key, continuation=None):
 			{"semantic": "output_prefix", "node_key": "92", "input_name": "filename_prefix"},
 		],
 		"outputs": {"primary": {"node_key": "92", "media_type": "Video"}},
-		"metadata": {"frame_count": 121, "output_fps": 24, "produces_video": 1, "produces_audio": 1},
+		"metadata": {"frame_count": 124, "output_fps": 24, "produces_video": 1, "produces_audio": 1},
 	}
 	doc = frappe.get_doc({
 		"doctype": "Generation Workflow",

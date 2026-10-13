@@ -18,7 +18,7 @@ from .generation_runner import (
 	prepare_generation_task,
 	submit_attempt,
 )
-from .generation_segment_planner import plan_generation_segments
+from .generation_segment_planner import MAX_SEGMENT_FRAMES, plan_generation_segments
 from .generation_pipeline_service import get_pipeline_steps, pipeline_for_final_workflow
 from .prompt_compiler import compile_segment_prompt_from_snapshot, prompt_source_for_workflow
 from .result_ingestor import sync_attempt_result
@@ -66,11 +66,12 @@ def _segment_plan(workflow, frame_count, continuation_workflow=None):
 	settings = _continuation_settings(workflow)
 	segments = plan_generation_segments(
 		frame_count,
-		max_segment_frames=workflow.frame_count,
+		# One generation never exceeds MAX_SEGMENT_FRAMES (124 frames, about 5s at 24fps).
+		max_segment_frames=min(int(workflow.frame_count), MAX_SEGMENT_FRAMES),
 		continuation_overlap_frames=settings["overlap_frames"],
 		continuation_new_frames=settings["new_frames"],
 		continuation_max_segment_frames=int(
-			getattr(continuation_workflow, "frame_count", None) or workflow.frame_count
+			min(int(getattr(continuation_workflow, "frame_count", None) or workflow.frame_count), MAX_SEGMENT_FRAMES)
 		),
 	)
 	if len(segments) > 1 and not (continuation_workflow and workflow_supports_continuation(continuation_workflow)):
