@@ -245,6 +245,7 @@ def _identity_guard(shot, project):
 	State the cast once, then resolve every name and body part against it.
 	"""
 	names = _character_names(shot, project)
+	inventory = first_frame_inventory(shot, project)
 	if len(names) > 1:
 		who = (
 			f"The only characters in this scene are {' and '.join(names)}. They are different individuals: never "
@@ -264,7 +265,9 @@ def _identity_guard(shot, project):
 			"first frame, and every hand or paw is that character's own. "
 		)
 	return (
-		"Scene fidelity: the supplied first frame is the truth for the place, the lighting, the time of day, the "
+		(f"The first frame contains exactly: {inventory}. Nothing else is added: no other character, box, carton or "
+		   "product. Whatever the text says anyone does, the characters listed above do it. " if inventory else "")
+		+ "Scene fidelity: the supplied first frame is the truth for the place, the lighting, the time of day, the "
 		"characters and every object. Keep them for the whole clip; this text describes only what moves, and any "
 		"description of a different place, lighting or object in it is ignored. Keep the camera framing of the "
 		"first frame: allow at most a very slight, slow push-in, so that every character and product stays in view "
@@ -322,6 +325,33 @@ def _display_name(label, number):
 		return "the kid mascot"
 	base = label.split(" (")[0].strip()
 	return base if base.isascii() and base else f"character {number}"
+
+
+def first_frame_inventory(shot, project):
+	"""What the approved first frame contains, from the scene's references: characters left to right, products, logo."""
+	def field(row, key):
+		return row.get(key) if hasattr(row, "get") else getattr(row, key, None)
+
+	references = getattr(shot, "references", None) or []
+	if not any(_role_of(r) in ("character", "person", "product", "logo") for r in references):
+		return ""
+	names = [n.split(" (")[0] for n in _character_names(shot, project)]
+	products = sum(1 for r in references if _role_of(r) == "product")
+	parts = []
+	if names:
+		parts.append(f"{'from left to right ' if len(names) > 1 else ''}{' and '.join(names)}")
+	if products:
+		parts.append(f"{'in front of them ' if names else ''}{products} small product pack{'s' if products > 1 else ''}")
+	if any(_role_of(r) == "logo" for r in references):
+		parts.append("the brand logo at the top left")
+	return ", ".join(parts)
+
+
+def _role_of(reference):
+	role = frappe.scrub(
+		(reference.get("reference_role") if hasattr(reference, "get") else getattr(reference, "reference_role", "")) or ""
+	)
+	return "character" if role in ("person", "people", "talent") else role
 
 
 def _character_names(shot, project):

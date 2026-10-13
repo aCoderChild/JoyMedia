@@ -71,15 +71,25 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 	return plan
 
 
-def motion_only(project, text, references):
-	"""The beat's actions and camera moves only, in English, without place, lighting or objects that do not move."""
+def motion_only(project, text, references, inventory=""):
+	"""The beat's actions and camera moves only, in English, using only what the first frame contains.
+
+	`inventory` names what the first frame shows. Anything else the beat mentions (other boxes, people, products)
+	is dropped, and what such an entity does is done by a listed character instead, because a video model draws
+	every extra entity the text names.
+	"""
 	cast = ", ".join(r["label"] for r in references or [] if r.get("role") in ("Character", "Person"))
 	prompt = (
 		"Rewrite this storyboard beat as ONLY what moves: the actions of the characters and the camera, in time "
 		"order, in at most 60 words of English. Remove every description of the place, lighting, time of day, "
-		"colours and objects that are not moving, and every quantity, name or word that would print as text on an "
-		f"object. Characters: {cast or 'as in the beat'}; every bear, mother or "
-		f"baby named is one of them.\nBEAT: {text}\nReturn {{\"motion\": \"...\"}}"
+		"colours and objects that are not moving, every position in the frame, and every quantity, name or word that "
+		"would print as text on an object. "
+		+ (
+			f"The first frame contains exactly: {inventory}. Mention only these; drop any other object, box, person "
+			"or product, and give the actions of anything dropped to the nearest listed character. "
+			if inventory else f"Characters: {cast or 'as in the beat'}; every bear, mother or baby named is one of them. "
+		)
+		+ f"\nBEAT: {text}\nReturn {{\"motion\": \"...\"}}"
 	)
 	raw = _ask_planner(prompt, system="You rewrite storyboard beats faithfully. Return JSON only.", max_tokens=300)
 	return " ".join(str((raw or {}).get("motion") or "").split())
@@ -375,6 +385,27 @@ def apply_production_shot(project, shot, plan):
 	shot.planner_notes = "\n".join(plan["notes"])
 	shot.save(ignore_permissions=True)
 	_assign_shot_references(project, {shot.name: plan["reference_keys"]})
+	_constrain_to_first_frame(project, shot, plan)
+
+
+def _constrain_to_first_frame(project, shot, plan):
+	"""Rewrite the movement so it names only what the first frame (the pasted references) contains."""
+	from joymedia.services.prompt_compiler import first_frame_inventory
+	from joymedia.services.subject_overlay import pasted_references
+
+	shot.reload()
+	references = [{"reference_role": row.reference_role, "asset_version": row.asset_version} for row in shot.generation_inputs or []]
+	if not pasted_references(references):
+		return
+	project_labels = {row.asset_version: row.label for row in project.selected_media or []}
+	inventory = first_frame_inventory(
+		frappe._dict(references=references),
+		frappe._dict(references=[{"asset_version": v, "label": label} for v, label in project_labels.items()]),
+	)
+	movement = motion_only(project, plan["video_prompt"], project_reference_options(project), inventory)
+	if movement:
+		shot.generation_prompt = movement + (f"\n\n{plan['audio']}" if plan.get("audio") else "")
+		shot.save(ignore_permissions=True)
 
 
 def request_seed(*parts):

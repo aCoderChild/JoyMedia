@@ -141,6 +141,9 @@ class TestApply(FrappeTestCase):
 		self.assertEqual("The mother lifts a tissue.", result)
 		self.assertIn("ONLY what moves", ask.call_args.args[0])
 		self.assertIn("Mama", ask.call_args.args[0])
+		with patch.object(planner, "_ask_planner", return_value={"motion": "The mother winks."}) as ask:
+			planner.motion_only(self.project, "x", [], inventory="the mother mascot and 3 small product packs")
+		self.assertIn("The first frame contains exactly: the mother mascot and 3 small product packs", ask.call_args.args[0])
 
 	def test_the_planners_foley_is_used_when_the_beat_names_no_sound(self):
 		project = frappe._dict(selected_media=[], product_name="P", project_name="P")

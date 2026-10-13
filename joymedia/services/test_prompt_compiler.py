@@ -244,3 +244,21 @@ class TestAudioLineLast(FrappeTestCase):
 			_scrub_printable("The mother winks and gives a thumbs up at the top right corner of the frame."),
 		)
 		self.assertEqual("The kid sits.", _scrub_printable("The kid sits on the left side of the screen."))
+
+	def test_the_prompt_lists_what_the_first_frame_contains(self):
+		from joymedia.services.prompt_compiler import first_frame_inventory
+
+		shot = frappe._dict(references=[
+			{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Character", "asset_version": "AV2"},
+			{"reference_role": "Product", "asset_version": "AV3"}, {"reference_role": "Product", "asset_version": "AV4"},
+			{"reference_role": "Logo", "asset_version": "AV5"},
+		])
+		project = frappe._dict(references=[
+			{"asset_version": "AV1", "label": "Gấu mẹ (mother mascot)"}, {"asset_version": "AV2", "label": "Gấu con (kid mascot)"},
+		])
+		with patch("joymedia.services.subject_overlay.describe_colours", return_value=""):
+			self.assertEqual(
+				"from left to right the mother mascot and the kid mascot, in front of them 2 small product packs, "
+				"the brand logo at the top left",
+				first_frame_inventory(shot, project),
+			)
