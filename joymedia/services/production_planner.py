@@ -223,7 +223,9 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		f"- The advertised product is: {project.product_name or project.project_name}. Generic words in the beat "
 		"for it (paper, bottle, bag...) mean this product; never substitute a different product.",
 		"- image_prompt: English, at most 60 words. Describe only the first frame: subjects, setting, framing, "
-		"lighting. Include only what must appear. No text, captions or logos.",
+		"lighting. Include only what must appear. No text, captions or logos. Characters behave like people in a "
+		"natural place (stand, hold something, look at each other, use the room), never posed side by side in the "
+		"middle of an empty space.",
 		"- setting_prompt: English, at most 30 words. Only the place, light and camera framing of the first frame: "
 		"no character, animal, hand, product, object in action or text.",
 		"- sound_effects: English, at most 15 words: the physical, non-vocal sounds this action makes (rustling, "
@@ -395,11 +397,11 @@ def _constrain_to_first_frame(project, shot, plan):
 
 	shot.reload()
 	references = [{"reference_role": row.reference_role, "asset_version": row.asset_version} for row in shot.generation_inputs or []]
-	if not pasted_references(references):
+	if not pasted_references(references, shot.character_mode or project.get("character_mode") or "Paste exact art"):
 		return
 	project_labels = {row.asset_version: row.label for row in project.selected_media or []}
 	inventory = first_frame_inventory(
-		frappe._dict(references=references),
+		frappe._dict(references=references, character_mode=shot.character_mode or project.get("character_mode")),
 		frappe._dict(references=[{"asset_version": v, "label": label} for v, label in project_labels.items()]),
 	)
 	movement = motion_only(project, plan["video_prompt"], project_reference_options(project), inventory)

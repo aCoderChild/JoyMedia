@@ -533,3 +533,21 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		run = frappe._dict(name="RUN-1", media_project="PRJ-1")
 		with patch.dict(frappe.conf, {"joymedia_max_independent_jobs_per_run": 3}):
 			self.assertEqual(1, generation_orchestrator._run_submission_limit(run))
+
+
+class TestDrawModeInputs(FrappeTestCase):
+	def test_in_draw_mode_one_character_goes_in_and_products_and_logos_stay_pasted(self):
+		from unittest.mock import patch
+
+		from joymedia.services import subject_overlay
+		from joymedia.services.generation_orchestrator import _pipeline_reference_inputs
+
+		contract = [{"role": "person", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False}]
+		shot = frappe._dict(character_mode="Draw in scene", references=[
+			{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Character", "asset_version": "AV2"},
+			{"reference_role": "Product", "asset_version": "AV3"}, {"reference_role": "Logo", "asset_version": "AV4"},
+		])
+		with patch("joymedia.services.workflow_resolver.get_workflow_input_contract", return_value=contract), patch.object(
+			subject_overlay, "_cutout_path", return_value="/x.png"
+		):
+			self.assertEqual({"person": ["AV1"]}, _pipeline_reference_inputs(shot, frappe._dict(name="W")))

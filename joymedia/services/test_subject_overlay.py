@@ -172,3 +172,32 @@ class TestDescribeColours(FrappeTestCase):
 				frappe, "get_doc", return_value=frappe._dict(get_full_path=lambda: str(path))
 			):
 				self.assertEqual("mostly cream, with brown details", subject_overlay.describe_colours("AV-COLOUR"))
+
+
+class TestCharacterMode(FrappeTestCase):
+	def test_characters_are_pasted_only_in_paste_mode_but_products_and_logos_always(self):
+		references = [
+			{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Product", "asset_version": "AV2"},
+			{"reference_role": "Logo", "asset_version": "AV3"},
+		]
+		with patch.object(subject_overlay, "_cutout_path", return_value="/a.png"):
+			self.assertEqual(["character", "product", "logo"], [p["role"] for p in pasted_references(references, "Paste exact art")])
+			self.assertEqual(["product", "logo"], [p["role"] for p in pasted_references(references, "Draw in scene")])
+
+	def test_the_character_board_keeps_each_picture_uncropped_and_the_mother_larger(self):
+		with tempfile.TemporaryDirectory() as folder:
+			mother, kid = Path(folder) / "m.png", Path(folder) / "k.png"
+			Image.new("RGBA", (200, 300), (250, 240, 230, 255)).save(mother)
+			Image.new("RGBA", (200, 300), (250, 240, 230, 255)).save(kid)
+			paths = {"AVM": str(mother), "AVK": str(kid)}
+			references = [{"reference_role": "Character", "asset_version": "AVM"}, {"reference_role": "Character", "asset_version": "AVK"}]
+			with patch.object(subject_overlay, "_any_image_path", side_effect=paths.get), patch.object(
+				frappe, "get_site_path", return_value=folder
+			):
+				board = subject_overlay.character_board(references, {"AVM": 1, "AVK": 0.5})
+			image = Image.open(board)
+			self.assertEqual(768, image.height)
+			# The mother's tile is twice as tall as the kid's, both from the same baseline.
+			column = lambda x: [y for y in range(image.height) if image.getpixel((x, y)) != (236, 232, 226)]
+			mother_x, kid_x = 40 + 60, image.width - 40 - 30
+			self.assertGreater(len(column(mother_x)), 1.8 * len(column(kid_x)))

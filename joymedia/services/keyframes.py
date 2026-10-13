@@ -21,7 +21,10 @@ def keyframe_signature(shot):
 	references = sorted(
 		(row.reference_role or "", row.asset_version or "") for row in (shot.get("generation_inputs") or [])
 	)
-	text = "\x1f".join([shot.image_prompt or "", getattr(shot, "setting_prompt", None) or "", repr(references)])
+	mode = getattr(shot, "character_mode", None) or (
+		frappe.db.get_value("Media Project", shot.media_project, "character_mode") if shot.get("media_project") else ""
+	)
+	text = "\x1f".join([shot.image_prompt or "", getattr(shot, "setting_prompt", None) or "", mode or "", repr(references)])
 	return hashlib.sha256(text.encode()).hexdigest()[:20]
 
 

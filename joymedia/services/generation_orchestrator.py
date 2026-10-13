@@ -81,10 +81,11 @@ def _segment_plan(workflow, frame_count, continuation_workflow=None):
 
 def _pipeline_reference_inputs(shot, workflow):
 	"""Map a Shot's ordered references into the pipeline's first image stage."""
-	from .subject_overlay import pasted_references
+	from .subject_overlay import DRAW, pasted_references
 	from .workflow_resolver import get_workflow_input_contract
 	from .workflow_routing import normalize_reference_role
 
+	character_mode = (shot.get("character_mode") if hasattr(shot, "get") else None) or DRAW
 	contract = get_workflow_input_contract(workflow)
 	roles = {item["role"] for item in contract if item.get("role")}
 	role_limits = {
@@ -107,8 +108,11 @@ def _pipeline_reference_inputs(shot, workflow):
 		if not asset_version:
 			continue
 		raw_role = frappe.scrub(reference.get("input_role") or reference.get("reference_role") or "")
-		if raw_role == "logo" or pasted_references([reference]):
+		if raw_role == "logo" or pasted_references([reference], character_mode):
 			continue  # cutouts are pasted over the keyframe, never an input of the image model
+		if character_mode == DRAW and normalize_reference_role(raw_role) == "person" and inputs.get("person"):
+			# One character picture goes in; every character of the scene is combined into its reference board.
+			continue
 		# Keep an already-concrete workflow role intact.  In particular, direct
 		# R2V uses ``product_reference`` for two scalar image slots; converting it
 		# to a semantic routing alias here leaves the required slots unbound.
@@ -319,6 +323,7 @@ def prepare_run(run_name: str):
 								generation_prompt=shot.get("generation_prompt"),
 								image_prompt=shot.get("image_prompt"),
 								setting_prompt=shot.get("setting_prompt"),
+								character_mode=shot.get("character_mode"),
 								motion_plan_json=shot.get("motion_plan_json"),
 								start_state=shot.get("start_state"), end_state=shot.get("end_state"),
 								handoff_type=shot.get("handoff_type"),
@@ -410,6 +415,7 @@ def prepare_run(run_name: str):
 						shot_number=shot.get("shot_number"),
 						generation_prompt=shot.get("generation_prompt"),
 						image_prompt=shot.get("image_prompt"),
+						character_mode=shot.get("character_mode"),
 						motion_plan_json=shot.get("motion_plan_json"),
 						start_state=shot.get("start_state"), end_state=shot.get("end_state"),
 						handoff_type=shot.get("handoff_type"),

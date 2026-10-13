@@ -21,6 +21,7 @@
   "generation_prompt",
   "image_prompt",
   "setting_prompt",
+  "character_mode",
   "keyframe_artifact",
   "keyframe_status",
   "keyframe_signature",
@@ -141,6 +142,13 @@
    "fieldname": "setting_prompt",
    "fieldtype": "Small Text",
    "label": "Setting Prompt"
+  },
+  {
+   "description": "Empty uses the project's setting. Draw in scene: the characters are drawn acting in the scene. Paste exact art: the real mascot pictures are placed unchanged.",
+   "fieldname": "character_mode",
+   "fieldtype": "Select",
+   "label": "Characters",
+   "options": "\\nDraw in scene\\nPaste exact art"
   },
   {
    "fieldname": "keyframe_artifact",

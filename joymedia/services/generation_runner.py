@@ -313,6 +313,15 @@ def _stage_generation_inputs(job, attempt):
 		} for reference in references]
 		resolved_inputs[f"{role}_board"] = {"sha256": board["sha256"], "count": board["count"]}
 
+	if staged.get("person") and workflow.output_media_type == "Image":
+		from .subject_overlay import character_board_for_task
+
+		board = character_board_for_task(job)
+		if board:
+			# "Draw in scene": the image model sees every character of the scene on one board.
+			staged["person"] = [upload_local_file(board)["server_path"]]
+			resolved_inputs["person_board"] = {"path": board}
+
 	if job.depends_on_task:
 		previous_attempt = get_effective_attempt(job.depends_on_task)
 		if not previous_attempt or previous_attempt.status != "Completed":

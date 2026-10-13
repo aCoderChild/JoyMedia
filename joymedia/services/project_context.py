@@ -280,6 +280,7 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 				"planned_frame_count": int(shot.planned_frame_count or 0),
 				"image_prompt": shot.image_prompt or "",
 				"setting_prompt": getattr(shot, "setting_prompt", None) or "",
+				"character_mode": getattr(shot_doc, "character_mode", None) or getattr(settings, "character_mode", None) or "Draw in scene",
 				# An approved, current keyframe is the scene's first frame; its image stage is not repeated.
 				"keyframe_task": approved_keyframe_task(shot_doc),
 				"generation_prompt": shot.generation_prompt or "",

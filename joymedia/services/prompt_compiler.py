@@ -201,9 +201,13 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 			_scrub_printable(part) if not part.lstrip().startswith("Audio:") else part for part in prompt.split("\n\n")
 		)
 	if prompt_source == "image":
-		from .subject_overlay import EMPTY_SETTING, pasted_references, usable_setting
+		from .subject_overlay import DRAW, EMPTY_SETTING, PASTE, pasted_references, usable_setting
 
-		if pasted_references(getattr(shot, "references", None)):
+		mode = getattr(shot, "character_mode", None) or PASTE
+		references = getattr(shot, "references", None) or []
+		if mode == DRAW and any(_role_of(r) == "character" for r in references):
+			return _draw_prompt(shot, project)
+		if pasted_references(references, mode):
 			# The real characters and products are pasted in afterwards, so the image model gets the place only.
 			# Anything else in the prompt (names, actions, fidelity rules) would be drawn into it.
 			return f"{usable_setting(getattr(shot, 'setting_prompt', None))}\n\n{EMPTY_SETTING}"
@@ -366,9 +370,10 @@ def first_frame_inventory(shot, project):
 		return ""
 	names = [n.split(" (")[0] for n in _character_names(shot, project)]
 	products = sum(1 for r in references if _role_of(r) == "product")
+	ordered = (getattr(shot, "character_mode", None) or "Paste exact art") != "Draw in scene"
 	parts = []
 	if names:
-		parts.append(f"{'from left to right ' if len(names) > 1 else ''}{' and '.join(names)}")
+		parts.append(f"{'from left to right ' if len(names) > 1 and ordered else ''}{' and '.join(names)}")
 	if products:
 		parts.append(f"{'in front of them ' if names else ''}{products} small product pack{'s' if products > 1 else ''}")
 	if any(_role_of(r) == "logo" for r in references):
@@ -381,6 +386,42 @@ def _role_of(reference):
 		(reference.get("reference_role") if hasattr(reference, "get") else getattr(reference, "reference_role", "")) or ""
 	)
 	return "character" if role in ("person", "people", "talent") else role
+
+
+def _character_labels(shot, project):
+	"""The labels of the Character references the scene uses, in order."""
+	def field(row, key):
+		return row.get(key) if hasattr(row, "get") else getattr(row, key, None)
+
+	labels = {
+		field(row, "asset_version"): field(row, "label")
+		for row in (project.get("references") or project.get("selected_media") or [])
+	}
+	return [
+		labels[field(r, "asset_version")]
+		for r in getattr(shot, "references", None) or []
+		if _role_of(r) == "character" and labels.get(field(r, "asset_version"))
+	]
+
+
+def _describe_character(label):
+	"""What the image model is told about a character: the label's own English detail, else its role."""
+	detail = label.split(" (", 1)[1].rstrip(")") if " (" in label else ""
+	if detail and detail.isascii():
+		return detail
+	return _display_name(label, 1)
+
+
+def _draw_prompt(shot, project):
+	"""The keyframe prompt for "Draw in scene": the scene's action with the characters behaving like people."""
+	image = (getattr(shot, "image_prompt", None) or getattr(shot, "generation_prompt", None) or "").strip()
+	cast = "; ".join(dict.fromkeys(_describe_character(label) for label in _character_labels(shot, project)))
+	return (
+		f"{image}\n\nThe characters are cartoon mascots who behave like people in a real home"
+		+ (f": {cast}" if cast else "")
+		+ ". They look like the characters in the reference picture. Natural light, realistic composition. "
+		"Keep a clear patch of floor in the lower foreground."
+	)
 
 
 def _character_names(shot, project):

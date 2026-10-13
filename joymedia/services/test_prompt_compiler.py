@@ -288,3 +288,19 @@ class TestAudioLineLast(FrappeTestCase):
 		movement = prompt.split("Identity consistency")[0].split("The first frame contains")[0]
 		for unwanted in ("30 packs", "large box", "zooms", "top right"):
 			self.assertNotIn(unwanted, movement)
+
+	def test_draw_mode_gives_the_image_model_the_action_and_the_characters(self):
+		from joymedia.services.prompt_compiler import compile_prompt_for_documents
+
+		shot = frappe._dict(
+			name="S", shot_number=1, image_prompt="The mother stands at the counter holding a glass of milk.", generation_prompt="x",
+			setting_prompt="A kitchen.", character_mode="Draw in scene",
+			references=[{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Character", "asset_version": "AV2"}],
+		)
+		project = frappe._dict(references=[
+			{"asset_version": "AV1", "label": "Gấu mẹ (mother mascot, flower on head)"}, {"asset_version": "AV2", "label": "Gấu con (kid mascot)"},
+		])
+		prompt = compile_prompt_for_documents(shot, project, prompt_source="image")
+		self.assertTrue(prompt.startswith("The mother stands at the counter holding a glass of milk."))
+		self.assertIn("behave like people in a real home: mother mascot, flower on head; kid mascot", prompt)
+		self.assertNotIn("empty", prompt)

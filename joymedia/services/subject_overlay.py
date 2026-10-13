@@ -15,6 +15,7 @@ from pathlib import Path
 import frappe
 
 PASTE_ROLES = frozenset({"character", "product", "logo"})
+DRAW, PASTE = "Draw in scene", "Paste exact art"
 # Fractions of the canvas: a character is the hero of the frame, a product sits in front of it.
 CHARACTER_HEIGHT, CHARACTER_WIDTH, CHARACTER_BASELINE = 0.36, 0.70, 0.86
 PRODUCT_HEIGHT, PRODUCT_WIDTH, PRODUCT_BASELINE = 0.15, 0.40, 0.90
@@ -104,16 +105,85 @@ def describe_colours(asset_version):
 	return f"mostly {' and '.join(main)}" + (f", with {' and '.join(details)} details" if details else "")
 
 
-def pasted_references(references):
-	"""The references that are pasted rather than shown to the image model, in the given order."""
+def pasted_references(references, character_mode=PASTE):
+	"""The references that are pasted rather than shown to the image model, in the given order.
+
+	Products and logos are always pasted when they are cutouts. Characters are pasted only in "Paste exact art"
+	mode; in "Draw in scene" mode the image model draws them from the reference board instead.
+	"""
+	roles = PASTE_ROLES if character_mode != DRAW else PASTE_ROLES - {"character"}
 	pasted = []
 	for reference in references or []:
 		asset_version = reference.get("asset_version")
-		if _role(reference) in PASTE_ROLES and asset_version:
+		if _role(reference) in roles and asset_version:
 			path = _cutout_path(asset_version)
 			if path:
 				pasted.append({"role": _role(reference), "asset_version": asset_version, "path": path})
 	return pasted
+
+
+def _any_image_path(asset_version):
+	file_url = frappe.db.get_value("Asset Version", asset_version, "file")
+	return str(frappe.get_doc("File", {"file_url": file_url}).get_full_path()) if file_url else None
+
+
+def character_board(references, scales=None):
+	"""A flat-background picture of a scene's characters side by side, as the image model's character reference.
+
+	Each character keeps its own proportions and its relative size (the mother larger than the kid), standing on
+	a common baseline, so the model sees who is who. Returns the PNG path, or None without a character picture.
+	"""
+	import hashlib
+
+	from PIL import Image
+
+	items = []
+	for reference in references or []:
+		path = _any_image_path(reference.get("asset_version")) if _role(reference) == "character" else None
+		if path:
+			with Image.open(path) as source:
+				image = source.convert("RGBA")
+			box = image.getchannel("A").point(lambda v: 255 if v > 8 else 0).getbbox()
+			items.append((image.crop(box) if box else image, (scales or {}).get(reference.get("asset_version"), 1) or 1))
+	if not items:
+		return None
+	largest = max(scale for _image, scale in items)
+	height, gap = 768, 40
+	tiles = []
+	for image, scale in items:
+		tile_height = round(height * 0.86 * scale / largest)
+		tiles.append(image.resize((max(1, round(image.width * tile_height / image.height)), tile_height), Image.Resampling.LANCZOS))
+	width = sum(tile.width for tile in tiles) + gap * (len(tiles) + 1)
+	board = Image.new("RGB", (width, height), (236, 232, 226))
+	x = gap
+	for tile in tiles:
+		board.paste(tile, (x, height - tile.height - 30), tile)
+		x += tile.width + gap
+	folder = Path(frappe.get_site_path("private", "joymedia-boards"))
+	folder.mkdir(parents=True, exist_ok=True)
+	digest = hashlib.sha256(
+		"|".join(f"{r.get('asset_version')}:{(scales or {}).get(r.get('asset_version'), 1)}" for r in references).encode()
+	).hexdigest()[:16]
+	output = folder / f"characters-{digest}.png"
+	board.save(output, "PNG")
+	return str(output)
+
+
+def character_board_for_task(job):
+	"""The character board for a keyframe task in "Draw in scene" mode, from its run's frozen snapshot, else None."""
+	snapshot = _run_snapshot(job.generation_run)
+	shot = next((row for row in snapshot.get("shots") or [] if row.get("shot") == job.shot), {})
+	if (shot.get("character_mode") or PASTE) != DRAW:
+		return None
+	scales = {row.get("asset_version"): row.get("scale") or 1 for row in snapshot.get("references") or []}
+	return character_board(shot.get("references"), scales)
+
+
+def _run_snapshot(run_name):
+	try:
+		return frappe.parse_json(frappe.db.get_value("Generation Run", run_name, "project_snapshot_json") or "{}") or {}
+	except (TypeError, ValueError):
+		return {}
 
 
 def _fit(width, height, max_width, max_height):
@@ -198,7 +268,7 @@ def _contact_shadow(canvas, x, y, width, height):
 		canvas.paste(Image.new("RGBA", canvas.size, (0, 0, 0, 255)), (0, 0), layer)
 
 
-def composite_subjects(background_bytes, subjects):
+def composite_subjects(background_bytes, subjects, shadows=True):
 	"""PNG bytes of the background with the subjects pasted at their exact aspect ratio."""
 	from PIL import Image, ImageFilter
 
@@ -222,7 +292,8 @@ def composite_subjects(background_bytes, subjects):
 			ramp = Image.linear_gradient("L").resize(rgb.size).point(lambda v: round((v - 190) * 0.6) if v > 190 else 0)
 			rgb = Image.composite(Image.new("RGB", rgb.size, (0, 0, 0)), rgb, ramp)
 			resized = Image.merge("RGBA", (*rgb.split(), alpha))
-			_contact_shadow(canvas, x, y, width, height)
+			if shadows:
+				_contact_shadow(canvas, x, y, width, height)
 		else:
 			resized.putalpha(alpha)
 		canvas.alpha_composite(resized, (max(0, x), max(0, y)))
@@ -243,7 +314,7 @@ def paste_subjects_into_keyframe(attempt, image_bytes):
 	except (TypeError, ValueError):
 		snapshot = {}
 	shot_snapshot = next((row for row in (snapshot or {}).get("shots") or [] if row.get("shot") == shot), {})
-	subjects = pasted_references(shot_snapshot.get("references"))
+	subjects = pasted_references(shot_snapshot.get("references"), shot_snapshot.get("character_mode") or PASTE)
 	scales = {row.get("asset_version"): row.get("scale") or 1 for row in (snapshot or {}).get("references") or []}
 	for subject in subjects:
 		subject["scale"] = scales.get(subject["asset_version"], 1)
