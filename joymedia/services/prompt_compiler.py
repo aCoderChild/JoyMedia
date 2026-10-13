@@ -439,6 +439,23 @@ def _first_actions(shot):
 	return _scrub_for_drawing(" ".join(sentences[:2]))[:260]
 
 
+def _size_sentence(sized):
+	"""Say how much taller the largest character is than each smaller one: the image model ignores the board's sizes."""
+	if len(sized) < 2:
+		return ""
+	largest = max(scale for _name, scale in sized)
+	big = next(name for name, scale in sized if scale == largest)
+	parts = []
+	for name, scale in sized:
+		if scale < largest * 0.85 and name != big:
+			times = largest / scale
+			parts.append(
+				f"{name} is much smaller: {big} is about {times:.1f} times taller and stands over {name}, "
+				f"who comes up only to {big}'s waist"
+			)
+	return ("Scale matters: " + "; ".join(parts) + ". ") if parts else ""
+
+
 def _draw_prompt(shot, project):
 	"""The keyframe prompt for "Draw in scene": the place, the action, and the mascots behaving like people.
 
@@ -455,23 +472,32 @@ def _draw_prompt(shot, project):
 		(row.get("label") if hasattr(row, "get") else getattr(row, "label", None))
 		for row in (project.get("references") or project.get("selected_media") or [])
 	}
-	briefs = []
+	scales = {
+		(row.get("asset_version") if hasattr(row, "get") else getattr(row, "asset_version", None)):
+		float((row.get("scale") if hasattr(row, "get") else getattr(row, "scale", None)) or 1)
+		for row in (project.get("references") or project.get("selected_media") or [])
+	}
+	briefs, sized = [], []
 	for reference in getattr(shot, "references", None) or []:
 		if _role_of(reference) != "character":
 			continue
 		version = reference.get("asset_version") if hasattr(reference, "get") else getattr(reference, "asset_version", None)
 		if labels.get(version):
 			colours = describe_colours(version)
-			briefs.append(_describe_character(labels[version]) + (f" ({colours})" if colours else ""))
+			name = _describe_character(labels[version])
+			briefs.append(name + (f" ({colours})" if colours else ""))
+			sized.append((name.split(",")[0], scales.get(version, 1.0)))
 	cast = "; ".join(dict.fromkeys(briefs))
+	size_rule = _size_sentence(sized)
 	return (
 		f"{usable_setting(getattr(shot, 'setting_prompt', None))} {action}\n\n"
 		"The characters are cartoon mascot characters who act exactly like human people: they stand upright on two legs, "
 		"sit on chairs or the floor, walk, hold things in their paws and gesture the way people do, in a real, "
 		"lived-in home with furniture around them"
 		+ (f": {cast}" if cast else "")
-		+ ". They look like the characters in the reference picture, but not in its seated pose. Natural window "
-		"light, realistic wide composition, a clear patch of floor in the lower foreground."
+		+ ". They look like the characters in the reference picture, but not in its seated pose. "
+		+ size_rule
+		+ "Natural window light, realistic wide composition, a clear patch of floor in the lower foreground."
 	)
 
 

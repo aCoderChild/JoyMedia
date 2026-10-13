@@ -316,3 +316,14 @@ class TestAudioLineLast(FrappeTestCase):
 			"medium shot on paw pulling out tissue. Full box of Shera appearing beside the kid.",
 			_scrub_for_drawing("Macro super close-up on hand pulling out tissue. Full box of 30 packs of Shera appearing beside the kid."),
 		)
+
+	def test_a_parent_and_a_child_are_told_their_relative_size(self):
+		from joymedia.services.prompt_compiler import _size_sentence
+
+		self.assertEqual(
+			"Scale matters: the kid mascot is much smaller: the mother mascot is about 2.5 times taller and stands over "
+			"the kid mascot, who comes up only to the mother mascot's waist. ",
+			_size_sentence([("the mother mascot", 1.0), ("the kid mascot", 0.4)]),
+		)
+		self.assertEqual("", _size_sentence([("a", 1.0), ("b", 0.95)]))
+		self.assertEqual("", _size_sentence([("a", 1.0)]))
