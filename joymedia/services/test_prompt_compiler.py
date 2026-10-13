@@ -306,7 +306,7 @@ class TestAudioLineLast(FrappeTestCase):
 		self.assertTrue(prompt.startswith("A warm wooden kitchen. The mother lifts a glass of milk. The kid sits on the floor."))
 		self.assertNotIn("Then she pours", prompt)
 		self.assertIn("act exactly like human people", prompt)
-		self.assertIn("mother mascot, flower on head (mostly cream); kid mascot (mostly cream)", prompt)
+		self.assertIn("mother mascot, flower on head (mostly cream; pale, light fur, never brown or tan); kid mascot (mostly cream; pale, light fur, never brown or tan)", prompt)
 		self.assertNotIn("Audio", prompt)
 
 	def test_a_planned_image_description_is_made_safe_for_drawing_mascots(self):
@@ -321,8 +321,8 @@ class TestAudioLineLast(FrappeTestCase):
 		from joymedia.services.prompt_compiler import _size_sentence
 
 		self.assertEqual(
-			"Scale matters: the kid mascot is much smaller: the mother mascot is about 2.5 times taller and stands over "
-			"the kid mascot, who comes up only to the mother mascot's waist. ",
+			"Scale matters: the kid mascot is much smaller: the mother mascot is about 2.5 times taller, stands upright on two "
+			"legs and towers over the kid mascot, who comes up only to the mother mascot's waist. ",
 			_size_sentence([("the mother mascot", 1.0), ("the kid mascot", 0.4)]),
 		)
 		self.assertEqual("", _size_sentence([("a", 1.0), ("b", 0.95)]))

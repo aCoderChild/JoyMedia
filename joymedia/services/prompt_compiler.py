@@ -450,8 +450,8 @@ def _size_sentence(sized):
 		if scale < largest * 0.85 and name != big:
 			times = largest / scale
 			parts.append(
-				f"{name} is much smaller: {big} is about {times:.1f} times taller and stands over {name}, "
-				f"who comes up only to {big}'s waist"
+				f"{name} is much smaller: {big} is about {times:.1f} times taller, stands upright on two legs and "
+				f"towers over {name}, who comes up only to {big}'s waist"
 			)
 	return ("Scale matters: " + "; ".join(parts) + ". ") if parts else ""
 
@@ -485,7 +485,7 @@ def _draw_prompt(shot, project):
 		if labels.get(version):
 			colours = describe_colours(version)
 			name = _describe_character(labels[version])
-			briefs.append(name + (f" ({colours})" if colours else ""))
+			briefs.append(name + (f" ({colours}; pale, light fur, never brown or tan)" if colours and "brown" not in colours.split(",")[0] else (f" ({colours})" if colours else "")))
 			sized.append((name.split(",")[0], scales.get(version, 1.0)))
 	cast = "; ".join(dict.fromkeys(briefs))
 	size_rule = _size_sentence(sized)
