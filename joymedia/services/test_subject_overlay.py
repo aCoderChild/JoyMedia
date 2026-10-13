@@ -122,7 +122,7 @@ class TestPastedReferences(FrappeTestCase):
 
 class TestKeyframeIngest(FrappeTestCase):
 	def test_the_run_snapshot_decides_what_is_pasted(self):
-		snapshot = {"shots": [{"shot": "S1", "references": [{"reference_role": "person", "asset_version": "AV1"}]}]}
+		snapshot = {"shots": [{"shot": "S1", "references": [{"reference_role": "character", "asset_version": "AV1"}]}]}
 		values = {
 			("Generation Attempt", "ATT"): frappe._dict(generation_task="TASK"),
 			("Generation Task", "TASK"): ("S1", "RUN"),

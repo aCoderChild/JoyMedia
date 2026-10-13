@@ -542,7 +542,10 @@ class TestDrawModeInputs(FrappeTestCase):
 		from joymedia.services import subject_overlay
 		from joymedia.services.generation_orchestrator import _pipeline_reference_inputs
 
-		contract = [{"role": "person", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False}]
+		contract = [
+			{"role": "character", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False},
+			{"role": "person", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False},
+		]
 		shot = frappe._dict(character_mode="Draw in scene", references=[
 			{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Character", "asset_version": "AV2"},
 			{"reference_role": "Product", "asset_version": "AV3"}, {"reference_role": "Logo", "asset_version": "AV4"},
@@ -550,4 +553,22 @@ class TestDrawModeInputs(FrappeTestCase):
 		with patch("joymedia.services.workflow_resolver.get_workflow_input_contract", return_value=contract), patch.object(
 			subject_overlay, "_cutout_path", return_value="/x.png"
 		):
-			self.assertEqual({"person": ["AV1"]}, _pipeline_reference_inputs(shot, frappe._dict(name="W")))
+			self.assertEqual({"character": ["AV1"]}, _pipeline_reference_inputs(shot, frappe._dict(name="W")))
+
+	def test_a_real_person_and_a_mascot_are_different_inputs_of_the_image_stage(self):
+		from unittest.mock import patch
+
+		from joymedia.services import subject_overlay
+		from joymedia.services.generation_orchestrator import _pipeline_reference_inputs
+
+		contract = [
+			{"role": "character", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False},
+			{"role": "person", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False},
+		]
+		shot = frappe._dict(character_mode="Draw in scene", references=[
+			{"reference_role": "Person", "asset_version": "AVP"}, {"reference_role": "Character", "asset_version": "AVC"},
+		])
+		with patch("joymedia.services.workflow_resolver.get_workflow_input_contract", return_value=contract), patch.object(
+			subject_overlay, "_cutout_path", return_value=None
+		):
+			self.assertEqual({"person": ["AVP"], "character": ["AVC"]}, _pipeline_reference_inputs(shot, frappe._dict(name="W")))

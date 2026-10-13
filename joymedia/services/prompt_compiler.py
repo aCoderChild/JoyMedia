@@ -206,7 +206,7 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 
 		mode = getattr(shot, "character_mode", None) or PASTE
 		references = getattr(shot, "references", None) or []
-		if mode == DRAW and any(_role_of(r) == "character" for r in references):
+		if mode == DRAW and any(_role_of(r) in ("character", "person") for r in references):
 			return _draw_prompt(shot, project)
 		if pasted_references(references, mode):
 			# The real characters and products are pasted in afterwards, so the image model gets the place only.
@@ -411,6 +411,7 @@ def first_frame_inventory(shot, project):
 
 
 def _role_of(reference):
+	"""A reference's role for naming and counting: a real person counts as a character in a scene."""
 	role = frappe.scrub(
 		(reference.get("reference_role") if hasattr(reference, "get") else getattr(reference, "reference_role", "")) or ""
 	)
@@ -518,6 +519,18 @@ def _draw_prompt(shot, project):
 			sized.append((name.split(",")[0], scales.get(version, 1.0)))
 	cast = "; ".join(dict.fromkeys(briefs))
 	size_rule = _size_sentence(sized)
+	raw_roles = {
+		frappe.scrub((r.get("reference_role") if hasattr(r, "get") else getattr(r, "reference_role", "")) or "")
+		for r in getattr(shot, "references", None) or []
+	}
+	has_mascot, has_person = "character" in raw_roles, bool(raw_roles & {"person", "people", "talent"})
+	if not has_mascot:
+		return (
+			f"{usable_setting(getattr(shot, 'setting_prompt', None))} {action}\n\n"
+			+ ("The person shown in the reference photo is in the scene, keeping their own face and look, in a natural pose "
+			   "doing what the scene describes, seen in a medium or wide shot. " if has_person else "")
+			+ "Natural light, realistic composition."
+		)
 	return (
 		f"{usable_setting(getattr(shot, 'setting_prompt', None))} {action}\n\n"
 		"The characters are cartoon mascot characters who act exactly like human people: they stand upright on two legs, "

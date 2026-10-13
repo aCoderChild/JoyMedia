@@ -110,7 +110,7 @@ def _pipeline_reference_inputs(shot, workflow):
 		raw_role = frappe.scrub(reference.get("input_role") or reference.get("reference_role") or "")
 		if raw_role == "logo" or pasted_references([reference], character_mode):
 			continue  # cutouts are pasted over the keyframe, never an input of the image model
-		if character_mode == DRAW and normalize_reference_role(raw_role) == "person" and inputs.get("person"):
+		if character_mode == DRAW and raw_role == "character" and inputs.get("character"):
 			# One character picture goes in; every character of the scene is combined into its reference board.
 			continue
 		# Keep an already-concrete workflow role intact.  In particular, direct

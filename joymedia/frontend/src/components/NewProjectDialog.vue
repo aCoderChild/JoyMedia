@@ -103,7 +103,8 @@ const error = ref("");
 
 const roleOptions = computed(() => [
   { label: tr("Auto", "Tự động"), value: "" },
-  { label: tr("Character", "Nhân vật"), value: "Character" },
+  { label: tr("Character (mascot)", "Nhân vật (mascot)"), value: "Character" },
+  { label: tr("Person (real face)", "Người thật (khuôn mặt)"), value: "Person" },
   { label: tr("Product", "Sản phẩm"), value: "Product" },
   { label: tr("Logo", "Logo"), value: "Logo" },
   { label: tr("Environment", "Bối cảnh"), value: "Environment" },

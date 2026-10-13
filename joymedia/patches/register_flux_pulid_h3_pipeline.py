@@ -125,15 +125,14 @@ def _keyframe_spec():
 				"target": {"node_key": "47", "input_name": "model"}, "base": ["63", 0],
 				"links": [{"role": "person", "nodes": ["54", "53", "51", "45", "62"], "node": "62", "input": "model"}],
 			},
-			{   # Image conditioning (Redux), in priority order: the character's identity is applied first,
-				# then product and environment references at a gentler strength. The character's image
-				# is the same image node that feeds PuLID above (node 54), which only acts on a human face.
+			{   # Image conditioning (Redux): a mascot or cartoon character (its board), then product and environment
+				# references at a gentler strength. A real person is NOT a Redux input: Redux copies a face
+				# crop's framing, so a person is identity-locked by PuLID above and the prompt decides the scene.
 				"target": {"node_key": "47", "input_name": "conditioning"}, "base": ["26", 0],
 				"links": [
-					{"role": role, "nodes": [f"{name}_encode", f"{name}_redux"] if name == "character"
-					 else [f"{name}_image", f"{name}_encode", f"{name}_redux"],
+					{"role": role, "nodes": [f"{name}_image", f"{name}_encode", f"{name}_redux"],
 					 "node": f"{name}_redux", "input": "conditioning"}
-					for role, name in (("person", "character"), ("product", "product"), ("environment", "environment"))
+					for role, name in (("character", "character"), ("product", "product"), ("environment", "environment"))
 				],
 			},
 		]},
@@ -162,7 +161,7 @@ def _register_keyframe():
 		"binding_key": "generation_prompt", "node_key": "6", "input_name": "text", "value_type": "Text", "required": 1,
 	})
 	for binding_key, role, node_key in (
-		("person_reference", "person", "54"),
+		("person_reference", "person", "54"), ("character_reference", "character", "character_image"),
 		("product_reference", "product", "product_image"), ("environment_reference", "environment", "environment_image"),
 	):
 		doc.append("bindings", {

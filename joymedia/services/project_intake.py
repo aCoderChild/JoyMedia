@@ -17,10 +17,11 @@ ROLE_KEYWORDS = (
 	("Environment", ("environment", "background", "location", "room", "interior", "setting", "scene", "phòng", "bối cảnh", "nền", "không gian")),
 	("Logo", ("logo", "wordmark", "brand mark", "thương hiệu")),
 	("Product", ("product", "pack", "package", "box", "bottle", "tube", "label", "sản phẩm", "bịch", "hộp", "gói", "chai")),
-	("Character", ("character", "mascot", "person", "model", "actor", "face", "bear", "nhân vật", "gấu", "người", "mẹ", "con")),
+	("Person", ("person", "presenter", "host", "model", "actor", "actress", "face", "portrait", "người dẫn", "người mẫu", "diễn viên")),
+	("Character", ("character", "mascot", "bear", "nhân vật", "gấu", "người", "mẹ", "con")),
 )
-ROLE_CATEGORY = {"Product": "Product", "Character": "Character", "Logo": "Brand", "Environment": "Background", "General": "Reference"}
-ROLES = ("Product", "Character", "Logo", "Environment", "General")
+ROLE_CATEGORY = {"Product": "Product", "Character": "Character", "Person": "Character", "Logo": "Brand", "Environment": "Background", "General": "Reference"}
+ROLES = ("Product", "Character", "Person", "Logo", "Environment", "General")
 
 
 def infer_reference_role(name):

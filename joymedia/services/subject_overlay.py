@@ -38,8 +38,8 @@ def usable_setting(text):
 
 def _role(reference):
 	role = frappe.scrub(reference.get("reference_role") or reference.get("input_role") or "")
-	# Workflow routing names a character's role "person".
-	return "character" if role in ("person", "people", "talent") else role
+	# A real person (identity-locked from a photo) is a different input from a mascot or cartoon character.
+	return "person" if role in ("person", "people", "talent") else role
 
 
 @lru_cache(maxsize=256)

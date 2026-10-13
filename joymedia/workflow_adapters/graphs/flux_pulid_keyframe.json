@@ -286,7 +286,7 @@
     0
    ],
    "image": [
-    "54",
+    "character_image",
     0
    ],
    "crop": "center"
@@ -309,6 +309,12 @@
    ],
    "strength": 0.22,
    "strength_type": "attn_bias"
+  }
+ },
+ "character_image": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "Gau me.png"
   }
  }
 }

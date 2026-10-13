@@ -97,7 +97,9 @@ def _map_pipeline_references(references, contract):
 	mapped = []
 	for reference in references:
 		item = dict(reference)
-		role = normalize_reference_role(item.get("reference_role") or item.get("input_role"))
+		declared = frappe.scrub(item.get("reference_role") or item.get("input_role") or "")
+		# A role the first stage declares itself (person and character are different inputs) is kept as it is.
+		role = declared if declared in contract else normalize_reference_role(declared)
 		if role == "logo":
 			# Logos are pasted over the keyframe, so no image stage needs a binding for them.
 			item["reference_role"] = role

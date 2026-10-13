@@ -83,7 +83,7 @@ CASES = {
 	"human-presenter-portrait": {
 		"preset": "Portrait",
 		"idea": "A presenter explains a product.",
-		"references": [("Presenter", "Character", "Character", _generated_face)],
+		"references": [("Presenter", "Person", "Character", _generated_face)],
 		"setting": "A modern office with a large window and plants.",
 		"video_prompt": "The presenter stands by the window and gestures while talking to the camera.",
 		"expect": {"pasted": [], "keeps_box_noun": False},
