@@ -367,6 +367,14 @@ def prepare_run(run_name: str):
 								or (pipeline_step.consumes_artifact_role if previous_pipeline_job else None)
 							),
 						}).insert(ignore_permissions=True)
+						from .tuning import tune
+
+						if (
+							segment["segment_index"] > 1 and shot.get("keyframe_artifact") and tune("anchor_continuation_to_keyframe")
+							and step_workflow.output_media_type == "Video"
+						):
+							# A later segment ends on the scene's approved keyframe (H3's own last_frame input).
+							job.append("inputs", {"input_role": "last_frame", "generation_artifact": shot["keyframe_artifact"]})
 						# The first pipeline stage consumes the Shot's ordered references;
 						# later stages consume only the upstream generated artifact.
 						if is_first_pipeline_step:

@@ -159,7 +159,8 @@
    "length": [
     "107",
     1
-   ]
+   ],
+   "last_frame": null
   }
  },
  "16": {
@@ -251,6 +252,15 @@
    "filename_prefix": "joymedia_h3",
    "format": "auto",
    "codec": "auto"
+  }
+ },
+ "115": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "example.png"
+  },
+  "_meta": {
+   "title": "Last frame (optional keyframe anchor)"
   }
  }
 }

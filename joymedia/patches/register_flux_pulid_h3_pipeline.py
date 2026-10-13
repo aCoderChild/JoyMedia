@@ -83,6 +83,12 @@ def _h3_spec():
 			{"semantic": "output_prefix", "node_key": "92", "input_name": "filename_prefix"},
 		],
 		"outputs": {"primary": {"node_key": "92", "media_type": "Video"}},
+		# H3's own optional last_frame input: a continuation segment can end on the scene's approved keyframe, which
+		# keeps the characters from drifting away from it. Absent, the input stays empty and nothing changes.
+		"conditional_inputs": [{
+			"role": "last_frame", "target": {"node_key": "104", "input_name": "last_frame"},
+			"when_present": ["115", 0], "when_absent": None,
+		}],
 		"metadata": {"frame_count": 124, "output_fps": 24, "produces_video": 1, "produces_audio": 1},
 	}
 
@@ -104,6 +110,11 @@ def _insert_h3(workflow_key, continuation=None):
 	doc.append("bindings", {
 		"binding_key": "first_frame", "node_key": "114", "input_name": "image",
 		"required_input_role": "first_frame", "value_type": "File Path", "required": 1,
+		"accepted_media_type": "Image", "allow_multiple": 0,
+	})
+	doc.append("bindings", {
+		"binding_key": "last_frame", "node_key": "115", "input_name": "image",
+		"required_input_role": "last_frame", "value_type": "File Path", "required": 0,
 		"accepted_media_type": "Image", "allow_multiple": 0,
 	})
 	doc.insert(ignore_permissions=True)

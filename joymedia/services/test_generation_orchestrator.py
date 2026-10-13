@@ -573,3 +573,10 @@ class TestDrawModeInputs(FrappeTestCase):
 			subject_overlay, "_cutout_path", return_value=None
 		):
 			self.assertEqual({"person": ["AVP"], "character": ["AVC"]}, _pipeline_reference_inputs(shot, frappe._dict(name="W")))
+
+
+class TestKeyframeAnchor(FrappeTestCase):
+	def test_the_snapshot_and_the_tuning_name_the_anchor(self):
+		from joymedia.services.tuning import DEFAULTS
+
+		self.assertTrue(DEFAULTS["anchor_continuation_to_keyframe"])

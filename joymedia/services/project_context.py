@@ -284,6 +284,7 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 				or _valid_character_mode(getattr(settings, "character_mode", None)) or "Draw in scene",
 				# An approved, current keyframe is the scene's first frame; its image stage is not repeated.
 				"keyframe_task": approved_keyframe_task(shot_doc),
+				"keyframe_artifact": shot_doc.keyframe_artifact if approved_keyframe_task(shot_doc) else None,
 				"generation_prompt": shot.generation_prompt or "",
 				"motion_plan_json": shot.motion_plan_json or "",
 				"start_state": shot.start_state or "",
