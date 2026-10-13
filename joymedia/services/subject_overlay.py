@@ -16,8 +16,11 @@ import frappe
 
 PASTE_ROLES = frozenset({"character", "product", "logo"})
 # Fractions of the canvas: a character is the hero of the frame, a product sits in front of it.
-CHARACTER_HEIGHT, CHARACTER_WIDTH, CHARACTER_BASELINE = 0.58, 0.85, 0.90
-PRODUCT_HEIGHT, PRODUCT_WIDTH, PRODUCT_BASELINE = 0.20, 0.45, 0.97
+CHARACTER_HEIGHT, CHARACTER_WIDTH, CHARACTER_BASELINE = 0.52, 0.72, 0.90
+PRODUCT_HEIGHT, PRODUCT_WIDTH, PRODUCT_BASELINE = 0.20, 0.45, 0.94
+# With a character, a product stands beside it on the same floor, slightly nearer the camera.
+PRODUCT_NEAR, PRODUCT_OFFSET, EDGE_MARGIN = 0.03, 0.22, 0.02
+COLOUR_MATCH = 0.10
 LOGO_MAX_WIDTH, LOGO_MAX_HEIGHT, LOGO_MARGIN = 0.22, 0.08, 0.04
 OPAQUE_BELOW = 250
 
@@ -99,19 +102,43 @@ def layout(canvas, sizes_by_role):
 		)
 		center = (rank + 1) * canvas_width / (count + 1)
 		boxes[index] = (round(center - box_width / 2), round(CHARACTER_BASELINE * canvas_height) - box_height, box_width, box_height)
+	hero = boxes[groups["character"][0]] if groups["character"] else None
 	for rank, index in enumerate(groups["product"]):
 		_role_name, width, height = sizes_by_role[index]
 		count = len(groups["product"])
 		box_width, box_height = _fit(width, height, PRODUCT_WIDTH * canvas_width / count, PRODUCT_HEIGHT * canvas_height)
-		# A lone product sits right of the characters' centre; several spread across the width.
-		center = 0.70 * canvas_width if count == 1 else (rank + 1) * canvas_width / (count + 1)
-		boxes[index] = (round(center - box_width / 2), round(PRODUCT_BASELINE * canvas_height) - box_height, box_width, box_height)
+		if hero and count == 1:
+			center = hero[0] + hero[2] / 2 + PRODUCT_OFFSET * canvas_width
+			bottom = hero[1] + hero[3] + PRODUCT_NEAR * canvas_height
+		else:
+			center = (rank + 1) * canvas_width / (count + 1)
+			bottom = (hero[1] + hero[3] + PRODUCT_NEAR * canvas_height) if hero else PRODUCT_BASELINE * canvas_height
+		margin = EDGE_MARGIN * canvas_width
+		x = min(max(center - box_width / 2, margin), canvas_width - margin - box_width)
+		bottom = min(bottom, 0.97 * canvas_height)
+		boxes[index] = (round(x), round(bottom) - box_height, box_width, box_height)
 	for rank, index in enumerate(groups["logo"]):
 		_role_name, width, height = sizes_by_role[index]
 		box_width, box_height = _fit(width, height, LOGO_MAX_WIDTH * canvas_width, LOGO_MAX_HEIGHT * canvas_height)
 		margin = round(LOGO_MARGIN * canvas_width)
 		boxes[index] = (margin if rank % 2 == 0 else canvas_width - margin - box_width, margin, box_width, box_height)
 	return boxes
+
+
+def _contact_shadow(canvas, x, y, width, height):
+	"""A tight dark shadow where the subject touches the floor, under a wider soft one."""
+	from PIL import Image, ImageFilter
+
+	shadow = Image.new("L", canvas.size, 0)
+	rim = max(3, round(height * 0.035))
+	base = y + height - round(rim * 1.3)
+	shadow.paste(70, (x + round(width * 0.02), base - rim, x + round(width * 0.98), base + rim * 2))
+	shadow = shadow.filter(ImageFilter.GaussianBlur(rim * 1.6))
+	tight = Image.new("L", canvas.size, 0)
+	tight.paste(150, (x + round(width * 0.12), base - round(rim * 0.5), x + round(width * 0.88), base + round(rim * 0.8)))
+	tight = tight.filter(ImageFilter.GaussianBlur(rim * 0.5))
+	for layer in (shadow, tight):
+		canvas.paste(Image.new("RGBA", canvas.size, (0, 0, 0, 255)), (0, 0), layer)
 
 
 def composite_subjects(background_bytes, subjects):
@@ -128,12 +155,15 @@ def composite_subjects(background_bytes, subjects):
 	boxes = layout(canvas.size, [(s["role"], a.width, a.height) for s, a in zip(subjects, assets)])
 	for subject, asset, (x, y, width, height) in zip(subjects, assets, boxes):
 		resized = asset.resize((width, height), Image.Resampling.LANCZOS)
+		# A softer edge and a touch of the room's colour make the cutout sit in the scene instead of on it.
+		alpha = resized.getchannel("A").filter(ImageFilter.GaussianBlur(0.7))
 		if subject["role"] != "logo":
-			shadow = Image.new("L", canvas.size, 0)
-			rim = max(2, round(height * 0.03))
-			shadow.paste(110, (x + round(width * 0.1), y + height - rim, x + round(width * 0.9), y + height + rim))
-			shadow = shadow.filter(ImageFilter.GaussianBlur(rim))
-			canvas.paste(Image.new("RGBA", canvas.size, (0, 0, 0, 255)), (0, 0), shadow)
+			room = canvas.crop((max(0, x), max(0, y), min(canvas.width, x + width), min(canvas.height, y + height)))
+			tint = Image.new("RGB", resized.size, room.convert("RGB").resize((1, 1), Image.Resampling.BOX).getpixel((0, 0)))
+			resized = Image.merge("RGBA", (*Image.blend(resized.convert("RGB"), tint, COLOUR_MATCH).split(), alpha))
+			_contact_shadow(canvas, x, y, width, height)
+		else:
+			resized.putalpha(alpha)
 		canvas.alpha_composite(resized, (max(0, x), max(0, y)))
 	output = io.BytesIO()
 	canvas.convert("RGB").save(output, "PNG")

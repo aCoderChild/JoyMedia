@@ -23,6 +23,12 @@ class TestLayout(FrappeTestCase):
 				self.assertLessEqual(x + box_width, canvas[0])
 				self.assertLessEqual(y + box_height, canvas[1])
 
+	def test_a_product_stands_beside_the_character_on_the_same_floor(self):
+		character, product = layout((720, 1280), [("character", 464, 560), ("product", 1076, 717)])
+		self.assertGreater(product[0] + product[2] / 2, character[0] + character[2] / 2)
+		self.assertLessEqual(abs((product[1] + product[3]) - (character[1] + character[3])), 0.05 * 1280)
+		self.assertLess(product[3], character[3])
+
 	def test_logos_sit_in_opposite_top_corners(self):
 		first, second = layout((1000, 1000), [("logo", 200, 100), ("logo", 200, 100)])
 		self.assertLess(first[0], 500)
@@ -49,7 +55,8 @@ class TestComposite(FrappeTestCase):
 			))).convert("RGB")
 			x, y, width, height = layout((400, 800), [("character", 200, 300)])[0]
 			self.assertEqual(result.size, (400, 800))
-			self.assertEqual((255, 0, 0), result.getpixel((x + width - 5, y + height - 5)))
+			# Pasted pixels keep the asset's colour apart from a slight match to the room.
+			self.assertLess(sum(abs(a - b) for a, b in zip((255, 0, 0), result.getpixel((x + width - 5, y + height - 5)))), 90)
 			self.assertEqual((0, 0, 255), result.getpixel((x + 2, y + 2)))
 
 
