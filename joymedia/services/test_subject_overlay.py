@@ -250,7 +250,7 @@ class TestProductBoard(FrappeTestCase):
 		with patch.object(subject_overlay, "describe_colours", side_effect=lambda v: {"AV1": "mostly green", "AV2": "mostly pink"}[v]):
 			note = _product_note(shot, project)
 		self.assertIn("The products from the product reference (green; pink) sit naturally in the scene", note)
-		self.assertIn("never held in front of anyone's feet", note)
+		self.assertIn("to the side of the characters and away from their feet", note)
 		self.assertEqual("", _product_note(frappe._dict(references=[]), project))
 
 	def test_a_scene_with_no_cast_pastes_its_product_even_in_draw_mode(self):

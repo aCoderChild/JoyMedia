@@ -507,9 +507,9 @@ def _product_note(shot, project):
 	count = len(colours)
 	return (
 		f"The {'products' if count > 1 else 'product'} from the product reference "
-		f"({'; '.join(c for c in colours if c)}) {'sit' if count > 1 else 'sits'} naturally in the scene, on a table, "
-		"a counter or the floor within the characters' reach, resting on a surface and never held in front of anyone's feet, "
-		"with only soft, unreadable label texture. "
+		f"({'; '.join(c for c in colours if c)}) {'sit' if count > 1 else 'sits'} naturally in the scene, resting on a "
+		"low table, a counter or the floor to the side of the characters and away from their feet, at the size of a real "
+		"household product, with only soft, unreadable label texture. "
 	)
 
 
