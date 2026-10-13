@@ -295,3 +295,43 @@ class TestGrounding(FrappeTestCase):
 	def test_the_planner_request_is_reproducible(self):
 		self.assertEqual(planner.request_seed("a", "b"), planner.request_seed("a", "b"))
 		self.assertNotEqual(planner.request_seed("a", "b"), planner.request_seed("a", "c"))
+
+
+class TestFollowTheSheet(FrappeTestCase):
+	REFS = [
+		{"key": "me", "label": "Gấu mẹ (mother mascot)", "role": "Character"},
+		{"key": "con", "label": "Gấu con (kid mascot)", "role": "Character"},
+		{"key": "green", "label": "Soft pack green", "role": "Product"},
+		{"key": "pink", "label": "Soft pack pink", "role": "Product"},
+		{"key": "logo", "label": "Brand logo", "role": "Logo"},
+	]
+
+	def _plan(self, raw, summary, number=3, total=6, motion="The mother lifts a tissue."):
+		project = frappe._dict(product_name="Soft tissue", name="P", planning_mode="Follow the sheet")
+		beat = {"raw": raw, "summary": summary, "camera": "", "action": "", "audio": "SFX: pop", "voice_over": "", "on_screen_text": ""}
+		shot = frappe._dict(shot_number=number, duration_seconds=5)
+		with patch.object(planner, "motion_only", return_value=motion), patch.object(planner, "_place", return_value="A kitchen."), patch.object(
+			frappe.db, "count", return_value=total
+		), patch.object(planner, "translate", side_effect=lambda text, project: text):
+			return planner.follow_the_sheet(project, shot, beat, self.REFS)
+
+	def test_only_the_characters_the_beat_names_appear_and_one_pack_for_a_product_beat(self):
+		plan = self._plan("Gấu mẹ rút một tờ giấy", "The mother pulls a tissue sheet.")
+		self.assertEqual(["me", "green"], plan["reference_keys"])
+
+	def test_a_name_inside_another_phrase_is_not_a_character_in_the_scene(self):
+		# "sợ mẹ mắng" (afraid mother will scold) mentions mother, who is not in the scene.
+		plan = self._plan("Gấu con sợ mẹ mắng, lấy giấy lau", "The kid, afraid of the scolding, grabs paper.", number=2)
+		self.assertEqual(["con", "green"], plan["reference_keys"])
+
+	def test_all_products_when_the_beat_says_products_and_the_logo_bookends_the_film(self):
+		plan = self._plan("Gấu mẹ ... các sản phẩm giấy", "The mother stands with all the products.", number=6, total=6)
+		self.assertEqual(["me", "green", "pink", "logo"], plan["reference_keys"])
+		first = self._plan("Gấu con", "The kid sits.", number=1, total=6)
+		self.assertIn("logo", first["reference_keys"])
+
+	def test_the_movement_is_english_and_the_sheets_own_sound_is_kept(self):
+		plan = self._plan("Gấu mẹ", "The mother waves.", motion="Gấu mẹ vẫy tay.")
+		self.assertEqual("The characters act out the scene.", plan["video_prompt"])
+		self.assertTrue(plan["audio"].startswith("Audio:"))
+		self.assertFalse(plan["held_back"])

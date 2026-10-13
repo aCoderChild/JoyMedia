@@ -112,6 +112,9 @@ def create_project_from_brief(project_name=None, video_idea=None, workbook_file=
 			if not project_name and project.product_name:
 				# Name the project after the product and the sheet it was built from.
 				project.db_set("project_name", f"{project.product_name} — {summary['demo']}"[:140], update_modified=False)
+		if workbook_file:
+			# The advertiser wrote the scenes: keep them, only translate (see production_planner.follow_the_sheet).
+			project.db_set("planning_mode", "Follow the sheet", update_modified=False)
 		if format:
 			preset = format if format in ("Landscape", "Portrait", "Square") else format_preset(format)
 			project.save_video_settings(total_duration_seconds=project.total_duration_seconds or 15, delivery_preset=preset)

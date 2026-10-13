@@ -10,6 +10,8 @@ prompts, continuity and reference assignments are proposed, for the user to revi
 
 import json
 
+import re
+
 import frappe
 import requests
 from frappe import _
@@ -29,6 +31,8 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 	"""Ask the planner for one shot's production plan and return it validated (nothing is saved)."""
 	references = references if references is not None else project_reference_options(project)
 	beat = creative_beat(project, shot)
+	if project.get("planning_mode") == "Follow the sheet":
+		return follow_the_sheet(project, shot, beat, references)
 	prompt = build_planning_prompt(project, shot, beat, references, previous_end_state)
 	raw = _ask_planner(prompt)
 	if len(str((raw or {}).get("image_prompt") or "").split()) > MAX_IMAGE_WORDS:
@@ -93,6 +97,80 @@ def motion_only(project, text, references, inventory=""):
 	)
 	raw = _ask_planner(prompt, system="You rewrite storyboard beats faithfully. Return JSON only.", max_tokens=300)
 	return " ".join(str((raw or {}).get("motion") or "").split())
+
+
+PLACE_WORDS = re.compile(
+	r"\b(kitchen|dining|table|room|home|house|garden|park|picnic|office|bathroom|bedroom|living|outdoor|street|beach|shop|store|"
+	r"studio|desk|car|bag|handbag)\b", re.I,
+)
+PRODUCT_WORDS = re.compile(r"\b(tissue|tissues|paper|napkin|napkins|pack|packs|bag|product|products|towel)\b", re.I)
+MANY_PRODUCTS = re.compile(r"\b(products|all (?:the )?products|range|lineup|collection)\b|các sản phẩm", re.I)
+
+
+def _name_phrase(label):
+	"""A character label's own name ("Gấu mẹ" from "Gấu mẹ (mother mascot…)"), as the sheet writes it."""
+	return label.split(" (")[0].strip()
+
+
+def follow_the_sheet(project, shot, beat, references):
+	"""A production plan taken from the storyboard's own text, with the language model used only to translate.
+
+	The advertiser wrote the scene; nothing is invented. Characters are the ones the beat names (by the exact name
+	the sheet uses for them), one product pack appears when the beat is about the product (all of them when it says
+	"products"), the logo bookends the film, the sounds are the sheet's own cues, and the movement is the beat's
+	action rewritten in English against exactly what the first frame contains.
+	"""
+	raw = beat.get("raw", "")
+	text = " ".join((raw, beat.get("summary", "")))
+	keys = []
+	for reference in references:
+		if reference["role"] == "Character" and _name_phrase(reference["label"]).casefold() in text.casefold():
+			keys.append(reference["key"])
+	products = [r for r in references if r["role"] == "Product"]
+	names_product = bool(project.get("product_name")) and bool(_words(project.product_name, 4) & _words(text, 4))
+	if products and (PRODUCT_WORDS.search(text) or names_product):
+		keys.extend(r["key"] for r in (products if MANY_PRODUCTS.search(text) else products[:1]))
+	logos = [r for r in references if r["role"] == "Logo"]
+	scenes = frappe.db.count("Shot", {"media_project": project.name, "is_removed": 0})
+	if logos and int(shot.shot_number or 0) in (1, scenes):
+		keys.append(logos[0]["key"])
+	if not keys:
+		keys = [r["key"] for r in references if r["role"] == "Character"][:1]
+	plan = {
+		"image_prompt": beat["summary"][:300], "setting_prompt": _place(project, beat),
+		"video_prompt": "", "reference_keys": keys, "continuity_mode": "New Scene", "start_state": "", "end_state": "",
+		"motion_plan": {"actions": []}, "notes": ["Taken from the sheet; the planner only translated it."], "sound_effects": "",
+	}
+	by_key = {r["key"]: r for r in references}
+	inventory = "; ".join(by_key[k]["label"].split(" (")[0] for k in keys if k in by_key)
+	movement = motion_only(project, beat["summary"], references, inventory) or beat["summary"]
+	if not movement.isascii():
+		movement = translate(movement, project)
+	if not movement.isascii():
+		movement = "The characters act out the scene."
+	plan["video_prompt"] = movement
+	plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": movement}]}
+	plan["audio"] = audio_direction(project, beat)
+	camera = (beat.get("camera") or "") + " " + (beat.get("action") or "")
+	if re.search(r"split[- ]?screen|chia \d? ?màn", camera, re.I):
+		plan["notes"].append("Needs editing: the sheet asks for a split screen; one clip shows the main moment.")
+	plan["coverage"], plan["held_back"] = 1.0, False
+	return plan
+
+
+def _place(project, beat):
+	"""The place the beat is set in, as a short English phrase; empty when the text names none."""
+	text = beat.get("summary", "")
+	found = PLACE_WORDS.findall(text)
+	if not found:
+		return ""
+	prompt = (
+		"From this storyboard text, write ONLY the place and the light, in one short English sentence, with no "
+		f"characters, objects or actions.\nTEXT: {text}\nReturn {{\"place\": \"...\"}}"
+	)
+	raw = _ask_planner(prompt, system="You extract the setting from storyboard text. Return JSON only.", max_tokens=80)
+	place = " ".join(str((raw or {}).get("place") or "").split())
+	return place if place.isascii() and len(place.split()) <= 25 else ""
 
 
 def project_reference_options(project):
