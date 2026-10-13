@@ -1,0 +1,191 @@
+{
+ "25": {
+  "class_type": "RandomNoise",
+  "inputs": {
+   "noise_seed": 186462208016243
+  }
+ },
+ "26": {
+  "class_type": "FluxGuidance",
+  "inputs": {
+   "conditioning": [
+    "6",
+    0
+   ],
+   "guidance": 3.5
+  }
+ },
+ "6": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "clip": [
+    "64",
+    0
+   ],
+   "text": "Half body portrait of a person holding a lipstick, photorealistic commercial style"
+  }
+ },
+ "27": {
+  "class_type": "EmptySD3LatentImage",
+  "inputs": {
+   "width": 768,
+   "height": 1024,
+   "batch_size": 1
+  }
+ },
+ "16": {
+  "class_type": "KSamplerSelect",
+  "inputs": {
+   "sampler_name": "euler"
+  }
+ },
+ "17": {
+  "class_type": "BasicScheduler",
+  "inputs": {
+   "model": [
+    "63",
+    0
+   ],
+   "scheduler": "simple",
+   "steps": 10,
+   "denoise": 1
+  }
+ },
+ "54": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "einstein.jpg"
+  }
+ },
+ "53": {
+  "class_type": "PulidFluxInsightFaceLoader",
+  "inputs": {
+   "provider": "CPU"
+  }
+ },
+ "51": {
+  "class_type": "PulidFluxEvaClipLoader",
+  "inputs": {}
+ },
+ "45": {
+  "class_type": "PulidFluxModelLoader",
+  "inputs": {
+   "pulid_file": "pulid_flux_v0.9.1.safetensors"
+  }
+ },
+ "62": {
+  "class_type": "ApplyPulidFlux",
+  "inputs": {
+   "model": [
+    "63",
+    0
+   ],
+   "pulid_flux": [
+    "45",
+    0
+   ],
+   "eva_clip": [
+    "51",
+    0
+   ],
+   "face_analysis": [
+    "53",
+    0
+   ],
+   "image": [
+    "54",
+    0
+   ],
+   "weight": 1,
+   "start_at": 0,
+   "end_at": 1,
+   "fusion": "mean",
+   "fusion_weight_max": 1.0,
+   "fusion_weight_min": 0.0,
+   "train_step": 1000,
+   "use_gray": true
+  }
+ },
+ "47": {
+  "class_type": "BasicGuider",
+  "inputs": {
+   "model": [
+    "62",
+    0
+   ],
+   "conditioning": [
+    "26",
+    0
+   ]
+  }
+ },
+ "48": {
+  "class_type": "SamplerCustomAdvanced",
+  "inputs": {
+   "noise": [
+    "25",
+    0
+   ],
+   "guider": [
+    "47",
+    0
+   ],
+   "sampler": [
+    "16",
+    0
+   ],
+   "sigmas": [
+    "17",
+    0
+   ],
+   "latent_image": [
+    "27",
+    0
+   ]
+  }
+ },
+ "49": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "48",
+    0
+   ],
+   "vae": [
+    "10",
+    0
+   ]
+  }
+ },
+ "50": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "images": [
+    "49",
+    0
+   ],
+   "filename_prefix": "joymedia_flux_pulid"
+  }
+ },
+ "63": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "flux1-dev-fp8.safetensors",
+   "weight_dtype": "default"
+  }
+ },
+ "10": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "ae.safetensors"
+  }
+ },
+ "64": {
+  "class_type": "DualCLIPLoader",
+  "inputs": {
+   "clip_name1": "t5xxl_fp8_e4m3fn.safetensors",
+   "clip_name2": "clip_l.safetensors",
+   "type": "flux"
+  }
+ }
+}

@@ -564,6 +564,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 				and (
 					project.generation_mode in ("Continuous", "Consistency")
 					or (execution_scope or {}).get("continuity")
+					or (execution_scope or {}).get("continuation_from_task")
 				)
 			):
 				continue

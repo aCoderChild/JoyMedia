@@ -20,6 +20,8 @@ from joymedia.services.video_composer import (
 
 
 STUDIO_EXPORT_QUALITY = "Studio 1440p60"
+# Generated clips rarely match the requested length exactly; only a shortfall this large is held.
+TAIL_HOLD_MIN_SECONDS = 1
 FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
 # Every film fades to black, and its sound to silence, over its last second.
 ENDING_FADE_SECONDS = 1.0
@@ -83,16 +85,22 @@ def compose_project_timeline_internal(project_name: str):
 		frappe.throw(_("Every timeline clip must contain at least one frame."))
 
 	transition_frames = _validated_transition_frames(video_clips, clip_frames)
-	positioned = _has_persisted_positions(video_clips) and _requires_positioned_render(video_clips, clip_frames)
+	# Authored timelines are held to the requested duration rather than ending at the last clip.
+	target_frames = round(float(project.get("total_duration_seconds") or 0) * render["fps"])
+	last_end = max(
+		(int(clip.timeline_start_frame or 0) + frames for clip, frames in zip(video_clips, clip_frames)),
+		default=0,
+	)
+	positioned = _has_persisted_positions(video_clips) and (
+		_requires_positioned_render(video_clips, clip_frames)
+		or target_frames - last_end >= round(TAIL_HOLD_MIN_SECONDS * render["fps"])
+	)
 	if positioned:
 		for previous, current, previous_frames in zip(video_clips, video_clips[1:], clip_frames):
 			previous_end = int(previous.timeline_start_frame or 0) + previous_frames
 			if int(current.timeline_start_frame or 0) < previous_end:
 				frappe.throw(_("Video clips may not overlap on the single video track."))
-		expected_frames = max(
-			int(clip.timeline_start_frame or 0) + frames
-			for clip, frames in zip(video_clips, clip_frames)
-		)
+		expected_frames = max(last_end, target_frames)
 	else:
 		expected_frames = sum(clip_frames) - sum(transition_frames)
 
@@ -122,6 +130,7 @@ def compose_project_timeline_internal(project_name: str):
 				silent_master,
 				render,
 				positioned=positioned,
+				total_frames=expected_frames,
 			)
 			_validate_normalized_video(silent_master, render, expected_frames=expected_frames)
 			output_frames = expected_frames
@@ -429,9 +438,9 @@ def _validated_transition_frames(clips, clip_frames):
 	return values
 
 
-def _render_sequence(paths, clips, clip_frames, transition_frames, output_path, profile, positioned=False):
+def _render_sequence(paths, clips, clip_frames, transition_frames, output_path, profile, positioned=False, total_frames=0):
 	if positioned:
-		return _render_positioned_sequence(paths, clips, clip_frames, output_path, profile)
+		return _render_positioned_sequence(paths, clips, clip_frames, output_path, profile, total_frames)
 	if len(paths) == 1:
 		_run_ffmpeg(
 			[
@@ -509,29 +518,33 @@ def _render_sequence(paths, clips, clip_frames, transition_frames, output_path, 
 	_run_ffmpeg(command)
 
 
-def _render_positioned_sequence(paths, clips, clip_frames, output_path, profile):
-	"""Render one persisted video track, including gaps before placed clips."""
+def _render_positioned_sequence(paths, clips, clip_frames, output_path, profile, total_frames=0):
+	"""Render one persisted video track.
+
+	Timing gaps are filled by holding the neighbouring picture (the leading gap
+	holds the first frame, every later gap and the tail hold the preceding clip's
+	last frame) instead of inserting black footage.
+	"""
 	command = ["ffmpeg", "-y"]
 	for path in paths:
 		command.extend(["-i", str(path)])
 
 	filter_parts = []
 	labels = []
-	previous_end = 0
-	for index, (path, clip, frame_count) in enumerate(zip(paths, clips, clip_frames)):
+	for index, (clip, frame_count) in enumerate(zip(clips, clip_frames)):
 		start = int(clip.timeline_start_frame or 0)
-		if start > previous_end:
-			gap = start - previous_end
-			gap_label = f"gap{index}"
-			filter_parts.append(
-				f"color=c=black:s={profile['width']}x{profile['height']}:r={profile['fps']:g}:"
-				f"d={gap / profile['fps']:.6f}[{gap_label}]"
-			)
-			labels.append(f"[{gap_label}]")
+		if index + 1 < len(clips):
+			next_start = int(clips[index + 1].timeline_start_frame or 0)
+		else:
+			next_start = max(start + frame_count, int(total_frames or 0))
+		hold = max(0, next_start - (start + frame_count))
+		lead = start if index == 0 else 0
+		pad = ""
+		if lead or hold:
+			pad = f",tpad=start_mode=clone:start={lead}:stop_mode=clone:stop={hold}"
 		clip_label = f"clip{index}"
-		filter_parts.append(f"[{index}:v]settb=AVTB,setpts=PTS-STARTPTS[{clip_label}]")
+		filter_parts.append(f"[{index}:v]settb=AVTB,setpts=PTS-STARTPTS{pad}[{clip_label}]")
 		labels.append(f"[{clip_label}]")
-		previous_end = start + frame_count
 
 	filter_parts.append(
 		f"{''.join(labels)}concat=n={len(labels)}:v=1:a=0[video]"

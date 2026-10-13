@@ -149,6 +149,18 @@ def _log_sync_failure(attempt, message, *args):
 	)
 
 
+def _will_retry_automatically(attempt):
+	"""Mirror the orchestrator's automatic retry rule for a just-failed attempt."""
+	from .generation_orchestrator import MAX_AUTOMATIC_RETRIES
+
+	if attempt.failure_class in {"Workflow", "Input"}:
+		return False
+	retries = frappe.db.count(
+		"Generation Attempt", {"generation_task": attempt.generation_task, "retry_of": ["is", "set"]}
+	)
+	return retries < MAX_AUTOMATIC_RETRIES
+
+
 def _fail_attempt(attempt, error_summary, error_details, failure_class):
 	from .user_messages import classify_failure, friendly_failure, technical_message
 	# ComfyUI often reports an authentication or node setup error as a generic
@@ -165,6 +177,11 @@ def _fail_attempt(attempt, error_summary, error_details, failure_class):
 	attempt.error_details = technical_message(error_details or error_summary)
 	attempt.failure_class = failure_class
 	attempt.save(ignore_permissions=True)
+	if _will_retry_automatically(attempt):
+		# Dependents wait for the retry; cancelling them now would strand the chain
+		# even when the retry succeeds.
+		_refresh_parent_execution_state(attempt.name)
+		return {"status": attempt.status}
 	for dependent in frappe.get_all(
 		"Generation Task",
 		filters={

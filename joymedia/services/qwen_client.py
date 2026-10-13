@@ -527,7 +527,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		'{"film_title":"...","shots":[{"shot_number":1,"shot_name":"...",'
 		'"duration_seconds":5,"generation_prompt":"...","image_prompt":"...",'
 		'"start_state":"...","end_state":"...",'
-		'"handoff_type":"motion_continuation",'
+		'"handoff_type":"motion_continuation","continuity_mode":"New Scene or Continue",'
 		'"motion_plan":{"actions":[{"start":0,"end":4,"action":"..."},{"start":4,"end":5,"action":"..."}]},"caption":"...",'
 		f'"references":[{example_references}]}}]}}'
 	)
@@ -822,6 +822,7 @@ def _normalize_qwen_plan(
 			"start_state": str(shot.get("start_state") or "").strip(),
 			"end_state": str(shot.get("end_state") or "").strip(),
 			"handoff_type": str(shot.get("handoff_type") or "").strip(),
+			"continuity_mode": "Continue" if str(shot.get("continuity_mode") or "").strip().casefold() == "continue" else "New Scene",
 			"motion_plan": _normalized_motion_plan(
 				shot.get("motion_plan") or shot.get("temporal_plan"),
 				shot.get("duration_seconds"), generation_prompt,
@@ -1003,6 +1004,7 @@ def _validate_video_plan(
 			"start_state": str(shot.get("start_state") or "").strip(),
 			"end_state": str(shot.get("end_state") or "").strip(),
 			"handoff_type": str(shot.get("handoff_type") or "").strip(),
+			"continuity_mode": "Continue" if str(shot.get("continuity_mode") or "").strip().casefold() == "continue" else "New Scene",
 			"motion_plan": _normalized_motion_plan(
 				shot.get("motion_plan") or shot.get("temporal_plan"), duration_seconds, prompt
 			),

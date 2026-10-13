@@ -92,12 +92,9 @@ class GenerationTask(Document):
 					scope = frappe.parse_json(run.execution_scope_json or "{}")
 				except (TypeError, ValueError):
 					scope = {}
-				if not (
-					isinstance(scope, dict)
-					and scope.get("continuity")
-					and scope.get("continuation_from_task") == dependency.name
-				):
+				if not (isinstance(scope, dict) and scope.get("continuation_from_task") == dependency.name):
 					frappe.throw(_("A chained Generation Task dependency must belong to the same Generation Run."))
+				self._validate_cross_run_dependency(dependency, project)
 			if dependency.name == self.name:
 				frappe.throw(_("A Generation Task cannot depend on itself."))
 		# Serialize the identity check with concurrent task preparation. The
@@ -127,6 +124,26 @@ class GenerationTask(Document):
 		if duplicate:
 			frappe.throw(_("Only one Generation Task may exist for each pipeline step of a shot segment in a run."))
 		return workflow
+
+	def _validate_cross_run_dependency(self, dependency, project):
+		"""A predecessor from another run must be this project's approved, selected take."""
+		dependency_shot = frappe.db.get_value(
+			"Shot", dependency.shot, ["media_project", "selected_output_asset_version", "review_status"], as_dict=True
+		)
+		if not dependency_shot or dependency_shot.media_project != project.name:
+			frappe.throw(_("A continuation dependency must belong to the same Media Project."))
+		if dependency_shot.review_status != "Approved" or not dependency_shot.selected_output_asset_version:
+			frappe.throw(_("A continuation dependency needs an approved selected output."))
+		attempt = frappe.db.get_value(
+			"Asset Version", dependency_shot.selected_output_asset_version, "source_generation_attempt"
+		)
+		if not attempt or frappe.db.get_value("Generation Attempt", attempt, "generation_task") != dependency.name:
+			frappe.throw(_("The continuation dependency is not the generation lineage of the selected output."))
+		if not frappe.db.exists(
+			"Generation Artifact",
+			{"generation_attempt": attempt, "artifact_role": "Last Frame", "frappe_file": ["is", "set"]},
+		):
+			frappe.throw(_("The continuation dependency has no usable Last Frame artifact."))
 
 	def _validate_generation_run(self, project):
 		if not self.generation_run:

@@ -50,7 +50,7 @@ class TestSceneTakes(FrappeTestCase):
 		result = scene_takes.select_scene_take(self.project.name, self.shot.name, 1)
 
 		self.assertEqual(self.takes[0].name, frappe.db.get_value("Shot", self.shot.name, "selected_output_asset_version"))
-		self.assertEqual({"shot_name": self.shot.name, "take_count": 2, "take_index": 1, "finishing": "Awaiting QA"}, result)
+		self.assertEqual({"shot_name": self.shot.name, "take_count": 2, "take_index": 1, "finishing": "Awaiting QA", "stale_shots": []}, result)
 		resume.assert_called_once_with(self.project.name)
 		with self.assertRaises(frappe.ValidationError):
 			scene_takes.select_scene_take(self.project.name, self.shot.name, 3)
@@ -118,3 +118,38 @@ class TestSceneTakes(FrappeTestCase):
 		busy.return_value = ["SHOT-OTHER"]
 		with patch("joymedia.services.post_production.resume_post_production_if_approved", return_value={"status": "Awaiting QA"}):
 			self.assertEqual(1, scene_takes.select_scene_take(self.project.name, self.shot.name, 1)["take_index"])
+
+
+class TestDownstreamStaleness(FrappeTestCase):
+	def test_only_shots_built_on_a_replaced_take_are_flagged(self):
+		shot = frappe._dict(name="S1", media_project="P", selected_output_asset_version="AV-new")
+		tasks = [
+			frappe._dict(name="T2", shot="S2", depends_on_task="T1-old"),
+			frappe._dict(name="T3", shot="S3", depends_on_task="T1-new"),
+			frappe._dict(name="T4", shot="S4", depends_on_task="T1-old"),
+		]
+		attempts = {"AV-new": "A-new", "AV2": "A2", "AV4": "A4"}
+		attempt_tasks = {"A-new": "T1-new", "A2": "T2", "A4": "T-other"}
+		shots = {
+			"S2": frappe._dict(selected_output_asset_version="AV2", media_project="P", is_removed=0),
+			"S4": frappe._dict(selected_output_asset_version="AV4", media_project="P", is_removed=0),
+		}
+
+		def get_value(doctype, name, field=None, as_dict=False):
+			if doctype == "Asset Version":
+				return attempts[name]
+			if doctype == "Generation Attempt":
+				return attempt_tasks[name]
+			return shots[name]
+
+		def get_all(doctype, **kwargs):
+			return ["T1-old", "T1-new"] if kwargs.get("pluck") else tasks
+
+		with patch.object(scene_takes.frappe, "get_all", side_effect=get_all), patch.object(
+			scene_takes.frappe.db, "get_value", side_effect=get_value
+		), patch.object(scene_takes.frappe.db, "set_value") as set_value:
+			stale = scene_takes.mark_stale_downstream_shots(shot)
+
+		# S3 was built on the selected take; S4's output came from a different task lineage.
+		self.assertEqual(["S2"], stale)
+		set_value.assert_called_once_with("Shot", "S2", "review_status", "Needs Revision", update_modified=False)

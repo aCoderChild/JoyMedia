@@ -207,6 +207,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 	resolved_shot_inputs = []
 	shot_docs = []
 
+	first_plan_number = min(item["shot_number"] for item in plan["shots"])
 	for shot in plan["shots"]:
 		doc = frappe.get_doc(
 			{
@@ -220,6 +221,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 				"start_state": shot.get("start_state") or "",
 				"end_state": shot.get("end_state") or "",
 				"handoff_type": shot.get("handoff_type") or "",
+				"continuity_mode": _plan_continuity_mode(shot, shot["shot_number"] == first_plan_number),
 				"caption": str(shot.get("caption") or "").strip()[:120],
 			}
 		)
@@ -441,6 +443,7 @@ def append_video_plan(
 				"start_state": shot.get("start_state") or "",
 				"end_state": shot.get("end_state") or "",
 				"handoff_type": shot.get("handoff_type") or "",
+				"continuity_mode": _plan_continuity_mode(shot, base_shot_number + offset == 1),
 				"caption": str(shot.get("caption") or "").strip()[:120],
 				"duration_seconds": float(shot["duration_seconds"]),
 				"planned_frame_count": int(shot.get("planned_frame_count") or 0),
@@ -459,6 +462,14 @@ def append_video_plan(
 		created_shots.append(doc.name)
 
 	return created_shots
+
+
+def _plan_continuity_mode(shot, is_first_shot):
+	"""The plan's explicit continuity decision; New Scene when unspecified or when nothing precedes."""
+	mode = str(shot.get("continuity_mode") or "New Scene").strip()
+	if mode not in ("Continue", "New Scene"):
+		frappe.throw(_("Continuity mode must be Continue or New Scene."))
+	return "New Scene" if is_first_shot else mode
 
 
 def _validate_plan_shape(plan):

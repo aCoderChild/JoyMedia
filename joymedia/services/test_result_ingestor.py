@@ -177,3 +177,25 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 
 		self.assertEqual({"status": "Failed"}, result)
 		self.assertEqual("bad video", attempt.error_details)
+
+
+class IntegrationTestFailureCascade(IntegrationTestCase):
+	def _fail(self, failure_class, prior_retries):
+		attempt = MagicMock(generation_task="TASK-1", name="ATT-1")
+		attempt.name = "ATT-1"
+		with patch.object(result_ingestor.frappe.db, "count", return_value=prior_retries), patch.object(
+			result_ingestor.frappe, "get_all", return_value=["TASK-2"]
+		), patch.object(result_ingestor.frappe.db, "set_value") as set_value, patch.object(
+			result_ingestor, "_refresh_parent_execution_state"
+		):
+			result_ingestor._fail_attempt(attempt, "x", "x", failure_class)
+		return set_value
+
+	def test_dependents_wait_for_an_automatic_retry(self):
+		self._fail("Infrastructure", 0).assert_not_called()
+
+	def test_dependents_are_cancelled_once_retries_are_exhausted(self):
+		self.assertEqual("TASK-2", self._fail("Infrastructure", 1).call_args.args[1])
+
+	def test_dependents_are_cancelled_for_failures_needing_a_human(self):
+		self.assertEqual("TASK-2", self._fail("Input", 0).call_args.args[1])

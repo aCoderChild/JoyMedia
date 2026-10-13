@@ -86,7 +86,11 @@ def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
 
 
 @frappe.whitelist()
-def approve_project_storyboard(project_name, acknowledge_timing_warnings=False):
+def approve_project_storyboard(project_name, acknowledge_timing_warnings=False, shot_references=None):
+	"""Approve the storyboard; `shot_references` maps a shot name to the reference keys it needs.
+
+	Shots without an explicit assignment fall back to every selected project image.
+	"""
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
 	if not frappe.db.exists("Shot", {"media_project": project.name, "is_removed": 0}):
@@ -96,6 +100,7 @@ def approve_project_storyboard(project_name, acknowledge_timing_warnings=False):
 	warnings = frappe.parse_json(project.storyboard_timing_warnings or "[]")
 	if warnings and str(acknowledge_timing_warnings).lower() not in {"1", "true", "yes", "on"}:
 		frappe.throw(_("Resolve or explicitly acknowledge the storyboard timing warnings before approval."))
+	_assign_shot_references(project, frappe.parse_json(shot_references) if shot_references else {})
 	_bind_unassigned_project_references(project)
 	project.storyboard_approval_status = "Approved"
 	project.save(ignore_permissions=True)
@@ -115,6 +120,26 @@ def _mark_storyboard_needs_review(project):
 	if project.storyboard_approval_status == "Approved":
 		project.db_set("storyboard_approval_status", "Ready for Review", update_modified=False)
 		project.storyboard_approval_status = "Ready for Review"
+
+
+def _assign_shot_references(project, assignments):
+	"""Replace the references of the named shots with the explicitly chosen project references."""
+	if not isinstance(assignments, dict):
+		frappe.throw(_("Shot references must map each shot to a list of reference keys."))
+	rows = {row.reference_key: row for row in project.selected_media or []}
+	for shot_name, keys in assignments.items():
+		shot = frappe.get_doc("Shot", shot_name)
+		if shot.media_project != project.name or shot.is_removed:
+			frappe.throw(_("Shot {0} does not belong to this project.").format(shot_name))
+		unknown = [key for key in keys if key not in rows]
+		if unknown:
+			frappe.throw(_("Unknown project reference(s) for {0}: {1}").format(shot_name, ", ".join(unknown)))
+		shot.set("generation_inputs", [])
+		for key in keys:
+			shot.append("generation_inputs", {
+				"reference_role": rows[key].reference_role or "General", "asset_version": rows[key].asset_version,
+			})
+		shot.save(ignore_permissions=True)
 
 
 def _bind_unassigned_project_references(project):
@@ -349,6 +374,11 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 		frappe.db.set_value("Shot", row.name, "shot_number", -index, update_modified=False)
 	for index, row in enumerate(ordered, start=1):
 		frappe.db.set_value("Shot", row.name, "shot_number", index, update_modified=False)
+	# Nothing precedes the new first shot, so it cannot continue from one.
+	first = ordered[0]
+	if frappe.db.get_value("Shot", first.name, "continuity_mode") == "Continue":
+		frappe.db.set_value("Shot", first.name, "continuity_mode", "New Scene", update_modified=False)
+		frappe.msgprint(_("Shot {0} is now first, so its continuity was reset to New Scene.").format(first.name))
 	_mark_storyboard_needs_review(project)
 	frappe.db.commit()
 	return {"shot_name": shot.name, "shot_number": target_shot_number}

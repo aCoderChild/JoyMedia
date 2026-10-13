@@ -12,6 +12,7 @@ from joymedia.services.timeline_composer import (
 	_caption_cues,
 	_get_generated_audio_sources,
 	_normalize_clip,
+	_render_positioned_sequence,
 	_render_sequence,
 )
 from joymedia.services.video_composer import _get_video_duration, _validate_normalized_video
@@ -226,3 +227,23 @@ class TestSceneCaptions(FrappeTestCase):
 			self.assertLess(lower_third(0.1), 40)
 			self.assertGreater(lower_third(2.0), 150)
 			self.assertLess(lower_third(5.0), 40)
+
+
+class TestPositionedGaps(FrappeTestCase):
+	def test_gaps_and_tail_hold_neighbouring_frames_instead_of_black(self):
+		profile = {"width": 320, "height": 240, "fps": 24.0}
+		with tempfile.TemporaryDirectory(prefix="joymedia-gaps-") as temp_dir:
+			temp_path = Path(temp_dir)
+			paths = []
+			for index, seconds in enumerate((3, 5, 5)):
+				path = temp_path / f"clip{index}.mp4"
+				_make_video(path, seconds, color="white")
+				paths.append(path)
+			# 0-3s, gap 3-4s, 4-9s, gap 9-10s, 10-15s, tail gap to 18s.
+			clips = [frappe._dict(timeline_start_frame=start * 24) for start in (0, 4, 10)]
+			output = temp_path / "out.mp4"
+			_render_positioned_sequence(paths, clips, [72, 120, 120], output, profile, total_frames=18 * 24)
+
+			_validate_normalized_video(output, profile, expected_frames=18 * 24)
+			for second in (3.5, 9.5, 17):
+				self.assertGreater(_mean_luma(output, second), 200, f"black footage at {second}s")

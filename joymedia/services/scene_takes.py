@@ -145,6 +145,7 @@ def select_scene_take(project_name, shot_name, take_index):
 	shot.db_set("selected_output_asset_version", selected_output, update_modified=False)
 	from joymedia.api.reviews import sync_shot_review_status
 	sync_shot_review_status(shot.name)
+	stale_shots = mark_stale_downstream_shots(shot) if selection_changed else []
 	from joymedia.services.post_production import resume_post_production_if_approved
 
 	frappe.db.commit()
@@ -157,7 +158,51 @@ def select_scene_take(project_name, shot_name, take_index):
 		frappe.logger("joymedia.scene_takes").exception("Unable to resume finishing for %s", project.name)
 		finishing = {"status": "Deferred"}
 	count, position = take_position(project.name, shot)
-	return {"shot_name": shot.name, "take_count": count, "take_index": position, "finishing": finishing["status"]}
+	return {
+		"shot_name": shot.name,
+		"take_count": count,
+		"take_index": position,
+		"finishing": finishing["status"],
+		"stale_shots": stale_shots,
+	}
+
+
+def mark_stale_downstream_shots(shot):
+	"""Flag shots whose selected output was generated from a different take of `shot`.
+
+	Dependencies come from stored Generation Task lineage, never from shot order:
+	a downstream selected output is stale when its task depends on a task of
+	`shot` other than the one that produced the take now selected.
+	"""
+	selected_attempt = frappe.db.get_value(
+		"Asset Version", shot.selected_output_asset_version, "source_generation_attempt"
+	)
+	selected_task = (
+		frappe.db.get_value("Generation Attempt", selected_attempt, "generation_task") if selected_attempt else None
+	)
+	upstream_tasks = frappe.get_all("Generation Task", filters={"shot": shot.name}, pluck="name")
+	if not upstream_tasks:
+		return []
+	stale = []
+	for task in frappe.get_all(
+		"Generation Task",
+		filters={"depends_on_task": ["in", upstream_tasks], "shot": ["!=", shot.name]},
+		fields=["name", "shot", "depends_on_task"],
+	):
+		if task.depends_on_task == selected_task or task.shot in stale:
+			continue
+		downstream = frappe.db.get_value(
+			"Shot", task.shot, ["selected_output_asset_version", "media_project", "is_removed"], as_dict=True
+		)
+		if not downstream or downstream.is_removed or downstream.media_project != shot.media_project:
+			continue
+		attempt = frappe.db.get_value(
+			"Asset Version", downstream.selected_output_asset_version, "source_generation_attempt"
+		) if downstream.selected_output_asset_version else None
+		if attempt and frappe.db.get_value("Generation Attempt", attempt, "generation_task") == task.name:
+			frappe.db.set_value("Shot", task.shot, "review_status", "Needs Revision", update_modified=False)
+			stale.append(task.shot)
+	return stale
 
 
 def _project_shot(project_name, shot_name):
