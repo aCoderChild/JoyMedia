@@ -198,3 +198,42 @@ class TestSegmentAssemblyWithAudio(FrappeTestCase):
 			_concatenate_normalized_shots([first, second], joined, profile, expected_frames=168)
 
 			_validate_normalized_video(joined, profile, expected_frames=168)
+
+
+class TestSceneLoudnessLeveling(FrappeTestCase):
+	def _tone(self, path, volume_db):
+		_run_ffmpeg(
+			"-f", "lavfi", "-i", f"sine=frequency=300:duration=3,volume={volume_db}dB", "-c:a", "pcm_s16le", str(path),
+		)
+
+	def _mean_db(self, path, start, end):
+		result = subprocess.run(
+			["ffmpeg", "-v", "info", "-ss", str(start), "-to", str(end), "-i", str(path), "-vn", "-af", "volumedetect", "-f", "null", "-"],
+			capture_output=True, text=True,
+		)
+		return float(result.stderr.split("mean_volume:")[1].split("dB")[0])
+
+	def _mix(self, temp, normalize):
+		quiet, loud = temp / "quiet.wav", temp / "loud.wav"
+		self._tone(quiet, -35)
+		self._tone(loud, -8)
+		master = temp / "master.mp4"
+		_run_ffmpeg("-f", "lavfi", "-i", "color=c=gray:s=320x240:r=24:d=6", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(master))
+		sources = [
+			{"path": path, "start_seconds": start, "duration_seconds": 3, "gain_db": 0, "fade_in_seconds": 0,
+			 "fade_out_seconds": 0, "duck_others": False, "loop": False, "normalize_loudness": normalize}
+			for path, start in ((quiet, 0), (loud, 3))
+		]
+		out = temp / ("leveled.mp4" if normalize else "raw.mp4")
+		_mix_audio(master, sources, out)
+		return out
+
+	def test_scenes_are_brought_to_a_common_loudness(self):
+		with tempfile.TemporaryDirectory(prefix="joymedia-level-") as temp_dir:
+			temp = Path(temp_dir)
+			raw, leveled = self._mix(temp, False), self._mix(temp, True)
+			raw_gap = abs(self._mean_db(raw, 0.2, 2.8) - self._mean_db(raw, 3.2, 5.8))
+			leveled_gap = abs(self._mean_db(leveled, 0.2, 2.8) - self._mean_db(leveled, 3.2, 5.8))
+
+			self.assertGreater(raw_gap, 20)
+			self.assertLess(leveled_gap, 4)

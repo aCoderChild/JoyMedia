@@ -362,6 +362,9 @@ def _get_shot_output_path(shot):
 	return path
 
 
+SCENE_LOUDNESS_LUFS = -18
+
+
 def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
 	sources = []
 	if timeline_clips is None:
@@ -392,6 +395,7 @@ def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
 				"fade_out_seconds": fade_out_seconds,
 				"duck_others": bool(clip.duck_others),
 				"loop": clip.audio_role == "BGM",
+				"normalize_loudness": clip.audio_role == "Source",
 			}
 		)
 	return sources
@@ -601,6 +605,10 @@ def _mix_audio(silent_master_path, audio_sources, delivery_path, ending=None):
 		else:
 			trim = f"atrim=duration={source['duration_seconds']:.6f}"
 		filter = f"[{index}:a]{trim},asetpts=PTS-STARTPTS"
+		if source.get("normalize_loudness"):
+			# Scene audio from different generations varies by tens of dB; bring each scene to a
+			# common loudness (EBU R128) with a true-peak ceiling before the user's gain is applied.
+			filter += f",loudnorm=I={SCENE_LOUDNESS_LUFS}:TP=-1.5:LRA=11,aformat=sample_rates=48000:channel_layouts=stereo"
 		filter += f",volume={source['gain_db']:.6f}dB"
 		if source["fade_in_seconds"]:
 			filter += f",afade=t=in:st=0:d={source['fade_in_seconds']:.6f}"
