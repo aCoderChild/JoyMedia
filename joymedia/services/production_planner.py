@@ -75,7 +75,7 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 	return plan
 
 
-def motion_only(project, text, references, inventory="", single_view=False):
+def motion_only(project, text, references, inventory="", single_view=False, attempt=0):
 	"""The beat's actions and camera moves only, in English, using only what the first frame contains.
 
 	`inventory` names what the first frame shows. Anything else the beat mentions (other boxes, people, products)
@@ -97,7 +97,9 @@ def motion_only(project, text, references, inventory="", single_view=False):
 			"The beat asks for a split screen of several views; describe ONLY the first view as one full-frame shot. "
 			if single_view else ""
 		)
+		+ "Do not add anything the beat does not say. "
 		+ f"\nBEAT: {text}\nReturn {{\"motion\": \"...\"}}"
+		+ (f"\n(Answer again, attempt {attempt + 1}: English only, faithful to the beat.)" if attempt else "")
 	)
 	raw = _ask_planner(prompt, system="You rewrite storyboard beats faithfully. Return JSON only.", max_tokens=300)
 	return " ".join(str((raw or {}).get("motion") or "").split())
@@ -154,7 +156,7 @@ def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 	plan = {
 		"image_prompt": beat["summary"][:300],
 		# A beat that names no place stays where the film already is.
-		"setting_prompt": _place(project, beat) or previous_setting,
+		"setting_prompt": _place(project, beat) or _place(project, beat, 1) or previous_setting,
 		"video_prompt": "", "reference_keys": keys, "continuity_mode": "New Scene", "start_state": "", "end_state": "",
 		"motion_plan": {"actions": []}, "notes": ["Taken from the sheet; the planner only translated it."], "sound_effects": "",
 	}
@@ -162,16 +164,19 @@ def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 	inventory = "; ".join(by_key[k]["label"].split(" (")[0] for k in keys if k in by_key)
 	camera = (beat.get("camera") or "") + " " + (beat.get("action") or "")
 	split_screen = bool(re.search(r"split[- ]?screen|chia \d? ?màn", camera, re.I))
+	# Only the action describes what moves; the camera text is the part the translator garbles most.
+	source = beat.get("action") if beat.get("action") and looks_english(beat.get("action")) else beat["summary"]
+	if not looks_english(source):
+		source = translate(source, project)
 	movement = ""
-	for _attempt in range(2):
-		movement = motion_only(project, beat["summary"], references, inventory, single_view=split_screen)
-		if movement and looks_english(movement):
+	for attempt in range(2):
+		movement = motion_only(project, source, references, inventory, single_view=split_screen, attempt=attempt)
+		# A rewrite is kept only if it still says what the sheet says; a model that invents is not.
+		if movement and looks_english(movement) and beat_coverage(source, movement)[0] >= 0.5:
 			break
-	if not (movement and looks_english(movement)):
-		# The model's rewrite failed twice: the beat's own English translation is better than a placeholder.
-		movement = beat["summary"] if looks_english(beat["summary"]) else translate(beat["summary"], project)
-	if not looks_english(movement):
-		movement = "The characters act out the scene."
+		movement = ""
+	if not movement:
+		movement = source if looks_english(source) else "The characters act out the scene."
 	plan["video_prompt"] = movement
 	plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": movement}]}
 	plan["audio"] = audio_direction(project, beat)
@@ -182,7 +187,7 @@ def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 	return plan
 
 
-def _place(project, beat):
+def _place(project, beat, attempt=0):
 	"""The place the beat is set in, as a short English phrase; empty when the text names none."""
 	text = beat.get("summary", "")
 	found = PLACE_WORDS.findall(text)
@@ -191,6 +196,7 @@ def _place(project, beat):
 	prompt = (
 		"From this storyboard text, write ONLY the place and the light, in one short English sentence, with no "
 		f"characters, objects or actions.\nTEXT: {text}\nReturn {{\"place\": \"...\"}}"
+		+ (f"\n(Attempt {attempt + 1}: name only a real place from the text.)" if attempt else "")
 	)
 	raw = _ask_planner(prompt, system="You extract the setting from storyboard text. Return JSON only.", max_tokens=80)
 	place = " ".join(str((raw or {}).get("place") or "").split())

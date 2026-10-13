@@ -356,6 +356,15 @@ class TestFollowTheSheet(FrappeTestCase):
 		with patch.object(planner, "_ask_planner", return_value={"place": "A warm family kitchen with sunlight."}):
 			self.assertEqual("A warm family kitchen with sunlight.", planner._place(frappe._dict(), {"summary": "In the kitchen she waves."}))
 
+	def test_a_rewrite_that_invents_is_rejected_for_the_sheets_own_words(self):
+		project = frappe._dict(product_name="Tissue", name="P", planning_mode="Follow the sheet")
+		beat = {"raw": "Gấu mẹ", "summary": "x", "action": "The mother presses a tissue to the kid's cheek.", "camera": "", "audio": "", "voice_over": "", "on_screen_text": ""}
+		with patch.object(planner, "motion_only", return_value="A dress absorbs red wine at a party."), patch.object(planner, "_place", return_value=""), patch.object(
+			frappe.db, "count", return_value=6
+		), patch.object(planner, "translate", side_effect=lambda t, p: t):
+			plan = planner.follow_the_sheet(project, frappe._dict(shot_number=4, duration_seconds=8), beat, TestFollowTheSheet.REFS)
+		self.assertEqual("The mother presses a tissue to the kid's cheek.", plan["video_prompt"])
+
 	def test_a_failed_rewrite_falls_back_to_the_beats_english_translation_not_a_placeholder(self):
 		project = frappe._dict(product_name="Tissue", name="P", planning_mode="Follow the sheet")
 		beat = {"raw": "Gấu mẹ", "summary": "The mother lifts the wet sheet.", "camera": "", "action": "", "audio": "", "voice_over": "", "on_screen_text": ""}
