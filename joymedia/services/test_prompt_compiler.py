@@ -130,3 +130,10 @@ class TestAudioLineLast(FrappeTestCase):
 		from joymedia.services.prompt_compiler import _audio_line_last
 
 		self.assertEqual("One.\n\nTwo.", _audio_line_last("One.\n\nTwo."))
+
+	def test_sound_effects_only_drops_music_and_rules_out_speech(self):
+		from joymedia.services.prompt_compiler import NO_VOICE_OR_MUSIC, _audio_line_last
+
+		result = _audio_line_last("Audio: sound effects: pop; music: jazz.\n\nMore.", sound_effects_only=True)
+		self.assertEqual(f"More.\n\nAudio: sound effects: pop. {NO_VOICE_OR_MUSIC}", result)
+		self.assertEqual(f"X.\n\nAudio: {NO_VOICE_OR_MUSIC}", _audio_line_last("X.\n\nAudio: music: jazz.", sound_effects_only=True))

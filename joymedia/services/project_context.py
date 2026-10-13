@@ -245,6 +245,7 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 		"reference_mode": getattr(settings, "reference_mode", None) or "Single Image",
 		"quality_mode": getattr(settings, "quality_mode", None) or "Production",
 		"generation_mode": settings.generation_mode or "Continuous",
+		"soundtrack_mode": getattr(settings, "soundtrack_mode", None) or "Full soundtrack",
 		"global_instructions": settings.global_instructions or "",
 		"workflow": settings.workflow or "",
 		"generation_pipeline": configured_pipeline,

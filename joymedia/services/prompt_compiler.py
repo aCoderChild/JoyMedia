@@ -216,18 +216,29 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 		timing = temporal_timing_instruction(shot, is_final=is_final)
 		if timing:
 			prompt = f"{prompt}\n\n{timing}"
-		prompt = _audio_line_last(prompt)
+		prompt = _audio_line_last(prompt, sound_effects_only=project.get("soundtrack_mode") == "Sound effects only")
 	return prompt.strip()
 
 
-def _audio_line_last(prompt):
+NO_VOICE_OR_MUSIC = "Sound effects only: no speech, no dialogue, no narration, no singing, no background music."
+
+
+def _audio_line_last(prompt, sound_effects_only=False):
 	"""Move the scene's `Audio:` paragraph to the end of the video prompt.
 
 	The video workflow's own sample prompt ends with its `Audio:` line. Left in the middle of a long prompt
-	(followed by fidelity, identity and timing text) the sound direction is easily ignored.
+	(followed by fidelity, identity and timing text) the sound direction is easily ignored. The workflow
+	generates voice, effects and music in one pass and exposes no level for each, so "sound effects only"
+	is asked for in that line: music cues are dropped and speech and music are ruled out.
 	"""
 	paragraphs = str(prompt).split("\n\n")
 	audio = [p for p in paragraphs if p.lstrip().startswith("Audio:")]
+	if sound_effects_only:
+		cues = [
+			part.strip() for line in audio for part in line.lstrip()[len("Audio:"):].strip().rstrip(".").split(";")
+			if part.strip() and not part.strip().casefold().startswith("music")
+		]
+		audio = [f"Audio: {'; '.join(cues)}. {NO_VOICE_OR_MUSIC}" if cues else f"Audio: {NO_VOICE_OR_MUSIC}"]
 	if not audio:
 		return prompt
 	rest = [p for p in paragraphs if not p.lstrip().startswith("Audio:")]
