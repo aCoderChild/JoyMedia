@@ -49,7 +49,7 @@
    "cfg": 4.5,
    "seed": 7,
    "prompt": "soft paper tissue rustling, gentle foley",
-   "negative_prompt": "",
+   "negative_prompt": "speech, talking, voice, singing, vocals, music, melody",
    "mask_away_clip": false,
    "force_offload": true
   }

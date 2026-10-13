@@ -174,6 +174,7 @@ class TestUseSoundEffectsOnly(FrappeTestCase):
 			"duration_seconds": 2.0, "audio_cues": cues,
 		}).insert(ignore_permissions=True)
 		_asset, video = _create_output_version(self.project, f"s{number}.mp4", 2)
+		shot.db_set("selected_output_asset_version", video.name)
 		frappe.get_doc({
 			"doctype": "Timeline Clip", "media_project": self.project.name, "shot": shot.name, "clip_order": number,
 			"track_type": "Video", "track_index": 0, "timeline_start_frame": (number - 1) * 48, "initial_timeline_start_frame": 0,
@@ -182,7 +183,7 @@ class TestUseSoundEffectsOnly(FrappeTestCase):
 		}).insert(ignore_permissions=True)
 		return shot
 
-	def test_only_scenes_with_an_sfx_cue_get_an_effect_and_the_mode_is_switched(self):
+	def test_every_rendered_scene_gets_an_effect_and_the_mode_is_switched(self):
 		from joymedia.services.audio_plan import use_sound_effects_only
 
 		with patch(
@@ -190,6 +191,9 @@ class TestUseSoundEffectsOnly(FrappeTestCase):
 		) as generate:
 			result = use_sound_effects_only(self.project.name, prompts={self.hook.name: "a crisp pop"})
 
-		generate.assert_called_once_with(self.project.name, self.hook.name, "SFX", prompt="a crisp pop")
-		self.assertEqual(["ASTV-1"], [g["asset_version"] for g in result["generated"]])
+		self.assertEqual(
+			[(self.hook.name, "a crisp pop"), (self.plain.name, "A scene.")],
+			[(c.args[1], c.kwargs["prompt"]) for c in generate.call_args_list],
+		)
+		self.assertEqual(2, len(result["generated"]))
 		self.assertEqual("Sound effects only", frappe.db.get_value("Media Project", self.project.name, "soundtrack_mode"))
