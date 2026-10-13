@@ -152,3 +152,5 @@ Storyboard approved,Đã duyệt kịch bản
 "Review the scenes, then approve.",Hãy xem lại các cảnh rồi duyệt.
 Untitled Project,Dự án chưa đặt tên
 References must be a list.,Danh sách tham chiếu không hợp lệ.
+Background processing,Xử lý nền
+Set scheduler_tick_interval to 60 in common_site_config.json: finished renders are only noticed every {0} seconds.,Hãy đặt scheduler_tick_interval là 60 trong common_site_config.json: video dựng xong chỉ được nhận biết sau mỗi {0} giây.

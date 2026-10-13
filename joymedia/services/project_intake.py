@@ -166,5 +166,16 @@ def get_project_readiness(project_name, lang=None):
 	warnings = frappe.parse_json(project.storyboard_timing_warnings or "[]")
 	add("timing", _("Storyboard timing"), not warnings, _("{0} timing gap(s) were found; they are closed on export.").format(len(warnings)) if warnings else "", blocking=False)
 	add("approval", _("Storyboard approved"), project.storyboard_approval_status == "Approved", "" if project.storyboard_approval_status == "Approved" else _("Review the scenes, then approve."))
+	# Finished renders are noticed by a cron that runs every minute, but only as often as Frappe's scheduler
+	# ticks (4 minutes by default). A slow tick leaves the GPU idle between tasks.
+	from frappe.utils.scheduler import get_scheduler_tick
+
+	tick = get_scheduler_tick()
+	add(
+		"scheduler", _("Background processing"), tick <= 60,
+		_("Set scheduler_tick_interval to 60 in common_site_config.json: finished renders are only noticed every {0} seconds.").format(tick)
+		if tick > 60 else "",
+		blocking=False,
+	)
 	blocking = [step for step in steps if step["status"] == "todo"]
 	return {"ready": not blocking, "steps": steps, "next": blocking[0]["key"] if blocking else None}

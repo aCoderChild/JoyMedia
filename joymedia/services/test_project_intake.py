@@ -164,3 +164,24 @@ class TestWorkbookPreview(FrappeTestCase):
 		image = frappe.get_doc({"doctype": "File", "file_name": "a.png", "content": _generate_image_bytes(), "is_private": 1}).insert(ignore_permissions=True)
 		with self.assertRaises(frappe.ValidationError):
 			project_intake.preview_workbook(image.name)
+
+
+class TestSchedulerTickWarning(FrappeTestCase):
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def _steps(self, tick):
+		frappe.set_user("Administrator")
+		with patch.object(frappe.db, "commit"):
+			project = project_intake.create_project_from_brief("Tick")["project"]
+		with patch("frappe.utils.scheduler.get_scheduler_tick", return_value=tick):
+			return {s["key"]: s for s in project_intake.get_project_readiness(project)["steps"]}
+
+	def test_a_slow_scheduler_tick_is_reported_but_does_not_block_generation(self):
+		step = self._steps(240)["scheduler"]
+		self.assertEqual("note", step["status"])
+		self.assertIn("240", step["detail"])
+
+	def test_a_one_minute_tick_is_fine(self):
+		self.assertEqual("done", self._steps(60)["scheduler"]["status"])
