@@ -8,7 +8,9 @@ class IntegrationTestGenerationRun(FrappeTestCase):
 	def setUp(self):
 		super().setUp()
 		from joymedia.joymedia.doctype.media_project.test_media_project import _ensure_workflow
+		from joymedia.services.testing import without_promoted_pipeline
 
+		without_promoted_pipeline(self)
 		self.workflow = _ensure_workflow()
 		self.project = frappe.get_doc(
 			{

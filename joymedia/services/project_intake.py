@@ -57,6 +57,36 @@ def apply_workbook_format(project):
 
 
 @frappe.whitelist()
+def preview_workbook(workbook_file):
+	"""What a storyboard workbook will produce, per sheet, before anything is created.
+
+	A workbook can hold several demos; the client picks one and sees its format, length and scene count.
+	"""
+	from joymedia.services.storyboard_workbook import parse_duration_seconds, parse_storyboard_workbook
+
+	file_doc = frappe.get_doc("File", workbook_file)
+	file_doc.check_permission("read")
+	if not str(file_doc.file_name or "").lower().endswith(".xlsx"):
+		frappe.throw(_("Storyboard import requires an .xlsx workbook."))
+	try:
+		parsed = parse_storyboard_workbook(file_doc.get_full_path())
+	except (OSError, ValueError) as exc:
+		frappe.throw(_("Could not read the storyboard workbook: {0}").format(str(exc)))
+	demos = []
+	for demo in parsed["demos"]:
+		metadata = demo.get("metadata") or {}
+		demos.append({
+			"name": demo["name"],
+			"product_name": metadata.get("product_name") or "",
+			"format": format_preset(metadata.get("format")),
+			"duration_seconds": parse_duration_seconds(metadata.get("duration") or "") if metadata.get("duration") else None,
+			"scene_count": len(demo.get("scenes") or []),
+			"timing_gaps": len(demo.get("timing_warnings") or []),
+		})
+	return {"demos": demos}
+
+
+@frappe.whitelist()
 def create_project_from_brief(project_name=None, video_idea=None, workbook_file=None, demo_name=None, references=None, format=None):
 	"""Create a project from the client's inputs and report what is still missing.
 

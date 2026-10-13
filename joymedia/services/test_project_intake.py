@@ -140,3 +140,27 @@ class TestNamingAndLanguage(FrappeTestCase):
 		en = {s["key"]: s["label"] for s in project_intake.get_project_readiness(project, lang="en")["steps"]}
 		self.assertEqual("Định dạng video", vi["format"])
 		self.assertEqual("Video format", en["format"])
+
+
+class TestWorkbookPreview(FrappeTestCase):
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def test_the_preview_reports_format_length_and_scenes_without_creating_anything(self):
+		frappe.set_user("Administrator")
+		workbook = frappe.get_doc({"doctype": "File", "file_name": "p.xlsx", "content": _workbook_bytes("16:9", "10s"), "is_private": 1}).insert(ignore_permissions=True)
+		before = frappe.db.count("Media Project")
+		demo = project_intake.preview_workbook(workbook.name)["demos"][0]
+
+		self.assertEqual("Demo 1", demo["name"])
+		self.assertEqual("Landscape", demo["format"])
+		self.assertEqual(10, demo["duration_seconds"])
+		self.assertEqual(2, demo["scene_count"])
+		self.assertEqual(before, frappe.db.count("Media Project"))
+
+	def test_a_non_workbook_is_refused(self):
+		frappe.set_user("Administrator")
+		image = frappe.get_doc({"doctype": "File", "file_name": "a.png", "content": _generate_image_bytes(), "is_private": 1}).insert(ignore_permissions=True)
+		with self.assertRaises(frappe.ValidationError):
+			project_intake.preview_workbook(image.name)

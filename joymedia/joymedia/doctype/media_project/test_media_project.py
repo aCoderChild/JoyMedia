@@ -15,6 +15,9 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		commit = patch.object(frappe.db, "commit")
 		commit.start()
 		self.addCleanup(commit.stop)
+		from joymedia.services.testing import without_promoted_pipeline
+
+		without_promoted_pipeline(self)
 		self.workflow = _ensure_workflow()
 
 	def tearDown(self):

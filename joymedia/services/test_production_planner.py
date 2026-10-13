@@ -157,6 +157,8 @@ class TestRealtimeAndBackgroundPlanning(FrappeTestCase):
 			storyboard.run_planning_job(self.project.name, None, "Administrator")
 		states = [c.args[1]["state"] for c in publish.call_args_list]
 		self.assertEqual(["started", "running", "done"], states)
+		# Progress must not wait for the job's final commit, or it all arrives in one burst at the end.
+		self.assertTrue(all(c.kwargs["after_commit"] is False for c in publish.call_args_list))
 
 	def test_a_failed_job_tells_the_studio_why(self):
 		from joymedia.api import storyboard
@@ -168,3 +170,60 @@ class TestRealtimeAndBackgroundPlanning(FrappeTestCase):
 		last = publish.call_args_list[-1].args[1]
 		self.assertEqual("failed", last["state"])
 		self.assertIn("planner down", last["error"])
+
+
+class TestGrounding(FrappeTestCase):
+	REFS = [
+		{"key": "mascot", "label": "Gau Shera mascot", "role": "Character"},
+		{"key": "pack", "label": "Shera pack", "role": "Product"},
+	]
+	PROJECT = frappe._dict(product_name="Khăn giấy rút cao cấp Shera", project_name="P")
+
+	def test_a_beat_that_names_the_product_gets_its_reference_even_if_the_planner_missed_it(self):
+		beat = {"raw": "Gấu con rút từng tờ giấy Shera ra khỏi bịch", "camera": "", "action": "The cub pulls tissue"}
+		keys, notes = planner.ground_reference_keys(self.PROJECT, beat, ["mascot"], self.REFS)
+		self.assertEqual(["mascot", "pack"], keys)
+		self.assertTrue(notes)
+
+	def test_a_beat_about_something_else_is_left_alone(self):
+		beat = {"raw": "Cảnh toàn thành phố lúc hoàng hôn", "camera": "", "action": "A city at dusk"}
+		self.assertEqual((["mascot"], []), planner.ground_reference_keys(self.PROJECT, beat, ["mascot"], self.REFS))
+
+	def test_the_characters_own_name_does_not_count_as_mentioning_the_product(self):
+		# 'Shera' is also in the mascot's label, so it must not pull the pack into every scene by itself.
+		beat = {"raw": "Gấu mẹ Shera nhảy múa", "camera": "", "action": "Mother Shera bear dances"}
+		keys, _ = planner.ground_reference_keys(self.PROJECT, beat, ["mascot"], self.REFS)
+		self.assertEqual(["mascot"], keys)
+
+	def test_an_already_chosen_product_is_not_duplicated(self):
+		beat = {"raw": "giấy Shera", "camera": "", "action": ""}
+		self.assertEqual((["pack"], []), planner.ground_reference_keys(self.PROJECT, beat, ["pack"], self.REFS))
+
+	def test_a_character_is_added_when_the_beat_uses_a_distinctive_word_of_its_label(self):
+		beat = {"raw": "Gấu con hoảng hốt", "camera": "", "action": "The bear cub panics"}
+		keys, notes = planner.ground_reference_keys(self.PROJECT, beat, ["pack"], self.REFS)
+		self.assertEqual(["pack", "mascot"], keys)
+		self.assertTrue(any("mascot" in n.lower() for n in notes))
+
+	def test_identical_planner_requests_are_answered_from_the_cache(self):
+		answers = iter([{"n": 1}, {"n": 2}])
+		with patch.object(planner, "_request_planner", side_effect=lambda *a, **k: next(answers)) as ask:
+			first = planner._ask_planner("same prompt " + frappe.generate_hash(length=6), system="s")
+			again = planner._ask_planner("same prompt " + "x", system="s")
+		self.assertEqual({"n": 1}, first)
+		self.assertEqual(2, ask.call_count)  # different prompts are different requests
+
+	def test_a_repeated_request_is_not_asked_twice_and_refresh_forces_a_new_answer(self):
+		prompt = "repeat " + frappe.generate_hash(length=8)
+		answers = iter([{"n": 1}, {"n": 2}])
+		with patch.object(planner, "_request_planner", side_effect=lambda *a, **k: next(answers)) as ask:
+			first = planner._ask_planner(prompt, system="s")
+			second = planner._ask_planner(prompt, system="s")
+			fresh = planner._ask_planner(prompt, system="s", refresh=True)
+		self.assertEqual((first, second), ({"n": 1}, {"n": 1}))
+		self.assertEqual({"n": 2}, fresh)
+		self.assertEqual(2, ask.call_count)
+
+	def test_the_planner_request_is_reproducible(self):
+		self.assertEqual(planner.request_seed("a", "b"), planner.request_seed("a", "b"))
+		self.assertNotEqual(planner.request_seed("a", "b"), planner.request_seed("a", "c"))

@@ -11,14 +11,14 @@
 
         <FormControl
           v-model="form.name" type="text" :label="tr('Project name', 'Tên dự án')"
-          :placeholder="tr('Optional — taken from the workbook', 'Tuỳ chọn — lấy từ bảng kịch bản')"
+          :placeholder="selectedDemo?.product_name || tr('Optional — taken from the workbook', 'Tuỳ chọn — lấy từ bảng kịch bản')"
         />
 
         <!-- 1. The story: a storyboard workbook, or a written brief -->
         <div>
           <p class="mb-1.5 text-xs font-semibold text-ink-primary">{{ tr('1. The story', '1. Kịch bản') }}</p>
           <FileUploader
-            :file-types="['.xlsx']" :validate-file="requireWorkbook" @success="(f) => (workbook = f)"
+            :file-types="['.xlsx']" :validate-file="requireWorkbook" @success="onWorkbook"
             @failure="(e) => (error = String(e?.message || e))"
           >
             <template #default="{ uploading, progress, openFileSelector }">
@@ -31,6 +31,20 @@
               </div>
             </template>
           </FileUploader>
+          <!-- What the chosen sheet will produce, before anything is created -->
+          <div v-if="preview.loading" class="mt-2 text-xs text-ink-muted">{{ tr('Reading the workbook…', 'Đang đọc bảng kịch bản…') }}</div>
+          <div v-else-if="demos.length" class="mt-2 flex flex-col gap-2" data-test="workbook-preview">
+            <FormControl
+              v-if="demos.length > 1" v-model="form.demo" type="select" :label="tr('Which sheet?', 'Chọn trang nào?')"
+              :options="demos.map((d) => ({ label: `${d.name}${d.product_name ? ' — ' + d.product_name : ''}`, value: d.name }))"
+            />
+            <div v-if="selectedDemo" class="flex flex-wrap gap-1.5">
+              <Badge theme="blue" :label="formatLabel(selectedDemo.format)" />
+              <Badge v-if="selectedDemo.duration_seconds" theme="blue" :label="`${selectedDemo.duration_seconds}s`" />
+              <Badge theme="blue" :label="tr(`${selectedDemo.scene_count} scenes`, `${selectedDemo.scene_count} cảnh`)" />
+              <Badge v-if="selectedDemo.timing_gaps" theme="amber" :label="tr(`${selectedDemo.timing_gaps} timing gaps (closed on export)`, `${selectedDemo.timing_gaps} khoảng trống thời gian (nối lại khi xuất)`)" />
+            </div>
+          </div>
           <FormControl
             v-model="form.brief" type="textarea" class="mt-2" :rows="3"
             :placeholder="tr('Describe the video you want (optional when a workbook is uploaded)', 'Mô tả video bạn muốn (không bắt buộc nếu đã tải bảng kịch bản)')"
@@ -74,14 +88,14 @@
 
 <script setup>
 import { computed, reactive, ref } from "vue";
-import { Alert, Button, Dialog, FileUploader, FormControl, call } from "frappe-ui";
+import { Alert, Badge, Button, Dialog, FileUploader, FormControl, call, createResource } from "frappe-ui";
 import { tr } from "../stores/i18n";
 import { errorMessage } from "../utils/errors";
 
 const open = defineModel({ type: Boolean, default: false });
 const emit = defineEmits(["created"]);
 
-const form = reactive({ name: "", brief: "", format: "" });
+const form = reactive({ name: "", brief: "", format: "", demo: "" });
 const workbook = ref(null);
 const references = ref([]);
 const creating = ref(false);
@@ -103,6 +117,26 @@ const formatOptions = computed(() => [
 
 const canCreate = computed(() => Boolean(workbook.value || form.brief.trim()));
 
+// Read the workbook before creating anything: which sheets it has and what each will produce.
+const preview = createResource({
+  url: "joymedia.services.project_intake.preview_workbook",
+  onSuccess: (data) => { form.demo = data?.demos?.[0]?.name || ""; },
+  onError: (err) => { error.value = errorMessage(err, tr("Could not read the workbook.", "Không đọc được bảng kịch bản.")); workbook.value = null; },
+});
+const demos = computed(() => preview.data?.demos || []);
+const selectedDemo = computed(() => demos.value.find((d) => d.name === form.demo));
+
+function onWorkbook(file) {
+  workbook.value = file;
+  error.value = "";
+  preview.submit({ workbook_file: file.name });
+}
+
+function formatLabel(preset) {
+  return { Portrait: tr("Portrait 9:16", "Dọc 9:16"), Landscape: tr("Landscape 16:9", "Ngang 16:9"), Square: tr("Square 1:1", "Vuông 1:1") }[preset]
+    || tr("Format: set it below", "Định dạng: chọn bên dưới");
+}
+
 function requireWorkbook(file) {
   return file.name.toLowerCase().endsWith(".xlsx") ? null : tr("Please choose an .xlsx workbook.", "Vui lòng chọn tệp .xlsx.");
 }
@@ -120,6 +154,7 @@ async function create() {
       project_name: form.name || null,
       video_idea: form.brief || null,
       workbook_file: workbook.value?.name || null,
+      demo_name: form.demo || null,
       format: form.format || null,
       references: references.value.map(({ file_name, label, role }) => ({ file_name, label, role })),
     });

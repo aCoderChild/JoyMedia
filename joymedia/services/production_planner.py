@@ -42,6 +42,8 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 		duration=float(shot.duration_seconds or 0),
 		is_first=int(shot.shot_number or 0) <= 1,
 	)
+	plan["reference_keys"], added_notes = ground_reference_keys(project, beat, plan["reference_keys"], references)
+	plan["notes"].extend(added_notes)
 	coverage, missing = beat_coverage(beat["summary"], plan["image_prompt"], plan["video_prompt"])
 	plan["coverage"] = round(coverage, 2)
 	# A plan that dropped much of the beat must not replace the advertiser's description unreviewed.
@@ -95,6 +97,7 @@ def creative_beat(project, shot):
 	if not (text["camera"] or text["action"]):
 		text["action"] = shot.generation_prompt or ""
 	# The models read English; the advertiser's original wording stays on the shot and in the source.
+	text["raw"] = " ".join(filter(None, (text["camera"], text["action"])))
 	text["camera"], text["action"] = translate(text["camera"], project), translate(text["action"], project)
 	text["summary"] = " ".join(filter(None, (text["camera"], text["action"]))).strip()
 	return text
@@ -147,8 +150,11 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		f"On-screen text (added in editing; never draw text in the image): {beat['on_screen_text'][:120] or '-'}",
 		f"PREVIOUS SHOT ENDS WITH: {previous_end_state or 'nothing (this is the first shot)'}",
 		"",
-		"RULES (write everything in English, whatever language the beat uses; name a reference by its label in "
-		"plain words, never copy the beat's wording or the role in brackets):",
+		"RULES (write everything in English, whatever language the beat uses; describe each reference by what it "
+		"is in plain words, for example 'the white bear mascot' or 'the tissue pack', never by its file label or "
+		"brand name, and never copy the beat's wording or the role in brackets):",
+		f"- The advertised product is: {project.product_name or project.project_name}. Generic words in the beat "
+		"for it (paper, bottle, bag...) mean this product; never substitute a different product.",
 		"- image_prompt: English, at most 60 words. Describe only the first frame: subjects, setting, framing, "
 		"lighting. Include only what must appear. No text, captions or logos.",
 		"- video_prompt: English, at most 80 words. What moves and how the camera moves, in time order, as one "
@@ -183,6 +189,52 @@ STOPWORDS = frozenset(
 )
 MIN_COVERAGE = 0.5
 REVIEW_COVERAGE = 0.85
+
+
+def _words(text, minimum=4):
+	"""Lower-case ASCII words (accents folded, so 'giấy' and 'giay' match) of at least `minimum` letters."""
+	import re
+	import unicodedata
+
+	folded = unicodedata.normalize("NFKD", str(text or "").replace("đ", "d").replace("Đ", "D")).encode("ascii", "ignore").decode()
+	return set(re.findall(r"[a-z]{%d,}" % minimum, folded.lower()))
+
+
+# Words in a reference's label that say what kind of image it is, not what it shows.
+LABEL_FILLER = frozenset("mascot character person model image photo picture pack package box background room reference".split())
+
+
+def ground_reference_keys(project, beat, keys, references):
+	"""Add the references a beat names in its own words, which the planner's guess can miss.
+
+	- A product reference is added when the beat mentions the advertised product (matched on the
+	  product's name, not on the model's guess).
+	- Any other reference is added when the beat uses a distinctive word of the reference's own label
+	  (a reference labelled 'Gau Shera mascot' for a beat about 'gấu').
+	Words that belong to the advertised product are not distinctive enough to pull in a character.
+	Returns the keys and notes explaining what was added.
+	"""
+	beat_text = " ".join((beat.get("raw", ""), beat.get("camera", ""), beat.get("action", "")))
+	beat_words, beat_short = _words(beat_text), _words(beat_text, 3)
+	product_words = _words(project.product_name) - _words(
+		" ".join(r["label"] for r in references if r["role"] != "Product")
+	)
+	product_brand = _words(project.product_name, 3)
+	added, notes = [], []
+	for reference in references:
+		if reference["key"] in keys:
+			continue
+		if reference["role"] == "Product":
+			hit = product_words & beat_words
+			reason = "the beat mentions the product"
+		else:
+			distinctive = _words(reference["label"], 3) - LABEL_FILLER - product_brand
+			hit = distinctive & beat_short
+			reason = "the beat mentions it"
+		if hit:
+			added.append(reference["key"])
+			notes.append(f"Added reference '{reference['label']}': {reason}.")
+	return keys + added, notes
 
 
 def beat_coverage(beat_text, *texts):
@@ -252,13 +304,41 @@ def apply_production_shot(project, shot, plan):
 	_assign_shot_references(project, {shot.name: plan["reference_keys"]})
 
 
-def _ask_planner(prompt, *, system=SYSTEM_PROMPT, max_tokens=900):
+def request_seed(*parts):
+	import hashlib
+
+	return int(hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:8], 16)
+
+
+CACHE_SECONDS = 7 * 24 * 3600
+
+
+def _ask_planner(prompt, *, system=SYSTEM_PROMPT, max_tokens=900, refresh=False):
+	"""Ask the planner; an identical request returns the stored answer.
+
+	The model is not deterministic even at temperature 0, so re-planning an unchanged beat would give a
+	different plan each time. Answers are cached in Frappe's cache keyed by the exact request; pass
+	refresh=True (or change the beat, references or brief) for a fresh one.
+	"""
+	cache_key = f"joymedia_planner:{request_seed(system, prompt, str(max_tokens))}"
+	if not refresh:
+		cached = frappe.cache.get_value(cache_key)
+		if cached is not None:
+			return cached
+	answer = _request_planner(prompt, system=system, max_tokens=max_tokens)
+	frappe.cache.set_value(cache_key, answer, expires_in_sec=CACHE_SECONDS)
+	return answer
+
+
+def _request_planner(prompt, *, system, max_tokens):
 	base_url, model, timeout = _qwen_config()
 	payload = {
 		"model": model,
 		"messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
 		"response_format": {"type": "json_object"},
 		"temperature": 0,
+		# The same request gives the same plan: the seed follows the prompt, not the clock.
+		"seed": request_seed(system, prompt),
 		"max_tokens": max_tokens,
 	}
 	try:

@@ -10,11 +10,18 @@ PROJECT_UPDATED = "joymedia_project_updated"
 PLANNING_PROGRESS = "joymedia_planning_progress"
 
 
-def publish_project_event(project_name, event, payload=None):
+def publish_project_event(project_name, event, payload=None, after_commit=True):
+	"""Publish to the project's document room.
+
+	`after_commit=True` (the default) holds the message until the transaction commits, which is right
+	when clients will reload saved data. Progress of a long background job must pass False: in a job
+	the commit only happens at the very end, so held messages would all arrive in one burst.
+	"""
 	if not project_name:
 		return
 	frappe.publish_realtime(
-		event, {"project": project_name, **(payload or {})}, doctype="Media Project", docname=project_name, after_commit=True
+		event, {"project": project_name, **(payload or {})}, doctype="Media Project", docname=project_name,
+		after_commit=after_commit,
 	)
 
 

@@ -215,18 +215,18 @@ def run_planning_job(project_name, shot_names, user):
 		publish_project_event(project_name, PLANNING_PROGRESS, {
 			"state": "running", "done": done, "total": total, "shot_name": result["shot_name"],
 			"held_back": result["held_back"], "notes": result["notes"],
-		})
+		}, after_commit=False)
 
-	publish_project_event(project_name, PLANNING_PROGRESS, {"state": "started"})
+	publish_project_event(project_name, PLANNING_PROGRESS, {"state": "started"}, after_commit=False)
 	try:
 		results = _plan_project(project, _parse_shot_names(shot_names), True, progress)
 	except Exception as exc:
 		frappe.db.rollback()
-		publish_project_event(project_name, PLANNING_PROGRESS, {"state": "failed", "error": str(exc)})
+		publish_project_event(project_name, PLANNING_PROGRESS, {"state": "failed", "error": str(exc)}, after_commit=False)
 		raise
 	publish_project_event(project_name, PLANNING_PROGRESS, {
 		"state": "done", "total": len(results), "held_back": sum(1 for r in results if r["held_back"]),
-	})
+	}, after_commit=False)
 
 
 @frappe.whitelist()

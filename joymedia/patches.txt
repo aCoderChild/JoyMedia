@@ -54,3 +54,4 @@ joymedia.patches.normalize_project_export_quality
 joymedia.patches.remove_end_card_fields
 joymedia.patches.remove_end_card_columns
 joymedia.patches.upgrade_flux2_multireference_workflow
+joymedia.patches.install_storyboard_approval_workflow

@@ -31,7 +31,7 @@
 </template>
 
 <script setup>
-import { computed, reactive } from "vue";
+import { computed, reactive, watch } from "vue";
 import { Alert, Badge, Button, Progress, call, createResource } from "frappe-ui";
 import { tr, useI18n } from "../../stores/i18n";
 import { useProjectRealtime } from "../../composables/useProjectRealtime";
@@ -44,6 +44,11 @@ const readiness = createResource({
   url: "joymedia.services.project_intake.get_project_readiness",
   params: { project_name: props.projectName, lang: currentLang.value },
   auto: true,
+});
+// The server translates the step texts; follow the studio's language switch without a reload.
+watch(currentLang, (lang) => {
+  readiness.update({ params: { project_name: props.projectName, lang } });
+  readiness.reload();
 });
 const steps = computed(() => readiness.data?.steps || []);
 const ready = computed(() => Boolean(readiness.data?.ready));
