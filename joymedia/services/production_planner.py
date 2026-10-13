@@ -42,7 +42,13 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 		duration=float(shot.duration_seconds or 0),
 		is_first=int(shot.shot_number or 0) <= 1,
 	)
-	for key in ("image_prompt", "setting_prompt", "video_prompt", "sound_effects"):
+	if not plan["video_prompt"].isascii():
+		# A video prompt that copied the beat's language, or mixed it with a translation, is not usable: the
+		# movement of the beat's English translation replaces it.
+		plan["video_prompt"] = motion_only(project, beat["summary"], references) or beat["summary"]
+		plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": plan["video_prompt"]}]}
+		plan["notes"].append("The planner did not answer in English, so the video prompt is the beat's movements.")
+	for key in ("image_prompt", "setting_prompt", "sound_effects"):
 		# The models read English; a planner answer that copied the beat's own language is translated.
 		plan[key] = translate(plan.get(key), project)
 	plan["audio"] = audio_direction(project, beat, plan.get("sound_effects"))
