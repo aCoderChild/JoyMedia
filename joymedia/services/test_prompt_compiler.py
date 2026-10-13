@@ -273,3 +273,18 @@ class TestAudioLineLast(FrappeTestCase):
 				"The camera slowly zooms in on emotional expressions."
 			),
 		)
+
+	def test_the_segments_of_a_long_scene_are_scrubbed_in_their_text_and_their_action_plan(self):
+		from joymedia.services.prompt_compiler import compile_segment_prompt_from_snapshot
+
+		shot = frappe._dict(
+			name="S", shot_number=1, generation_prompt="The kid pulls tissue from the large box (30 packs per box).",
+			image_prompt="", handoff_type="", end_state="", references=[{"reference_role": "Character", "asset_version": "AV1"}],
+			motion_plan_json='{"actions":[{"start":0,"end":7,"action":"Camera zooms in. The mother winks at top right corner."}]}',
+		)
+		project = frappe._dict(generation_mode="Multi-shot", global_instructions="", references=[{"asset_version": "AV1", "label": "Mascot"}])
+		with patch("joymedia.services.subject_overlay.describe_colours", return_value=""):
+			prompt = compile_segment_prompt_from_snapshot(shot, project, 1, 2, fps=24, segment_start_frame=0, segment_effective_frames=124)
+		movement = prompt.split("Identity consistency")[0].split("The first frame contains")[0]
+		for unwanted in ("30 packs", "large box", "zooms", "top right"):
+			self.assertNotIn(unwanted, movement)

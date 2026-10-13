@@ -148,6 +148,9 @@ def compile_segment_prompt_from_snapshot(
 	if segment_count == 1 or prompt_source == "image":
 		# A still image has no segments or timing; the action plan belongs to the video stage.
 		return base
+	has_references = bool(shot.get("references") if hasattr(shot, "get") else getattr(shot, "references", None))
+	if prompt_source == "motion" and has_references:
+		base = _scrub_paragraphs(base)
 	start_seconds = None
 	end_seconds = None
 	if segment_start_frame is not None and segment_effective_frames is not None:
@@ -161,6 +164,9 @@ def compile_segment_prompt_from_snapshot(
 	timing = temporal_timing_instruction(
 		shot, is_final=is_final, start_seconds=start_seconds, end_seconds=end_seconds
 	)
+	if prompt_source == "motion" and has_references:
+		# The action plan is written from the beat's own text, so it needs the same treatment.
+		timing = _scrub_printable(timing)
 	if segment_index == 1:
 		return finish((
 			f"{base}\n\nThis is segment 1 of {segment_count}. "
@@ -327,6 +333,13 @@ def _scrub_printable(text):
 	text = CAMERA_ZOOM.sub("", text)
 	text = re.sub(r"\s{2,}", " ", text)
 	return re.sub(r"\s+([.,;:!?])", r"\1", text).strip()
+
+
+def _scrub_paragraphs(text):
+	"""Scrub the movement paragraphs of a prompt; the audio line is left as it is."""
+	return "\n\n".join(
+		part if part.lstrip().startswith("Audio:") else _scrub_printable(part) for part in str(text).split("\n\n")
+	)
 
 
 def _display_name(label, number):
