@@ -98,7 +98,10 @@ def _map_pipeline_references(references, contract):
 	for reference in references:
 		item = dict(reference)
 		role = normalize_reference_role(item.get("reference_role") or item.get("input_role"))
-		if role in contract:
+		if role == "logo":
+			# Logos are pasted over the keyframe, so no image stage needs a binding for them.
+			item["reference_role"] = role
+		elif role in contract:
 			item["reference_role"] = role
 		elif board and board.get("allow_multiple"):
 			item["reference_role"] = board_role

@@ -168,7 +168,7 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		f"PREVIOUS SHOT ENDS WITH: {previous_end_state or 'nothing (this is the first shot)'}",
 		"",
 		"RULES (write everything in English, whatever language the beat uses; describe each reference by what it "
-		"is in plain words, for example 'the white bear mascot' or 'the tissue pack', never by its file label or "
+		"is in plain words, for example 'the mascot' or 'the tissue pack', never by its file label or "
 		"brand name, and never copy the beat's wording or the role in brackets):",
 		f"- The advertised product is: {project.product_name or project.project_name}. Generic words in the beat "
 		"for it (paper, bottle, bag...) mean this product; never substitute a different product.",
@@ -178,6 +178,9 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		"continuous shot. Keep every action the beat requires; invent no claims or extra characters.",
 		"- image_prompt is ONE still frame, never a sequence of events. When a reference shows a pose, keep the "
 		"character's pose in the prompt consistent with it.",
+		"- Name a character only as the same subject its reference shows (for example 'the mascot'); never use a "
+		"generic animal or person word such as 'bear cub' or 'woman', which makes the video model invent a "
+		"different one.",
 		"- reference_keys: include the key of EVERY listed character or product that is visible in the first frame "
 		"(the advertised product's pack whenever the product itself is shown). Empty only if none is visible.",
 		'- continuity_mode: "Continue" only if this beat continues the same scene, subject and setting from the '
@@ -186,9 +189,9 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		'cannot show, give a short reason and plan the single most important moment; else "".',
 		"- motion_plan: actions with start and end in seconds covering the duration.",
 		"",
-		'EXAMPLE of the style: image_prompt "Extreme close-up of a small white bear mascot sitting at a wooden '
-		'table, holding a glass of orange juice, soft daylight, shallow depth of field." video_prompt "The bear '
-		'tips the glass and juice spills across the table; the camera slowly pushes in as the bear gasps."',
+		'EXAMPLE of the style: image_prompt "Extreme close-up of the mascot sitting at a wooden '
+		'table, holding a glass of orange juice, soft daylight, shallow depth of field." video_prompt "The mascot '
+		'tips the glass and juice spills across the table; the camera slowly pushes in as the mascot gasps."',
 		"",
 		'Return {"image_prompt":"","video_prompt":"","reference_keys":[],"continuity_mode":"New Scene",'
 		'"start_state":"","end_state":"","motion_plan":{"actions":[{"start":0,"end":0,"action":""}]},'

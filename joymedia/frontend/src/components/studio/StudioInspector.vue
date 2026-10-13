@@ -313,6 +313,7 @@
             >
               <option value="Product">{{ currentLang === 'vi' ? 'Sản phẩm' : 'Product' }}</option>
               <option value="Character">{{ currentLang === 'vi' ? 'Nhân vật' : 'Character' }}</option>
+              <option value="Logo">Logo</option>
               <option value="Environment">{{ currentLang === 'vi' ? 'Bối cảnh' : 'Place' }}</option>
               <option value="Style">{{ currentLang === 'vi' ? 'Phong cách' : 'Style' }}</option>
               <option value="Motion">{{ currentLang === 'vi' ? 'Chuyển động' : 'Motion' }}</option>

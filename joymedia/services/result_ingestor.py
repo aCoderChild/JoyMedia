@@ -383,6 +383,10 @@ def _store_artifact_file_in_frappe(artifact, attempt, output=None):
 		output.get("type", "output"),
 		base_url=attempt.comfyui_endpoint_url,
 	)
+	if artifact.media_type == "Image":
+		from .subject_overlay import paste_subjects_into_keyframe
+
+		video_bytes = paste_subjects_into_keyframe(attempt, video_bytes)
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",

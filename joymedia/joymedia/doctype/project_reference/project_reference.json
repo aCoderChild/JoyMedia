@@ -32,7 +32,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Reference Role",
-   "options": "Product\nCharacter\nEnvironment\nStyle\nComposition\nMotion\nAudio\nGeneral",
+   "options": "Product\nCharacter\nLogo\nEnvironment\nStyle\nComposition\nMotion\nAudio\nGeneral",
    "reqd": 1
   },
   {

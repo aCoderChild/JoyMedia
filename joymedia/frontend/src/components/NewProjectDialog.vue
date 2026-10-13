@@ -105,6 +105,7 @@ const roleOptions = computed(() => [
   { label: tr("Auto", "Tự động"), value: "" },
   { label: tr("Character", "Nhân vật"), value: "Character" },
   { label: tr("Product", "Sản phẩm"), value: "Product" },
+  { label: tr("Logo", "Logo"), value: "Logo" },
   { label: tr("Environment", "Bối cảnh"), value: "Environment" },
   { label: tr("Other", "Khác"), value: "General" },
 ]);

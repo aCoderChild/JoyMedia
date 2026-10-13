@@ -81,6 +81,7 @@ def _segment_plan(workflow, frame_count, continuation_workflow=None):
 
 def _pipeline_reference_inputs(shot, workflow):
 	"""Map a Shot's ordered references into the pipeline's first image stage."""
+	from .subject_overlay import pasted_references
 	from .workflow_resolver import get_workflow_input_contract
 	from .workflow_routing import normalize_reference_role
 
@@ -106,6 +107,8 @@ def _pipeline_reference_inputs(shot, workflow):
 		if not asset_version:
 			continue
 		raw_role = frappe.scrub(reference.get("input_role") or reference.get("reference_role") or "")
+		if raw_role == "logo" or pasted_references([reference]):
+			continue  # cutouts are pasted over the keyframe, never an input of the image model
 		# Keep an already-concrete workflow role intact.  In particular, direct
 		# R2V uses ``product_reference`` for two scalar image slots; converting it
 		# to a semantic routing alias here leaves the required slots unbound.

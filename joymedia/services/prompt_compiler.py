@@ -177,6 +177,12 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 			_("Shot {0} has no generation prompt.").format(shot.name)
 		)
 
+	if prompt_source == "image":
+		from .subject_overlay import EMPTY_SETTING, pasted_references
+
+		if pasted_references(getattr(shot, "references", None)):
+			prompt = f"{prompt}\n\n{EMPTY_SETTING}"
+
 	global_instructions = str(project.get("global_instructions") or "").strip()
 	if global_instructions and include_global_instructions:
 		prompt = (

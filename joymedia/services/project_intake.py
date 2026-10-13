@@ -15,11 +15,12 @@ from frappe import _
 # Words that mark what a reference image is, in English and Vietnamese. Order matters: first match wins.
 ROLE_KEYWORDS = (
 	("Environment", ("environment", "background", "location", "room", "interior", "setting", "scene", "phòng", "bối cảnh", "nền", "không gian")),
-	("Product", ("product", "pack", "package", "box", "bottle", "tube", "label", "logo", "sản phẩm", "bịch", "hộp", "gói", "chai")),
+	("Logo", ("logo", "wordmark", "brand mark", "thương hiệu")),
+	("Product", ("product", "pack", "package", "box", "bottle", "tube", "label", "sản phẩm", "bịch", "hộp", "gói", "chai")),
 	("Character", ("character", "mascot", "person", "model", "actor", "face", "bear", "nhân vật", "gấu", "người", "mẹ", "con")),
 )
-ROLE_CATEGORY = {"Product": "Product", "Character": "Character", "Environment": "Background", "General": "Reference"}
-ROLES = ("Product", "Character", "Environment", "General")
+ROLE_CATEGORY = {"Product": "Product", "Character": "Character", "Logo": "Brand", "Environment": "Background", "General": "Reference"}
+ROLES = ("Product", "Character", "Logo", "Environment", "General")
 
 
 def infer_reference_role(name):
