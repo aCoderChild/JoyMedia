@@ -116,6 +116,13 @@ class TestApply(FrappeTestCase):
 		self.assertTrue(prompt.startswith(RAW["video_prompt"]))
 		self.assertTrue(prompt.endswith("Audio: sound effects: a pop."))
 
+	def test_motion_only_asks_for_movement_and_not_for_place_or_light(self):
+		with patch.object(planner, "_ask_planner", return_value={"motion": "  The mother lifts a tissue. "}) as ask:
+			result = planner.motion_only(self.project, "Candlelight. Mother lifts a tissue.", [{"label": "Mama", "role": "Character"}])
+		self.assertEqual("The mother lifts a tissue.", result)
+		self.assertIn("ONLY what moves", ask.call_args.args[0])
+		self.assertIn("Mama", ask.call_args.args[0])
+
 	def test_the_planners_foley_is_used_when_the_beat_names_no_sound(self):
 		project = frappe._dict(selected_media=[], product_name="P", project_name="P")
 		self.assertEqual(
@@ -130,7 +137,7 @@ class TestApply(FrappeTestCase):
 			planner, "creative_beat", return_value=beat
 		), patch.object(planner, "beat_coverage", return_value=(0.1, ["milk"])), patch.object(
 			planner, "ground_reference_keys", return_value=([], [])
-		):
+		), patch.object(planner, "motion_only", return_value="Mother bear spills the milk."):
 			plan = planner.plan_production_shot(self.project, self.shot, references=[])
 		self.assertEqual("Mother bear spills the milk.", plan["video_prompt"])
 		self.assertEqual(1, len(plan["motion_plan"]["actions"]))

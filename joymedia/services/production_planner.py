@@ -53,10 +53,26 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 	if coverage < MIN_COVERAGE and beat["summary"]:
 		# A plan that dropped much of the beat must not replace the advertiser's description. The beat's own
 		# English wording becomes the video prompt, so the model never receives the raw foreign-language text.
-		plan["video_prompt"] = beat["summary"]
-		plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": beat["summary"]}]}
-		plan["notes"].append("Plan covers too little of the beat, so the beat's own English wording is used as the video prompt.")
+		# The video starts from a first frame that already shows the place, lighting and objects, so only the
+		# movement is kept; a description of a different place or light would pull the video away from it.
+		movement = motion_only(project, beat["summary"], references) or beat["summary"]
+		plan["video_prompt"] = movement
+		plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": movement}]}
+		plan["notes"].append("Plan covers too little of the beat, so the beat's own wording, reduced to its movements, is used as the video prompt.")
 	return plan
+
+
+def motion_only(project, text, references):
+	"""The beat's actions and camera moves only, in English, without place, lighting or objects that do not move."""
+	cast = ", ".join(r["label"] for r in references or [] if r.get("role") in ("Character", "Person"))
+	prompt = (
+		"Rewrite this storyboard beat as ONLY what moves: the actions of the characters and the camera, in time "
+		"order, in at most 60 words of English. Remove every description of the place, lighting, time of day, "
+		f"colours and objects that are not moving. Characters: {cast or 'as in the beat'}; every bear, mother or "
+		f"baby named is one of them.\nBEAT: {text}\nReturn {{\"motion\": \"...\"}}"
+	)
+	raw = _ask_planner(prompt, system="You rewrite storyboard beats faithfully. Return JSON only.", max_tokens=300)
+	return " ".join(str((raw or {}).get("motion") or "").split())
 
 
 def project_reference_options(project):

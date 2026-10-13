@@ -95,7 +95,7 @@ AUDIO_WORKFLOW_KEY = "mmaudio_video_to_audio"
 
 
 @frappe.whitelist()
-def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflow_key=AUDIO_WORKFLOW_KEY):
+def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflow_key=AUDIO_WORKFLOW_KEY, seed_offset=0, place=True):
 	"""Generate audio for a scene from its selected video with a video-to-audio workflow, then place it.
 
 	``prompt`` overrides the storyboard cue text; such models usually respond best to a short
@@ -138,7 +138,7 @@ def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflo
 	start, end = _shot_frame_range(project.name, shot.name)
 	frames = (end - start) if start is not None else math.ceil(float(shot.duration_seconds or 0) * fps)
 	frames = max(1, min(int(frames), int(workflow_version.frame_count or frames)))
-	seed = int(hashlib.sha256(f"{shot.name}|{role}|{cue_text}".encode()).hexdigest()[:12], 16)
+	seed = int(hashlib.sha256(f"{shot.name}|{role}|{cue_text}".encode()).hexdigest()[:12], 16) + int(seed_offset)
 	workflow = build_execution_workflow(
 		workflow_version,
 		inputs={"generation_prompt": cue_text, "source_video": upload_local_file(video_path)["server_path"]},
@@ -150,7 +150,7 @@ def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflo
 	# The job ran for a while; commit so later writes see current rows.
 	frappe.db.commit()
 	version = _save_output(project.name, f"{shot.name} {role} audio", "Audio", f"{shot.name}-{role.lower()}.flac", content)
-	placed = place_cue_audio(project.name, shot.name, role, version)
+	placed = place_cue_audio(project.name, shot.name, role, version) if place else {}
 	return {"asset_version": version, "workflow": workflow_version.name, "prompt": cue_text, **placed}
 
 
@@ -234,13 +234,34 @@ def check_scene_audio(project_name, apply=True):
 			row["action"] = "replaced"
 			if apply:
 				if clip.shot not in placed:
-					generate_cue_audio(project.name, clip.shot, "SFX", prompt=scene_sound_prompt(frappe.get_doc("Shot", clip.shot)))
+					row["layer_score"] = _place_best_effects_layer(project.name, clip.shot)
 				frappe.db.set_value("Timeline Clip", clip.name, "enabled", 0, update_modified=False)
 		report.append(row)
 	if apply:
 		_invalidate_project_output(project.name)
 		frappe.db.commit()
 	return report
+
+
+EFFECT_LAYER_ATTEMPTS = 3
+
+
+def _place_best_effects_layer(project_name, shot_name):
+	"""Generate an effect layer, retrying other seeds until one passes the effects screen; place the best."""
+	from joymedia.services.audio_check import EFFECTS_FLATNESS_MIN, effects_score
+	from joymedia.services.video_composer import _get_asset_version_path
+
+	prompt = scene_sound_prompt(frappe.get_doc("Shot", shot_name))
+	best = None
+	for attempt in range(EFFECT_LAYER_ATTEMPTS):
+		version = generate_cue_audio(project_name, shot_name, "SFX", prompt=prompt, seed_offset=attempt, place=False)["asset_version"]
+		score = effects_score(_get_asset_version_path(version))
+		if best is None or (score or 0) > (best[1] or 0):
+			best = (version, score)
+		if score is not None and score >= EFFECTS_FLATNESS_MIN:
+			break
+	place_cue_audio(project_name, shot_name, "SFX", best[0])
+	return best[1]
 
 
 def scene_sound_prompt(shot):
