@@ -412,9 +412,28 @@ def _describe_character(label):
 	return _display_name(label, 1)
 
 
+HUMAN_BODY = re.compile(r"\b(hands?|fingers?)\b", re.I)
+EXTREME_CLOSEUP = re.compile(r"\b(?:macro|extreme|super)(?:[ -]+(?:macro|extreme|super))*[ -]+close[ -]?ups?\b|\bmacro\b", re.I)
+QUANTITY = re.compile(r"\(\s*\d[^)]*\)|\b\d+\s*(?:packs?|boxes|box|sheets?|ply|layers?|rolls?|pcs|pieces)\b(?:\s+of)?|[\"“”][^\"“”]*[\"“”]", re.I)
+
+
+def _scrub_for_drawing(text):
+	"""Make a planner's image description safe for drawing a family scene of mascots.
+
+	A hand is the character's own paw (the model would draw a person's hand), an extreme close-up becomes a
+	medium shot (the characters must be seen acting in the room), and quantities and quoted words go (they get
+	drawn as letters).
+	"""
+	text = QUANTITY.sub("", str(text or ""))
+	text = EXTREME_CLOSEUP.sub("medium shot", text)
+	text = HUMAN_BODY.sub(lambda m: "paws" if m.group(1).lower().endswith("s") else "paw", text)
+	text = re.sub(r"\s{2,}", " ", text)
+	return re.sub(r"\s+([.,;:!?])", r"\1", text).strip()
+
+
 def _draw_prompt(shot, project):
 	"""The keyframe prompt for "Draw in scene": the scene's action with the characters behaving like people."""
-	image = (getattr(shot, "image_prompt", None) or getattr(shot, "generation_prompt", None) or "").strip()
+	image = _scrub_for_drawing(getattr(shot, "image_prompt", None) or getattr(shot, "generation_prompt", None) or "")
 	cast = "; ".join(dict.fromkeys(_describe_character(label) for label in _character_labels(shot, project)))
 	return (
 		f"{image}\n\nThe characters are cartoon mascots who behave like people in a real home"

@@ -304,3 +304,11 @@ class TestAudioLineLast(FrappeTestCase):
 		self.assertTrue(prompt.startswith("The mother stands at the counter holding a glass of milk."))
 		self.assertIn("behave like people in a real home: mother mascot, flower on head; kid mascot", prompt)
 		self.assertNotIn("empty", prompt)
+
+	def test_a_planned_image_description_is_made_safe_for_drawing_mascots(self):
+		from joymedia.services.prompt_compiler import _scrub_for_drawing
+
+		self.assertEqual(
+			"medium shot on paw pulling out tissue. Full box of Shera appearing beside the kid.",
+			_scrub_for_drawing("Macro super close-up on hand pulling out tissue. Full box of 30 packs of Shera appearing beside the kid."),
+		)
