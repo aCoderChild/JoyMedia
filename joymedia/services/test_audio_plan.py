@@ -211,3 +211,51 @@ class TestUseSoundEffectsOnly(FrappeTestCase):
 
 		shot = frappe._dict(audio_cues="SFX: Paper tearing. Baby giggling laughter.", generation_prompt="")
 		self.assertEqual("Paper tearing.", scene_sound_prompt(shot))
+
+
+class TestCheckSceneAudio(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		commit = patch.object(frappe.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
+		frappe.set_user("Administrator")
+		self.project = frappe.get_doc({
+			"doctype": "Media Project", "project_name": "Audio check", "workflow": _create_workflow(),
+			"total_duration_seconds": 4, "delivery_preset": "Landscape",
+		}).insert(ignore_permissions=True)
+
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def _source_clip(self, number):
+		shot = frappe.get_doc({
+			"doctype": "Shot", "media_project": self.project.name, "shot_number": number, "generation_prompt": "A scene.",
+			"duration_seconds": 2.0,
+		}).insert(ignore_permissions=True)
+		_asset, video = _create_output_version(self.project, f"s{number}.mp4", 2)
+		clip = frappe.get_doc({
+			"doctype": "Timeline Clip", "media_project": self.project.name, "shot": shot.name, "clip_order": number,
+			"track_type": "Audio", "track_index": 0, "timeline_start_frame": 0, "initial_timeline_start_frame": 0, "enabled": 1,
+			"source_asset_version": video.name, "source_in_frame": 0, "source_out_frame": 48,
+			"initial_source_in_frame": 0, "initial_source_out_frame": 48, "audio_role": "Source",
+		}).insert(ignore_permissions=True)
+		return shot, clip
+
+	def test_a_music_like_scene_is_replaced_and_an_effects_like_scene_is_kept(self):
+		from joymedia.services.audio_plan import check_scene_audio
+
+		clean_shot, clean_clip = self._source_clip(1)
+		music_shot, music_clip = self._source_clip(2)
+		scores = {clean_clip.source_asset_version: 0.6, music_clip.source_asset_version: 0.1}
+		with patch("joymedia.services.video_composer._get_asset_version_path", side_effect=lambda name: name), patch(
+			"joymedia.services.audio_check.effects_score", side_effect=lambda path: scores[path]
+		), patch("joymedia.services.audio_plan.generate_cue_audio") as generate:
+			report = check_scene_audio(self.project.name)
+
+		self.assertEqual({"kept", "replaced"}, {row["action"] for row in report})
+		generate.assert_called_once()
+		self.assertEqual(music_shot.name, generate.call_args.args[1])
+		self.assertEqual(1, frappe.db.get_value("Timeline Clip", clean_clip.name, "enabled"))
+		self.assertEqual(0, frappe.db.get_value("Timeline Clip", music_clip.name, "enabled"))

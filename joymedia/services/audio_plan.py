@@ -205,6 +205,44 @@ def use_separate_effects_layer(project_name, prompts=None):
 	return {"generated": generated, "already_placed": skipped, "mode": "Separate effects layer"}
 
 
+@frappe.whitelist()
+def check_scene_audio(project_name, apply=True):
+	"""Screen each scene's own audio and replace the ones that sound like music or a voice.
+
+	The video model's audio cannot be told reliably to leave music or voice out. A scene whose audio is not
+	noise-like (see audio_check) gets a generated sound-effect layer instead, and its own audio is muted on the
+	timeline; scenes that pass keep their own audio. Returns one row per scene with its score and what was done.
+	With apply=0 nothing is changed.
+	"""
+	from joymedia.services.audio_check import EFFECTS_FLATNESS_MIN, effects_score
+	from joymedia.services.timeline_editor import _invalidate_project_output
+	from joymedia.services.video_composer import _get_asset_version_path
+
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	apply = str(apply).lower() in {"1", "true", "yes", "on"}
+	placed = {cue["shot"] for cue in build_audio_plan(project.name) if cue["role"] == "SFX" and cue["scheduled"]}
+	report = []
+	for clip in frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project.name, "track_type": "Audio", "audio_role": "Source", "enabled": 1, "shot": ["is", "set"]},
+		fields=["name", "shot", "source_asset_version"],
+	):
+		score = effects_score(_get_asset_version_path(clip.source_asset_version))
+		row = {"shot": clip.shot, "shot_name": frappe.db.get_value("Shot", clip.shot, "shot_name"), "score": score, "action": "kept"}
+		if score is not None and score < EFFECTS_FLATNESS_MIN:
+			row["action"] = "replaced"
+			if apply:
+				if clip.shot not in placed:
+					generate_cue_audio(project.name, clip.shot, "SFX", prompt=scene_sound_prompt(frappe.get_doc("Shot", clip.shot)))
+				frappe.db.set_value("Timeline Clip", clip.name, "enabled", 0, update_modified=False)
+		report.append(row)
+	if apply:
+		_invalidate_project_output(project.name)
+		frappe.db.commit()
+	return report
+
+
 def scene_sound_prompt(shot):
 	"""Describe the effects of a scene: its SFX cue, else its prompt's audio line, else its action.
 

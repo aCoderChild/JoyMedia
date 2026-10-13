@@ -206,4 +206,5 @@ class TestAudioLineLast(FrappeTestCase):
 				prompt = compile_segment_prompt_from_snapshot(shot, project, index, 2, fps=24, segment_start_frame=0, segment_effective_frames=48)
 			self.assertIn("The only character in this scene is Shera mascot", prompt)
 			self.assertIn("Add no text, letters", prompt)
+			self.assertIn("first frame is the truth for the place, the lighting", prompt)
 			self.assertTrue(prompt.split("\n\n")[-1].startswith("Audio:"), prompt[-300:])

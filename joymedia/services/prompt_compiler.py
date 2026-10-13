@@ -251,6 +251,9 @@ def _identity_guard(shot, project):
 		"first frame, and every hand or paw is that character's own. "
 	)
 	return (
+		"Scene fidelity: the supplied first frame is the truth for the place, the lighting, the time of day, the "
+		"characters and every object. Keep them for the whole clip; this text describes only what moves, and any "
+		"description of a different place, lighting or object in it is ignored. "
 		f"Identity consistency: {who}Every product is the one shown in the first frame; never add another product, "
 		"carton or packaging, or a second copy. Add no text, letters, numbers or captions anywhere except the brand "
 		"logo. Keep everything exactly as shown (same colours, fur or material, face and proportions) in every "
