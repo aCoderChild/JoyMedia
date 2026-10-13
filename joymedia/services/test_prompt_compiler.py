@@ -87,3 +87,28 @@ class TestPromptCompiler(FrappeTestCase):
 
 		self.assertIn("0-5s: walk into the pool area", prompt)
 		self.assertNotIn("show the lobby", prompt)
+
+
+class TestIdentityConsistency(FrappeTestCase):
+	def _shot(self, references):
+		return frappe._dict(
+			name="S", shot_number=1, generation_prompt="The bear tips the glass.", image_prompt="A bear at a table.",
+			references=references, motion_plan_json="", handoff_type="", end_state="",
+		)
+
+	def _project(self):
+		return frappe._dict(generation_mode="Multi-shot", global_instructions="")
+
+	def test_the_video_prompt_keeps_characters_as_in_the_first_frame(self):
+		prompt = compile_prompt_for_documents(self._shot([{"asset_version": "AV"}]), self._project(), prompt_source="motion")
+		self.assertIn("Identity consistency", prompt)
+		self.assertIn("including close-ups", prompt)
+
+	def test_the_keyframe_prompt_and_reference_free_shots_do_not_get_it(self):
+		self.assertNotIn(
+			"Identity consistency",
+			compile_prompt_for_documents(self._shot([{"asset_version": "AV"}]), self._project(), prompt_source="image"),
+		)
+		self.assertNotIn(
+			"Identity consistency", compile_prompt_for_documents(self._shot([]), self._project(), prompt_source="motion")
+		)

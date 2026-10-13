@@ -161,7 +161,10 @@ after_migrate = "joymedia.migration.after_migrate"
 doc_events = {
 	"File": {
 		"before_insert": "joymedia.overrides.file_hooks.ensure_home_folder_exists",
-	}
+	},
+	# Open studios refresh from these instead of polling.
+	"Media Project": {"on_update": "joymedia.services.realtime.project_changed"},
+	"Shot": {"on_update": "joymedia.services.realtime.shot_changed"},
 }
 
 # doc_events = {

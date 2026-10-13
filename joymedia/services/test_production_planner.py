@@ -106,3 +106,65 @@ class TestApply(FrappeTestCase):
 
 		self.assertTrue(result[0]["held_back"])
 		self.assertEqual("Original.", frappe.get_doc("Shot", self.shot.name).generation_prompt)
+
+
+class TestRealtimeAndBackgroundPlanning(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		commit = patch.object(frappe.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
+		self.project = frappe.get_doc({
+			"doctype": "Media Project", "project_name": "Realtime", "workflow": _create_workflow(), "total_duration_seconds": 3,
+			"delivery_preset": "Landscape",
+		}).insert(ignore_permissions=True)
+
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
+
+	def test_saving_a_project_publishes_to_its_document_room(self):
+		with patch("frappe.publish_realtime") as publish:
+			self.project.reload()
+			self.project.save(ignore_permissions=True)
+		events = [call.args[0] for call in publish.call_args_list]
+		self.assertIn("joymedia_project_updated", events)
+		call = next(c for c in publish.call_args_list if c.args[0] == "joymedia_project_updated")
+		self.assertEqual("Media Project", call.kwargs["doctype"])
+		self.assertEqual(self.project.name, call.kwargs["docname"])
+
+	def test_planning_is_queued_not_run_in_the_request(self):
+		from joymedia.api import storyboard
+
+		with patch("frappe.enqueue") as enqueue:
+			result = storyboard.start_project_planning(self.project.name)
+		self.assertEqual({"queued": True}, result)
+		kwargs = enqueue.call_args.kwargs
+		self.assertEqual("long", kwargs["queue"])
+		self.assertTrue(kwargs["deduplicate"])
+		self.assertEqual(self.project.name, kwargs["project_name"])
+
+	def test_the_job_reports_start_progress_and_completion(self):
+		from joymedia.api import storyboard
+
+		def fake_plan(project, wanted, apply, progress=None):
+			progress(1, 1, {"shot_name": "Hook", "held_back": False, "notes": []})
+			return [{"held_back": False}]
+
+		with patch.object(storyboard, "_plan_project", side_effect=fake_plan), patch(
+			"joymedia.services.realtime.frappe.publish_realtime"
+		) as publish:
+			storyboard.run_planning_job(self.project.name, None, "Administrator")
+		states = [c.args[1]["state"] for c in publish.call_args_list]
+		self.assertEqual(["started", "running", "done"], states)
+
+	def test_a_failed_job_tells_the_studio_why(self):
+		from joymedia.api import storyboard
+
+		with patch.object(storyboard, "_plan_project", side_effect=frappe.ValidationError("planner down")), patch(
+			"joymedia.services.realtime.frappe.publish_realtime"
+		) as publish, self.assertRaises(frappe.ValidationError):
+			storyboard.run_planning_job(self.project.name, None, "Administrator")
+		last = publish.call_args_list[-1].args[1]
+		self.assertEqual("failed", last["state"])
+		self.assertIn("planner down", last["error"])

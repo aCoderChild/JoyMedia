@@ -203,6 +203,15 @@ def compile_prompt_for_documents(shot, project, include_global_instructions=True
 				"Describe the next movement from the existing pose rather than reintroducing "
 				"the product from scratch."
 			)
+	if prompt_source == "motion" and getattr(shot, "references", None):
+		# The video model keeps no identity of its own beyond the supplied frame and tends to redesign a
+		# character the moment the camera moves in close. Say so explicitly.
+		prompt = (
+			f"{prompt}\n\n"
+			"Identity consistency: keep every character and object exactly as shown in the supplied first "
+			"frame (same colours, fur or material, face and proportions) in every camera angle, including "
+			"close-ups; never redesign or recolour them."
+		)
 	if prompt_source == "motion":
 		timing = temporal_timing_instruction(shot, is_final=is_final)
 		if timing:

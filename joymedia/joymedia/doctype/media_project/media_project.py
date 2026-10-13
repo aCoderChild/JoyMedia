@@ -55,8 +55,9 @@ class MediaProject(Document):
 	def validate(self):
 		self._validate_generation_affecting_changes()
 		self._invalidate_storyboard_approval_for_creative_changes()
-		from joymedia.joymedia.doctype.project_reference.project_reference import assign_reference_key
+		from joymedia.joymedia.doctype.project_reference.project_reference import assign_reference_key, assign_reference_role
 		for reference in self.selected_media or []:
+			assign_reference_role(reference)
 			assign_reference_key(reference, self)
 		self.project_name = (self.project_name or "").strip()
 		self.product_name = (self.product_name or "").strip()

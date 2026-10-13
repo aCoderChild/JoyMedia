@@ -75,6 +75,10 @@ def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
 		from joymedia.services.storyboard_workbook import parse_duration_seconds
 		project.total_duration_seconds = parse_duration_seconds(metadata["duration"]) or project.total_duration_seconds
 	project.save(ignore_permissions=True)
+	# The workbook states its own format (for example 9:16); the client should not have to repeat it.
+	from joymedia.services.project_intake import apply_workbook_format
+	project.reload()
+	apply_workbook_format(project)
 	frappe.db.commit()
 	return {
 		"project": project.name,
@@ -126,21 +130,10 @@ def _mark_storyboard_needs_review(project):
 		project.storyboard_approval_status = "Ready for Review"
 
 
-@frappe.whitelist()
-def plan_project_production(project_name, shot_names=None, apply=True):
-	"""Turn the storyboard's creative beats into production shots (prompts, continuity, references).
-
-	Timing, voice-over, on-screen text and the imported source stay as written. The result is a
-	proposal for the user to review before approval; with apply=False nothing is saved.
-	"""
+def _plan_project(project, wanted, apply, progress=None):
+	"""Plan each wanted scene in order; `progress(done, total, result)` is called after every scene."""
 	from joymedia.services import production_planner
 
-	project = frappe.get_doc("Media Project", project_name)
-	project._require_write_access()
-	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
-	ensure_shot_planning_editable(project.name)
-	apply = str(apply).lower() in {"1", "true", "yes", "on"}
-	wanted = set(frappe.parse_json(shot_names)) if isinstance(shot_names, str) and shot_names else set(shot_names or [])
 	busy = _busy_shots(project.name)
 	shots = [
 		frappe.get_doc("Shot", name)
@@ -149,6 +142,7 @@ def plan_project_production(project_name, shot_names=None, apply=True):
 		)
 	]
 	references = production_planner.project_reference_options(project)
+	total = len([shot for shot in shots if not wanted or shot.name in wanted])
 	results, previous_end_state = [], ""
 	for shot in shots:
 		if wanted and shot.name not in wanted:
@@ -163,10 +157,76 @@ def plan_project_production(project_name, shot_names=None, apply=True):
 			production_planner.apply_production_shot(project, shot, plan)
 		previous_end_state = plan["end_state"]
 		results.append({"shot": shot.name, "shot_name": shot.shot_name, **plan})
+		if progress:
+			progress(len(results), total, results[-1])
 	if apply and any(not result["held_back"] for result in results):
 		_mark_storyboard_needs_review(project)
 		frappe.db.commit()
 	return results
+
+
+def _parse_shot_names(shot_names):
+	return set(frappe.parse_json(shot_names)) if isinstance(shot_names, str) and shot_names else set(shot_names or [])
+
+
+@frappe.whitelist()
+def plan_project_production(project_name, shot_names=None, apply=True):
+	"""Turn the storyboard's creative beats into production shots (prompts, continuity, references).
+
+	Timing, voice-over, on-screen text and the imported source stay as written. The result is a
+	proposal for the user to review before approval; with apply=False nothing is saved.
+	"""
+	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
+
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	ensure_shot_planning_editable(project.name)
+	return _plan_project(project, _parse_shot_names(shot_names), str(apply).lower() in {"1", "true", "yes", "on"})
+
+
+@frappe.whitelist()
+def start_project_planning(project_name, shot_names=None):
+	"""Plan the scenes in the background; the studio follows progress over realtime events.
+
+	Planning calls the language model once per scene (minutes for a whole film), so it runs as a
+	queued job instead of holding a web request open.
+	"""
+	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
+
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	ensure_shot_planning_editable(project.name)
+	frappe.enqueue(
+		"joymedia.api.storyboard.run_planning_job",
+		queue="long", timeout=3600, job_id=f"joymedia-planning-{project.name}", deduplicate=True,
+		project_name=project.name, shot_names=shot_names, user=frappe.session.user,
+	)
+	return {"queued": True}
+
+
+def run_planning_job(project_name, shot_names, user):
+	"""Background job body: plan, reporting each scene (and any failure) to the open studio."""
+	from joymedia.services.realtime import PLANNING_PROGRESS, publish_project_event
+
+	frappe.set_user(user)
+	project = frappe.get_doc("Media Project", project_name)
+
+	def progress(done, total, result):
+		publish_project_event(project_name, PLANNING_PROGRESS, {
+			"state": "running", "done": done, "total": total, "shot_name": result["shot_name"],
+			"held_back": result["held_back"], "notes": result["notes"],
+		})
+
+	publish_project_event(project_name, PLANNING_PROGRESS, {"state": "started"})
+	try:
+		results = _plan_project(project, _parse_shot_names(shot_names), True, progress)
+	except Exception as exc:
+		frappe.db.rollback()
+		publish_project_event(project_name, PLANNING_PROGRESS, {"state": "failed", "error": str(exc)})
+		raise
+	publish_project_event(project_name, PLANNING_PROGRESS, {
+		"state": "done", "total": len(results), "held_back": sum(1 for r in results if r["held_back"]),
+	})
 
 
 @frappe.whitelist()
@@ -206,14 +266,10 @@ def _assign_shot_references(project, assignments):
 	return set(assignments)
 
 
-def _validate_shot_reference_contracts(project):
-	"""Reject, before any GPU time, shots whose references the first pipeline stage cannot take.
-
-	Every problem across the storyboard is reported together so the user can fix the
-	assignments in one pass.
-	"""
+def shot_reference_problems(project):
+	"""Every shot whose references the first pipeline stage cannot take, as readable messages."""
 	if not project.workflow:
-		return
+		return []
 	from joymedia.services.generation_orchestrator import _pipeline_reference_inputs
 	from joymedia.services.workflow_resolver import get_workflow_input_contract
 	from joymedia.services.workflow_routing import resolve_shot_render_route
@@ -246,6 +302,16 @@ def _validate_shot_reference_contracts(project):
 					frappe.throw(_("no reference is assigned for the required role '{0}'.").format(item["role"]))
 		except frappe.ValidationError as exc:
 			errors.append(f"{shot.shot_name or shot.name}: {frappe.utils.strip_html(str(exc))}")
+	return errors
+
+
+def _validate_shot_reference_contracts(project):
+	"""Reject, before any GPU time, shots whose references the first pipeline stage cannot take.
+
+	Every problem across the storyboard is reported together so the user can fix the
+	assignments in one pass.
+	"""
+	errors = shot_reference_problems(project)
 	if errors:
 		frappe.throw("<br>".join([_("Fix these shot reference assignments before approval:")] + errors))
 

@@ -34,8 +34,21 @@ def assign_reference_key(reference, project):
 	reference.reference_key = key
 
 
+def assign_reference_role(reference):
+	"""Classify a reference added without a role from its name.
+
+	Uploads, API calls and the desk form all go through the parent's validate, so clients are never
+	asked to know the role vocabulary. An explicit role is always kept.
+	"""
+	if (not reference.reference_role or reference.reference_role == "General") and (reference.label or reference.reference_key):
+		from joymedia.services.project_intake import infer_reference_role
+
+		reference.reference_role = infer_reference_role(reference.label or reference.reference_key)
+
+
 class ProjectReference(Document):
 	def validate(self):
+		assign_reference_role(self)
 		project = frappe.get_doc("Media Project", self.parent) if self.parent else None
 		if project:
 			assign_reference_key(self, project)
