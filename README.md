@@ -36,7 +36,8 @@ services separately after installation; see [operations](docs/operations.md).
 .
 ├── joymedia/                 # Python application package
 │   ├── api/                  # Whitelisted HTTP endpoints
-│   ├── services/             # Generation, QA, routing, and finishing logic
+│   ├── services/             # Application logic, one package per concern (see docs/architecture.md)
+│   ├── tests/                # All service and adapter tests, mirroring services/
 │   ├── workflow_adapters/    # ComfyUI workflow adapters
 │   ├── frontend/             # Vue application
 │   ├── hooks.py              # Frappe lifecycle and route hooks
@@ -66,12 +67,14 @@ See [architecture](docs/architecture.md) for boundaries and request flow.
 
 ```bash
 python scripts/verify_app_layout.py
-bench --site joymedia.localhost run-tests --app joymedia
+python scripts/run_tests.py joymedia.localhost            # every test module (or add a package name: planning)
 cd joymedia/frontend && npm ci && npm run build
 ```
 
 The site name is environment-specific. Use the site created by `bench new-site`
-in your local Bench.
+in your local Bench. `bench run-tests --app joymedia` only finds the doctype-side tests, so
+`scripts/run_tests.py` runs each test module and is what CI uses. To set up a site for rendering,
+run `bench --site <site> execute joymedia.install.setup` (see [docs/production-pipeline.md](docs/production-pipeline.md)).
 
 ## Contributing
 
