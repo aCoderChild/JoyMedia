@@ -10,7 +10,7 @@
 #
 # With JOYMEDIA_GPU_AUTOSTART=1 (the default), the remote services are started
 # before the tunnel opens. The SSH account needs passwordless permission for:
-#   systemctl start joymedia-qwen.service joymedia-comfyui.service
+#   systemctl start joymedia-qwen.service joymedia-vision.service joymedia-comfyui.service
 
 HOST="${JOYMEDIA_GPU_HOST:-ubuntu@50.35.188.78}"
 PORT="${JOYMEDIA_GPU_PORT:-30134}"
@@ -26,7 +26,7 @@ ssh_options=(
 start_remote_services() {
 	[ "$AUTOSTART" = "1" ] || return 0
 	if ! ssh "${ssh_options[@]}" "$HOST" \
-		"sudo -n systemctl start joymedia-qwen.service joymedia-comfyui.service"; then
+		"sudo -n systemctl start joymedia-qwen.service joymedia-vision.service joymedia-comfyui.service"; then
 		echo "$(date -Is) unable to start GPU services remotely; tunnel will still be retried" >&2
 	fi
 }

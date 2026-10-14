@@ -1,8 +1,8 @@
 # Operating JoyMedia
 
-JoyMedia plans with Qwen and renders with ComfyUI on a separate GPU server.
-Install the Frappe app first, then configure the required workers and external
-services.
+JoyMedia plans with Qwen, analyses images with Qwen VL, and renders with ComfyUI
+on a separate GPU server. Install the Frappe app first, then configure the
+required workers and external services.
 
 ## Workers
 
@@ -28,6 +28,7 @@ bench --site <site> set-config comfyui_base_url http://127.0.0.1:8188
 bench --site <site> set-config comfyui_api_key '<COMFY_ORG_API_KEY>'
 bench --site <site> set-config qwen_base_url http://127.0.0.1:8001/v1
 bench --site <site> set-config qwen_vl_base_url http://127.0.0.1:8002/v1
+bench --site <site> set-config qwen_vl_model joymedia-vl
 ```
 
 Keep credentials in site configuration, never in source files or ComfyUI
@@ -39,8 +40,14 @@ To install the GPU-host services after copying `deploy/` to that host:
 sudo JOYMEDIA_TUNNEL_USER=<ssh-user> ./deploy/install-gpu-services.sh
 ```
 
-The tunnel starts the services idempotently before opening forwarded ports. Set
+The installation registers the Qwen 2.5 32B planner, local AWQ Qwen 2.5 VL
+vision model, and ComfyUI as system services. Once installed, `bench start`
+starts them idempotently through the tunnel before opening forwarded ports. Set
 `JOYMEDIA_GPU_AUTOSTART=0` to disable that behavior.
+
+The vision service expects its model at
+`/home/ubuntu/models_qwen/Qwen2.5-VL-7B-Instruct-AWQ`. Its bounded 2,048-token
+context is sufficient for JoyMedia's single-image analysis and review requests.
 
 ## Capacity
 
