@@ -6,7 +6,7 @@
 
 import frappe
 from frappe import _
-from joymedia.services.project_context import (
+from joymedia.services.project.context import (
 	SUPPORTED_PROJECT_MEDIA_TYPES,
 	_get_asset_file_url,
 )

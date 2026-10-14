@@ -5,7 +5,7 @@ references in a scene. Nothing here is specific to one product: the Shera film i
 
 ```
  sheet (.xlsx) + pictures (PDF or files)
-      │  intake            Client intake dialog / joymedia.services.project_intake
+      │  intake            Client intake dialog / joymedia.services.intake.project
       ▼
  project + scenes + references           Media Project, Shot, Project Reference
       │  planning          "Follow the sheet" (default for a workbook) or "Creative" (brief only)
@@ -38,7 +38,7 @@ Rollback = promote the previous pipeline name; existing runs keep their snapshot
 Also set `scheduler_tick_interval` to 60 in `common_site_config.json`, otherwise finished renders are noticed only every
 four minutes and the GPU idles (the readiness list warns about it).
 
-Every tunable number (layout fractions, audio screen thresholds, keyframe anchoring) is in `services/tuning.py`.
+Every tunable number (layout fractions, audio screen thresholds, keyframe anchoring) is in `services/project/tuning.py`.
 A site overrides any of them in `site_config.json` under `joymedia_tuning`, for example
 `{"character_height": 0.45, "anchor_continuation_to_keyframe": false}`.
 
@@ -107,7 +107,7 @@ in the borderline band are flagged. The screen is a screen, not proof: listen to
 
 ## Regression cases
 
-`bench --site <site> execute joymedia.services.regression_cases.run_all` renders keyframes on the real ComfyUI for a
+`bench --site <site> execute joymedia.tests.support.regression_cases.run_all` renders keyframes on the real ComfyUI for a
 boxed product in 16:9 with a logo, a real person (face generated on the spot) in 9:16, and a text-only brief, and
 checks shape, pasted references, colours and movement text. Run it after any change to the pipeline.
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import frappe
 from frappe import _
-from joymedia.services.project_context import (
+from joymedia.services.project.context import (
 	_active_project_shots,
 	_busy_shots,
 	_renumber_active_shots,
@@ -30,7 +30,7 @@ def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
 		frappe.throw(_("Storyboard import requires an .xlsx workbook."))
 	if int(file_doc.file_size or 0) > 10 * 1024 * 1024:
 		frappe.throw(_("Storyboard workbook must be 10 MB or smaller."))
-	from joymedia.services.storyboard_workbook import parse_storyboard_workbook
+	from joymedia.services.planning.workbook import parse_storyboard_workbook
 	try:
 		parsed = parse_storyboard_workbook(file_doc.get_full_path())
 	except (OSError, ValueError) as exc:
@@ -72,11 +72,11 @@ def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
 	if not (project.video_idea or "").strip():
 		project.video_idea = "\n".join(filter(None, (metadata.get("objective"), metadata.get("tone_mood"))))
 	if metadata.get("duration"):
-		from joymedia.services.storyboard_workbook import parse_duration_seconds
+		from joymedia.services.planning.workbook import parse_duration_seconds
 		project.total_duration_seconds = parse_duration_seconds(metadata["duration"]) or project.total_duration_seconds
 	project.save(ignore_permissions=True)
 	# The workbook states its own format (for example 9:16); the client should not have to repeat it.
-	from joymedia.services.project_intake import apply_workbook_format
+	from joymedia.services.intake.project import apply_workbook_format
 	project.reload()
 	apply_workbook_format(project)
 	frappe.db.commit()
@@ -107,7 +107,7 @@ def approve_project_storyboard(project_name, acknowledge_timing_warnings=False, 
 	assigned = _assign_shot_references(project, frappe.parse_json(shot_references) if shot_references else {})
 	_bind_unassigned_project_references(project, skip=assigned)
 	_validate_shot_reference_contracts(project)
-	from joymedia.services.plan_signature import compute_plan_signature
+	from joymedia.services.planning.signature import compute_plan_signature
 
 	project.storyboard_approval_status = "Approved"
 	project.approved_plan_signature = compute_plan_signature(project.name)
@@ -132,7 +132,7 @@ def _mark_storyboard_needs_review(project):
 
 def _plan_project(project, wanted, apply, progress=None):
 	"""Plan each wanted scene in order; `progress(done, total, result)` is called after every scene."""
-	from joymedia.services import production_planner
+	from joymedia.services.planning import production as production_planner
 
 	busy = _busy_shots(project.name)
 	shots = [
@@ -178,7 +178,7 @@ def plan_project_production(project_name, shot_names=None, apply=True):
 	Timing, voice-over, on-screen text and the imported source stay as written. The result is a
 	proposal for the user to review before approval; with apply=False nothing is saved.
 	"""
-	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
+	from joymedia.services.planning.durations import ensure_shot_planning_editable
 
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
@@ -193,7 +193,7 @@ def start_project_planning(project_name, shot_names=None):
 	Planning calls the language model once per scene (minutes for a whole film), so it runs as a
 	queued job instead of holding a web request open.
 	"""
-	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
+	from joymedia.services.planning.durations import ensure_shot_planning_editable
 
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
@@ -208,7 +208,7 @@ def start_project_planning(project_name, shot_names=None):
 
 def run_planning_job(project_name, shot_names, user):
 	"""Background job body: plan, reporting each scene (and any failure) to the open studio."""
-	from joymedia.services.realtime import PLANNING_PROGRESS, publish_project_event
+	from joymedia.services.project.realtime import PLANNING_PROGRESS, publish_project_event
 
 	frappe.set_user(user)
 	project = frappe.get_doc("Media Project", project_name)
@@ -272,9 +272,9 @@ def shot_reference_problems(project):
 	"""Every shot whose references the first pipeline stage cannot take, as readable messages."""
 	if not project.workflow:
 		return []
-	from joymedia.services.generation_orchestrator import _pipeline_reference_inputs
-	from joymedia.services.workflow_resolver import get_workflow_input_contract
-	from joymedia.services.workflow_routing import resolve_shot_render_route
+	from joymedia.services.generation.orchestrator import _pipeline_reference_inputs
+	from joymedia.services.workflows.resolver import get_workflow_input_contract
+	from joymedia.services.workflows.routing import resolve_shot_render_route
 
 	default_workflow = frappe.get_doc("Generation Workflow", project.workflow)
 	errors = []
@@ -348,13 +348,13 @@ def revise_project_storyboard(project_name, instruction=None, use_current_workfl
 
 @frappe.whitelist()
 def revise_project_shot_with_ai(project_name, shot_name, instruction):
-	from joymedia.services.ai_director import revise_project_shot_with_ai as revise
+	from joymedia.services.planning.revisions import revise_project_shot_with_ai as revise
 	return revise(project_name, shot_name, instruction)
 
 
 @frappe.whitelist()
 def apply_project_shot_ai_revision(project_name, shot_name, values, regenerate=False):
-	from joymedia.services.ai_director import apply_project_shot_ai_revision as apply_revision
+	from joymedia.services.planning.revisions import apply_project_shot_ai_revision as apply_revision
 	return apply_revision(project_name, shot_name, values, regenerate)
 
 
@@ -405,7 +405,7 @@ def update_project_shot(project_name, shot_name, values):
 	if changed or image_prompt_changed or continuity_changed:
 		_mark_storyboard_needs_review(project)
 	if caption_changed:
-		from joymedia.services.timeline_editor import _invalidate_project_output
+		from joymedia.services.editing.timeline import _invalidate_project_output
 
 		_invalidate_project_output(project.name)
 	return {
@@ -429,7 +429,7 @@ def set_project_shot_keyframe(project_name, shot_name, frame_role, asset_version
 	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
-	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
+	from joymedia.services.planning.durations import ensure_shot_planning_editable
 	ensure_shot_planning_editable(project.name)
 	asset = frappe.db.get_value("Asset Version", asset_version, ["name", "media_asset"], as_dict=True)
 	if not asset or frappe.db.get_value("Media Asset", asset.media_asset, "media_type") != "Image":
@@ -468,7 +468,7 @@ def update_project_shot_timing(project_name, shot_name, duration_seconds):
 	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
-	from joymedia.services.shot_duration_planner import rebalance_shot_duration
+	from joymedia.services.planning.durations import rebalance_shot_duration
 	result = rebalance_shot_duration(project.name, shot.name, duration_seconds)
 	_mark_storyboard_needs_review(project)
 	return {"shot_name": shot.name, "shot_number": shot.shot_number, **result}
@@ -521,7 +521,7 @@ def remove_project_scene(project_name, shot_name, confirm_continuation=False):
 				),
 			}
 
-	from joymedia.services.timeline_editor import _remove_shot_timeline_clips
+	from joymedia.services.editing.timeline import _remove_shot_timeline_clips
 	_remove_shot_timeline_clips(project.name, shot.name)
 	frappe.db.set_value("Shot", shot.name, "is_removed", 1, update_modified=False)
 	_renumber_active_shots(project.name)
@@ -534,7 +534,7 @@ def remove_project_scene(project_name, shot_name, confirm_continuation=False):
 def reorder_project_shot(project_name, shot_name, target_shot_number):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
-	from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
+	from joymedia.services.planning.durations import ensure_shot_planning_editable
 	ensure_shot_planning_editable(project.name)
 	try:
 		target_shot_number = int(target_shot_number)
@@ -564,6 +564,6 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 
 @frappe.whitelist()
 def regenerate_project_shot(project_name, shot_name):
-	from joymedia.services.scene_takes import regenerate_scene
+	from joymedia.services.generation.takes import regenerate_scene
 
 	return regenerate_scene(project_name, shot_name)

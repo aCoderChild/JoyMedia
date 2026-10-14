@@ -22,7 +22,7 @@ frappe.ui.form.on("Generation Task", {
 				],
 				(values) => {
 					frappe.call({
-						method: "joymedia.services.generation_orchestrator.retry_generation_task_from_ui",
+						method: "joymedia.services.generation.orchestrator.retry_generation_task_from_ui",
 						args: { job_name: frm.doc.name, reason: values.reason },
 						freeze: true,
 						freeze_message: "Creating and submitting retry attempts...",

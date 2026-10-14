@@ -94,7 +94,7 @@ class IntegrationTestGenerationTask(IntegrationTestCase):
 				side_effect=[shot, project, run, workflow],
 			),
 			patch(
-				"joymedia.services.workflow_resolver.workflow_supports_continuation",
+				"joymedia.services.workflows.resolver.workflow_supports_continuation",
 				return_value=False,
 			),
 			self.assertRaises(frappe.ValidationError),

@@ -11,7 +11,7 @@ frappe.ui.form.on("Generation Attempt", {
 			frm.add_custom_button("Submit to ComfyUI", () => {
 				frappe.confirm("Submit this generation attempt to ComfyUI?", () => {
 					frappe.call({
-						method: "joymedia.services.generation_runner.submit_attempt_from_ui",
+						method: "joymedia.services.generation.runner.submit_attempt_from_ui",
 						args: { attempt_name: frm.doc.name },
 						freeze: true,
 						freeze_message: "Submitting to ComfyUI...",

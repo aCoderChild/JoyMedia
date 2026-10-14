@@ -85,7 +85,7 @@ async function save() {
   if (!name.value.trim() || !changed.value || saving.value) return;
   saving.value = true;
   try {
-    const result = await call("joymedia.services.media_asset_service.update_media_asset", {
+    const result = await call("joymedia.services.intake.assets.update_media_asset", {
       media_asset: props.asset.name,
       asset_name: name.value.trim(),
       asset_category: category.value,

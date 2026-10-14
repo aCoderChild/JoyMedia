@@ -45,7 +45,7 @@ class Shot(Document):
 		self._recalculate_durations()
 
 	def _recalculate_durations(self, media_project=None):
-		from joymedia.services.shot_duration_planner import recalculate_shot_durations
+		from joymedia.services.planning.durations import recalculate_shot_durations
 
 		recalculate_shot_durations(media_project or self.media_project)
 

@@ -7,7 +7,7 @@ from .generation_attempt import (
 	GenerationAttempt,
 	create_retry_attempt,
 )
-from joymedia.services.generation_runner import submit_attempt
+from joymedia.services.generation.runner import submit_attempt
 
 
 class TestGenerationAttempt(FrappeTestCase):
@@ -99,6 +99,6 @@ class TestGenerationAttempt(FrappeTestCase):
 
 	def test_failed_attempt_cannot_be_submitted_again(self):
 		attempt = frappe._dict(name="ATT-00001", status="Failed")
-		with patch("joymedia.services.generation_runner.frappe.get_doc", return_value=attempt):
+		with patch("joymedia.services.generation.runner.frappe.get_doc", return_value=attempt):
 			with self.assertRaises(frappe.ValidationError):
 				submit_attempt(attempt.name)

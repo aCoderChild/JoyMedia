@@ -11,7 +11,7 @@ function syncServerLanguage(lang) {
   if (syncedLang === lang) return;
   syncedLang = lang;
   // Signed-out pages cannot save it; that is fine, so failures are not retried.
-  call("joymedia.services.preferences.set_language", { language: lang }).catch(() => {});
+  call("joymedia.services.project.preferences.set_language", { language: lang }).catch(() => {});
 }
 
 export const messages = {

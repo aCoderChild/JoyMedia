@@ -135,7 +135,7 @@ def _invalidate_manual_regeneration_outputs(job):
 
 	media_project = run.media_project
 	if media_project:
-		from joymedia.services.timeline_editor import _invalidate_project_output
+		from joymedia.services.editing.timeline import _invalidate_project_output
 
 		_invalidate_project_output(media_project)
 
@@ -169,7 +169,7 @@ def _create_successor_attempt(previous_attempt, reason):
 		}
 	).insert(ignore_permissions=True)
 	if job.generation_run:
-		from joymedia.services.generation_orchestrator import refresh_generation_state_for_attempt
+		from joymedia.services.generation.orchestrator import refresh_generation_state_for_attempt
 
 		refresh_generation_state_for_attempt(retry_attempt.name)
 	return retry_attempt

@@ -108,7 +108,7 @@ export function useProjectReferences(projectName, onRefresh) {
   async function archiveMediaAsset(asset) {
     if (!asset?.name) return;
     try {
-      const result = await call("joymedia.services.media_asset_service.archive_media_asset", {
+      const result = await call("joymedia.services.intake.assets.archive_media_asset", {
         media_asset: asset.name,
       });
       if (result?.in_use) {
@@ -116,7 +116,7 @@ export function useProjectReferences(projectName, onRefresh) {
           `${asset.asset_name} is used by ${result.projects?.length || 0} project(s). Archive it and remove it from those projects?`
         );
         if (!confirmed) return;
-        await call("joymedia.services.media_asset_service.archive_media_asset", {
+        await call("joymedia.services.intake.assets.archive_media_asset", {
           media_asset: asset.name,
           detach_projects: 1,
         });
@@ -157,7 +157,7 @@ export function useProjectReferences(projectName, onRefresh) {
         if (!uploaded?.file_url || !uploaded?.name) throw new Error("Upload failed");
 		const isAudio = file.type.startsWith("audio");
 		const category = isAudio ? "Audio" : "Reference";
-        const created = await call("joymedia.services.media_asset_service.create_media_asset", {
+        const created = await call("joymedia.services.intake.assets.create_media_asset", {
           asset_name: file.name.replace(/\.[^/.]+$/, ""),
           asset_category: category,
           file_url: uploaded.file_url,

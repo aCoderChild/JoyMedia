@@ -295,7 +295,7 @@ export function useProjectGeneration(projectName, onRefresh) {
         type: "info",
       });
       const res = await call(
-        "joymedia.services.ai_director.improve_project_video_idea",
+        "joymedia.services.planning.revisions.improve_project_video_idea",
         {
           project_name: project(),
           current_idea: textToImprove,

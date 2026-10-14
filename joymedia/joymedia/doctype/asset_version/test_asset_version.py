@@ -30,7 +30,7 @@ class IntegrationTestAssetVersion(IntegrationTestCase):
 		self.assertEqual({"Library", "Project Output"}, set((scope.options or "").splitlines()))
 
 	def test_duplicate_uploads_respect_asset_category(self):
-		from joymedia.services.media_asset_service import create_media_asset
+		from joymedia.services.intake.assets import create_media_asset
 		image_buffer = BytesIO()
 		color = tuple(int(frappe.generate_hash(length=6)[index : index + 2], 16) for index in (0, 2, 4))
 		Image.new("RGB", (640, 640), color=color).save(image_buffer, format="PNG")

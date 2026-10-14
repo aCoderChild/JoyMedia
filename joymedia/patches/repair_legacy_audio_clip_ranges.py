@@ -1,6 +1,6 @@
 import frappe
 
-from joymedia.services.timeline_editor import _project_fps, _source_max_frames, _visual_timeline_end_frame
+from joymedia.services.editing.timeline import _project_fps, _source_max_frames, _visual_timeline_end_frame
 
 
 def execute():

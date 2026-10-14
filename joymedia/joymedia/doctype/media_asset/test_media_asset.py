@@ -28,7 +28,7 @@ class IntegrationTestMediaAsset(IntegrationTestCase):
 		return asset
 
 	def test_library_asset_can_be_renamed_and_recategorised(self):
-		from joymedia.services.media_asset_service import update_media_asset
+		from joymedia.services.intake.assets import update_media_asset
 
 		asset = self._asset()
 		result = update_media_asset(asset.name, asset_name="  Hồ bơi  ", asset_category="Background")
@@ -38,7 +38,7 @@ class IntegrationTestMediaAsset(IntegrationTestCase):
 		self.assertEqual(("Hồ bơi", "Background"), (asset.asset_name, asset.asset_category))
 
 	def test_invalid_edits_are_rejected(self):
-		from joymedia.services.media_asset_service import update_media_asset
+		from joymedia.services.intake.assets import update_media_asset
 
 		asset = self._asset()
 		self.assertRaises(frappe.ValidationError, update_media_asset, asset.name, asset_name="   ")

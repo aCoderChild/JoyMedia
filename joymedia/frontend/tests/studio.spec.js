@@ -19,19 +19,19 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
   test.beforeAll(async () => {
     // 1. Setup initial project with Video clips and Audio track
     const output = runBench(
-      'bench --site joymedia.localhost execute joymedia.services.e2e_setup.setup_e2e_project'
+      'bench --site joymedia.localhost execute joymedia.tests.support.e2e_setup.setup_e2e_project'
     );
     const parsed = JSON.parse(output.trim());
     projectName = parsed.project_name;
     fiveSecondProjectName = JSON.parse(
       runBench(
-        "bench --site joymedia.localhost execute joymedia.services.e2e_setup.setup_e2e_project " +
+        "bench --site joymedia.localhost execute joymedia.tests.support.e2e_setup.setup_e2e_project " +
         "--kwargs '{\"project_name\":\"E2E-STUDIO-5S\",\"duration_seconds\":5}'"
       ).trim()
     ).project_name;
     fifteenSecondProjectName = JSON.parse(
       runBench(
-        "bench --site joymedia.localhost execute joymedia.services.e2e_setup.setup_e2e_project " +
+        "bench --site joymedia.localhost execute joymedia.tests.support.e2e_setup.setup_e2e_project " +
         "--kwargs '{\"project_name\":\"E2E-STUDIO-15S\",\"duration_seconds\":15}'"
       ).trim()
     ).project_name;
@@ -41,14 +41,14 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
     if (projectName) {
       try {
         runBench(
-          `bench --site joymedia.localhost execute joymedia.services.e2e_setup.cleanup_e2e_project --args "['${projectName}']"`
+          `bench --site joymedia.localhost execute joymedia.tests.support.e2e_setup.cleanup_e2e_project --args "['${projectName}']"`
         );
       } catch (_) {}
     }
     if (freshProjectName) {
       try {
         runBench(
-          `bench --site joymedia.localhost execute joymedia.services.e2e_setup.cleanup_e2e_project --args "['${freshProjectName}']"`
+          `bench --site joymedia.localhost execute joymedia.tests.support.e2e_setup.cleanup_e2e_project --args "['${freshProjectName}']"`
         );
       } catch (_) {}
     }
@@ -56,7 +56,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
       if (!name) continue;
       try {
         runBench(
-          `bench --site joymedia.localhost execute joymedia.services.e2e_setup.cleanup_e2e_project --args "['${name}']"`
+          `bench --site joymedia.localhost execute joymedia.tests.support.e2e_setup.cleanup_e2e_project --args "['${name}']"`
         );
       } catch (_) {}
     }
@@ -370,7 +370,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
   test("11. Golden Path Fresh Marketer Flow: empty prompt + 1 image reference -> Generate -> plan & retry", async ({ page }) => {
     // 1. Setup fresh project with 1 image reference and empty prompt
     const output = runBench(
-      'bench --site joymedia.localhost execute joymedia.services.e2e_setup.setup_fresh_empty_project'
+      'bench --site joymedia.localhost execute joymedia.tests.support.e2e_setup.setup_fresh_empty_project'
     );
     const parsed = JSON.parse(output.trim());
     freshProjectName = parsed.project_name;

@@ -642,7 +642,7 @@ async function finishFilm() {
   );
   if (!confirmed) return;
   try {
-    await call("joymedia.services.post_production.queue_post_production", { project_name: projectName.value });
+    await call("joymedia.services.editing.post_production.queue_post_production", { project_name: projectName.value });
     await fetchWorkspace();
   } catch (err) {
     notify({ title: currentLang.value === "vi" ? "Không thể hoàn thiện phim" : "Could not finish the film", text: errorMessage(err, ""), type: "error" });
@@ -651,7 +651,7 @@ async function finishFilm() {
 
 async function cancelFinishing() {
   try {
-    await call("joymedia.services.post_production.cancel_post_production", { project_name: projectName.value });
+    await call("joymedia.services.editing.post_production.cancel_post_production", { project_name: projectName.value });
     if (finishPollTimer) clearTimeout(finishPollTimer);
     finishPollTimer = null;
     await fetchWorkspace();
@@ -666,7 +666,7 @@ async function pollFinishing() {
   const previous = postProduction.value.status;
   try {
     // Reports a finishing job that died (worker restart) as Failed instead of Running forever.
-    await call("joymedia.services.post_production.get_post_production_status", { project_name: projectName.value });
+    await call("joymedia.services.editing.post_production.get_post_production_status", { project_name: projectName.value });
   } catch (_) {}
   await fetchWorkspace();
   const { status, error } = postProduction.value;
@@ -847,7 +847,7 @@ const pendingCue = ref(null);
 
 async function fetchAudioPlan() {
   try {
-    audioPlan.value = await call("joymedia.services.audio_plan.get_audio_plan", { project_name: projectName.value });
+    audioPlan.value = await call("joymedia.services.audio.plan.get_audio_plan", { project_name: projectName.value });
   } catch (err) {
     audioPlan.value = [];
   }
@@ -897,7 +897,7 @@ async function handleSelectReference({ asset, role }) {
     const cue = pendingCue.value;
     pendingCue.value = null;
     try {
-      await call("joymedia.services.audio_plan.place_cue_audio", {
+      await call("joymedia.services.audio.plan.place_cue_audio", {
         project_name: projectName.value,
         shot_name: cue.shot,
         role: cue.role,
@@ -1528,7 +1528,7 @@ async function regenerateCurrentShot(target = null) {
   if (!shot?.name) return;
   const vi = currentLang.value === "vi";
   try {
-    await call("joymedia.services.scene_takes.regenerate_scene", {
+    await call("joymedia.services.generation.takes.regenerate_scene", {
       project_name: projectName.value,
       shot_name: shot.name,
     });
@@ -1570,7 +1570,7 @@ async function updateShotCaption(shot, caption) {
 async function selectShotTake(shot, takeIndex) {
   const vi = currentLang.value === "vi";
   try {
-    await call("joymedia.services.scene_takes.select_scene_take", {
+    await call("joymedia.services.generation.takes.select_scene_take", {
       project_name: projectName.value,
       shot_name: shot.name,
       take_index: takeIndex,

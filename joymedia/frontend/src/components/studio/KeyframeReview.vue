@@ -55,7 +55,7 @@ const props = defineProps({ projectName: { type: String, required: true } });
 const emit = defineEmits(["changed"]);
 
 const keyframes = createResource({
-  url: "joymedia.services.keyframes.get_project_keyframes",
+  url: "joymedia.services.keyframes.stage.get_project_keyframes",
   params: { project_name: props.projectName },
   auto: true,
 });
@@ -79,7 +79,7 @@ async function draw(shots) {
   drawing.value = !shots;
   busy.value = shots?.[0] || "";
   try {
-    await call("joymedia.services.keyframes.generate_keyframes", { project_name: props.projectName, shot_names: shots || null });
+    await call("joymedia.services.keyframes.stage.generate_keyframes", { project_name: props.projectName, shot_names: shots || null });
     notify({ title: tr("Frames", "Khung hình"), text: tr("Drawing started. They appear here as they finish.", "Đã bắt đầu vẽ. Khung hình sẽ hiện ở đây khi xong."), type: "success" });
     emit("changed");
   } catch (err) {
@@ -92,7 +92,7 @@ async function draw(shots) {
 
 async function approve(row, approved) {
   try {
-    await call("joymedia.services.keyframes.set_keyframe_approval", { project_name: props.projectName, shot_name: row.shot, approved });
+    await call("joymedia.services.keyframes.stage.set_keyframe_approval", { project_name: props.projectName, shot_name: row.shot, approved });
     keyframes.reload();
   } catch (err) {
     notify({ title: tr("Frames", "Khung hình"), text: errorMessage(err, tr("Unable to change the approval.", "Không thể đổi trạng thái duyệt.")), type: "error" });

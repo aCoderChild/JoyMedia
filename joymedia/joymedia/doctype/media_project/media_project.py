@@ -9,7 +9,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils.synchronization import filelock
 
-from joymedia.services.project_context import (
+from joymedia.services.project.context import (
 	build_project_snapshot,
 	_active_project_shots,
 	_customer_style_details,
@@ -190,7 +190,7 @@ class MediaProject(Document):
 		# technical execution choices.
 		export_quality = normalize_export_quality(export_quality or self.export_quality)
 		workflow = _get_customer_workflow_for_export_quality(export_quality)
-		from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow
+		from joymedia.services.workflows.pipeline import pipeline_for_final_workflow
 		pipeline = pipeline_for_final_workflow(workflow.name)
 		pipeline_name = pipeline.name if pipeline else ""
 		self.total_duration_seconds = total_duration_seconds
@@ -238,17 +238,17 @@ class MediaProject(Document):
 		return self.get_video_settings()
 
 	def _get_project_image_inputs(self):
-		from joymedia.services.project_image_manifest import get_project_image_manifest
+		from joymedia.services.intake.image_manifest import get_project_image_manifest
 		return get_project_image_manifest(self.name, include_data_url=True)
 
 	def _use_reference_video_for_story_film(self):
 		"""Character + location projects need Reference-to-Video to keep identity and places."""
-		from joymedia.services.film_director import (
+		from joymedia.services.planning.film_director import (
 			infer_product_reference_contexts,
 			infer_property_area_references,
 			is_story_film,
 		)
-		from joymedia.services.vision_analysis import ensure_project_image_analysis
+		from joymedia.services.intake.vision import ensure_project_image_analysis
 
 		if getattr(self, "reference_mode", None) == "Multi-reference":
 			return
@@ -284,8 +284,8 @@ class MediaProject(Document):
 	def _plan_video(self, *, workflow, video_idea, story_film, shot_count=None,
 		reference_images=None, reference_media=None):
 		"""Single entry point to the AI Director; shared by first-plan and revision."""
-		from joymedia.services.qwen_client import generate_video_plan
-		from joymedia.services.workflow_routing import automatic_planning_input_contract
+		from joymedia.services.planning.llm import generate_video_plan
+		from joymedia.services.workflows.routing import automatic_planning_input_contract
 		settings = _project_settings(self)
 		return generate_video_plan(
 			product_name=_meaningful_project_value(self.product_name, "The supplied product"),
@@ -305,7 +305,7 @@ class MediaProject(Document):
 	def generate_video_plan(self):
 		self._require_read_access()
 		self._require_video_idea()
-		from joymedia.services.vision_analysis import ensure_project_image_analysis
+		from joymedia.services.intake.vision import ensure_project_image_analysis
 
 		# Pictures added or analysed with an older prompt are (re)described first.
 		ensure_project_image_analysis(self)
@@ -336,8 +336,8 @@ class MediaProject(Document):
 		instruction = (instruction or "").strip()
 		if not instruction:
 			frappe.throw(_("Describe how the storyboard should change."))
-		from joymedia.services.shot_duration_planner import ensure_shot_planning_editable
-		from joymedia.services.video_plan_service import apply_video_plan
+		from joymedia.services.planning.durations import ensure_shot_planning_editable
+		from joymedia.services.planning.video_plan import apply_video_plan
 		ensure_shot_planning_editable(self.name)
 		workflow = frappe.get_doc("Generation Workflow", self.workflow)
 		current_shots = "\n".join(
@@ -367,7 +367,7 @@ class MediaProject(Document):
 		self._require_video_idea()
 		if frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}) and self.storyboard_approval_status != "Approved":
 			frappe.throw(_("Review and approve the storyboard before starting generation."))
-		from joymedia.services.plan_signature import assert_plan_matches_approval
+		from joymedia.services.planning.signature import assert_plan_matches_approval
 		assert_plan_matches_approval(self)
 		if not self.workflow:
 			frappe.throw(_("Configure Video Settings before generating a storyboard."))
@@ -384,7 +384,7 @@ class MediaProject(Document):
 				return self.retry_failed_jobs()
 		if not frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}):
 			# Planning takes minutes: longer than a web request may run.
-			from joymedia.services.storyboard_job import queue_storyboard
+			from joymedia.services.planning.jobs import queue_storyboard
 
 			return queue_storyboard(self.name)
 		return self.generate_video()
@@ -395,8 +395,8 @@ class MediaProject(Document):
 		self._require_video_idea()
 		if self.storyboard_approval_status != "Approved":
 			frappe.throw(_("Review and approve the storyboard before starting generation."))
-		from joymedia.services.generation_orchestrator import start_run_internal, validate_generation_preflight
-		from joymedia.services.shot_duration_planner import recalculate_shot_durations
+		from joymedia.services.generation.orchestrator import start_run_internal, validate_generation_preflight
+		from joymedia.services.planning.durations import recalculate_shot_durations
 		with filelock(f"joymedia-generate-video-{self.name}"):
 			existing = frappe.db.get_value(
 				"Generation Run",
@@ -413,7 +413,7 @@ class MediaProject(Document):
 			workflow = frappe.get_doc("Generation Workflow", settings.workflow)
 			recalculate_shot_durations(self.name)
 			# Duration rebalancing is deterministic for the approved plan, so re-seal it.
-			from joymedia.services.plan_signature import compute_plan_signature
+			from joymedia.services.planning.signature import compute_plan_signature
 			plan_signature = compute_plan_signature(self.name)
 			if self.approved_plan_signature:
 				self.db_set("approved_plan_signature", plan_signature, update_modified=False)
@@ -458,11 +458,11 @@ class MediaProject(Document):
 			frappe.throw(_("Add Scene currently supports up to 120 seconds at a time."))
 		continuity = str(continuity).lower() in ("1", "true", "yes", "on")
 
-		from joymedia.services.qwen_client import generate_video_plan
-		from joymedia.services.video_plan_service import append_video_plan
-		from joymedia.services.artifact_service import get_attempt_artifact
+		from joymedia.services.planning.llm import generate_video_plan
+		from joymedia.services.planning.video_plan import append_video_plan
+		from joymedia.services.generation.artifacts import get_attempt_artifact
 		from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
-		from joymedia.services.workflow_routing import automatic_planning_input_contract
+		from joymedia.services.workflows.routing import automatic_planning_input_contract
 		settings = _project_settings(self)
 
 		with filelock(f"joymedia-append-scenes-{self.name}"):
@@ -559,7 +559,7 @@ class MediaProject(Document):
 	@frappe.whitelist()
 	def retry_failed_jobs(self):
 		self._require_write_access()
-		from joymedia.services.generation_orchestrator import retry_failed_jobs_internal
+		from joymedia.services.generation.orchestrator import retry_failed_jobs_internal
 		run_name = frappe.db.get_value(
 			"Generation Run", {"media_project": self.name},
 			"name", order_by="creation desc",

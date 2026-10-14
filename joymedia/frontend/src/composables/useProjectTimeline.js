@@ -63,7 +63,7 @@ export function useProjectTimeline(projectName) {
   async function loadTimeline(createIfPossible = false) {
     try {
       const result = await call(
-        "joymedia.services.timeline_editor.get_project_timeline",
+        "joymedia.services.editing.timeline.get_project_timeline",
         {
           project_name: project(),
           create_if_possible: createIfPossible,
@@ -119,7 +119,7 @@ export function useProjectTimeline(projectName) {
 
     try {
       const result = await call(
-        `joymedia.services.timeline_editor.${method}`,
+        `joymedia.services.editing.timeline.${method}`,
         {
           project_name: project(),
           ...payload,
@@ -148,7 +148,7 @@ export function useProjectTimeline(projectName) {
   }
 
   async function restoreHistoryState(state) {
-    return call("joymedia.services.timeline_editor.restore_timeline_state", {
+    return call("joymedia.services.editing.timeline.restore_timeline_state", {
       project_name: project(),
       state_json: JSON.stringify(state),
     });
@@ -282,7 +282,7 @@ export function useProjectTimeline(projectName) {
     async function check() {
       try {
         const res = await call(
-          "joymedia.services.timeline_editor.get_project_timeline_export_status",
+          "joymedia.services.editing.timeline.get_project_timeline_export_status",
           { project_name: project() }
         );
         if (timeline.value) {
@@ -316,7 +316,7 @@ export function useProjectTimeline(projectName) {
     if (isExporting.value) return null;
     try {
       const queueRes = await call(
-        "joymedia.services.timeline_editor.queue_project_timeline_export",
+        "joymedia.services.editing.timeline.queue_project_timeline_export",
         {
           project_name: project(),
         }

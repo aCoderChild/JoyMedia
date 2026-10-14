@@ -15,7 +15,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		commit = patch.object(frappe.db, "commit")
 		commit.start()
 		self.addCleanup(commit.stop)
-		from joymedia.services.testing import without_promoted_pipeline
+		from joymedia.tests.support.helpers import without_promoted_pipeline
 
 		without_promoted_pipeline(self)
 		self.workflow = _ensure_workflow()
@@ -90,7 +90,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual("Ready for Review", project.storyboard_approval_status)
 
 	def test_selected_media_supports_image_video_and_audio(self):
-		from joymedia.services.project_context import _get_project_selected_assets
+		from joymedia.services.project.context import _get_project_selected_assets
 
 		project, _ = _create_project("Reference Media", self.workflow)
 		for media_type, extension in (("Image", "png"), ("Video", "mp4"), ("Audio", "wav")):
@@ -118,8 +118,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 	def test_workspace_exposes_business_data_not_raw_artifacts(self):
 		from joymedia.api.projects import get_project_workspace
-		from joymedia.services.video_plan_service import apply_video_plan
-		from joymedia.services.workflow_routing import resolve_shot_render_route
+		from joymedia.services.planning.video_plan import apply_video_plan
+		from joymedia.services.workflows.routing import resolve_shot_render_route
 
 		project, _ = _create_project("Workspace", self.workflow)
 		asset, version = _create_asset_version(project, "Image", "png")
@@ -151,11 +151,11 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertNotIn("outputs", workspace)
 		self.assertEqual(workspace["assets"][0]["asset_version"], version.name)
 
-	@patch("joymedia.services.project_context._get_asset_version_file_url")
-	@patch("joymedia.services.project_context.frappe.db.get_value")
-	@patch("joymedia.services.project_context.frappe.get_all")
+	@patch("joymedia.services.project.context._get_asset_version_file_url")
+	@patch("joymedia.services.project.context.frappe.db.get_value")
+	@patch("joymedia.services.project.context.frappe.get_all")
 	def test_shot_progress_is_weighted_by_segment_frames(self, get_all, get_value, get_file_url):
-		from joymedia.services.project_context import _aggregate_shot_progress
+		from joymedia.services.project.context import _aggregate_shot_progress
 
 		get_all.return_value = [
 			frappe._dict(
@@ -186,7 +186,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertAlmostEqual(result[0]["progress"], 66.666666, places=4)
 
 	def test_shot_can_preserve_multiple_references_with_one_role(self):
-		from joymedia.services.video_plan_service import apply_video_plan
+		from joymedia.services.planning.video_plan import apply_video_plan
 
 		project, _ = _create_project("Multiple References", self.workflow)
 		first_asset, first_version = _create_asset_version(project, "Image", "png")
@@ -220,7 +220,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertFalse([row for row in shot.generation_inputs if row.reference_role == "first_frame"])
 
 	def test_storyboard_revision_preserves_prompt_and_supersedes_previous_spec(self):
-		from joymedia.services.video_plan_service import apply_video_plan
+		from joymedia.services.planning.video_plan import apply_video_plan
 
 		project, _ = _create_project("Storyboard Revision", self.workflow)
 		_attach_image_reference(project, "Revision Reference")
@@ -241,8 +241,8 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual(new_shot.generation_prompt, "Original shot prompt.")
 
 	def test_cancelled_unstarted_run_does_not_lock_storyboard_replacement(self):
-		from joymedia.services.project_context import build_project_snapshot
-		from joymedia.services.video_plan_service import apply_video_plan
+		from joymedia.services.project.context import build_project_snapshot
+		from joymedia.services.planning.video_plan import apply_video_plan
 
 		project, _ = _create_project("Recover Cancelled Plan", self.workflow)
 		_attach_image_reference(project, "Recovery Reference")
@@ -286,7 +286,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		project.selected_media[1].reference_role = "General"
 		project.save(ignore_permissions=True)
 
-		with patch("joymedia.services.vision_analysis.ensure_project_image_analysis"):
+		with patch("joymedia.services.intake.vision.ensure_project_image_analysis"):
 			project._use_reference_video_for_story_film()
 
 		self.assertEqual(
@@ -299,14 +299,14 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual(workflow.adapter_key, "comfyui_generic")
 		self.assertFalse(frappe.db.exists("DocType", "AI Model Profile"))
 
-	@patch("joymedia.services.generation_orchestrator.start_run_internal")
-	@patch("joymedia.services.generation_orchestrator.validate_generation_preflight")
+	@patch("joymedia.services.generation.orchestrator.start_run_internal")
+	@patch("joymedia.services.generation.orchestrator.validate_generation_preflight")
 	def test_generation_recalculates_shots_before_freezing_run_snapshot(
 		self, validate_preflight, start_run
 	):
-		from joymedia.services.project_context import build_project_snapshot
-		from joymedia.services.shot_duration_planner import recalculate_shot_durations
-		from joymedia.services.video_plan_service import apply_video_plan
+		from joymedia.services.project.context import build_project_snapshot
+		from joymedia.services.planning.durations import recalculate_shot_durations
+		from joymedia.services.planning.video_plan import apply_video_plan
 
 		project, _ = _create_project("Snapshot Duration Order", self.workflow)
 		_attach_image_reference(project, "Snapshot Reference")
@@ -332,7 +332,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 		start_run.return_value = {"status": "Queued"}
 		with patch(
-			"joymedia.services.shot_duration_planner.recalculate_shot_durations",
+			"joymedia.services.planning.durations.recalculate_shot_durations",
 			side_effect=recalculate,
 		), patch(
 			"joymedia.joymedia.doctype.media_project.media_project.build_project_snapshot",

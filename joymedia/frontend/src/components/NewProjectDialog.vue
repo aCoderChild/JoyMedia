@@ -121,7 +121,7 @@ const canCreate = computed(() => Boolean(workbook.value || form.brief.trim()));
 
 // Read the workbook before creating anything: which sheets it has and what each will produce.
 const preview = createResource({
-  url: "joymedia.services.project_intake.preview_workbook",
+  url: "joymedia.services.intake.project.preview_workbook",
   onSuccess: (data) => { form.demo = data?.demos?.[0]?.name || ""; },
   onError: (err) => { error.value = errorMessage(err, tr("Could not read the workbook.", "Không đọc được bảng kịch bản.")); workbook.value = null; },
 });
@@ -152,7 +152,7 @@ async function create() {
   creating.value = true;
   error.value = "";
   try {
-    const result = await call("joymedia.services.project_intake.create_project_from_brief", {
+    const result = await call("joymedia.services.intake.project.create_project_from_brief", {
       project_name: form.name || null,
       video_idea: form.brief || null,
       workbook_file: workbook.value?.name || null,

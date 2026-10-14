@@ -7,7 +7,7 @@ frappe.ui.form.on("Generation Run", {
 		if (frm.doc.status === "Draft") {
 			frm.add_custom_button("Start Run", () => {
 				frappe.call({
-					method: "joymedia.services.generation_orchestrator.start_run",
+					method: "joymedia.services.generation.orchestrator.start_run",
 					args: { run_name: frm.doc.name },
 					freeze: true,
 					freeze_message: "Starting generation run...",
@@ -26,7 +26,7 @@ frappe.ui.form.on("Generation Run", {
 					"Create new Attempts for failed Jobs in this run?",
 					() => {
 						frappe.call({
-							method: "joymedia.services.generation_orchestrator.retry_failed_jobs_from_ui",
+							method: "joymedia.services.generation.orchestrator.retry_failed_jobs_from_ui",
 							args: { run_name: frm.doc.name },
 							freeze: true,
 							freeze_message: "Retrying failed jobs...",

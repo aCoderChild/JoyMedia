@@ -1,0 +1,673 @@
+"""Assembles the clips of one scene: normalises each generated segment, joins chained segments to the planned length
+and levels and mixes their audio; also the audio sources of the timeline export.
+"""
+
+import json
+import subprocess
+import tempfile
+from pathlib import Path
+
+import frappe
+from frappe import _
+from frappe.utils.synchronization import filelock
+
+
+def compose_shot_segments(generation_run_name, shot_name):
+	"""Assemble completed generated segments into one selected Shot output."""
+	with filelock(f"joymedia-compose-shot-{generation_run_name}-{shot_name}"):
+		shot = frappe.get_doc("Shot", shot_name)
+		all_jobs = frappe.get_all(
+			"Generation Task",
+			filters={
+				"generation_run": generation_run_name,
+				"shot": shot.name,
+			},
+			fields=[
+				"name", "workflow", "segment_index", "segment_frame_count",
+				"segment_effective_frames", "overlap_frames", "status",
+			],
+			order_by="segment_index asc",
+		)
+		if not all_jobs or any(job.status != "Completed" for job in all_jobs):
+			return None
+		# A multi-stage pipeline can include image/audio preparation tasks. Only
+		# primary-video tasks belong on the visible Shot timeline.
+		jobs = [
+			job for job in all_jobs
+			if frappe.db.get_value("Generation Workflow", job.workflow, "output_media_type") == "Video"
+		]
+		if not jobs:
+			return None
+
+		project = frappe.get_doc("Media Project", shot.media_project)
+		segments = []
+		for job in jobs:
+			attempt = frappe.db.get_value(
+				"Generation Attempt",
+				{"generation_task": job.name, "status": "Completed"},
+				"name",
+				order_by="creation desc",
+			)
+			if not attempt:
+				return None
+			artifact = frappe.get_doc(
+				"Generation Artifact",
+				{"generation_attempt": attempt, "artifact_role": "Primary Video"},
+			)
+			if not artifact.frappe_file:
+				return None
+			segments.append((job, artifact))
+
+		shot_asset = _get_or_create_shot_output_asset(shot, project.name)
+		if len(segments) == 1:
+			profile = _get_delivery_profile(project, generation_run_name)
+			expected_frames = _shot_frame_count(shot, profile)
+			try:
+				with tempfile.TemporaryDirectory(prefix=f"joymedia-shot-{shot.name}-") as temp_dir:
+					normalized_path = Path(temp_dir) / f"{shot.name}.mp4"
+					_normalize_segment(
+						_get_artifact_path(segments[0][1]),
+						normalized_path,
+						profile,
+						int(segments[0][0].segment_frame_count or 0),
+						drop_first=False,
+						preserve_audio=True,
+					)
+					_validate_normalized_video(normalized_path, profile, expected_frames=expected_frames)
+					video_bytes = normalized_path.read_bytes()
+					video_duration = _get_video_duration(normalized_path)
+			except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+				frappe.throw(_("Unable to normalize Shot output: {0}").format(_command_error(exc)))
+			file_doc = frappe.get_doc(
+				{
+					"doctype": "File",
+					"file_name": f"{shot.name}.mp4",
+					"content": video_bytes,
+					"is_private": 1,
+					"attached_to_doctype": "Media Asset",
+					"attached_to_name": shot_asset.name,
+				}
+			).insert(ignore_permissions=True)
+			asset_version = frappe.get_doc(
+				{
+					"doctype": "Asset Version",
+					"media_asset": shot_asset.name,
+					"file": file_doc.file_url,
+					"source": "Composed",
+					"duration_seconds": video_duration,
+					"fps": profile["fps"],
+					"source_generation_attempt": segments[-1][1].generation_attempt,
+				}
+			).insert(ignore_permissions=True)
+			_select_output_for_review(shot, asset_version.name)
+			return asset_version.name
+
+		profile = _get_delivery_profile(project, generation_run_name)
+		try:
+			with tempfile.TemporaryDirectory(prefix=f"joymedia-shot-{shot.name}-") as temp_dir:
+				temporary_path = Path(temp_dir)
+				normalized_paths = []
+				expected_frames = 0
+				for index, (job, artifact) in enumerate(segments):
+					generated_frames = int(job.segment_frame_count or 0)
+					overlap_frames = int(job.overlap_frames or 0) if index > 0 else 0
+					effective_frames = int(job.segment_effective_frames or (generated_frames - overlap_frames))
+					if effective_frames <= 0:
+						raise ValueError(f"Generation Task {job.name} has no effective segment frames")
+					normalized_path = temporary_path / f"{index + 1:04d}-{job.name}.mp4"
+					_normalize_segment(
+						_get_artifact_path(artifact),
+						normalized_path,
+						profile,
+						generated_frames,
+						drop_first=overlap_frames,
+						preserve_audio=True,
+					)
+					_validate_normalized_video(normalized_path, profile, expected_frames=effective_frames)
+					normalized_paths.append(normalized_path)
+					expected_frames += effective_frames
+
+				assembled_path = temporary_path / f"{shot.name}.mp4"
+				_concatenate_normalized_shots(normalized_paths, assembled_path, profile, expected_frames=expected_frames)
+				_validate_normalized_video(assembled_path, profile, expected_frames=expected_frames)
+				video_bytes = assembled_path.read_bytes()
+				video_duration = _get_video_duration(assembled_path)
+		except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+			frappe.throw(_("Unable to assemble Shot segments: {0}").format(_command_error(exc)))
+
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"{shot.name}.mp4",
+				"content": video_bytes,
+				"is_private": 1,
+				"attached_to_doctype": "Media Asset",
+				"attached_to_name": shot_asset.name,
+			}
+		).insert(ignore_permissions=True)
+		asset_version = frappe.get_doc(
+			{
+				"doctype": "Asset Version",
+				"media_asset": shot_asset.name,
+				"file": file_doc.file_url,
+				"source": "Composed",
+				"duration_seconds": video_duration,
+				"fps": profile["fps"],
+				"source_generation_attempt": segments[-1][1].generation_attempt,
+			}
+		).insert(ignore_permissions=True)
+		_select_output_for_review(shot, asset_version.name)
+		return asset_version.name
+
+
+def _select_output_for_review(shot, asset_version_name):
+	"""Select a new immutable take and immediately run configured visual QA.
+
+	The QA service is fail-closed: an unavailable model leaves the take pending for
+	a human; it never converts availability problems into an approval.
+	"""
+	shot.db_set(
+		{"selected_output_asset_version": asset_version_name, "review_status": "Pending Review"},
+		update_modified=False,
+	)
+	from joymedia.services.review.visual_quality import queue_automated_shot_review
+
+	queue_automated_shot_review(shot.name, asset_version_name)
+
+
+def _get_or_create_shot_output_asset(shot, media_project):
+	asset_name = f"{shot.name} Output"
+	asset_id = frappe.db.get_value(
+		"Media Asset",
+		{
+			"asset_name": asset_name,
+			"media_project": media_project,
+			"asset_category": "Other",
+			"asset_scope": "Project Output",
+		},
+		"name",
+	)
+	if asset_id:
+		return frappe.get_doc("Media Asset", asset_id)
+	return frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": asset_name,
+			"media_project": media_project,
+			"media_type": "Video",
+			"asset_category": "Other",
+			"asset_scope": "Project Output",
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
+
+
+
+def _get_delivery_profile(project, generation_run_name=None):
+	width = project.delivery_width
+	height = project.delivery_height
+	workflow_name = project.workflow
+	if generation_run_name:
+		run = frappe.get_doc("Generation Run", generation_run_name)
+		try:
+			snapshot = frappe.parse_json(run.project_snapshot_json or "{}")
+		except (TypeError, ValueError):
+			frappe.throw(_("Generation Run {0} has invalid project snapshot JSON.").format(run.name))
+		width = snapshot.get("delivery_width")
+		height = snapshot.get("delivery_height")
+		workflow_name = snapshot.get("workflow") or run.workflow
+	if not width or not height:
+		frappe.throw(_("Media Project must have delivery width and height before composition."))
+	if not workflow_name:
+		frappe.throw(_("Media Project must have a Workflow before composition."))
+
+	workflow = frappe.get_doc(
+		"Generation Workflow",
+		workflow_name,
+	)
+	if not workflow.output_fps:
+		frappe.throw(_("Workflow must have output FPS before composition."))
+
+	return {
+		"width": int(width),
+		"height": int(height),
+		"fps": float(workflow.output_fps),
+	}
+
+
+def _shot_frame_count(shot, profile):
+	"""Return the persisted frame-exact duration used by the editor/exporter."""
+	planned_frames = int(shot.get("planned_frame_count") or 0)
+	if planned_frames > 0:
+		return planned_frames
+
+	duration_seconds = float(shot.get("duration_seconds") or 0)
+	frames = round(duration_seconds * profile["fps"])
+	if frames <= 0:
+		raise ValueError(f"Shot {shot.name} has no positive timeline duration")
+	return frames
+
+
+SEPARATE_EFFECTS_LAYER = "Separate effects layer"
+SCENE_LOUDNESS_LUFS = -18
+# Below this mean level (dBFS) a source counts as silent.
+AUDIBLE_FLOOR_DB = -55
+
+
+def _is_audible(path, seconds):
+	"""Whether the first `seconds` of an audio source contain real sound."""
+	result = subprocess.run(
+		["ffmpeg", "-v", "info", "-t", f"{seconds:.3f}", "-i", str(path), "-vn", "-af", "volumedetect", "-f", "null", "-"],
+		capture_output=True, text=True,
+	)
+	try:
+		return float(result.stderr.split("mean_volume:")[1].split("dB")[0]) > AUDIBLE_FLOOR_DB
+	except (IndexError, ValueError):
+		# -inf (digital silence) or an unreadable stream: nothing to level.
+		return False
+
+
+def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
+	sources = []
+	if timeline_clips is None:
+		return sources
+	fps = float(fps or 0)
+	if fps <= 0:
+		frappe.throw(_("Workflow output FPS must be greater than zero."))
+	separate_layer = (project.get("soundtrack_mode") if project else None) == SEPARATE_EFFECTS_LAYER
+	for clip in timeline_clips:
+		# The video model's own audio mixes voice, effects and music in one stream and cannot be split.
+		# "Separate effects layer" drops it entirely, leaving just the generated sound-effect layer.
+		if separate_layer and clip.audio_role == "Source":
+			continue
+		start_seconds = float(clip.timeline_start_frame or 0) / fps
+		clip_frames = int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0)
+		end_seconds = min(start_seconds + clip_frames / fps, video_duration)
+		if start_seconds >= video_duration:
+			continue
+		if end_seconds <= start_seconds:
+			frappe.throw(_("Audio clip {0} has no usable timeline duration.").format(clip.name))
+		cue_duration = end_seconds - start_seconds
+		fade_in_seconds = float(clip.fade_in_frames or 0) / fps
+		fade_out_seconds = float(clip.fade_out_frames or 0) / fps
+		if fade_in_seconds + fade_out_seconds > cue_duration:
+			frappe.throw(_("Audio clip {0} fades exceed its timeline duration.").format(clip.name))
+		sources.append(
+			{
+				"path": _get_timeline_audio_path(clip),
+				"start_seconds": start_seconds,
+				"duration_seconds": cue_duration,
+				"gain_db": float(clip.gain_db or 0),
+				"fade_in_seconds": fade_in_seconds,
+				"fade_out_seconds": fade_out_seconds,
+				"duck_others": bool(clip.duck_others),
+				"loop": clip.audio_role == "BGM",
+				# Levelling lifts quiet scenes toward a common loudness; a scene with no audible sound must be
+				# left silent, not amplified into noise.
+				"normalize_loudness": clip.audio_role == "Source" and _is_audible(_get_timeline_audio_path(clip), cue_duration),
+			}
+		)
+	return sources
+
+
+def _get_audio_asset_path(asset_version_name):
+	asset_version = frappe.get_doc("Asset Version", asset_version_name)
+	media_asset = frappe.get_doc("Media Asset", asset_version.media_asset)
+	if media_asset.media_type != "Audio":
+		frappe.throw(_("Asset Version {0} must belong to an Audio Media Asset.").format(asset_version.name))
+	if not asset_version.file:
+		frappe.throw(_("Asset Version {0} has no attached file.").format(asset_version.name))
+
+	file_doc = frappe.get_doc("File", {"file_url": asset_version.file})
+	path = Path(file_doc.get_full_path())
+	if not path.exists():
+		frappe.throw(_("Asset Version file does not exist: {0}").format(path))
+	if not _has_audio_stream(path):
+		frappe.throw(_("Asset Version {0} has no audio stream.").format(asset_version.name))
+	return path
+
+
+def _get_timeline_audio_path(clip):
+	return _get_audio_asset_path(clip.source_asset_version)
+
+
+def _normalize_segment(
+	source_path,
+	normalized_path,
+	profile,
+	generated_frames,
+	*,
+	drop_first=0,
+	preserve_audio=False,
+):
+	"""Normalize a generated segment and remove its configured overlap frames."""
+	drop_first = int(drop_first or 0)
+	if drop_first < 0 or drop_first >= generated_frames:
+		raise ValueError("drop_first must be smaller than generated_frames")
+	effective_frames = generated_frames - drop_first
+	video_filter = f"fps={profile['fps']:g},"
+	if drop_first:
+		video_filter += f"select='gte(n,{drop_first})',"
+	video_filter += (
+		f"tpad=stop_mode=clone:stop_duration={effective_frames / profile['fps']:.6f},"
+		f"trim=end_frame={effective_frames},setpts=PTS-STARTPTS,"
+		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=increase,"
+		f"crop={profile['width']}:{profile['height']}"
+	)
+	command = [
+		"ffmpeg",
+		"-y",
+		"-i",
+		str(source_path),
+		"-map",
+		"0:v:0",
+		"-vf",
+		video_filter,
+	]
+	if preserve_audio:
+		audio_duration = effective_frames / profile["fps"]
+		command.extend(
+			[
+				"-map",
+				"0:a?",
+				"-af",
+				f"apad,atrim=duration={audio_duration:.6f},asetpts=PTS-STARTPTS",
+				"-c:a",
+				"aac",
+			]
+		)
+	else:
+		command.append("-an")
+	command.extend(
+		[
+			"-c:v",
+			"libx264",
+			"-profile:v",
+			"high",
+			"-pix_fmt",
+			"yuv420p",
+			"-movflags",
+			"+faststart",
+			str(normalized_path),
+		]
+	)
+	_run_ffmpeg(command)
+
+
+def _get_asset_version_path(asset_version_name):
+	asset_version = frappe.get_doc("Asset Version", asset_version_name)
+	if not asset_version.file:
+		raise ValueError(f"Asset Version {asset_version.name} has no file")
+	file_doc = frappe.get_doc("File", {"file_url": asset_version.file})
+	path = Path(file_doc.get_full_path())
+	if not path.exists():
+		raise ValueError(f"Asset Version file does not exist: {path}")
+	return path
+
+
+def _get_artifact_path(artifact):
+	if not artifact.frappe_file:
+		raise ValueError(f"Generation Artifact {artifact.name} has no file")
+	file_doc = frappe.get_doc("File", {"file_url": artifact.frappe_file})
+	path = Path(file_doc.get_full_path())
+	if not path.exists():
+		raise ValueError(f"Generation Artifact file does not exist: {path}")
+	return path
+
+
+def _concatenate_normalized_shots(paths, output_path, profile, expected_frames=None):
+	"""Join normalized clips; expected_frames caps the output so audio padding cannot lengthen it."""
+	concat_file = output_path.with_suffix(".txt")
+	concat_file.write_text("\n".join(f"file '{_escape_concat_path(path)}'" for path in paths) + "\n")
+	_run_ffmpeg(
+		[
+			"ffmpeg",
+			"-y",
+			"-f",
+			"concat",
+			"-safe",
+			"0",
+			"-i",
+			str(concat_file),
+			"-map",
+			"0:v:0",
+			"-map",
+			"0:a?",
+			"-c:v",
+			"libx264",
+			"-c:a",
+			"aac",
+			"-profile:v",
+			"high",
+			"-pix_fmt",
+			"yuv420p",
+			"-r",
+			f"{profile['fps']:g}",
+			*(["-t", f"{expected_frames / profile['fps']:.6f}"] if expected_frames else []),
+			"-movflags",
+			"+faststart",
+			str(output_path),
+		]
+	)
+
+
+def _mix_audio(silent_master_path, audio_sources, delivery_path, ending=None):
+	"""Mix audio_sources under the master; ending=(start, seconds) fades the whole mix out."""
+	command = ["ffmpeg", "-y", "-i", str(silent_master_path)]
+	filter_parts = []
+	duck_labels = []
+	base_labels = []
+	for index, source in enumerate(audio_sources, start=1):
+		if source["loop"]:
+			command.extend(["-stream_loop", "-1"])
+		command.extend(["-i", str(source["path"])])
+
+		source_start = source.get("source_start_seconds", 0)
+		if source_start:
+			trim = (
+				f"atrim=start={source_start:.6f}:"
+				f"duration={source['duration_seconds']:.6f}"
+			)
+		else:
+			trim = f"atrim=duration={source['duration_seconds']:.6f}"
+		filter = f"[{index}:a]{trim},asetpts=PTS-STARTPTS"
+		if source.get("normalize_loudness"):
+			# Scene audio from different generations varies by tens of dB; bring each scene to a
+			# common loudness (EBU R128) with a true-peak ceiling before the user's gain is applied.
+			filter += f",loudnorm=I={SCENE_LOUDNESS_LUFS}:TP=-1.5:LRA=11,aformat=sample_rates=48000:channel_layouts=stereo"
+		filter += f",volume={source['gain_db']:.6f}dB"
+		if source["fade_in_seconds"]:
+			filter += f",afade=t=in:st=0:d={source['fade_in_seconds']:.6f}"
+		if source["fade_out_seconds"]:
+			fade_start = source["duration_seconds"] - source["fade_out_seconds"]
+			filter += f",afade=t=out:st={fade_start:.6f}:d={source['fade_out_seconds']:.6f}"
+		if source["start_seconds"]:
+			filter += f",adelay={round(source['start_seconds'] * 1000)}:all=1"
+		filter_parts.append(f"{filter}[audio{index}]")
+		(duck_labels if source["duck_others"] else base_labels).append(f"[audio{index}]")
+
+	if duck_labels:
+		_mix_labels(filter_parts, duck_labels, "duck_source")
+		if base_labels:
+			_mix_labels(filter_parts, base_labels, "base")
+			filter_parts.append("[duck_source]asplit=2[duck_sidechain][duck_mix]")
+			filter_parts.append("[base][duck_sidechain]sidechaincompress[ducked]")
+			_mix_labels(filter_parts, ["[ducked]", "[duck_mix]"], "mixed")
+		else:
+			filter_parts.append("[duck_source]anull[mixed]")
+	else:
+		_mix_labels(filter_parts, base_labels, "mixed")
+	output_label = "[mixed]"
+	if ending:
+		start, seconds = ending
+		# The audio must span the whole film even when the only sound is a short effect; players handle a
+		# stream that ends early badly.
+		filter_parts.append(f"[mixed]apad=whole_dur={start + seconds:.6f},afade=t=out:st={start:.6f}:d={seconds:.6f}[ending]")
+		output_label = "[ending]"
+	command.extend(
+		[
+			"-filter_complex",
+			";".join(filter_parts),
+			"-map",
+			"0:v:0",
+			"-map",
+			output_label,
+			# The master is already normalized H.264; re-encoding would only lose detail.
+			"-c:v",
+			"copy",
+			"-c:a",
+			"aac",
+			"-b:a",
+			"192k",
+			"-movflags",
+			"+faststart",
+			str(delivery_path),
+		]
+	)
+	_run_ffmpeg(command)
+
+
+def _mix_labels(filter_parts, labels, output_label):
+	if len(labels) == 1:
+		filter_parts.append(f"{labels[0]}anull[{output_label}]")
+		return
+	filter_parts.append(
+		"".join(labels) + f"amix=inputs={len(labels)}:duration=longest:normalize=0[{output_label}]"
+	)
+
+
+def _inspect_video(path):
+	result = subprocess.run(
+		[
+			"ffprobe",
+			"-v",
+			"error",
+			"-select_streams",
+			"v:0",
+			"-show_entries",
+			"stream=codec_name,profile,width,height,pix_fmt,r_frame_rate",
+			"-of",
+			"json",
+			str(path),
+		],
+		capture_output=True,
+		text=True,
+		check=True,
+	)
+	streams = json.loads(result.stdout).get("streams", [])
+	if not streams:
+		raise ValueError(f"{path} does not contain a video stream")
+	return streams[0]
+
+
+def _get_video_duration(path):
+	result = subprocess.run(
+		[
+			"ffprobe",
+			"-v",
+			"error",
+			"-show_entries",
+			"format=duration",
+			"-of",
+			"json",
+			str(path),
+		],
+		capture_output=True,
+		text=True,
+		check=True,
+	)
+	return float(json.loads(result.stdout)["format"]["duration"])
+
+
+def _has_audio_stream(path):
+	result = subprocess.run(
+		[
+			"ffprobe",
+			"-v",
+			"error",
+			"-select_streams",
+			"a:0",
+			"-show_entries",
+			"stream=codec_type",
+			"-of",
+			"json",
+			str(path),
+		],
+		capture_output=True,
+		text=True,
+		check=True,
+	)
+	return bool(json.loads(result.stdout).get("streams"))
+
+
+def _validate_normalized_video(path, profile, expected_frames=None):
+	stream = _inspect_video(path)
+	if (
+		stream.get("codec_name") != "h264"
+		or stream.get("profile") != "High"
+		or stream.get("pix_fmt") != "yuv420p"
+		or stream.get("width") != profile["width"]
+		or stream.get("height") != profile["height"]
+		or abs(_frame_rate(stream.get("r_frame_rate")) - profile["fps"]) > 0.001
+	):
+		raise ValueError(f"{path} does not match the normalized delivery profile")
+
+	if expected_frames is not None:
+		expected_duration = expected_frames / profile["fps"]
+		actual_duration = _get_video_duration(path)
+		frame_tolerance = (1 / profile["fps"]) + 0.01
+		if abs(actual_duration - expected_duration) > frame_tolerance:
+			raise ValueError(
+				f"{path} duration {actual_duration:.6f}s does not match timeline "
+				f"duration {expected_duration:.6f}s"
+			)
+
+
+def _frame_rate(value):
+	try:
+		numerator, denominator = str(value).split("/", 1)
+		return int(numerator) / int(denominator)
+	except (TypeError, ValueError, ZeroDivisionError) as exc:
+		raise ValueError(f"Invalid video frame rate: {value}") from exc
+
+
+def _get_or_create_final_asset(project):
+	asset_name = f"{project.name} Final Video"
+	asset_id = frappe.db.get_value(
+		"Media Asset",
+		{"asset_name": asset_name, "media_project": project.name},
+		"name",
+	)
+	if asset_id:
+		return frappe.get_doc("Media Asset", asset_id)
+
+	output_asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": asset_name,
+			"media_project": project.name,
+			"media_type": "Video",
+			"asset_category": "Other",
+			"asset_scope": "Project Output",
+			"status": "Active",
+		}
+	)
+	output_asset.insert(ignore_permissions=True)
+	return output_asset
+
+
+def _run_ffmpeg(command):
+	try:
+		subprocess.run(command, capture_output=True, text=True, check=True, timeout=600)
+	except subprocess.TimeoutExpired as exc:
+		raise ValueError("Video processing exceeded the 10-minute timeout.") from exc
+
+
+def _escape_concat_path(path):
+	return str(path).replace("'", "'\\''")
+
+
+def _command_error(exc):
+	if isinstance(exc, subprocess.CalledProcessError):
+		return exc.stderr.strip() or str(exc)
+	return str(exc)

@@ -28,7 +28,7 @@ class GenerationRun(Document):
 			if not self.workflow:
 				self.workflow = project.workflow
 			if not self.generation_pipeline:
-				from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow
+				from joymedia.services.workflows.pipeline import pipeline_for_final_workflow
 
 				try:
 					pipeline = pipeline_for_final_workflow(self.workflow)
@@ -83,7 +83,7 @@ class GenerationRun(Document):
 		if snapshot.get("generation_pipeline") and snapshot.get("generation_pipeline") != self.generation_pipeline:
 			frappe.throw(_("Generation Run project snapshot pipeline does not match the Run pipeline."))
 		if self.generation_pipeline:
-			from joymedia.services.generation_pipeline_service import get_pipeline_steps
+			from joymedia.services.workflows.pipeline import get_pipeline_steps
 
 			steps = get_pipeline_steps(self.generation_pipeline)
 			if steps[-1].workflow != self.workflow:

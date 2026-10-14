@@ -1,14 +1,14 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from joymedia.services.project_context import build_project_snapshot
+from joymedia.services.project.context import build_project_snapshot
 
 
 class IntegrationTestGenerationRun(FrappeTestCase):
 	def setUp(self):
 		super().setUp()
 		from joymedia.joymedia.doctype.media_project.test_media_project import _ensure_workflow
-		from joymedia.services.testing import without_promoted_pipeline
+		from joymedia.tests.support.helpers import without_promoted_pipeline
 
 		without_promoted_pipeline(self)
 		self.workflow = _ensure_workflow()

@@ -75,7 +75,7 @@ class GenerationTask(Document):
 			# A dependency means runtime continuation from the upstream task's
 			# Last Frame Artifact. Workflows without a first_frame input cannot
 			# safely chain long-shot segments or cross-shot continuity.
-			from joymedia.services.workflow_resolver import workflow_supports_continuation
+			from joymedia.services.workflows.resolver import workflow_supports_continuation
 
 			if not self.dependency_artifact_role and not workflow_supports_continuation(workflow):
 				frappe.throw(
@@ -178,7 +178,7 @@ class GenerationTask(Document):
 			None,
 		)
 		if shot_snapshot:
-			from joymedia.services.workflow_profiles import allowed_workflows_for_shot
+			from joymedia.services.workflows.profiles import allowed_workflows_for_shot
 
 			allowed_workflows = allowed_workflows_for_shot(snapshot, shot_snapshot)
 			pipeline_workflows = self._pipeline_workflows(run, shot_snapshot)
@@ -270,7 +270,7 @@ class GenerationTask(Document):
 								role, accepted_media_type, media_type or "unknown"
 							)
 						)
-			from joymedia.services.workflow_resolver import validate_role_input_count
+			from joymedia.services.workflows.resolver import validate_role_input_count
 
 			validate_role_input_count(workflow, role, len(asset_versions))
 

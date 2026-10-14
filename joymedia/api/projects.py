@@ -6,7 +6,7 @@
 
 import frappe
 from frappe import _
-from joymedia.services.project_context import (
+from joymedia.services.project.context import (
 	_aggregate_shot_progress,
 	_busy_shots,
 	_customer_style_details,
@@ -22,7 +22,7 @@ from joymedia.services.project_context import (
 	_storyboard_payload,
 	build_project_snapshot,
 )
-from joymedia.services.storyboard_job import planning_status
+from joymedia.services.planning.jobs import planning_status
 
 
 @frappe.whitelist()
@@ -197,7 +197,7 @@ def refresh_project_studio(name):
 	# never dispatched until the next scheduler tick.
 	if production and production.status in ("Queued", "Running"):
 		from frappe.utils.synchronization import filelock
-		from joymedia.services.generation_orchestrator import refresh_run
+		from joymedia.services.generation.orchestrator import refresh_run
 
 		with filelock(f"joymedia-refresh-run-{production.name}"):
 			refresh_run(production.name)
@@ -265,7 +265,7 @@ def create_project(project_name, product_name, video_idea=None, campaign_brief=N
 		if "No active Generation Pipeline is configured" not in str(exc):
 			raise
 		workflow = None
-	from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow
+	from joymedia.services.workflows.pipeline import pipeline_for_final_workflow
 	pipeline = pipeline_for_final_workflow(workflow.name) if workflow else None
 	project = frappe.get_doc({
 		"doctype": "Media Project",
@@ -354,7 +354,7 @@ def cancel_project_generation(project_name):
 	run = _get_latest_project_generation_run(project.name)
 	if not run or run.status not in ("Queued", "Running"):
 		return {"cancelled": False, "status": project.status}
-	from joymedia.services.generation_orchestrator import cancel_run, sync_media_project_status_for_run
+	from joymedia.services.generation.orchestrator import cancel_run, sync_media_project_status_for_run
 	result = cancel_run(run.name)
 	sync_media_project_status_for_run(run.name)
 	return {"cancelled": True, **result}

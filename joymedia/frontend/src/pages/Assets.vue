@@ -418,7 +418,7 @@ async function onAssetSaved(result) {
 async function archiveAsset(asset) {
   assetMenuName.value = "";
   try {
-    const result = await call("joymedia.services.media_asset_service.archive_media_asset", {
+    const result = await call("joymedia.services.intake.assets.archive_media_asset", {
       media_asset: asset.name,
     });
     if (result?.in_use) {
@@ -427,7 +427,7 @@ async function archiveAsset(asset) {
         `${asset.asset_name} is used by ${projectCount} project(s). Archive it and remove it from those projects?`
       );
       if (!confirmed) return;
-      await call("joymedia.services.media_asset_service.archive_media_asset", {
+      await call("joymedia.services.intake.assets.archive_media_asset", {
         media_asset: asset.name,
         detach_projects: 1,
       });
@@ -476,7 +476,7 @@ async function handleUploadAsset() {
     const uploaded = await uploadFile(selectedFile.value, { private: true });
     if (!uploaded?.file_url || !uploaded?.name) throw new Error("Không thể tải lên file.");
 
-    await call("joymedia.services.media_asset_service.create_media_asset", {
+    await call("joymedia.services.intake.assets.create_media_asset", {
       asset_name: selectedFile.value.name.replace(/\.[^/.]+$/, ""),
       asset_category: uploadCategory.value,
       file_url: uploaded.file_url,

@@ -41,7 +41,7 @@ const { currentLang } = useI18n();
 const emit = defineEmits(["changed"]);
 
 const readiness = createResource({
-  url: "joymedia.services.project_intake.get_project_readiness",
+  url: "joymedia.services.intake.project.get_project_readiness",
   params: { project_name: props.projectName, lang: currentLang.value },
   auto: true,
 });

@@ -15,7 +15,7 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 	On Rejected or Needs Revision, automatically calls the AI to generate a
 	suggested prompt revision from the structured feedback.
 	"""
-	from joymedia.services.ai_director import generate_review_revision
+	from joymedia.services.planning.revisions import generate_review_revision
 
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
@@ -91,7 +91,7 @@ def submit_shot_review(project_name, shot_name, verdict, feedback_notes="", reje
 	frappe.db.commit()
 	finishing = None
 	if verdict == "Approved":
-		from joymedia.services.post_production import resume_post_production_if_approved
+		from joymedia.services.editing.post_production import resume_post_production_if_approved
 
 		try:
 			finishing = resume_post_production_if_approved(project.name).get("status")
@@ -118,7 +118,7 @@ def sync_shot_review_status(shot_name):
 	exact Asset Version the reviewer watched, never for every take of the Shot.
 	"""
 	shot = frappe.get_doc("Shot", shot_name)
-	from joymedia.services.review_authority import human_review_status
+	from joymedia.services.review.authority import human_review_status
 
 	status = human_review_status(shot.name, shot.selected_output_asset_version)
 	frappe.db.set_value("Shot", shot.name, "review_status", status, update_modified=False)
@@ -165,7 +165,7 @@ def apply_shot_review_revision(project_name, shot_name, review_name, regenerate=
 	result = {"shot_name": shot_name, "review_name": review_name, "applied": True}
 
 	if frappe.parse_json(regenerate) if isinstance(regenerate, str) else regenerate:
-		from joymedia.services.scene_takes import regenerate_scene_with_reason
+		from joymedia.services.generation.takes import regenerate_scene_with_reason
 		regen = regenerate_scene_with_reason(project_name, shot_name, retry_reason="QA Rejection")
 		frappe.db.set_value("Shot Review", review_name, "regeneration_triggered", 1, update_modified=False)
 		frappe.db.set_value("Shot", shot_name, "review_status", "Pending Review", update_modified=False)

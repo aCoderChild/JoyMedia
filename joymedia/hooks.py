@@ -163,8 +163,8 @@ doc_events = {
 		"before_insert": "joymedia.overrides.file_hooks.ensure_home_folder_exists",
 	},
 	# Open studios refresh from these instead of polling.
-	"Media Project": {"on_update": "joymedia.services.realtime.project_changed"},
-	"Shot": {"on_update": "joymedia.services.realtime.shot_changed"},
+	"Media Project": {"on_update": "joymedia.services.project.realtime.project_changed"},
+	"Shot": {"on_update": "joymedia.services.project.realtime.shot_changed"},
 }
 
 # doc_events = {
@@ -181,9 +181,9 @@ doc_events = {
 scheduler_events = {
 	"cron": {
 		"* * * * *": [
-			"joymedia.services.result_ingestor.sync_active_attempts",
-			"joymedia.services.generation_orchestrator.refresh_active_runs",
-			"joymedia.services.post_production.resume_queued_post_productions",
+			"joymedia.services.generation.ingestor.sync_active_attempts",
+			"joymedia.services.generation.orchestrator.refresh_active_runs",
+			"joymedia.services.editing.post_production.resume_queued_post_productions",
 		],
 	},
 }

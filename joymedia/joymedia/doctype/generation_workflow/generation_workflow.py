@@ -34,7 +34,7 @@ DEFAULT_ADAPTER_KEY = "comfyui_generic"
 
 def get_latest_valid_workflow(workflow_key=None):
 	"""Return the newest workflow whose stored graph and bindings are executable."""
-	from joymedia.services.workflow_resolver import (
+	from joymedia.services.workflows.resolver import (
 		validate_workflow_bindings,
 		validate_workflow_for_execution,
 	)
@@ -63,7 +63,7 @@ def validate_workflow(version_name: str):
 	"""Validate an existing Generation Workflow on demand."""
 	frappe.has_permission("Generation Workflow", "read", version_name, throw=True)
 	workflow = frappe.get_doc("Generation Workflow", version_name)
-	from joymedia.services.workflow_resolver import (
+	from joymedia.services.workflows.resolver import (
 		validate_workflow_bindings,
 		validate_workflow_for_execution,
 	)
@@ -147,7 +147,7 @@ class GenerationWorkflow(Document):
 		if not isinstance(workflow_data, dict):
 			frappe.throw(_("Workflow JSON must define a JSON object."))
 
-		from joymedia.services.workflow_resolver import validate_workflow_bindings
+		from joymedia.services.workflows.resolver import validate_workflow_bindings
 
 		adapter = get_workflow_adapter(self)
 		validate_workflow_bindings(self)

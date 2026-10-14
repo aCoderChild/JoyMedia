@@ -41,7 +41,7 @@ def assign_reference_role(reference):
 	asked to know the role vocabulary. An explicit role is always kept.
 	"""
 	if (not reference.reference_role or reference.reference_role == "General") and (reference.label or reference.reference_key):
-		from joymedia.services.project_intake import infer_reference_role
+		from joymedia.services.intake.project import infer_reference_role
 
 		reference.reference_role = infer_reference_role(reference.label or reference.reference_key)
 
