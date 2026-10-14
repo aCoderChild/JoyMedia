@@ -238,19 +238,26 @@ class TestShippedKeyframeWorkflow(FrappeTestCase):
 		adapter, graph = self._adapter_and_graph()
 		adapter.validate_specification(graph)
 
-	def test_one_character_image_feeds_both_identity_paths(self):
+	def test_a_person_and_a_mascot_are_separate_identity_inputs(self):
 		_adapter, graph = self._adapter_and_graph()
-		# PuLID reads node 54; the Redux encoder must read the same node, not a separate placeholder.
+		# A real person is identity-locked by PuLID alone (node 54); a mascot is a Redux reference with its own image
+		# node. Redux copies a face crop's framing, so a person never feeds it.
 		self.assertEqual(["54", 0], graph["62"]["inputs"]["image"])
-		self.assertEqual(["54", 0], graph["character_encode"]["inputs"]["image"])
-		self.assertNotIn("character_image", graph)
+		self.assertEqual(["character_image", 0], graph["character_encode"]["inputs"]["image"])
+		self.assertIn("character_image", graph)
 
-	def test_a_character_alone_leaves_a_complete_graph(self):
+	def test_a_person_alone_leaves_a_complete_graph_without_redux(self):
 		adapter, graph = self._adapter_and_graph()
 		adapter._finalize_optional_input_chains(graph, adapter.execution_spec["input_preprocessing"], {"person": ["x.png"]})
-		self.assertEqual(["product_redux" if "product_redux" in graph else "character_redux", 0], graph["47"]["inputs"]["conditioning"])
-		self.assertNotIn("product_image", graph)
+		self.assertEqual(["26", 0], graph["47"]["inputs"]["conditioning"])  # straight from the guidance, no Redux
+		for node in ("character_image", "character_redux", "product_image", "environment_image"):
+			self.assertNotIn(node, graph)
+
+	def test_a_mascot_alone_leaves_a_complete_graph_through_its_redux_branch(self):
+		adapter, graph = self._adapter_and_graph()
+		adapter._finalize_optional_input_chains(graph, adapter.execution_spec["input_preprocessing"], {"character": ["x.png"]})
 		self.assertEqual(["character_redux", 0], graph["47"]["inputs"]["conditioning"])
+		self.assertNotIn("product_image", graph)
 
 
 class TestRoundToMultiple(FrappeTestCase):
