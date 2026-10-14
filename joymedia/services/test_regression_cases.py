@@ -1,5 +1,4 @@
 from frappe.tests.utils import FrappeTestCase
-from PIL import Image
 
 from joymedia.services import regression_cases as cases
 

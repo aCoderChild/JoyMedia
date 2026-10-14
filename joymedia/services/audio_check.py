@@ -9,7 +9,6 @@ on rendered clips, but it is a screen, not proof: a clip near the line should be
 import re
 import subprocess
 
-from .tuning import tune
 
 # Measured on rendered clips: effects-like clips scored 0.43 to 0.59, music-like ones 0.09 to 0.28. Scores from
 # the minimum to BORDERLINE_MAX are accepted but should be listened to.
@@ -31,8 +30,3 @@ def effects_score(path):
 	values = [value for value in (float(v) for v in re.findall(r"flatness=([0-9.eE+-]+)", output)) if value > 0]
 	return round(sum(values) / len(values), 3) if values else None
 
-
-def is_effects_like(path):
-	"""True/False for audible audio, None when there is no sound to judge."""
-	score = effects_score(path)
-	return None if score is None else score >= tune("effects_flatness_min")

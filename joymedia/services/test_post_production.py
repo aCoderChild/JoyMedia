@@ -8,23 +8,6 @@ from joymedia.services import post_production
 
 
 class TestSegmentedSoundtrack(FrappeTestCase):
-	def test_long_soundtrack_is_split_into_short_equal_segments(self):
-		for seconds in (4, 21, 31, 61):
-			durations = post_production.segment_durations(seconds)
-			frames = [int(duration * 24) for duration in durations]
-
-			# H3 snaps segments down to 17k+5 frames, so each must already sit on that grid.
-			self.assertTrue(all(frame % 17 == 5 for frame in frames), (seconds, frames))
-			self.assertGreaterEqual(sum(frames), seconds * 24)
-			self.assertTrue(all(3 <= duration <= post_production.SEGMENT_SECONDS + 0.2 for duration in durations))
-
-	def test_segmented_prompt_marks_each_cut_for_h3(self):
-		prompt = post_production.segmented_prompt(["Open.", "Go on.", "End."], [4.5, 4.5, 4.5])
-
-		self.assertEqual(
-			"[Shot 1] Open.\n---\n[Shot 2] At 00:04.500, Go on.\n---\n[Shot 3] At 00:09.000, End.", prompt
-		)
-
 	@patch("joymedia.services.post_production._video_workflow")
 	def test_soundtrack_uses_the_project_workflow_contract(self, video_workflow):
 		video_workflow.return_value = ({"save": {"inputs": {}}}, "save")

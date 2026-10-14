@@ -10,7 +10,6 @@ from joymedia.services.timeline_composer import (
 	_assert_timeline_unchanged,
 	_apply_ending,
 	_caption_cues,
-	_get_generated_audio_sources,
 	_normalize_clip,
 	_render_positioned_sequence,
 	_render_sequence,
@@ -23,38 +22,6 @@ class TestTimelineComposer(FrappeTestCase):
 		with patch("joymedia.services.post_production.timeline_signature", return_value="newer-edit"):
 			with self.assertRaises(frappe.ValidationError):
 				_assert_timeline_unchanged("PROJECT-TEST", "render-start")
-
-	def test_generated_audio_sources_preserve_video_audio_timing(self):
-		clip = frappe._dict(
-			name="CLIP-1",
-			timeline_start_frame=12,
-			source_asset_version="ASTV-1",
-			source_in_frame=24,
-			source_out_frame=72,
-		)
-
-		with (
-			patch("joymedia.services.timeline_composer._asset_version_path", return_value=Path("video.mp4")),
-			patch("joymedia.services.timeline_composer._has_audio_stream", return_value=True),
-		):
-			sources = _get_generated_audio_sources(
-				[clip], [48], 4.0, 24.0, positioned=True, transition_frames=[0]
-			)
-
-		self.assertEqual(
-			{
-				"path": Path("video.mp4"),
-				"start_seconds": 0.5,
-				"source_start_seconds": 1.0,
-				"duration_seconds": 2.0,
-				"gain_db": 0,
-				"fade_in_seconds": 0,
-				"fade_out_seconds": 0,
-				"duck_others": False,
-				"loop": False,
-			},
-			sources[0],
-		)
 
 	def test_normalize_clip_extracts_frame_exact_source_range(self):
 		with tempfile.TemporaryDirectory(prefix="joymedia-timeline-trim-") as temp_dir:

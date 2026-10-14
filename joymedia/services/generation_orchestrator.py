@@ -19,7 +19,7 @@ from .generation_runner import (
 	submit_attempt,
 )
 from .generation_segment_planner import MAX_SEGMENT_FRAMES, plan_generation_segments
-from .generation_pipeline_service import get_pipeline_steps, pipeline_for_final_workflow
+from .generation_pipeline_service import get_pipeline_steps
 from .prompt_compiler import compile_segment_prompt_from_snapshot, prompt_source_for_workflow
 from .result_ingestor import sync_attempt_result
 from .video_composer import compose_shot_segments
@@ -775,14 +775,6 @@ def _finish_film(project_name):
 	return resume_post_production_if_approved(project_name)
 
 
-def enqueue_finalization_if_ready(run_name: str):
-	"""Retained for compatibility; generation no longer queues project export."""
-	run = frappe.get_doc("Generation Run", run_name)
-	if run.status != "Cancelled":
-		_refresh_run_counters(run)
-	return _run_summary(run)
-
-
 @frappe.whitelist()
 def finalize_run_from_ui(run_name: str):
 	frappe.throw(_("Generation runs are exported from the editor."))
@@ -866,11 +858,6 @@ def _require_project_generation_authorization(project):
 	project._require_write_access()
 	if project.storyboard_approval_status != "Approved":
 		frappe.throw(_("Review and approve the storyboard before starting or retrying generation."))
-
-
-def finalize_run(run_name: str):
-	"""Reject the removed generation-level project composition boundary."""
-	frappe.throw(_("Generation runs no longer export the project timeline. Use Export from the editor."))
 
 
 def cancel_run(run_name: str):
@@ -1308,19 +1295,6 @@ def _finalize_completed_shots(run):
 			fields=["status"],
 		)
 		if jobs and all(job.status == "Completed" for job in jobs):
-			last_jobs = frappe.get_all(
-				"Generation Task",
-				filters={"generation_run": run.name, "shot": shot_name},
-				fields=["workflow", "segment_index"],
-				order_by="segment_index desc, creation desc",
-			)
-			last_job = next(
-				(job for job in last_jobs if frappe.db.get_value("Generation Workflow", job.workflow, "output_media_type") == "Video"),
-				None,
-			)
-			workflow = frappe.get_doc(
-				"Generation Workflow", last_job.workflow if last_job else run.workflow
-			)
 			assembled_version = compose_shot_segments(run.name, shot_name)
 			if assembled_version:
 				from .timeline_editor import update_timeline_source_for_shot

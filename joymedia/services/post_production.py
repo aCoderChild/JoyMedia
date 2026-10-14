@@ -664,34 +664,6 @@ def _music_start_frame(audio_path, total_frames):
 	return round((quietest - film_end) * step / rate * 24)
 
 
-def segment_durations(seconds, max_segment_seconds=SEGMENT_SECONDS, fps=24):
-	"""Equal segments of about max_segment_seconds that together last at least seconds.
-
-	The configured segment grid has a small frame offset. Size each segment on
-	that grid so a long soundtrack does not return shorter than requested.
-	"""
-	frames = math.ceil(seconds * fps)
-	fewest = max(1, math.ceil(frames / (max_segment_seconds * fps)))
-
-	def plan(count):
-		per_segment = math.ceil(frames / count)
-		return count, per_segment + (5 - per_segment % 17) % 17
-
-	count, per_segment = min((plan(count) for count in range(fewest, fewest + 3)), key=lambda p: p[0] * p[1])
-	# Half a frame of headroom so float rounding never snaps a segment down a step.
-	return [(per_segment + 0.5) / fps] * count
-
-
-def segmented_prompt(prompts, durations):
-	"""One [Shot N] prompt block per segment with its cut time."""
-	blocks, start = [], 0.0
-	for index, (prompt, duration) in enumerate(zip(prompts, durations), start=1):
-		cut = "" if index == 1 else f"At {int(start // 60):02d}:{start % 60:06.3f}, "
-		blocks.append(f"[Shot {index}] {cut}{prompt}")
-		start += duration
-	return "\n---\n".join(blocks)
-
-
 def _soundtrack_workflow(project_name, first_frame, music, seconds):
 	"""Render a soundtrack through the project's declared video workflow."""
 	instrumental = "Instrumental music only, no speech, no singing, no sound effects."

@@ -219,19 +219,6 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		# input contract, so no redundant pipeline first-frame reference is stored.
 		self.assertFalse([row for row in shot.generation_inputs if row.reference_role == "first_frame"])
 
-	def test_planning_context_tracks_prompt_assets_settings_and_global_instructions(self):
-		from joymedia.services.project_context import _build_planning_context
-
-		project, _ = _create_project("Planning Context", self.workflow)
-		context, first_hash = _build_planning_context(project)
-		self.assertEqual(context["video_idea"], project.video_idea)
-		self.assertEqual(context["global_instructions"], "Keep the product identity consistent.")
-
-		project.video_idea = "A brighter revised campaign."
-		project.save(ignore_permissions=True)
-		_, changed_hash = _build_planning_context(project)
-		self.assertNotEqual(first_hash, changed_hash)
-
 	def test_storyboard_revision_preserves_prompt_and_supersedes_previous_spec(self):
 		from joymedia.services.video_plan_service import apply_video_plan
 

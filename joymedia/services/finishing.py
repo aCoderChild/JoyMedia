@@ -151,14 +151,5 @@ def _ffmpeg(arguments):
 		)
 
 
-def _frame_count(path):
-	output = subprocess.run(
-		["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
-		 "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(path)],
-		capture_output=True, text=True, check=True, timeout=120,
-	).stdout.strip()
-	return int(output)
-
-
 def _even(value):
 	return int(round(value / 2) * 2)

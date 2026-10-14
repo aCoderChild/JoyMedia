@@ -1,12 +1,6 @@
 import frappe
 from frappe import _
 
-from joymedia.services.generation_pipeline_service import pipeline_for_final_workflow, get_pipeline_steps
-
-
-def customer_workflow_key(reference_mode, quality_mode):
-	"""Legacy compatibility shim; workflow selection now belongs to Project settings."""
-	return None
 
 
 def choose_shot_workflow(snapshot, shot):
@@ -38,34 +32,6 @@ def references_for_workflow(workflow, references):
 		return references[:1]
 	maximum = int(contract.get("max_count") or 0)
 	return references[:maximum] if maximum else references
-
-
-def planning_input_contract(workflow, pipeline_name=None):
-	"""Return the reference contract used while planning a pipeline-backed shot.
-
-	The final workflow may consume an upstream artifact such as ``first_frame``.
-	That is pipeline internals, not a user-upload requirement, so planning uses
-	the initial pipeline step's contract.
-	"""
-	from joymedia.services.workflow_resolver import get_workflow_input_contract
-
-	contract = get_workflow_input_contract(workflow)
-	pipeline = frappe.get_doc("Generation Pipeline", pipeline_name) if pipeline_name else pipeline_for_final_workflow(workflow.name)
-	if pipeline and (not pipeline.steps or pipeline.steps[-1].workflow != workflow.name):
-		frappe.throw(_("Generation Pipeline {0} does not end with Workflow {1}.").format(
-			pipeline.name, workflow.name
-		))
-	if not pipeline:
-		return contract
-
-	steps = get_pipeline_steps(pipeline.name)
-	keyframe_workflow = frappe.get_doc("Generation Workflow", steps[0].workflow)
-	keyframe_contract = get_workflow_input_contract(keyframe_workflow)
-	# Only expose keyframe workflow inputs to the planner. ``first_frame`` is an
-	# internal artifact produced by this step and consumed by the final video
-	# workflow; it is not a reference the user must upload or the planner should
-	# attach to each shot.
-	return [item for item in keyframe_contract if item.get("role") != "first_frame"]
 
 
 def allowed_workflows_for_shot(snapshot, shot):

@@ -13,7 +13,6 @@ import json
 import frappe
 from frappe import _
 
-from joymedia.joymedia.doctype.generation_workflow.generation_workflow import get_latest_valid_workflow
 
 SUPPORTED_PROJECT_MEDIA_TYPES = {"Image", "Video", "Audio", "Document"}
 # Used until enough render jobs have finished to measure the real average.
@@ -132,25 +131,6 @@ def _project_runs(filters):
 		order_by="creation desc",
 		limit_page_length=1,
 	)
-
-
-def _build_planning_context(project, settings=None):
-	settings = settings or project
-	context = {
-		"video_idea": project.video_idea or "",
-		"product_name": project.product_name or "",
-		"selected_asset_versions": sorted(
-			row.asset_version for row in project.selected_media or [] if row.asset_version
-		),
-		"workflow": settings.workflow or "",
-		"generation_pipeline": settings.generation_pipeline or "",
-		"generation_mode": getattr(settings, "generation_mode", None) or "",
-		"total_duration_seconds": float(settings.total_duration_seconds or 0),
-		"delivery_preset": settings.delivery_preset or "",
-		"global_instructions": settings.global_instructions or "",
-	}
-	serialized = json.dumps(context, sort_keys=True, separators=(",", ":"))
-	return context, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _customer_style_details(settings):

@@ -7,7 +7,6 @@ import frappe
 from frappe import _
 from frappe.utils.synchronization import filelock
 
-from .artifact_service import get_attempt_artifact
 
 
 def compose_shot_segments(generation_run_name, shot_name):
@@ -158,75 +157,6 @@ def compose_shot_segments(generation_run_name, shot_name):
 		return asset_version.name
 
 
-def promote_cumulative_shot_output(generation_run_name, shot_name):
-	"""Promote the cumulative Primary Video from the final completed segment."""
-	with filelock(f"joymedia-compose-shot-{generation_run_name}-{shot_name}"):
-		shot = frappe.get_doc("Shot", shot_name)
-		job = frappe.get_all(
-			"Generation Task",
-			filters={"generation_run": generation_run_name, "shot": shot.name},
-			fields=["name", "segment_index", "status"],
-			order_by="segment_index desc",
-			limit=1,
-		)
-		if not job or job[0].status != "Completed":
-			return None
-		attempt = frappe.db.get_value(
-			"Generation Attempt",
-			{"generation_task": job[0].name, "status": "Completed"},
-			"name",
-			order_by="creation desc",
-		)
-		if not attempt:
-			return None
-		artifact = get_attempt_artifact(attempt, "Primary Video")
-		if not artifact or not artifact.frappe_file:
-			return None
-		project = frappe.get_doc("Media Project", shot.media_project)
-		shot_asset = _get_or_create_shot_output_asset(shot, project.name)
-		profile = _get_delivery_profile(project, generation_run_name)
-		expected_frames = _shot_frame_count(shot, profile)
-		try:
-			with tempfile.TemporaryDirectory(prefix=f"joymedia-cumulative-{shot.name}-") as temp_dir:
-				normalized_path = Path(temp_dir) / f"{shot.name}.mp4"
-				_normalize_segment(
-					_get_artifact_path(artifact),
-					normalized_path,
-					profile,
-					expected_frames,
-					drop_first=False,
-					preserve_audio=True,
-				)
-				_validate_normalized_video(normalized_path, profile, expected_frames=expected_frames)
-				video_bytes = normalized_path.read_bytes()
-				video_duration = _get_video_duration(normalized_path)
-		except (OSError, subprocess.CalledProcessError, ValueError) as exc:
-			frappe.throw(_("Unable to normalize cumulative Shot output: {0}").format(_command_error(exc)))
-		file_doc = frappe.get_doc(
-			{
-				"doctype": "File",
-				"file_name": f"{shot.name}.mp4",
-				"content": video_bytes,
-				"is_private": 1,
-				"attached_to_doctype": "Media Asset",
-				"attached_to_name": shot_asset.name,
-			}
-		).insert(ignore_permissions=True)
-		asset_version = frappe.get_doc(
-			{
-				"doctype": "Asset Version",
-				"media_asset": shot_asset.name,
-				"file": file_doc.file_url,
-				"source": "Composed",
-				"duration_seconds": video_duration,
-				"fps": profile["fps"],
-				"source_generation_attempt": attempt,
-			}
-		).insert(ignore_permissions=True)
-		_select_output_for_review(shot, asset_version.name)
-		return asset_version.name
-
-
 def _select_output_for_review(shot, asset_version_name):
 	"""Select a new immutable take and immediately run configured visual QA.
 
@@ -240,21 +170,6 @@ def _select_output_for_review(shot, asset_version_name):
 	from .visual_quality import queue_automated_shot_review
 
 	queue_automated_shot_review(shot.name, asset_version_name)
-
-
-def _promote_artifact_file(artifact, media_asset, file_name):
-	"""Copy an internal artifact file into the customer-visible asset library."""
-	source_file = frappe.get_doc("File", {"file_url": artifact.frappe_file})
-	return frappe.get_doc(
-		{
-			"doctype": "File",
-			"file_name": file_name,
-			"content": source_file.get_content(),
-			"is_private": 1,
-			"attached_to_doctype": "Media Asset",
-			"attached_to_name": media_asset.name,
-		}
-	).insert(ignore_permissions=True)
 
 
 def _get_or_create_shot_output_asset(shot, media_project):
@@ -328,38 +243,6 @@ def _shot_frame_count(shot, profile):
 	if frames <= 0:
 		raise ValueError(f"Shot {shot.name} has no positive timeline duration")
 	return frames
-
-
-def _validate_shots(shots, media_project_name):
-	if not shots:
-		frappe.throw(_("Media Project {0} has no Shots.").format(media_project_name))
-
-	seen_numbers = set()
-	for shot in shots:
-		if shot.shot_number < 1:
-			frappe.throw(_("Shot {0} must have a shot number of at least 1.").format(shot.name))
-		if shot.shot_number in seen_numbers:
-			frappe.throw(_("Shot number {0} is duplicated in this Media Project.").format(shot.shot_number))
-		seen_numbers.add(shot.shot_number)
-		if not shot.selected_output_asset_version:
-			frappe.throw(_("Shot {0} has no selected output asset version.").format(shot.name))
-		if float(shot.duration_seconds or 0) <= 0 and int(shot.planned_frame_count or 0) <= 0:
-			frappe.throw(_("Shot {0} has no positive timeline duration.").format(shot.name))
-
-
-def _get_shot_output_path(shot):
-	asset_version = frappe.get_doc("Asset Version", shot.selected_output_asset_version)
-	media_asset = frappe.get_doc("Media Asset", asset_version.media_asset)
-	if media_asset.media_type != "Video":
-		frappe.throw(_("Shot {0} selected output must be a video Asset Version.").format(shot.name))
-	if not asset_version.file:
-		frappe.throw(_("Asset Version {0} has no attached file.").format(asset_version.name))
-
-	file_doc = frappe.get_doc("File", {"file_url": asset_version.file})
-	path = Path(file_doc.get_full_path())
-	if not path.exists():
-		frappe.throw(_("Asset Version file does not exist: {0}").format(path))
-	return path
 
 
 SEPARATE_EFFECTS_LAYER = "Separate effects layer"
@@ -443,49 +326,6 @@ def _get_audio_asset_path(asset_version_name):
 
 def _get_timeline_audio_path(clip):
 	return _get_audio_asset_path(clip.source_asset_version)
-
-
-def _normalize_shot(source_path, normalized_path, profile, planned_frames):
-	"""Normalize one clip and force it to the exact editor frame count.
-
-	The generated source may be longer or shorter than the edited timeline clip.
-	Long clips are trimmed. Short clips are padded by holding the final frame,
-	which makes the existing UI's Extend action deterministic instead of silently
-	being ignored by the final composition step.
-	"""
-	if planned_frames <= 0:
-		raise ValueError("Shot planned frame count must be greater than zero")
-
-	planned_duration = planned_frames / profile["fps"]
-	video_filter = (
-		f"fps={profile['fps']:g},"
-		f"tpad=stop_mode=clone:stop_duration={planned_duration:.6f},"
-		f"trim=end_frame={planned_frames},setpts=PTS-STARTPTS,"
-		f"scale={profile['width']}:{profile['height']}:force_original_aspect_ratio=increase,"
-		f"crop={profile['width']}:{profile['height']}"
-	)
-	_run_ffmpeg(
-		[
-			"ffmpeg",
-			"-y",
-			"-i",
-			str(source_path),
-			"-map",
-			"0:v:0",
-			"-vf",
-			video_filter,
-			"-an",
-			"-c:v",
-			"libx264",
-			"-profile:v",
-			"high",
-			"-pix_fmt",
-			"yuv420p",
-			"-movflags",
-			"+faststart",
-			str(normalized_path),
-		]
-	)
 
 
 def _normalize_segment(

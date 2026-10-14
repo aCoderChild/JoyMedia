@@ -4,7 +4,8 @@ from pathlib import Path
 
 from frappe.tests.utils import FrappeTestCase
 
-from joymedia.services.audio_check import effects_score, is_effects_like
+from joymedia.services.audio_check import effects_score
+from joymedia.services.tuning import tune
 
 
 def _tone(path, source):
@@ -18,7 +19,7 @@ class TestEffectsScreen(FrappeTestCase):
 			_tone(noise, "anoisesrc=color=white:amplitude=0.3:sample_rate=16000")
 			_tone(tone, "sine=frequency=220:sample_rate=16000")
 			_tone(silence, "anullsrc=r=16000:cl=mono")
-			self.assertTrue(is_effects_like(noise))
-			self.assertFalse(is_effects_like(tone))
+			self.assertGreaterEqual(effects_score(noise), tune("effects_flatness_min"))
+			self.assertLess(effects_score(tone), tune("effects_flatness_min"))
 			self.assertGreater(effects_score(noise), effects_score(tone))
-			self.assertIsNone(is_effects_like(silence))
+			self.assertIsNone(effects_score(silence))

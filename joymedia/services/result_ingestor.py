@@ -418,10 +418,6 @@ def _execution_timestamp(history, message_name):
 	return None
 
 
-def _find_primary_mp4(history, preferred_node_keys=None):
-	return _find_output_by_extensions(history, (".mp4",), preferred_node_keys)
-
-
 def _find_primary_output(history, workflow, preferred_node_keys=None):
 	media_type = getattr(workflow, "output_media_type", "Video") if workflow else "Video"
 	extensions = {

@@ -145,7 +145,7 @@ def evaluate(name, image_bytes, project_name):
 	"""Mechanical checks of a rendered keyframe; returns a list of (check, passed, detail)."""
 	from PIL import Image
 
-	from joymedia.services.subject_overlay import layout, pasted_references
+	from joymedia.services.subject_overlay import pasted_references
 
 	case, results = CASES[name], []
 	if not image_bytes:

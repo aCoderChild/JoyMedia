@@ -464,22 +464,6 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual("No staged input was available.", job.error_summary)
 		self.assertEqual("Failed", set_value.call_args.args[2]["status"])
 
-	@patch("joymedia.services.generation_orchestrator._refresh_run_counters")
-	@patch("joymedia.services.generation_orchestrator._enqueue")
-	@patch("joymedia.services.generation_orchestrator.frappe.get_doc")
-	def test_generation_completion_does_not_enqueue_project_export(self, get_doc, enqueue, refresh_counters):
-		run = frappe._dict(name="RUN-00001", status="Completed")
-		get_doc.return_value = run
-
-		generation_orchestrator.enqueue_finalization_if_ready(run.name)
-
-		refresh_counters.assert_called_once_with(run)
-		enqueue.assert_not_called()
-
-	def test_generation_finalization_endpoint_is_removed(self):
-		with self.assertRaises(frappe.ValidationError):
-			generation_orchestrator.finalize_run("RUN-00001")
-
 	@patch("joymedia.services.post_production.resume_post_production_if_approved", return_value={"status": "Awaiting QA"})
 	def test_generation_completion_treats_pending_human_qa_as_expected(self, resume):
 		self.assertEqual({"status": "Awaiting QA"}, generation_orchestrator._finish_film("PRJ-00001"))

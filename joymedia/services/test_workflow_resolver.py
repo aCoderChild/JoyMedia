@@ -1,5 +1,4 @@
 import json
-from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -19,27 +18,6 @@ from joymedia.services.workflow_resolver import (
 
 
 class TestWorkflowResolver(FrappeTestCase):
-	def test_selected_pipeline_supplies_the_keyframe_role_contract(self):
-		final_workflow = frappe._dict(name="WF-VIDEO", bindings=[frappe._dict(
-			binding_key="first_frame", required_input_role="first_frame", value_type="File Path",
-			accepted_media_type="Image", allow_multiple=0, required=1,
-		)])
-		keyframe_workflow = frappe._dict(name="WF-KEYFRAME", bindings=[
-			frappe._dict(binding_key=role, required_input_role=role, value_type="File Paths",
-				accepted_media_type="Image", allow_multiple=1, required=0)
-			for role in ("person", "product", "environment")
-		])
-		pipeline = frappe._dict(name="PIPE-TEST", steps=[
-			frappe._dict(workflow=keyframe_workflow.name), frappe._dict(workflow=final_workflow.name),
-		])
-		documents = {
-			("Generation Pipeline", "PIPE-TEST"): pipeline,
-			("Generation Workflow", keyframe_workflow.name): keyframe_workflow,
-		}
-		with patch.object(frappe, "get_doc", side_effect=lambda doctype, name: documents[(doctype, name)]):
-			contract = workflow_profiles.planning_input_contract(final_workflow, "PIPE-TEST")
-		self.assertEqual(["person", "product", "environment"], [row["role"] for row in contract[:3]])
-
 	def test_ordered_bindings_use_declared_role_and_order(self):
 		bindings = [
 			frappe._dict(binding_key="product_primary", required_input_role="product_reference",

@@ -17,7 +17,6 @@ from .comfyui_client import (
 )
 from .prompt_compiler import compile_prompt
 from .reference_compositor import compose_reference_board
-from .result_ingestor import sync_attempt_result
 from .workflow_resolver import resolve_attempt
 from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
 
@@ -33,20 +32,6 @@ def submit_attempt_from_ui(attempt_name: str):
 	result = submit_attempt(attempt_name)
 	frappe.db.commit()
 	return {"prompt_id": result.get("prompt_id"), "result": result}
-
-
-def sync_attempt_result_from_ui(attempt_name: str):
-	result = sync_attempt_result(attempt_name)
-	frappe.db.commit()
-	return result
-
-
-def prepare_attempt(attempt_name: str):
-	"""Resolve an attempt without submitting it to ComfyUI."""
-	attempt = frappe.get_doc("Generation Attempt", attempt_name)
-	job = frappe.get_doc("Generation Task", attempt.generation_task)
-	job.validate_for_execution()
-	return resolve_attempt(attempt_name)
 
 
 def prepare_generation_task(job_name: str, input_snapshot=None):
@@ -105,7 +90,6 @@ def attach_chained_inputs(job):
 	previous_attempt = get_effective_attempt(job.depends_on_task)
 	if not previous_attempt or previous_attempt.status != "Completed":
 		return False
-	workflow = frappe.get_doc("Generation Workflow", job.workflow)
 	if job.dependency_artifact_role:
 		artifact = get_attempt_artifact(previous_attempt.name, job.dependency_artifact_role)
 		return bool(artifact and artifact.frappe_file)

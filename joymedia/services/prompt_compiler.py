@@ -1,4 +1,3 @@
-import hashlib
 import json
 import re
 
@@ -68,43 +67,10 @@ def temporal_timing_instruction(shot, is_final=False, start_seconds=None, end_se
 	return "Chronological action plan (approximate timing): " + "; ".join(parts) + ". " + ending
 
 
-def segment_action_timing_instruction():
-	"""Compatibility text for callers outside a concrete shot context."""
-	return "Use the shot's seconds-based action plan; keep one continuous action and a natural handoff."
-
-
-def compile_prompt_from_ui(shot: str):
-	prompt_text = compile_prompt(shot=shot)
-	return {
-		"prompt_text": prompt_text,
-		"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
-	}
-
-
 def compile_prompt(shot: str):
 	shot = frappe.get_doc("Shot", shot)
 	project = frappe.get_doc("Media Project", shot.media_project)
 	return compile_prompt_for_documents(shot, project)
-
-
-def compile_segment_prompt(shot: str, segment_index: int, segment_count: int, prompt_source="motion", is_final=False):
-	doc = frappe.get_doc("Shot", shot)
-	project = frappe.get_doc("Media Project", doc.media_project)
-	base = compile_prompt_for_documents(doc, project, prompt_source=prompt_source, is_final=is_final)
-	if segment_count == 1:
-		return base
-	if segment_index == 1:
-		return (
-			f"{base}\n\nThis is segment 1 of {segment_count}. "
-			"Begin the planned action naturally.\n\n"
-			f"{temporal_timing_instruction(doc, is_final=is_final)}"
-		).strip()
-	return (
-		f"{base}\n\nThis is continuation segment {segment_index} of {segment_count}. "
-		"Continue directly from the supplied first frame, which is the last frame of the previous segment. "
-		"Do not restart or reintroduce the action.\n\n"
-		f"{temporal_timing_instruction(doc, is_final=is_final)}"
-	).strip()
 
 
 def compile_segment_prompt_from_snapshot(
@@ -424,22 +390,6 @@ def _role_of(reference):
 	return "character" if role in ("person", "people", "talent") else role
 
 
-def _character_labels(shot, project):
-	"""The labels of the Character references the scene uses, in order."""
-	def field(row, key):
-		return row.get(key) if hasattr(row, "get") else getattr(row, key, None)
-
-	labels = {
-		field(row, "asset_version"): field(row, "label")
-		for row in (project.get("references") or project.get("selected_media") or [])
-	}
-	return [
-		labels[field(r, "asset_version")]
-		for r in getattr(shot, "references", None) or []
-		if _role_of(r) == "character" and labels.get(field(r, "asset_version"))
-	]
-
-
 def _describe_character(label):
 	"""What the image model is told about a character: the label's own English detail, else its role."""
 	detail = label.split(" (", 1)[1].rstrip(")") if " (" in label else ""
@@ -518,33 +468,6 @@ def _size_sentence(sized):
 				f"towers over {name}, who comes up only to {big}'s waist"
 			)
 	return ("Scale matters: " + "; ".join(parts) + ". ") if parts else ""
-
-
-def _product_note(shot, project):
-	"""Where the products are in a drawn scene: placed naturally in it, with no printed words."""
-	from .subject_overlay import describe_colours
-
-	labels = {
-		(row.get("asset_version") if hasattr(row, "get") else getattr(row, "asset_version", None)):
-		(row.get("label") if hasattr(row, "get") else getattr(row, "label", None))
-		for row in (project.get("references") or project.get("selected_media") or [])
-	}
-	colours = []
-	for reference in getattr(shot, "references", None) or []:
-		if _role_of(reference) != "product":
-			continue
-		version = reference.get("asset_version") if hasattr(reference, "get") else getattr(reference, "asset_version", None)
-		if version in labels:
-			colours.append(describe_colours(version).replace("mostly ", "") or "")
-	if not colours:
-		return ""
-	count = len(colours)
-	return (
-		f"The {'products' if count > 1 else 'product'} from the product reference "
-		f"({'; '.join(c for c in colours if c)}) {'sit' if count > 1 else 'sits'} naturally in the scene, resting on a "
-		"low table, a counter or the floor to the side of the characters and away from their feet, at the size of a real "
-		"household product, with only soft, unreadable label texture. "
-	)
 
 
 def _draw_prompt(shot, project):
@@ -689,16 +612,3 @@ def _reference_asset_versions_from_snapshot(shot, snapshot):
 		if reference.get("asset_version")
 	]
 
-
-def _build_source_snapshot(shot, project):
-	return {
-		"media_project": project.name,
-		"shot": shot.name,
-		"generation_prompt": shot.generation_prompt or "",
-		"image_prompt": getattr(shot, "image_prompt", None) or "",
-		"motion_plan_json": getattr(shot, "motion_plan_json", None) or "",
-		"start_state": getattr(shot, "start_state", None) or "",
-		"end_state": getattr(shot, "end_state", None) or "",
-		"handoff_type": getattr(shot, "handoff_type", None) or "",
-		"global_instructions": project.get("global_instructions") or "",
-	}

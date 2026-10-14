@@ -369,14 +369,6 @@ def _resolve_declared_binding(binding, inputs, role_slot=0):
 		allow_multiple=bool(getattr(binding, "allow_multiple", 0)),
 		role_slot=role_slot,
 	)
-def _resolve_semantic_binding(binding, job, staged_inputs, role_slot=0):
-	return _resolve_declared_binding(
-		binding,
-		{PROMPT_BINDING_KEY: job.prompt_text, **staged_inputs},
-		role_slot=role_slot,
-	)
-
-
 def _role_slot_index(bindings, binding):
 	"""Return a role-local slot index without encoding order in a binding name."""
 	role = frappe.scrub(getattr(binding, "required_input_role", None) or "")

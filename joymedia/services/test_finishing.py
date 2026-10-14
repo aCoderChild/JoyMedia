@@ -21,6 +21,16 @@ def _fake_comfyui_chunk(chunk_path, kept):
 	return output.read_bytes()
 
 
+def _frame_count(path):
+	import subprocess as _sp
+
+	out = _sp.run(
+		["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(path)],
+		capture_output=True, text=True,
+	)
+	return int(out.stdout.strip())
+
+
 class TestFinishing(FrappeTestCase):
 	def test_studio_profiles(self):
 		delivery = {"width": 1920, "height": 1080, "fps": 24.0}
@@ -48,7 +58,7 @@ class TestFinishing(FrappeTestCase):
 
 			self.assertEqual(3, finish_chunk.call_count)
 			# Each chunk but the last carries the next chunk's first frame.
-			self.assertEqual([25, 25, 10], [finishing._frame_count(call.args[0]) for call in finish_chunk.call_args_list])
+			self.assertEqual([25, 25, 10], [_frame_count(call.args[0]) for call in finish_chunk.call_args_list])
 			_validate_normalized_video(
 				output, {"width": 320, "height": 180, "fps": 60.0}, expected_frames=finishing.finished_frame_count(58, 24)
 			)

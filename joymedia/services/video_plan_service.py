@@ -355,51 +355,6 @@ def _name_untitled_project(project, film_title):
 		frappe.db.set_value("Media Project", project.name, "project_name", title, update_modified=False)
 
 
-def _assign_reference_pool(plan, project, settings, contract_by_role, project_references, mode):
-	"""Assign selected image references to shots when the planner omits them."""
-	image_references = []
-	for row in project.selected_media or []:
-		if not row.reference_key or not row.asset_version:
-			continue
-		media_asset = frappe.db.get_value(
-			"Asset Version", row.asset_version, "media_asset"
-		)
-		if media_asset and frappe.db.get_value("Media Asset", media_asset, "media_type") == "Image":
-			image_references.append(row)
-	if not image_references:
-		return
-
-	from joymedia.services.generation_settings import detect_reference_mode
-
-	reference_mode = detect_reference_mode(len(image_references))
-	product_role = "product_reference" if "product_reference" in contract_by_role else None
-	first_frame_role = next(
-		(
-			role for role, contract in contract_by_role.items()
-			if contract.get("min_count") and contract.get("max_count") == 1
-		),
-		"first_frame",
-	)
-	for shot in plan["shots"]:
-		if mode == "Continuous" and shot["shot_number"] != 1:
-			continue
-		references = shot.setdefault("references", [])
-		role_counts = {}
-		for reference in references:
-			role = frappe.scrub(reference.get("usage_role") or "")
-			role_counts[role] = role_counts.get(role, 0) + 1
-		for role, contract in contract_by_role.items():
-			needed = max(0, int(contract.get("min_count") or 0) - role_counts.get(role, 0))
-			if not needed:
-				continue
-			if role == product_role and reference_mode == "Multi-reference" and len(image_references) < 2:
-				frappe.throw(_("Multi-reference mode requires at least two selected image references."))
-			for offset in range(needed):
-				row = image_references[(shot["shot_number"] - 1 + offset) % len(image_references)]
-				references.append({"reference_key": row.reference_key, "usage_role": role})
-			role_counts[role] = role_counts.get(role, 0) + needed
-
-
 def append_video_plan(
 	media_project_name: str = None,
 	plan: dict = None,
