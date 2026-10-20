@@ -51,6 +51,20 @@ class TestShotStructure(TestCase):
 		structure.update(subject_motion="locomotion")
 		self.assertEqual("follow", infer_cinematic_intent(structure)["purpose"])
 
+	def test_reviewed_endpoints_guide_broad_push_without_inventing_a_crop(self):
+		scene = self.scene()
+		scene.motion_plan_json["shot_structure"].update(stage="establish", framing="wide")
+		scene.motion_plan_json["camera_intent"] = {"behavior": "push_in", "purpose": "hook"}
+		scene.references = [
+			{"reference_role": "first_frame", "asset_version": "OPEN"},
+			{"reference_role": "last_frame", "asset_version": "END"},
+		]
+		result = camera_plan(scene, {})
+		self.assertEqual("push_in", result["behavior"])
+		self.assertIn("supplied opening and ending", result["direction"])
+		scene.motion_plan_json["shot_structure"].update(stage="extract", framing="close_up")
+		self.assertEqual("locked", camera_plan(scene, {})["behavior"])
+
 	def test_cinematic_hook_moves_only_with_safe_margins_and_broad_coverage(self):
 		scene = self.scene()
 		scene.motion_plan_json["shot_structure"].update(stage="establish", framing="wide")

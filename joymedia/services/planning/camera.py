@@ -187,20 +187,24 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 					"product_focus": product,
 					"closing": closing,
 				}
+		anchored_push = (
+			behavior == "push_in" and broad_presentation and {"first_frame", "last_frame"} <= roles
+		)
 		if (
 			behavior == "locked"
 			or intent["allow_reframe"]
+			or anchored_push
 			or allows_push(framing_safety)
 			or (generated_composition and broad_presentation and behavior == "push_in")
 		):
 			directions = {
 				"locked": "The camera holds one static shot with fixed position, focal length and focus throughout; no pan, tilt, orbit, zoom or rack focus.",
 				"tracking_backward": "The camera tracks backward smoothly at the moving subject's real-time pace, maintaining its screen size and the approved opening framing. Camera speed does not slow the action. The stationary setting has continuous depth-dependent parallax; no sliding or resetting backdrop. No orbit, zoom or lateral drift; settle at the ending composition.",
-				"push_in": "The camera makes one smooth controlled push-in along the same optical axis toward the product detail, following the supplied opening and ending compositions. No simultaneous pan, tilt, orbit or focus pull. Settle into the final view before the end.",
+				"push_in": "The camera makes one smooth controlled push-in along the same optical axis toward the authored focal subject, following the supplied opening and ending compositions. No simultaneous pan, tilt, orbit or focus pull. Settle into the final view before the end.",
 				"pull_back": "The camera makes one smooth axial dolly backward from the supplied opening to the reviewed wider ending, revealing the same three-dimensional setting. Preserve screen direction, subject scale progression and depth-dependent parallax; no orbit, pan or zoom pulse.",
 				"arc": "The camera follows one smooth shallow arc of at most 12 degrees between the supplied reviewed viewpoints, keeping subject distance and screen size stable. The setting remains stationary with depth-dependent parallax. No simultaneous zoom, tilt or axis crossing.",
 			}
-			if behavior == "push_in" and not intent["allow_reframe"]:
+			if behavior == "push_in" and not intent["allow_reframe"] and not anchored_push:
 				limit = 6 if broad_presentation and intent.get("energy") in {"measured", "brisk"} else 2
 				duration = float(shot.get("duration_seconds") or 5)
 				settle = (
