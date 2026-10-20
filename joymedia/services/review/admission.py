@@ -487,6 +487,7 @@ def run_gate(attempt_name, artifact_name, history, last_frame_name, user):
 	from frappe.utils.synchronization import filelock
 
 	from joymedia.services.generation.ingestor import _complete_attempt
+	from joymedia.services.runtime.transactions import persist_result
 
 	frappe.set_user(user)
 	with filelock(f"visual-admission-{attempt_name}"):
@@ -525,18 +526,22 @@ def run_gate(attempt_name, artifact_name, history, last_frame_name, user):
 		# Result polling uses this same lock. Hold it only for the final writes,
 		# never while waiting for the remote visual judge.
 		with filelock(f"joymedia-sync-attempt-{attempt_name}"):
-			frappe.db.commit()
-			attempt.reload()
-			run.reload()
-			job.reload()
-			if (
-				attempt.status not in {"Running", "Queued"}
-				or job.status in {"Cancelled", "Failed"}
-				or run.status in {"Cancelled", "Failed"}
-			):
+			def save_computed_report():
+				attempt.reload()
+				run.reload()
+				job.reload()
+				if (
+					attempt.status not in {"Running", "Queued"}
+					or job.status in {"Cancelled", "Failed"}
+					or run.status in {"Cancelled", "Failed"}
+				):
+					return False
+				store_report(attempt, artifact, report)
+				return True
+
+			# Retry only persistence after a database conflict, not remote inspection.
+			if not persist_result(save_computed_report):
 				return
-			store_report(attempt, artifact, report)
-			frappe.db.commit()
 			attempt.reload()
 			_complete_attempt(
 				attempt,

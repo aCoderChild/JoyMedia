@@ -35,8 +35,8 @@ class TestVisualAdmission(unittest.TestCase):
 		from pathlib import Path
 		from tempfile import TemporaryDirectory
 
-		for cancelled in (False, True):
-			with self.subTest(cancelled=cancelled), TemporaryDirectory() as folder:
+		for cancelled, conflict in ((False, False), (True, False), (False, True)):
+			with self.subTest(cancelled=cancelled, conflict=conflict), TemporaryDirectory() as folder:
 				path = Path(folder) / "video.mp4"
 				path.write_bytes(b"immutable output")
 				attempt = Mock(name="attempt", status="Running")
@@ -50,6 +50,7 @@ class TestVisualAdmission(unittest.TestCase):
 					frappe_file="/private/files/video.mp4",
 				)
 				active = set()
+				writes = []
 
 				@contextmanager
 				def locked(name):
@@ -68,10 +69,17 @@ class TestVisualAdmission(unittest.TestCase):
 				def write(*args):
 					self.assertIn("joymedia-sync-attempt-A", active)
 
+				def store_write(*args):
+					write(*args)
+					writes.append(args)
+					if conflict and len(writes) == 1:
+						raise a.frappe.QueryDeadlockError("1020 naming-series conflict")
+
 				with (
 					patch("frappe.utils.synchronization.filelock", side_effect=locked),
 					patch.object(a.frappe, "set_user"),
 					patch.object(a.frappe.db, "commit"),
+					patch.object(a.frappe.db, "rollback") as rollback,
 					patch.object(
 						a.frappe,
 						"get_doc",
@@ -83,9 +91,9 @@ class TestVisualAdmission(unittest.TestCase):
 						}[kind],
 					),
 					patch.object(a, "context_for", return_value=(job, run, {}, {})),
-					patch.object(a, "inspect_file", side_effect=inspect),
+					patch.object(a, "inspect_file", side_effect=inspect) as inspection,
 					patch("joymedia.services.workflows.capabilities.controls", return_value=[]),
-					patch.object(a, "store_report", side_effect=write) as store,
+					patch.object(a, "store_report", side_effect=store_write) as store,
 					patch(
 						"joymedia.services.generation.ingestor._complete_attempt", side_effect=write
 					) as complete,
@@ -95,8 +103,10 @@ class TestVisualAdmission(unittest.TestCase):
 					store.assert_not_called()
 					complete.assert_not_called()
 				else:
-					store.assert_called_once()
+					self.assertEqual(store.call_count, 2 if conflict else 1)
 					complete.assert_called_once()
+				inspection.assert_called_once()
+				self.assertEqual(rollback.call_count, 1 if conflict else 0)
 				self.assertFalse(active)
 
 	def test_product_only_does_not_authorize_a_human_hand(self):

@@ -238,3 +238,31 @@ The reference drawing branch must append the same `opening_instruction` as the o
 A scene contract can optionally carry up to eight `proportions` rows with declared `subject`, `reference`, `axis` (`height`, `width`, `depth`) and finite ordered `min`/`max` ratios. These express authored physical dimensions at comparable camera depth; they are not detector measurements. Both direct and inverse duplicate pairs are rejected. The image prompt, frozen video prompt and independent review claims share these rows. Editing them changes the keyframe signature. Keep the target generic: reference image crop size is never object scale.
 
 For seated interaction, name the seat supporting the pelvis and specify foreground occlusion by the work surface. A prompt such as “at a table” does not establish whether the actor sits on the table, on a chair, or on the floor. Review these relationships on the actual first frame before rendering motion. Prose constraints and vision-model judgments still do not guarantee correct geometry.
+
+### Anatomy and contact references
+
+Select the intended views of each identity explicitly. A pose photograph can contain
+an incidental prop or gesture; role instructions do not guarantee that a generator
+will ignore it. Do not combine conflicting pose variants merely to increase the
+reference count. Compare body shape, limb attachment, paw/hand shape and relative
+object scale with the approved view before admitting a new opening image. A close
+crop cannot establish the proportions of a full figure that is outside the frame.
+
+Repair an incorrect opening before running image-to-video again. For a local
+contact demonstration, opening and ending references should agree on camera,
+support, immobile objects, lighting and the acting limb. The ending must reveal the
+physical consequence, not just a different pose over unchanged material. Bind both
+images through the workbook's existing reference columns; the normal approved
+plan, frozen inputs, workflow capabilities and review remain in force.
+
+The native Klein profile supports an optional General composition reference using
+the same reference-latent chain as its existing identity slots. Composition guidance
+is additional conditioning, not an anatomy guarantee. A rejected image is never
+promoted just because this workflow decoded it successfully.
+
+Workflow delivery may declare `temporal_fit: "preserve_endpoints"` when native frame
+grids exceed an authored duration. The compositor maps the complete source interval
+to the requested frame count, including the actual final frame, with proportional
+audio timing. The default remains trimming. This delivery choice prevents a
+resolved end state from being silently cut off; it does not repair bad generated
+motion or change the authored total duration.
