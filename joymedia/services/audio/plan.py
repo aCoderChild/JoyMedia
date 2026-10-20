@@ -104,6 +104,8 @@ def place_cue_audio(project_name, shot_name, role, asset_version_name):
 		for name in frappe.get_all("Timeline Clip", filters={"media_project": project.name}, pluck="name")
 		if name not in existing
 	)
+	# Retain ownership so rerendered effects replace this scene's earlier layer.
+	frappe.db.set_value("Timeline Clip", new_clip, "shot", shot_name, update_modified=False)
 	if role == "Voiceover":
 		# Narration takes priority over music and effects.
 		frappe.db.set_value("Timeline Clip", new_clip, "duck_others", 1, update_modified=False)

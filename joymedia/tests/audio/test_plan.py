@@ -121,6 +121,16 @@ class TestAudioPlan(FrappeTestCase):
 		self.assertTrue(plan["Voiceover"]["scheduled"])
 		self.assertFalse(plan["SFX"]["scheduled"])
 
+	def test_effect_layer_is_found_by_scene_for_replacement(self):
+		version = self._audio_version()
+		result = place_cue_audio(self.project.name, self.shot.name, "SFX", version.name)
+		layers = frappe.get_all(
+			"Timeline Clip",
+			filters={"media_project": self.project.name, "shot": self.shot.name, "audio_role": "SFX"},
+			pluck="name",
+		)
+		self.assertEqual([result["clip"]], layers)
+
 	def test_unknown_role_is_rejected(self):
 		with self.assertRaises(frappe.ValidationError):
 			place_cue_audio(self.project.name, self.shot.name, "Laugh", "AV")
