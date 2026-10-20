@@ -19,13 +19,15 @@
       "keyframe_framing_prefix": 88,
       "audio_layer_ownership": 41,
       "result_persistence_and_cancellation": 116,
-      "manual_physics_candidate_boundary": 78
+      "manual_physics_candidate_boundary": 78,
+      "finishing_retry_and_project_versions": 37,
+      "pure_finishing_retry_and_cancellation": 6
     },
-    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy. Admission commits share the ingestion lock, release it during model I/O, recheck cancellation, and avoid repeated Running-state writes. Static presentation preserves the authored composition mode; closing holds prefer the actual frozen image dependency and fail closed when it is missing. Opening-frame prefixes use structural framing before legacy camera prose; an unplanned scene no longer invents a shot-index crop. Placed cue audio retains its shot, enabling the existing one-layer replacement query to remove earlier effects instead of stacking them. Composed outputs use the existing bounded persistence retry after expensive processing, recheck cancellation, and reuse immutable outputs; unchanged task summaries do not write again. Late finishing workers cannot revive Cancelled state. Physics relationship uncertainty follows the existing manual-review candidate path; status remains Needs Review. Witnessed physics violations and uncertain action, identity or staging claims still block.",
-    "result": "Final full sweep: all 1059 tests in 113 module groups passed.",
+    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy. Admission commits share the ingestion lock, release it during model I/O, recheck cancellation, and avoid repeated Running-state writes. Static presentation preserves the authored composition mode; closing holds prefer the actual frozen image dependency and fail closed when it is missing. Opening-frame prefixes use structural framing before legacy camera prose; an unplanned scene no longer invents a shot-index crop. Placed cue audio retains its shot, enabling the existing one-layer replacement query to remove earlier effects instead of stacking them. Composed outputs use the existing bounded persistence retry after expensive processing, recheck cancellation, and reuse immutable outputs; unchanged task summaries do not write again. Late finishing workers cannot revive Cancelled state. Physics relationship uncertainty follows the existing manual-review candidate path; status remains Needs Review. Witnessed physics violations and uncertain action, identity or staging claims still block. Explicit finishing requests and status writes use bounded transaction retries; request timestamps remain stable across retries, with queue dispatch outside the retry callback.",
+    "result": "Final full sweep: all 1068 tests in 113 module groups passed.",
     "final_full_sweep": {
       "modules": 113,
-      "tests": 1059,
+      "tests": 1068,
       "failed_modules": 0
     }
   },
@@ -48,8 +50,8 @@
   "compatibility": "Existing whitelisted methods, queued-job import paths and Frappe DocTypes preserved.",
   "video_qualification": {
     "project": "PRJ-02565",
-    "review_export": "ASTV-04820",
-    "file": "/private/files/PRJ-02565-edited-565a8f71.mp4",
+    "review_export": "ASTV-04852",
+    "file": "/private/files/PRJ-02565-edited-db471db3.mp4",
     "video_frames": 720,
     "fps": 24,
     "video_duration_seconds": 30,
@@ -59,18 +61,29 @@
     ],
     "generation_note": "Export is upscaled from the source takes; this is not native 2K inference.",
     "full_decode": "passed",
-    "audio_peak_dbfs": -2.6379,
+    "audio_peak_dbfs": -2.83796,
     "audio_full_scale_samples": 0,
     "music_asset": "ASTV-04819",
     "music_duration_seconds": 31,
-    "manual_review": "Held: water exits the glass sidewall in the spill take; the extraction take crops the package logo. Earlier duplicate/photo-card examples are absent in sampled comparison frames. No production release or blanket resolution is claimed.",
+    "manual_review": "Selected and reviewed all eight takes. Spill replaced with rim-origin flow; extraction and contact blot separated into two shots; original artwork retained in the closing composition. Review export completed; no production release certification is claimed.",
     "replacement_runs": [
       "RUN-00761",
-      "RUN-00762"
+      "RUN-00762",
+      "RUN-00763"
     ],
     "replacement_profile": "Native base 20-step, turbo disabled; actual submitted graph verified.",
     "global_pipeline_promoted": false,
-    "template_update": "Eight source rows: extraction 2s plus contact insert 2s replace the combined 4s beat. Total remains 720 frames / 30 seconds. Four original-pixel opening controls are catalogued in the workbook."
+    "template_update": "Eight source rows: extraction 2s plus contact insert 2s replace the combined 4s beat. Total remains 720 frames / 30 seconds. Four original-pixel opening controls are catalogued in the workbook.",
+    "shots": 8,
+    "working_edit": true,
+    "sha256": "fc572b25a45229ffe4f41826461d0a2ff30dcf4a4284601b22e3107d64611383",
+    "audio_rms_dbfs": -23.6989,
+    "feedback_resolution": {
+      "latest_V9_comments": 5,
+      "additional_review_findings": 2,
+      "historical_comments": "Earlier-version history retained unchanged."
+    },
+    "browser": "Final export loaded in the owner project view, readyState 4, with no JavaScript errors."
   },
   "reference_preparation": {
     "workflow": "ComfyUI native ImageCropV2 through existing generic adapter",
@@ -83,5 +96,10 @@
     "source_rgb_unchanged": true,
     "detected_category": "package",
     "scene_detections": 1
+  },
+  "ref2va": {
+    "installed_on": "3.5 TB GPU model volume",
+    "size_gb": 20.97,
+    "usage": "Reference-guided cheek-wipe take; other shots use reviewed first/last-frame takes or original source-frame hold. Ref2VA is not a guarantee of exact printed artwork."
   }
 }

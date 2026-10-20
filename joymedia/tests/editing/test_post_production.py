@@ -1,5 +1,6 @@
 from datetime import datetime
-from unittest.mock import patch
+from unittest import TestCase
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -426,9 +427,11 @@ class TestMusicBed(FrappeTestCase):
 			self.assertEqual("soft ukulele", post_production.music_brief("PRJ-X"))
 
 
-class TestFinishingCancellation(FrappeTestCase):
+class TestFinishingCancellation(TestCase):
 	def test_late_worker_cannot_revive_cancelled_finishing(self):
 		with (
+			patch.object(frappe.db, "commit"),
+			patch.object(frappe.db, "rollback"),
 			patch.object(frappe.db, "get_value", return_value="Cancelled"),
 			patch.object(frappe.db, "set_value") as write,
 		):
@@ -436,3 +439,41 @@ class TestFinishingCancellation(FrappeTestCase):
 				with self.assertRaisesRegex(ValueError, "cancelled"):
 					post_production._set_status("PROJECT", status)
 		write.assert_not_called()
+
+
+class TestFinishingWriteRetry(TestCase):
+	def test_explicit_rebuild_request_retries_write_before_queueing_once(self):
+		project = Mock()
+		project.name = "PROJECT"
+		with (
+			patch.object(frappe, "get_doc", return_value=project),
+			patch.object(frappe.db, "commit"),
+			patch.object(frappe.db, "rollback") as rollback,
+			patch.object(
+				frappe.db, "set_value", side_effect=[frappe.QueryDeadlockError("row changed"), None]
+			) as write,
+			patch.object(
+				post_production, "queue_post_production_internal", return_value={"status": "Queued"}
+			) as queue,
+		):
+			self.assertEqual({"status": "Queued"}, post_production.queue_post_production("PROJECT"))
+		self.assertEqual(2, write.call_count)
+		rollback.assert_called_once()
+		queue.assert_called_once_with("PROJECT")
+
+	def test_request_timestamp_retry_does_not_enqueue_duplicate_live_finish(self):
+		with (
+			patch.object(post_production, "_shot_video_clips", return_value=[{}]),
+			patch.object(frappe.db, "commit"),
+			patch.object(frappe.db, "rollback") as rollback,
+			patch.object(
+				frappe.db, "set_value", side_effect=[frappe.QueryDeadlockError("row changed"), None]
+			) as write,
+			patch.object(frappe.db, "get_value", return_value="Running"),
+			patch.object(post_production, "is_render_alive", return_value=True),
+			patch.object(post_production, "enqueue_render") as enqueue,
+		):
+			self.assertEqual({"status": "Running"}, post_production.queue_post_production_internal("PROJECT"))
+		self.assertEqual(write.call_args_list[0], write.call_args_list[1])
+		rollback.assert_called_once()
+		enqueue.assert_not_called()

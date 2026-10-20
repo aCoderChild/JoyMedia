@@ -60,6 +60,7 @@ from joymedia.services.editing.rendering import (
 	_video_workflow,
 )
 from joymedia.services.project.render_queue import enqueue_render, is_render_alive
+from joymedia.services.runtime.transactions import persist_result
 
 # Finishing can repeat when selected scenes change during an in-flight job.
 MAX_FINISHING_ROUNDS = 3
@@ -71,8 +72,10 @@ def queue_post_production(project_name: str):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
 	# Asked for by hand: rebuild everything, including a timeline edited by hand.
-	frappe.db.set_value(
-		"Media Project", project.name, "finished_timeline_signature", "", update_modified=False
+	persist_result(
+		lambda: frappe.db.set_value(
+			"Media Project", project.name, "finished_timeline_signature", "", update_modified=False
+		)
 	)
 	return queue_post_production_internal(project.name)
 
@@ -174,8 +177,11 @@ def queue_post_production_internal(project_name):
 	# A finish already running repeats when it sees a request newer than its start.
 	# Do this after validation but before checking for a live job: a newly approved
 	# take must request another pass even while a previous finish is rendering.
-	frappe.db.set_value(
-		"Media Project", project_name, "post_production_requested_at", now_datetime(), update_modified=False
+	requested_at = now_datetime()
+	persist_result(
+		lambda: frappe.db.set_value(
+			"Media Project", project_name, "post_production_requested_at", requested_at, update_modified=False
+		)
 	)
 	status = frappe.db.get_value("Media Project", project_name, "post_production_status")
 	if status in ("Queued", "Running") and is_render_alive(_job_id(project_name)):
@@ -539,20 +545,23 @@ def _keep_to_sound_effects(project_name):
 
 
 def _set_status(project_name, status, step=None, error=None):
-	if (
-		status in {"Running", "Completed"}
-		and frappe.db.get_value("Media Project", project_name, "post_production_status", for_update=True)
-		== "Cancelled"
-	):
-		raise ValueError("Post-production was cancelled.")
+	from joymedia.services.project.realtime import PROJECT_UPDATED, publish_project_event
+
 	values = {"post_production_status": status}
 	if step is not None:
 		values["post_production_step"] = step
 	if error is not None:
 		values["post_production_error"] = error
-	frappe.db.set_value("Media Project", project_name, values, update_modified=False)
-	# db.set_value fires no document event, so tell open studios directly.
-	from joymedia.services.project.realtime import PROJECT_UPDATED, publish_project_event
 
-	publish_project_event(project_name, PROJECT_UPDATED, {"doctype": "Media Project"})
-	frappe.db.commit()
+	def write():
+		if (
+			status in {"Running", "Completed"}
+			and frappe.db.get_value("Media Project", project_name, "post_production_status", for_update=True)
+			== "Cancelled"
+		):
+			raise ValueError("Post-production was cancelled.")
+		frappe.db.set_value("Media Project", project_name, values, update_modified=False)
+		# Publish only after the short write commits; rollback drops the callback.
+		publish_project_event(project_name, PROJECT_UPDATED, {"doctype": "Media Project"})
+
+	persist_result(write)
