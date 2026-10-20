@@ -324,6 +324,103 @@ def _ensure_scene_free(project, shot):
 		frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))
 
 
+@frappe.whitelist(methods=["POST"])
+def retain_held_take_for_review(
+	project_name, shot_name, attempt_name, expected_current, expected_source_sha256, review_note
+):
+	"""Keep action-qualified held footage as a separate, unselected review take.
+
+	This never changes the failed attempt, machine findings or selected output.
+	Only physical/continuity uncertainty is eligible; missing action, identity or
+	cast evidence and every witnessed violation remain blocking.
+	"""
+	import tempfile
+	from pathlib import Path
+
+	from joymedia.services.consistency.repair import held_take_review_candidate
+	from joymedia.services.editing import composer as c
+	from joymedia.services.project.context import _sheet_scenes
+	from joymedia.services.review.admission import digest, report_for
+	from joymedia.services.scene.direction import authored_action, direction_changed
+
+	project, shot = _project_shot(project_name, shot_name)
+	_ensure_scene_free(project, shot)
+	if shot.selected_output_asset_version != expected_current:
+		frappe.throw(_("The selected take changed. Reload the scene history."))
+	if not isinstance(review_note, str) or not review_note.strip() or len(review_note) > 2000:
+		frappe.throw(_("Describe the evidence to inspect in this held take."))
+	attempt = frappe.get_doc("Generation Attempt", attempt_name)
+	task = frappe.get_doc("Generation Task", attempt.generation_task)
+	if task.shot != shot.name or attempt.status != "Failed" or task.status != "Failed":
+		frappe.throw(_("Choose a held attempt from this scene."))
+	run = frappe.get_doc("Generation Run", task.generation_run)
+	if run.media_project != project.name or run.status != "Failed":
+		frappe.throw(_("The held attempt does not belong to this failed project run."))
+	report = report_for(attempt.name)
+	if not report or not held_take_review_candidate(report):
+		frappe.throw(_("Resolve action, cast, identity or witnessed violations before retaining this take."))
+	artifact = frappe.get_doc(
+		"Generation Artifact", {"generation_attempt": attempt.name, "artifact_role": "Primary Video"}
+	)
+	path = c._get_artifact_path(artifact)
+	content_hash = digest(Path(path).read_bytes())
+	if (
+		content_hash != expected_source_sha256
+		or content_hash != report.get("source_sha256")
+		or digest(run.project_snapshot_json.encode()) != report.get("snapshot_sha256")
+		or report.get("artifact") != artifact.name
+	):
+		frappe.throw(_("Held footage or its frozen review evidence changed."))
+	scene = next(s for s in json.loads(run.project_snapshot_json)["shots"] if s["shot"] == shot.name)
+	current = shot.as_dict()
+	current["references"] = [r.as_dict() for r in shot.generation_inputs]
+	current["authored_action"] = authored_action(
+		shot, _sheet_scenes(project).get((shot.storyboard_beat or "", shot.source_timing or ""))
+	)
+	if direction_changed(current, scene):
+		frappe.throw(_("Scene direction changed since this held inference."))
+	tasks = frappe.get_all(
+		"Generation Task", filters={"generation_run": run.name, "shot": shot.name}, pluck="name"
+	)
+	if tasks != [task.name]:
+		frappe.throw(_("Review held segments individually before assembling a chained scene."))
+	asset = c._get_or_create_shot_output_asset(shot, project.name)
+	frappe.db.commit()
+	profile = c._get_delivery_profile(project, run.name)
+	frames = c._shot_frame_count(shot, profile)
+	with tempfile.TemporaryDirectory(prefix="joymedia-held-take-") as directory:
+		output = Path(directory) / "review.mp4"
+		c._normalize_segment(path, output, profile, int(task.segment_frame_count or 0), preserve_audio=True)
+		c._validate_normalized_video(output, profile, expected_frames=frames)
+		content = output.read_bytes()
+	manifest = dict(
+		method="Explicitly retained held inference for review",
+		original_run=run.name,
+		original_attempt=attempt.name,
+		source_sha256=content_hash,
+		output_sha256=digest(content),
+		machine_status=report["status"],
+		machine_policy=report.get("policy"),
+		machine_findings=report["results"],
+		retained_by=frappe.session.user,
+		retained_at=str(frappe.utils.now_datetime()),
+		review_note=review_note.strip(),
+	)
+	version = c._persist_composed_output(
+		run.name,
+		shot.name,
+		asset.name,
+		artifact,
+		content,
+		frames / profile["fps"],
+		profile["fps"],
+		select_output=False,
+		can_select=False,
+		review_manifest=manifest,
+	)
+	return dict(asset_version=version, selected=False, status="Review Required")
+
+
 @frappe.whitelist()
 def use_reviewed_take(project_name, shot_name, asset_version, expected_current):
 	"""Select a reviewed immutable candidate, guarded against stale history tabs."""

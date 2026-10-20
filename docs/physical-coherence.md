@@ -266,3 +266,13 @@ to the requested frame count, including the actual final frame, with proportiona
 audio timing. The default remains trimming. This delivery choice prevents a
 resolved end state from being silently cut off; it does not repair bad generated
 motion or change the authored total duration.
+
+When completed provider footage is held solely for physical/continuity uncertainty,
+`generation.takes.retain_held_take_for_review` can retain a separate unselected
+take using the existing compositor. The request binds the source SHA256, current
+selection, unchanged direction and complete immutable findings. Action, cast and
+identity must be supported; witnessed violations or missing required findings
+block retention. Failed Run/Task/Attempt records and machine findings stay failed.
+The retained version records its requester, note, source/output hashes and full
+findings, and remains **Review Required**. Selection still uses the ordinary
+reviewed-take operation and exact-take release approval remains independent.

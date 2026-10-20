@@ -194,7 +194,17 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 
 
 def _persist_composed_output(
-	run_name, shot_name, asset_name, artifact, content, duration, fps, *, select_output, can_select
+	run_name,
+	shot_name,
+	asset_name,
+	artifact,
+	content,
+	duration,
+	fps,
+	*,
+	select_output,
+	can_select,
+	review_manifest=None,
 ):
 	"""Promote computed bytes in a short retryable transaction, without replaying QA."""
 	from joymedia.services.runtime.transactions import persist_result
@@ -233,6 +243,7 @@ def _persist_composed_output(
 						"duration_seconds": duration,
 						"fps": fps,
 						"source_generation_attempt": artifact.generation_attempt,
+						"edit_manifest_json": json.dumps(review_manifest) if review_manifest else None,
 						"preservation_evidence_json": None
 						if can_select
 						else json.dumps(

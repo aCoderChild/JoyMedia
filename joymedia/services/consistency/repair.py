@@ -600,3 +600,21 @@ def repair_review_candidate(report):
 		and any(r.get("id") == "authored_action" for r in required)
 		and all(r.get("verdict") == "supported" for r in required)
 	)
+
+
+def held_take_review_candidate(report):
+	"""Retain an explicitly requested candidate without overriding failed admission."""
+	if report.get("status") != "Needs Review" or not repair_review_candidate(report):
+		return False
+	rows = report.get("results") or []
+	ids = [r.get("id") for r in rows]
+	if len(ids) != len(set(ids)) or set(ids) != set(report.get("required_claim_ids") or []):
+		return False
+	return all(
+		r.get("verdict") == "supported"
+		or (
+			r.get("verdict") == "uncertain"
+			and (r.get("dimension") == "physics" or r.get("id") in {"continuity", "geometry_qualification"})
+		)
+		for r in rows
+	)
