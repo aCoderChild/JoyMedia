@@ -54,6 +54,9 @@ PLANNING_RULES = (
 - motion_plan.scene_contract is optional when no physical interaction needs constraints.
   Start with {"version":1,"entities":[{"id":"subject","label":"the authored subject"}],"relations":[],"events":[]}.
   Populate only the entities, relationships and events established by this scene; no actor is required.
+  Reference assets are not an entity whitelist: include authored handled props, supports, openings
+  and material sources even when they have no reference image. For an authored transfer, constrain
+  its visible source boundary in an event-scoped check; a broad container label is insufficient.
   Relationship rows use {"kind":"supported_by","subject":"declared subject ID","object":"declared support ID"}.
   Event rows use {"id":"cause","description":"the authored visible event","start":0,"end":1,"after":[]} only when an event is required.
   Declare every referenced entity, use unique IDs, and only assert relationships required by
