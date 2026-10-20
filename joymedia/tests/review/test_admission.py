@@ -296,13 +296,17 @@ class TestVisualAdmission(unittest.TestCase):
 		with TemporaryDirectory() as folder:
 			source = Path(folder) / "frame.png"
 			source.write_bytes(b"frame-evidence")
-			for identifier, verdict, expected in [
-				("physics", "uncertain", True),
-				("physics", "violated", False),
-				("action", "uncertain", False),
+			for identifier, dimension, verdict, expected in [
+				("physics", "physics", "uncertain", True),
+				("relation.0", "physics", "uncertain", True),
+				("relation.0", "physics", "violated", False),
+				("physics", "physics", "violated", False),
+				("action", "action", "uncertain", False),
+				("reference.AV", "identity", "uncertain", False),
+				("check.count", "staging", "uncertain", False),
 			]:
 				report = {
-					"results": [{"id": identifier, "verdict": verdict}],
+					"results": [{"id": identifier, "dimension": dimension, "verdict": verdict}],
 					"required_claim_ids": [identifier],
 				}
 				with (

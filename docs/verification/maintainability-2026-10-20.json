@@ -18,9 +18,10 @@
       "declared_composition_and_retention": 108,
       "keyframe_framing_prefix": 88,
       "audio_layer_ownership": 41,
-      "result_persistence_and_cancellation": 116
+      "result_persistence_and_cancellation": 116,
+      "manual_physics_candidate_boundary": 78
     },
-    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy. Admission commits share the ingestion lock, release it during model I/O, recheck cancellation, and avoid repeated Running-state writes. Static presentation preserves the authored composition mode; closing holds prefer the actual frozen image dependency and fail closed when it is missing. Opening-frame prefixes use structural framing before legacy camera prose; an unplanned scene no longer invents a shot-index crop. Placed cue audio retains its shot, enabling the existing one-layer replacement query to remove earlier effects instead of stacking them. Composed outputs use the existing bounded persistence retry after expensive processing, recheck cancellation, and reuse immutable outputs; unchanged task summaries do not write again. Late finishing workers cannot revive Cancelled state.",
+    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy. Admission commits share the ingestion lock, release it during model I/O, recheck cancellation, and avoid repeated Running-state writes. Static presentation preserves the authored composition mode; closing holds prefer the actual frozen image dependency and fail closed when it is missing. Opening-frame prefixes use structural framing before legacy camera prose; an unplanned scene no longer invents a shot-index crop. Placed cue audio retains its shot, enabling the existing one-layer replacement query to remove earlier effects instead of stacking them. Composed outputs use the existing bounded persistence retry after expensive processing, recheck cancellation, and reuse immutable outputs; unchanged task summaries do not write again. Late finishing workers cannot revive Cancelled state. Physics relationship uncertainty follows the existing manual-review candidate path; status remains Needs Review. Witnessed physics violations and uncertain action, identity or staging claims still block.",
     "result": "Final full sweep: all 1059 tests in 113 module groups passed.",
     "final_full_sweep": {
       "modules": 113,
@@ -64,11 +65,12 @@
     "music_duration_seconds": 31,
     "manual_review": "Held: water exits the glass sidewall in the spill take; the extraction take crops the package logo. Earlier duplicate/photo-card examples are absent in sampled comparison frames. No production release or blanket resolution is claimed.",
     "replacement_runs": [
-      "RUN-00759",
-      "RUN-00760"
+      "RUN-00761",
+      "RUN-00762"
     ],
     "replacement_profile": "Native base 20-step, turbo disabled; actual submitted graph verified.",
-    "global_pipeline_promoted": false
+    "global_pipeline_promoted": false,
+    "template_update": "Eight source rows: extraction 2s plus contact insert 2s replace the combined 4s beat. Total remains 720 frames / 30 seconds. Four original-pixel opening controls are catalogued in the workbook."
   },
   "reference_preparation": {
     "workflow": "ComfyUI native ImageCropV2 through existing generic adapter",

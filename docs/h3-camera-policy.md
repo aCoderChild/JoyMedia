@@ -264,3 +264,11 @@ actors retain first/middle/last coverage; short visible intervals use every
 available view. Unknown comparisons remain blocking, as do witnessed identity
 violations. The change is frozen by the existing admission implementation hash;
 older held attempts are not retroactively passed.
+
+When one workbook row combines extraction with a new contact action or a different
+coverage scale, use separate timed rows and preserve their combined duration.
+The editor makes the cut; each generated shot keeps one main interaction and the
+shared policy chooses its camera behavior from structure. Opening references must
+show the row's actual starting state. Keep approved opening views in References
+and bind them through the workbook's opening/ending columns so a later import can
+reproduce the same controls.

@@ -380,7 +380,10 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		report["status"] == "Needs Review"
 		and all(
 			r["verdict"] == "supported"
-			or (r["id"] in {"geometry_qualification", "physics"} and r["verdict"] == "uncertain")
+			or (
+				(r.get("dimension") == "physics" or r["id"] in {"geometry_qualification", "physics"})
+				and r["verdict"] == "uncertain"
+			)
 			for r in report["results"]
 		)
 	)
