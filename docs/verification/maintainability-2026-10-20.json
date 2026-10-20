@@ -11,10 +11,11 @@
     "focused_after_corrections": {
       "planning_and_camera": 114,
       "prompt_serialization": 64,
-      "finishing_and_project_versions": 33
+      "finishing_and_project_versions": 33,
+      "admission_ingestion_cancellation": 45
     },
-    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy.",
-    "result": "All 113 module groups verified after correction; three additional regression tests pass."
+    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy. Admission commits share the ingestion lock, release it during model I/O, recheck cancellation, and avoid repeated Running-state writes.",
+    "result": "All 113 module groups verified after correction; five additional regression tests pass."
   },
   "frontend": {
     "focused_passed": 19,

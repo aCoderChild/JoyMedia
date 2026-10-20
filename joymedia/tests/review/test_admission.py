@@ -16,6 +16,89 @@ class TestVisualAdmission(unittest.TestCase):
 			references=[dict(reference_role=r) for r in roles],
 		)
 
+	def test_polling_an_already_running_gate_does_not_rewrite_the_attempt(self):
+		attempt = SimpleNamespace(name="A", status="Running", save=Mock())
+		with (
+			patch.object(a, "context_for", return_value=(None, None, None, {"enabled": True})),
+			patch.object(a, "report_for", return_value=None),
+			patch.object(a.frappe, "enqueue") as enqueue,
+		):
+			self.assertEqual(
+				a.gate_attempt(attempt, SimpleNamespace(name="G", media_type="Video"), {}, None),
+				{"status": "Checking"},
+			)
+		attempt.save.assert_not_called()
+		enqueue.assert_called_once()
+
+	def test_gate_commits_under_the_ingestion_lock_and_rechecks_cancellation(self):
+		from contextlib import contextmanager
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+
+		for cancelled in (False, True):
+			with self.subTest(cancelled=cancelled), TemporaryDirectory() as folder:
+				path = Path(folder) / "video.mp4"
+				path.write_bytes(b"immutable output")
+				attempt = Mock(name="attempt", status="Running")
+				attempt.name = "A"
+				job = SimpleNamespace(status="Running", workflow="W", reload=Mock())
+				run = SimpleNamespace(status="Running", project_snapshot_json="{}", reload=Mock())
+				artifact = SimpleNamespace(
+					name="G",
+					generation_attempt="A",
+					media_type="Video",
+					frappe_file="/private/files/video.mp4",
+				)
+				active = set()
+
+				@contextmanager
+				def locked(name):
+					active.add(name)
+					try:
+						yield
+					finally:
+						active.remove(name)
+
+				def inspect(*args):
+					self.assertEqual(active, {"visual-admission-A"})
+					if cancelled:
+						job.status = "Cancelled"
+					return {"status": "Passed"}
+
+				def write(*args):
+					self.assertIn("joymedia-sync-attempt-A", active)
+
+				with (
+					patch("frappe.utils.synchronization.filelock", side_effect=locked),
+					patch.object(a.frappe, "set_user"),
+					patch.object(a.frappe.db, "commit"),
+					patch.object(
+						a.frappe,
+						"get_doc",
+						side_effect=lambda kind, *args: {
+							"Generation Attempt": attempt,
+							"Generation Artifact": artifact,
+							"File": SimpleNamespace(get_full_path=lambda: str(path)),
+							"Generation Workflow": None,
+						}[kind],
+					),
+					patch.object(a, "context_for", return_value=(job, run, {}, {})),
+					patch.object(a, "inspect_file", side_effect=inspect),
+					patch("joymedia.services.workflows.capabilities.controls", return_value=[]),
+					patch.object(a, "store_report", side_effect=write) as store,
+					patch(
+						"joymedia.services.generation.ingestor._complete_attempt", side_effect=write
+					) as complete,
+				):
+					a.run_gate("A", "G", {}, None, "reviewer")
+				if cancelled:
+					store.assert_not_called()
+					complete.assert_not_called()
+				else:
+					store.assert_called_once()
+					complete.assert_called_once()
+				self.assertFalse(active)
+
 	def test_product_only_does_not_authorize_a_human_hand(self):
 		claims = a.screening_claims(self.scene(["Product"]), False)
 		self.assertIn("unrequested_human", [r["id"] for r in claims])

@@ -458,8 +458,9 @@ def gate_attempt(attempt, artifact, history, last_frame):
 		return report
 	# Provider completion is not task completion. Commit admission before I/O;
 	# the worker then rechecks cancellation and the exact attempt before writing.
-	attempt.status = "Running"
-	attempt.save(ignore_permissions=True)
+	if attempt.status != "Running":
+		attempt.status = "Running"
+		attempt.save(ignore_permissions=True)
 	frappe.enqueue(
 		"joymedia.services.review.admission.run_gate",
 		queue="long",
@@ -515,25 +516,29 @@ def run_gate(attempt_name, artifact_name, history, last_frame_name, user):
 			attempt=attempt.name,
 			artifact=artifact.name,
 		)
-		frappe.db.commit()
-		attempt.reload()
-		run.reload()
-		job.reload()
-		if (
-			attempt.status not in {"Running", "Queued"}
-			or job.status in {"Cancelled", "Failed"}
-			or run.status in {"Cancelled", "Failed"}
-		):
-			return
-		store_report(attempt, artifact, report)
-		frappe.db.commit()
-		_complete_attempt(
-			attempt,
-			history,
-			artifact,
-			frappe.get_doc("Generation Artifact", last_frame_name) if last_frame_name else None,
-		)
-		frappe.db.commit()
+		# Result polling uses this same lock. Hold it only for the final writes,
+		# never while waiting for the remote visual judge.
+		with filelock(f"joymedia-sync-attempt-{attempt_name}"):
+			frappe.db.commit()
+			attempt.reload()
+			run.reload()
+			job.reload()
+			if (
+				attempt.status not in {"Running", "Queued"}
+				or job.status in {"Cancelled", "Failed"}
+				or run.status in {"Cancelled", "Failed"}
+			):
+				return
+			store_report(attempt, artifact, report)
+			frappe.db.commit()
+			attempt.reload()
+			_complete_attempt(
+				attempt,
+				history,
+				artifact,
+				frappe.get_doc("Generation Artifact", last_frame_name) if last_frame_name else None,
+			)
+			frappe.db.commit()
 
 
 def quality_retry(attempt):
