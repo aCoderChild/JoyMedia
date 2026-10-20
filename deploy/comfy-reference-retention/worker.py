@@ -64,7 +64,6 @@ def detect(image, caption, runtime, threshold=0.30, atomic_categories=False):
 		)[0]
 		from torchvision.ops import nms
 
-		indices = nms(result["boxes"], result["scores"], 0.45).tolist()
 		# GroundingDINO's upstream predict(remove_combined=True) confines a
 		# phrase to the period-delimited class containing its highest logit.
 		# HF's unrestricted labels can combine "package jar", making a glass
@@ -87,12 +86,19 @@ def detect(image, caption, runtime, threshold=0.30, atomic_categories=False):
 				peak = int(probability.argmax())
 				position = bisect.bisect_left(boundaries, peak)
 				if not 0 < position < len(boundaries):
-					raise ValueError("Detected object has no bounded category phrase.")
+					label_ids.append([])
+					continue
 				left, right = boundaries[position - 1], boundaries[position]
 				label_ids.append([token_ids[i] for i in range(left + 1, right) if probability[i] > 0.25])
 			labels = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
-			if any(not label.strip() for label in labels):
-				raise ValueError("Detected object category is empty; do not guess placement.")
+		# A proposal can pass the box threshold while every text token remains
+		# below the text threshold. It is not a classified object. Discard it
+		# before NMS so it cannot suppress or invalidate a supported proposal.
+		valid = [i for i, label in enumerate(labels) if str(label).strip()]
+		if not valid:
+			return []
+		kept = nms(result["boxes"][valid], result["scores"][valid], 0.45).tolist()
+		indices = [valid[i] for i in kept]
 		return [
 			dict(
 				box=result["boxes"][i].cpu().tolist(), score=float(result["scores"][i]), label=str(labels[i])

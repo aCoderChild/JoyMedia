@@ -7,3 +7,7 @@ Licensed under Apache License 2.0; see GroundingDINO-LICENSE.
 The adaptation uses the installed Hugging Face tokenizer, retains the existing
 box thresholds and NMS, and confines atomic phrase selection to source category
 classification. Scene object and limb detection keep their native labels.
+
+Unclassified proposals are discarded before non-maximum suppression. No class is
+inferred for an empty phrase; preparation still rejects an unsupported source
+category or an ambiguous scene placement.

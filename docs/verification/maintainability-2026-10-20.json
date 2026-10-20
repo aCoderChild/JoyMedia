@@ -48,5 +48,12 @@
     "workflow": "ComfyUI native ImageCropV2 through existing generic adapter",
     "real_job_verified": true,
     "source_pixel_max_channel_difference": 0
+  },
+  "source_art_runtime": {
+    "verification": "Actual Shera source and staged frame processed by the pinned GPU detector/matting runtime.",
+    "unnamed_proposals": "Discarded before NMS; unsupported categories and ambiguous placement still fail closed.",
+    "source_rgb_unchanged": true,
+    "detected_category": "package",
+    "scene_detections": 1
   }
 }
