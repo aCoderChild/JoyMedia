@@ -1,13 +1,7 @@
-"""Post-production for generated films: transition bridges and one soundtrack.
+"""Finishing lifecycle, cancellation and timeline reconciliation.
 
-Each take is rendered on its own, so cuts are hard and every take brings its own
-audio. This step rebuilds the edit timeline from the takes and then
-
-- replaces every cut with a short generated bridge clip that morphs from the
-  outgoing take into the incoming one. The bridge overlaps both takes by
-  BRIDGE_OVERLAP_FRAMES, so no other clip moves and the film keeps its length;
-- generates one soundtrack for the whole film with the project's selected video
-  workflow and lays it under the timeline, replacing the per-take audio.
+Stable HTTP and queued-job entry points remain here. Music, transition bridges,
+workflow rendering and media lookups live in their focused editing modules.
 """
 
 import hashlib
@@ -67,19 +61,9 @@ from joymedia.services.editing.rendering import (
 )
 from joymedia.services.project.render_queue import enqueue_render, is_render_alive
 
-# Part of the soundtrack cache key: bump it when the soundtrack prompts change.
-# Extra soundtrack rendered past the film's end to choose where the music ends.
-# Conservative default for workflows that produce sound through video segments.
-SEGMENT_SECONDS = 5
-# Audio/video context shared between soundtrack segments (on the AV prefix grid 39/90/141).
-SOUNDTRACK_CONTEXT_FRAMES = 39
-# A long fade gives every film a deliberate ending when a workflow does not resolve music itself.
-# Finishing repeats when scenes change while it runs, at most this many times per job.
+# Finishing can repeat when selected scenes change during an in-flight job.
 MAX_FINISHING_ROUNDS = 3
 EFFECTS_AND_MUSIC = "Effects + music"
-# The video model makes music only together with picture, and coherently for a few seconds: one short instrumental
-# is rendered (small, the picture is thrown away) and looped with crossfades under the whole film.
-# Under the scenes' effects: the effects also push the music down while they sound (the composer's ducking).
 
 
 @frappe.whitelist()
