@@ -1,0 +1,82 @@
+{
+  "doctype": "Generation Workflow",
+  "workflow_key": "reference_image_crop",
+  "adapter_key": "comfyui_generic",
+  "workflow_json": {
+    "source": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "reference.png"
+      }
+    },
+    "crop": {
+      "class_type": "ImageCropV2",
+      "inputs": {
+        "image": [
+          "source",
+          0
+        ],
+        "crop_region": {
+          "x": 0,
+          "y": 0,
+          "width": 512,
+          "height": 512
+        }
+      }
+    },
+    "save": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "crop",
+          0
+        ],
+        "filename_prefix": "reference-view"
+      }
+    }
+  },
+  "execution_spec": {
+    "capabilities": [
+      "first_frame"
+    ],
+    "parameters": [
+      {
+        "semantic": "output_prefix",
+        "node_key": "save",
+        "input_name": "filename_prefix"
+      }
+    ],
+    "outputs": {
+      "primary": {
+        "node_key": "save",
+        "media_type": "Image"
+      }
+    },
+    "metadata": {
+      "frame_count": 1,
+      "output_fps": 1,
+      "produces_video": 0,
+      "produces_audio": 0
+    }
+  },
+  "bindings": [
+    {
+      "binding_key": "first_frame",
+      "node_key": "source",
+      "input_name": "image",
+      "value_type": "File Path",
+      "required_input_role": "first_frame",
+      "accepted_media_type": "Image",
+      "required": 1
+    },
+    {
+      "binding_key": "crop_region",
+      "node_key": "crop",
+      "input_name": "crop_region",
+      "value_type": "JSON",
+      "required": 1,
+      "required_input_role": "crop_region",
+      "accepted_media_type": "Any"
+    }
+  ]
+}

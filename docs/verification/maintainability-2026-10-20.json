@@ -14,10 +14,16 @@
       "finishing_and_project_versions": 33,
       "admission_ingestion_cancellation": 45,
       "closing_mode_and_frozen_frames": 61,
-      "live_runtime_imports": 52
+      "live_runtime_imports": 52,
+      "declared_composition_and_retention": 108
     },
     "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy. Admission commits share the ingestion lock, release it during model I/O, recheck cancellation, and avoid repeated Running-state writes. Static presentation preserves the authored composition mode; closing holds prefer the actual frozen image dependency and fail closed when it is missing.",
-    "result": "All 113 module groups verified after correction; eight additional regression tests pass."
+    "result": "Final full sweep: all 1059 tests in 113 module groups passed.",
+    "final_full_sweep": {
+      "modules": 113,
+      "tests": 1059,
+      "failed_modules": 0
+    }
   },
   "frontend": {
     "focused_passed": 19,
@@ -36,5 +42,10 @@
     "branch_history": "Reviewed false positives: workflow identifiers and a bound SQL submission-key parameter. No credentials added."
   },
   "compatibility": "Existing whitelisted methods, queued-job import paths and Frappe DocTypes preserved.",
-  "video_qualification": "Separate from code checks. Real Shera jobs ran through the owner browser and ComfyUI; camera/reference failures remain held. No approved new 30-second release is claimed."
+  "video_qualification": "Separate from code checks. Real Shera jobs ran through the owner browser and ComfyUI; camera/reference failures remain held. No approved new 30-second release is claimed.",
+  "reference_preparation": {
+    "workflow": "ComfyUI native ImageCropV2 through existing generic adapter",
+    "real_job_verified": true,
+    "source_pixel_max_channel_difference": 0
+  }
 }

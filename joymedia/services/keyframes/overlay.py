@@ -126,9 +126,8 @@ def describe_colours(asset_version):
 
 
 def scene_mode(references, character_mode=PASTE):
-	"""The mode a scene really runs in: drawing needs someone to draw, so a scene with no character or person is pasted."""
-	has_cast = any(_role(r) in ("character", "person") for r in references or [])
-	return DRAW if character_mode == DRAW and has_cast else PASTE
+	"""Respect the declared staging mode for actors, products and empty settings."""
+	return DRAW if character_mode == DRAW else PASTE
 
 
 def closes_film(shot, project=None):

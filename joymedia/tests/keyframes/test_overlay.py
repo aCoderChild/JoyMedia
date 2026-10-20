@@ -1,5 +1,6 @@
 import io
 import itertools
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -648,3 +649,46 @@ class TestSharedStudioGround(unittest.TestCase):
 				self.assertGreaterEqual(min(x, y), 0)
 				self.assertLessEqual(x + bw, canvas[0])
 				self.assertLessEqual(y + bh, canvas[1])
+
+
+class TestProductOnlyStaging(FrappeTestCase):
+	def test_a_product_only_staged_closing_uses_source_preparation_not_photo_cells(self):
+		from unittest.mock import Mock
+
+		from joymedia.services.keyframes.overlay import paste_subjects_into_keyframe
+
+		shot = {
+			"shot": "S",
+			"shot_number": 1,
+			"character_mode": "Draw in scene",
+			"references": [
+				{
+					"reference_role": "Product",
+					"asset_version": "PRODUCT",
+					"preservation_mode": "source_pixels",
+				}
+			],
+			"reference_retention": {"recipe_sha256": "frozen recipe"},
+		}
+		snapshot = {"shots": [shot]}
+		with (
+			patch(
+				"joymedia.services.keyframes.overlay.frappe.db.get_value",
+				side_effect=[frappe._dict(generation_task="TASK"), ("S", "RUN"), json.dumps(snapshot)],
+			),
+			patch(
+				"joymedia.services.consistency.retention.retain", return_value=b"prepared source"
+			) as retain,
+			patch("joymedia.services.keyframes.overlay.closing_subjects") as cells,
+		):
+			result = paste_subjects_into_keyframe(Mock(name="ATTEMPT"), b"rendered staging")
+		self.assertEqual(result, b"prepared source")
+		retain.assert_called_once()
+		cells.assert_not_called()
+
+	def test_explicit_exact_art_mode_is_preserved_with_or_without_an_actor(self):
+		from joymedia.services.keyframes.overlay import scene_mode
+
+		for refs in ([], [{"reference_role": "Product"}], [{"reference_role": "Character"}]):
+			self.assertEqual(scene_mode(refs, "Paste exact art"), "Paste exact art")
+			self.assertEqual(scene_mode(refs, "Draw in scene"), "Draw in scene")
