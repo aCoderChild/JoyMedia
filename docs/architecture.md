@@ -1,84 +1,102 @@
 # JoyMedia architecture
 
-## Why `joymedia/joymedia` exists
+JoyMedia is a Frappe app. The browser edits project data; server services freeze a
+production plan; workflow adapters submit it to ComfyUI; immutable attempts and
+asset versions record the result. A review export and an approved release are
+separate outputs.
 
-Frappe separates an application package from its Desk module. In JoyMedia:
+## Package boundaries
 
-| Location | Responsibility | Typical import |
-| --- | --- | --- |
-| `joymedia/` | App code, hooks, APIs, background services, frontend assets | `joymedia.services.*` |
-| `joymedia/joymedia/` | Frappe module named `JoyMedia`: DocTypes, reports, workspace | `joymedia.joymedia.doctype.*` |
+| Location | Responsibility |
+| --- | --- |
+| `joymedia/frontend/src/pages` | Route composition and editor layout |
+| `joymedia/frontend/src/composables` | Workspace, generation, timeline, import and finishing state |
+| `joymedia/frontend/src/components` | Reusable views and editor controls |
+| `joymedia/api` | Authenticated editor operations and orchestration entry points |
+| `joymedia/services/intake` | Workbook and reference import, project readiness |
+| `joymedia/services/planning` | Workbook interpretation, scene planning and prompt compilation |
+| `joymedia/services/scene` | Provider-independent identities, references, physical contracts and evidence |
+| `joymedia/services/keyframes` | Location anchors, opening frames, source-art repair and approval |
+| `joymedia/services/generation` | Frozen runs, task dependencies, submission, retries and result ingestion |
+| `joymedia/services/workflows` | Workflow capabilities, routing, graph binding and ComfyUI transport |
+| `joymedia/workflow_adapters` | Provider serialization and versioned execution graphs |
+| `joymedia/services/editing` | Timeline assembly, finishing and export |
+| `joymedia/services/audio` | Voice, effects, audio planning and checks |
+| `joymedia/services/review` | Sampled visual admission, brand review, comments and release checks |
+| `joymedia/services/consistency` | Source-art preservation, tracking and surface repair |
+| `joymedia/services/project` | Snapshots, edit versions, selected references and realtime updates |
+| `joymedia/services/runtime` | Configured service endpoints |
+| `joymedia/joymedia` | Framework-owned DocTypes, reports and workspace |
+| `deploy` | GPU setup, pinned upstream provenance and operating tools |
+| `scripts` | Repository checks and repeatable verification tools |
 
-The module name is persisted in Frappe records and migrations. Treat the inner
-directory as framework-owned structure. New business logic belongs in an API,
-service, or adapter; new persisted Frappe objects belong in the module.
+The outer `joymedia` directory is the Python app; the inner directory is Frappe's
+persisted `JoyMedia` module. Flattening these would break installed-site metadata.
+Services belong outside DocType controllers unless they enforce a persisted invariant.
 
-## Code boundaries
+## Production flow
 
-```
-Browser (joymedia/frontend)
-        │
-        ▼
-API endpoints (joymedia/api)           thin: permissions + delegate
-        │
-        ├── Services (joymedia/services)           application logic, see the map below
-        ├── Workflow adapters (joymedia/workflow_adapters)   ComfyUI graph execution contracts
-        │
-        ▼
-Frappe DocTypes and reports (joymedia/joymedia)
-        │
-        ▼
-External language model, ComfyUI (FLUX, H3, MMAudio) on a separate GPU host
-```
+1. Import the workbook and select immutable reference views. The workbook owns
+   the scene order, duration, action and claims. Brand style describes visual
+   qualities; scene rows own their actors, locations and props.
+2. Plan and approve scenes. `planning/production.py` coordinates planning;
+   `language_rules.py` contains pure translation-fidelity and vocabulary rules.
+   `scene/contract.py` holds physical relationships and timed checks.
+3. Compile a prompt from that plan. `planning/camera.py` chooses one camera
+   behavior from structural data; `planning/h3.py` serializes H3 fields.
+   Provider-specific serialization does not choose the advertised product or case.
+4. Resolve declared workflow capabilities and input roles. Freeze inputs, prompt,
+   policy and workflow versions before submitting a generation attempt.
+5. Ingest artifacts and run sampled visual checks. Failed or uncertain evidence
+   cannot establish product fidelity. Inspect the actual footage before selecting
+   a reviewed take; preserve prior selected takes when rejecting a candidate.
+6. Assemble selected takes, narration, effects, music and editorial graphics into
+   the timeline. Export a review version; release checks remain a separate gate.
 
-Keep API endpoints thin: validate permissions and delegate work to a service.
-Services own application behavior and must not depend on Vue components.
-Adapters translate validated workflow contracts to provider-specific requests.
-DocType controllers enforce data invariants and preserve Frappe lifecycle
-behavior.
+## Finishing responsibilities
 
-## Services map (`joymedia/services/`)
+`editing/post_production.py` keeps the stable whitelisted endpoints and queued job
+entry points. Its focused collaborators are:
 
-One package per concern; every package and module opens with a docstring saying what it is for. Nothing in
-`services/` is a test.
+- `music.py`: music briefs, score rendering, soundtrack placement and reuse.
+- `bridges.py`: optional generated transition clips and overlap bookkeeping.
+- `rendering.py`: workflow execution, frame extraction and persisted output assets.
+- `queries.py`: shared take and asset-version lookups.
 
-| Package | Purpose | Modules |
-| --- | --- | --- |
-| `intake/` | Bring a client's material in | `project` (create a project from a sheet/brief/pictures, readiness checklist, PDF picture extraction), `assets` (Media Assets), `vision` (describe pictures), `image_manifest` |
-| `planning/` | Story → scenes → prompts | `workbook` (xlsx import), `production` (Follow the sheet / Creative planner), `prompts` (what each workflow receives), `llm` (language-model client), `revisions` (AI edits), `video_plan` (brief → plan), `film_director` (story-film rules), `durations`, `signature` (approval), `jobs` (background planning), `quality_feedback` |
-| `keyframes/` | First-frame stage | `stage` (draw, review, approve each scene's frame), `overlay` (paste real logo/product/mascot, character boards, layout), `reference_board` |
-| `generation/` | Render life cycle | `orchestrator` (runs, tasks, retries), `runner` (stage inputs, submit), `ingestor` (collect results), `segments`, `artifacts`, `takes` (regenerate/switch), `failures` |
-| `workflows/` | ComfyUI and workflow records | `comfyui` (HTTP client), `resolver` (task → graph), `routing`, `profiles`, `pipeline` (promoted pipeline) |
-| `editing/` | After generation | `timeline` (clips, trims), `export` (timeline → film), `composer` (assemble scene segments), `post_production`, `finishing` (upscale, 60 fps) |
-| `audio/` | Sound | `plan` (cues, effect layers, per-scene screen), `check` (effects vs music/voice) |
-| `review/` | Quality gate | `authority` (human approval), `visual_quality` (automated QA) |
-| `project/` | Shared plumbing | `context` (snapshots), `realtime` (socket events), `preferences`, `tuning` (every tunable number), `modes`, `render_queue` |
+The facade re-exports existing helper names for callers. New code and tests should
+import the module that owns the behavior. Mock a collaborator where the caller
+looks it up, rather than relying on an old facade alias.
 
-Dependencies point down this list: `intake`/`planning` use `project`, `generation` uses `workflows` and `keyframes`,
-`editing` uses `generation` results and `audio`. Tests live in `joymedia/tests/<package>/`, mirroring this tree;
-`tests/support/` holds fixtures and the keyframe regression cases that need a real ComfyUI.
+The editor follows the same boundary: `ProjectStudio.vue` composes the workspace;
+`useStoryboardImport` owns upload/sheet selection, `useProjectFinishing` owns
+finishing commands and polling, and `utils/download.js` handles session-authenticated
+downloads. Timer cleanup belongs to the composable that creates the timer.
 
-Guard tests keep the structure honest: `tests/test_frontend_api_contract.py` (every server method the studio
-calls exists and is whitelisted) and `tests/test_hooks_contract.py` (every function `hooks.py` names exists).
+## Change and deployment rules
 
-## Main production flow
+- Keep case-specific artwork, wording and action in workbooks and reference data.
+  Keep node IDs and model options in versioned workflow contracts.
+- Reuse upstream workflows and installed capabilities before adding dependencies.
+  Record repository revision, model identity and license under `deploy`/`docs`.
+- Do not edit admission implementation files while frozen runs are active. Those
+  runs verify an implementation digest; finish or cancel them before deployment.
+- Preserve whitelisted HTTP paths, RQ entry points, DocType names and migration
+  history during internal refactors. Introduce schema changes through migrations.
+- Keep weights, private media, sessions, site configuration, logs and build
+  dependencies outside Git. Generated media and database edit history stay in Frappe.
 
-1. Assets are stored as immutable Asset Versions.
-2. The AI director creates a shot plan and route selection validates its real
-   workflow input contract.
-3. The orchestrator creates immutable generation attempts and submits work to
-   ComfyUI.
-4. Generated outputs become selected takes and receive asynchronous automated
-   visual QA. Human approval remains the delivery gate.
-5. Approved active shots can enter post-production or timeline export.
-6. Reviews and attempts feed analytics and the quality-feedback service for
-   later planning and routing decisions.
+## Verification
 
-## Safe structural changes
+From the app checkout, run `python scripts/verify_app_layout.py`,
+`ruff check joymedia scripts deploy`, and `ruff format --check joymedia scripts deploy`.
+From the Bench, run `python apps/joymedia/scripts/run_tests.py <site>`; this includes
+service tests that `bench run-tests --app joymedia` misses. Build the frontend with
+`npm ci && npm run build` in `joymedia/frontend` and run the relevant Playwright
+checks. Live tests require an explicitly configured authorized session and project.
 
-- Keep repository-level package metadata (`pyproject.toml`) at the root.
-- Keep the outer `joymedia` package and inner `joymedia` Frappe module intact.
-- Do not commit Bench runtime directories such as `apps/`, `sites/`, `env/`,
-  `logs/`, or generated frontend dependencies.
-- Run `python scripts/verify_app_layout.py` and `python scripts/run_tests.py <site>` after
-  changes that affect imports, hooks, DocTypes, or package layout.
+For an isolated worktree, verify `joymedia.__file__` before testing: running Python
+from the live checkout can otherwise import the live app instead of the refactor.
+Use `PYTHONSAFEPATH=1` and an explicit `PYTHONPATH`, with the Bench as working directory.
+
+Historical qualification reports under `docs` describe their recorded runs. They
+are evidence of those runs, not the current model inventory or release status.

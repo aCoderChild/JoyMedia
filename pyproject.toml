@@ -12,6 +12,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+quality = ["ruff==0.14.10"]
 narration = ["edge-tts>=7.3.1,<8"]
 tracking = ["opencv-python-headless>=4.11,<6"]
 previs = ["pymunk>=7.3.1,<8"]
@@ -63,6 +64,8 @@ ignore = [
     "UP040", # Use type aliases instead of type annotations
 ]
 typing-modules = ["frappe.types.DF"]
+# Workbook delimiters and localized dimensions must retain their authored characters.
+allowed-confusables = ["：", "×", "–"]
 
 [tool.ruff.format]
 quote-style = "double"

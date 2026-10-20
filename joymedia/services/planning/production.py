@@ -15,6 +15,31 @@ import frappe
 import requests
 from frappe import _
 
+from joymedia.services.planning.language_rules import (
+	CAMERA_LABEL,
+	CAMERA_TERMS,
+	COLOUR_TERMS,
+	COMMON_CAPITALISED,
+	FRAMING_WORDS,
+	MIN_SENTENCE_COVERAGE,
+	STOPWORDS,
+	_foreign_share,
+	_name_phrase,
+	_words,
+	added_share,
+	beat_coverage,
+	brand_words,
+	camera_direction,
+	camera_glossary,
+	colour_terms,
+	english_part,
+	invented_names,
+	is_english,
+	keeps_every_sentence,
+	looks_english,
+	split_views,
+	with_glossary,
+)
 from joymedia.services.planning.llm import _normalized_motion_plan
 
 MAX_PROMPT_CHARS = 700
@@ -43,8 +68,10 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 	if len(str((raw or {}).get("image_prompt") or "").split()) > MAX_IMAGE_WORDS:
 		# One corrective retry: the image prompt must describe a single frame, not the whole action.
 		raw = _ask_planner(
-			prompt + f"\nYour previous image_prompt was too long. Rewrite it as one still frame of at most {MAX_IMAGE_WORDS - 10} words."
+			prompt
+			+ f"\nYour previous image_prompt was too long. Rewrite it as one still frame of at most {MAX_IMAGE_WORDS - 10} words."
 		)
+	_discard_inferred_camera(project, raw)
 	plan = normalize_production_shot(
 		raw,
 		reference_keys={reference["key"] for reference in references},
@@ -55,13 +82,21 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 		# A video prompt that copied the beat's language, or mixed it with a translation, is not usable: the
 		# movement of the beat's English translation replaces it.
 		plan["video_prompt"] = motion_only(project, beat["summary"], references) or beat["summary"]
-		plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": plan["video_prompt"]}]}
-		plan["notes"].append("The planner did not answer in English, so the video prompt is the beat's movements.")
+		plan["motion_plan"] = {
+			"actions": [
+				{"start": 0, "end": float(shot.duration_seconds or 1), "action": plan["video_prompt"]}
+			]
+		}
+		plan["notes"].append(
+			"The planner did not answer in English, so the video prompt is the beat's movements."
+		)
 	for key in ("image_prompt", "setting_prompt", "sound_effects"):
 		# The models read English; a planner answer that copied the beat's own language is translated.
 		plan[key] = translate(plan.get(key), project)
 	plan["audio"] = audio_direction(project, beat, plan.get("sound_effects"))
-	plan["reference_keys"], added_notes = ground_reference_keys(project, beat, plan["reference_keys"], references)
+	plan["reference_keys"], added_notes = ground_reference_keys(
+		project, beat, plan["reference_keys"], references
+	)
 	plan["notes"].extend(added_notes)
 	coverage, missing = beat_coverage(beat["summary"], plan["image_prompt"], plan["video_prompt"])
 	plan["coverage"] = round(coverage, 2)
@@ -75,8 +110,12 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 		# movement is kept; a description of a different place or light would pull the video away from it.
 		movement = motion_only(project, beat["summary"], references) or beat["summary"]
 		plan["video_prompt"] = movement
-		plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": movement}]}
-		plan["notes"].append("Plan covers too little of the beat, so the beat's own wording, reduced to its movements, is used as the video prompt.")
+		plan["motion_plan"] = {
+			"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": movement}]
+		}
+		plan["notes"].append(
+			"Plan covers too little of the beat, so the beat's own wording, reduced to its movements, is used as the video prompt."
+		)
 	return _apply_camera_profile(project, shot, plan)
 
 
@@ -99,90 +138,33 @@ def motion_only(project, text, references, inventory="", attempt=0):
 			f"The characters and products in the scene are exactly: {inventory}. Do not add any other person, character "
 			"or product. Keep every other object the beat names (cups, drinks, food, napkins…) as that object: never turn "
 			"an object into the advertised product, which appears only where the beat itself names it. "
-			if inventory else f"Characters: {cast or 'as in the beat'}; every named family role is one of them. "
+			if inventory
+			else f"Characters: {cast or 'as in the beat'}; every named family role is one of them. "
 		)
 		+ "Do not add anything the beat does not say. "
-		+ STAGING_RULES + " Keep this rewrite faithful; report only motion in the requested JSON field. "
-		+ f"\nBEAT: {text}\nReturn {{\"motion\": \"...\"}}"
+		+ STAGING_RULES
+		+ " Keep this rewrite faithful; report only motion in the requested JSON field. "
+		+ f'\nBEAT: {text}\nReturn {{"motion": "..."}}'
 		+ (f"\n(Answer again, attempt {attempt + 1}: English only, faithful to the beat.)" if attempt else "")
 	)
-	raw = _ask_planner(prompt, system="You rewrite storyboard beats faithfully. Return JSON only.", max_tokens=300, capability="translator")
+	raw = _ask_planner(
+		prompt,
+		system="You rewrite storyboard beats faithfully. Return JSON only.",
+		max_tokens=300,
+		capability="translator",
+	)
 	return " ".join(str((raw or {}).get("motion") or "").split())
 
 
 PLACE_WORDS = re.compile(
 	r"\b(kitchen|dining|room|home|house|garden|park|picnic|office|bathroom|bedroom|living|outdoor|outdoors|street|beach|shop|"
-	r"store|studio|restaurant|cafe|school|hospital|hotel)\b", re.I,
+	r"store|studio|restaurant|cafe|school|hospital|hotel)\b",
+	re.I,
 )
-PRODUCT_WORDS = re.compile(r"\b(pack|packs|package|packages|bag|bags|bottle|bottles|box|boxes|product|products)\b", re.I)
+PRODUCT_WORDS = re.compile(
+	r"\b(pack|packs|package|packages|bag|bags|bottle|bottles|box|boxes|product|products)\b", re.I
+)
 MANY_PRODUCTS = re.compile(r"\b(products|all (?:the )?products|range|lineup|collection)\b|các sản phẩm", re.I)
-
-
-def looks_english(text):
-	"""Whether text is in English (Latin script without the accented letters of Vietnamese and similar languages).
-
-	Punctuation such as arrows, dashes and curly quotes does not count against it: only letters do.
-	"""
-	import unicodedata
-
-	decomposed = unicodedata.normalize("NFD", str(text or ""))
-	return not any(unicodedata.combining(c) or c in "đĐ" or (c.isalpha() and ord(c) > 0x24F) for c in decomposed)
-
-
-def _foreign_share(text):
-	"""Share of a text's words written with letters English does not use (Vietnamese tone marks, đ, …)."""
-	words = re.findall(r"[^\W\d_]+", str(text or ""))
-	return sum(1 for word in words if not looks_english(word)) / len(words) if words else 0.0
-
-
-def invented_names(english, source):
-	"""Names in a translation that its source never mentions: words in the source language, or proper nouns.
-
-	A translation adds no character, brand or place; a model that does is describing something else.
-	"""
-	source_words = {w.casefold() for w in re.findall(r"[^\W\d_]+", str(source or ""))}
-	invented = set()
-	# The first word of each sentence or clause is capitalised anyway; only later capitals can mark a name.
-	for clause in re.split(r"(?<=[.!?:;])\s+|\n+", str(english or "")):
-		for index, word in enumerate(re.findall(r"[^\W\d_]+", clause)):
-			foreign = not looks_english(word)
-			proper = index > 0 and word[:1].isupper() and not word.isupper() and len(word) > 2
-			if (foreign or proper) and word.casefold() not in source_words:
-				invented.add(word)
-	# Capitalised ordinary words (sentence starts after a colon, "Close-up") are not names: keep only foreign words and
-	# proper nouns the source language would also write with a capital letter.
-	return {w for w in invented if not looks_english(w) or w.casefold() not in COMMON_CAPITALISED}
-
-
-COMMON_CAPITALISED = {
-	"camera", "close", "wide", "medium", "shot", "top", "down", "extreme", "slow", "motion", "eye", "level", "the", "a", "an",
-	"sound", "light", "lighting", "effect", "effects", "angle", "movement", "split", "screen", "fast", "paced", "soft",
-	"macro", "overhead", "front", "side", "view", "transition", "zoom", "pan", "tilt", "music", "voice", "over",
-}
-
-
-def is_english(text):
-	"""English, allowing a few words in the source language such as a character's own name."""
-	return bool(re.search(r"[A-Za-z]{2,}", str(text or ""))) and _foreign_share(text) < 0.25
-
-
-def english_part(answer):
-	"""The English in a translation answer, without the source text the model echoed around it.
-
-	Small models often answer "<source>: <English>", "<source> translates to: <English>" or "<source> (<English>)".
-	Every sentence or bracketed part that is mostly in the source language is dropped; English that merely names a
-	character in the source language ("Gấu con knocks over…") is kept.
-	"""
-	text = re.sub(r"\btranslat(?:es|ed|ion)?\s+(?:in)?to\s*(?:english)?\s*:?", " : ", str(answer or ""), flags=re.I)
-	pieces = re.split(r"(?<=[.!?])\s+|:\s+|\n+", text)
-	kept = [piece.strip(" \t.:;,-\"'()[]") for piece in pieces]
-	kept = [piece for piece in kept if piece and _foreign_share(piece) < 0.25]
-	return ". ".join(kept).strip() + ("." if kept else "")
-
-
-def _name_phrase(label):
-	"""A character label's own name ("Gấu mẹ" from "Gấu mẹ (mother mascot…)"), as the sheet writes it."""
-	return label.split(" (")[0].strip()
 
 
 # A rewrite must keep this share of the beat's own content words, and add at most this share of new ones, or the
@@ -200,32 +182,15 @@ def faithful_rewrite(project, source, references, inventory=""):
 	for attempt in range(2):
 		movement = motion_only(project, source, references, inventory, attempt=attempt)
 		if (
-			movement and is_english(movement) and beat_coverage(source, movement)[0] >= MIN_REWRITE_COVERAGE
+			movement
+			and is_english(movement)
+			and beat_coverage(source, movement)[0] >= MIN_REWRITE_COVERAGE
 			and keeps_every_sentence(source, movement)
-			and added_share(source, movement, inventory) <= MAX_REWRITE_ADDITIONS and len(movement) <= 1.6 * len(source) + 60
+			and added_share(source, movement, inventory) <= MAX_REWRITE_ADDITIONS
+			and len(movement) <= 1.6 * len(source) + 60
 		):
 			return movement
 	return source if is_english(source) else "The characters act out the scene."
-
-
-MIN_SENTENCE_COVERAGE = 0.5
-
-
-def keeps_every_sentence(source, rewrite):
-	"""Whether the rewrite still says each sentence of the source: an overall share can hide a whole dropped sentence
-	("Paper remains intact and unbroken, not torn", the scene's very claim, was lost at 82% overall)."""
-	sentences = [part for part in re.split(r"(?<=[.!?;:])\s+", str(source or "")) if len(re.findall(r"[a-z]{4,}", part.lower())) >= 2]
-	return all(beat_coverage(sentence, rewrite)[0] >= MIN_SENTENCE_COVERAGE for sentence in sentences)
-
-
-def split_views(text):
-	"""The numbered views a split-screen beat lists ("... qua 3 góc: 1. Bàn ăn gia đình 2. Trên thảm picnic 3. Trong
-	túi xách"), in order; fewer than two is not a list."""
-	views = [
-		view.strip(" .;,\n")
-		for view in re.findall(r"(?:^|[\s:;])\d[.)]\s*(.+?)(?=\s*(?:\n|;)?\s*\d[.)]\s|$)", str(text or ""), re.S)
-	]
-	return [view for view in views if view] if len(views) >= 2 else []
 
 
 def follow_the_sheet(project, shot, beat, references, previous_setting=""):
@@ -239,20 +204,23 @@ def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 	"products"), the logo bookends the film, the sounds are the sheet's own cues, and the movement is the beat's
 	action rewritten in English against exactly what the first frame contains.
 	"""
-	from joymedia.services.planning.roles import family_role, names_family
-
 	from joymedia.services.intake.references import find_reference, place_row, props_in
-	from joymedia.services.planning.timed_actions import read_timed_actions
 	from joymedia.services.planning.camera import camera_planning_rules
+	from joymedia.services.planning.roles import family_role, names_family
+	from joymedia.services.planning.timed_actions import read_timed_actions
 
 	# Read the original cell before translation or motion summarization can flatten
 	# its line breaks and explicit pace. Untimed workbooks retain their old path.
-	timed = read_timed_actions(beat.get("action_source") or beat.get("action"), float(shot.duration_seconds or 0))
+	timed = read_timed_actions(
+		beat.get("action_source") or beat.get("action"), float(shot.duration_seconds or 0)
+	)
 
 	raw = beat.get("raw", "")
 	text = " ".join((raw, beat.get("summary", "")))
 	keys, notes, extra_rules = [], [], []
-	named = beat.get("cast") or beat.get("products") or beat.get("cast_declared") or beat.get("products_declared")
+	named = (
+		beat.get("cast") or beat.get("products") or beat.get("cast_declared") or beat.get("products_declared")
+	)
 	# A character is in the scene when the beat names it ("Gấu mẹ"); a word for the whole family ("gia đình", "cả nhà",
 	# "family") brings in every character named as a family member (bố, mẹ, con, ông, bà…). A lone role word is not
 	# enough: "sợ mẹ mắng" (afraid mum will scold) names a mother who is not in the picture.
@@ -266,12 +234,16 @@ def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 				if reference:
 					keys.append(reference["key"])
 				else:
-					notes.append(f"Needs a picture: the sheet names '{name}' in this scene but the project has no picture of it; it is drawn from the text.")
+					notes.append(
+						f"Needs a picture: the sheet names '{name}' in this scene but the project has no picture of it; it is drawn from the text."
+					)
 	else:
 		for reference in references:
 			if reference["role"] != "Character":
 				continue
-			if _name_phrase(reference["label"]).casefold() in text.casefold() or (group and family_role(reference["label"])):
+			if _name_phrase(reference["label"]).casefold() in text.casefold() or (
+				group and family_role(reference["label"])
+			):
 				keys.append(reference["key"])
 		products = [r for r in references if r["role"] == "Product"]
 		if products and shows_product(project, text):
@@ -298,17 +270,33 @@ def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 		keys = [r["key"] for r in references if r["role"] == "Character"][:1]
 	keys = list(dict.fromkeys(keys))
 	plan = {
-		"image_prompt": " ".join(filter(None, (camera_direction(beat.get("camera")), english_roles(beat.get("action") or "", references, project.get("product_name")))))[:MAX_PROMPT_CHARS]
+		"image_prompt": " ".join(
+			filter(
+				None,
+				(
+					camera_direction(beat.get("camera")),
+					english_roles(beat.get("action") or "", references, project.get("product_name")),
+				),
+			)
+		)[:MAX_PROMPT_CHARS]
 		or beat["summary"][:MAX_PROMPT_CHARS],
 		# A beat that names no place stays where the film already is.
 		"setting_prompt": setting or _place(project, beat) or _place(project, beat, 1) or previous_setting,
-		"video_prompt": "", "reference_keys": keys, "continuity_mode": "New Scene", "start_state": "", "end_state": "",
-		"motion_plan": {"actions": []}, "notes": ["Taken from the sheet; the planner only translated it.", *notes], "sound_effects": "",
+		"video_prompt": "",
+		"reference_keys": keys,
+		"continuity_mode": "New Scene",
+		"start_state": "",
+		"end_state": "",
+		"motion_plan": {"actions": []},
+		"notes": ["Taken from the sheet; the planner only translated it.", *notes],
+		"sound_effects": "",
 	}
 	by_key = {r["key"]: r for r in references}
 	inventory = "; ".join(by_key[k]["label"].split(" (")[0] for k in keys if k in by_key)
 	if timed or camera_planning_rules(project):
-		authored = timed or [{"start": 0, "end": float(shot.duration_seconds), "action": beat.get("action") or beat["summary"]}]
+		authored = timed or [
+			{"start": 0, "end": float(shot.duration_seconds), "action": beat.get("action") or beat["summary"]}
+		]
 		return _timed_sheet_plan(project, shot, beat, references, plan, authored)
 	camera = (beat.get("camera") or "") + " " + (beat.get("action") or "")
 	split_screen = bool(re.search(r"split[- ]?screen|chia \d? ?màn", camera, re.I))
@@ -334,34 +322,55 @@ def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 	if views:
 		# The translated list is replaced by the numbered views; what the beat says before its list is kept.
 		movement = re.split(r"\s*(?:^|\s)1[.)]\s", movement, maxsplit=1)[0].strip(" :;,.")
-		movement = f"Split screen of {len(views)} stacked panels, top to bottom: " + "; ".join(
-			f"{number}. {view['text']}" for number, view in enumerate(views, 1)
-		) + (f". {movement}." if movement else ".")
+		movement = (
+			f"Split screen of {len(views)} stacked panels, top to bottom: "
+			+ "; ".join(f"{number}. {view['text']}" for number, view in enumerate(views, 1))
+			+ (f". {movement}." if movement else ".")
+		)
 	plan["video_prompt"] = movement + (f" Camera: {camera}" if camera else "")
 	rules = "; ".join(filter(None, [str(beat.get("rules") or "").strip(" ."), *extra_rules]))
 	if rules:
 		# The sheet's Logic / Continuity column, the place's rule and the props: their own paragraph (prompts.scene_rules).
 		plan["video_prompt"] += f"\n\nRules: {rules}."
 	plan["views"] = views
-	plan["motion_plan"] = {"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": movement}]}
+	plan["motion_plan"] = {
+		"actions": [{"start": 0, "end": float(shot.duration_seconds or 1), "action": movement}]
+	}
 	plan["audio"] = audio_direction(project, beat)
 	if split_screen:
 		if not views:
-			plan["notes"].append("Needs editing: the sheet asks for a split screen but lists no numbered views.")
-		plan["setting_prompt"] = setting or previous_setting  # the views have their own places; the film's place stays
+			plan["notes"].append(
+				"Needs editing: the sheet asks for a split screen but lists no numbered views."
+			)
+		plan["setting_prompt"] = (
+			setting or previous_setting
+		)  # the views have their own places; the film's place stays
 	plan["coverage"], plan["held_back"] = 1.0, False
 	return plan
 
 
+def _discard_inferred_camera(project, raw):
+	"""Policy owns inferred camera intent; explicit authored plans use their normal validator."""
+	from joymedia.services.planning.camera import camera_planning_rules
+
+	if camera_planning_rules(project) and isinstance(raw.get("motion_plan"), dict):
+		raw["motion_plan"].pop("camera_intent", None)
+
+
 def _apply_camera_profile(project, shot, plan):
 	from joymedia.services.planning.camera import camera_planning_rules, infer_cinematic_intent
+
 	if camera_planning_rules(project):
 		structure = plan.get("motion_plan", {}).get("shot_structure")
 		if not structure:
-			raise ValueError("The cinematic camera profile requires a structured shot plan. Replan this scene.")
+			raise ValueError(
+				"The cinematic camera profile requires a structured shot plan. Replan this scene."
+			)
 		count = frappe.db.count("Shot", {"media_project": project.name, "is_removed": 0})
 		plan["motion_plan"]["camera_intent"] = infer_cinematic_intent(
-			structure, opening=int(shot.shot_number or 0) == 1, closing=int(shot.shot_number or 0) == count,
+			structure,
+			opening=int(shot.shot_number or 0) == 1,
+			closing=int(shot.shot_number or 0) == count,
 		)
 	return plan
 
@@ -372,22 +381,48 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 	The shared shot grammar chooses camera behavior downstream. No provider,
 	product, scene count or native frame grid belongs in workbook interpretation.
 	"""
-	actions = [dict(row, action=english_roles(translate(row["action"], project), references,
-	                                        project.get("product_name"))) for row in authored]
-	from joymedia.services.planning.shot_structure import PLANNING_RULES as STRUCTURE_RULES
+	actions = [
+		dict(
+			row,
+			action=english_roles(translate(row["action"], project), references, project.get("product_name")),
+		)
+		for row in authored
+	]
 	from joymedia.services.planning.camera import camera_planning_rules
+	from joymedia.services.planning.shot_structure import PLANNING_RULES as STRUCTURE_RULES
 	from joymedia.services.scene.contract import STAGING_RULES
+
 	camera_rules = camera_planning_rules(project)
 	# Serialize authored event timing instead of asking the model to predict it again.
-	labels = {"Person": "the referenced person", "Character": "the referenced character",
-	          "Product": "the advertised product", "Environment": "the referenced setting",
-	          "General": "the referenced prop", "Logo": "the referenced brand artwork"}
-	entities = [{"id": f"ref{i + 1}", "label": labels[r["role"]]}
-	            for i, r in enumerate(references) if r["key"] in base["reference_keys"]]
-	contract = {"version": 1, "entities": entities, "relations": [], "checks": [],
-	            "events": [{"id": f"action{i + 1}", "description": row["action"],
-	                        "start": row["start"], "end": row["end"],
-	                        "after": [f"action{i}"] if i else []} for i, row in enumerate(actions)]}
+	labels = {
+		"Person": "the referenced person",
+		"Character": "the referenced character",
+		"Product": "the advertised product",
+		"Environment": "the referenced setting",
+		"General": "the referenced prop",
+		"Logo": "the referenced brand artwork",
+	}
+	entities = [
+		{"id": f"ref{i + 1}", "label": labels[r["role"]]}
+		for i, r in enumerate(references)
+		if r["key"] in base["reference_keys"]
+	]
+	contract = {
+		"version": 1,
+		"entities": entities,
+		"relations": [],
+		"checks": [],
+		"events": [
+			{
+				"id": f"action{i + 1}",
+				"description": row["action"],
+				"start": row["start"],
+				"end": row["end"],
+				"after": [f"action{i}"] if i else [],
+			}
+			for i, row in enumerate(actions)
+		],
+	}
 	prompt = (
 		"Convert this authored timed scene into an English production plan, JSON only. "
 		"Preserve every subject and action; invent no objects, actors, packaging layers or claims. "
@@ -395,27 +430,46 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 		"setting_prompt: place and lighting only, at most 30 words. video_prompt: authored motion only. "
 		"start_state and end_state: short descriptions. Use New Scene for a direct cut. "
 		"needs_editing: report impossible action timing without omitting actions. "
-		"Infer motion_plan.shot_structure and, when the camera profile requests it, camera_intent; do NOT generate scene_contract, actions or checks: "
+		"Infer motion_plan.shot_structure only; do NOT generate camera_intent, scene_contract, actions or checks: "
 		"the application serializes authored events and timing. keep_visible must use the given ENTITY IDs. "
 		"Use one main camera behavior from shared shot grammar. Camera movement never substitutes for subject action. "
-		+ STRUCTURE_RULES + STAGING_RULES + camera_rules
-		+ "\nENTITY IDs: " + json.dumps(entities)
-		+ "\nAUTHORITATIVE ACTIONS: " + json.dumps(actions, ensure_ascii=False)
-		+ "\nVISUAL: " + str(beat.get("camera") or "")
-		+ "\nCONTINUITY: " + str(beat.get("rules") or "")
-		+ "\nPLACE: " + base["setting_prompt"]
-		+ "\nREFERENCES: " + json.dumps([{k: r.get(k) for k in ("key", "label", "role")}
-		                                      for r in references if r["key"] in base["reference_keys"]], ensure_ascii=False)
-		+ '\nReturn {"image_prompt":"","setting_prompt":"","video_prompt":"","reference_keys":[],"continuity_mode":"New Scene","start_state":"","end_state":"","motion_plan":{"shot_structure":{}},"needs_editing":""}. Include camera_intent in motion_plan when requested above.'
+		+ STRUCTURE_RULES
+		+ STAGING_RULES
+		+ camera_rules
+		+ "\nENTITY IDs: "
+		+ json.dumps(entities)
+		+ "\nAUTHORITATIVE ACTIONS: "
+		+ json.dumps(actions, ensure_ascii=False)
+		+ "\nVISUAL: "
+		+ str(beat.get("camera") or "")
+		+ "\nCONTINUITY: "
+		+ str(beat.get("rules") or "")
+		+ "\nPLACE: "
+		+ base["setting_prompt"]
+		+ "\nREFERENCES: "
+		+ json.dumps(
+			[
+				{k: r.get(k) for k in ("key", "label", "role")}
+				for r in references
+				if r["key"] in base["reference_keys"]
+			],
+			ensure_ascii=False,
+		)
+		+ '\nReturn {"image_prompt":"","setting_prompt":"","video_prompt":"","reference_keys":[],"continuity_mode":"New Scene","start_state":"","end_state":"","motion_plan":{"shot_structure":{}},"needs_editing":""}. Camera intent is derived by application policy.'
 	)
 	# A bounded schema-repair retry fixes malformed inferred structure, never the
 	# authored actions. Invalid output must not silently lose physical constraints.
 	for attempt in range(3):
 		raw = _ask_planner(prompt, max_tokens=2600)
 		raw.setdefault("motion_plan", {}).update(actions=actions, scene_contract=contract)
+		_discard_inferred_camera(project, raw)
 		try:
-			plan = normalize_production_shot(raw, reference_keys={r["key"] for r in references},
-			                                 duration=float(shot.duration_seconds), is_first=int(shot.shot_number or 0) <= 1)
+			plan = normalize_production_shot(
+				raw,
+				reference_keys={r["key"] for r in references},
+				duration=float(shot.duration_seconds),
+				is_first=int(shot.shot_number or 0) <= 1,
+			)
 			break
 		except ValueError as exc:
 			if attempt == 2:
@@ -429,7 +483,10 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 				"Events require id, description, start, end, after:[]; dependencies must end before the event starts. "
 				"Checks require id, scope:opening|sequence|event, claim; event scope also requires a declared event ID. "
 				"image_prompt is one opening still of at most 60 words. "
-				+ STRUCTURE_RULES + camera_rules + "\nINVALID PLAN: " + json.dumps(raw, ensure_ascii=False)
+				+ STRUCTURE_RULES
+				+ camera_rules
+				+ "\nINVALID PLAN: "
+				+ json.dumps(raw, ensure_ascii=False)
 			)
 	if not plan["motion_plan"].get("shot_structure"):
 		frappe.throw(_("Timed scene planning did not provide shot structure. Please replan the scene."))
@@ -440,23 +497,22 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 		plan["video_prompt"] += "\n\nRules: " + beat["rules"]
 	plan["reference_keys"] = base["reference_keys"]
 	plan["setting_prompt"] = base["setting_prompt"] or plan["setting_prompt"]
-	plan["notes"] = [*base["notes"][1:], *plan["notes"], "Action timing and ordered events preserved from the workbook; opening staging uses the shared production planner."]
+	plan["notes"] = [
+		*base["notes"][1:],
+		*plan["notes"],
+		"Action timing and ordered events preserved from the workbook; opening staging uses the shared production planner.",
+	]
 	plan["audio"] = audio_direction(project, beat)
 	plan["views"], plan["coverage"] = [], 1.0
 	plan["held_back"] = any(note.startswith("Needs editing:") for note in plan["notes"])
 	return plan
 
 
-CAMERA_LABEL = re.compile(r"^\s*(?:camera(?:\s+(?:angle|movement|shot|move))?|shot|angle|góc quay|góc máy)\s*[:.]\s*", re.I)
-
-
 def english_roles(text, references, product_name=""):
 	"""The text with each character's name as the sheet writes it ("Gấu con") replaced by its English role, and the
 	product's own name by "the advertised product": the video model prints names it is
 	given onto objects."""
-	from joymedia.services.planning.prompts import _display_name
-
-	from joymedia.services.planning.prompts import cast_number
+	from joymedia.services.planning.prompts import _display_name, cast_number
 
 	characters = [r for r in references if r.get("role") in ("Character", "Person")]
 	labels = [r["label"] for r in characters]
@@ -465,81 +521,27 @@ def english_roles(text, references, product_name=""):
 		name = _name_phrase(reference["label"])
 		if name and not name.isascii():
 			number, total = cast_number(reference["label"], labels)
-			display = _display_name(reference["label"], number, total, person=reference.get("role") == "Person")
+			display = _display_name(
+				reference["label"], number, total, person=reference.get("role") == "Person"
+			)
 			text = re.sub(re.escape(name), display, text, flags=re.I)
-	products = {_name_phrase(r["label"]) for r in references if r.get("role") == "Product"} | {str(product_name or "").strip()}
+	products = {_name_phrase(r["label"]) for r in references if r.get("role") == "Product"} | {
+		str(product_name or "").strip()
+	}
 	for name in sorted((n for n in products if n and not n.isascii()), key=len, reverse=True):
 		text = re.sub(
-			rf"(?:\b(?:the|a|an)\s+)?{re.escape(name)}(?:\s+(?:package|pack|packet|bag))?", "the advertised product", text, flags=re.I,
+			rf"(?:\b(?:the|a|an)\s+)?{re.escape(name)}(?:\s+(?:package|pack|packet|bag))?",
+			"the advertised product",
+			text,
+			flags=re.I,
 		)
 	return re.sub(r"(^|[.!?]\s+)the ", lambda m: m.group(1) + "The ", text)
 
 
 # Camera terms of Vietnamese storyboards, longest first; the small planning model mistranslates these.
-CAMERA_TERMS = (
-	("siêu cận cảnh", "extreme close-up"), ("cận cảnh", "close-up"), ("trung cảnh", "medium shot"),
-	("toàn cảnh", "wide shot"), ("viễn cảnh", "long shot"), ("góc nghiêng", "side angle"), ("chính diện", "front view"),
-	("ngang tầm mắt", "eye level"), ("từ trên xuống", "top-down"), ("từ dưới lên", "low angle"), ("góc thấp", "low angle"),
-	("góc cao", "high angle"), ("chuyển động chậm", "slow motion"), ("quay chậm", "slow motion"), ("lia máy", "pan"),
-	("đẩy máy", "push in"), ("kéo máy", "pull out"), ("máy đi theo", "tracking shot"), ("xoay quanh", "orbit"),
-	("cầm tay", "handheld"), ("ánh sáng dịu nhẹ", "soft light"), ("chia màn hình", "split screen"),
-)
-
-
-def camera_glossary(text):
-	"""The camera terms of a Vietnamese camera direction, in order, with "->" read as "to": "wide shot to close-up"."""
-	source = str(text or "").casefold()
-	found = []
-	for vietnamese, english in CAMERA_TERMS:
-		for match in re.finditer(re.escape(vietnamese), source):
-			if not any(start <= match.start() < end for start, end, _term in found):
-				found.append((match.start(), match.end(), english))
-	found.sort()
-	parts = []
-	for index, (start, _end, english) in enumerate(found):
-		joined_by_arrow = index and re.search(r"->|→|=>", source[found[index - 1][1]:start])
-		parts.append(("to " if joined_by_arrow else "") + english)
-	return re.sub(r",\s+to ", " to ", ", ".join(parts))
-
-
-FRAMING_WORDS = re.compile(
-	r"\b(?:shot|close|wide|medium|angle|camera|zoom\w*|pan\w*|tilt\w*|view|slow|motion|top|down|macro|overhead|eye|level|"
-	r"split|dolly|track\w*|push|pull)\b", re.I,
-)
-
-
-def with_glossary(translation, terms):
-	"""The glossary's framing, then every clause of the translation the glossary does not restate.
-
-	A clause naming the same framing in other words ("front angle" for "front view") is dropped; one the glossary does
-	not cover ("very slight push-in", "hero packshot", "sparkling light around the pack") is kept."""
-	covered = {word[:4] for word in re.findall(r"[a-z]{4,}", terms.casefold())} | {
-		word for word in re.findall(r"\b[a-z]{2,3}\b", terms.casefold())
-	}
-
-	def restates(clause):
-		words = {word[:4] for word in re.findall(r"[a-z]{4,}", clause.casefold())}
-		return bool(FRAMING_WORDS.search(clause) and words & covered)
-
-	clauses = [part.strip(" .") for part in re.split(r"(?<=[.!?])\s+|,\s*", str(translation or "")) if part.strip(" .")]
-	kept = [clause[:1].upper() + clause[1:] for clause in clauses if not restates(clause)]
-	return " ".join([terms[:1].upper() + terms[1:] + "."] + [f"{clause}." for clause in kept])
-
-
-def camera_direction(text):
-	"""The sheet's camera direction as one plain sentence: "Close-up of the table. Slow motion." (labels removed)."""
-	parts = [CAMERA_LABEL.sub("", line + " ").strip(" .") for line in re.split(r"\n+|(?<=[.!?])\s+", str(text or ""))]
-	parts = [part for part in parts if part and is_english(part)]
-	return ". ".join(parts) + "." if parts else ""
 
 
 PACKAGING_WORDS = re.compile(r"\b(?:bịch|hộp|gói|thùng|chai|lọ|tuýp|sản phẩm)\b", re.I)
-
-
-def brand_words(product_name):
-	"""The likely brand words in a product name, after its generic product words."""
-	words = re.findall(r"[^\W\d_]+", str(product_name or ""))
-	return {w.casefold() for w in words[1:] if w[:1].isupper() or (w.isupper() and len(w) > 1)}
 
 
 def shows_product(project, text):
@@ -549,7 +551,9 @@ def shows_product(project, text):
 	about an ordinary competitor ("giấy ăn thường lau… bị mủn rách") and must not show the advertised pack failing.
 	"""
 	words = {w.casefold() for w in re.findall(r"[^\W\d_]+", str(text or ""))}
-	return bool(brand_words(project.get("product_name")) & words) or bool(PACKAGING_WORDS.search(text) or PRODUCT_WORDS.search(text))
+	return bool(brand_words(project.get("product_name")) & words) or bool(
+		PACKAGING_WORDS.search(text) or PRODUCT_WORDS.search(text)
+	)
 
 
 def _place(project, beat, attempt=0):
@@ -560,14 +564,25 @@ def _place(project, beat, attempt=0):
 		return ""
 	prompt = (
 		"From this storyboard text, write ONLY the place and the light, in one short English sentence, with no "
-		f"characters, objects or actions.\nTEXT: {text}\nReturn {{\"place\": \"...\"}}"
+		f'characters, objects or actions.\nTEXT: {text}\nReturn {{"place": "..."}}'
 		+ (f"\n(Attempt {attempt + 1}: name only a real place from the text.)" if attempt else "")
 	)
-	raw = _ask_planner(prompt, system="You extract the setting from storyboard text. Return JSON only.", max_tokens=80, capability="translator")
+	raw = _ask_planner(
+		prompt,
+		system="You extract the setting from storyboard text. Return JSON only.",
+		max_tokens=80,
+		capability="translator",
+	)
 	place = " ".join(str((raw or {}).get("place") or "").split())
 	# A place has no verbs: an action sentence ("Water stain ... is absorbed") is not one.
-	is_action = re.search(r"\b(is|are|was|were|being|absorb\w*|plac\w*|pull\w*|lift\w*|hold\w*|pour\w*|spill\w*)\b", place, re.I)
-	return place if looks_english(place) and len(place.split()) <= 25 and not is_action and PLACE_WORDS.search(place) else ""
+	is_action = re.search(
+		r"\b(is|are|was|were|being|absorb\w*|plac\w*|pull\w*|lift\w*|hold\w*|pour\w*|spill\w*)\b", place, re.I
+	)
+	return (
+		place
+		if looks_english(place) and len(place.split()) <= 25 and not is_action and PLACE_WORDS.search(place)
+		else ""
+	)
 
 
 def project_reference_options(project):
@@ -588,18 +603,28 @@ def project_reference_options(project):
 		if not asset or frappe.db.get_value("Media Asset", asset, "media_type") != "Image":
 			continue
 		variant_count = sum(1 for item in all_rows if identity_key(item) == identity_key(row))
-		option = {"key": row.reference_key, "label": row.label or row.reference_key, "role": row.reference_role or "General"}
-		option["aliases"] = [item.label or item.reference_key for item in all_rows if identity_key(item) == identity_key(row)]
+		option = {
+			"key": row.reference_key,
+			"label": row.label or row.reference_key,
+			"role": row.reference_role or "General",
+		}
+		option["aliases"] = [
+			item.label or item.reference_key for item in all_rows if identity_key(item) == identity_key(row)
+		]
 		if variant_count > 1:
 			option["description"] = f"{variant_count} approved views of this one identity."
 		try:
-			analysis = frappe.parse_json(frappe.db.get_value("Asset Version", row.asset_version, "analysis_json") or "{}")
+			analysis = frappe.parse_json(
+				frappe.db.get_value("Asset Version", row.asset_version, "analysis_json") or "{}"
+			)
 		except (TypeError, ValueError):
 			analysis = {}
 		# What the picture actually shows (pose, framing) lets the prompt agree with it.
 		if isinstance(analysis, dict) and analysis.get("description"):
 			option["description"] = " ".join(
-				filter(None, (option.get("description"), " ".join(str(analysis["description"]).split())[:200]))
+				filter(
+					None, (option.get("description"), " ".join(str(analysis["description"]).split())[:200])
+				)
 			)
 		options.append(option)
 	return options
@@ -609,7 +634,11 @@ def creative_beat(project, shot):
 	"""The advertiser's own description of the beat, verbatim; imported rows when available."""
 	source = {}
 	try:
-		scenes = (frappe.parse_json(project.storyboard_source_json or "{}") or {}).get("selected_demo", {}).get("scenes", [])
+		scenes = (
+			(frappe.parse_json(project.storyboard_source_json or "{}") or {})
+			.get("selected_demo", {})
+			.get("scenes", [])
+		)
 	except (TypeError, ValueError):
 		scenes = []
 	earlier = ""
@@ -643,38 +672,28 @@ def creative_beat(project, shot):
 	# A camera column is a list of short directions: translated whole, the model embroiders it ("light radiating around
 	# the pack" became "bokeh … window blinds"); one direction at a time it stays faithful.
 	text["camera"] = " ".join(
-		filter(None, (translate(part, project).strip() for part in re.split(r"\n+|(?<=[.!?])\s+", camera_vi) if part.strip()))
+		filter(
+			None,
+			(
+				translate(part, project).strip()
+				for part in re.split(r"\n+|(?<=[.!?])\s+", camera_vi)
+				if part.strip()
+			),
+		)
 	)
 	text["action"] = translate(text["action"], project, earlier=earlier)
 	# Camera directions use a fixed vocabulary: a translation missing one of the sheet's camera terms is replaced by them.
 	terms = camera_glossary(camera_vi)
-	if terms and any(term not in text["camera"].casefold().replace("-", " ").replace("slow-motion", "slow motion")
-	                 for term in (atom.replace("-", " ") for atom in re.split(r", | to ", terms))):
+	if terms and any(
+		term not in text["camera"].casefold().replace("-", " ").replace("slow-motion", "slow motion")
+		for term in (atom.replace("-", " ") for atom in re.split(r", | to ", terms))
+	):
 		text["camera"] = with_glossary(text["camera"], terms)
 	text["summary"] = " ".join(filter(None, (text["camera"], text["action"]))).strip()
 	return text
 
 
 # Colour words translated by a fixed table (the model reads "hồng", pink, as red). Longest first: "xanh lá" before "xanh".
-COLOUR_TERMS = (
-	("xanh lá cây", "green"), ("xanh lá", "green"), ("xanh lục", "green"), ("xanh dương", "blue"), ("xanh lam", "blue"),
-	("xanh da trời", "sky blue"), ("đỏ", "red"), ("hồng", "pink"), ("cam", "orange"), ("vàng", "yellow"), ("tím", "purple"),
-	("nâu", "brown"), ("đen", "black"), ("trắng", "white"), ("xám", "grey"), ("ghi", "grey"), ("kem", "cream"), ("be", "beige"),
-	# Paper products: "giấy lụa" is tissue paper (not lace), "rút" is pull-out.
-	("giấy lụa rút", "pull-out tissue paper"), ("giấy lụa", "tissue paper"), ("khăn giấy rút", "pull-out tissues"),
-	("khăn giấy", "tissues"), ("giấy ăn", "paper napkins"),
-	# "rút" is taking a sheet out of its pack; read as "draw" it puts a drawing on the paper.
-	("vừa rút", "just pulled out of the pack"), ("rút", "pull out of the pack (never draw)"),
-)
-
-
-def colour_terms(text):
-	"""'hồng = pink' for each colour word the text uses (a word on its own, not inside another word)."""
-	source, found = f" {str(text or '').casefold()} ", []
-	for vietnamese, english in COLOUR_TERMS:
-		if re.search(rf"(?<![\w]){re.escape(vietnamese)}(?![\w])", source) and not any(vietnamese in v for v, _e in found):
-			found.append((vietnamese, english))
-	return [f"{vietnamese} = {english}" for vietnamese, english in found]
 
 
 def translate(text, project, about="", earlier=""):
@@ -693,8 +712,7 @@ def translate(text, project, about="", earlier=""):
 	context = (
 		f"This is a storyboard for an advertisement for: {project.product_name or project.project_name}. "
 		+ (f"The story: {story} " if story else "")
-		+
-		f"Characters and products shown: {references or 'not specified'}. Product words refer to the advertised "
+		+ f"Characters and products shown: {references or 'not specified'}. Product words refer to the advertised "
 		"product; a character named in the text is the listed character, and a body part named in the text "
 		"(for example a hand) belongs to that character."
 		+ (f" The text belongs to this scene: {about}" if about else "")
@@ -705,17 +723,26 @@ def translate(text, project, about="", earlier=""):
 	prompt = (
 		f"{context}\nTranslate this storyboard text into English. Be literal and complete; do not add, remove or "
 		"change any detail, and do not repeat the original text.\n"
-		f"TEXT: {text}\nReturn {{\"english\": \"...\"}}"
+		f'TEXT: {text}\nReturn {{"english": "..."}}'
 	)
 	for attempt in range(2):
 		raw = _ask_planner(
-			prompt + ("\nThe answer must be written in English only, not in the original language." if attempt else ""),
-			system="You translate storyboard text faithfully. Return JSON only.", max_tokens=600, capability="translator",
+			prompt
+			+ (
+				"\nThe answer must be written in English only, not in the original language."
+				if attempt
+				else ""
+			),
+			system="You translate storyboard text faithfully. Return JSON only.",
+			max_tokens=600,
+			capability="translator",
 		)
 		english = english_part((raw or {}).get("english"))
 		# A complete translation is about as long as the text: much shorter drops an action, much longer invents one.
 		if (
-			english and is_english(english) and 0.5 * len(text) <= len(english) <= 2.2 * len(text) + 40
+			english
+			and is_english(english)
+			and 0.5 * len(text) <= len(english) <= 2.2 * len(text) + 40
 			and not invented_names(english, f"{text} {about} {project.product_name or ''}")
 		):
 			return english
@@ -758,9 +785,12 @@ def audio_direction(project, beat, foley=None):
 
 
 BRAND_PROMPT = (
-	("logline", "STORY"), ("key_message", "KEY MESSAGE"), ("audience", "AUDIENCE"),
+	("logline", "STORY"),
+	("key_message", "KEY MESSAGE"),
+	("audience", "AUDIENCE"),
 	("claims", "APPROVED CLAIMS (the only product benefits that may be shown or said)"),
-	("avoid", "MUST NOT SAY OR SHOW"), ("mandatories", "MUST INCLUDE"),
+	("avoid", "MUST NOT SAY OR SHOW"),
+	("mandatories", "MUST INCLUDE"),
 )
 
 
@@ -769,29 +799,40 @@ def brand_lines(project):
 	from joymedia.services.intake.references import brand
 
 	given = brand(project)
-	return [f"{title}: {' | '.join(line.strip() for line in str(given[key]).splitlines() if line.strip())}" for key, title in BRAND_PROMPT if given.get(key)]
+	return [
+		f"{title}: {' | '.join(line.strip() for line in str(given[key]).splitlines() if line.strip())}"
+		for key, title in BRAND_PROMPT
+		if given.get(key)
+	]
 
 
 def build_planning_prompt(project, shot, beat, references, previous_end_state):
-	from joymedia.services.scene.contract import PLANNING_RULES
+	from joymedia.services.planning.camera import camera_planning_rules
 	from joymedia.services.planning.director_rules import CINEMATOGRAPHY_RULES
 	from joymedia.services.planning.shot_structure import PLANNING_RULES as SHOT_STRUCTURE_RULES
-	from joymedia.services.planning.camera import camera_planning_rules
+	from joymedia.services.scene.contract import PLANNING_RULES
 
-	aspect = "portrait 9:16" if (project.delivery_height or 0) > (project.delivery_width or 0) else "landscape"
-	lines = [
-		f"PROJECT: {project.product_name or project.project_name}. Format: {aspect}.",
-		f"BRIEF: {' '.join(str(project.video_idea or '').split())[:300]}",
-		"AVAILABLE REFERENCES (use only these keys):",
-		*(
-			f"- {ref['key']}: {ref['label']} ({ref['role']})" + (f". It shows: {ref['description']}" if ref.get("description") else "")
-			for ref in references
-		),
-	] if references else [
-		f"PROJECT: {project.product_name or project.project_name}. Format: {aspect}.",
-		f"BRIEF: {' '.join(str(project.video_idea or '').split())[:300]}",
-		"AVAILABLE REFERENCES: none.",
-	]
+	aspect = (
+		"portrait 9:16" if (project.delivery_height or 0) > (project.delivery_width or 0) else "landscape"
+	)
+	lines = (
+		[
+			f"PROJECT: {project.product_name or project.project_name}. Format: {aspect}.",
+			f"BRIEF: {' '.join(str(project.video_idea or '').split())[:300]}",
+			"AVAILABLE REFERENCES (use only these keys):",
+			*(
+				f"- {ref['key']}: {ref['label']} ({ref['role']})"
+				+ (f". It shows: {ref['description']}" if ref.get("description") else "")
+				for ref in references
+			),
+		]
+		if references
+		else [
+			f"PROJECT: {project.product_name or project.project_name}. Format: {aspect}.",
+			f"BRIEF: {' '.join(str(project.video_idea or '').split())[:300]}",
+			"AVAILABLE REFERENCES: none.",
+		]
+	)
 	lines += brand_lines(project)
 	lines.append(camera_planning_rules(project))
 	lines += [
@@ -835,7 +876,7 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		"(the advertised product's pack whenever the product itself is shown). Empty only if none is visible.",
 		'- continuity_mode: "Continue" only if this beat continues the same scene, subject and setting from the '
 		'previous shot; otherwise "New Scene".',
-		'- needs_editing: if the beat needs several cuts, locations or a split-screen that one continuous clip '
+		"- needs_editing: if the beat needs several cuts, locations or a split-screen that one continuous clip "
 		'cannot show, give a short reason and plan the single most important moment; else "".',
 		"- motion_plan: actions with start and end in seconds covering the duration.",
 		PLANNING_RULES,
@@ -851,28 +892,14 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 	return "\n".join(lines)
 
 
-STOPWORDS = frozenset(
-	"this that with from into onto over under then than they them their there where while which will would "
-	"each every some very much more most only just also have has had been being were what when who whom "
-	"about after before above below between during through across along behind beside around against "
-	"angle camera shot shots close closeup extreme medium wide macro super lighting light soft focus depth field "
-	"smooth gentle slowly slow frame view scene style look feel image video".split()
-)
 MIN_COVERAGE = 0.5
 REVIEW_COVERAGE = 0.85
 
 
-def _words(text, minimum=4):
-	"""Lower-case ASCII words (accents folded, so 'giấy' and 'giay' match) of at least `minimum` letters."""
-	import re
-	import unicodedata
-
-	folded = unicodedata.normalize("NFKD", str(text or "").replace("đ", "d").replace("Đ", "D")).encode("ascii", "ignore").decode()
-	return set(re.findall(r"[a-z]{%d,}" % minimum, folded.lower()))
-
-
 # Words in a reference's label that say what kind of image it is, not what it shows.
-LABEL_FILLER = frozenset("mascot character person model image photo picture pack package box background room reference".split())
+LABEL_FILLER = frozenset(
+	"mascot character person model image photo picture pack package box background room reference".split()
+)
 
 
 def ground_reference_keys(project, beat, keys, references):
@@ -908,34 +935,6 @@ def ground_reference_keys(project, beat, keys, references):
 	return keys + added, notes
 
 
-def added_share(beat_text, rewrite, *allowed):
-	"""Share of a rewrite's content words (by 4-letter stem) found neither in the beat nor in `allowed` (the cast)."""
-	def stems(text):
-		return {w[:4] for w in re.findall(r"[a-z]{4,}", str(text).lower()) if w not in STOPWORDS}
-
-	have = stems(rewrite)
-	return len(have - stems(" ".join((beat_text, *allowed)))) / len(have) if have else 0.0
-
-
-def beat_coverage(beat_text, *texts):
-	"""Fraction of the beat's content words (matched by 4-letter stem) that the plan still mentions.
-
-	A rewrite that drops a required character, object or action scores low, so it can be held back for a
-	person to review instead of silently replacing the advertiser's description.
-	"""
-	import re
-
-	def stems(text):
-		return {w[:4] for w in re.findall(r"[a-z]{4,}", str(text).lower()) if w not in STOPWORDS}
-
-	wanted = stems(beat_text)
-	if not wanted:
-		return 1.0, []
-	have = stems(" ".join(texts))
-	missing = sorted(w for w in wanted if w not in have)
-	return 1 - len(missing) / len(wanted), missing
-
-
 def normalize_production_shot(raw, *, reference_keys, duration, is_first):
 	"""Validate the planner's answer. Unknown references are dropped and reported; the rest must be usable."""
 	if not isinstance(raw, dict):
@@ -945,7 +944,9 @@ def normalize_production_shot(raw, *, reference_keys, duration, is_first):
 	if not image_prompt or not video_prompt:
 		frappe.throw(_("The planner did not return both an image prompt and a video prompt."))
 	if len(image_prompt.split()) > MAX_IMAGE_WORDS:
-		frappe.throw(_("The planner's image prompt describes more than one frame; review this scene by hand."))
+		frappe.throw(
+			_("The planner's image prompt describes more than one frame; review this scene by hand.")
+		)
 	keys, notes = [], []
 	for key in raw.get("reference_keys") if isinstance(raw.get("reference_keys"), list) else []:
 		key = str(key).strip()
@@ -953,7 +954,9 @@ def normalize_production_shot(raw, *, reference_keys, duration, is_first):
 			keys.append(key)
 		elif key:
 			notes.append(f"Ignored unknown reference '{key}'.")
-	mode = "Continue" if str(raw.get("continuity_mode") or "").strip().casefold() == "continue" else "New Scene"
+	mode = (
+		"Continue" if str(raw.get("continuity_mode") or "").strip().casefold() == "continue" else "New Scene"
+	)
 	motion = _normalized_motion_plan(raw.get("motion_plan"), duration, video_prompt)
 	if any(a["end"] <= a["start"] or a["start"] < 0 or a["end"] > duration + 0.01 for a in motion["actions"]):
 		motion["actions"] = [{"start": 0, "end": duration, "action": video_prompt}]
@@ -962,13 +965,16 @@ def normalize_production_shot(raw, *, reference_keys, duration, is_first):
 	if needs_editing:
 		notes.append(f"Needs editing: {needs_editing}")
 	return {
-		"image_prompt": image_prompt, "video_prompt": video_prompt, "reference_keys": keys,
+		"image_prompt": image_prompt,
+		"video_prompt": video_prompt,
+		"reference_keys": keys,
 		"setting_prompt": " ".join(str(raw.get("setting_prompt") or "").split())[:300],
 		"sound_effects": " ".join(str(raw.get("sound_effects") or "").split())[:160],
 		"continuity_mode": "New Scene" if is_first else mode,
 		"start_state": " ".join(str(raw.get("start_state") or "").split())[:300],
 		"end_state": " ".join(str(raw.get("end_state") or "").split())[:300],
-		"motion_plan": motion, "notes": notes,
+		"motion_plan": motion,
+		"notes": notes,
 	}
 
 
@@ -986,16 +992,21 @@ def apply_production_shot(project, shot, plan):
 	shot.planner_notes = "\n".join(plan["notes"])
 	shot.views_json = frappe.as_json(plan["views"]) if plan.get("views") else ""
 	shot.save(ignore_permissions=True)
-	_assign_shot_references(project, {shot.name: plan["reference_keys"]}, view_keys=plan.get("reference_views"))
+	_assign_shot_references(
+		project, {shot.name: plan["reference_keys"]}, view_keys=plan.get("reference_views")
+	)
 	beat = creative_beat(project, shot)
 	for field, frame_role in (("opening_reference", "first_frame"), ("ending_reference", "last_frame")):
 		opening = beat.get(field)
 		if not opening:
 			continue
-		from joymedia.services.intake.references import find_reference
 		from joymedia.api.storyboard import set_project_shot_keyframe
-		options = [{"key": row.reference_key, "label": row.label, "version": row.asset_version}
-		           for row in project.selected_media or []]
+		from joymedia.services.intake.references import find_reference
+
+		options = [
+			{"key": row.reference_key, "label": row.label, "version": row.asset_version}
+			for row in project.selected_media or []
+		]
 		ref = find_reference(opening, options)
 		if not ref:
 			frappe.throw(_("Opening reference '{0}' is not selected in this project.").format(opening))
@@ -1011,13 +1022,22 @@ def _constrain_to_first_frame(project, shot, plan):
 	shot.reload()
 	if plan.get("views"):
 		return  # a split screen keeps its list of views as translated
-	references = [{"reference_role": row.reference_role, "asset_version": row.asset_version} for row in shot.generation_inputs or []]
-	if not pasted_references(references, shot.character_mode or project.get("character_mode") or "Paste exact art"):
+	references = [
+		{"reference_role": row.reference_role, "asset_version": row.asset_version}
+		for row in shot.generation_inputs or []
+	]
+	if not pasted_references(
+		references, shot.character_mode or project.get("character_mode") or "Paste exact art"
+	):
 		return
 	project_labels = {row.asset_version: row.label for row in project.selected_media or []}
 	inventory = first_frame_inventory(
-		frappe._dict(references=references, character_mode=shot.character_mode or project.get("character_mode")),
-		frappe._dict(references=[{"asset_version": v, "label": label} for v, label in project_labels.items()]),
+		frappe._dict(
+			references=references, character_mode=shot.character_mode or project.get("character_mode")
+		),
+		frappe._dict(
+			references=[{"asset_version": v, "label": label} for v, label in project_labels.items()]
+		),
 	)
 	# The sheet's camera line and its rules are not movement to rewrite: they are kept apart and put back as they are.
 	body, _rules_sep, rules = plan["video_prompt"].partition("\n\nRules: ")
@@ -1072,13 +1092,16 @@ def _request_planner(prompt, *, system, max_tokens, capability="planner"):
 	}
 	if capability == "planner":
 		from joymedia.services.planning.plan_parsing import _completion_budget
+
 		payload["max_tokens"] = _completion_budget(base_url, payload)
 	try:
 		response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
 	except requests.RequestException as exc:
 		frappe.throw(_("The planner is unavailable at {0}: {1}").format(base_url, str(exc)))
 	if not response.ok:
-		frappe.throw(_("The planner request failed ({0}): {1}").format(response.status_code, response.text[:300]))
+		frappe.throw(
+			_("The planner request failed ({0}): {1}").format(response.status_code, response.text[:300])
+		)
 	try:
 		return json.loads(response.json()["choices"][0]["message"]["content"])
 	except (KeyError, IndexError, TypeError, ValueError) as exc:

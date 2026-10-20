@@ -71,3 +71,6 @@ jspm_packages/
 
 # Aider AI Chat
 .aider*
+
+# Also excludes dependency symlinks used by isolated worktrees.
+node_modules

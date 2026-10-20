@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Keep ComfyUI traffic on its own SSH connection. Large planner/vision requests
 # must not stall queue checks, prompt submission or output downloads.
+# PNG, MP4 and model payloads are already compressed; avoid SSH recompression.
 set -u
 HOST="${JOYMEDIA_GPU_HOST:-ubuntu@50.35.188.78}"
 PORT="${JOYMEDIA_GPU_PORT:-30134}"
@@ -15,7 +16,7 @@ stop() {
 }
 trap stop TERM INT
 while true; do
-  ssh -N -C -i "$KEY" -p "$PORT" \
+  ssh -N -o Compression=no -i "$KEY" -p "$PORT" \
     -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
     -o ConnectTimeout=20 -o BatchMode=yes \
     -L "127.0.0.1:${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" "$HOST" &

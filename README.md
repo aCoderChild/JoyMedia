@@ -67,6 +67,8 @@ See [architecture](docs/architecture.md) for boundaries and request flow.
 
 ```bash
 python scripts/verify_app_layout.py
+ruff check joymedia scripts deploy
+ruff format --check joymedia scripts deploy
 python scripts/run_tests.py joymedia.localhost            # every test module (or add a package name: planning)
 cd joymedia/frontend && npm ci && npm run build
 ```
@@ -82,7 +84,7 @@ run `bench --site <site> execute joymedia.install.setup` (see [docs/production-p
 pre-commit install
 ```
 
-Pre-commit runs Ruff, ESLint, Prettier, and pyupgrade. The GitHub Actions
+Pre-commit runs Ruff, ESLint, Prettier, and file-format checks. The GitHub Actions
 workflow installs this repository through `bench get-app`, installs the app on
 a clean test site, runs the server suite, and builds the frontend.
 

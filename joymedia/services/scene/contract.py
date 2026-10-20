@@ -48,7 +48,9 @@ STAGING_RULES = """Physical staging:
   fit its duration, report needs_editing; never silently omit a required action.
 """
 
-PLANNING_RULES = STAGING_RULES + """
+PLANNING_RULES = (
+	STAGING_RULES
+	+ """
 - motion_plan.scene_contract is optional when no physical interaction needs constraints.
   Start with {"version":1,"entities":[{"id":"subject","label":"the authored subject"}],"relations":[],"events":[]}.
   Populate only the entities, relationships and events established by this scene; no actor is required.
@@ -87,6 +89,7 @@ PLANNING_RULES = STAGING_RULES + """
   turning, flowing, gesturing, changing shape, interacting, or moving/orbiting cameras;
   preserve the authored action and its events instead. Unknown motion is not stationary.
 """
+)
 
 
 def read_contract(plan, duration=None):
@@ -98,22 +101,36 @@ def read_contract(plan, duration=None):
 		return None
 	if not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] != 1:
 		raise ValueError("Scene contract requires version 1.")
-	unknown = set(value) - {'version','entities','relations','events','checks','proportions','counts','parts','properties'}
+	unknown = set(value) - {
+		"version",
+		"entities",
+		"relations",
+		"events",
+		"checks",
+		"proportions",
+		"counts",
+		"parts",
+		"properties",
+	}
 	if unknown:
-		raise ValueError('Unsupported scene contract fields: ' + ', '.join(sorted(unknown)))
+		raise ValueError("Unsupported scene contract fields: " + ", ".join(sorted(unknown)))
+
 	def rows(key, limit):
 		items = value.get(key, [])
 		if not isinstance(items, list) or len(items) > limit or any(not isinstance(r, dict) for r in items):
 			raise ValueError(f"Scene contract {key} must contain at most {limit} objects.")
 		return items
+
 	def text(value, field):
 		if not isinstance(value, str) or not value.strip() or len(value) > 240:
 			raise ValueError(f"Scene contract {field} must be nonempty text of at most 240 characters.")
 		return " ".join(value.split())
+
 	def identifier(value):
 		if not isinstance(value, str) or not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_-]{0,47}", value):
 			raise ValueError("Scene contract IDs must be short identifiers.")
 		return value
+
 	entities, events = {}, {}
 	for row in rows("entities", 16):
 		key = identifier(row.get("id"))
@@ -123,24 +140,47 @@ def read_contract(plan, duration=None):
 	relations = []
 	for row in rows("relations", 16):
 		kind, subject, obj = row.get("kind"), row.get("subject"), row.get("object")
-		if not isinstance(kind, str) or kind not in RELATIONS or not isinstance(subject, str) or not isinstance(obj, str) or subject not in entities or obj not in entities or subject == obj:
-			raise ValueError("Scene contract relations require a known kind and two distinct declared entities.")
+		if (
+			not isinstance(kind, str)
+			or kind not in RELATIONS
+			or not isinstance(subject, str)
+			or not isinstance(obj, str)
+			or subject not in entities
+			or obj not in entities
+			or subject == obj
+		):
+			raise ValueError(
+				"Scene contract relations require a known kind and two distinct declared entities."
+			)
 		relation = {"kind": kind, "subject": subject, "object": obj}
 		if relation not in relations:
 			relations.append(relation)
 	proportions, pairs = [], set()
 	for row in rows("proportions", 8):
 		subject, reference, axis = row.get("subject"), row.get("reference"), row.get("axis")
-		if not isinstance(subject, str) or not isinstance(reference, str) or subject not in entities or reference not in entities or subject == reference or axis not in ("height", "width", "depth"):
-			raise ValueError("Proportions require two distinct declared entities and a height, width or depth axis.")
+		if (
+			not isinstance(subject, str)
+			or not isinstance(reference, str)
+			or subject not in entities
+			or reference not in entities
+			or subject == reference
+			or axis not in ("height", "width", "depth")
+		):
+			raise ValueError(
+				"Proportions require two distinct declared entities and a height, width or depth axis."
+			)
 		low, high = row.get("min"), row.get("max")
 		if any(type(v) not in (int, float) or not 0.01 <= v <= 100 for v in (low, high)) or low > high:
-			raise ValueError("Proportion bounds must be finite ratios between 0.01 and 100, ordered min to max.")
+			raise ValueError(
+				"Proportion bounds must be finite ratios between 0.01 and 100, ordered min to max."
+			)
 		pair = (*sorted((subject, reference)), axis)
 		if pair in pairs:
 			raise ValueError("Declare each proportion pair and axis only once, including inverse pairs.")
 		pairs.add(pair)
-		proportions.append({"subject": subject, "reference": reference, "axis": axis, "min": low, "max": high})
+		proportions.append(
+			{"subject": subject, "reference": reference, "axis": axis, "min": low, "max": high}
+		)
 	owners = {}
 	for row in relations:
 		if row["kind"] == "attached_to":
@@ -159,12 +199,22 @@ def read_contract(plan, duration=None):
 		if key in events:
 			raise ValueError("Scene contract event IDs must be unique.")
 		start, end = row.get("start"), row.get("end")
-		if any(type(t) not in (int, float) or not math.isfinite(t) for t in (start, end)) or not 0 <= start < end or (duration is not None and end > float(duration) + 0.01):
+		if (
+			any(type(t) not in (int, float) or not math.isfinite(t) for t in (start, end))
+			or not 0 <= start < end
+			or (duration is not None and end > float(duration) + 0.01)
+		):
 			raise ValueError("Scene contract events require finite positive intervals within the shot.")
 		after = row.get("after", [])
 		if not isinstance(after, list) or len(after) > 8:
 			raise ValueError("Scene contract event dependencies must be a bounded list.")
-		events[key] = {"id": key, "description": text(row.get("description"), "description"), "start": start, "end": end, "after": [identifier(k) for k in after]}
+		events[key] = {
+			"id": key,
+			"description": text(row.get("description"), "description"),
+			"start": start,
+			"end": end,
+			"after": [identifier(k) for k in after],
+		}
 	for row in events.values():
 		for key in row["after"]:
 			if key not in events or events[key]["end"] > row["start"]:
@@ -176,23 +226,33 @@ def read_contract(plan, duration=None):
 			raise ValueError("Scene checks need unique IDs and opening, sequence or event scope.")
 		ids.add(key)
 		check = {"id": key, "claim": text(row.get("claim"), "claim"), "scope": row["scope"]}
-		if row['scope'] == 'event':
-			event_key = identifier(row.get('event'))
+		if row["scope"] == "event":
+			event_key = identifier(row.get("event"))
 			if event_key not in events:
-				raise ValueError('A phase-scoped check must reference a declared event.')
-			check['event'] = event_key
-		elif 'event' in row:
-			raise ValueError('Only event-scoped checks may reference an event.')
+				raise ValueError("A phase-scoped check must reference a declared event.")
+			check["event"] = event_key
+		elif "event" in row:
+			raise ValueError("Only event-scoped checks may reference an event.")
 		checks.append(check)
-	return {**normalize_structure(value, entities), "version": 1, "entities": list(entities.values()), "relations": relations, "events": sorted(events.values(), key=lambda r: (r["start"], r["id"])), **({"checks": checks} if checks else {}), **({"proportions": proportions} if proportions else {})}
+	return {
+		**normalize_structure(value, entities),
+		"version": 1,
+		"entities": list(entities.values()),
+		"relations": relations,
+		"events": sorted(events.values(), key=lambda r: (r["start"], r["id"])),
+		**({"checks": checks} if checks else {}),
+		**({"proportions": proportions} if proportions else {}),
+	}
 
 
-def instruction(plan, duration=None, start=None, end=None):
+def instruction(plan, duration=None, start=None, end=None, *, include_events=True):
 	contract = read_contract(plan, duration)
 	if not contract:
 		return ""
 	labels = {r["id"]: r["label"] for r in contract["entities"]}
-	parts = [f"{labels[r['subject']]} {RELATIONS[r['kind']]} {labels[r['object']]}" for r in contract["relations"]]
+	parts = [
+		f"{labels[r['subject']]} {RELATIONS[r['kind']]} {labels[r['object']]}" for r in contract["relations"]
+	]
 	actions = []
 	for event in contract["events"]:
 		if (start is not None and event["end"] <= start) or (end is not None and event["start"] >= end):
@@ -201,9 +261,10 @@ def instruction(plan, duration=None, start=None, end=None):
 		origin = start or 0
 		first = max(event["start"], origin) - origin
 		last = min(event["end"], end if end is not None else event["end"]) - origin
-		actions.append(f"{first:g}-{last:g}s: {event['description']}")
-		for check in contract.get('checks', []):
-			if check.get('event') == event['id']:
+		if include_events:
+			actions.append(f"{first:g}-{last:g}s: {event['description']}")
+		for check in contract.get("checks", []):
+			if check.get("event") == event["id"]:
 				actions.append(f"{first:g}-{last:g}s only: {check['claim']}")
 	parts.extend(proportion_claims(contract))
 	parts.extend(structure_claims(contract))
@@ -223,16 +284,31 @@ def review_questions(plan, duration=None):
 	questions = []
 	for row in contract["relations"]:
 		claim = f"{labels[row['subject']]} {RELATIONS[row['kind']]} {labels[row['object']]}"
-		questions.append((claim, "In these frames ordered left to right, top to bottom, is this relationship visibly supported wherever it can be seen: " + claim + "?"))
+		questions.append(
+			(
+				claim,
+				"In these frames ordered left to right, top to bottom, is this relationship visibly supported wherever it can be seen: "
+				+ claim
+				+ "?",
+			)
+		)
 	for row in contract["events"]:
 		for cause in row["after"]:
 			earlier = next(e for e in contract["events"] if e["id"] == cause)
 			claim = earlier["description"] + " BEFORE " + row["description"]
-			questions.append((claim, "Do these time-ordered frames visibly establish this event order: " + claim + "?"))
+			questions.append(
+				(claim, "Do these time-ordered frames visibly establish this event order: " + claim + "?")
+			)
 	for claim in structure_claims(contract):
-		questions.append((claim, 'Does the visible evidence support this authored structural requirement? Use uncertainty for hidden or ambiguous details: ' + claim))
-	if len(questions)>24:
-		raise ValueError('Scene review exceeds the claim budget; simplify or split the scene.')
+		questions.append(
+			(
+				claim,
+				"Does the visible evidence support this authored structural requirement? Use uncertainty for hidden or ambiguous details: "
+				+ claim,
+			)
+		)
+	if len(questions) > 24:
+		raise ValueError("Scene review exceeds the claim budget; simplify or split the scene.")
 	return questions
 
 
@@ -253,8 +329,11 @@ def opening_claims(plan, duration=None):
 	if not contract:
 		return []
 	labels = {row["id"]: row["label"] for row in contract["entities"]}
-	claims = [f"{labels[row['subject']]} {RELATIONS[row['kind']]} {labels[row['object']]}"
-		for row in contract["relations"] if row["kind"] in {"attached_to", "supported_by"}]
+	claims = [
+		f"{labels[row['subject']]} {RELATIONS[row['kind']]} {labels[row['object']]}"
+		for row in contract["relations"]
+		if row["kind"] in {"attached_to", "supported_by"}
+	]
 	claims.extend(proportion_claims(contract))
 	claims.extend(structure_claims(contract))
 	claims.extend(row["claim"] for row in contract.get("checks", []) if row["scope"] == "opening")
