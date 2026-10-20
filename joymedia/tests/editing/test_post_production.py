@@ -212,7 +212,7 @@ class TestMusicEnding(FrappeTestCase):
 				check=True,
 			)
 
-			start = post_production._music_start_frame(audio, 240)
+			start = post_production._music_start_frame(audio, 240, 24)
 
 		self.assertAlmostEqual(36, start, delta=3)
 
@@ -308,7 +308,12 @@ class TestMusicBed(FrappeTestCase):
 		from unittest.mock import MagicMock
 
 		for maximum, expected in ((744, 744), (192, 192)):
-			workflow = frappe._dict(execution_spec={"limits": {"max_frames": maximum}})
+			workflow = frappe._dict(
+				execution_spec={"limits": {"max_frames": maximum}},
+				delivery_width=720,
+				delivery_height=1280,
+				output_fps=24,
+			)
 			adapter = MagicMock()
 			adapter.extract_execution_metadata.return_value = {"primary_output_node_key": "save"}
 			with (
@@ -319,6 +324,7 @@ class TestMusicBed(FrappeTestCase):
 				patch("joymedia.workflow_adapters.get_workflow_adapter", return_value=adapter),
 				patch("joymedia.services.workflows.comfyui.run_workflow_to_bytes", return_value=b"audio"),
 				patch.object(music, "music_bed"),
+				patch.object(music, "_project_fps", return_value=24),
 				patch.object(music, "_save_output", return_value="NEW-MUSIC"),
 				patch("pathlib.Path.read_bytes", return_value=b"audio"),
 			):

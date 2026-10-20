@@ -39,15 +39,20 @@ def _video_workflow(project_name, first_frame, prompt, seconds, last_frame=None,
 	}
 	if last_frame and "last_frame" in contract:
 		inputs["last_frame"] = upload_local_file(last_frame)["server_path"]
-	fps = float(workflow_version.output_fps or 24)
+	from joymedia.services.project.formats import require_dimensions
+
+	width, height = require_dimensions(project)
+	fps = float(workflow_version.output_fps or 0)
+	if fps <= 0:
+		raise ValueError("The finishing workflow must declare output FPS.")
 	frame_count = max(1, math.ceil(float(seconds) * fps))
 	seed_material = f"{project_name}|{prompt}|{frame_count}|{first_frame}|{last_frame or ''}"
 	workflow = build_execution_workflow(
 		workflow_version,
 		inputs=inputs,
 		seed=int(hashlib.sha256(seed_material.encode()).hexdigest()[:12], 16),
-		width=int(size[0] if size else project.delivery_width or 1920),
-		height=int(size[1] if size else project.delivery_height or 1080),
+		width=int(size[0] if size else width),
+		height=int(size[1] if size else height),
 		fps=fps,
 		frame_count=frame_count,
 		output_prefix=f"joymedia/post/{frappe.generate_hash(length=10)}",

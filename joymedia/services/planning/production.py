@@ -120,6 +120,8 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 
 
 def motion_only(project, text, references, inventory="", attempt=0):
+	from joymedia.services.planning.director_rules import CINEMATOGRAPHY_RULES
+	from joymedia.services.project.formats import ratio_label
 	from joymedia.services.scene.contract import STAGING_RULES
 
 	"""The beat's actions and camera moves only, in English, using only what the first frame contains.
@@ -389,7 +391,9 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 		for row in authored
 	]
 	from joymedia.services.planning.camera import camera_planning_rules
+	from joymedia.services.planning.director_rules import CINEMATOGRAPHY_RULES
 	from joymedia.services.planning.shot_structure import PLANNING_RULES as STRUCTURE_RULES
+	from joymedia.services.project.formats import ratio_label
 	from joymedia.services.scene.contract import STAGING_RULES
 
 	camera_rules = camera_planning_rules(project)
@@ -434,6 +438,11 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 		"the application serializes authored events and timing. keep_visible must use the given ENTITY IDs. "
 		"Use one main camera behavior from shared shot grammar. Camera movement never substitutes for subject action. "
 		+ STRUCTURE_RULES
+		+ CINEMATOGRAPHY_RULES
+		+ "\nFORMAT: "
+		+ (ratio_label(project.delivery_width, project.delivery_height) or "unspecified")
+		+ "\n"
+		+ previous_coverage(project, shot)
 		+ STAGING_RULES
 		+ camera_rules
 		+ "\nENTITY IDs: "
@@ -806,14 +815,35 @@ def brand_lines(project):
 	]
 
 
+def previous_coverage(project, shot):
+	"""Context for editorial decisions in both workbook and creative planning."""
+	if int(shot.shot_number or 0) <= 1:
+		return ""
+	previous = frappe.db.get_value(
+		"Shot",
+		{"media_project": project.name, "shot_number": int(shot.shot_number) - 1, "is_removed": 0},
+		"motion_plan_json",
+	)
+	if not previous:
+		return ""
+	plan = frappe.parse_json(previous) if isinstance(previous, str) else previous
+	structure = plan.get("shot_structure") if isinstance(plan, dict) else None
+	return (
+		"PREVIOUS COVERAGE (preserve axis; motivate repeated size or a large jump): " + json.dumps(structure)
+		if structure
+		else ""
+	)
+
+
 def build_planning_prompt(project, shot, beat, references, previous_end_state):
 	from joymedia.services.planning.camera import camera_planning_rules
 	from joymedia.services.planning.director_rules import CINEMATOGRAPHY_RULES
 	from joymedia.services.planning.shot_structure import PLANNING_RULES as SHOT_STRUCTURE_RULES
+	from joymedia.services.project.formats import ratio_label
 	from joymedia.services.scene.contract import PLANNING_RULES
 
 	aspect = (
-		"portrait 9:16" if (project.delivery_height or 0) > (project.delivery_width or 0) else "landscape"
+		ratio_label(project.delivery_width, project.delivery_height) or "unspecified; do not invent a format"
 	)
 	lines = (
 		[
@@ -833,6 +863,7 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 			"AVAILABLE REFERENCES: none.",
 		]
 	)
+	lines.append(previous_coverage(project, shot))
 	lines += brand_lines(project)
 	lines.append(camera_planning_rules(project))
 	lines += [

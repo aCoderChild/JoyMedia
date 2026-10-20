@@ -192,7 +192,8 @@
 							:production-error="productionError"
 							:production-status="projectStatus"
 							:project-assets="projectAssets"
-							:settings-format="videoSettings.delivery_preset"
+							:settings-width="videoSettings.delivery_width"
+							:settings-height="videoSettings.delivery_height"
 							:final-video="finalVideo"
 							:selected-shot-index="selectedShotIndex"
 							:current-lang="currentLang"
@@ -372,7 +373,7 @@
 							:storyboard-approved="
 								workspace?.project?.storyboard_approval_status === 'Approved'
 							"
-							:portrait="videoSettings.delivery_preset === 'Portrait'"
+							:aspect-ratio="videoSettings.delivery_width / videoSettings.delivery_height"
 							:is-generating="isGenerating || isProductionActive"
 							:generation-phase="generationPhase"
 							:sync-error="syncError"

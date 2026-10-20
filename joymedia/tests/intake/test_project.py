@@ -179,6 +179,32 @@ class TestCreateFromBrief(FrappeTestCase):
 		self.assertEqual("todo", steps["approval"]["status"])
 		self.assertEqual("story", result["readiness"]["next"])
 
+	def test_description_ratio_and_missing_format_are_not_replaced_by_presets(self):
+		result = project_intake.create_project_from_brief(
+			"Wide brief", video_idea="A product commercial in 21:9."
+		)
+		project = frappe.get_doc("Media Project", result["project"])
+		self.assertEqual((1680, 720), (project.delivery_width, project.delivery_height))
+		empty = project_intake.create_project_from_brief("No shape", video_idea="A product commercial.")
+		project = frappe.get_doc("Media Project", empty["project"])
+		self.assertFalse(project.delivery_width)
+		self.assertEqual(
+			"todo", next(s for s in empty["readiness"]["steps"] if s["key"] == "format")["status"]
+		)
+
+	def test_custom_workbook_ratio_survives_settings_and_quality_change(self):
+		workbook = self._file("custom-shape.xlsx", _workbook_bytes(format_text="4:5 advertising"))
+		result = project_intake.create_project_from_brief(workbook_file=workbook.name)
+		project = frappe.get_doc("Media Project", result["project"])
+		self.assertEqual((720, 900), (project.delivery_width, project.delivery_height))
+		project.save_video_settings(
+			total_duration_seconds=10, delivery_preset="Portrait", export_quality="Studio 1440p60"
+		)
+		self.assertEqual((1080, 1350), (project.delivery_width, project.delivery_height))
+		project.save_video_settings(total_duration_seconds=10, delivery_preset="Portrait", aspect_ratio="1:1")
+		self.assertEqual("Square", project.delivery_preset)
+		self.assertEqual(project.delivery_width, project.delivery_height)
+
 	def test_a_bad_format_is_rejected(self):
 		with self.assertRaises(frappe.ValidationError):
 			project_intake.create_project_from_brief("Bad format", format="sideways")

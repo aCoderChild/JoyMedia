@@ -70,7 +70,10 @@ FIELDS = {
 		"required": True,
 		"label": {"vi": "Định dạng", "en": "Format"},
 		"names": ("định dạng", "tỉ lệ", "tỷ lệ khung hình", "format", "aspect ratio", "aspect"),
-		"hint": {"vi": "9:16, 16:9 hoặc 1:1.", "en": "9:16, 16:9 or 1:1."},
+		"hint": {
+			"vi": "Tỷ lệ đầu ra, vd. 16:9, 4:5, 1:1 hoặc 9:16.",
+			"en": "Output ratio, e.g. 16:9, 4:5, 1:1 or 9:16.",
+		},
 		"example": {
 			"vi": "9:16 (Dọc cho TikTok/Reels/Shorts)",
 			"en": "9:16 (vertical for TikTok/Reels/Shorts)",

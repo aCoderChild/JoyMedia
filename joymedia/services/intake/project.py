@@ -94,15 +94,11 @@ def infer_relative_size(label):
 
 
 def format_preset(text):
-	"""Delivery preset for the first aspect ratio found in a format description, else None."""
-	match = re.search(r"(\d+)\s*[:x×]\s*(\d+)", str(text or ""))
-	if not match:
-		return None
-	width, height = int(match.group(1)), int(match.group(2))
-	if not width or not height:
-		return None
-	ratio = width / height
-	return "Portrait" if ratio < 0.9 else "Square" if ratio <= 1.1 else "Landscape"
+	"""Orientation label only; exact geometry is retained separately."""
+	from joymedia.services.project.formats import orientation, parse_ratio
+
+	ratio = parse_ratio(text)
+	return orientation(ratio) if ratio else None
 
 
 def apply_workbook_format(project):
@@ -111,10 +107,13 @@ def apply_workbook_format(project):
 		demo = (frappe.parse_json(project.storyboard_source_json or "{}") or {}).get("selected_demo") or {}
 	except (TypeError, ValueError):
 		return None
-	preset = format_preset((demo.get("metadata") or {}).get("format"))
+	format_text = (demo.get("metadata") or {}).get("format")
+	preset = format_preset(format_text)
 	duration = float(project.total_duration_seconds or 0)
 	if preset and 1 <= duration <= 60:
-		project.save_video_settings(total_duration_seconds=duration, delivery_preset=preset)
+		project.save_video_settings(
+			total_duration_seconds=duration, delivery_preset=preset, aspect_ratio=format_text
+		)
 	return preset
 
 
@@ -205,10 +204,13 @@ def create_project_from_brief(
 				project.db_set(
 					"project_name", f"{project.product_name} — {summary['demo']}"[:140], update_modified=False
 				)
-		if format:
-			preset = format if format in ("Landscape", "Portrait", "Square") else format_preset(format)
+		format_text = format or (video_idea if not workbook_file else None)
+		if format_text and format_preset(format_text):
+			preset = format_preset(format_text)
 			project.save_video_settings(
-				total_duration_seconds=project.total_duration_seconds or 15, delivery_preset=preset
+				total_duration_seconds=project.total_duration_seconds or 15,
+				delivery_preset=preset,
+				aspect_ratio=format_text,
 			)
 		added = []
 		for item in references:

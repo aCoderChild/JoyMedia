@@ -186,12 +186,15 @@ def generate_cue_audio(
 	inputs = {"generation_prompt": cue_text}
 	if any(row.required_input_role == "source_video" for row in workflow_version.bindings):
 		inputs["source_video"] = upload_local_file(video_path)["server_path"]
+	from joymedia.services.project.formats import require_dimensions
+
+	width, height = require_dimensions(project)
 	workflow = build_execution_workflow(
 		workflow_version,
 		inputs=inputs,
 		seed=seed,
-		width=int(project.delivery_width or 640),
-		height=int(project.delivery_height or 360),
+		width=width,
+		height=height,
 		fps=fps,
 		frame_count=frames,
 		output_prefix=f"joymedia/audio/{frappe.generate_hash(length=10)}",

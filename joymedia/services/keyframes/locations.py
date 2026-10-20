@@ -277,12 +277,15 @@ def render_place(project, setting, view=False):
 		f"{setting}\n\n{VIEW_SETTING if view else EMPTY_SETTING} No people, animals, characters, products, packaging, text or "
 		f"logos. {_mood(project)}"
 	).strip()
+	from joymedia.services.project.formats import require_dimensions
+
+	width, height = require_dimensions(settings)
 	workflow = build_execution_workflow(
 		workflow_version,
 		inputs={"generation_prompt": prompt},
 		seed=int(hashlib.sha256(prompt.encode()).hexdigest()[:12], 16),
-		width=int(settings.delivery_width or 1920),
-		height=int(settings.delivery_height or 1080),
+		width=width,
+		height=height,
 		fps=float(workflow_version.output_fps or 24),
 		frame_count=1,
 		output_prefix=f"joymedia/places/{frappe.generate_hash(length=10)}",

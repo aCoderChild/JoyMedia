@@ -69,6 +69,7 @@ def improve_project_video_idea(project_name, current_idea=""):
 	project._refuse_if_sheet()
 	from joymedia.services.planning.llm import improve_video_idea
 	from joymedia.services.project.context import _get_project_selected_assets, _meaningful_project_value
+	from joymedia.services.project.formats import ratio_label
 
 	references = _get_project_selected_assets(project)
 	idea_text = (current_idea or "").strip() or project.video_idea or ""
@@ -78,7 +79,7 @@ def improve_project_video_idea(project_name, current_idea=""):
 		product_name=_meaningful_project_value(project.product_name, "the product"),
 		references=references,
 		duration=float(project.total_duration_seconds or 15),
-		delivery_preset=project.delivery_preset or "Landscape",
+		delivery_preset=ratio_label(project.delivery_width, project.delivery_height),
 	)
 
 	improved_idea = result.get("improved_idea") or idea_text

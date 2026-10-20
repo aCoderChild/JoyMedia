@@ -125,6 +125,7 @@
         />
 
             <FormControl v-model="form.format" type="select" :label="tr('Format', 'Định dạng')" :options="formatOptions" />
+            <FormControl v-if="form.format === 'Custom'" v-model="form.customRatio" :label="tr('Aspect ratio', 'Tỷ lệ khung hình')" placeholder="4:5, 21:9…" />
           </div>
         </details>
 
@@ -148,7 +149,7 @@ import { errorMessage } from "../utils/errors";
 const open = defineModel({ type: Boolean, default: false });
 const emit = defineEmits(["created"]);
 
-const form = reactive({ name: "", brief: "", format: "", demo: "" });
+const form = reactive({ name: "", brief: "", format: "", customRatio: "", demo: "" });
 const workbook = ref(null);
 const references = ref([]);
 const creating = ref(false);
@@ -168,6 +169,7 @@ const formatOptions = computed(() => [
   { label: tr("Portrait 9:16 — TikTok, Reels", "Dọc 9:16 — TikTok, Reels"), value: "Portrait" },
   { label: tr("Landscape 16:9 — YouTube, web", "Ngang 16:9 — YouTube, web"), value: "Landscape" },
   { label: tr("Square 1:1", "Vuông 1:1"), value: "Square" },
+  { label: tr("Custom ratio", "Tỷ lệ khác"), value: "Custom" },
 ]);
 
 const canCreate = computed(() => workbook.value ? Boolean(selectedDemo.value?.can_create) : Boolean(form.brief.trim()));
@@ -216,7 +218,7 @@ async function create() {
       video_idea: form.brief || null,
       workbook_file: workbook.value?.name || null,
       demo_name: form.demo || null,
-      format: form.format || null,
+      format: form.format === "Custom" ? form.customRatio : form.format || null,
       references: references.value.map(({ file_name, label, role }) => ({ file_name, label, role })),
     });
     open.value = false;

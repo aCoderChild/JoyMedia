@@ -3,13 +3,14 @@
 import math
 
 
-def delivery_contract(workflow):
+def delivery_contract(workflow, profile=None):
 	from joymedia.services.workflows.capabilities import execution_spec
 
 	value = execution_spec(workflow).get("delivery")
 	if value is None:
 		return None
 	allowed = {
+		"short_edge",
 		"width",
 		"height",
 		"fps",
@@ -35,6 +36,21 @@ def delivery_contract(workflow):
 		"audio_channels": 2,
 		**value,
 	}
+	if profile is not None:
+		from joymedia.services.project.formats import delivery_dimensions, parse_ratio, require_dimensions
+
+		width, height = require_dimensions(
+			{"delivery_width": profile.get("width"), "delivery_height": profile.get("height")}
+		)
+		short_edge = result.get("short_edge")
+		if short_edge is None:
+			# Legacy declarations supply a quality size, never a replacement aspect.
+			short_edge = min(result.get("width", width), result.get("height", height))
+		if type(short_edge) is not int or not 32 <= short_edge <= 3840:
+			raise ValueError("Delivery short edge must be an integer from 32 to 3840.")
+		result["width"], result["height"] = delivery_dimensions(parse_ratio(f"{width}:{height}"), short_edge)
+	elif "short_edge" in result:
+		raise ValueError("A ratio-preserving delivery profile requires project geometry.")
 	for key in ["width", "height"]:
 		if type(result.get(key)) is not int or not 32 <= result[key] <= 3840 or result[key] % 2:
 			raise ValueError("Delivery dimensions must be even integers from 32 to 3840.")

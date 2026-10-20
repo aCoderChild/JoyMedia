@@ -190,7 +190,9 @@ def compose_project_timeline_internal(project_name: str, *, require_brand_approv
 
 			from joymedia.services.editing.delivery import delivery_contract, transform_delivery
 
-			delivery = delivery_contract(frappe.get_doc("Generation Workflow", project.workflow))
+			delivery = delivery_contract(
+				frappe.get_doc("Generation Workflow", project.workflow), output_profile
+			)
 			if delivery:
 				transformed = temp_path / f"{project.name}-delivery-master.mp4"
 				output_profile = transform_delivery(delivery_path, transformed, output_profile, delivery)

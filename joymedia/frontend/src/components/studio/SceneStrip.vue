@@ -103,7 +103,7 @@
     </div>
 
     <!-- Storyboard panels, as on a drawn storyboard: each scene's first frame, then what happens in plain words -->
-    <div v-if="shots.length" class="grid gap-3 pb-2" :style="{ gridTemplateColumns: `repeat(auto-fill, minmax(${portrait ? 170 : 240}px, 1fr))` }" data-test="storyboard-grid">
+    <div v-if="shots.length" class="grid gap-3 pb-2" :style="{ gridTemplateColumns: `repeat(auto-fill, minmax(${aspectRatio < 1 ? 170 : 240}px, 1fr))` }" data-test="storyboard-grid">
       <template v-for="(shot, index) in shots" :key="shot.name || shot.shot_number || index">
         <div
           class="relative rounded-2xl border p-2 transition-all cursor-pointer bg-surface-muted select-none flex flex-col"
@@ -120,7 +120,7 @@
           @click="$emit('selectShot', shot, index)"
         >
           <!-- The first frame; clicking it plays the scene's video in place -->
-          <div class="relative w-full rounded-xl overflow-hidden bg-black flex items-center justify-center mb-2" :class="portrait ? 'aspect-[9/16]' : 'aspect-video'">
+          <div class="relative w-full rounded-xl overflow-hidden bg-black flex items-center justify-center mb-2" :style="{ aspectRatio: Number.isFinite(aspectRatio) && aspectRatio > 0 ? String(aspectRatio) : undefined }">
             <video
               v-if="playing === shot.name && getShotVideoFile(shot)"
               :src="getShotVideoFile(shot)" :poster="panelImage(shot)" class="size-full object-contain" controls autoplay playsinline
@@ -479,7 +479,7 @@ const props = defineProps({
   fromSheet: { type: Boolean, default: false },
   // First frames are drawn from the approved scenes only.
   storyboardApproved: { type: Boolean, default: true },
-  portrait: { type: Boolean, default: false },
+  aspectRatio: { type: Number, default: 0 },
 });
 
 const frames = props.frames;

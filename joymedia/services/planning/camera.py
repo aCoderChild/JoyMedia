@@ -43,9 +43,9 @@ def infer_cinematic_intent(structure, *, opening=False, closing=False):
 		behavior, purpose, energy = "locked", "demonstrate", "measured"
 	elif motion == "locomotion":
 		behavior, purpose, energy = "tracking_backward", "follow", "measured"
-	elif opening and framing in {"wide", "medium"}:
+	elif opening and framing in {"wide", "full", "medium", "medium_close_up"}:
 		behavior, purpose, energy = "push_in", "hook", "brisk"
-	elif (stage == "feel" and framing in {"wide", "medium"}) or closing:
+	elif (stage == "feel" and framing in {"wide", "full", "medium", "medium_close_up"}) or closing:
 		behavior, purpose, energy = "push_in", "resolve", "measured"
 	else:
 		behavior, purpose, energy = "locked", "demonstrate", "measured"
@@ -127,19 +127,16 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 		and intent
 		and intent.get("purpose") in {"hook", "reveal", "resolve"}
 		and structure["stage"] in {"establish", "present", "feel", "hero"}
-		and (structure["framing"] in {"wide", "medium"} or (closing and structure["framing"] == "close_up"))
+		and (
+			structure["framing"] in {"wide", "full", "medium", "medium_close_up"}
+			or (closing and structure["framing"] == "close_up")
+		)
 	)
 	interaction = bool(
 		contract.get("events")
 		or any(r.get("kind") in {"contacts", "flows_from"} for r in contract.get("relations") or [])
 	)
-	framing = (
-		"unobstructed product hero close-up"
-		if closing and product
-		else ("wide establishing shot", "medium shot", "close-up", "detail shot", "medium close-up")[
-			position % 5
-		]
-	)
+	framing = "the supplied opening composition"
 	if structure:
 		framing = framing_text(structure)
 		if structure["subject_motion"] == "manipulation" and not broad_presentation:

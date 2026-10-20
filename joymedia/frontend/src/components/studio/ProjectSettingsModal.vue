@@ -37,13 +37,15 @@
               :class="form.delivery_preset === preset.value
                 ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
                 : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
-              @click="form.delivery_preset = preset.value"
+              @click="form.delivery_preset = preset.value; form.aspect_ratio = preset.ratio"
             >
               <span class="text-base">{{ preset.icon }}</span>
               <span class="text-xs font-semibold">{{ currentLang === 'vi' ? preset.vi : preset.label }}</span>
               <span class="text-[10px] text-ink-muted">{{ preset.sub }}</span>
             </button>
           </div>
+          <label class="block text-ink-muted">{{ currentLang === 'vi' ? 'Tỷ lệ chính xác' : 'Exact aspect ratio' }}</label>
+          <input v-model="form.aspect_ratio" placeholder="16:9, 4:5, 1:1…" class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border" data-test="aspect-ratio-input" />
         </div>
 
         <!-- 2. Target Duration -->
@@ -197,9 +199,9 @@ const props = defineProps({
 
 const emit = defineEmits(["close", "save"]);
 const formatPresets = [
-  { value: "Landscape", label: "Landscape", vi: "Ngang", sub: "16:9 · YouTube, Web", icon: "🖥️" },
-  { value: "Portrait", label: "Portrait", vi: "Dọc", sub: "9:16 · TikTok, Reels", icon: "📱" },
-  { value: "Square", label: "Square", vi: "Vuông", sub: "1:1 · Facebook, Instagram", icon: "⏹️" },
+  { value: "Landscape", ratio: "16:9", label: "Landscape", vi: "Ngang", sub: "16:9 · YouTube, Web", icon: "🖥️" },
+  { value: "Portrait", ratio: "9:16", label: "Portrait", vi: "Dọc", sub: "9:16 · TikTok, Reels", icon: "📱" },
+  { value: "Square", ratio: "1:1", label: "Square", vi: "Vuông", sub: "1:1 · Facebook, Instagram", icon: "⏹️" },
 ];
 
 // The prompts are English for the AI; the labels are what marketers see.
@@ -217,7 +219,8 @@ const showCustomMusic = computed(
   () => customMusic.value || Boolean(form.soundtrack_prompt && !musicMoods.some((mood) => mood.prompt === form.soundtrack_prompt))
 );
 const form = reactive({
-  delivery_preset: "Landscape",
+  delivery_preset: "",
+  aspect_ratio: "",
   total_duration_seconds: 15,
   generation_mode: "Continuous",
   reference_mode: "Single Image",
@@ -269,7 +272,8 @@ watch(
   () => props.settings,
   (s) => {
     if (s) {
-      form.delivery_preset = s.delivery_preset || "Landscape";
+      form.delivery_preset = s.delivery_preset || "";
+      form.aspect_ratio = s.delivery_width && s.delivery_height ? `${s.delivery_width}:${s.delivery_height}` : "";
       form.total_duration_seconds = Number(s.duration || s.total_duration_seconds) || 15;
       form.generation_mode = "Continuous";
       form.reference_mode = s.reference_mode || "Single Image";

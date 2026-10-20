@@ -203,6 +203,8 @@ def get_project_workspace(name):
 				"name": project.name,
 				"duration": settings.total_duration_seconds,
 				"delivery_preset": settings.delivery_preset,
+				"delivery_width": settings.delivery_width,
+				"delivery_height": settings.delivery_height,
 				"generation_mode": _normalize_generation_mode(settings.generation_mode),
 				"reference_mode": getattr(settings, "reference_mode", None) or "Single Image",
 				"quality_mode": getattr(settings, "quality_mode", None) or "Production",
@@ -331,6 +333,10 @@ def create_project(project_name, product_name, video_idea=None, campaign_brief=N
 	from joymedia.services.workflows.pipeline import pipeline_for_final_workflow
 
 	pipeline = pipeline_for_final_workflow(workflow.name) if workflow else None
+	from joymedia.services.project.formats import delivery_dimensions, orientation, parse_ratio
+
+	ratio = parse_ratio(video_idea or campaign_brief)
+	width, height = delivery_dimensions(ratio, 720) if ratio else (None, None)
 	project = frappe.get_doc(
 		{
 			"doctype": "Media Project",
@@ -340,9 +346,9 @@ def create_project(project_name, product_name, video_idea=None, campaign_brief=N
 			"workflow": workflow.name if workflow else None,
 			"generation_pipeline": pipeline.name if pipeline else None,
 			"total_duration_seconds": 15,
-			"delivery_preset": "Landscape",
-			"delivery_width": 1280,
-			"delivery_height": 720,
+			"delivery_preset": orientation(ratio) if ratio else None,
+			"delivery_width": width,
+			"delivery_height": height,
 			"export_quality": export_quality,
 			"generation_mode": "Continuous",
 			# New projects render a fast draft; export uses the current editable timeline.
@@ -398,6 +404,7 @@ def save_project_video_settings(
 	character_mode=None,
 	soundtrack_mode=None,
 	planning_mode=None,
+	aspect_ratio=None,
 ):
 	project = frappe.get_doc("Media Project", project_name)
 	return project.save_video_settings(
@@ -415,6 +422,7 @@ def save_project_video_settings(
 		character_mode=character_mode,
 		soundtrack_mode=soundtrack_mode,
 		planning_mode=planning_mode,
+		aspect_ratio=aspect_ratio,
 	)
 
 

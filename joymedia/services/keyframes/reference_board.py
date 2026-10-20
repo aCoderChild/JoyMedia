@@ -29,7 +29,7 @@ def normalize_reference_role(value):
 	return ROLE_ALIASES.get(key, key or "general")
 
 
-def compose_reference_board(references, *, width=1344, height=768):
+def compose_reference_board(references, *, width, height):
 	"""Return a stable PNG board and a prompt instruction describing its tiles.
 
 	Each reference is fitted into a deterministic grid. The board is deliberately

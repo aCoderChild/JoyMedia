@@ -12,8 +12,8 @@ STAGES = {
 	"feel",
 	"hero",
 }
-FRAMINGS = {"wide", "medium", "close_up", "extreme_close_up"}
-ANGLES = {"eye_level", "high_angle", "overhead", "oblique"}
+FRAMINGS = {"wide", "full", "medium", "medium_close_up", "close_up", "extreme_close_up"}
+ANGLES = {"eye_level", "low_angle", "high_angle", "overhead", "oblique", "over_shoulder"}
 MOTIONS = {"stationary", "locomotion", "manipulation"}
 
 PLANNING_RULES = """
@@ -21,7 +21,8 @@ PLANNING_RULES = """
   {"stage":"extract","framing":"close_up","angle":"high_angle",
    "subject_motion":"manipulation","keep_visible":["actor","product","container"]}.
   stage is establish|approach|grip|extract|present|unfold|inspect|detail|feel|hero;
-  framing is wide|medium|close_up|extreme_close_up; angle is eye_level|high_angle|overhead|oblique;
+  framing is wide|full|medium|medium_close_up|close_up|extreme_close_up;
+  angle is eye_level|low_angle|high_angle|overhead|oblique|over_shoulder;
   subject_motion is stationary|locomotion|manipulation. keep_visible lists declared scene-contract entity IDs.
   Describe only the authored action. Grip precedes extraction; a product clears its opening before placement;
   support remains until a hand visibly takes its weight. Place the item before releasing the grip.

@@ -7,6 +7,7 @@ boundaries; ComfyUI drops that duplicate frame again, so the finished chunks
 can be joined by stream copy without decoding them all at once.
 """
 
+import json
 import math
 import subprocess
 from pathlib import Path
@@ -14,23 +15,21 @@ from pathlib import Path
 import frappe
 from frappe import _
 
-STUDIO_SCALE = 2
-STUDIO_FPS = 60
-CHUNK_FRAMES = 24
-# RIFE renders 120 fps (x5) and every second frame is kept: 24 fps -> 60 fps.
-RIFE_MULTIPLIER = 5
-KEEP_EVERY_NTH = 2
-UPSCALE_MODEL = "RealESRGAN_x2.pth"
-INTERPOLATION_MODEL = "rife_v4.26.safetensors"
+# Model names, interpolation multiplier and encoding choices belong to the graph.
+_PROFILE = json.loads((Path(__file__).parents[2] / "workflow_adapters/graphs/studio_finish.json").read_text())
+STUDIO_SCALE = _PROFILE["execution_spec"]["finishing"]["scale"]
+STUDIO_FPS = _PROFILE["execution_spec"]["finishing"]["output_fps"]
+CHUNK_FRAMES = _PROFILE["execution_spec"]["finishing"]["chunk_frames"]
+RIFE_MULTIPLIER = _PROFILE["execution_spec"]["finishing"]["interpolation_multiplier"]
+KEEP_EVERY_NTH = _PROFILE["execution_spec"]["finishing"]["selection_stride"]
 CHUNK_TIMEOUT_SECONDS = 900
-OUTPUT_NODE = "joymedia_save"
 
 
 def studio_profile(profile):
 	"""Return the finished delivery profile for a delivery profile (1920x1080 -> 2560x1440 @ 60)."""
 	return {
-		"width": _even(profile["width"] * 4 / 3),
-		"height": _even(profile["height"] * 4 / 3),
+		"width": _even(profile["width"] * _PROFILE["execution_spec"]["finishing"]["delivery_scale"]),
+		"height": _even(profile["height"] * _PROFILE["execution_spec"]["finishing"]["delivery_scale"]),
 		"fps": float(STUDIO_FPS),
 	}
 
@@ -51,6 +50,8 @@ def finished_frame_count(frame_count, source_fps):
 
 def finish_video(source_path, output_path, frame_count, source_fps, temp_path):
 	"""Upscale x2 and interpolate source_path (frame_count frames) to STUDIO_FPS."""
+	if float(source_fps) != float(_PROFILE["execution_spec"]["finishing"]["source_fps"]):
+		raise ValueError("Studio finishing requires the source FPS declared by its workflow profile.")
 	temp_path = Path(temp_path)
 	chunk_paths = []
 	starts = list(range(0, frame_count, CHUNK_FRAMES))
@@ -104,70 +105,35 @@ def _cut_chunk(source_path, output_path, start, end, fps):
 
 
 def _finish_chunk(chunk_path, keep_frames):
+	from joymedia.services.workflows.capabilities import configured_workflow
 	from joymedia.services.workflows.comfyui import run_workflow_to_bytes, upload_local_file
+	from joymedia.services.workflows.resolver import build_execution_workflow
+	from joymedia.workflow_adapters import get_workflow_adapter
 
-	workflow = {
-		"load": {
-			"class_type": "VHS_LoadVideo",
-			"inputs": {
-				"video": upload_local_file(chunk_path)["server_path"],
-				"force_rate": 0,
-				"custom_width": 0,
-				"custom_height": 0,
-				"frame_load_cap": 0,
-				"skip_first_frames": 0,
-				"select_every_nth": 1,
-				"format": "None",
-			},
-		},
-		"upscale_model": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": UPSCALE_MODEL}},
-		"upscale": {
-			"class_type": "ImageUpscaleWithModel",
-			"inputs": {"upscale_model": ["upscale_model", 0], "image": ["load", 0]},
-		},
-		"interp_model": {
-			"class_type": "FrameInterpolationModelLoader",
-			"inputs": {"model_name": INTERPOLATION_MODEL},
-		},
-		"interpolate": {
-			"class_type": "FrameInterpolate",
-			"inputs": {
-				"interp_model": ["interp_model", 0],
-				"images": ["upscale", 0],
-				"multiplier": RIFE_MULTIPLIER,
-			},
-		},
-		"select": {
-			"class_type": "VHS_SelectEveryNthImage",
-			"inputs": {
-				"images": ["interpolate", 0],
-				"select_every_nth": KEEP_EVERY_NTH,
-				"skip_first_images": 0,
-			},
-		},
-		"trim": {
-			"class_type": "ImageFromBatch",
-			"inputs": {"image": ["select", 0], "batch_index": 0, "length": keep_frames},
-		},
-		OUTPUT_NODE: {
-			"class_type": "VHS_VideoCombine",
-			"inputs": {
-				"images": ["trim", 0],
-				"frame_rate": float(STUDIO_FPS),
-				"loop_count": 0,
-				"filename_prefix": f"joymedia/finish/{frappe.generate_hash(length=10)}",
-				"format": "video/h264-mp4",
-				"pix_fmt": "yuv420p",
-				"crf": 12,
-				# Chunks are intermediate: ComfyUI's temp folder is cleared on restart,
-				# while its output folder would keep ~220 MB per Studio export.
-				"save_metadata": False,
-				"pingpong": False,
-				"save_output": False,
-			},
-		},
-	}
-	return run_workflow_to_bytes(workflow, OUTPUT_NODE, timeout=CHUNK_TIMEOUT_SECONDS, forget=True)
+	name = configured_workflow("finishing")
+	if not name:
+		raise ValueError("Configure a finishing workflow before requesting Studio export.")
+	version = frappe.get_doc("Generation Workflow", name)
+	from joymedia.services.workflows.capabilities import execution_spec
+
+	if execution_spec(version).get("finishing") != _PROFILE["execution_spec"]["finishing"]:
+		raise ValueError(
+			"The selected finishing workflow must match the declared Studio timing and scaling contract."
+		)
+	workflow = build_execution_workflow(
+		version,
+		inputs={"source_video": upload_local_file(chunk_path)["server_path"]},
+		seed=0,
+		width=0,
+		height=0,
+		fps=float(version.output_fps),
+		frame_count=keep_frames,
+		output_prefix=f"joymedia/finish/{frappe.generate_hash(length=10)}",
+	)
+	output_node = get_workflow_adapter(version).extract_execution_metadata(workflow)[
+		"primary_output_node_key"
+	]
+	return run_workflow_to_bytes(workflow, output_node, timeout=CHUNK_TIMEOUT_SECONDS, forget=True)
 
 
 def _join_chunks(chunk_paths, output_path, expected_frames, temp_path):

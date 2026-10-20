@@ -150,7 +150,7 @@ def improve_video_idea(
 		f"PRODUCT: {product_name or 'Commercial Showcase'}\n"
 		f"CURRENT IDEA: {current_idea or 'Showcase the product in a stylish setting.'}\n"
 		f"PLANNED DURATION: {duration or 15}s\n"
-		f"ASPECT RATIO / FORMAT: {delivery_preset or 'Landscape 16:9'}\n"
+		f"ASPECT RATIO / FORMAT: {delivery_preset or 'unspecified; preserve the authored format'}\n"
 		f"PROJECT INGREDIENTS / REFERENCES:\n{ref_text}\n\n"
 		"RULES:\n"
 		"1. Elevate narrative hook, lighting mood, camera motion, tactile material textures, and commercial elegance.\n"

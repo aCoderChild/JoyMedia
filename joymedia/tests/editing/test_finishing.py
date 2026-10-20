@@ -1,8 +1,10 @@
 import subprocess
 import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.editing import finishing as finishing
@@ -109,3 +111,30 @@ class TestFinishing(FrappeTestCase):
 				{"width": 320, "height": 180, "fps": 60.0},
 				expected_frames=finishing.finished_frame_count(58, 24),
 			)
+
+
+class TestFinishingProfile(unittest.TestCase):
+	def test_declared_graph_uses_shared_binding_and_execution_path(self):
+		import json
+
+		from joymedia.patches.register_studio_finishing import GRAPH
+		from joymedia.services.workflows.resolver import build_execution_workflow
+
+		profile = json.loads(GRAPH.read_text())
+		profile["workflow_json"] = json.dumps(profile["workflow_json"])
+		profile["execution_spec"] = json.dumps(profile["execution_spec"])
+		version = frappe._dict(profile)
+		version.bindings = [frappe._dict(b) for b in profile["bindings"]]
+		graph = build_execution_workflow(
+			version,
+			inputs={"source_video": "clip.mp4"},
+			seed=0,
+			width=720,
+			height=900,
+			fps=60,
+			frame_count=58,
+			output_prefix="review/finish",
+		)
+		self.assertEqual("clip.mp4", graph["load"]["inputs"]["video"])
+		self.assertEqual(58, graph["trim"]["inputs"]["length"])
+		self.assertEqual("review/finish", graph["joymedia_save"]["inputs"]["filename_prefix"])

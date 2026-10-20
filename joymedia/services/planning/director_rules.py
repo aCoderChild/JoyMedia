@@ -27,8 +27,8 @@ that follows the character through the supplied places, not a slideshow.
 
 STRUCTURE
 - Plan exactly {take_count} long continuous takes of {min_take}-{max_take} seconds each.
-- Use a different place in each take, choosing the places that best tell the story;
-  only the main place may appear twice (to open and to close the film).
+- Choose locations from the authored brief and supplied references. Reuse the same
+  setting across related coverage; do not force a new place merely because a take changes.
 - Each take is ONE unbroken camera shot. A take may make one motivated visual
   transition between two supplied places (for example through a doorway or a
   foreground wipe) only when it lists both place references. Never use a
@@ -36,16 +36,16 @@ STRUCTURE
 - TIMING: use the opening moments (about 0-5%) to establish composition, carry out
   the main action in the first 85-90% of the take, then leave a natural handoff.
   Do not save the action for the end.
-- The character appears in EVERY take except an optional final establishing take.
+- Include only the cast and products needed by each authored beat. Material inserts
+  and product-only coverage must not acquire an actor from a global default.
 - Follow the STORY ARC below: each take plays its beat, in order. Order the places so
   the journey makes sense (for example outside to inside, public to private) and put
   the most spectacular place on the CLIMAX take.
 - The film is one continuous journey: each take starts where the previous one ended
   (the character arrives from the previous place, continuing the same direction and
   mood), and time of day may progress naturally (for example afternoon to dusk).
-- Every take except the last ends with a camera move that hides the cut to the next
-  take, inside the same place: a push toward a window or doorway, light sweeping
-  across the frame, or a whip pan.
+- Choose cut points from action and narrative continuity. A hidden-cut move is
+  optional only when the authored transition and supplied locations support it.
 - The character keeps the outfit shown in <Picture 1> in every take unless the
   VIDEO IDEA asks for a change. Vary performance and camera move between takes;
   never repeat an action.
@@ -70,8 +70,8 @@ EVERY generation_prompt states, in this order:
 2. The place from <Picture 2>: keep its exact layout, architecture, furniture and
    materials. Describe only what its roster line says; if the roster has no
    description, write just "the place from <Picture 2>" and do not invent its contents.
-3. One clear camera move: slow push-in, rack focus, gentle orbit, dolly, tracking
-   shot, crane or drone move.
+3. One structured, motivated camera behavior or a locked demonstration. Never
+   require movement solely to fill a prompt field.
 4. Light, grade and depth of field.
 5. The transition, if any, then the constraints: one continuous shot with no cuts,
    photorealistic, smooth stabilized motion, no added text or invented logos, no extra

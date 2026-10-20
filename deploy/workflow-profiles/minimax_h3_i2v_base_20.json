@@ -354,43 +354,15 @@
         "semantic": "width",
         "node_key": "104",
         "input_name": "width",
-        "transform": "nearest_size_dimension",
-        "dimension": "width",
-        "options": [
-          {
-            "width": 1344,
-            "height": 768
-          },
-          {
-            "width": 768,
-            "height": 1344
-          },
-          {
-            "width": 1024,
-            "height": 1024
-          }
-        ]
+        "transform": "round_to_multiple",
+        "multiple": 32
       },
       {
         "semantic": "height",
         "node_key": "104",
         "input_name": "height",
-        "transform": "nearest_size_dimension",
-        "dimension": "height",
-        "options": [
-          {
-            "width": 1344,
-            "height": 768
-          },
-          {
-            "width": 768,
-            "height": 1344
-          },
-          {
-            "width": 1024,
-            "height": 1024
-          }
-        ]
+        "transform": "round_to_multiple",
+        "multiple": 32
       },
       {
         "semantic": "frame_count",
@@ -408,85 +380,29 @@
         "semantic": "width",
         "node_key": "first_frame_size",
         "input_name": "width",
-        "transform": "nearest_size_dimension",
-        "dimension": "width",
-        "options": [
-          {
-            "width": 1344,
-            "height": 768
-          },
-          {
-            "width": 768,
-            "height": 1344
-          },
-          {
-            "width": 1024,
-            "height": 1024
-          }
-        ]
+        "transform": "round_to_multiple",
+        "multiple": 32
       },
       {
         "semantic": "height",
         "node_key": "first_frame_size",
         "input_name": "height",
-        "transform": "nearest_size_dimension",
-        "dimension": "height",
-        "options": [
-          {
-            "width": 1344,
-            "height": 768
-          },
-          {
-            "width": 768,
-            "height": 1344
-          },
-          {
-            "width": 1024,
-            "height": 1024
-          }
-        ]
+        "transform": "round_to_multiple",
+        "multiple": 32
       },
       {
         "semantic": "width",
         "node_key": "last_frame_size",
         "input_name": "width",
-        "transform": "nearest_size_dimension",
-        "dimension": "width",
-        "options": [
-          {
-            "width": 1344,
-            "height": 768
-          },
-          {
-            "width": 768,
-            "height": 1344
-          },
-          {
-            "width": 1024,
-            "height": 1024
-          }
-        ]
+        "transform": "round_to_multiple",
+        "multiple": 32
       },
       {
         "semantic": "height",
         "node_key": "last_frame_size",
         "input_name": "height",
-        "transform": "nearest_size_dimension",
-        "dimension": "height",
-        "options": [
-          {
-            "width": 1344,
-            "height": 768
-          },
-          {
-            "width": 768,
-            "height": 1344
-          },
-          {
-            "width": 1024,
-            "height": 1024
-          }
-        ]
+        "transform": "round_to_multiple",
+        "multiple": 32
       },
       {
         "semantic": "last_frame_index",
@@ -530,8 +446,6 @@
       "produces_audio": 1
     },
     "delivery": {
-      "width": 1440,
-      "height": 2560,
       "fps": 24,
       "audio_sample_rate": 44100,
       "audio_channels": 2,
@@ -540,7 +454,8 @@
       "sharpen": 0.9,
       "contrast": 1.03,
       "brightness": 0.01,
-      "saturation": 1.04
+      "saturation": 1.04,
+      "short_edge": 1440
     }
   },
   "bindings": [

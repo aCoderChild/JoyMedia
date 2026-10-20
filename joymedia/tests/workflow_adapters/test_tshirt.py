@@ -62,6 +62,17 @@ class TestTShirtWorkflow(TestCase):
 		)
 		self.assertIn("at most 2 percent", r["direction"])
 
+	def test_delivery_preserves_requested_aspect_even_with_legacy_portrait_defaults(self):
+		for geometry, expected in [
+			((1280, 720), (2560, 1440)),
+			((720, 900), (1440, 1800)),
+			((720, 720), (1440, 1440)),
+		]:
+			profile = {"width": geometry[0], "height": geometry[1], "fps": 24}
+			for declaration in [{"width": 1440, "height": 2560, "fps": 24}, {"short_edge": 1440, "fps": 24}]:
+				contract = delivery_contract({"execution_spec": {"delivery": declaration}}, profile)
+				self.assertEqual(expected, (contract["width"], contract["height"]))
+
 	def test_delivery_rejects_arbitrary_filters_and_frame_interpolation(self):
 		self.assertIsNone(delivery_contract({"execution_spec": {}}))
 		with self.assertRaises(ValueError):

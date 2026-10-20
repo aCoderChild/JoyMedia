@@ -319,10 +319,13 @@ def _stage_generation_inputs(job, attempt):
 			snapshot = frappe.parse_json(run.project_snapshot_json or "{}")
 		except (TypeError, ValueError):
 			snapshot = {}
+		from joymedia.services.project.formats import require_dimensions
+
+		width, height = require_dimensions(snapshot)
 		board = compose_reference_board(
 			references,
-			width=int(snapshot.get("delivery_width") or 1344),
-			height=int(snapshot.get("delivery_height") or 768),
+			width=width,
+			height=height,
 		)
 		uploaded = upload_local_file(board["path"], **upload_options)
 		staged[role] = [uploaded["server_path"]]

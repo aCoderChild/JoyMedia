@@ -4,11 +4,7 @@
     <div
       ref="viewport"
       class="gflow-viewport w-full max-w-[760px] max-h-[41vh] bg-black/90 rounded-2xl overflow-hidden relative flex items-center justify-center border border-outline-border shadow-2xl transition-all"
-      :class="{
-        'ratio-landscape': settingsFormat === 'Landscape',
-        'ratio-portrait': settingsFormat === 'Portrait',
-        'ratio-square': settingsFormat === 'Square'
-      }"
+      :style="{ aspectRatio: settingsWidth && settingsHeight ? `${settingsWidth} / ${settingsHeight}` : undefined }"
     >
       <!-- The scene's on-screen caption, as the export will draw it -->
       <div v-if="caption" class="pointer-events-none absolute inset-x-0 bottom-[12%] z-20 flex justify-center px-6">
@@ -177,7 +173,8 @@ const props = defineProps({
   productionError: { type: String, default: "" },
   productionStatus: { type: String, default: "" },
   projectAssets: { type: Array, default: () => [] },
-  settingsFormat: { type: String, default: "Landscape" },
+  settingsWidth: { type: Number, default: 0 },
+  settingsHeight: { type: Number, default: 0 },
   finalVideo: { type: Object, default: null },
   selectedShotIndex: { type: Number, default: 0 },
   currentLang: { type: String, default: "vi" },

@@ -30,6 +30,15 @@ class TestShotStructure(TestCase):
 		scene.append.assert_not_called()
 		scene.save.assert_not_called()
 
+	def test_unplanned_framing_does_not_cycle_with_scene_number(self):
+		from joymedia.services.planning.camera import camera_plan
+
+		for number in range(1, 9):
+			self.assertEqual(
+				"the supplied opening composition",
+				camera_plan(frappe._dict(shot_number=number), {})["framing"],
+			)
+
 	def test_camera_grammar_uses_purpose_instead_of_alternating_shot_numbers(self):
 		from joymedia.services.planning.camera import infer_cinematic_intent
 

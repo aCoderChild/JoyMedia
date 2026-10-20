@@ -11,6 +11,7 @@ import frappe
 
 from joymedia.services.editing.queries import _latest_version_of, _shot_video_clips
 from joymedia.services.editing.rendering import _extract_frame, _render_video, _save_output, _video_workflow
+from joymedia.services.editing.view import _project_fps
 
 SOUNDTRACK_VERSION = 5
 
@@ -27,7 +28,7 @@ SOUNDTRACK_FADE_OUT_FRAMES = 72
 MUSIC_CLIP_SECONDS = 10
 
 
-MUSIC_CLIP_SIZE = (384, 672)
+MUSIC_CLIP_SIZE = 384
 
 
 MUSIC_CROSSFADE_SECONDS = 1.5
@@ -39,10 +40,7 @@ MUSIC_GAIN_DB = -12
 MUSIC_FADE_OUT_FRAMES = 48
 
 
-DEFAULT_SOUNDTRACK_MUSIC = (
-	"an elegant cinematic instrumental score, soft piano melody over warm sustained strings, "
-	"slowly building with emotion to a gentle swell, then resolving softly at the end"
-)
+DEFAULT_SOUNDTRACK_MUSIC = ""
 
 
 def _add_soundtrack(project_name):
@@ -53,7 +51,9 @@ def _add_soundtrack(project_name):
 		int(clip.timeline_start_frame) + int(clip.source_out_frame) - int(clip.source_in_frame)
 		for clip in clips
 	)
-	music = (project.soundtrack_prompt or "").strip() or DEFAULT_SOUNDTRACK_MUSIC
+	music = music_brief(project_name)
+	if not music:
+		frappe.throw("Describe the background music in the project or storyboard before generating it.")
 	# Finishing again (e.g. after regenerating one scene) keeps the same music.
 	key = hashlib.sha256(f"{SOUNDTRACK_VERSION}:{music}".encode()).hexdigest()[:8]
 	asset_name = f"{project_name} AI Soundtrack {total_frames}f {key}"
@@ -70,7 +70,9 @@ def _add_soundtrack(project_name):
 	from joymedia.services.editing.timeline import _ensure_source_audio_clips, _timeline_clip_rows
 
 	# The soundtrack is an audio asset; the timeline helper only resolves videos.
-	music_start = _music_start_frame(_get_asset_version_path(audio_version), total_frames)
+	music_start = _music_start_frame(
+		_get_asset_version_path(audio_version), total_frames, _project_fps(project_name)
+	)
 	# Bridges bring their own source audio; backfill it so it can be switched off too.
 	_ensure_source_audio_clips(project, _timeline_clip_rows(project_name))
 	for clip in frappe.get_all(
@@ -146,6 +148,8 @@ def _add_music_bed(project_name):
 		for clip in clips
 	)
 	music = music_brief(project_name)
+	if not music:
+		frappe.throw("Describe the background music in the project or storyboard before generating it.")
 	key = hashlib.sha256(f"{SOUNDTRACK_VERSION}:{music}".encode()).hexdigest()[:8]
 	asset_name = f"{project_name} Music bed {total_frames}f {key}"
 	audio_version = _latest_version_of(project_name, asset_name) or _render_music_bed(
@@ -204,13 +208,15 @@ def _render_music_bed(project_name, asset_name, first_clip, music, total_frames)
 		temp_path = Path(temp_dir)
 		first = temp_path / "first.png"
 		_extract_frame(_asset_version_path(first_clip.source_asset_version), 0, first)
-		workflow, output_node = _video_workflow(
-			project_name, first, prompt, MUSIC_CLIP_SECONDS, size=MUSIC_CLIP_SIZE
-		)
+		from joymedia.services.project.formats import delivery_dimensions, parse_ratio, require_dimensions
+
+		width, height = require_dimensions(frappe.get_doc("Media Project", project_name))
+		size = delivery_dimensions(parse_ratio(f"{width}:{height}"), MUSIC_CLIP_SIZE)
+		workflow, output_node = _video_workflow(project_name, first, prompt, MUSIC_CLIP_SECONDS, size=size)
 		video_path = temp_path / "music.mp4"
 		video_path.write_bytes(_render_video(project_name, workflow, output_node))
 		bed = temp_path / "music-bed.m4a"
-		music_bed(video_path, total_frames / 24 + 1, bed)
+		music_bed(video_path, total_frames / _project_fps(project_name) + 1, bed)
 		return _save_output(project_name, asset_name, "Audio", f"{project_name}-music.m4a", bed.read_bytes())
 
 
@@ -222,10 +228,17 @@ def _render_workflow_music_bed(project_name, asset_name, workflow_name, music, t
 	from joymedia.workflow_adapters import get_workflow_adapter
 
 	version = frappe.get_doc("Generation Workflow", workflow_name)
-	frames = min(total_frames + 24, capacity(version))
-	continuous = frames >= total_frames
+	from joymedia.services.project.formats import require_dimensions
+
+	width, height = require_dimensions(frappe.get_doc("Media Project", project_name))
+	provider_fps = float(version.output_fps or 0)
+	if provider_fps <= 0:
+		raise ValueError("The music workflow must declare output FPS.")
+	duration = total_frames / _project_fps(project_name)
+	frames = min(math.ceil((duration + 1) * provider_fps), capacity(version))
+	continuous = frames / provider_fps >= duration
 	direction = (
-		f"A continuous {frames / 24:g}-second instrumental cue, developing naturally and resolving at the end. "
+		f"A continuous {frames / provider_fps:g}-second instrumental cue, developing naturally and resolving at the end. "
 		if continuous
 		else "A steady, loopable instrumental phrase. "
 	)
@@ -234,9 +247,9 @@ def _render_workflow_music_bed(project_name, asset_name, workflow_name, music, t
 		version,
 		inputs={"generation_prompt": direction + music + ". Instrumental only; no speech or singing."},
 		seed=seed,
-		width=768,
-		height=1344,
-		fps=24,
+		width=width,
+		height=height,
+		fps=provider_fps,
 		frame_count=frames,
 		output_prefix=f"joymedia/music/{frappe.generate_hash(length=10)}",
 	)
@@ -256,7 +269,7 @@ def _render_workflow_music_bed(project_name, asset_name, workflow_name, music, t
 	with tempfile.TemporaryDirectory(prefix="joymedia-music-") as temp_dir:
 		phrase, bed = Path(temp_dir) / "phrase.flac", Path(temp_dir) / "bed.m4a"
 		phrase.write_bytes(content)
-		music_bed(phrase, total_frames / 24 + 1, bed)
+		music_bed(phrase, duration + 1, bed)
 		return _save_output(project_name, asset_name, "Audio", f"{project_name}-music.m4a", bed.read_bytes())
 
 
@@ -306,7 +319,7 @@ def _render_soundtrack(project_name, asset_name, first_clip, music, total_frames
 		_extract_frame(_asset_version_path(first_clip.source_asset_version), 0, first)
 		video_path = temp_path / "soundtrack.mp4"
 		workflow, output_node = _soundtrack_workflow(
-			project_name, first, music, _soundtrack_seconds(total_frames)
+			project_name, first, music, _soundtrack_seconds(total_frames, _project_fps(project_name))
 		)
 		video_path.write_bytes(_render_video(project_name, workflow, output_node))
 		audio_path = temp_path / "soundtrack.m4a"
@@ -336,13 +349,13 @@ def _render_soundtrack(project_name, asset_name, first_clip, music, total_frames
 		)
 
 
-def _soundtrack_seconds(total_frames):
+def _soundtrack_seconds(total_frames, fps):
 	# One extra second so the music never ends before the picture, plus room to choose
 	# where in the music the film ends (_music_start_frame).
-	return total_frames / 24 + 1 + MUSIC_ENDING_SEARCH_SECONDS
+	return total_frames / fps + 1 + MUSIC_ENDING_SEARCH_SECONDS
 
 
-def _music_start_frame(audio_path, total_frames):
+def _music_start_frame(audio_path, total_frames, fps):
 	"""Where the film's music starts, so the film ends on the softest moment of the music.
 
 	Some video workflows do not compose an ending on request, and fading out mid-note sounds cut off.
@@ -362,20 +375,20 @@ def _music_start_frame(audio_path, total_frames):
 		sum(value * value for value in samples[start : start + step]) / step
 		for start in range(0, len(samples) - step, step)
 	]
-	film_end = round(total_frames / 24 * rate / step)
+	film_end = round(total_frames / fps * rate / step)
 	latest = min(len(energy) - 4, film_end + round(MUSIC_ENDING_SEARCH_SECONDS * rate / step))
 	if latest <= film_end:
 		return 0
 	# Judge each candidate end by the music around it (0.4 s), not one 50 ms window.
 	quietest = min(range(film_end, latest + 1), key=lambda index: sum(energy[max(0, index - 4) : index + 4]))
-	return round((quietest - film_end) * step / rate * 24)
+	return round((quietest - film_end) * step / rate * fps)
 
 
 def _soundtrack_workflow(project_name, first_frame, music, seconds):
 	"""Render a soundtrack through the project's declared video workflow."""
 	instrumental = "Instrumental music only, no speech, no singing, no sound effects."
 	prompt = (
-		f"A calm cinematic scene with a slow camera drift. Audio: {music}. "
+		f"Preserve the supplied scene composition. Audio: {music}. "
 		f"The music develops naturally and resolves softly at the end. {instrumental}"
 	)
 	return _video_workflow(project_name, first_frame, prompt, seconds)

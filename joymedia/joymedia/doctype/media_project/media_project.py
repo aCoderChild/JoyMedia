@@ -192,6 +192,8 @@ class MediaProject(Document):
 			"status": self.status,
 			"total_duration_seconds": settings.total_duration_seconds,
 			"delivery_preset": settings.delivery_preset,
+			"delivery_width": settings.delivery_width,
+			"delivery_height": settings.delivery_height,
 			"generation_mode": _normalize_generation_mode(settings.generation_mode),
 			"global_instructions": settings.global_instructions or "",
 			"show_captions": int(settings.show_captions or 0),
@@ -220,6 +222,7 @@ class MediaProject(Document):
 		character_mode=None,
 		soundtrack_mode=None,
 		planning_mode=None,
+		aspect_ratio=None,
 	):
 		self._require_write_access()
 		try:
@@ -228,6 +231,16 @@ class MediaProject(Document):
 			frappe.throw(_("Duration must be greater than zero."))
 		if not math.isfinite(total_duration_seconds) or not 1 <= total_duration_seconds <= 60:
 			frappe.throw(_("Duration must be between 1 and 60 seconds."))
+		if aspect_ratio:
+			from joymedia.services.project.formats import orientation, parse_ratio
+
+			try:
+				ratio = parse_ratio(aspect_ratio)
+				if not ratio:
+					raise ValueError("Specify an aspect ratio such as 16:9 or 4:5.")
+				delivery_preset = orientation(ratio)
+			except ValueError as exc:
+				frappe.throw(_(str(exc)))
 		if delivery_preset not in ("Landscape", "Portrait", "Square"):
 			frappe.throw(_("Select Landscape, Portrait, or Square format."))
 		generation_mode = _normalize_generation_mode(generation_mode or self.generation_mode or "Continuous")
@@ -255,6 +268,7 @@ class MediaProject(Document):
 			workflow = _get_customer_workflow_for_export_quality(export_quality)
 			pipeline = pipeline_for_final_workflow(workflow.name)
 		pipeline_name = pipeline.name if pipeline else ""
+		previous_preset = self.delivery_preset
 		self.total_duration_seconds = total_duration_seconds
 		self.delivery_preset = delivery_preset
 		self.generation_mode = generation_mode
@@ -285,16 +299,31 @@ class MediaProject(Document):
 		self.export_quality = export_quality
 		self.workflow = workflow.name
 		self.generation_pipeline = pipeline_name
-		# Studio finishing turns the 1080p source into a 1440p/60fps delivery.
-		# The source remains at the workflow-friendly size; only the customer
-		# facing tier determines the final delivery profile.
-		studio_source = export_quality == "Studio 1440p60"
-		if delivery_preset == "Landscape":
-			self.delivery_width, self.delivery_height = (1920, 1080) if studio_source else (1280, 720)
-		elif delivery_preset == "Portrait":
-			self.delivery_width, self.delivery_height = (1080, 1920) if studio_source else (720, 1280)
-		elif delivery_preset == "Square":
-			self.delivery_width, self.delivery_height = (1080, 1080) if studio_source else (720, 720)
+		from joymedia.services.project.formats import (
+			PRESET_RATIOS,
+			delivery_dimensions,
+			orientation,
+			parse_ratio,
+		)
+
+		try:
+			ratio = parse_ratio(aspect_ratio) if aspect_ratio else None
+			if aspect_ratio and not ratio:
+				raise ValueError("Specify an aspect ratio such as 16:9 or 4:5.")
+			if (
+				ratio is None
+				and self.delivery_width
+				and self.delivery_height
+				and delivery_preset == previous_preset
+			):
+				ratio = parse_ratio(f"{self.delivery_width}:{self.delivery_height}")
+			ratio = ratio or PRESET_RATIOS[delivery_preset]
+			self.delivery_preset = orientation(ratio)
+			self.delivery_width, self.delivery_height = delivery_dimensions(
+				ratio, 1080 if export_quality == "Studio 1440p60" else 720
+			)
+		except ValueError as exc:
+			frappe.throw(_(str(exc)))
 		if self.status != "Archived":
 			latest_run = _get_latest_project_generation_run(self.name)
 			self.status = {

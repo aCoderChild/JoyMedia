@@ -68,6 +68,7 @@ export function useProjectWorkspace(projectName) {
         project_name: project(),
         total_duration_seconds: totalDurationSeconds,
         delivery_preset: settingsPayload.delivery_preset,
+        aspect_ratio: settingsPayload.aspect_ratio || undefined,
         generation_mode: "Continuous",
         global_instructions: settingsPayload.global_instructions || "",
         soundtrack_prompt: settingsPayload.soundtrack_prompt || "",
