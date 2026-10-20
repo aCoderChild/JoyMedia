@@ -69,7 +69,11 @@ class TestTShirtWorkflow(TestCase):
 			((720, 720), (1440, 1440)),
 		]:
 			profile = {"width": geometry[0], "height": geometry[1], "fps": 24}
-			for declaration in [{"width": 1440, "height": 2560, "fps": 24}, {"short_edge": 1440, "fps": 24}]:
+			for declaration in [
+				{"width": 1440, "height": 2560, "fps": 24},
+				{"short_edge": 1440, "fps": 24},
+				{"short_edge": 1440, "fps": 24, "temporal_fit": "preserve_endpoints"},
+			]:
 				contract = delivery_contract({"execution_spec": {"delivery": declaration}}, profile)
 				self.assertEqual(expected, (contract["width"], contract["height"]))
 
@@ -77,6 +81,8 @@ class TestTShirtWorkflow(TestCase):
 		self.assertIsNone(delivery_contract({"execution_spec": {}}))
 		with self.assertRaises(ValueError):
 			delivery_contract({"execution_spec": {"delivery": {"command": "anything"}}})
+		with self.assertRaisesRegex(ValueError, "temporal_fit"):
+			delivery_contract({"execution_spec": {"delivery": {"temporal_fit": "interpolate"}}})
 		c = delivery_contract({"execution_spec": execution_spec()}, {"width": 720, "height": 1280, "fps": 24})
 		self.assertEqual(c["fps"], 24)
 		self.assertEqual(c["audio_sample_rate"], 44100)
@@ -112,7 +118,18 @@ class TestTShirtWorkflow(TestCase):
 				],
 				check=True,
 			)
-			c = delivery_contract({"execution_spec": {"delivery": {"width": 144, "height": 256, "fps": 24}}})
+			c = delivery_contract(
+				{
+					"execution_spec": {
+						"delivery": {
+							"width": 144,
+							"height": 256,
+							"fps": 24,
+							"temporal_fit": "preserve_endpoints",
+						}
+					}
+				}
+			)
 			transform_delivery(src, out, {"width": 64, "height": 128, "fps": 24}, c)
 			streams = json.loads(
 				subprocess.check_output(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(out)])

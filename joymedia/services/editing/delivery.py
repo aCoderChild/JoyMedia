@@ -22,9 +22,12 @@ def delivery_contract(workflow, profile=None):
 		"contrast",
 		"brightness",
 		"saturation",
+		"temporal_fit",
 	}
 	if not isinstance(value, dict) or set(value) - allowed:
 		raise ValueError("Unsupported workflow delivery fields.")
+	if value.get("temporal_fit", "trim") not in {"trim", "preserve_endpoints"}:
+		raise ValueError("Workflow delivery temporal_fit must be trim or preserve_endpoints.")
 	result = {
 		"crf": 14,
 		"preset": "slow",
