@@ -1,0 +1,108 @@
+{
+  "capabilities": [
+    "first_frame",
+    "last_frame",
+    "reference_image",
+    "native_audio"
+  ],
+  "limits": {
+    "max_frames": 124
+  },
+  "parameters": [
+    {
+      "semantic": "seed",
+      "node_key": "15",
+      "input_name": "noise_seed"
+    },
+    {
+      "semantic": "width",
+      "node_key": "104",
+      "input_name": "width",
+      "transform": "round_to_multiple",
+      "multiple": 32
+    },
+    {
+      "semantic": "height",
+      "node_key": "104",
+      "input_name": "height",
+      "transform": "round_to_multiple",
+      "multiple": 32
+    },
+    {
+      "semantic": "frame_count",
+      "node_key": "111",
+      "input_name": "value",
+      "transform": "frames_to_seconds",
+      "fps": 24
+    },
+    {
+      "semantic": "output_prefix",
+      "node_key": "92",
+      "input_name": "filename_prefix"
+    }
+  ],
+  "outputs": {
+    "primary": {
+      "node_key": "92",
+      "media_type": "Video"
+    }
+  },
+  "metadata": {
+    "frame_count": 124,
+    "output_fps": 24,
+    "produces_video": 1,
+    "produces_audio": 1
+  },
+  "conditional_inputs": [
+    {
+      "role": "product",
+      "target": {
+        "node_key": "104",
+        "input_name": "ref_images.ref_image_1"
+      },
+      "when_present": [
+        "product",
+        0
+      ],
+      "when_absent": null
+    }
+  ],
+  "input_preprocessing": {
+    "optional_input_chains": [
+      {
+        "target": {
+          "node_key": "16",
+          "input_name": "conditioning"
+        },
+        "base": [
+          "guide_first",
+          0
+        ],
+        "links": [
+          {
+            "role": "last_frame",
+            "nodes": [
+              "115",
+              "guide_last"
+            ],
+            "node": "guide_last",
+            "input": "positive"
+          }
+        ]
+      }
+    ]
+  },
+  "prompt_transforms": [
+    {
+      "node_key": "104",
+      "input_name": "prompt",
+      "append_text": "Use <Picture 1> as the opening composition, subject identity, room, pose and action state. Continue only this authored shot; do not copy a reference photograph as a cutaway."
+    },
+    {
+      "node_key": "104",
+      "input_name": "prompt",
+      "when_role_present": "product",
+      "append_text": "Use <Picture 2> only for the exact advertised product silhouette, proportions, colours and printed artwork. It is the same physical product visible in <Picture 1>, not a second product or a new scene. Keep its artwork attached to its surface through perspective, motion and occlusion."
+    }
+  ]
+}

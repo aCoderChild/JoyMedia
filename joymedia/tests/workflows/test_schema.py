@@ -83,7 +83,7 @@ class TestGraphSchema(unittest.TestCase):
 		self.assertIn("music", foley["negative_prompt"])
 		self.assertIn("images", foley)
 
-	def test_h3_renders_at_native_portrait_size_independently_of_delivery_size(self):
+	def test_h3_rounds_authored_dimensions_to_native_grid(self):
 		from joymedia.patches.register_flux_pulid_h3_pipeline import GRAPHS, _h3_spec
 		from joymedia.workflow_adapters.comfyui_generic import GenericComfyUIAdapter
 
@@ -94,9 +94,17 @@ class TestGraphSchema(unittest.TestCase):
 			graph, seed=5, width=720, height=1280, fps=24, frame_count=96, output_prefix="test"
 		)
 		self.assertEqual(
-			(768, 1344), (resolved["104"]["inputs"]["width"], resolved["104"]["inputs"]["height"])
+			(736, 1280), (resolved["104"]["inputs"]["width"], resolved["104"]["inputs"]["height"])
 		)
 		self.assertEqual(4, resolved["111"]["inputs"]["value"])
 		self.assertEqual(
 			{"model": ["122", 0], "shift_video": 12.0, "shift_audio": 3.0}, resolved["sigma_shift"]["inputs"]
 		)
+		for width, height, expected in [(720, 900, (736, 896)), (1680, 720, (1696, 736))]:
+			with self.subTest(width=width, height=height):
+				resolved = adapter.prepare_execution(
+					graph, seed=5, width=width, height=height, fps=24, frame_count=96, output_prefix="test"
+				)
+				self.assertEqual(
+					expected, (resolved["104"]["inputs"]["width"], resolved["104"]["inputs"]["height"])
+				)

@@ -10,41 +10,14 @@ from pathlib import Path
 import frappe
 
 from joymedia.patches.register_flux2_klein_pipeline import _register_keyframe
-from joymedia.patches.register_flux_pulid_h3_pipeline import GRAPHS, _h3_spec
+from joymedia.patches.register_flux_pulid_h3_pipeline import GRAPHS
 
 WORKFLOW_KEY = "tshirt_h3_fl2va_turbo8"
 GRAPH = GRAPHS / "t_shirt_h3_i2v.json"
 
 
 def execution_spec():
-	spec = _h3_spec()
-	spec["capabilities"] = ["first_frame", "last_frame", "native_audio"]
-	spec["limits"] = {"max_frames": 124}
-	# Symmetric endpoint preprocessing follows the upstream optional I2V/FL2V topology.
-	for node in ("first_frame_size", "last_frame_size"):
-		for dimension in ("width", "height"):
-			original = next(m for m in spec["parameters"] if m["semantic"] == dimension)
-			spec["parameters"].append({**original, "node_key": node, "input_name": dimension})
-	spec["conditional_inputs"][0]["when_present"] = ["last_frame_size", 0]
-	spec["outputs"]["last_frame"] = {"node_key": "save_last_image", "media_type": "Image"}
-	spec["parameters"] += [
-		{"semantic": "last_frame_index", "node_key": "last_image", "input_name": "batch_index"},
-		{"semantic": "last_frame_prefix", "node_key": "save_last_image", "input_name": "filename_prefix"},
-	]
-	spec["delivery"] = {
-		"width": 1440,
-		"height": 2560,
-		"fps": 24,
-		"audio_sample_rate": 44100,
-		"audio_channels": 2,
-		"crf": 14,
-		"preset": "slow",
-		"sharpen": 0.9,
-		"contrast": 1.03,
-		"brightness": 0.01,
-		"saturation": 1.04,
-	}
-	return spec
+	return json.loads((GRAPHS / "minimax_h3_fl2va.execution.json").read_text())
 
 
 def execute(keyframe_workflow=None):

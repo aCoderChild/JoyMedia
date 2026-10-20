@@ -1,0 +1,7 @@
+{
+  "repository": "Comfy-Org/MiniMax-H3",
+  "revision": "e5eb578a89295337b8ff433a035929ce0279e0b6",
+  "file": "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+  "sha256": "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779",
+  "bytes": 20970379616
+}

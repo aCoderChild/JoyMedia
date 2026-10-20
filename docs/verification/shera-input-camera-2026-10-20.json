@@ -132,11 +132,114 @@
       "modules": 7,
       "tests": 121,
       "failed_modules": 0
+    },
+    "shared_default_followup": {
+      "modules": 7,
+      "failed_modules": 0,
+      "summary": [
+        {
+          "module": "joymedia.tests.workflow_adapters.test_tshirt",
+          "ok": true
+        },
+        {
+          "module": "joymedia.tests.workflow_adapters.test_ref2va",
+          "ok": true
+        },
+        {
+          "module": "joymedia.tests.workflows.test_pipeline",
+          "ok": true
+        },
+        {
+          "module": "joymedia.tests.workflows.test_resolution_execution",
+          "ok": true
+        },
+        {
+          "module": "joymedia.tests.test_install",
+          "ok": true
+        },
+        {
+          "module": "joymedia.tests.workflows.test_schema",
+          "ok": true
+        },
+        {
+          "module": "joymedia.tests.planning.test_endpoint_geometry",
+          "ok": true
+        }
+      ]
     }
   },
   "references": [
     "Quy tac sap xep hinh trong dung phim.docx",
     "videos/TVC_HOODIE_GYM_NYC_25S_2K_QHD_MASTER.mp4",
     "https://www.brandsvietnam.com/congdong/topic/338390-16-goc-quay-pho-bien-de-xay-dung-mot-storyboard-hap-dan"
-  ]
+  ],
+  "shared_default_geometry": {
+    "old_pipeline": "PIPE-00037",
+    "pipeline": "PIPE-00050",
+    "workflow": "WF-02681",
+    "changes": [
+      {
+        "source": "WF-02658",
+        "workflow": "WF-02680",
+        "graph_sha256": "a88aa620b69c9c0193211a7b1d631687e0f6408f014b0d80fd5e26503f8f5248",
+        "graph_unchanged": true,
+        "native_geometry": {
+          "width": {
+            "transform": "round_to_multiple",
+            "multiple": 32
+          },
+          "height": {
+            "transform": "round_to_multiple",
+            "multiple": 32
+          }
+        },
+        "continuation": null
+      },
+      {
+        "source": "WF-02659",
+        "workflow": "WF-02681",
+        "graph_sha256": "a88aa620b69c9c0193211a7b1d631687e0f6408f014b0d80fd5e26503f8f5248",
+        "graph_unchanged": true,
+        "native_geometry": {
+          "width": {
+            "transform": "round_to_multiple",
+            "multiple": 32
+          },
+          "height": {
+            "transform": "round_to_multiple",
+            "multiple": 32
+          }
+        },
+        "continuation": "WF-02680"
+      }
+    ],
+    "project_specific_pin_required": false,
+    "existing_project_pins": "Preserved",
+    "sampling_and_models": "Executable graph bytes/values preserved; only dimension bindings and continuation version links changed.",
+    "actual_owner_created_project": "PRJ-02568",
+    "active_pipeline": "PIPE-00050",
+    "execution_resolution": [
+      {
+        "input": [
+          720,
+          900
+        ],
+        "native": [
+          736,
+          896
+        ]
+      },
+      {
+        "input": [
+          1680,
+          720
+        ],
+        "native": [
+          1696,
+          736
+        ]
+      }
+    ],
+    "submitted_to_comfy": false
+  }
 }

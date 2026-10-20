@@ -77,7 +77,7 @@ class TestTShirtWorkflow(TestCase):
 		self.assertIsNone(delivery_contract({"execution_spec": {}}))
 		with self.assertRaises(ValueError):
 			delivery_contract({"execution_spec": {"delivery": {"command": "anything"}}})
-		c = delivery_contract({"execution_spec": execution_spec()})
+		c = delivery_contract({"execution_spec": execution_spec()}, {"width": 720, "height": 1280, "fps": 24})
 		self.assertEqual(c["fps"], 24)
 		self.assertEqual(c["audio_sample_rate"], 44100)
 		with self.assertRaises(ValueError):

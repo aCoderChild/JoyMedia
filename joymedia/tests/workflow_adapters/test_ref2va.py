@@ -41,7 +41,7 @@ class TestRef2VA(FrappeTestCase):
 		self.assertEqual(0, graph["guide_first"]["inputs"]["frame_idx"])
 		self.assertEqual(["guide_first", 0], graph["16"]["inputs"]["conditioning"])
 		self.assertIn("<Picture 2>", graph["104"]["inputs"]["prompt"])
-		self.assertEqual((768, 1344), (graph["104"]["inputs"]["width"], graph["104"]["inputs"]["height"]))
+		self.assertEqual((736, 1280), (graph["104"]["inputs"]["width"], graph["104"]["inputs"]["height"]))
 		self.assertEqual("MiniMaxH3ReferenceToVideo", graph["104"]["class_type"])
 		self.assertIn("ref2va", graph["6"]["inputs"]["unet_name"])
 		self.assertNotIn("guide_last", graph)

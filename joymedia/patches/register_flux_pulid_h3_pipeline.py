@@ -91,52 +91,7 @@ def _register_h3():
 
 
 def _h3_spec():
-	sizes = [{"width": 1344, "height": 768}, {"width": 768, "height": 1344}, {"width": 1024, "height": 1024}]
-	return {
-		"capabilities": ["first_frame", "last_frame", "native_audio"],
-		"limits": {"max_frames": 124},
-		"parameters": [
-			{"semantic": "seed", "node_key": "15", "input_name": "noise_seed"},
-			# H3's latent grid needs sizes divisible by 32 (the shipped workflow's Resolution Selector rounds to
-			# a multiple of 32 for the same reason); 720 is not, and fails inside the sampler.
-			{
-				"semantic": "width",
-				"node_key": "104",
-				"input_name": "width",
-				"transform": "nearest_size_dimension",
-				"dimension": "width",
-				"options": sizes,
-			},
-			{
-				"semantic": "height",
-				"node_key": "104",
-				"input_name": "height",
-				"transform": "nearest_size_dimension",
-				"dimension": "height",
-				"options": sizes,
-			},
-			{
-				"semantic": "frame_count",
-				"node_key": "111",
-				"input_name": "value",
-				"transform": "frames_to_seconds",
-				"fps": 24,
-			},
-			{"semantic": "output_prefix", "node_key": "92", "input_name": "filename_prefix"},
-		],
-		"outputs": {"primary": {"node_key": "92", "media_type": "Video"}},
-		# H3's own optional last_frame input: a continuation segment can end on the scene's approved keyframe, which
-		# keeps the characters from drifting away from it. Absent, the input stays empty and nothing changes.
-		"conditional_inputs": [
-			{
-				"role": "last_frame",
-				"target": {"node_key": "104", "input_name": "last_frame"},
-				"when_present": ["115", 0],
-				"when_absent": None,
-			}
-		],
-		"metadata": {"frame_count": 124, "output_fps": 24, "produces_video": 1, "produces_audio": 1},
-	}
+	return json.loads((GRAPHS / "minimax_h3_i2v.execution.json").read_text())
 
 
 def _insert_h3(workflow_key, continuation=None):

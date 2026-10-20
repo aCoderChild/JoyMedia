@@ -18,7 +18,7 @@ or frozen-run dimensions; missing geometry fails with an actionable error.
 The studio preview and storyboard tiles use those dimensions, including squares.
 
 Providers may align native inference dimensions to their declared latent grid.
-The opt-in H3 base profile uses the existing `round_to_multiple` transform instead
+The shared H3 I2V, FL2VA and Ref2VA profiles use the existing `round_to_multiple` transform instead
 of snapping every request to one of three shapes. Model grid alignment is not
 permission to change the final delivery ratio. The delivery transform derives
 both axes from project geometry and a declared short-edge quality target. Legacy
@@ -74,3 +74,8 @@ Single-image, geometry and temporal observations share the existing bounded
 read-only transport retry. A dropped connection retries the identical observation,
 not the video generation or a judgment. HTTP answers and genuine visual failures
 are not rerolled. Missing evidence remains unavailable after the retry budget.
+
+H3 execution contracts and the Ref2VA model manifest live beside their graphs as
+JSON. Deployment promotes an immutable version of the shared default route;
+existing per-project pins remain intact. The format correction changes dimension
+bindings only and preserves executable graph sampling and model values.
