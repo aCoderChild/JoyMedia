@@ -1,5 +1,37 @@
 # Systematic H3 camera direction
 
+## Current camera ownership
+
+The Brand-sheet `Camera style: cinematic` activates a deterministic policy.
+The planner supplies semantic `shot_structure`; application policy derives
+`camera_intent`. Inferred camera fields returned by the language model do not
+override that policy. Explicit authored camera plans still use strict validation.
+One continuous shot receives one main camera behavior, chosen independently of
+camera commands embedded in scene prose. The supplied opening frame owns its
+actual crop; movement must respect reviewed subject bounds and product margins.
+
+H3 serialization keeps visual direction, reference roles, opening, chronological
+action, camera, sound and ending in that order. Timed actions appear once;
+event-specific physical checks remain attached to their time window. Reference
+fidelity rules preserve existing lettering instead of banning all printed words.
+Style appears once. Global style should describe light, materials and mood;
+actors, locations, props and physical events belong to individual workbook rows.
+
+Explicit named reference views constrain identity expansion: selecting one pose
+must not silently attach every pose of the same identity. Structured framing also
+chooses broad or close location context. Empty, declared cast/product cells mean
+that role is absent from the shot, including reaction coverage and macro inserts.
+
+Prompt conformance is an intention, not measured footage. Verify decoded motion,
+framing, support, action and package artwork before selecting a take. Installed
+Ref2VA weights and valid references do not establish release qualification.
+Failed or uncertain candidates retain their evidence and prior selected takes.
+The running Shera qualification is recorded separately from code verification.
+
+Implementation boundaries and deployment checks are in [architecture.md](architecture.md).
+The sections below retain earlier policy and qualification context.
+
+
 H3 video tasks use the existing JoyMedia scene compiler, with a provider-specific
 serializer in `services/planning/h3.py` and shared camera decisions in
 `services/planning/camera.py`. Both pipeline and direct-workflow preparation pass
@@ -77,7 +109,6 @@ fields are rejected. This selects one behavior per shot. Existing hard camera
 locks and split-screen restrictions take precedence. Without explicit reframing,
 the V2 margin and 2% push-in limits still apply. Intentional product-detail
 endpoints can approve reframing; the supplied endpoint must still be reviewed.
-
 The T-shirt case uses matched backward tracking, a locked pivot, a locked
 sunglasses action, and an intentional detail push-in. Continuations inherit the
 predecessor's admitted decoded final image. Their frame-approval check follows
@@ -233,112 +264,3 @@ actors retain first/middle/last coverage; short visible intervals use every
 available view. Unknown comparisons remain blocking, as do witnessed identity
 violations. The change is frozen by the existing admission implementation hash;
 older held attempts are not retroactively passed.
-
-## Reviewed source, integrated packshots and art direction
-
-The Shera revision uses `SAN PHAM AI/kich_ban/Shera_TVC_30s_JoyMedia.xlsx`
-through the existing workbook planner. Its Brand / Visual style field controls
-set dressing, directional lighting, material detail and visual hierarchy through
-`sheet_brief` / `_mood`; the same field reaches environment plates and scene
-keyframes. Tone alone is insufficient production design. The room is generated
-once and shared across coverage; a different seed per scene must not redesign it.
-Environment rendering now respects a project's pinned image pipeline, like its
-scene keyframes, instead of silently using the global image provider.
-
-The source `Quy tac sap xep hinh trong dung phim.docx` supplies graduated shot
-scales, action-axis continuity, matched action phases and duration appropriate to
-visible information. The [BrandsVietnam article](https://www.brandsvietnam.com/congdong/topic/338390-16-goc-quay-pho-bien-de-xay-dung-mot-storyboard-hap-dan)
-separates framing, angle and movement. These are distinct decisions: varied shot
-sizes do not require drifting or zooming during a precise product demonstration.
-Use the existing shared shot structure/camera policy and review the decoded
-result for cropping, drift, support and required detail visibility.
-
-For **Draw in scene**, a final product shot now follows the same measured source
-matting and placement path as an interior demonstration. Being the last shot no
-longer forces ordinary JPEG references into separate white photo cells. The
-existing exact-art card mode remains explicit. This correction does not certify
-lighting, contact shadows or occlusion: approve new keyframes and rendered
-candidates only after inspecting them. Old exports and their pinned feedback
-remain immutable.
-
-Music refresh is a separate native finishing action: **Replace background
-music** queues the configured ComfyUI music workflow and preserves picture trims,
-voiceover and effects. The selected workflow's declared frame capacity controls
-whether a whole-film cue can be generated; short workflows keep the crossfade
-loop fallback. The registered MMAudio profile declares 744 frames (31 seconds at
-24 fps), using its existing duration input and the generic frames-to-seconds
-mapping. The music bed still ducks beneath VO/effects and fades at the end.
-Upstream inspection and pinned repository commits are recorded in
-`deploy/endpoint-workflow-reference.lock.json`. No new inference implementation
-or model-specific prompt path was added.
-
-## Cinematic camera profile
-
-The optional Brand-sheet **Camera style** value `cinematic` asks the existing
-production planner to infer `motion_plan.camera_intent` alongside shot structure.
-This applies to timed workbook and creative planning. It does not parse motion
-commands from scene prose or choose a model from a product name.
-
-The intent carries one `behavior`, `allow_reframe`, optional `purpose`
-(`hook`, `follow`, `demonstrate`, `detail`, `reveal`, `resolve`) and `energy`
-(`slow`, `measured`, `brisk`). A broad establishing/presentation/emotional beat
-can make a bounded axial move; precise extraction, contact and detail coverage
-remain locked. With assessed complete subjects and sufficient margins, a broad
-cinematic push is capped at 6% apparent enlargement; unknown/tight framing holds.
-The move eases to a stop, preserving real depth-dependent background parallax.
-A closing push settles two seconds before the end. These are requests requiring
-render review, not guarantees about generated camera paths.
-
-A spatial `pull_back` or shallow `arc` requires both reviewed boundary images
-and explicit reframing permission. Missing anchors hold the camera instead of
-inventing a spatial reveal. Tracking retains the approved crop rather than
-forcing full-body coverage. The same semantic direction feeds H3 and the plain
-prompt compiler; only field serialization belongs to the provider adapter.
-
-The current visual reference is
-`videos/TVC_HOODIE_GYM_NYC_25S_2K_QHD_MASTER.mp4` (25.875 seconds), replacing
-`T-Shirt 01.mp4` for this review. Its transferable grammar is motivated rear/
-side/front coverage, an approach into a readable product detail, quieter contact
-coverage, then a wider spatial reveal and resolved hero. Product rotation and
-camera orbit are distinct. Do not copy its changing artwork, floating-product
-staging or an unsupported axis change into another case.
-
-Workbook entity columns now retain whether they were declared: an explicit empty
-cast does not fall back to an arbitrary actor in a material-only insert. Named
-alternate views can resolve to the canonical identity through their aliases;
-that identity remains one subject. Clean identity-only views avoid incidental
-hearts or packages becoming unsolicited action props. Neither a reference board
-nor a failed candidate is evidence of product fidelity.
-
-## Original-reference video conditioning
-
-A pipeline may declare `reference_only` when its final stage generates video
-directly from role-separated original references. In that profile the final
-workflow contract validates inputs, and execution skips the unused image stage.
-The UI does not require an opening frame that the graph never consumes.
-Authored first/last-frame controls are rejected explicitly; choose an anchored
-profile to use them. This capability does not disable video action, geometry or
-cast admission, and does not certify printed artwork.
-
-Prompt picture ordinals follow present final-stage bindings in their declared
-order, matching the deployed native reference node. Each original image controls
-its semantic role only. Reference photo backgrounds, incidental props and poses
-are not additional actors or actions. With no fixed opening, cinematic camera
-prompts request the authored framing plus margins; actual crop and parallax
-remain unverified until the rendered clip is reviewed. Precise manipulation
-and material-detail coverage remain steady.
-
-For the Shera qualification, the original single-pack 400-sheet/4-ply PNG is the
-product input. The five-view board of that same SKU is a comparison authority,
-not five physical products. FLUX candidates with changed lettering, incorrect
-framing or an extra actor are not approved anchors for this route. Compare the
-rendered wordmark, 400-sheet/4-ply information, blue panel layout, pack silhouette
-and contact/support against the originals. Any exact-print restoration uses
-reviewed printed-surface planes through existing source-art repair, rather than
-pasting an opaque catalogue photograph over the package opening.
-
-The deployed direct-reference graph uses the native Ref2VA checkpoint and
-20-step sampler; its provider-specific graph stays in the workflow adapter.
-Repository revision and checkpoint provenance are recorded in the deployment
-lock file. Ref2VA remains a candidate for product fidelity, not a guarantee of
-exact typography or physical action.
