@@ -13,7 +13,9 @@ class Shot(Document):
 			# explicitly replaced plan, as when the director saves a fresh draft.
 			if self.has_value_changed("generation_prompt") or self.has_value_changed("image_prompt"):
 				for field in ("motion_plan_json", "end_state", "handoff_type"):
-					if not self.has_value_changed(field) and not (field == "motion_plan_json" and self.flags.get("explicit_motion_plan")):
+					if not self.has_value_changed(field) and not (
+						field == "motion_plan_json" and self.flags.get("explicit_motion_plan")
+					):
 						self.set(field, None)
 			if self.has_value_changed("image_prompt") and not self.has_value_changed("start_state"):
 				self.start_state = None
@@ -33,16 +35,29 @@ class Shot(Document):
 			frappe.throw("Shots cannot be deleted while a Generation Run is active.")
 
 	def _validate_active_run_changes(self):
-		if self.is_new() or not self.media_project or not frappe.db.exists("Media Project", self.media_project):
+		if (
+			self.is_new()
+			or not self.media_project
+			or not frappe.db.exists("Media Project", self.media_project)
+		):
 			return
 		if not frappe.db.exists(
 			"Generation Run", {"media_project": self.media_project, "status": ["in", ["Queued", "Running"]]}
 		):
 			return
 		fields = (
-			"shot_number", "duration_seconds", "planned_frame_count", "storyboard_action", "generation_prompt",
-			"image_prompt", "motion_plan_json",
-			"start_state", "end_state", "handoff_type", "continuity_mode", "generation_inputs",
+			"shot_number",
+			"duration_seconds",
+			"planned_frame_count",
+			"storyboard_action",
+			"generation_prompt",
+			"image_prompt",
+			"motion_plan_json",
+			"start_state",
+			"end_state",
+			"handoff_type",
+			"continuity_mode",
+			"generation_inputs",
 		)
 		if any(self.has_value_changed(fieldname) for fieldname in fields):
 			frappe.throw("Generation-affecting Shot fields are read-only while a Generation Run is active.")
@@ -77,8 +92,7 @@ class Shot(Document):
 			or media_asset.media_project != project.name
 		):
 			frappe.throw(
-				"Selected Output Asset Version must belong to a project output "
-				"for this Media Project."
+				"Selected Output Asset Version must belong to a project output for this Media Project."
 			)
 
 	def validate_required_workflow_input_mappings(self):

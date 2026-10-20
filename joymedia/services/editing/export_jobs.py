@@ -17,8 +17,8 @@ def queue_project_timeline_export(project_name: str, purpose="review"):
 	if purpose not in ("review", "release"):
 		raise ValueError("Export purpose must be review or release.")
 	if purpose == "release":
-		from joymedia.services.review.release import release_evidence
 		from joymedia.services.editing.timeline import _timeline_clip_rows
+		from joymedia.services.review.release import release_evidence
 
 		try:
 			release_evidence(project.name, _timeline_clip_rows(project.name))
@@ -36,7 +36,9 @@ def queue_project_timeline_export(project_name: str, purpose="review"):
 	if getattr(project, "post_production_status", None) in ("Queued", "Running") and is_render_alive(
 		post_production_job_id(project.name)
 	):
-		frappe.throw(_("The film is still being finished. Export once the transitions and soundtrack are added."))
+		frappe.throw(
+			_("The film is still being finished. Export once the transitions and soundtrack are added.")
+		)
 	project.db_set("export_status", "Queued")
 	project.db_set("export_error", None)
 	enqueue_render(
@@ -62,11 +64,13 @@ def _fail_dead_export(project):
 	"""Report an export whose background job died as Failed, so it can be retried."""
 	if project.export_status not in ("Queued", "Running") or is_render_alive(_export_job_id(project.name)):
 		return
-	project.db_set({
-		"export_status": "Failed",
-		"export_error": _("The export stopped unexpectedly. Please export again."),
-		"export_completed_at": frappe.utils.now(),
-	})
+	project.db_set(
+		{
+			"export_status": "Failed",
+			"export_error": _("The export stopped unexpectedly. Please export again."),
+			"export_completed_at": frappe.utils.now(),
+		}
+	)
 	frappe.db.commit()
 
 
@@ -78,7 +82,11 @@ def run_project_timeline_export(project_name: str, purpose="review"):
 		project.db_set("export_status", "Running")
 		project.db_set("export_started_at", frappe.utils.now())
 		frappe.db.commit()
-		result = compose_project_timeline_internal(project.name, require_brand_approval=True) if purpose == "release" else compose_project_timeline_internal(project.name)
+		result = (
+			compose_project_timeline_internal(project.name, require_brand_approval=True)
+			if purpose == "release"
+			else compose_project_timeline_internal(project.name)
+		)
 		project.db_set("export_status", "Completed")
 		project.db_set("export_completed_at", frappe.utils.now())
 		frappe.db.commit()
@@ -114,5 +122,3 @@ def get_project_timeline_export_status(project_name: str):
 		"export_completed_at": getattr(project, "export_completed_at", None),
 		"current_output_asset_version": getattr(project, "current_output_asset_version", None),
 	}
-
-

@@ -168,10 +168,10 @@ class TestPartnerAccess(ReviewCommentCase):
 			feedback.triage_feedback("missing", "Resolved")
 
 	def test_reviewer_cannot_be_promoted_by_mixing_client_or_internal_roles(self):
-		for role in ('JoyMedia User', 'JoyMedia Specialist', 'System Manager'):
-			frappe.set_user('Administrator')
-			user = frappe.get_doc('User', self.user)
-			user.append('roles', {'role': role})
+		for role in ("JoyMedia User", "JoyMedia Specialist", "System Manager"):
+			frappe.set_user("Administrator")
+			user = frappe.get_doc("User", self.user)
+			user.append("roles", {"role": role})
 			with self.assertRaises(frappe.ValidationError):
 				user.save(ignore_permissions=True)
 			self.assertNotIn(role, frappe.get_roles(self.user))
@@ -179,33 +179,39 @@ class TestPartnerAccess(ReviewCommentCase):
 	def test_reviewer_capabilities_stay_limited_when_testing_is_enabled(self):
 		self.admin_update(allow_generation=1)
 		access = partners.get_access()
-		self.assertEqual(access['role'], 'reviewer')
-		self.assertTrue(access['can_create'])
-		for capability in ('administrator', 'can_manage_reviewers', 'can_use_library', 'can_use_advanced_editor'):
+		self.assertEqual(access["role"], "reviewer")
+		self.assertTrue(access["can_create"])
+		for capability in (
+			"administrator",
+			"can_manage_reviewers",
+			"can_use_library",
+			"can_use_advanced_editor",
+		):
 			self.assertFalse(access[capability])
 
 
 from unittest import TestCase
-from joymedia.services.access import role_for, portal_access
+
+from joymedia.services.access import portal_access, role_for
 
 
 class TestRoleContract(TestCase):
 	def test_explicit_role_mapping_and_capabilities(self):
 		for role, roles in (
-			('administrator', ['System Manager']),
-			('production', ['JoyMedia Specialist', 'JoyMedia User']),
-			('client', ['JoyMedia User']),
-			('unassigned', ['Website User']),
+			("administrator", ["System Manager"]),
+			("production", ["JoyMedia Specialist", "JoyMedia User"]),
+			("client", ["JoyMedia User"]),
+			("unassigned", ["Website User"]),
 		):
-			with self.subTest(role=role), patch.object(frappe, 'get_roles', return_value=roles):
-				access = portal_access('role-test@example.invalid')
-				self.assertEqual(access['role'], role)
-				self.assertEqual(access['can_create'], role != 'unassigned')
-				self.assertEqual(access['can_use_advanced_editor'], role in ('administrator', 'production'))
-				self.assertEqual(access['can_manage_reviewers'], role == 'administrator')
+			with self.subTest(role=role), patch.object(frappe, "get_roles", return_value=roles):
+				access = portal_access("role-test@example.invalid")
+				self.assertEqual(access["role"], role)
+				self.assertEqual(access["can_create"], role != "unassigned")
+				self.assertEqual(access["can_use_advanced_editor"], role in ("administrator", "production"))
+				self.assertEqual(access["can_manage_reviewers"], role == "administrator")
 
 	def test_legacy_reviewer_conflicts_fail_closed(self):
-		for role in ('JoyMedia User', 'JoyMedia Specialist', 'System Manager'):
-			self.assertEqual(role_for('test', ['JoyMedia Reviewer', role]), 'unassigned')
-		self.assertEqual(role_for('Guest', ['System Manager']), 'unassigned')
-		self.assertEqual(role_for('Administrator', []), 'administrator')
+		for role in ("JoyMedia User", "JoyMedia Specialist", "System Manager"):
+			self.assertEqual(role_for("test", ["JoyMedia Reviewer", role]), "unassigned")
+		self.assertEqual(role_for("Guest", ["System Manager"]), "unassigned")
+		self.assertEqual(role_for("Administrator", []), "administrator")

@@ -3,6 +3,7 @@
 Only printed surfaces are projected. The generated object's geometry, opening,
 contact shadow and environment are not replaced by a catalogue photograph.
 """
+
 import hashlib
 import json
 from pathlib import Path
@@ -16,7 +17,11 @@ def _opening(project_name, shot_name):
 	shot = frappe.get_doc("Shot", shot_name)
 	if shot.media_project != project.name:
 		frappe.throw("Shot does not belong to this project.", frappe.PermissionError)
-	frames = [r.asset_version for r in shot.generation_inputs if frappe.scrub(r.reference_role or "") == "first_frame"]
+	frames = [
+		r.asset_version
+		for r in shot.generation_inputs
+		if frappe.scrub(r.reference_role or "") == "first_frame"
+	]
 	if len(frames) > 1:
 		frappe.throw("Choose one opening image.")
 	if frames:
@@ -24,6 +29,7 @@ def _opening(project_name, shot_name):
 		url, identity = version.file, {"asset_version": version.name}
 	elif shot.keyframe_artifact:
 		from joymedia.services.keyframes.stage import keyframe_signature
+
 		if shot.keyframe_signature != keyframe_signature(shot):
 			frappe.throw("The opening image is stale. Redraw it first.")
 		url = frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "frappe_file")
@@ -44,7 +50,9 @@ def project_surface(background, artwork, source_quad, target_quad, *, blend_mode
 	"""Same polygon/homography/alpha primitives as consistency.tracking.restore_video."""
 	import cv2
 	import numpy as np
-	from joymedia.services.consistency.tracking import quad, PreservationError
+
+	from joymedia.services.consistency.tracking import PreservationError, quad
+
 	if background is None or artwork is None or artwork.ndim != 3 or artwork.shape[2] not in (3, 4):
 		raise PreservationError("Artwork must be an RGB or RGBA image.")
 	h, w = background.shape[:2]
@@ -54,7 +62,11 @@ def project_surface(background, artwork, source_quad, target_quad, *, blend_mode
 	target = quad(target_quad, (w, h))
 	if cv2.contourArea(source, oriented=True) * cv2.contourArea(target, oriented=True) <= 0:
 		raise PreservationError("Source and target corner order would mirror the artwork.")
-	alpha = artwork[:, :, 3].astype(np.float32) / 255 if artwork.shape[2] == 4 else np.ones(artwork.shape[:2], np.float32)
+	alpha = (
+		artwork[:, :, 3].astype(np.float32) / 255
+		if artwork.shape[2] == 4
+		else np.ones(artwork.shape[:2], np.float32)
+	)
 	mask = np.zeros(artwork.shape[:2], np.uint8)
 	cv2.fillConvexPoly(mask, source.astype(np.int32), 1)
 	alpha *= mask
@@ -72,8 +84,10 @@ def project_surface(background, artwork, source_quad, target_quad, *, blend_mode
 def repair_opening_art(project_name, shot_name, expected_frame, planes):
 	import cv2
 	import numpy as np
-	from joymedia.services.consistency.repair import _project_asset_path
+
 	from joymedia.api.storyboard import _busy_shots
+	from joymedia.services.consistency.repair import _project_asset_path
+
 	project, shot, _url, content, token = _opening(project_name, shot_name)
 	project._require_write_access()
 	if token != frappe.parse_json(expected_frame):
@@ -86,36 +100,75 @@ def repair_opening_art(project_name, shot_name, expected_frame, planes):
 	image = cv2.imdecode(np.frombuffer(content, np.uint8), cv2.IMREAD_COLOR)
 	evidence = []
 	for plane in planes:
-		if (not isinstance(plane, dict)
+		if (
+			not isinstance(plane, dict)
 			or not {"artwork", "source_quad", "target_quad"} <= set(plane)
-			or set(plane) - {"artwork", "source_quad", "target_quad", "blend_mode"}):
+			or set(plane) - {"artwork", "source_quad", "target_quad", "blend_mode"}
+		):
 			frappe.throw("Each surface needs artwork and matching source/target quadrilaterals.")
 		path = _project_asset_path(project, plane["artwork"])
 		art = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
 		image = project_surface(
-			image, art, plane["source_quad"], plane["target_quad"], blend_mode=plane.get("blend_mode", "source")
+			image,
+			art,
+			plane["source_quad"],
+			plane["target_quad"],
+			blend_mode=plane.get("blend_mode", "source"),
 		)
 		evidence.append({**plane, "artwork_sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
 	ok, data = cv2.imencode(".png", image)
 	if not ok:
 		frappe.throw("Could not encode the repaired image.")
 	# A candidate does not replace or approve the current opening.
-	asset = frappe.get_doc({"doctype":"Media Asset", "media_project":project.name,
-		"asset_name": f"{shot.name} opening artwork repair", "media_type":"Image", "asset_category":"Reference",
-		"asset_scope":"Project Output", "status":"Active"}).insert(ignore_permissions=True)
-	file = frappe.get_doc({"doctype":"File", "file_name":f"{shot.name}-source-art-{frappe.generate_hash(length=8)}.png",
-		"content":data.tobytes(), "is_private":1, "attached_to_doctype":"Media Asset", "attached_to_name":asset.name}).insert(ignore_permissions=True)
-	version = frappe.get_doc({"doctype":"Asset Version", "media_asset":asset.name, "file":file.file_url, "source":"Composed",
-		"derived_from":token.get("asset_version"), "analysis_json":json.dumps({"opening_art_repair":{
-			"shot":shot.name, "source":token, "planes":evidence, "strategy":"opencv_source_surface_projection",
-			"scope":"Projected printed surfaces only; geometry, support, occlusion and visual quality require review."}})}).insert(ignore_permissions=True)
-	return {"asset_version":version.name, "file":file.file_url, "expected_frame":token}
+	asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"media_project": project.name,
+			"asset_name": f"{shot.name} opening artwork repair",
+			"media_type": "Image",
+			"asset_category": "Reference",
+			"asset_scope": "Project Output",
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
+	file = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"{shot.name}-source-art-{frappe.generate_hash(length=8)}.png",
+			"content": data.tobytes(),
+			"is_private": 1,
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": asset.name,
+		}
+	).insert(ignore_permissions=True)
+	version = frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": asset.name,
+			"file": file.file_url,
+			"source": "Composed",
+			"derived_from": token.get("asset_version"),
+			"analysis_json": json.dumps(
+				{
+					"opening_art_repair": {
+						"shot": shot.name,
+						"source": token,
+						"planes": evidence,
+						"strategy": "opencv_source_surface_projection",
+						"scope": "Projected printed surfaces only; geometry, support, occlusion and visual quality require review.",
+					}
+				}
+			),
+		}
+	).insert(ignore_permissions=True)
+	return {"asset_version": version.name, "file": file.file_url, "expected_frame": token}
 
 
 @frappe.whitelist(methods=["POST"])
 def use_opening_art_repair(project_name, shot_name, asset_version, expected_frame):
-	from joymedia.services.consistency.repair import _project_asset_path
 	from joymedia.api.storyboard import set_project_shot_keyframe
+	from joymedia.services.consistency.repair import _project_asset_path
+
 	project, shot, _url, _content, token = _opening(project_name, shot_name)
 	project._require_write_access()
 	if token != frappe.parse_json(expected_frame):

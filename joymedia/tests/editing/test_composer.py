@@ -21,20 +21,46 @@ class TestVideoComposer(FrappeTestCase):
 
 		with tempfile.TemporaryDirectory() as directory:
 			temp = Path(directory)
-			master, mono, stereo, output = [temp / name for name in ("v.mp4", "voice.wav", "music.wav", "out.mp4")]
-			_run_ffmpeg("-f", "lavfi", "-i", "color=s=128x128:r=24:d=1", "-an", "-c:v", "libx264", str(master))
+			master, mono, stereo, output = [
+				temp / name for name in ("v.mp4", "voice.wav", "music.wav", "out.mp4")
+			]
+			_run_ffmpeg(
+				"-f", "lavfi", "-i", "color=s=128x128:r=24:d=1", "-an", "-c:v", "libx264", str(master)
+			)
 			_run_ffmpeg("-f", "lavfi", "-i", "aevalsrc=0.8*sin(2*PI*440*t):s=48000:d=1", str(mono))
 			_run_ffmpeg("-f", "lavfi", "-i", "aevalsrc=0.8*sin(2*PI*440*t)|0:s=48000:d=1", str(stereo))
-			sources = [dict(path=path, loop=False, start_seconds=0, duration_seconds=1, gain_db=0,
-				fade_in_seconds=0, fade_out_seconds=0, duck_others=False) for path in (mono, stereo)]
+			sources = [
+				dict(
+					path=path,
+					loop=False,
+					start_seconds=0,
+					duration_seconds=1,
+					gain_db=0,
+					fade_in_seconds=0,
+					fade_out_seconds=0,
+					duck_others=False,
+				)
+				for path in (mono, stereo)
+			]
 			_mix_audio(master, sources, output)
-			probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)], capture_output=True, text=True, check=True).stdout)
+			probe = json.loads(
+				subprocess.run(
+					["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)],
+					capture_output=True,
+					text=True,
+					check=True,
+				).stdout
+			)
 			self.assertEqual(next(s for s in probe["streams"] if s["codec_type"] == "audio")["channels"], 2)
-			decoded = subprocess.run(["ffmpeg", "-v", "error", "-i", str(output), "-vn", "-f", "f32le", "-"], capture_output=True, check=True).stdout
+			decoded = subprocess.run(
+				["ffmpeg", "-v", "error", "-i", str(output), "-vn", "-f", "f32le", "-"],
+				capture_output=True,
+				check=True,
+			).stdout
 			samples = array.array("f", decoded)
 			peak = max(abs(x) for x in samples)
-			left = sum(x*x for x in samples[0::2])
-			right = sum(x*x for x in samples[1::2])
+			left = sum(x * x for x in samples[0::2])
+			right = sum(x * x for x in samples[1::2])
 			del decoded, samples
 			self.assertLess(peak, 0.95)
 			self.assertGreater(left, right * 1.5)
@@ -42,9 +68,9 @@ class TestVideoComposer(FrappeTestCase):
 	def test_delivery_profile_uses_generation_run_snapshot_dimensions(self):
 		project = frappe._dict(delivery_width=1080, delivery_height=1920, workflow="LIVE-WORKFLOW")
 		run = frappe._dict(
-		name="RUN-00001",
-		project_snapshot_json='{"delivery_width": 1920, "delivery_height": 1080, "workflow": "SNAPSHOT-WORKFLOW"}',
-		workflow="SNAPSHOT-WORKFLOW",
+			name="RUN-00001",
+			project_snapshot_json='{"delivery_width": 1920, "delivery_height": 1080, "workflow": "SNAPSHOT-WORKFLOW"}',
+			workflow="SNAPSHOT-WORKFLOW",
 		)
 		workflow = frappe._dict(output_fps=24)
 		with patch("joymedia.services.editing.composer.frappe.get_doc", side_effect=[run, workflow]):
@@ -59,22 +85,50 @@ class TestVideoComposer(FrappeTestCase):
 			source = temp_path / "source.mp4"
 			output = temp_path / "normalized.mp4"
 			_run_ffmpeg(
-				"-f", "lavfi", "-i", "testsrc=size=320x240:rate=24:duration=2",
-				"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=3",
-				"-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-				"-c:a", "aac", str(source),
+				"-f",
+				"lavfi",
+				"-i",
+				"testsrc=size=320x240:rate=24:duration=2",
+				"-f",
+				"lavfi",
+				"-i",
+				"sine=frequency=440:sample_rate=48000:duration=3",
+				"-map",
+				"0:v:0",
+				"-map",
+				"1:a:0",
+				"-c:v",
+				"libx264",
+				"-pix_fmt",
+				"yuv420p",
+				"-c:a",
+				"aac",
+				str(source),
 			)
 			profile = {"width": 320, "height": 240, "fps": 24.0}
-			_normalize_segment(source, output, profile, generated_frames=24, drop_first=False, preserve_audio=True)
+			_normalize_segment(
+				source, output, profile, generated_frames=24, drop_first=False, preserve_audio=True
+			)
 			_validate_normalized_video(output, profile, expected_frames=24)
 			self.assertAlmostEqual(_get_video_duration(output), 1.0, delta=0.05)
 			audio_duration = float(
 				json.loads(
 					subprocess.run(
 						[
-							"ffprobe", "-v", "error", "-select_streams", "a:0",
-							"-show_entries", "stream=duration", "-of", "json", str(output),
-						], capture_output=True, text=True, check=True,
+							"ffprobe",
+							"-v",
+							"error",
+							"-select_streams",
+							"a:0",
+							"-show_entries",
+							"stream=duration",
+							"-of",
+							"json",
+							str(output),
+						],
+						capture_output=True,
+						text=True,
+						check=True,
 					).stdout
 				)["streams"][0]["duration"]
 			)
@@ -87,9 +141,36 @@ class TestVideoComposer(FrappeTestCase):
 			bgm = temp_path / "bgm.wav"
 			voiceover = temp_path / "voiceover.wav"
 			delivery = temp_path / "delivery.mp4"
-			_run_ffmpeg("-f", "lavfi", "-i", "color=c=black:s=320x240:r=24:d=2", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(silent_master))
-			_run_ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=1", "-c:a", "pcm_s16le", str(bgm))
-			_run_ffmpeg("-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000:duration=0.8", "-c:a", "pcm_s16le", str(voiceover))
+			_run_ffmpeg(
+				"-f",
+				"lavfi",
+				"-i",
+				"color=c=black:s=320x240:r=24:d=2",
+				"-an",
+				"-c:v",
+				"libx264",
+				"-pix_fmt",
+				"yuv420p",
+				str(silent_master),
+			)
+			_run_ffmpeg(
+				"-f",
+				"lavfi",
+				"-i",
+				"sine=frequency=440:sample_rate=48000:duration=1",
+				"-c:a",
+				"pcm_s16le",
+				str(bgm),
+			)
+			_run_ffmpeg(
+				"-f",
+				"lavfi",
+				"-i",
+				"sine=frequency=880:sample_rate=48000:duration=0.8",
+				"-c:a",
+				"pcm_s16le",
+				str(voiceover),
+			)
 
 			_mix_audio(
 				silent_master,
@@ -144,9 +225,25 @@ class TestSegmentAssemblyWithAudio(FrappeTestCase):
 	def _clip_with_audio(self, path, frames):
 		seconds = frames / 24
 		_run_ffmpeg(
-			"-f", "lavfi", "-i", f"color=c=white:s=320x240:r=24:d={seconds}",
-			"-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds + 0.05}",
-			"-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-c:a", "aac", "-r", "24", str(path),
+			"-f",
+			"lavfi",
+			"-i",
+			f"color=c=white:s=320x240:r=24:d={seconds}",
+			"-f",
+			"lavfi",
+			"-i",
+			f"sine=frequency=440:duration={seconds + 0.05}",
+			"-c:v",
+			"libx264",
+			"-profile:v",
+			"high",
+			"-pix_fmt",
+			"yuv420p",
+			"-c:a",
+			"aac",
+			"-r",
+			"24",
+			str(path),
 		)
 
 	def test_joined_segments_with_audio_keep_the_exact_frame_count(self):
@@ -170,13 +267,36 @@ class TestSegmentAssemblyWithAudio(FrappeTestCase):
 class TestSceneLoudnessLeveling(FrappeTestCase):
 	def _tone(self, path, volume_db):
 		_run_ffmpeg(
-			"-f", "lavfi", "-i", f"sine=frequency=300:duration=3,volume={volume_db}dB", "-c:a", "pcm_s16le", str(path),
+			"-f",
+			"lavfi",
+			"-i",
+			f"sine=frequency=300:duration=3,volume={volume_db}dB",
+			"-c:a",
+			"pcm_s16le",
+			str(path),
 		)
 
 	def _mean_db(self, path, start, end):
 		result = subprocess.run(
-			["ffmpeg", "-v", "info", "-ss", str(start), "-to", str(end), "-i", str(path), "-vn", "-af", "volumedetect", "-f", "null", "-"],
-			capture_output=True, text=True,
+			[
+				"ffmpeg",
+				"-v",
+				"info",
+				"-ss",
+				str(start),
+				"-to",
+				str(end),
+				"-i",
+				str(path),
+				"-vn",
+				"-af",
+				"volumedetect",
+				"-f",
+				"null",
+				"-",
+			],
+			capture_output=True,
+			text=True,
 		)
 		return float(result.stderr.split("mean_volume:")[1].split("dB")[0])
 
@@ -185,10 +305,29 @@ class TestSceneLoudnessLeveling(FrappeTestCase):
 		self._tone(quiet, -35)
 		self._tone(loud, -8)
 		master = temp / "master.mp4"
-		_run_ffmpeg("-f", "lavfi", "-i", "color=c=gray:s=320x240:r=24:d=6", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(master))
+		_run_ffmpeg(
+			"-f",
+			"lavfi",
+			"-i",
+			"color=c=gray:s=320x240:r=24:d=6",
+			"-c:v",
+			"libx264",
+			"-pix_fmt",
+			"yuv420p",
+			str(master),
+		)
 		sources = [
-			{"path": path, "start_seconds": start, "duration_seconds": 3, "gain_db": 0, "fade_in_seconds": 0,
-			 "fade_out_seconds": 0, "duck_others": False, "loop": False, "normalize_loudness": normalize}
+			{
+				"path": path,
+				"start_seconds": start,
+				"duration_seconds": 3,
+				"gain_db": 0,
+				"fade_in_seconds": 0,
+				"fade_out_seconds": 0,
+				"duck_others": False,
+				"loop": False,
+				"normalize_loudness": normalize,
+			}
 			for path, start in ((quiet, 0), (loud, 3))
 		]
 		out = temp / ("leveled.mp4" if normalize else "raw.mp4")
@@ -214,7 +353,15 @@ class TestSilentScenesAreNotAmplified(FrappeTestCase):
 			temp = Path(temp_dir)
 			silent, quiet = temp / "silent.wav", temp / "quiet.wav"
 			_run_ffmpeg("-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "2", str(silent))
-			_run_ffmpeg("-f", "lavfi", "-i", "sine=frequency=300:duration=2,volume=-12dB", "-c:a", "pcm_s16le", str(quiet))
+			_run_ffmpeg(
+				"-f",
+				"lavfi",
+				"-i",
+				"sine=frequency=300:duration=2,volume=-12dB",
+				"-c:a",
+				"pcm_s16le",
+				str(quiet),
+			)
 			self.assertFalse(_is_audible(silent, 2))
 			self.assertTrue(_is_audible(quiet, 2))
 
@@ -224,13 +371,32 @@ class TestSoundEffectsOnlyMode(FrappeTestCase):
 		from joymedia.services.editing.composer import _get_audio_sources
 
 		clips = [
-			frappe._dict(name="SRC", audio_role="Source", timeline_start_frame=0, source_in_frame=0, source_out_frame=48,
-				fade_in_frames=0, fade_out_frames=0, gain_db=0, duck_others=0),
-			frappe._dict(name="FX", audio_role="SFX", timeline_start_frame=0, source_in_frame=0, source_out_frame=48,
-				fade_in_frames=0, fade_out_frames=0, gain_db=0, duck_others=0),
+			frappe._dict(
+				name="SRC",
+				audio_role="Source",
+				timeline_start_frame=0,
+				source_in_frame=0,
+				source_out_frame=48,
+				fade_in_frames=0,
+				fade_out_frames=0,
+				gain_db=0,
+				duck_others=0,
+			),
+			frappe._dict(
+				name="FX",
+				audio_role="SFX",
+				timeline_start_frame=0,
+				source_in_frame=0,
+				source_out_frame=48,
+				fade_in_frames=0,
+				fade_out_frames=0,
+				gain_db=0,
+				duck_others=0,
+			),
 		]
-		with patch("joymedia.services.editing.composer._get_timeline_audio_path", return_value="/x.wav"), patch(
-			"joymedia.services.editing.composer._is_audible", return_value=True
+		with (
+			patch("joymedia.services.editing.composer._get_timeline_audio_path", return_value="/x.wav"),
+			patch("joymedia.services.editing.composer._is_audible", return_value=True),
 		):
 			return _get_audio_sources(frappe._dict(soundtrack_mode=mode), 10, clips, 24)
 
@@ -251,13 +417,47 @@ class TestAudioSpansTheWholeFilm(FrappeTestCase):
 		with tempfile.TemporaryDirectory(prefix="joymedia-pad-") as temp_dir:
 			temp = Path(temp_dir)
 			effect, master, out = temp / "fx.wav", temp / "master.mp4", temp / "out.mp4"
-			_run_ffmpeg("-f", "lavfi", "-i", "sine=frequency=300:duration=1", "-c:a", "pcm_s16le", str(effect))
-			_run_ffmpeg("-f", "lavfi", "-i", "color=c=gray:s=320x240:r=24:d=6", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(master))
-			source = {"path": effect, "start_seconds": 0, "duration_seconds": 1, "gain_db": 0, "fade_in_seconds": 0,
-				"fade_out_seconds": 0, "duck_others": False, "loop": False}
+			_run_ffmpeg(
+				"-f", "lavfi", "-i", "sine=frequency=300:duration=1", "-c:a", "pcm_s16le", str(effect)
+			)
+			_run_ffmpeg(
+				"-f",
+				"lavfi",
+				"-i",
+				"color=c=gray:s=320x240:r=24:d=6",
+				"-c:v",
+				"libx264",
+				"-pix_fmt",
+				"yuv420p",
+				str(master),
+			)
+			source = {
+				"path": effect,
+				"start_seconds": 0,
+				"duration_seconds": 1,
+				"gain_db": 0,
+				"fade_in_seconds": 0,
+				"fade_out_seconds": 0,
+				"duck_others": False,
+				"loop": False,
+			}
 			_mix_audio(master, [source], out, ending=(5.0, 1.0))
-			audio = float(subprocess.run(
-				["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=duration", "-of", "csv=p=0", str(out)],
-				capture_output=True, text=True,
-			).stdout.strip())
+			audio = float(
+				subprocess.run(
+					[
+						"ffprobe",
+						"-v",
+						"error",
+						"-select_streams",
+						"a:0",
+						"-show_entries",
+						"stream=duration",
+						"-of",
+						"csv=p=0",
+						str(out),
+					],
+					capture_output=True,
+					text=True,
+				).stdout.strip()
+			)
 			self.assertAlmostEqual(6.0, audio, delta=0.1)

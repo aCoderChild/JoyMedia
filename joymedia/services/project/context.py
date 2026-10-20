@@ -23,7 +23,10 @@ LEGACY_EXPORT_QUALITIES = {"Standard 1080p": DEFAULT_EXPORT_QUALITY}
 
 def is_placeholder_product_name(value):
 	return not (value or "").strip() or (value or "").strip().lower() in {
-		"untitled", "untitled product", "sản phẩm mới", "new product",
+		"untitled",
+		"untitled product",
+		"sản phẩm mới",
+		"new product",
 	}
 
 
@@ -111,24 +114,36 @@ def _busy_shots(media_project):
 	an admission gap in which two tabs can queue the same scene twice.
 	"""
 	runs = frappe.get_all(
-		"Generation Run", filters={"media_project": media_project, "status": ["in", ["Queued", "Running"]]},
+		"Generation Run",
+		filters={"media_project": media_project, "status": ["in", ["Queued", "Running"]]},
 		fields=["name", "execution_scope_json"],
 	)
 	if not runs:
 		return []
-	valid = set(frappe.get_all("Shot", filters={"media_project": media_project, "is_removed": 0}, pluck="name"))
-	busy = set(frappe.get_all(
-		"Generation Task",
-		filters={"generation_run": ["in", [run.name for run in runs]], "status": ["not in", ["Completed", "Failed", "Cancelled"]]},
-		pluck="shot",
-	))
+	valid = set(
+		frappe.get_all("Shot", filters={"media_project": media_project, "is_removed": 0}, pluck="name")
+	)
+	busy = set(
+		frappe.get_all(
+			"Generation Task",
+			filters={
+				"generation_run": ["in", [run.name for run in runs]],
+				"status": ["not in", ["Completed", "Failed", "Cancelled"]],
+			},
+			pluck="shot",
+		)
+	)
 	for run in runs:
 		try:
 			scope = frappe.parse_json(run.execution_scope_json or "{}")
 		except (TypeError, ValueError):
 			scope = {}
 		names = scope.get("shot_names") if isinstance(scope, dict) else None
-		busy.update(names if isinstance(names, list) and names and all(isinstance(name, str) for name in names) else valid)
+		busy.update(
+			names
+			if isinstance(names, list) and names and all(isinstance(name, str) for name in names)
+			else valid
+		)
 	return sorted(busy & valid)
 
 
@@ -137,9 +152,18 @@ def _project_runs(filters):
 		"Generation Run",
 		filters=filters,
 		fields=[
-			"name", "media_project", "status", "started_at", "completed_at",
-			"progress", "completed_tasks", "total_tasks", "failed_tasks", "running_tasks",
-			"error_summary", "project_snapshot_hash",
+			"name",
+			"media_project",
+			"status",
+			"started_at",
+			"completed_at",
+			"progress",
+			"completed_tasks",
+			"total_tasks",
+			"failed_tasks",
+			"running_tasks",
+			"error_summary",
+			"project_snapshot_hash",
 		],
 		order_by="creation desc",
 		limit_page_length=1,
@@ -167,15 +191,15 @@ def _active_project_shots(project_name, fields=None):
 		"Shot",
 		filters={"media_project": project_name, "is_removed": 0},
 		fields=fields
-			or [
-				"name",
-				"shot_number",
-				"shot_name",
-				"duration_seconds",
-				"planned_frame_count",
-				"generation_prompt",
-				"selected_output_asset_version",
-			],
+		or [
+			"name",
+			"shot_number",
+			"shot_name",
+			"duration_seconds",
+			"planned_frame_count",
+			"generation_prompt",
+			"selected_output_asset_version",
+		],
 		order_by="shot_number asc, name asc",
 	)
 
@@ -215,15 +239,18 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 					_("The active Generation Pipeline does not end with this project's Generation Workflow.")
 				)
 			configured_pipeline = active_pipeline.name
-	workflow_fps = frappe.db.get_value("Generation Workflow", settings.workflow, "output_fps") if settings.workflow else None
+	workflow_fps = (
+		frappe.db.get_value("Generation Workflow", settings.workflow, "output_fps")
+		if settings.workflow
+		else None
+	)
 	default_workflow = (
 		frappe.get_doc("Generation Workflow", settings.workflow)
 		if settings.workflow and frappe.db.exists("Generation Workflow", settings.workflow)
 		else None
 	)
 	visual_asset_versions = {
-		asset.asset_version for asset in _get_project_selected_assets(project)
-		if asset.media_type == "Image"
+		asset.asset_version for asset in _get_project_selected_assets(project) if asset.media_type == "Image"
 	}
 	snapshot = {
 		"media_project": project.name,
@@ -246,7 +273,9 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 			{
 				"asset_version": row.asset_version,
 				"reference_key": getattr(row, "reference_key", None) or "",
-				"identity_key": getattr(row, "identity_key", None) or getattr(row, "reference_key", None) or "",
+				"identity_key": getattr(row, "identity_key", None)
+				or getattr(row, "reference_key", None)
+				or "",
 				"reference_role": row.reference_role or "General",
 				"label": row.label or "",
 				"scale": float(getattr(row, "relative_size", None) or 1),
@@ -257,50 +286,63 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 		],
 	}
 	from joymedia.services.scene.direction import authored_action
+
 	sheet_scenes = _sheet_scenes(project)
 	snapshot["shots"] = []
 	for shot in _active_project_shots(
 		project.name,
 		fields=[
-			"name", "shot_number", "duration_seconds", "planned_frame_count", "generation_prompt",
-			"image_prompt", "setting_prompt", "motion_plan_json",
-			"start_state", "end_state", "handoff_type", "continuity_mode",
+			"name",
+			"shot_number",
+			"duration_seconds",
+			"planned_frame_count",
+			"generation_prompt",
+			"image_prompt",
+			"setting_prompt",
+			"motion_plan_json",
+			"start_state",
+			"end_state",
+			"handoff_type",
+			"continuity_mode",
 		],
 	):
 		shot_doc = frappe.get_doc("Shot", shot.name)
 		from joymedia.services.keyframes.stage import approved_keyframe_task
 
 		shot_snapshot = {
-				"shot": shot.name,
-				"beat_name": shot_doc.get("storyboard_beat") or shot_doc.get("shot_name"),
-				"shot_number": shot.shot_number,
-				"duration_seconds": float(shot.duration_seconds or 0),
-				"planned_frame_count": int(shot.planned_frame_count or 0),
-				"image_prompt": shot.image_prompt or "",
-				"setting_prompt": getattr(shot, "setting_prompt", None) or "",
-				# A split screen's views (keyframes.overlay.split_screen_keyframe); empty for a full-frame scene.
-				"views_json": shot_doc.get("views_json") or "",
-				"character_mode": _valid_character_mode(getattr(shot_doc, "character_mode", None))
-				or _valid_character_mode(getattr(settings, "character_mode", None)) or "Draw in scene",
-				# An approved, current keyframe is the scene's first frame; its image stage is not repeated.
-				"keyframe_task": approved_keyframe_task(shot_doc),
-				"keyframe_artifact": shot_doc.keyframe_artifact if approved_keyframe_task(shot_doc) else None,
-				"generation_prompt": shot.generation_prompt or "",
-				"authored_action": authored_action(shot_doc, sheet_scenes.get((shot_doc.storyboard_beat or "", shot_doc.source_timing or ""))),
-				"motion_plan_json": shot.motion_plan_json or "",
-				"start_state": shot.start_state or "",
-				"end_state": shot.end_state or "",
-				"handoff_type": shot.handoff_type or "",
+			"shot": shot.name,
+			"beat_name": shot_doc.get("storyboard_beat") or shot_doc.get("shot_name"),
+			"shot_number": shot.shot_number,
+			"duration_seconds": float(shot.duration_seconds or 0),
+			"planned_frame_count": int(shot.planned_frame_count or 0),
+			"image_prompt": shot.image_prompt or "",
+			"setting_prompt": getattr(shot, "setting_prompt", None) or "",
+			# A split screen's views (keyframes.overlay.split_screen_keyframe); empty for a full-frame scene.
+			"views_json": shot_doc.get("views_json") or "",
+			"character_mode": _valid_character_mode(getattr(shot_doc, "character_mode", None))
+			or _valid_character_mode(getattr(settings, "character_mode", None))
+			or "Draw in scene",
+			# An approved, current keyframe is the scene's first frame; its image stage is not repeated.
+			"keyframe_task": approved_keyframe_task(shot_doc),
+			"keyframe_artifact": shot_doc.keyframe_artifact if approved_keyframe_task(shot_doc) else None,
+			"generation_prompt": shot.generation_prompt or "",
+			"authored_action": authored_action(
+				shot_doc, sheet_scenes.get((shot_doc.storyboard_beat or "", shot_doc.source_timing or ""))
+			),
+			"motion_plan_json": shot.motion_plan_json or "",
+			"start_state": shot.start_state or "",
+			"end_state": shot.end_state or "",
+			"handoff_type": shot.handoff_type or "",
 			"continuity_mode": getattr(shot, "continuity_mode", None) or "New Scene",
-				"references": [
-					{
-						"reference_role": row.reference_role or "",
-						"asset_version": row.asset_version,
-					}
-					for row in shot_doc.generation_inputs or []
-					if row.reference_role and row.asset_version
-				],
-			}
+			"references": [
+				{
+					"reference_role": row.reference_role or "",
+					"asset_version": row.asset_version,
+				}
+				for row in shot_doc.generation_inputs or []
+				if row.reference_role and row.asset_version
+			],
+		}
 		if default_workflow:
 			from joymedia.services.workflows.routing import resolve_shot_render_route
 
@@ -308,22 +350,27 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 				default_workflow,
 				shot_snapshot["references"],
 				handoff_type=(
-					"new_scene" if shot_snapshot["continuity_mode"] == "New Scene" else shot_snapshot["handoff_type"]
+					"new_scene"
+					if shot_snapshot["continuity_mode"] == "New Scene"
+					else shot_snapshot["handoff_type"]
 				),
 				motion_plan_json=shot_snapshot["motion_plan_json"],
 				pipeline_name=configured_pipeline or None,
 			)
-			shot_snapshot.update({
-				"workflow": route["workflow"],
-				"generation_pipeline": route["generation_pipeline"],
-				"render_strategy": route["strategy"],
-				"routing_reason": route["reason"],
-				"requires_recomposition": route["requires_recomposition"],
-				"references": route["references"],
-			})
+			shot_snapshot.update(
+				{
+					"workflow": route["workflow"],
+					"generation_pipeline": route["generation_pipeline"],
+					"render_strategy": route["strategy"],
+					"routing_reason": route["reason"],
+					"requires_recomposition": route["requires_recomposition"],
+					"references": route["references"],
+				}
+			)
 			snapshot["shots"].append(shot_snapshot)
 	from joymedia.services.consistency.retention import policy
 	from joymedia.services.intake.references import preservation_modes
+
 	preservation = preservation_modes(project)
 	for reference in snapshot["references"]:
 		if reference.get("asset_version") in preservation:
@@ -336,22 +383,34 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 		if retention_policy:
 			scene["reference_retention"] = retention_policy
 			from joymedia.services.consistency.retention import route_presentation
+
 			route_presentation(scene, retention_policy)
 	_compose_end_card(snapshot["shots"])
 	from joymedia.services.editing.graphics import requested_graphics
 
 	for scene in snapshot["shots"]:
 		duration = float(scene.get("planned_frame_count") or 0) / float(snapshot.get("output_fps") or 24)
-		scene["graphic_overlays"] = requested_graphics(project.get("storyboard_source_json"), scene.get("beat_name"), scene.get("generation_prompt"), duration)
+		scene["graphic_overlays"] = requested_graphics(
+			project.get("storyboard_source_json"),
+			scene.get("beat_name"),
+			scene.get("generation_prompt"),
+			duration,
+		)
 		from joymedia.services.scene.identity import identity_plan
 		from joymedia.services.workflows.capabilities import controls
 
 		# Source identities and workflow controls are immutable run inputs, not
 		# claims that the output has passed identity or packaging acceptance.
 		selected = {r["asset_version"]: r for r in snapshot["references"]}
-		references = [{**selected.get(r.get("asset_version"), {}), **r} for r in scene.get("references") or []]
-		scene["consistency_plan"] = identity_plan(references, controls(frappe.get_doc("Generation Workflow", scene.get("workflow") or snapshot["workflow"])))
+		references = [
+			{**selected.get(r.get("asset_version"), {}), **r} for r in scene.get("references") or []
+		]
+		scene["consistency_plan"] = identity_plan(
+			references,
+			controls(frappe.get_doc("Generation Workflow", scene.get("workflow") or snapshot["workflow"])),
+		)
 	from joymedia.services.review.admission import freeze_policy
+
 	admission = freeze_policy()
 	if admission:
 		snapshot["visual_admission"] = admission
@@ -372,15 +431,21 @@ def _compose_end_card(shots):
 		return
 	last = max(shots, key=lambda row: int(row.get("shot_number") or 0))
 	from joymedia.services.planning.shot_structure import structure_for
+
 	structure = structure_for(last)
 	if structure and structure["subject_motion"] == "locomotion":
 		return  # Preserve the authored performance through the ending; no forced pose hold.
-	if any(frappe.scrub(row.get("reference_role") or "") == "product" for row in last.get("references") or []):
+	if any(
+		frappe.scrub(row.get("reference_role") or "") == "product" for row in last.get("references") or []
+	):
 		from joymedia.services.consistency.retention import is_static_presentation
+
 		static = is_static_presentation(last)
 		duration = float(last.get("duration_seconds") or 0)
 		if not static and duration <= 2:
-			raise ValueError("A closing product action needs more than two seconds to leave a readable final hold.")
+			raise ValueError(
+				"A closing product action needs more than two seconds to leave a readable final hold."
+			)
 		last["closing_hold_seconds"] = min(2.0, duration)
 		last["closing_hold_mode"] = "source_artwork" if static else "generated_pose"
 		if static:
@@ -402,8 +467,16 @@ def _get_project_selected_assets(project):
 			"Asset Version",
 			selection.asset_version,
 			[
-				"name", "media_asset", "file", "width", "height", "duration_seconds", "fps",
-				"analysis_status", "analysis_json", "analysis_error",
+				"name",
+				"media_asset",
+				"file",
+				"width",
+				"height",
+				"duration_seconds",
+				"fps",
+				"analysis_status",
+				"analysis_json",
+				"analysis_error",
 			],
 			as_dict=True,
 		)
@@ -423,7 +496,9 @@ def _get_project_selected_assets(project):
 				media_asset=asset.name,
 				asset_version=version.name,
 				reference_key=getattr(selection, "reference_key", None) or "",
-				identity_key=getattr(selection, "identity_key", None) or getattr(selection, "reference_key", None) or "",
+				identity_key=getattr(selection, "identity_key", None)
+				or getattr(selection, "reference_key", None)
+				or "",
 				reference_role=selection.reference_role or "General",
 				label=selection.label or "",
 				relative_size=float(getattr(selection, "relative_size", None) or 1),
@@ -475,7 +550,9 @@ def _get_project_reference_contexts(project):
 			"reference_role": asset.reference_role,
 			"label": asset.label,
 			"reference_key": getattr(asset, "reference_key", None) or "",
-			"identity_key": getattr(asset, "identity_key", None) or getattr(asset, "reference_key", None) or "",
+			"identity_key": getattr(asset, "identity_key", None)
+			or getattr(asset, "reference_key", None)
+			or "",
 		}
 		if asset.analysis_status == "Ready" and asset.analysis_json:
 			try:
@@ -491,7 +568,14 @@ def scene_direction(prompt):
 	reviewer's corrections block or anything else written for the model."""
 	from joymedia.services.review.comments import strip_corrections
 
-	first = next((part for part in strip_corrections(prompt).split("\n\n") if part.strip() and not part.lstrip().startswith("Audio:")), "")
+	first = next(
+		(
+			part
+			for part in strip_corrections(prompt).split("\n\n")
+			if part.strip() and not part.lstrip().startswith("Audio:")
+		),
+		"",
+	)
 	action, _sep, camera = first.partition(" Camera: ")
 	return {"action": action.strip(), "camera": camera.strip()}
 
@@ -499,10 +583,15 @@ def scene_direction(prompt):
 def _sheet_scenes(project):
 	"""The imported sheet's scenes by (beat name, timing), when the project was imported from one."""
 	try:
-		demo = (frappe.parse_json(project.get("storyboard_source_json") or "{}") or {}).get("selected_demo") or {}
+		demo = (frappe.parse_json(project.get("storyboard_source_json") or "{}") or {}).get(
+			"selected_demo"
+		) or {}
 	except (TypeError, ValueError):
 		return {}
-	return {(scene.get("beat_name") or "", scene.get("source_timing") or ""): scene for scene in demo.get("scenes") or []}
+	return {
+		(scene.get("beat_name") or "", scene.get("source_timing") or ""): scene
+		for scene in demo.get("scenes") or []
+	}
 
 
 def _storyboard_payload(specification):
@@ -548,22 +637,37 @@ def _storyboard_payload(specification):
 		# What the scene shows, in plain words under its frame: the sheet's own words, and the English direction.
 		shot["direction"] = scene_direction(shot.generation_prompt)
 		from joymedia.services.scene.direction import authored_action
+
 		scene = sheet.get((shot.storyboard_beat or "", shot.source_timing or ""))
 		shot["authored_action"] = authored_action(shot, scene)
 		from joymedia.services.review.lineage import take_direction_changed
-		shot['is_outdated'] = take_direction_changed(shot)
+
+		shot["is_outdated"] = take_direction_changed(shot)
 		from joymedia.services.scene.contract import read_contract
+
 		try:
-			contract = read_contract(shot.get('motion_plan_json'), shot.duration_seconds)
+			contract = read_contract(shot.get("motion_plan_json"), shot.duration_seconds)
 			from joymedia.services.scene.structure import structure_claims
-			shot['continuity_checks'] = list(dict.fromkeys([*structure_claims(contract), *(row['claim'] for row in (contract or {}).get('checks', []))]))
+
+			shot["continuity_checks"] = list(
+				dict.fromkeys(
+					[
+						*structure_claims(contract),
+						*(row["claim"] for row in (contract or {}).get("checks", [])),
+					]
+				)
+			)
 		except (TypeError, ValueError):
-			shot['continuity_checks'] = []
-		shot.pop('motion_plan_json', None)
-		shot.pop('image_prompt', None)
-		shot.pop('keyframe_artifact', None)
+			shot["continuity_checks"] = []
+		shot.pop("motion_plan_json", None)
+		shot.pop("image_prompt", None)
+		shot.pop("keyframe_artifact", None)
 		scene = sheet.get((shot.storyboard_beat or "", shot.source_timing or ""))
-		shot["sheet_direction"] = {"action": scene.get("action") or "", "camera": scene.get("visual_camera") or ""} if scene else None
+		shot["sheet_direction"] = (
+			{"action": scene.get("action") or "", "camera": scene.get("visual_camera") or ""}
+			if scene
+			else None
+		)
 		if shot.selected_output_asset_version:
 			shot["output_video"] = _get_asset_version_file_url(shot.selected_output_asset_version)
 		shot["take_count"], shot["take_index"] = take_position(specification.name, shot)
@@ -584,7 +688,8 @@ def _storyboard_payload(specification):
 				shot[output_key] = _get_asset_version_file_url(row.asset_version)
 				project_reference = next(
 					(
-						selection for selection in specification.selected_media or []
+						selection
+						for selection in specification.selected_media or []
 						if selection.asset_version == row.asset_version
 					),
 					None,
@@ -601,7 +706,8 @@ def _storyboard_payload(specification):
 				"asset_version": row.asset_version,
 				"file": _get_asset_version_file_url(row.asset_version),
 				"input_role": row.reference_role,
-				"reference_key": getattr(project_references.get(row.asset_version), "reference_key", None) or "",
+				"reference_key": getattr(project_references.get(row.asset_version), "reference_key", None)
+				or "",
 				"reference_role": getattr(project_references.get(row.asset_version), "reference_role", None),
 				"label": getattr(project_references.get(row.asset_version), "label", None)
 				or _asset_version_name(row.asset_version),
@@ -647,7 +753,15 @@ def _aggregate_shot_progress(run_name):
 	jobs = frappe.get_all(
 		"Generation Task",
 		filters={"generation_run": run_name},
-		fields=["shot", "status", "progress", "error_summary", "segment_frame_count", "segment_index", "pipeline_step_key"],
+		fields=[
+			"shot",
+			"status",
+			"progress",
+			"error_summary",
+			"segment_frame_count",
+			"segment_index",
+			"pipeline_step_key",
+		],
 		order_by="creation asc",
 	)
 	groups = {}
@@ -656,8 +770,10 @@ def _aggregate_shot_progress(run_name):
 	result = []
 	for shot_name, shot_jobs in groups.items():
 		shot = frappe.db.get_value(
-			"Shot", shot_name,
-			["shot_number", "shot_name", "selected_output_asset_version"], as_dict=True,
+			"Shot",
+			shot_name,
+			["shot_number", "shot_name", "selected_output_asset_version"],
+			as_dict=True,
 		)
 		statuses = [row.status for row in shot_jobs]
 		# Keep the technical state truthful at the shot boundary.  The client must
@@ -678,10 +794,10 @@ def _aggregate_shot_progress(run_name):
 			status = "Waiting"
 		total_frames = sum(max(int(row.segment_frame_count or 0), 0) for row in shot_jobs)
 		if total_frames:
-			progress = sum(
-				float(row.progress or 0) * max(int(row.segment_frame_count or 0), 0)
-				for row in shot_jobs
-			) / total_frames
+			progress = (
+				sum(float(row.progress or 0) * max(int(row.segment_frame_count or 0), 0) for row in shot_jobs)
+				/ total_frames
+			)
 		else:
 			progress = sum(float(row.progress or 0) for row in shot_jobs) / max(len(shot_jobs), 1)
 		active_job = next(
@@ -689,20 +805,22 @@ def _aggregate_shot_progress(run_name):
 			next((row for row in shot_jobs if row.status == "Failed"), None),
 		)
 		output = shot.selected_output_asset_version if shot else None
-		result.append({
-			"shot": shot_name,
-			"shot_number": shot.shot_number if shot else None,
-			"shot_name": shot.shot_name if shot else None,
-			"status": status,
-			"progress": progress,
-			"error_summary": next((row.error_summary for row in shot_jobs if row.error_summary), None),
-			"selected_output_asset_version": output,
-			"output_video": _get_asset_version_file_url(output) if output else None,
-			"segment_done": sum(1 for row in shot_jobs if row.status == "Completed"),
-			"segment_total": len(shot_jobs),
-			"current_step": active_job.pipeline_step_key if active_job else None,
-			"current_step_status": active_job.status if active_job else None,
-		})
+		result.append(
+			{
+				"shot": shot_name,
+				"shot_number": shot.shot_number if shot else None,
+				"shot_name": shot.shot_name if shot else None,
+				"status": status,
+				"progress": progress,
+				"error_summary": next((row.error_summary for row in shot_jobs if row.error_summary), None),
+				"selected_output_asset_version": output,
+				"output_video": _get_asset_version_file_url(output) if output else None,
+				"segment_done": sum(1 for row in shot_jobs if row.status == "Completed"),
+				"segment_total": len(shot_jobs),
+				"current_step": active_job.pipeline_step_key if active_job else None,
+				"current_step_status": active_job.status if active_job else None,
+			}
+		)
 	return sorted(result, key=lambda row: (row["shot_number"] or 0, row["shot"]))
 
 

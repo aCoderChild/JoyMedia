@@ -24,21 +24,35 @@ def sheet_references(project):
 
 def plain(text):
 	"""A name as compared: no accents, no case, no extension, letters and digits only."""
-	text = Path(str(text or "").strip()).stem if re.search(r"\.\w{2,4}$", str(text or "").strip()) else str(text or "")
+	text = (
+		Path(str(text or "").strip()).stem
+		if re.search(r"\.\w{2,4}$", str(text or "").strip())
+		else str(text or "")
+	)
 	text = unicodedata.normalize("NFKD", text.replace("đ", "d").replace("Đ", "D"))
-	return re.sub(r"[^a-z0-9]+", " ", "".join(c for c in text if not unicodedata.combining(c)).casefold()).strip()
+	return re.sub(
+		r"[^a-z0-9]+", " ", "".join(c for c in text if not unicodedata.combining(c)).casefold()
+	).strip()
 
 
 def pdf_pages(rows, pdf_file_name):
 	"""The pages of an uploaded PDF that the References sheet names (empty: the sheet names none of its pages)."""
-	return sorted({row["pdf_page"] for row in rows if row.get("pdf_page") and plain(row.get("file")) == plain(pdf_file_name)})
+	return sorted(
+		{
+			row["pdf_page"]
+			for row in rows
+			if row.get("pdf_page") and plain(row.get("file")) == plain(pdf_file_name)
+		}
+	)
 
 
 def _picture_names(project):
 	"""{Project Reference row name: (plain file name, plain label)} of the project's pictures."""
 	names = {}
 	for row in project.selected_media or []:
-		file_url = frappe.db.get_value("Asset Version", row.asset_version, "file") if row.asset_version else None
+		file_url = (
+			frappe.db.get_value("Asset Version", row.asset_version, "file") if row.asset_version else None
+		)
 		file_name = frappe.db.get_value("File", {"file_url": file_url}, "file_name") if file_url else ""
 		names[row.name] = (plain(file_name), plain(row.label))
 	return names
@@ -52,18 +66,26 @@ def _match(row, project, names):
 	if row.get("pdf_page"):
 		# A PDF's pictures are labelled "<pdf name> p<page> <image>" (intake.project.add_pdf_images_to_project).
 		page = [
-			reference for reference in project.selected_media or []
-			if plain(reference.label).startswith(wanted[:40].strip()) and f" p{row['pdf_page']} " in f" {plain(reference.label)} "
+			reference
+			for reference in project.selected_media or []
+			if plain(reference.label).startswith(wanted[:40].strip())
+			and f" p{row['pdf_page']} " in f" {plain(reference.label)} "
 		]
 		# Several pictures on one page: the largest is the subject (the others are icons and decorations).
 		return max(page, key=lambda reference: _picture_area(reference.asset_version), default=None)
-	matched = next((reference for reference in project.selected_media or [] if wanted in names.get(reference.name, ())), None)
+	matched = next(
+		(reference for reference in project.selected_media or [] if wanted in names.get(reference.name, ())),
+		None,
+	)
 	if matched:
 		return matched
 	# Private uploads may receive a hash suffix. An explicitly selected, uniquely
 	# named reference still matches the sheet; never guess from a partial filename.
-	labelled = [reference for reference in project.selected_media or []
-	            if plain(str(reference.label or "").split(" (")[0]) == plain(row.get("name"))]
+	labelled = [
+		reference
+		for reference in project.selected_media or []
+		if plain(str(reference.label or "").split(" (")[0]) == plain(row.get("name"))
+	]
 	return labelled[0] if len(labelled) == 1 else None
 
 
@@ -95,11 +117,17 @@ def apply_sheet_references(project_name):
 				missing.append(row["name"])
 			continue
 		label = row["name"] + (f" ({row['description']})" if row.get("description") else "")
-		size = row.get("relative_size") or (role_size(f"{row['name']} {row.get('family_role') or ''}") if row["role"] == "Character" else None)
+		size = row.get("relative_size") or (
+			role_size(f"{row['name']} {row.get('family_role') or ''}") if row["role"] == "Character" else None
+		)
 		# A prop's picture is kept for the record; props reach the prompts by their description (planning.production).
 		role = {"General": reference.reference_role, "Prop": "General"}.get(row["role"], row["role"])
-		values = {"label": label[:140], "reference_role": role,
-		          "relative_size": size or reference.relative_size, "keep_rule": row.get("keep_rule") or ""}
+		values = {
+			"label": label[:140],
+			"reference_role": role,
+			"relative_size": size or reference.relative_size,
+			"keep_rule": row.get("keep_rule") or "",
+		}
 		if any((reference.get(key) or None) != (value or None) for key, value in values.items()):
 			reference.update(values)
 			changed = True
@@ -140,8 +168,13 @@ def find_reference(name, references):
 	wanted = plain(name)
 	if not wanted:
 		return None
-	exact = [r for r in references if plain(str(r["label"]).split(" (")[0]) == wanted or plain(r.get("key")) == wanted
-		or any(plain(str(alias).split(" (")[0]) == wanted for alias in r.get("aliases", []))]
+	exact = [
+		r
+		for r in references
+		if plain(str(r["label"]).split(" (")[0]) == wanted
+		or plain(r.get("key")) == wanted
+		or any(plain(str(alias).split(" (")[0]) == wanted for alias in r.get("aliases", []))
+	]
 	if exact:
 		return exact[0]
 	return next((r for r in references if wanted in plain(r["label"])), None)
@@ -168,8 +201,17 @@ def brand(project):
 def place_row(name, project):
 	"""The References row of a place by its name (a place the AI draws has no picture), or None."""
 	wanted = plain(name)
-	return next((row for row in sheet_references(project) if row["role"] == "Environment" and plain(row["name"]) == wanted), None)
+	return next(
+		(
+			row
+			for row in sheet_references(project)
+			if row["role"] == "Environment" and plain(row["name"]) == wanted
+		),
+		None,
+	)
 
 
 def missing_detail(names):
-	return _("The References sheet names these pictures, but they are not uploaded: {0}.").format(", ".join(names))
+	return _("The References sheet names these pictures, but they are not uploaded: {0}.").format(
+		", ".join(names)
+	)

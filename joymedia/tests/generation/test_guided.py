@@ -11,9 +11,24 @@ from joymedia.workflow_adapters.comfyui_generic import _transform_value
 
 class TestGuidedControls(TestCase):
 	def workflow(self):
-		return frappe._dict(output_fps=24, bindings=[frappe._dict(binding_key=role, required_input_role=role,
-			value_type="File Path", accepted_media_type=kind, required=required, allow_multiple=0)
-			for role, kind, required in [("control_video", "Video", 1), ("control_mask", "Video", 0), ("identity_reference", "Image", 0)]])
+		return frappe._dict(
+			output_fps=24,
+			bindings=[
+				frappe._dict(
+					binding_key=role,
+					required_input_role=role,
+					value_type="File Path",
+					accepted_media_type=kind,
+					required=required,
+					allow_multiple=0,
+				)
+				for role, kind, required in [
+					("control_video", "Video", 1),
+					("control_mask", "Video", 0),
+					("identity_reference", "Image", 0),
+				]
+			],
+		)
 
 	def test_bad_role_inputs_are_rejected_before_any_path_is_read(self):
 		for inputs in [None, [], {}, {"control_video": "V", "arbitrary_path": "/tmp/x"}]:
@@ -30,7 +45,19 @@ class TestGuidedControls(TestCase):
 			([base, {**base, "width": 832}], {"control_video": "V", "control_mask": "M"}),
 			([base, {**base, "frames": 73}], {"control_video": "V", "control_mask": "M"}),
 		]:
-			with patch.object(guided, "_control_path", return_value="/owned.mp4"), patch.object(guided, "_probe", side_effect=probes), patch.object(frappe.db, "get_value", side_effect=lambda dt, *args, **kwargs: frappe._dict(media_asset="A", content_hash="digest") if dt == "Asset Version" else "Video"):
+			with (
+				patch.object(guided, "_control_path", return_value="/owned.mp4"),
+				patch.object(guided, "_probe", side_effect=probes),
+				patch.object(
+					frappe.db,
+					"get_value",
+					side_effect=lambda dt, *args, **kwargs: frappe._dict(
+						media_asset="A", content_hash="digest"
+					)
+					if dt == "Asset Version"
+					else "Video",
+				),
+			):
 				with self.assertRaises(ValueError):
 					guided.validate_controls(frappe._dict(), self.workflow(), inputs, 72)
 
@@ -38,7 +65,9 @@ class TestGuidedControls(TestCase):
 		for multiple in [4, 8, 17]:
 			for offset in range(multiple):
 				for value in range(1, 180):
-					result = _transform_value({"transform": "ceil_to_multiple", "multiple": multiple, "offset": offset}, value, {})
+					result = _transform_value(
+						{"transform": "ceil_to_multiple", "multiple": multiple, "offset": offset}, value, {}
+					)
 					self.assertGreaterEqual(result, value)
 					self.assertLess(result - value, multiple)
 					self.assertEqual((result - offset) % multiple, 0)
@@ -48,12 +77,20 @@ class TestGuidedControls(TestCase):
 		config = json.loads(path.read_text())
 		for forbidden in ["shera", "bear", "tissue", "human fingers"]:
 			self.assertNotIn(forbidden, config["graph"]["negative"]["inputs"]["text"].lower())
-		self.assertEqual({"control_video", "control_mask", "identity_reference"}, {b["required_input_role"] for b in config["bindings"] if b.get("required_input_role")})
+		self.assertEqual(
+			{"control_video", "control_mask", "identity_reference"},
+			{b["required_input_role"] for b in config["bindings"] if b.get("required_input_role")},
+		)
 
 	def test_unknown_library_ownership_uses_project_access_guard(self):
 		version = frappe._dict(media_asset="A", file="/private/source", content_hash="x")
-		parent = frappe._dict(asset_scope="Library", media_project=None, owner="another@example.test", status="Active")
-		with patch.object(frappe, "get_doc", side_effect=[version, parent]), patch.object(guided, "_project_asset_path", side_effect=frappe.PermissionError) as access:
+		parent = frappe._dict(
+			asset_scope="Library", media_project=None, owner="another@example.test", status="Active"
+		)
+		with (
+			patch.object(frappe, "get_doc", side_effect=[version, parent]),
+			patch.object(guided, "_project_asset_path", side_effect=frappe.PermissionError) as access,
+		):
 			with self.assertRaises(frappe.PermissionError):
 				guided._control_path(frappe._dict(owner="owner@example.test"), "V")
 			access.assert_called_once()
@@ -62,9 +99,20 @@ class TestGuidedControls(TestCase):
 		from unittest.mock import MagicMock
 
 		state = {"status": "Completed", "asset_version": "candidate"}
-		run = frappe._dict(execution_scope_json=json.dumps({"shot_names": ["S"], "expected_take": "original"}))
+		run = frappe._dict(
+			execution_scope_json=json.dumps({"shot_names": ["S"], "expected_take": "original"})
+		)
 		shot = frappe._dict(name="S", selected_output_asset_version="newer", reload=MagicMock())
-		with patch.object(guided, "guided_candidate_status", return_value=state), patch.object(frappe, "get_doc", return_value=run), patch("joymedia.services.generation.takes._project_shot", return_value=(frappe._dict(name="P"), shot)), patch.object(frappe.db, "sql"), patch("joymedia.services.generation.takes.select_scene_take") as select:
+		with (
+			patch.object(guided, "guided_candidate_status", return_value=state),
+			patch.object(frappe, "get_doc", return_value=run),
+			patch(
+				"joymedia.services.generation.takes._project_shot",
+				return_value=(frappe._dict(name="P"), shot),
+			),
+			patch.object(frappe.db, "sql"),
+			patch("joymedia.services.generation.takes.select_scene_take") as select,
+		):
 			with self.assertRaises(frappe.ValidationError):
 				guided.use_guided_candidate("P", "R", "original")
 			select.assert_not_called()
@@ -73,9 +121,23 @@ class TestGuidedControls(TestCase):
 		from unittest.mock import MagicMock
 
 		state = {"status": "Completed", "asset_version": "candidate"}
-		run = frappe._dict(execution_scope_json=json.dumps({"shot_names": ["S"], "expected_take": "original", "plan_signature": "approved"}))
+		run = frappe._dict(
+			execution_scope_json=json.dumps(
+				{"shot_names": ["S"], "expected_take": "original", "plan_signature": "approved"}
+			)
+		)
 		shot = frappe._dict(name="S", selected_output_asset_version="original", reload=MagicMock())
-		with patch.object(guided, "guided_candidate_status", return_value=state), patch.object(frappe, "get_doc", return_value=run), patch("joymedia.services.generation.takes._project_shot", return_value=(frappe._dict(name="P"), shot)), patch.object(frappe.db, "sql"), patch("joymedia.services.planning.signature.compute_plan_signature", return_value="changed"), patch("joymedia.services.generation.takes.select_scene_take") as select:
+		with (
+			patch.object(guided, "guided_candidate_status", return_value=state),
+			patch.object(frappe, "get_doc", return_value=run),
+			patch(
+				"joymedia.services.generation.takes._project_shot",
+				return_value=(frappe._dict(name="P"), shot),
+			),
+			patch.object(frappe.db, "sql"),
+			patch("joymedia.services.planning.signature.compute_plan_signature", return_value="changed"),
+			patch("joymedia.services.generation.takes.select_scene_take") as select,
+		):
 			with self.assertRaises(frappe.ValidationError):
 				guided.use_guided_candidate("P", "R", "original")
 			select.assert_not_called()
@@ -85,7 +147,11 @@ class TestGuidedControls(TestCase):
 		config = json.loads(path.read_text())
 		graph = config["graph"]
 		conditions = config["execution_spec"]["conditional_inputs"]
-		control = next(r for r in conditions if r["target"] == {"node_key": "conditioning", "input_name": "control_video"})
+		control = next(
+			r
+			for r in conditions
+			if r["target"] == {"node_key": "conditioning", "input_name": "control_video"}
+		)
 		self.assertEqual(control["when_present"], ["inpaint_guide", 0])
 		self.assertEqual(control["when_absent"], ["guide", 0])
 		self.assertEqual(graph["inpaint_guide"]["inputs"]["source"], ["neutral_hole", 0])
@@ -121,7 +187,10 @@ class TestGuidedControls(TestCase):
 		self.assertEqual(graph["identity_opacity"]["inputs"]["mask"], ["identity", 1])
 
 	def test_disabled_deployment_does_not_resolve_or_queue_a_model(self):
-		with patch.dict(frappe.conf, {"joymedia_guided_video_enabled": False}), patch.object(frappe, "get_doc") as get_doc:
+		with (
+			patch.dict(frappe.conf, {"joymedia_guided_video_enabled": False}),
+			patch.object(frappe, "get_doc") as get_doc,
+		):
 			with self.assertRaises(ValueError):
 				guided._workflow()
 			get_doc.assert_not_called()
@@ -130,8 +199,28 @@ class TestGuidedControls(TestCase):
 		from unittest.mock import MagicMock
 
 		state = {"status": "Completed", "asset_version": "candidate"}
-		run = frappe._dict(execution_scope_json=json.dumps({"shot_names": ["S"], "expected_take": "original", "plan_signature": "approved"}))
+		run = frappe._dict(
+			execution_scope_json=json.dumps(
+				{"shot_names": ["S"], "expected_take": "original", "plan_signature": "approved"}
+			)
+		)
 		shot = frappe._dict(name="S", selected_output_asset_version="original", reload=MagicMock())
-		with patch.object(guided, "guided_candidate_status", return_value=state), patch.object(frappe, "get_doc", return_value=run), patch("joymedia.services.generation.takes._project_shot", return_value=(frappe._dict(name="P"), shot)), patch.object(frappe.db, "sql"), patch("joymedia.services.planning.signature.compute_plan_signature", return_value="approved"), patch("joymedia.services.generation.takes.scene_takes", return_value=[frappe._dict(name="original"), frappe._dict(name="candidate")]), patch("joymedia.services.generation.takes.select_scene_take", return_value={"selected": "candidate"}) as select:
+		with (
+			patch.object(guided, "guided_candidate_status", return_value=state),
+			patch.object(frappe, "get_doc", return_value=run),
+			patch(
+				"joymedia.services.generation.takes._project_shot",
+				return_value=(frappe._dict(name="P"), shot),
+			),
+			patch.object(frappe.db, "sql"),
+			patch("joymedia.services.planning.signature.compute_plan_signature", return_value="approved"),
+			patch(
+				"joymedia.services.generation.takes.scene_takes",
+				return_value=[frappe._dict(name="original"), frappe._dict(name="candidate")],
+			),
+			patch(
+				"joymedia.services.generation.takes.select_scene_take", return_value={"selected": "candidate"}
+			) as select,
+		):
 			self.assertEqual(guided.use_guided_candidate("P", "R", "original"), {"selected": "candidate"})
 			select.assert_called_once_with("P", "S", 2)

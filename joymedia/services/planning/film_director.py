@@ -13,7 +13,7 @@ import unicodedata
 
 import frappe
 
-from joymedia.services.planning.director_rules import (  # noqa: E402,F401  (moved; kept importable from here)
+from joymedia.services.planning.director_rules import (
 	CLOSING_DIRECTION,
 	DIRECTOR_RULES,
 	FEW_SHOT_EXAMPLE,
@@ -66,7 +66,7 @@ def name_story_beats(shots):
 	The planner sometimes translates or invents the beat word ("Biến thể 1: …"), which
 	loses which take is the climax.
 	"""
-	for shot, beat in zip(shots, story_beats(len(shots))):
+	for shot, beat in zip(shots, story_beats(len(shots)), strict=False):
 		name = str(shot.get("shot_name") or "").strip()
 		title = name.split(":", 1)[1].strip() if ":" in name else name
 		shot["shot_name"] = f"{beat}: {title}" if title else beat
@@ -138,10 +138,11 @@ def classify_reference(context):
 	category = str(context.get("asset_category") or "").strip().lower()
 	analysis = context.get("analysis") if isinstance(context.get("analysis"), dict) else {}
 	kind = str(analysis.get("kind") or "").strip().lower()
-	for chosen, choices in ((role, (CHARACTER_ROLES, PLACE_ROLES, PRODUCT_ROLES)), (category, (
-		CHARACTER_CATEGORIES, PLACE_CATEGORIES, PRODUCT_CATEGORIES
-	))):
-		for kind_of_reference, values in zip((CHARACTER, PLACE, PRODUCT), choices):
+	for chosen, choices in (
+		(role, (CHARACTER_ROLES, PLACE_ROLES, PRODUCT_ROLES)),
+		(category, (CHARACTER_CATEGORIES, PLACE_CATEGORIES, PRODUCT_CATEGORIES)),
+	):
+		for kind_of_reference, values in zip((CHARACTER, PLACE, PRODUCT), choices, strict=False):
 			if chosen in values:
 				return kind_of_reference
 	return {"person": CHARACTER, "place": PLACE, "product": PRODUCT}.get(kind, OTHER)
@@ -189,7 +190,7 @@ def balance_take_durations(shots, total_seconds):
 			lower = middle
 		else:
 			upper = middle
-	for shot, length in zip(shots, lengths(upper)):
+	for shot, length in zip(shots, lengths(upper), strict=False):
 		shot["duration_seconds"] = length
 	# Remove the bisection residue so the takes sum exactly to the total.
 	shots[-1]["duration_seconds"] = total - sum(shot["duration_seconds"] for shot in shots[:-1])
@@ -234,8 +235,7 @@ def infer_product_reference_contexts(reference_contexts, video_idea):
 		return reference_contexts
 	product_key = roster[OTHER][0].get("reference_key")
 	return [
-		{**context, "reference_role": "Product"}
-		if context.get("reference_key") == product_key else context
+		{**context, "reference_role": "Product"} if context.get("reference_key") == product_key else context
 		for context in reference_contexts
 	]
 
@@ -300,7 +300,10 @@ def _product_director_instruction(roster, reference_role, take_count, reference_
 		)
 	lines = [
 		PRODUCT_DIRECTOR_RULES.format(
-			take_count=take_count, min_take=MIN_TAKE_SECONDS, max_take=MAX_TAKE_SECONDS, settings=settings,
+			take_count=take_count,
+			min_take=MIN_TAKE_SECONDS,
+			max_take=MAX_TAKE_SECONDS,
+			settings=settings,
 		),
 		PLANNING_RULES,
 		"",
@@ -411,10 +414,10 @@ def _tour_places(index, shot_count, places, explicit_keys):
 	if shot_count > len(keys):
 		position = index * (len(keys) - 1) / max(shot_count - 1, 1)
 		start, end = math.floor(position), math.ceil(position)
-		return list(dict.fromkeys(keys[start:end + 1]))
+		return list(dict.fromkeys(keys[start : end + 1]))
 	start = math.floor(index * len(keys) / shot_count)
 	end = math.ceil((index + 1) * len(keys) / shot_count)
-	return keys[start:max(start + 1, end)]
+	return keys[start : max(start + 1, end)]
 
 
 def enforce_requested_product_presentation(shots, video_idea, reference_contexts):
@@ -422,7 +425,9 @@ def enforce_requested_product_presentation(shots, video_idea, reference_contexts
 	if not is_product_film(reference_contexts):
 		return shots
 	idea = str(video_idea or "").lower()
-	if not re.search(r"quảng cáo|quang cao|giới thiệu|gioi thieu|promot|advertis|market|showcase|present", idea):
+	if not re.search(
+		r"quảng cáo|quang cao|giới thiệu|gioi thieu|promot|advertis|market|showcase|present", idea
+	):
 		return shots
 	for shot in shots or []:
 		if not isinstance(shot, dict):
@@ -447,7 +452,9 @@ def enforce_requested_product_presentation(shots, video_idea, reference_contexts
 def explicit_product_brief_anchor(video_idea):
 	"""Return a deterministic English anchor for an unambiguous product brief."""
 	idea = str(video_idea or "").lower()
-	advertising = re.search(r"quảng cáo|quang cao|giới thiệu|gioi thieu|promot|advertis|market|showcase", idea)
+	advertising = re.search(
+		r"quảng cáo|quang cao|giới thiệu|gioi thieu|promot|advertis|market|showcase", idea
+	)
 	plate = re.search(r"cái\s*đĩa|cai\s*dia|\bplate\b|\bdish\b", idea)
 	if not advertising or not plate:
 		return ""
@@ -476,7 +483,9 @@ def enforce_explicit_product_brief(shots, video_idea):
 		if not isinstance(shot, dict):
 			continue
 		if index == 1:
-			action = "holds the plate securely with both hands and turns its decorated front toward the camera"
+			action = (
+				"holds the plate securely with both hands and turns its decorated front toward the camera"
+			)
 		else:
 			action = "keeps the plate presented to camera and gently tilts it to reveal its design"
 		shot["generation_prompt"] = (
@@ -523,19 +532,60 @@ def _normalize_product_references(shots, roster, reference_role, reference_roles
 
 # Kinds of place a take's action can wrongly drift into (a balcony in a lobby photo).
 PLACE_WORDS = (
-	"balcony", "rooftop", "terrace", "pool", "lobby", "bedroom", "bathroom", "kitchen", "living room",
-	"dining room", "garden", "beach", "gym", "playground", "spa", "restaurant", "bar", "office",
-	"street", "park", "lake", "river", "forest", "mountain", "penthouse", "corridor", "hallway",
-	"elevator", "courtyard", "library", "cafe", "studio", "boutique", "showroom",
+	"balcony",
+	"rooftop",
+	"terrace",
+	"pool",
+	"lobby",
+	"bedroom",
+	"bathroom",
+	"kitchen",
+	"living room",
+	"dining room",
+	"garden",
+	"beach",
+	"gym",
+	"playground",
+	"spa",
+	"restaurant",
+	"bar",
+	"office",
+	"street",
+	"park",
+	"lake",
+	"river",
+	"forest",
+	"mountain",
+	"penthouse",
+	"corridor",
+	"hallway",
+	"elevator",
+	"courtyard",
+	"library",
+	"cafe",
+	"studio",
+	"boutique",
+	"showroom",
 	# Features a take invents inside a place just as often as whole places.
-	"staircase", "stairs", "escalator", "fountain", "fireplace", "waterfall", "aquarium",
+	"staircase",
+	"stairs",
+	"escalator",
+	"fountain",
+	"fireplace",
+	"waterfall",
+	"aquarium",
 )
 
 
 def place_text(context):
 	"""Everything known about what a place reference shows."""
 	analysis = context.get("analysis") if isinstance(context.get("analysis"), dict) else {}
-	values = (context.get("reference_key"), context.get("label"), context.get("asset_name"), analysis.get("description"))
+	values = (
+		context.get("reference_key"),
+		context.get("label"),
+		context.get("asset_name"),
+		analysis.get("description"),
+	)
 	return " ".join(
 		str(value).replace("_", " ").strip().lower()
 		for value in values
@@ -547,7 +597,8 @@ def invented_places(prompt, place_description):
 	"""Kinds of place the prompt sets its action in that the place photo does not show."""
 	prompt = str(prompt or "").lower()
 	return [
-		word for word in PLACE_WORDS
+		word
+		for word in PLACE_WORDS
 		if re.search(rf"\b{word}s?\b", prompt) and not re.search(rf"\b{word}", place_description)
 	]
 
@@ -564,15 +615,18 @@ def plan_problems(shots, take_count, places=None):
 		problems.append(f"You returned {len(shots)} takes; return exactly {take_count}.")
 	prompts = [" ".join(str(shot.get("generation_prompt") or "").lower().split()) for shot in shots]
 	if len(set(prompts)) < len(prompts):
-		problems.append("Several takes have the same generation_prompt; write each one for its own beat and place.")
+		problems.append(
+			"Several takes have the same generation_prompt; write each one for its own beat and place."
+		)
 	place_keys = [
-		str(((shot.get("references") or [{}])[-1] or {}).get("reference_key") or "")
-		for shot in shots
+		str(((shot.get("references") or [{}])[-1] or {}).get("reference_key") or "") for shot in shots
 	]
 	overused = sorted({key for key in place_keys if key and place_keys.count(key) > 2})
 	if overused:
-		problems.append(f"Place {', '.join(overused)} is used more than twice; give those takes other places.")
-	for number, (shot, key) in enumerate(zip(shots, place_keys), start=1):
+		problems.append(
+			f"Place {', '.join(overused)} is used more than twice; give those takes other places."
+		)
+	for number, (shot, key) in enumerate(zip(shots, place_keys, strict=False), start=1):
 		description = (places or {}).get(key)
 		invented = invented_places(shot.get("generation_prompt"), description) if description else []
 		if invented:
@@ -595,7 +649,9 @@ def _best_matching_place(prompt, places):
 	prompt_words = set(WORD_PATTERN.findall(prompt.lower()))
 
 	def score(context):
-		return len(prompt_words & {word for word in WORD_PATTERN.findall(place_text(context)) if len(word) > 3})
+		return len(
+			prompt_words & {word for word in WORD_PATTERN.findall(place_text(context)) if len(word) > 3}
+		)
 
 	return max(places, key=score)["reference_key"]
 
@@ -652,7 +708,9 @@ def reference_preamble(shot_reference_versions, project_references):
 			"preserve both locations and do not invent an unrelated room."
 		)
 	if parts:
-		parts.append("References are independently framed; their pixel sizes do not establish physical scale. Follow the scene support surfaces and authored relative dimensions.")
+		parts.append(
+			"References are independently framed; their pixel sizes do not establish physical scale. Follow the scene support surfaces and authored relative dimensions."
+		)
 	return " ".join(parts)
 
 
@@ -665,12 +723,19 @@ def _first_sentence(text, limit=220):
 
 def _asset_version_context(asset_version, project_reference):
 	"""Build the classify_reference input for an Asset Version from the database."""
-	version = frappe.db.get_value(
-		"Asset Version", asset_version, ["media_asset", "analysis_status", "analysis_json"], as_dict=True
-	) or frappe._dict()
-	asset = frappe.db.get_value(
-		"Media Asset", version.media_asset, ["media_type", "asset_category"], as_dict=True
-	) if version.media_asset else None
+	version = (
+		frappe.db.get_value(
+			"Asset Version", asset_version, ["media_asset", "analysis_status", "analysis_json"], as_dict=True
+		)
+		or frappe._dict()
+	)
+	asset = (
+		frappe.db.get_value(
+			"Media Asset", version.media_asset, ["media_type", "asset_category"], as_dict=True
+		)
+		if version.media_asset
+		else None
+	)
 	analysis = {}
 	if version.analysis_status == "Ready" and version.analysis_json:
 		try:
@@ -690,7 +755,9 @@ def _roster_line(context, person=False, product=False):
 	if product:
 		# Say what it is before what it depicts: a product that is a painting of a
 		# harbour must not become the harbour.
-		seen = str(analysis.get("description") or context.get("label") or context.get("asset_name") or "").strip()
+		seen = str(
+			analysis.get("description") or context.get("label") or context.get("asset_name") or ""
+		).strip()
 		return f"- key={context['reference_key']}: THE PRODUCT, an object (not a place); its picture: {seen[:300]}"
 	outfit = str(analysis.get("outfit") or "").strip() if isinstance(analysis.get("outfit"), str) else ""
 	if person and outfit:

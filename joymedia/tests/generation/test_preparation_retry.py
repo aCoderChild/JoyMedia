@@ -12,7 +12,11 @@ class TestPreparationRetry(FrappeTestCase):
 		with (
 			patch("frappe.utils.synchronization.filelock", return_value=nullcontext()),
 			patch.object(frappe.db, "rollback") as rollback,
-			patch.object(preparation, "_prepare_run", side_effect=[frappe.QueryDeadlockError("conflict"), {"status": "Queued"}]) as prepare,
+			patch.object(
+				preparation,
+				"_prepare_run",
+				side_effect=[frappe.QueryDeadlockError("conflict"), {"status": "Queued"}],
+			) as prepare,
 		):
 			self.assertEqual({"status": "Queued"}, preparation.prepare_run("RUN-TEST"))
 			self.assertEqual(2, prepare.call_count)
@@ -22,7 +26,9 @@ class TestPreparationRetry(FrappeTestCase):
 		with (
 			patch("frappe.utils.synchronization.filelock", return_value=nullcontext()),
 			patch.object(frappe.db, "rollback") as rollback,
-			patch.object(preparation, "_prepare_run", side_effect=frappe.QueryDeadlockError("conflict")) as prepare,
+			patch.object(
+				preparation, "_prepare_run", side_effect=frappe.QueryDeadlockError("conflict")
+			) as prepare,
 		):
 			with self.assertRaises(frappe.QueryDeadlockError):
 				preparation.prepare_run("RUN-TEST")

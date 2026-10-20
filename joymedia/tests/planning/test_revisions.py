@@ -15,7 +15,8 @@ class TestAiDirector(FrappeTestCase):
 		update.return_value = {}
 
 		apply_project_shot_ai_revision(
-			"PROJECT-TEST", "SHOT-TEST",
+			"PROJECT-TEST",
+			"SHOT-TEST",
 			{
 				"image_prompt": "A presenter and plate at an elegant dining table.",
 				"generation_prompt": "The presenter raises the plate toward camera with a slow dolly-in.",

@@ -17,7 +17,12 @@ class ReviewComment(Document):
 			frappe.throw(_("A comment can have at most {0} characters.").format(MAX_COMMENT_LENGTH))
 		if self.scope == "Scene":
 			self.start_frame = self.end_frame = None
-		elif self.start_frame is None or self.end_frame is None or int(self.start_frame) < 0 or int(self.end_frame) < int(self.start_frame):
+		elif (
+			self.start_frame is None
+			or self.end_frame is None
+			or int(self.start_frame) < 0
+			or int(self.end_frame) < int(self.start_frame)
+		):
 			frappe.throw(_("The frame range must start at 0 or later and end at or after its start."))
 		if frappe.db.get_value("Shot", self.shot, "media_project") != self.media_project:
 			frappe.throw(_("The scene does not belong to this project."))

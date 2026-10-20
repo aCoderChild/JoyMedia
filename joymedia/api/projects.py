@@ -6,6 +6,8 @@
 
 import frappe
 from frappe import _
+
+from joymedia.services.planning.jobs import planning_status
 from joymedia.services.project.context import (
 	_aggregate_shot_progress,
 	_busy_shots,
@@ -17,12 +19,11 @@ from joymedia.services.project.context import (
 	_get_project_selected_assets,
 	_normalize_generation_mode,
 	_project_settings,
-	normalize_export_quality,
 	_remaining_render_minutes,
 	_storyboard_payload,
 	build_project_snapshot,
+	normalize_export_quality,
 )
-from joymedia.services.planning.jobs import planning_status
 
 
 @frappe.whitelist()
@@ -154,10 +155,11 @@ def get_project_workspace(name):
 	)
 	if final_video:
 		from joymedia.services.project.versions import exported_edit_is_outdated
-		frozen = frappe.db.get_value('Asset Version', current_output_asset_version, 'edit_manifest_json')
+
+		frozen = frappe.db.get_value("Asset Version", current_output_asset_version, "edit_manifest_json")
 		outdated = exported_edit_is_outdated(project, frozen)
 		if outdated is not None:
-			final_video['is_outdated'] = outdated
+			final_video["is_outdated"] = outdated
 		# A reviewed set of current scene takes is not evidence that an older
 		# review MP4 was exported through the release checks.
 		final_video["export_purpose"] = (
@@ -228,7 +230,13 @@ def refresh_project_studio(name):
 	project._require_read_access()
 	# A newer completed take must not hide an older active run. Reconcile one
 	# active run per poll to keep HTTP work bounded; the scheduler also polls all.
-	active = frappe.get_all("Generation Run", filters={"media_project": project.name, "status": ["in", ["Queued", "Running"]]}, fields=["name", "status"], order_by="creation asc", limit=1)
+	active = frappe.get_all(
+		"Generation Run",
+		filters={"media_project": project.name, "status": ["in", ["Queued", "Running"]]},
+		fields=["name", "status"],
+		order_by="creation asc",
+		limit=1,
+	)
 	production = active[0] if active else None
 	# The browser polls this endpoint while a render is in progress. Reconcile
 	# ComfyUI here as a recovery path as well as in the scheduler: if the worker
@@ -238,6 +246,7 @@ def refresh_project_studio(name):
 	if production and production.status in ("Queued", "Running"):
 		from frappe.utils.file_lock import LockTimeoutError
 		from frappe.utils.synchronization import filelock
+
 		from joymedia.services.generation.orchestrator import refresh_run
 
 		try:

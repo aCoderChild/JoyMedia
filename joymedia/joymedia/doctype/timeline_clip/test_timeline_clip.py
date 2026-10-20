@@ -55,16 +55,12 @@ class TestGeneratedTimelineOrdering(TestCase):
 				"joymedia.joymedia.doctype.timeline_clip.timeline_clip.frappe.db.get_value",
 				return_value=None,
 			),
-			patch(
-				"joymedia.joymedia.doctype.timeline_clip.timeline_clip.frappe.db.set_value"
-			) as set_value,
+			patch("joymedia.joymedia.doctype.timeline_clip.timeline_clip.frappe.db.set_value") as set_value,
 		):
 			_restore_pristine_generated_shot_order("PRJ-00001")
 
 		updates = {
-			call.args[1]: call.args[2]
-			for call in set_value.call_args_list
-			if call.args[0] == "Timeline Clip"
+			call.args[1]: call.args[2] for call in set_value.call_args_list if call.args[0] == "Timeline Clip"
 		}
 		self.assertEqual(updates["TLCLIP-SHOT-1"]["clip_order"], 1)
 		self.assertEqual(updates["TLCLIP-SHOT-1"]["timeline_start_frame"], 0)
@@ -94,9 +90,7 @@ class TestGeneratedTimelineOrdering(TestCase):
 				"joymedia.joymedia.doctype.timeline_clip.timeline_clip.frappe.get_all",
 				return_value=clips,
 			),
-			patch(
-				"joymedia.joymedia.doctype.timeline_clip.timeline_clip.frappe.db.set_value"
-			) as set_value,
+			patch("joymedia.joymedia.doctype.timeline_clip.timeline_clip.frappe.db.set_value") as set_value,
 		):
 			_restore_pristine_generated_shot_order("PRJ-00001")
 

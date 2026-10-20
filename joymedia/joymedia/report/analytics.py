@@ -55,7 +55,9 @@ def get_attempt_analytics(filters=None):
 	# output type (image, video, or audio), including composed shot outputs.
 	output_versions = frappe.get_all(
 		"Asset Version",
-		filters={"source_generation_attempt": ["in", attempt_names]} if attempt_names else {"name": ["in", [""]]},
+		filters={"source_generation_attempt": ["in", attempt_names]}
+		if attempt_names
+		else {"name": ["in", [""]]},
 		fields=["name", "source_generation_attempt"],
 	)
 	source_attempt_by_output = {
@@ -63,10 +65,15 @@ def get_attempt_analytics(filters=None):
 		for version in output_versions
 		if version.source_generation_attempt
 	}
-	commented_outputs = set(frappe.get_all(
-		"Review Comment", filters={"output_asset_version": ["in", list(source_attempt_by_output)]} if source_attempt_by_output else {"name": ["in", [""]]},
-		pluck="output_asset_version",
-	))
+	commented_outputs = set(
+		frappe.get_all(
+			"Review Comment",
+			filters={"output_asset_version": ["in", list(source_attempt_by_output)]}
+			if source_attempt_by_output
+			else {"name": ["in", [""]]},
+			pluck="output_asset_version",
+		)
+	)
 	enriched_attempts = []
 	for attempt in attempts:
 		job = jobs_by_name.get(attempt.generation_task)
@@ -78,7 +85,11 @@ def get_attempt_analytics(filters=None):
 			source_attempt_by_output,
 		)
 		# A take a reviewer wrote comments on needed changes; selection alone says nothing about quality.
-		attempt.commented = any(output in commented_outputs for output, source in source_attempt_by_output.items() if source == attempt.name)
+		attempt.commented = any(
+			output in commented_outputs
+			for output, source in source_attempt_by_output.items()
+			if source == attempt.name
+		)
 		if filters.workflow and attempt.workflow != filters.workflow:
 			continue
 		enriched_attempts.append(attempt)

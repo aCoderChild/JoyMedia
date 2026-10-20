@@ -7,17 +7,37 @@ from joymedia.joymedia.report.analytics import (
 	queue_wait_seconds,
 )
 
-
 COLUMNS = [
-	{"fieldname": "workflow", "label": "Generation Workflow", "fieldtype": "Link", "options": "Generation Workflow", "width": 150},
+	{
+		"fieldname": "workflow",
+		"label": "Generation Workflow",
+		"fieldtype": "Link",
+		"options": "Generation Workflow",
+		"width": 150,
+	},
 	{"fieldname": "attempts", "label": "Attempts", "fieldtype": "Int", "width": 90},
 	{"fieldname": "success_rate", "label": "Success Rate %", "fieldtype": "Percent", "width": 100},
 	{"fieldname": "retry_rate", "label": "Retry Rate %", "fieldtype": "Percent", "width": 100},
-	{"fieldname": "commented_rate", "label": "Takes With Review Comments %", "fieldtype": "Percent", "width": 170},
+	{
+		"fieldname": "commented_rate",
+		"label": "Takes With Review Comments %",
+		"fieldtype": "Percent",
+		"width": 170,
+	},
 	{"fieldname": "avg_runtime_seconds", "label": "Avg Runtime (s)", "fieldtype": "Float", "width": 110},
 	{"fieldname": "p95_runtime_seconds", "label": "p95 Runtime (s)", "fieldtype": "Float", "width": 110},
-	{"fieldname": "avg_queue_wait_seconds", "label": "Avg Queue Wait (s)", "fieldtype": "Float", "width": 125},
-	{"fieldname": "gpu_seconds_per_clean_take", "label": "GPU Seconds / Take Without Comments", "fieldtype": "Float", "width": 200},
+	{
+		"fieldname": "avg_queue_wait_seconds",
+		"label": "Avg Queue Wait (s)",
+		"fieldtype": "Float",
+		"width": 125,
+	},
+	{
+		"fieldname": "gpu_seconds_per_clean_take",
+		"label": "GPU Seconds / Take Without Comments",
+		"fieldtype": "Float",
+		"width": 200,
+	},
 ]
 
 
@@ -83,4 +103,8 @@ def _average(values):
 
 def _per_clean_take(bucket):
 	"""Total recorded render time divided by the selected takes nobody had to comment on."""
-	return round(bucket["gpu_runtime_seconds"] / bucket["selected_clean"], 2) if bucket["selected_clean"] else None
+	return (
+		round(bucket["gpu_runtime_seconds"] / bucket["selected_clean"], 2)
+		if bucket["selected_clean"]
+		else None
+	)

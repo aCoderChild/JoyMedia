@@ -19,4 +19,6 @@ class TestCaseAssets(FrappeTestCase):
 			self.assertLessEqual(len(case["expect"]["pasted"]), len(case["references"]), name)
 
 	def test_a_missing_keyframe_fails_the_check(self):
-		self.assertEqual([("keyframe rendered", False, "no image")], cases.evaluate("text-only-portrait", None, "x"))
+		self.assertEqual(
+			[("keyframe rendered", False, "no image")], cases.evaluate("text-only-portrait", None, "x")
+		)

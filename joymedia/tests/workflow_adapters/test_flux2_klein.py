@@ -21,7 +21,9 @@ class TestFlux2KleinKeyframe(FrappeTestCase):
 		graph = copy.deepcopy(json.loads(GRAPH.read_text()))
 		spec = keyframe_spec()
 		GenericComfyUIAdapter._finalize_optional_input_chains(
-			graph, spec["input_preprocessing"], {"character": ["mother.png", "kid.png"], "environment": ["room.png"]}
+			graph,
+			spec["input_preprocessing"],
+			{"character": ["mother.png", "kid.png"], "environment": ["room.png"]},
 		)
 		self.assertEqual(["environment_ref", 0], graph["guider"]["inputs"]["conditioning"])
 		self.assertEqual(["character2_ref", 0], graph["environment_ref"]["inputs"]["conditioning"])
@@ -32,5 +34,7 @@ class TestFlux2KleinKeyframe(FrappeTestCase):
 
 	def test_without_references_the_prompt_alone_conditions_the_image(self):
 		graph = copy.deepcopy(json.loads(GRAPH.read_text()))
-		GenericComfyUIAdapter._finalize_optional_input_chains(graph, keyframe_spec()["input_preprocessing"], {})
+		GenericComfyUIAdapter._finalize_optional_input_chains(
+			graph, keyframe_spec()["input_preprocessing"], {}
+		)
 		self.assertEqual(["text", 0], graph["guider"]["inputs"]["conditioning"])

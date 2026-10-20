@@ -1,6 +1,5 @@
 """Plan technical generation segments for a creative shot."""
 
-
 MAX_SEGMENT_FRAMES = 124
 CONTINUATION_OVERLAP_FRAMES = 1
 
@@ -19,12 +18,19 @@ def plan_generation_segments(
 	its overlap). ``continuation_max_segment_frames`` is the capacity of the
 	continuation workflow; it may differ from the initial workflow capacity.
 	"""
-	planned_frame_count = int(round(planned_frame_count))
+	planned_frame_count = planned_frame_count
 	if planned_frame_count < 1:
 		raise ValueError("planned_frame_count must be positive.")
-	for name, value in (("max_segment_frames", max_segment_frames), ("continuation_overlap_frames", continuation_overlap_frames),
-		("continuation_max_segment_frames", continuation_max_segment_frames), ("continuation_new_frames", continuation_new_frames), ("max_segments", max_segments)):
-		if value is not None and (type(value) is not int or value < (0 if name == "continuation_overlap_frames" else 1)):
+	for name, value in (
+		("max_segment_frames", max_segment_frames),
+		("continuation_overlap_frames", continuation_overlap_frames),
+		("continuation_max_segment_frames", continuation_max_segment_frames),
+		("continuation_new_frames", continuation_new_frames),
+		("max_segments", max_segments),
+	):
+		if value is not None and (
+			type(value) is not int or value < (0 if name == "continuation_overlap_frames" else 1)
+		):
 			raise ValueError(f"{name} must be an integer in its supported range.")
 
 	if max_segment_frames < 2:

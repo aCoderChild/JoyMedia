@@ -2,10 +2,15 @@ from collections import defaultdict
 
 from joymedia.joymedia.report.analytics import get_attempt_analytics
 
-
 COLUMNS = [
 	{"fieldname": "source", "label": "Source", "fieldtype": "Data", "width": 120},
-	{"fieldname": "workflow", "label": "Generation Workflow", "fieldtype": "Link", "options": "Generation Workflow", "width": 150},
+	{
+		"fieldname": "workflow",
+		"label": "Generation Workflow",
+		"fieldtype": "Link",
+		"options": "Generation Workflow",
+		"width": 150,
+	},
 	{"fieldname": "failure_class", "label": "Failure Class", "fieldtype": "Data", "width": 160},
 	{"fieldname": "retry_reason", "label": "Retry Reason", "fieldtype": "Data", "width": 170},
 	{"fieldname": "count", "label": "Count", "fieldtype": "Int", "width": 80},
@@ -22,7 +27,7 @@ def execute(filters=None):
 				(
 					"Execution Attempt",
 					attempt.workflow or "Unassigned",
-				attempt.failure_class,
+					attempt.failure_class,
 					attempt.retry_reason or "",
 				)
 			] += 1

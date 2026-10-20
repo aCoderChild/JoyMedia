@@ -8,7 +8,6 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now
 
-
 MANUAL_REGENERATION_REASONS = {"Manual Retry", "Reroll"}
 
 
@@ -62,7 +61,9 @@ class GenerationAttempt(Document):
 		if previous_attempt.status == "Completed" and self.retry_reason in MANUAL_REGENERATION_REASONS:
 			return
 		frappe.throw(
-			_("Retry Of must be a failed Generation Attempt, unless this is a manual regeneration of a completed Attempt.")
+			_(
+				"Retry Of must be a failed Generation Attempt, unless this is a manual regeneration of a completed Attempt."
+			)
 		)
 
 
@@ -143,9 +144,7 @@ def _invalidate_manual_regeneration_outputs(job):
 def _create_successor_attempt(previous_attempt, reason):
 	job = frappe.get_doc("Generation Task", previous_attempt.generation_task)
 	if job.status not in ("Ready", "Queued", "Completed", "Failed"):
-		frappe.throw(
-			_("Generation Task {0} cannot be retried from status {1}.").format(job.name, job.status)
-		)
+		frappe.throw(_("Generation Task {0} cannot be retried from status {1}.").format(job.name, job.status))
 
 	if reason in MANUAL_REGENERATION_REASONS:
 		_invalidate_manual_regeneration_outputs(job)
@@ -178,7 +177,9 @@ def _create_successor_attempt(previous_attempt, reason):
 def _validate_retry_reason(reason):
 	valid_reasons = {
 		value
-		for value in (frappe.get_meta("Generation Attempt").get_field("retry_reason").options or "").splitlines()
+		for value in (
+			frappe.get_meta("Generation Attempt").get_field("retry_reason").options or ""
+		).splitlines()
 		if value
 	}
 	if reason not in valid_reasons:

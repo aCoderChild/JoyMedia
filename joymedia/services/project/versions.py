@@ -268,7 +268,11 @@ def get_history(project_name, kind="edits", start=0, page_length=30, shot_name=N
 		frappe.throw(_("Choose edit, export or scene take history."))
 	return {
 		"family": summary(project),
-		"can_select_takes": bool(project.status != "Archived" and root.status != "Archived" and frappe.has_permission("Media Project", "write", doc=project)),
+		"can_select_takes": bool(
+			project.status != "Archived"
+			and root.status != "Archived"
+			and frappe.has_permission("Media Project", "write", doc=project)
+		),
 		"kind": kind,
 		"items": rows[:page_length],
 		"scenes": scenes,
@@ -324,7 +328,9 @@ def create_edit(project_name, label, kind="Creative", expected_current=None, mak
 		copy.insert(ignore_permissions=True)
 		shot_map, take_map, timings, reference_map = {}, {}, [], {}
 		for reference in copy.selected_media or []:
-			reference.asset_version = copy_control_reference(reference.asset_version, source, copy, reference_map)
+			reference.asset_version = copy_control_reference(
+				reference.asset_version, source, copy, reference_map
+			)
 		copy.save(ignore_permissions=True)
 		for name in frappe.get_all(
 			"Shot",
@@ -336,10 +342,14 @@ def create_edit(project_name, label, kind="Creative", expected_current=None, mak
 			shot = frappe.copy_doc(old)
 			shot.media_project = copy.name
 			for reference in shot.generation_inputs or []:
-				reference.asset_version = copy_control_reference(reference.asset_version, source, copy, reference_map)
+				reference.asset_version = copy_control_reference(
+					reference.asset_version, source, copy, reference_map
+				)
 			plan = frappe.parse_json(shot.motion_plan_json or "{}") or {}
 			for placement in plan.get("artwork_placements", []):
-				placement["asset_version"] = copy_control_reference(placement["asset_version"], source, copy, reference_map)
+				placement["asset_version"] = copy_control_reference(
+					placement["asset_version"], source, copy, reference_map
+				)
 			if plan.get("artwork_placements"):
 				shot.motion_plan_json = frappe.as_json(plan)
 			for field in (
@@ -408,7 +418,11 @@ def create_edit(project_name, label, kind="Creative", expected_current=None, mak
 			# finishing patches new takes without erasing trims, mutes or soundtrack.
 			from joymedia.services.editing.post_production import timeline_signature
 
-			copy.db_set("finished_timeline_signature", source.finished_timeline_signature or timeline_signature(source.name), update_modified=False)
+			copy.db_set(
+				"finished_timeline_signature",
+				source.finished_timeline_signature or timeline_signature(source.name),
+				update_modified=False,
+			)
 		if str(make_working).lower() in {"true", "1", "yes", "on"}:
 			root.db_set("current_edit", copy.name, update_modified=False)
 	return {"project": root.name, "edit": copy.name, "label": label}
@@ -537,16 +551,37 @@ def exported_edit_is_outdated(project, manifest):
 	"""None for legacy exports; otherwise compare to the exact exported inputs."""
 	try:
 		manifest = json.loads(manifest) if isinstance(manifest, str) else manifest
-		if not isinstance(manifest, dict) or not manifest.get('timeline_signature') or not isinstance(manifest.get('project_state'), dict):
+		if (
+			not isinstance(manifest, dict)
+			or not manifest.get("timeline_signature")
+			or not isinstance(manifest.get("project_state"), dict)
+		):
 			return None
 		from joymedia.services.editing.post_production import timeline_signature
-		if manifest['timeline_signature'] != timeline_signature(project.name):
+
+		if manifest["timeline_signature"] != timeline_signature(project.name):
 			return True
-		normalize = lambda value: json.loads(json.dumps(value, default=lambda v: v.as_dict() if hasattr(v, 'as_dict') else str(v)))
-		if any(normalize(project.get(key)) != value for key, value in manifest['project_state'].items()):
+
+		def normalize(value):
+			return json.loads(
+				json.dumps(value, default=lambda v: v.as_dict() if hasattr(v, "as_dict") else str(v))
+			)
+
+		if any(normalize(project.get(key)) != value for key, value in manifest["project_state"].items()):
 			return True
-		for saved in manifest.get('selected_takes', []):
-			current = frappe.db.get_value('Shot', saved['name'], ['selected_output_asset_version','image_prompt','generation_prompt','storyboard_action','motion_plan_json'], as_dict=True)
+		for saved in manifest.get("selected_takes", []):
+			current = frappe.db.get_value(
+				"Shot",
+				saved["name"],
+				[
+					"selected_output_asset_version",
+					"image_prompt",
+					"generation_prompt",
+					"storyboard_action",
+					"motion_plan_json",
+				],
+				as_dict=True,
+			)
 			if not current or any(current.get(key) != saved.get(key) for key in current):
 				return True
 		return False
@@ -555,46 +590,51 @@ def exported_edit_is_outdated(project, manifest):
 
 
 def copy_control_reference(version, source, target, copied):
-    """Copy edit-owned control metadata, sharing immutable bytes and lineage.
+	"""Copy edit-owned control metadata, sharing immutable bytes and lineage.
 
-    Library versions stay selected references. Never grant a family-wide media
-    access exception: each new edit owns its control versions and patch records.
-    """
-    if not version:
-        return version
-    if version in copied:
-        if copied[version] is None:
-            frappe.throw(_('Control reference evidence contains a cycle.'))
-        return copied[version]
-    original = frappe.get_doc('Asset Version', version)
-    parent = frappe.get_doc('Media Asset', original.media_asset)
-    if not parent.media_project:
-        return version
-    if parent.media_project == target.name:
-        return version
-    owner_project = frappe.get_doc('Media Project', parent.media_project)
-    owner_project._require_read_access()
-    if family(owner_project).name != family(source).name:
-        frappe.throw(_('Control references must belong to this project family.'), frappe.PermissionError)
-    # Validate file integrity before sharing its URL into another edit.
-    from joymedia.services.consistency.tracking import file_hash
-    path = frappe.get_doc('File', {'file_url': original.file}).get_full_path()
-    if file_hash(path) != original.content_hash:
-        frappe.throw(_('Control reference bytes changed.'))
-    copied[version] = None
-    media = frappe.copy_doc(parent)
-    media.media_project = target.name
-    media.insert(ignore_permissions=True)
-    clone = frappe.copy_doc(original)
-    clone.media_asset, clone.source, clone.derived_from = media.name, 'Derived', original.name
-    clone.release_evidence_json = None
-    evidence = frappe.parse_json(original.preservation_evidence_json or '{}') or {}
-    for item in (evidence.get('product_lock') or {}).get('items', []):
-        if item.get('source_asset_version'):
-            item['source_asset_version'] = copy_control_reference(item['source_asset_version'], source, target, copied)
-        if item.get('patch_asset_version'):
-            item['patch_asset_version'] = copy_control_reference(item['patch_asset_version'], source, target, copied)
-    clone.preservation_evidence_json = frappe.as_json(evidence) if evidence else None
-    clone.insert(ignore_permissions=True)
-    copied[version] = clone.name
-    return clone.name
+	Library versions stay selected references. Never grant a family-wide media
+	access exception: each new edit owns its control versions and patch records.
+	"""
+	if not version:
+		return version
+	if version in copied:
+		if copied[version] is None:
+			frappe.throw(_("Control reference evidence contains a cycle."))
+		return copied[version]
+	original = frappe.get_doc("Asset Version", version)
+	parent = frappe.get_doc("Media Asset", original.media_asset)
+	if not parent.media_project:
+		return version
+	if parent.media_project == target.name:
+		return version
+	owner_project = frappe.get_doc("Media Project", parent.media_project)
+	owner_project._require_read_access()
+	if family(owner_project).name != family(source).name:
+		frappe.throw(_("Control references must belong to this project family."), frappe.PermissionError)
+	# Validate file integrity before sharing its URL into another edit.
+	from joymedia.services.consistency.tracking import file_hash
+
+	path = frappe.get_doc("File", {"file_url": original.file}).get_full_path()
+	if file_hash(path) != original.content_hash:
+		frappe.throw(_("Control reference bytes changed."))
+	copied[version] = None
+	media = frappe.copy_doc(parent)
+	media.media_project = target.name
+	media.insert(ignore_permissions=True)
+	clone = frappe.copy_doc(original)
+	clone.media_asset, clone.source, clone.derived_from = media.name, "Derived", original.name
+	clone.release_evidence_json = None
+	evidence = frappe.parse_json(original.preservation_evidence_json or "{}") or {}
+	for item in (evidence.get("product_lock") or {}).get("items", []):
+		if item.get("source_asset_version"):
+			item["source_asset_version"] = copy_control_reference(
+				item["source_asset_version"], source, target, copied
+			)
+		if item.get("patch_asset_version"):
+			item["patch_asset_version"] = copy_control_reference(
+				item["patch_asset_version"], source, target, copied
+			)
+	clone.preservation_evidence_json = frappe.as_json(evidence) if evidence else None
+	clone.insert(ignore_permissions=True)
+	copied[version] = clone.name
+	return clone.name

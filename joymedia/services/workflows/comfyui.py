@@ -38,7 +38,14 @@ def endpoint_for_workflow(workflow_name):
 	if not isinstance(value, str):
 		raise ValueError("A workflow endpoint must be an HTTP(S) URL.")
 	url = urlsplit(value)
-	if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password or url.query or url.fragment:
+	if (
+		url.scheme not in {"http", "https"}
+		or not url.hostname
+		or url.username
+		or url.password
+		or url.query
+		or url.fragment
+	):
 		raise ValueError("A workflow endpoint must be an HTTP(S) URL without credentials, query or fragment.")
 	return value.rstrip("/")
 
@@ -115,6 +122,7 @@ def _validate_image_upload(path: Path):
 		return
 	try:
 		from PIL import Image
+
 		with Image.open(path) as image:
 			image.verify()
 	except (OSError, ValueError):
@@ -289,7 +297,12 @@ def download_output(
 
 
 def run_workflow_to_bytes(
-	workflow: dict, output_node: str, *, timeout: float = 3600, forget: bool = False, base_url: str | None = None,
+	workflow: dict,
+	output_node: str,
+	*,
+	timeout: float = 3600,
+	forget: bool = False,
+	base_url: str | None = None,
 	on_submitted=None,
 ) -> bytes:
 	"""Run one ComfyUI job to completion and return the first file saved by output_node.
@@ -322,8 +335,15 @@ def run_workflow_to_bytes(
 				]
 				frappe.throw(_("ComfyUI job failed: {0}").format("; ".join(errors) or prompt_id))
 			saved = (history.get("outputs") or {}).get(output_node, {})
-			for item in saved.get("images", []) + saved.get("videos", []) + saved.get("gifs", []) + saved.get("audio", []):
-				content = download_output(item["filename"], item.get("subfolder", ""), item.get("type", "output"), base_url=base_url)
+			for item in (
+				saved.get("images", [])
+				+ saved.get("videos", [])
+				+ saved.get("gifs", [])
+				+ saved.get("audio", [])
+			):
+				content = download_output(
+					item["filename"], item.get("subfolder", ""), item.get("type", "output"), base_url=base_url
+				)
 				if forget:
 					delete_history([prompt_id], base_url=base_url)
 				return content
@@ -347,7 +367,9 @@ def delete_history(prompt_ids: list[str], *, base_url: str | None = None):
 	_raise_for_comfyui_error(response)
 
 
-def probe_output(filename: str, subfolder: str = "", file_type: str = "output", *, base_url: str | None = None) -> bool:
+def probe_output(
+	filename: str, subfolder: str = "", file_type: str = "output", *, base_url: str | None = None
+) -> bool:
 	"""Check whether ComfyUI already wrote a deterministic output file."""
 	try:
 		response = requests.get(

@@ -6,6 +6,7 @@ particles can illustrate a material trajectory; they do not model absorption,
 surface tension or a continuous liquid. Use the rendered clip as a motion guide.
 Only local, operator-authored JSON is accepted; this is not a public RPC.
 """
+
 import argparse
 import hashlib
 import json
@@ -36,7 +37,15 @@ def render(scene, output):
 		kind = entity.get("type", "static")
 		if kind not in {"static", "dynamic", "kinematic"}:
 			raise ValueError("Unsupported body type")
-		body = pymunk.Body(entity.get("mass", 1), entity.get("moment", 1000), body_type={"static": pymunk.Body.STATIC, "dynamic": pymunk.Body.DYNAMIC, "kinematic": pymunk.Body.KINEMATIC}[kind])
+		body = pymunk.Body(
+			entity.get("mass", 1),
+			entity.get("moment", 1000),
+			body_type={
+				"static": pymunk.Body.STATIC,
+				"dynamic": pymunk.Body.DYNAMIC,
+				"kinematic": pymunk.Body.KINEMATIC,
+			}[kind],
+		)
 		body.position = tuple(entity["position"])
 		body.angle = float(entity.get("angle", 0))
 		space.add(body)
@@ -45,17 +54,46 @@ def render(scene, output):
 			if geometry["kind"] == "circle":
 				shape = pymunk.Circle(body, geometry["radius"], tuple(geometry.get("offset", [0, 0])))
 			elif geometry["kind"] == "segment":
-				shape = pymunk.Segment(body, tuple(geometry["a"]), tuple(geometry["b"]), geometry.get("radius", 2))
+				shape = pymunk.Segment(
+					body, tuple(geometry["a"]), tuple(geometry["b"]), geometry.get("radius", 2)
+				)
 			elif geometry["kind"] == "polygon":
 				shape = pymunk.Poly(body, geometry["vertices"])
 			else:
 				raise ValueError("Unsupported geometry")
-			shape.friction = entity.get("friction", .6)
-			shape.elasticity = entity.get("elasticity", .02)
+			shape.friction = entity.get("friction", 0.6)
+			shape.elasticity = entity.get("elasticity", 0.02)
 			shape.sensor = bool(entity.get("sensor", False))
 			space.add(shape)
 			shapes[name].append((shape, geometry))
-	process = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{width}x{height}", "-r", str(fps), "-i", "-", "-an", "-c:v", "libx264", "-crf", "15", "-pix_fmt", "yuv420p", str(output)], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+	process = subprocess.Popen(
+		[
+			"ffmpeg",
+			"-v",
+			"error",
+			"-y",
+			"-f",
+			"rawvideo",
+			"-pix_fmt",
+			"rgb24",
+			"-s",
+			f"{width}x{height}",
+			"-r",
+			str(fps),
+			"-i",
+			"-",
+			"-an",
+			"-c:v",
+			"libx264",
+			"-crf",
+			"15",
+			"-pix_fmt",
+			"yuv420p",
+			str(output),
+		],
+		stdin=subprocess.PIPE,
+		stderr=subprocess.PIPE,
+	)
 	trajectories = []
 	try:
 		for frame in range(frames):
@@ -87,16 +125,34 @@ def render(scene, output):
 					if isinstance(shape, pymunk.Circle):
 						point = body.local_to_world(shape.offset)
 						r = shape.radius
-						draw.ellipse((point.x-r, point.y-r, point.x+r, point.y+r), fill=color)
+						draw.ellipse((point.x - r, point.y - r, point.x + r, point.y + r), fill=color)
 					elif isinstance(shape, pymunk.Segment):
-						draw.line([tuple(body.local_to_world(p)) for p in [shape.a, shape.b]], fill=color, width=max(1, round(shape.radius * 2)))
+						draw.line(
+							[tuple(body.local_to_world(p)) for p in [shape.a, shape.b]],
+							fill=color,
+							width=max(1, round(shape.radius * 2)),
+						)
 					else:
-						draw.polygon([tuple(body.local_to_world(p)) for p in shape.get_vertices()], fill=color)
+						draw.polygon(
+							[tuple(body.local_to_world(p)) for p in shape.get_vertices()], fill=color
+						)
 				if entity.get("connected_to"):
 					anchor = bodies[entity["connected_to"]].position
-					draw.line([tuple(anchor), tuple(body.position)], fill=entity.get("color", "#eadbc0"), width=entity.get("link_width", 24))
+					draw.line(
+						[tuple(anchor), tuple(body.position)],
+						fill=entity.get("color", "#eadbc0"),
+						width=entity.get("link_width", 24),
+					)
 			process.stdin.write(image.tobytes())
-			trajectories.append({"frame": frame, "bodies": {name: {"position": list(body.position), "angle": body.angle} for name, body in bodies.items()}})
+			trajectories.append(
+				{
+					"frame": frame,
+					"bodies": {
+						name: {"position": list(body.position), "angle": body.angle}
+						for name, body in bodies.items()
+					},
+				}
+			)
 			for _ in range(12):
 				space.step(1 / (fps * 12))
 	finally:
@@ -104,7 +160,11 @@ def render(scene, output):
 		errors = process.stderr.read().decode()
 		if process.wait():
 			raise RuntimeError(errors)
-	return {"scene_sha256": hashlib.sha256(json.dumps(scene, sort_keys=True).encode()).hexdigest(), "pymunk_version": pymunk.version, "trajectories": trajectories}
+	return {
+		"scene_sha256": hashlib.sha256(json.dumps(scene, sort_keys=True).encode()).hexdigest(),
+		"pymunk_version": pymunk.version,
+		"trajectories": trajectories,
+	}
 
 
 def main():

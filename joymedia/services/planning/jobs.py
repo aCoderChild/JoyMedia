@@ -64,15 +64,20 @@ def plan_and_generate(project_name):
 		frappe.log_error(title=f"Storyboard planning failed for {project_name}")
 		# Validation messages ("Add at least one image…") are written for users; anything
 		# else is a technical failure the Error Log keeps.
-		message = str(exc) if isinstance(exc, frappe.ValidationError) else _(
-			"The AI director could not create the storyboard. Please try again."
+		message = (
+			str(exc)
+			if isinstance(exc, frappe.ValidationError)
+			else _("The AI director could not create the storyboard. Please try again.")
 		)
 		_set(project_name, "Failed", message[:1000])
 
 
 def _set(project_name, status, error):
 	frappe.db.set_value(
-		"Media Project", project_name, {"planning_status": status, "planning_error": error}, update_modified=False
+		"Media Project",
+		project_name,
+		{"planning_status": status, "planning_error": error},
+		update_modified=False,
 	)
 	frappe.db.commit()
 

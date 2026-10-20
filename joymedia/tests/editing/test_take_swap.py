@@ -15,8 +15,10 @@ class TestConcurrentTakeSwap(TestCase):
 			patch.object(frappe.db, "get_value", return_value="Continuous"),
 			patch.object(frappe.db, "commit"),
 			patch.object(frappe.db, "rollback") as rollback,
-			patch("joymedia.services.editing.timeline.update_timeline_source_for_shot",
-				side_effect=[frappe.QueryDeadlockError("1020"), None]) as swap,
+			patch(
+				"joymedia.services.editing.timeline.update_timeline_source_for_shot",
+				side_effect=[frappe.QueryDeadlockError("1020"), None],
+			) as swap,
 			patch.object(post_production, "_bridge_asset_version") as render,
 		):
 			post_production._patch_changed_scenes("PROJECT")

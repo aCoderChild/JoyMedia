@@ -4,16 +4,14 @@
 from io import BytesIO
 
 import frappe
-from PIL import Image
 from frappe.tests import IntegrationTestCase
-
+from PIL import Image
 
 # On IntegrationTestCase, the doctype test records and all
 # link-field test record dependencies are recursively loaded
 # Use these module variables to add/remove to/from that list
 EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
-
 
 
 class IntegrationTestAssetVersion(IntegrationTestCase):
@@ -31,6 +29,7 @@ class IntegrationTestAssetVersion(IntegrationTestCase):
 
 	def test_duplicate_uploads_respect_asset_category(self):
 		from joymedia.services.intake.assets import create_media_asset
+
 		image_buffer = BytesIO()
 		color = tuple(int(frappe.generate_hash(length=6)[index : index + 2], 16) for index in (0, 2, 4))
 		Image.new("RGB", (640, 640), color=color).save(image_buffer, format="PNG")

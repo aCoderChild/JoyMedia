@@ -27,36 +27,52 @@ class TestTrackedSourceArt(TestCase):
 			folder = Path(directory)
 			video, art, controls = self.fixture(folder)
 			controls.pop("tracking_quad")
-			with patch("joymedia.services.consistency.tracking.track_homography", side_effect=AssertionError("must not track")):
+			with patch(
+				"joymedia.services.consistency.tracking.track_homography",
+				side_effect=AssertionError("must not track"),
+			):
 				report = restore_video(video, art, folder / "fixed.mp4", tracking_mode="fixed", **controls)
 			self.assertEqual("fixed_source_plane", report["strategy"])
 			self.assertEqual(24, report["protected_frames"])
 			self.assertIsNone(report["maximum_reprojection_error"])
 			self.assertIsNone(report["tracking_quad"])
 			with self.assertRaises(PreservationError):
-				restore_video(video, art, folder / "invalid.mp4", tracking_mode="fixed", tracking_quad=controls["target_quad"], **controls)
+				restore_video(
+					video,
+					art,
+					folder / "invalid.mp4",
+					tracking_mode="fixed",
+					tracking_quad=controls["target_quad"],
+					**controls,
+				)
 
 	def test_stationary_scene_matte_keeps_rigid_edges_continuous_and_action_visible(self):
 		with tempfile.TemporaryDirectory() as directory:
 			folder = Path(directory)
 			video, art, _ = self.fixture(folder)
-			image = np.full((240,320,4), (90,120,150,255), np.uint8)
-			image[180:190,:, :3] = (20,50,220)  # a rigid edge spanning the scene
-			image[40:120,100:200,3] = 0  # only the acting region is unconstrained
+			image = np.full((240, 320, 4), (90, 120, 150, 255), np.uint8)
+			image[180:190, :, :3] = (20, 50, 220)  # a rigid edge spanning the scene
+			image[40:120, 100:200, 3] = 0  # only the acting region is unconstrained
 			cv2.imwrite(str(art), image)
-			points = [[0,0],[319,0],[319,239],[0,239]]
+			points = [[0, 0], [319, 0], [319, 239], [0, 239]]
 			output = folder / "stationary-scene.mp4"
-			report = restore_video(video,art,output,source_quad=points,target_quad=points,tracking_mode="fixed")
-			self.assertEqual(24,report["protected_frames"])
-			cap = cv2.VideoCapture(str(output)); action = []
+			report = restore_video(
+				video, art, output, source_quad=points, target_quad=points, tracking_mode="fixed"
+			)
+			self.assertEqual(24, report["protected_frames"])
+			cap = cv2.VideoCapture(str(output))
+			action = []
 			while True:
 				ok, frame = cap.read()
-				if not ok:break
-				self.assertLess(float(np.abs(frame[182:188,4:315].astype(float)-image[182:188,4:315,:3]).mean()),5)
-				action.append(frame[50:110,110:190].astype(float))
+				if not ok:
+					break
+				self.assertLess(
+					float(np.abs(frame[182:188, 4:315].astype(float) - image[182:188, 4:315, :3]).mean()), 5
+				)
+				action.append(frame[50:110, 110:190].astype(float))
 			cap.release()
-			self.assertEqual(24,len(action))
-			self.assertGreater(float(np.abs(action[-1]-action[0]).mean()),5)
+			self.assertEqual(24, len(action))
+			self.assertGreater(float(np.abs(action[-1] - action[0]).mean()), 5)
 
 	def fixture(self, folder, *, lost=False, mask=False):
 		video, art = folder / "input.mp4", folder / "art.png"
@@ -159,16 +175,16 @@ class TestTrackedSourceArt(TestCase):
 			video, art, controls = self.fixture(folder, mask=True)
 			output = folder / "seamless.mp4"
 			report = restore_video(video, art, output, blend_mode="seamless", **controls)
-			self.assertEqual(report['blend_mode'], 'seamless')
-			self.assertEqual(report['protected_frames'], 24)
+			self.assertEqual(report["blend_mode"], "seamless")
+			self.assertEqual(report["protected_frames"], 24)
 			cap = cv2.VideoCapture(str(output))
 			for _ in range(24):
 				ok, frame = cap.read()
 				self.assertTrue(ok)
 				self.assertGreater(float(frame[90:105, 110:130, 1].mean()), 210)
 			cap.release()
-			with self.assertRaisesRegex(PreservationError, 'blend mode'):
-				restore_video(video, art, folder / 'invalid.mp4', blend_mode='invented', **controls)
+			with self.assertRaisesRegex(PreservationError, "blend mode"):
+				restore_video(video, art, folder / "invalid.mp4", blend_mode="invented", **controls)
 
 	def test_random_motion_is_measured_against_the_original_reference(self):
 		rng = np.random.default_rng(1729)

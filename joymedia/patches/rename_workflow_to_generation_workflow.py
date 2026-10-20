@@ -68,6 +68,6 @@ def execute():
 				PRIMARY KEY (name)
 				) ENGINE=InnoDB
 				""",
-				auto_commit=True,
-			)
+			auto_commit=True,
+		)
 	frappe.clear_cache()

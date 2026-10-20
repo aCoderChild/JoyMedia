@@ -13,14 +13,25 @@ class TestPlanSignature(FrappeTestCase):
 		commit = patch.object(frappe.db, "commit")
 		commit.start()
 		self.addCleanup(commit.stop)
-		self.project = frappe.get_doc({
-			"doctype": "Media Project", "project_name": "Plan Signature", "workflow": _create_workflow(),
-			"total_duration_seconds": 2, "delivery_preset": "Landscape",
-		}).insert(ignore_permissions=True)
-		self.shot = frappe.get_doc({
-			"doctype": "Shot", "media_project": self.project.name, "shot_number": 1,
-			"generation_prompt": "A scene.", "duration_seconds": 2.0, "caption": "Hello",
-		}).insert(ignore_permissions=True)
+		self.project = frappe.get_doc(
+			{
+				"doctype": "Media Project",
+				"project_name": "Plan Signature",
+				"workflow": _create_workflow(),
+				"total_duration_seconds": 2,
+				"delivery_preset": "Landscape",
+			}
+		).insert(ignore_permissions=True)
+		self.shot = frappe.get_doc(
+			{
+				"doctype": "Shot",
+				"media_project": self.project.name,
+				"shot_number": 1,
+				"generation_prompt": "A scene.",
+				"duration_seconds": 2.0,
+				"caption": "Hello",
+			}
+		).insert(ignore_permissions=True)
 
 	def tearDown(self):
 		frappe.db.rollback()
@@ -47,13 +58,16 @@ class TestPlanSignature(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			assert_plan_matches_approval(frappe.get_doc("Media Project", self.project.name))
 		self.assertEqual(
-			"Ready for Review", frappe.db.get_value("Media Project", self.project.name, "storyboard_approval_status")
+			"Ready for Review",
+			frappe.db.get_value("Media Project", self.project.name, "storyboard_approval_status"),
 		)
 
 
 class TestRetryPolicy(FrappeTestCase):
 	def _run(self, signature):
-		return frappe._dict(media_project="P", execution_scope_json=frappe.as_json({"plan_signature": signature}))
+		return frappe._dict(
+			media_project="P", execution_scope_json=frappe.as_json({"plan_signature": signature})
+		)
 
 	def test_retry_is_refused_after_the_plan_changed(self):
 		from joymedia.services.generation.orchestrator import _require_run_plan_unchanged

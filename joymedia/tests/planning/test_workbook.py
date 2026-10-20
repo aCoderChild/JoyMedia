@@ -16,7 +16,9 @@ def _workbook_path():
 		sheet.append(["Thời lượng", duration])
 		sheet.append(["Phân cảnh", "Thời lượng", "Hình ảnh", "Hành động", "VO", "SFX", "Chữ"])
 		if title == "Demo 1":
-			sheet.append(["Hook", "0:00 - 0:04", "Cận cảnh", "Đổ nước ép", "Giấy lau cứ mủn nát", "Cốc đổ", "x"])
+			sheet.append(
+				["Hook", "0:00 - 0:04", "Cận cảnh", "Đổ nước ép", "Giấy lau cứ mủn nát", "Cốc đổ", "x"]
+			)
 		else:
 			sheet.append(["Hook", "0:00 - 0:03", "Macro", "Rút giấy", "", "ASMR", "x"])
 			sheet.append(["Không bụi", "0:04 - 0:09", "Macro", "Ôm giấy", "Yên tâm", "", "ÊM MỀM"])

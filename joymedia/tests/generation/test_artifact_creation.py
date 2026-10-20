@@ -9,9 +9,7 @@ from joymedia.services.generation.ingestor import _create_primary_artifact
 class TestGenerationArtifactCreation(FrappeTestCase):
 	@patch("joymedia.services.generation.ingestor.frappe.get_doc")
 	@patch("joymedia.services.generation.ingestor.frappe.db.get_value", return_value=None)
-	def test_primary_artifact_starts_as_frappe_file_artifact(
-		self, get_value, get_doc
-	):
+	def test_primary_artifact_starts_as_frappe_file_artifact(self, get_value, get_doc):
 		artifact = MagicMock()
 		get_doc.return_value = artifact
 		attempt = frappe._dict(name="ATT-00001")

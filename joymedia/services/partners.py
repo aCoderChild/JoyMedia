@@ -160,8 +160,12 @@ def get_access(project_name=None):
 	from joymedia.services.access import portal_access
 
 	access = portal_access()
-	if not access['reviewer']:
-		return {**access, 'enabled': access['role'] != 'unassigned', 'can_open_project': access['role'] != 'unassigned'}
+	if not access["reviewer"]:
+		return {
+			**access,
+			"enabled": access["role"] != "unassigned",
+			"can_open_project": access["role"] != "unassigned",
+		}
 	p = policy(required=False)
 	return {
 		**access,

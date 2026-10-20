@@ -9,7 +9,6 @@ from frappe.tests.utils import FrappeTestCase
 
 from .generation_artifact import GenerationArtifact
 
-
 # On IntegrationTestCase, the doctype test records and all
 # link-field test record dependencies are recursively loaded
 # Use these module variables to add/remove to/from that list
@@ -17,11 +16,8 @@ EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
-
 class TestGenerationArtifact(FrappeTestCase):
-	@patch(
-		"joymedia.joymedia.doctype.generation_artifact.generation_artifact.frappe.db.get_value"
-	)
+	@patch("joymedia.joymedia.doctype.generation_artifact.generation_artifact.frappe.db.get_value")
 	def test_existing_artifact_identity_cannot_change(self, get_value):
 		artifact = frappe._dict(
 			name="GART-00001",

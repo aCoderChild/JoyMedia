@@ -1,5 +1,6 @@
 """Who may read or edit a project's timeline."""
 
+
 def _require_project_read(project):
 	if hasattr(project, "_require_read_access"):
 		project._require_read_access()

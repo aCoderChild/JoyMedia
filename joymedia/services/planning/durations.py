@@ -29,11 +29,19 @@ def rebalance_shot_duration(media_project_name: str, shot_name: str, target_dura
 	ensure_shot_planning_editable(media_project_name)
 	project = frappe.get_doc("Media Project", media_project_name)
 	from joymedia.services.project.context import _project_settings
+
 	settings = _project_settings(project)
 	shots = frappe.get_all(
 		"Shot",
 		filters={"media_project": project.name, "is_removed": 0},
-		fields=["name", "shot_number", "duration_seconds", "source_timing", "source_start_seconds", "source_end_seconds"],
+		fields=[
+			"name",
+			"shot_number",
+			"duration_seconds",
+			"source_timing",
+			"source_start_seconds",
+			"source_end_seconds",
+		],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
@@ -70,7 +78,7 @@ def rebalance_shot_duration(media_project_name: str, shot_name: str, target_dura
 		for index, shot_index in enumerate(other_indexes):
 			planned_frames[shot_index] = planned_other[index]
 
-	for shot, planned_frame_count in zip(shots, planned_frames):
+	for shot, planned_frame_count in zip(shots, planned_frames, strict=False):
 		frappe.db.set_value(
 			"Shot",
 			shot.name,
@@ -95,11 +103,19 @@ def recalculate_shot_durations(media_project_name: str):
 	"""
 	project = frappe.get_doc("Media Project", media_project_name)
 	from joymedia.services.project.context import _project_settings
+
 	settings = _project_settings(project)
 	shots = frappe.get_all(
 		"Shot",
 		filters={"media_project": project.name, "is_removed": 0},
-		fields=["name", "shot_number", "duration_seconds", "source_timing", "source_start_seconds", "source_end_seconds"],
+		fields=[
+			"name",
+			"shot_number",
+			"duration_seconds",
+			"source_timing",
+			"source_start_seconds",
+			"source_end_seconds",
+		],
 		order_by="shot_number asc, name asc",
 	)
 	if not shots:
@@ -117,15 +133,15 @@ def recalculate_shot_durations(media_project_name: str):
 	# represented and resolved deliberately in the timeline.
 	if all(shot.source_timing and shot.source_end_seconds > shot.source_start_seconds for shot in shots):
 		planned_frames = [max(1, round(float(shot.duration_seconds or 0) * fps)) for shot in shots]
-		for shot, planned_frame_count in zip(shots, planned_frames):
-			frappe.db.set_value("Shot", shot.name, {"planned_frame_count": planned_frame_count}, update_modified=False)
+		for shot, planned_frame_count in zip(shots, planned_frames, strict=False):
+			frappe.db.set_value(
+				"Shot", shot.name, {"planned_frame_count": planned_frame_count}, update_modified=False
+			)
 		return {"total_frames": sum(planned_frames), "shots": len(shots), "preserved_source_timing": True}
 
 	total_frames = round(float(settings.total_duration_seconds or 0) * fps)
 	if total_frames < len(shots):
-		frappe.throw(
-			_("Total Duration must provide at least one frame for each Shot.")
-		)
+		frappe.throw(_("Total Duration must provide at least one frame for each Shot."))
 
 	# Preserve an editor-authored timing split when every shot already has a
 	# positive duration. Newly-created storyboards start at zero and therefore
@@ -137,7 +153,9 @@ def recalculate_shot_durations(media_project_name: str):
 			raw_frames = [total_frames * duration / duration_total for duration in existing_durations]
 			planned_frames = [max(1, int(value)) for value in raw_frames]
 			remaining = total_frames - sum(planned_frames)
-			order = sorted(range(len(shots)), key=lambda index: raw_frames[index] - int(raw_frames[index]), reverse=True)
+			order = sorted(
+				range(len(shots)), key=lambda index: raw_frames[index] - int(raw_frames[index]), reverse=True
+			)
 			if remaining > 0:
 				for index in order[:remaining]:
 					planned_frames[index] += 1

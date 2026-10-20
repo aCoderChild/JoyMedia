@@ -5,10 +5,9 @@ import hashlib
 import json
 import subprocess
 
-from PIL import Image
-
 import frappe
 from frappe.model.document import Document
+from PIL import Image
 
 
 class AssetVersion(Document):
@@ -46,14 +45,14 @@ class AssetVersion(Document):
 		self.version_number = (latest_version or 0) + 1
 
 	def validate_immutable_fields(self):
-		previous = frappe.db.get_value(
-			"Asset Version", self.name, list(self.IMMUTABLE_FIELDS), as_dict=True
-		)
+		previous = frappe.db.get_value("Asset Version", self.name, list(self.IMMUTABLE_FIELDS), as_dict=True)
 		if not previous:
 			return
 		for fieldname in self.IMMUTABLE_FIELDS:
 			if self.get(fieldname) != previous.get(fieldname):
-				frappe.throw(f"Asset Version {self.name} is immutable; create a new version instead of changing {fieldname}.")
+				frappe.throw(
+					f"Asset Version {self.name} is immutable; create a new version instead of changing {fieldname}."
+				)
 
 	def set_content_hash(self):
 		if not self.file:

@@ -138,12 +138,18 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 
 	def test_completion_between_history_and_queue_reads_is_ingested_instead_of_retried(self):
 		attempt = self._attempt()
-		history = {"status": {"completed": True}, "outputs": {"save": {"images": [{"filename": "result.png"}]}}}
-		with patch.object(result_ingestor, "get_queue_state", return_value=None), patch.object(
-			result_ingestor, "get_history", return_value={"comfy-1": history}
-		), patch.object(result_ingestor, "_sync_attempt_result", return_value={"status": "Completed"}) as ingest, patch.object(
-			result_ingestor, "_fail_attempt"
-		) as fail:
+		history = {
+			"status": {"completed": True},
+			"outputs": {"save": {"images": [{"filename": "result.png"}]}},
+		}
+		with (
+			patch.object(result_ingestor, "get_queue_state", return_value=None),
+			patch.object(result_ingestor, "get_history", return_value={"comfy-1": history}),
+			patch.object(
+				result_ingestor, "_sync_attempt_result", return_value={"status": "Completed"}
+			) as ingest,
+			patch.object(result_ingestor, "_fail_attempt") as fail,
+		):
 			result = result_ingestor._sync_attempt_without_history(attempt)
 		self.assertEqual({"status": "Completed"}, result)
 		ingest.assert_called_once_with(attempt.name, history=history)
@@ -190,10 +196,11 @@ class IntegrationTestFailureCascade(IntegrationTestCase):
 	def _fail(self, failure_class, prior_retries):
 		attempt = MagicMock(generation_task="TASK-1", name="ATT-1")
 		attempt.name = "ATT-1"
-		with patch.object(result_ingestor.frappe.db, "count", return_value=prior_retries), patch.object(
-			result_ingestor.frappe, "get_all", return_value=["TASK-2"]
-		), patch.object(result_ingestor.frappe.db, "set_value") as set_value, patch.object(
-			result_ingestor, "_refresh_parent_execution_state"
+		with (
+			patch.object(result_ingestor.frappe.db, "count", return_value=prior_retries),
+			patch.object(result_ingestor.frappe, "get_all", return_value=["TASK-2"]),
+			patch.object(result_ingestor.frappe.db, "set_value") as set_value,
+			patch.object(result_ingestor, "_refresh_parent_execution_state"),
 		):
 			result_ingestor._fail_attempt(attempt, "x", "x", failure_class)
 		return set_value

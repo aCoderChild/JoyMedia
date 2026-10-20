@@ -20,7 +20,7 @@ def _migrate_global_instructions():
 	]
 	if not old_fields:
 		return
-	columns = ", ".join(["name", "global_instructions"] + old_fields)
+	columns = ", ".join(["name", "global_instructions", *old_fields])
 	for row in frappe.db.sql(f"SELECT {columns} FROM `tabMedia Specification`", as_dict=True):
 		parts = []
 		for value in [row.global_instructions] + [row.get(fieldname) for fieldname in old_fields]:
@@ -29,7 +29,11 @@ def _migrate_global_instructions():
 				parts.append(text)
 		if parts:
 			frappe.db.set_value(
-				"Media Specification", row.name, "global_instructions", "\n\n".join(parts), update_modified=False
+				"Media Specification",
+				row.name,
+				"global_instructions",
+				"\n\n".join(parts),
+				update_modified=False,
 			)
 
 

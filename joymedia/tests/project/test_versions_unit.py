@@ -83,17 +83,45 @@ class TestVersionCards(TestCase):
 
 class TestExportFreshness(TestCase):
 	def test_legacy_export_has_no_invented_freshness(self):
-		self.assertIsNone(versions.exported_edit_is_outdated(row('project'), None))
+		self.assertIsNone(versions.exported_edit_is_outdated(row("project"), None))
 
 	def test_fresh_export_does_not_inherit_an_old_generation_runs_outdated_flag(self):
-		project=row('project')
-		manifest={'timeline_signature':'same','project_state':{'product_name':'Same product'},'selected_takes':[]}
-		with patch('joymedia.services.editing.post_production.timeline_signature',return_value='same'):
-			self.assertFalse(versions.exported_edit_is_outdated(project,manifest))
-			project.product_name='New product'
-			self.assertTrue(versions.exported_edit_is_outdated(project,manifest))
+		project = row("project")
+		manifest = {
+			"timeline_signature": "same",
+			"project_state": {"product_name": "Same product"},
+			"selected_takes": [],
+		}
+		with patch("joymedia.services.editing.post_production.timeline_signature", return_value="same"):
+			self.assertFalse(versions.exported_edit_is_outdated(project, manifest))
+			project.product_name = "New product"
+			self.assertTrue(versions.exported_edit_is_outdated(project, manifest))
 
 	def test_changing_the_direction_invalidates_the_export_even_when_the_take_is_unchanged(self):
-		manifest={'timeline_signature':'same','project_state':{},'selected_takes':[{'name':'s','selected_output_asset_version':'take','image_prompt':'old','generation_prompt':'old','motion_plan_json':None}]}
-		with patch('joymedia.services.editing.post_production.timeline_signature',return_value='same'), patch.object(frappe.db,'get_value',return_value=frappe._dict(selected_output_asset_version='take',image_prompt='new',generation_prompt='old',motion_plan_json=None)):
-			self.assertTrue(versions.exported_edit_is_outdated(row('project'),manifest))
+		manifest = {
+			"timeline_signature": "same",
+			"project_state": {},
+			"selected_takes": [
+				{
+					"name": "s",
+					"selected_output_asset_version": "take",
+					"image_prompt": "old",
+					"generation_prompt": "old",
+					"motion_plan_json": None,
+				}
+			],
+		}
+		with (
+			patch("joymedia.services.editing.post_production.timeline_signature", return_value="same"),
+			patch.object(
+				frappe.db,
+				"get_value",
+				return_value=frappe._dict(
+					selected_output_asset_version="take",
+					image_prompt="new",
+					generation_prompt="old",
+					motion_plan_json=None,
+				),
+			),
+		):
+			self.assertTrue(versions.exported_edit_is_outdated(row("project"), manifest))

@@ -32,7 +32,7 @@ def execute():
 		counter = 2
 		while key in used:
 			suffix = f"_{counter}"
-			key = f"{base[:100 - len(suffix)]}{suffix}"
+			key = f"{base[: 100 - len(suffix)]}{suffix}"
 			counter += 1
 		frappe.db.set_value("Project Reference", row.name, "reference_key", key, update_modified=False)
 		used.add(key)

@@ -54,7 +54,9 @@ def sync_attempt_result(attempt_name):
 def _sync_attempt_result(attempt_name, *, history=None):
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	workflow = _attempt_workflow(attempt)
-	primary = get_attempt_artifact(attempt.name, workflow.primary_artifact_role if workflow else "Primary Video")
+	primary = get_attempt_artifact(
+		attempt.name, workflow.primary_artifact_role if workflow else "Primary Video"
+	)
 	if attempt.status == "Completed" and primary:
 		artifact = primary
 		_store_artifact_file_in_frappe(artifact, attempt)
@@ -91,20 +93,28 @@ def _sync_attempt_result(attempt_name, *, history=None):
 		return {"status": attempt.status}
 
 	workflow = _attempt_workflow(attempt)
-	preferred_nodes = [str(workflow.primary_output_node_key)] if workflow and workflow.primary_output_node_key else None
+	preferred_nodes = (
+		[str(workflow.primary_output_node_key)] if workflow and workflow.primary_output_node_key else None
+	)
 	output = _find_primary_output(history, workflow, preferred_node_keys=preferred_nodes)
 	if not output:
 		output_label = "MP4" if not workflow or workflow.output_media_type == "Video" else "primary output"
 		_log_sync_failure(attempt, "returned no usable %s: %s", output_label, history.get("outputs"))
 		return _fail_attempt(
-			attempt, _("ComfyUI completed but returned no usable {0}.").format(output_label), None, "Generation"
+			attempt,
+			_("ComfyUI completed but returned no usable {0}.").format(output_label),
+			None,
+			"Generation",
 		)
 
 	from joymedia.services.consistency.retention import RetentionRejected
+
 	try:
 		artifact, last_frame_artifact = _ingest_completed_output(attempt, history, output)
 	except RetentionRejected as exc:
-		return _fail_attempt(attempt, "The product reference needs attention before this scene can be used.", str(exc), "Input")
+		return _fail_attempt(
+			attempt, "The product reference needs attention before this scene can be used.", str(exc), "Input"
+		)
 	except ValueError as exc:
 		return _fail_attempt(attempt, "Visual admission rejected", str(exc), "Input")
 	except UnusableComfyUIOutput as exc:
@@ -130,7 +140,11 @@ def _sync_attempt_without_history(attempt):
 		latest = latest.get(attempt.external_job_id, latest)
 		if latest:
 			return _sync_attempt_result(attempt.name, history=latest)
-		job = frappe.get_doc("Generation Task", attempt.generation_task) if attempt.get("generation_task") else None
+		job = (
+			frappe.get_doc("Generation Task", attempt.generation_task)
+			if attempt.get("generation_task")
+			else None
+		)
 		output_filename = f"{job.name}_{attempt.name}_00001_.mp4" if job else None
 		if output_filename and probe_output(output_filename, base_url=attempt.comfyui_endpoint_url):
 			history = {
@@ -138,9 +152,13 @@ def _sync_attempt_without_history(attempt):
 				"outputs": {"joymedia_probe": {"images": [{"filename": output_filename, "type": "output"}]}},
 			}
 			try:
-				artifact, last_frame_artifact = _ingest_completed_output(attempt, history, history["outputs"]["joymedia_probe"]["images"][0])
+				artifact, last_frame_artifact = _ingest_completed_output(
+					attempt, history, history["outputs"]["joymedia_probe"]["images"][0]
+				)
 			except UnusableComfyUIOutput as exc:
-				return _fail_attempt(attempt, "ComfyUI output could not be processed.", str(exc), "Generation")
+				return _fail_attempt(
+					attempt, "ComfyUI output could not be processed.", str(exc), "Generation"
+				)
 			return _complete_attempt(attempt, history, artifact, last_frame_artifact)
 		_log_sync_failure(attempt, "is missing from ComfyUI /history and /queue")
 		return _fail_attempt(
@@ -184,6 +202,7 @@ def _will_retry_automatically(attempt):
 
 def _fail_attempt(attempt, error_summary, error_details, failure_class):
 	from joymedia.services.generation.failures import classify_failure, friendly_failure, technical_message
+
 	# ComfyUI often reports an authentication or node setup error as a generic
 	# execution failure. Preserve the actionable cause for orchestration and the
 	# studio instead of retrying it as if the GPU were merely busy.
@@ -261,8 +280,7 @@ def _complete_attempt(attempt, history, artifact, last_frame_artifact):
 	if review and review.get("status") != "Passed" and not review.get("review_only"):
 		from joymedia.services.review.admission import quality_retry
 
-		return _fail_attempt(attempt, REJECTED, REJECTED,
-			"Generation" if quality_retry(attempt) else "Input")
+		return _fail_attempt(attempt, REJECTED, REJECTED, "Generation" if quality_retry(attempt) else "Input")
 	attempt.status = "Completed"
 	if not attempt.started_at:
 		attempt.started_at = _execution_timestamp(history, "execution_start") or now()
@@ -278,6 +296,7 @@ def _complete_attempt(attempt, history, artifact, last_frame_artifact):
 		"output_artifact": artifact.name,
 		"last_frame_artifact": last_frame_artifact.name if last_frame_artifact else None,
 	}
+
 
 def _find_last_frame_image(history, workflow=None):
 	node_key = "save_last_frame"
@@ -442,6 +461,7 @@ def _store_artifact_file_in_frappe(artifact, attempt, output=None):
 	artifact.save(ignore_permissions=True)
 	if precheck:
 		from joymedia.services.review.admission import store_report
+
 		store_report(attempt, artifact, precheck)
 	return artifact
 
@@ -493,6 +513,7 @@ def _find_output_by_extensions(history, extensions, preferred_node_keys=None):
 def _attempt_workflow(attempt):
 	workflow_name = (
 		frappe.db.get_value("Generation Task", attempt.generation_task, "workflow")
-		if getattr(attempt, "generation_task", None) else None
+		if getattr(attempt, "generation_task", None)
+		else None
 	)
 	return frappe.get_doc("Generation Workflow", workflow_name) if workflow_name else None

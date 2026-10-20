@@ -9,7 +9,7 @@ from joymedia.services.review.release import release_evidence
 
 class TestReleaseEvidence(TestCase):
 	def setUp(self):
-		guard = patch('joymedia.services.review.release_feedback.unresolved_cut_feedback', return_value=[])
+		guard = patch("joymedia.services.review.release_feedback.unresolved_cut_feedback", return_value=[])
 		self.cut_feedback = guard.start()
 		self.addCleanup(guard.stop)
 		self.references = [frappe._dict(reference_role="Product", asset_version="SOURCE")]
@@ -24,7 +24,7 @@ class TestReleaseEvidence(TestCase):
 
 	def run_guard(self, clips=None, open_comments=False):
 		with (
-			patch('joymedia.services.review.lineage.take_direction_changed', return_value=False),
+			patch("joymedia.services.review.lineage.take_direction_changed", return_value=False),
 			patch.object(frappe.db, "sql", side_effect=[[self.shot], self.references]),
 			patch.object(frappe.db, "exists", return_value=open_comments),
 		):
@@ -58,23 +58,25 @@ class TestReleaseEvidence(TestCase):
 
 	def test_unresolved_frame_feedback_blocks_the_exact_scene_take(self):
 		with (
-			patch('joymedia.services.review.lineage.take_direction_changed', return_value=False),
-			patch.object(frappe.db, 'sql', side_effect=[[self.shot], self.references]),
-			patch.object(frappe.db, 'exists', side_effect=lambda doctype, filters: doctype == 'Video Review Feedback'),
+			patch("joymedia.services.review.lineage.take_direction_changed", return_value=False),
+			patch.object(frappe.db, "sql", side_effect=[[self.shot], self.references]),
+			patch.object(
+				frappe.db, "exists", side_effect=lambda doctype, filters: doctype == "Video Review Feedback"
+			),
 		):
-			with self.assertRaisesRegex(ValueError, 'unresolved frame or timeline feedback'):
-				release_evidence('PROJECT', [self.clip])
+			with self.assertRaisesRegex(ValueError, "unresolved frame or timeline feedback"):
+				release_evidence("PROJECT", [self.clip])
 
 	def test_a_new_direction_cannot_be_released_with_old_footage(self):
 		with (
-			patch('joymedia.services.review.lineage.take_direction_changed', return_value=True),
-			patch.object(frappe.db, 'sql', side_effect=[[self.shot], self.references]),
-			patch.object(frappe.db, 'exists', return_value=False),
+			patch("joymedia.services.review.lineage.take_direction_changed", return_value=True),
+			patch.object(frappe.db, "sql", side_effect=[[self.shot], self.references]),
+			patch.object(frappe.db, "exists", return_value=False),
 		):
-			with self.assertRaisesRegex(ValueError, 'earlier direction'):
-				release_evidence('PROJECT', [self.clip])
+			with self.assertRaisesRegex(ValueError, "earlier direction"):
+				release_evidence("PROJECT", [self.clip])
 
 	def test_full_cut_findings_are_not_bypassed_by_reexport(self):
-		self.cut_feedback.return_value = ['FINDING']
-		with self.assertRaisesRegex(ValueError, 'Full-video feedback still needs review'):
+		self.cut_feedback.return_value = ["FINDING"]
+		with self.assertRaisesRegex(ValueError, "Full-video feedback still needs review"):
 			self.run_guard()

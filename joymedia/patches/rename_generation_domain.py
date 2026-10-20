@@ -1,6 +1,5 @@
 import frappe
 
-
 RENAMES = (
 	("Shot Specification", "Shot", {"media_specification": "media_project"}),
 	("Shot Input Mapping", "Shot Reference", {"input_role": "reference_role"}),
@@ -58,8 +57,7 @@ def _copy_rows(old_doctype, new_doctype, field_mapping):
 	columns_sql = ", ".join(f"`{column}`" for column in columns)
 	new_columns_sql = ", ".join(f"`{column}`" for column in new_names)
 	frappe.db.sql(
-		f"INSERT INTO `tab{new_doctype}` ({new_columns_sql}) "
-		f"SELECT {columns_sql} FROM `tab{old_doctype}`"
+		f"INSERT INTO `tab{new_doctype}` ({new_columns_sql}) SELECT {columns_sql} FROM `tab{old_doctype}`"
 	)
 
 

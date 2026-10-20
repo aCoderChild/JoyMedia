@@ -80,7 +80,7 @@ def named_reference_views(rows, names):
 		value(row, "reference_key")
 		for row in rows or []
 		if value(row, "reference_key")
-		and wanted.intersection({
-			normalize(str(value(row, "label")).split(" (", 1)[0]), normalize(value(row, "reference_key"))
-		})
+		and wanted.intersection(
+			{normalize(str(value(row, "label")).split(" (", 1)[0]), normalize(value(row, "reference_key"))}
+		)
 	]

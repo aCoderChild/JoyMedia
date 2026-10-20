@@ -4,26 +4,54 @@ from unittest import TestCase
 
 from joymedia.services.review.temporal import MAX_SAMPLES, SequenceCheck, claims_for, evaluate, sample_times
 
-PLAN = {"scene_contract": {"version": 1, "entities": [{"id": "a", "label": "the actor"}, {"id": "b", "label": "the object"}],
-	"relations": [{"kind": "contacts", "subject": "a", "object": "b"}], "events": [
-		{"id": "cause", "description": "The actor contacts the object", "start": 0, "end": 1, "after": []},
-		{"id": "effect", "description": "The object moves", "start": 1, "end": 3, "after": ["cause"]}]}}
+PLAN = {
+	"scene_contract": {
+		"version": 1,
+		"entities": [{"id": "a", "label": "the actor"}, {"id": "b", "label": "the object"}],
+		"relations": [{"kind": "contacts", "subject": "a", "object": "b"}],
+		"events": [
+			{
+				"id": "cause",
+				"description": "The actor contacts the object",
+				"start": 0,
+				"end": 1,
+				"after": [],
+			},
+			{"id": "effect", "description": "The object moves", "start": 1, "end": 3, "after": ["cause"]},
+		],
+	}
+}
 
 
 class TestTemporalEvidence(TestCase):
 	def check(self):
 		claims = claims_for(PLAN, 3, "Contact then move")
-		return SequenceCheck([], [{"index": i, "time": t} for i, t in enumerate([0, .5, 1.5, 2.9])], claims, {"asset_version": "TAKE"})
+		return SequenceCheck(
+			[],
+			[{"index": i, "time": t} for i, t in enumerate([0, 0.5, 1.5, 2.9])],
+			claims,
+			{"asset_version": "TAKE"},
+		)
 
 	def answers(self, check):
-		return {"observations": [{"id": row["id"], "verdict": "supported", "frames": [1, 2], "reason": "Visible contact followed by movement"} for row in check.claims]}
+		return {
+			"observations": [
+				{
+					"id": row["id"],
+					"verdict": "supported",
+					"frames": [1, 2],
+					"reason": "Visible contact followed by movement",
+				}
+				for row in check.claims
+			]
+		}
 
 	def test_sampling_preserves_start_end_event_anchors_and_budget(self):
 		times = sample_times(3, 24, PLAN)
 		self.assertEqual(times, sorted(set(times)))
 		self.assertEqual(times[0], 0)
 		self.assertAlmostEqual(times[-1], 71 / 24)
-		self.assertIn(.5, times)
+		self.assertIn(0.5, times)
 		self.assertIn(1, times)
 		self.assertLessEqual(len(times), MAX_SAMPLES)
 		for fps in [1, 23.976, 24, 60]:
@@ -65,7 +93,9 @@ class TestTemporalEvidence(TestCase):
 		check = self.check()
 		for frames in [[1], [2, 1], [1, 1]]:
 			answer = self.answers(check)
-			next(row for row in answer["observations"] if row["id"].startswith("order.")).update(frames=frames)
+			next(row for row in answer["observations"] if row["id"].startswith("order.")).update(
+				frames=frames
+			)
 			self.assertEqual(evaluate(check, answer)["status"], "Needs Review")
 
 	def test_late_event_evidence_is_reported_as_timing_instead_of_physics_failure(self):
@@ -79,7 +109,9 @@ class TestTemporalEvidence(TestCase):
 	def test_uncertainty_is_preserved_without_invented_probability(self):
 		check = self.check()
 		answer = self.answers(check)
-		answer["observations"][0].update(verdict="uncertain", frames=[], reason="Interaction occurs between sampled frames")
+		answer["observations"][0].update(
+			verdict="uncertain", frames=[], reason="Interaction occurs between sampled frames"
+		)
 		report = evaluate(check, answer)
 		self.assertEqual(report["results"][0]["verdict"], "uncertain")
 		self.assertNotIn("score", report)
@@ -87,6 +119,7 @@ class TestTemporalEvidence(TestCase):
 
 	def test_batched_requests_cover_all_samples_and_use_bounded_claims(self):
 		from joymedia.services.review.temporal import batches
+
 		check = self.check()
 		check.metadata = [{"index": i, "time": i * 2.9 / 15} for i in range(16)]
 		requests = list(batches(check))
@@ -102,6 +135,7 @@ class TestTemporalEvidence(TestCase):
 
 	def test_one_bad_or_uncertain_window_overrides_other_supported_windows(self):
 		from joymedia.services.review.temporal import merge_observations
+
 		check = self.check()
 		good = evaluate(check, self.answers(check))
 		answer = self.answers(check)
@@ -120,10 +154,13 @@ class TestTemporalEvidence(TestCase):
 
 	def test_occurrence_is_not_required_before_it_starts_but_a_violation_still_wins(self):
 		from joymedia.services.review.temporal import merge_observations
+
 		check = self.check()
 		good = evaluate(check, self.answers(check))
 		answer = self.answers(check)
-		answer["observations"][0].update(verdict="uncertain", frames=[], reason="Action has not started in this window")
+		answer["observations"][0].update(
+			verdict="uncertain", frames=[], reason="Action has not started in this window"
+		)
 		unclear = evaluate(check, answer)
 		self.assertEqual(merge_observations(check, [unclear, good])["results"][0]["verdict"], "supported")
 		answer["observations"][1].update(verdict="uncertain", frames=[], reason="Subject is obscured")
@@ -150,6 +187,7 @@ class TestTemporalEvidence(TestCase):
 			data = io.BytesIO()
 			image.save(data, "PNG")
 			return data.getvalue()
+
 		self.assertEqual(compare_opening(picture(10), picture(10))["verdict"], "supported")
 		opening = compare_opening(picture(10), picture(70))
 		self.assertEqual(opening["verdict"], "violated")
@@ -159,22 +197,34 @@ class TestTemporalEvidence(TestCase):
 		self.assertEqual(report["status"], "Needs Review")
 		self.assertEqual(report["results"][0]["id"], "opening.condition")
 
+
 class TestWindowCoverage(TestCase):
- def test_trailing_window_is_not_rejudged_as_contextless_single_frame(self):
-  from joymedia.services.scene.evidence import batches,SequenceCheck
-  for count in range(1,17):
-   check=SequenceCheck([], [dict(index=i,time=i) for i in range(count)], [dict(id='paw',dimension='staging',claim='Connected rounded paw')], {})
-   windows=[indices for indices,claims in batches(check)]
-   self.assertEqual(set(range(count)),{i for w in windows for i in w})
-   self.assertFalse(any(set(w)<set(other) for w in windows for other in windows))
+	def test_trailing_window_is_not_rejudged_as_contextless_single_frame(self):
+		from joymedia.services.scene.evidence import SequenceCheck, batches
+
+		for count in range(1, 17):
+			check = SequenceCheck(
+				[],
+				[dict(index=i, time=i) for i in range(count)],
+				[dict(id="paw", dimension="staging", claim="Connected rounded paw")],
+				{},
+			)
+			windows = [indices for indices, claims in batches(check)]
+			self.assertEqual(set(range(count)), {i for w in windows for i in w})
+			self.assertFalse(any(set(w) < set(other) for w in windows for other in windows))
+
 
 class TestStreamFrameSampling(TestCase):
- def test_rounded_container_duration_cannot_request_a_nonexistent_frame(self):
-  from joymedia.services.scene.evidence import sample_times
-  for duration in [5.166667,5.1666666667]:
-   self.assertLessEqual(max(sample_times(duration,24)),123/24)
-   self.assertLessEqual(max(sample_times(duration,24,frame_count=124)),123/24)
- def test_an_authoritative_stream_count_handles_fractional_rates(self):
-  from joymedia.services.scene.evidence import sample_times
-  fps=30000/1001;times=sample_times(4.171,fps,frame_count=125)
-  self.assertEqual(124,round(max(times)*fps))
+	def test_rounded_container_duration_cannot_request_a_nonexistent_frame(self):
+		from joymedia.services.scene.evidence import sample_times
+
+		for duration in [5.166667, 5.1666666667]:
+			self.assertLessEqual(max(sample_times(duration, 24)), 123 / 24)
+			self.assertLessEqual(max(sample_times(duration, 24, frame_count=124)), 123 / 24)
+
+	def test_an_authoritative_stream_count_handles_fractional_rates(self):
+		from joymedia.services.scene.evidence import sample_times
+
+		fps = 30000 / 1001
+		times = sample_times(4.171, fps, frame_count=125)
+		self.assertEqual(124, round(max(times) * fps))

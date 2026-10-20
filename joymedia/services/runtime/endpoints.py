@@ -26,7 +26,12 @@ from frappe import _
 
 DEFAULT_TIMEOUTS = {"planner": 600, "vision": 120, "translator": 300}
 _LEGACY_KEYS = {
-	"planner": {"base_url": "qwen_base_url", "model": "qwen_model", "timeout": "qwen_timeout", "max_model_len": "qwen_max_model_len"},
+	"planner": {
+		"base_url": "qwen_base_url",
+		"model": "qwen_model",
+		"timeout": "qwen_timeout",
+		"max_model_len": "qwen_max_model_len",
+	},
 	"vision": {"base_url": "qwen_vl_base_url", "model": "qwen_vl_model", "timeout": "qwen_vl_timeout"},
 	"translator": {},
 }
@@ -70,9 +75,13 @@ def endpoint(capability: str) -> frappe._dict:
 	try:
 		timeout = float(values.get("timeout") or DEFAULT_TIMEOUTS[capability])
 	except (TypeError, ValueError):
-		frappe.throw(_("JoyMedia {0} endpoint timeout must be a positive number of seconds.").format(capability))
+		frappe.throw(
+			_("JoyMedia {0} endpoint timeout must be a positive number of seconds.").format(capability)
+		)
 	if not math.isfinite(timeout) or timeout <= 0:
-		frappe.throw(_("JoyMedia {0} endpoint timeout must be a positive number of seconds.").format(capability))
+		frappe.throw(
+			_("JoyMedia {0} endpoint timeout must be a positive number of seconds.").format(capability)
+		)
 	values.update(base_url=base_url, model=model, timeout=timeout)
 	return frappe._dict(values)
 
@@ -95,7 +104,12 @@ def structured_response(configured, schema, name):
 		raise ValueError("structured_output must be an object.")
 	transport = options.get("transport", "response_format")
 	if transport == "response_format":
-		return {"response_format": {"type": "json_schema", "json_schema": {"name": name, "strict": True, "schema": schema}}}
+		return {
+			"response_format": {
+				"type": "json_schema",
+				"json_schema": {"name": name, "strict": True, "schema": schema},
+			}
+		}
 	if transport == "structured_outputs":
 		compact = options.get("compact", True)
 		if type(compact) is not bool:

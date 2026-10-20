@@ -235,7 +235,9 @@ def _row(doc):
 
 
 @frappe.whitelist()
-def get_feedback(project_name, asset_version, start=0, page_length=30, focused_name=None, include_closed=True):
+def get_feedback(
+	project_name, asset_version, start=0, page_length=30, focused_name=None, include_closed=True
+):
 	_root, _asset, version, _shot, fps, limit = target(project_name, asset_version)
 	try:
 		start, page_length = max(0, int(start)), min(100, max(1, int(page_length)))
@@ -258,7 +260,9 @@ def get_feedback(project_name, asset_version, start=0, page_length=30, focused_n
 		fields=["*"],
 	)
 	focused = (
-		frappe.db.get_value("Video Review Feedback", {**focused_filters, "name": focused_name}, "*", as_dict=True)
+		frappe.db.get_value(
+			"Video Review Feedback", {**focused_filters, "name": focused_name}, "*", as_dict=True
+		)
 		if focused_name
 		else None
 	)

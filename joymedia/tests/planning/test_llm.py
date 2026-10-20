@@ -12,7 +12,13 @@ class TestQwenClient(FrappeTestCase):
 	def test_shot_revision_preserves_separate_image_and_video_prompts(self, post, _config):
 		response = MagicMock(ok=True)
 		response.json.return_value = {
-			"choices": [{"message": {"content": '{"summary":"Aligned.","changes":[],"generation_prompt":"A woman presents a ceramic plate in an elegant restaurant.","image_prompt":"A woman holding a ceramic plate in an elegant restaurant."}'}}]
+			"choices": [
+				{
+					"message": {
+						"content": '{"summary":"Aligned.","changes":[],"generation_prompt":"A woman presents a ceramic plate in an elegant restaurant.","image_prompt":"A woman holding a ceramic plate in an elegant restaurant."}'
+					}
+				}
+			]
 		}
 		post.return_value = response
 		shot = frappe._dict(
@@ -34,13 +40,15 @@ class TestQwenClient(FrappeTestCase):
 		self.assertIn("separate motion-aware video prompt", request_text)
 
 	def test_equal_image_and_shot_counts_assign_images_in_order_for_single_image_workflows(self):
-		contract = [{
-			"role": "first_frame",
-			"min_count": 1,
-			"max_count": 1,
-			"accepted_media_type": "Image",
-			"allow_multiple": False,
-		}]
+		contract = [
+			{
+				"role": "first_frame",
+				"min_count": 1,
+				"max_count": 1,
+				"accepted_media_type": "Image",
+				"allow_multiple": False,
+			}
+		]
 		plan = _normalize_qwen_plan(
 			{
 				"shots": [
@@ -71,21 +79,25 @@ class TestQwenClient(FrappeTestCase):
 		)
 
 	def test_multi_reference_workflow_fills_missing_r2v_slots_from_selected_pool(self):
-		contract = [{
-			"role": "product_reference",
-			"min_count": 2,
-			"max_count": 2,
-			"accepted_media_type": "Image",
-			"allow_multiple": True,
-		}]
+		contract = [
+			{
+				"role": "product_reference",
+				"min_count": 2,
+				"max_count": 2,
+				"accepted_media_type": "Image",
+				"allow_multiple": True,
+			}
+		]
 		plan = _normalize_qwen_plan(
 			{
-				"shots": [{
-					"shot_number": 2,
-					"generation_prompt": "Show the product.",
-					"duration_seconds": 5,
-					"references": [{"reference_key": "dress", "usage_role": "product_reference"}],
-				}],
+				"shots": [
+					{
+						"shot_number": 2,
+						"generation_prompt": "Show the product.",
+						"duration_seconds": 5,
+						"references": [{"reference_key": "dress", "usage_role": "product_reference"}],
+					}
+				],
 			},
 			reference_images=[{"reference_key": "dress"}, {"reference_key": "model"}],
 			workflow_input_contract=contract,
@@ -101,20 +113,24 @@ class TestQwenClient(FrappeTestCase):
 		)
 
 	def test_repeated_scalar_reference_slots_fill_from_selected_pool(self):
-		contract = [{
-			"role": "product_reference",
-			"min_count": 2,
-			"max_count": 2,
-			"accepted_media_type": "Image",
-			"allow_multiple": False,
-		}]
+		contract = [
+			{
+				"role": "product_reference",
+				"min_count": 2,
+				"max_count": 2,
+				"accepted_media_type": "Image",
+				"allow_multiple": False,
+			}
+		]
 		plan = _normalize_qwen_plan(
 			{
-				"shots": [{
-					"generation_prompt": "Show the product with the model.",
-					"duration_seconds": 5,
-					"references": [{"reference_key": "dress", "usage_role": "product_reference"}],
-				}],
+				"shots": [
+					{
+						"generation_prompt": "Show the product with the model.",
+						"duration_seconds": 5,
+						"references": [{"reference_key": "dress", "usage_role": "product_reference"}],
+					}
+				],
 			},
 			reference_images=[{"reference_key": "dress"}, {"reference_key": "model"}],
 			workflow_input_contract=contract,
@@ -130,29 +146,34 @@ class TestQwenClient(FrappeTestCase):
 		)
 
 	def test_pipeline_reference_role_preserves_multiple_references_for_keyframe_stage(self):
-		contract = [{
-			"role": "keyframe_reference",
-			"min_count": 1,
-			"max_count": 0,
-			"accepted_media_type": "Image",
-			"allow_multiple": True,
-		}]
+		contract = [
+			{
+				"role": "keyframe_reference",
+				"min_count": 1,
+				"max_count": 0,
+				"accepted_media_type": "Image",
+				"allow_multiple": True,
+			}
+		]
 		plan = _normalize_qwen_plan(
 			{
-				"shots": [{
-					"generation_prompt": "Show the product.",
-					"duration_seconds": 5,
-					"references": [
-						{"reference_key": "talent", "usage_role": "keyframe_reference"},
-						{"reference_key": "product", "usage_role": "keyframe_reference"},
-					],
-				}],
+				"shots": [
+					{
+						"generation_prompt": "Show the product.",
+						"duration_seconds": 5,
+						"references": [
+							{"reference_key": "talent", "usage_role": "keyframe_reference"},
+							{"reference_key": "product", "usage_role": "keyframe_reference"},
+						],
+					}
+				],
 			},
 			workflow_input_contract=contract,
 		)
 
 		_validate_video_plan(plan, workflow_input_contract=contract)
 		self.assertEqual(2, len(plan["shots"][0]["references"]))
+
 	def test_equal_image_and_shot_counts_use_equal_total_duration(self):
 		plan = _normalize_qwen_plan(
 			{
@@ -237,13 +258,15 @@ class TestQwenClient(FrappeTestCase):
 		self.assertNotIn("reference_image_index", plan["shots"][1])
 
 	def test_continuous_mode_requires_static_first_frame_only_for_shot_one(self):
-		contract = [{
-			"role": "first_frame",
-			"min_count": 1,
-			"max_count": 1,
-			"accepted_media_type": "Image",
-			"allow_multiple": False,
-		}]
+		contract = [
+			{
+				"role": "first_frame",
+				"min_count": 1,
+				"max_count": 1,
+				"accepted_media_type": "Image",
+				"allow_multiple": False,
+			}
+		]
 		plan = _normalize_qwen_plan(
 			{
 				"shots": [
@@ -269,16 +292,18 @@ class TestQwenClient(FrappeTestCase):
 	def test_semantic_shot_reference_usage_is_preserved(self):
 		plan = _normalize_qwen_plan(
 			{
-				"shots": [{
-					"shot_number": 1,
-					"shot_name": "Hero reveal",
-					"generation_prompt": "Reveal the product.",
-					"duration_seconds": 5,
-					"references": [
-						{"reference_key": "hero_product", "usage_role": "product_reference"},
-						{"reference_key": "hero_product_side", "usage_role": "product_reference"},
-					],
-				}],
+				"shots": [
+					{
+						"shot_number": 1,
+						"shot_name": "Hero reveal",
+						"generation_prompt": "Reveal the product.",
+						"duration_seconds": 5,
+						"references": [
+							{"reference_key": "hero_product", "usage_role": "product_reference"},
+							{"reference_key": "hero_product_side", "usage_role": "product_reference"},
+						],
+					}
+				],
 			}
 		)
 		_validate_video_plan(plan)
@@ -286,32 +311,40 @@ class TestQwenClient(FrappeTestCase):
 		self.assertEqual(plan["shots"][0]["references"][1]["usage_role"], "product_reference")
 
 	def test_workflow_contract_rejects_unsupported_or_repeated_roles(self):
-		contract = [{
-			"role": "product_reference",
-			"value_type": "File Path",
-			"required": False,
-			"accepted_media_type": "Image",
-			"allow_multiple": False,
-		}]
-		plan = _normalize_qwen_plan({
-			"shots": [{
-				"shot_number": 1,
-				"generation_prompt": "Show the product.",
-				"duration_seconds": 2,
-				"references": [
-					{"reference_key": "one", "usage_role": "product_reference"},
-					{"reference_key": "two", "usage_role": "product_reference"},
+		contract = [
+			{
+				"role": "product_reference",
+				"value_type": "File Path",
+				"required": False,
+				"accepted_media_type": "Image",
+				"allow_multiple": False,
+			}
+		]
+		plan = _normalize_qwen_plan(
+			{
+				"shots": [
+					{
+						"shot_number": 1,
+						"generation_prompt": "Show the product.",
+						"duration_seconds": 2,
+						"references": [
+							{"reference_key": "one", "usage_role": "product_reference"},
+							{"reference_key": "two", "usage_role": "product_reference"},
+						],
+					}
 				],
-			}],
-		})
+			}
+		)
 		with self.assertRaises(frappe.ValidationError):
 			_validate_video_plan(plan, workflow_input_contract=contract)
 
 	def test_validation_rescales_multi_shot_durations_to_total(self):
-		result = {"shots": [
-			{"shot_number": 1, "generation_prompt": "Exterior.", "duration_seconds": 2},
-			{"shot_number": 2, "generation_prompt": "Pool.", "duration_seconds": 6},
-		]}
+		result = {
+			"shots": [
+				{"shot_number": 1, "generation_prompt": "Exterior.", "duration_seconds": 2},
+				{"shot_number": 2, "generation_prompt": "Pool.", "duration_seconds": 6},
+			]
+		}
 
 		_validate_video_plan(result, generation_mode="Multi-shot", total_video_duration=16)
 

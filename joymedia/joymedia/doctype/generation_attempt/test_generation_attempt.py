@@ -3,11 +3,12 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from joymedia.services.generation.runner import submit_attempt
+
 from .generation_attempt import (
 	GenerationAttempt,
 	create_retry_attempt,
 )
-from joymedia.services.generation.runner import submit_attempt
 
 
 class TestGenerationAttempt(FrappeTestCase):
@@ -59,21 +60,15 @@ class TestGenerationAttempt(FrappeTestCase):
 		)
 
 	def test_create_retry_attempt_creates_a_pending_successor(self):
-		failed_attempt = frappe._dict(
-			name="ATT-00001", status="Failed", generation_task="JOB-00001", seed=42
-		)
+		failed_attempt = frappe._dict(name="ATT-00001", status="Failed", generation_task="JOB-00001", seed=42)
 		job = frappe._dict(name="JOB-00001", status="Failed")
 		job.save = MagicMock()
 		retry_attempt = MagicMock()
 		retry_attempt.insert.return_value = retry_attempt
 
 		with (
-			patch(
-				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.has_permission"
-			),
-			patch(
-				"joymedia.joymedia.doctype.generation_attempt.generation_attempt._validate_retry_reason"
-			),
+			patch("joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.has_permission"),
+			patch("joymedia.joymedia.doctype.generation_attempt.generation_attempt._validate_retry_reason"),
 			patch(
 				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.get_doc",
 				side_effect=[failed_attempt, job, retry_attempt],

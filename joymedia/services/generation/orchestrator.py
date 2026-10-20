@@ -117,7 +117,6 @@ def validate_run_preflight(run, project):
 	validate_generation_preflight(project, workflow, shots, **preflight_kwargs)
 
 
-
 def submit_run(run_name: str):
 	"""Create and submit outstanding attempts for prepared Jobs in this run."""
 	# This lock and the database count form the single capacity boundary for all
@@ -184,7 +183,11 @@ def refresh_run(run_name: str, enqueue_finalization: bool = True):
 		except Exception as exc:
 			message = _exception_message(exc)
 			for job_name in _get_run_job_names(run.name):
-				if frappe.db.get_value("Generation Task", job_name, "status") in ("Completed", "Failed", "Cancelled"):
+				if frappe.db.get_value("Generation Task", job_name, "status") in (
+					"Completed",
+					"Failed",
+					"Cancelled",
+				):
 					continue
 				frappe.db.set_value(
 					"Generation Task",
@@ -266,10 +269,17 @@ def _advance_run(run, enqueue_finalization=True):
 		# Successful provider inference can still fail delivery or preservation.
 		# Keep its real attempts/artifacts, but stop repeatedly composing the same
 		# rejected output on every UI poll and scheduler tick.
-		frappe.db.set_value("Generation Run", {"name": run.name, "status": ["!=", "Cancelled"]}, {
-			"status": "Failed", "failure_class": "Finalization", "completed_at": now(),
-			"error_summary": str(exc)[:2000],
-		}, update_modified=False)
+		frappe.db.set_value(
+			"Generation Run",
+			{"name": run.name, "status": ["!=", "Cancelled"]},
+			{
+				"status": "Failed",
+				"failure_class": "Finalization",
+				"completed_at": now(),
+				"error_summary": str(exc)[:2000],
+			},
+			update_modified=False,
+		)
 		frappe.db.commit()
 		run.reload()
 		sync_media_project_status_for_run(run.name)
@@ -286,13 +296,24 @@ def _advance_run(run, enqueue_finalization=True):
 	run.reload()
 	sync_media_project_status_for_run(run.name)
 	from joymedia.services.consistency.retention import allows_automatic_finishing
-	if run.status == "Completed" and previous_status != "Completed" and not _is_keyframe_run(run) and not (frappe.parse_json(run.execution_scope_json or "{}") or {}).get("candidate_only") and allows_automatic_finishing(run):
+
+	if (
+		run.status == "Completed"
+		and previous_status != "Completed"
+		and not _is_keyframe_run(run)
+		and not (frappe.parse_json(run.execution_scope_json or "{}") or {}).get("candidate_only")
+		and allows_automatic_finishing(run)
+	):
 		_finish_film(run.media_project)
 	if run.status in ("Completed", "Failed", "Cancelled") and previous_status != run.status:
 		# Scenes the consistency check sent back wait for the project's runs to end, then go in one run.
 		frappe.enqueue(
-			"joymedia.services.review.consistency.redo_waiting", queue="long", enqueue_after_commit=True,
-			job_id=f"joymedia-redo-{run.media_project}", deduplicate=True, project_name=run.media_project,
+			"joymedia.services.review.consistency.redo_waiting",
+			queue="long",
+			enqueue_after_commit=True,
+			job_id=f"joymedia-redo-{run.media_project}",
+			deduplicate=True,
+			project_name=run.media_project,
 		)
 	return _run_summary(run)
 
@@ -308,7 +329,9 @@ def _finish_film(project_name):
 def retry_failed_jobs_from_ui(run_name: str):
 	"""Retry and submit the latest failed Attempt chain for every failed Job in a Run."""
 	frappe.has_permission("Generation Run", "write", run_name, throw=True)
-	_require_project_generation_authorization(frappe.get_doc("Media Project", frappe.db.get_value("Generation Run", run_name, "media_project")))
+	_require_project_generation_authorization(
+		frappe.get_doc("Media Project", frappe.db.get_value("Generation Run", run_name, "media_project"))
+	)
 	return retry_failed_jobs_internal(run_name)
 
 
@@ -320,8 +343,10 @@ def _require_run_plan_unchanged(run):
 	signature = scope.get("plan_signature") if isinstance(scope, dict) else None
 	if signature and signature != compute_plan_signature(run.media_project):
 		frappe.throw(
-			_("The storyboard changed after this run started. Retry would repeat the old plan; "
-			  "regenerate to render the current approved plan.")
+			_(
+				"The storyboard changed after this run started. Retry would repeat the old plan; "
+				"regenerate to render the current approved plan."
+			)
 		)
 
 
@@ -400,12 +425,18 @@ def cancel_run(run_name: str):
 	# No network call may hold the transaction's earlier read snapshot while
 	# ingestion changes attempts on another worker (MariaDB error 1020).
 	frappe.db.commit()
-	frappe.db.set_value("Generation Run", run.name, {"status": "Cancelled", "completed_at": run.completed_at}, update_modified=False)
+	frappe.db.set_value(
+		"Generation Run",
+		run.name,
+		{"status": "Cancelled", "completed_at": run.completed_at},
+		update_modified=False,
+	)
 	frappe.db.commit()
 	jobs = _get_run_job_names(run.name)
 	if jobs:
 		attempts = frappe.get_all(
-			"Generation Attempt", filters={"generation_task": ["in", jobs], "status": ["in", ["Submitting", "Queued", "Running"]]},
+			"Generation Attempt",
+			filters={"generation_task": ["in", jobs], "status": ["in", ["Submitting", "Queued", "Running"]]},
 			fields=["external_job_id", "status", "comfyui_endpoint_url"],
 		)
 		frappe.db.commit()
@@ -416,12 +447,29 @@ def cancel_run(run_name: str):
 				elif attempt.external_job_id and attempt.status == "Running":
 					interrupt(prompt_id=attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
 			except Exception:
-				frappe.logger("joymedia.generation_run").exception("Unable to stop ComfyUI prompt %s for %s", attempt.external_job_id, run.name)
+				frappe.logger("joymedia.generation_run").exception(
+					"Unable to stop ComfyUI prompt %s for %s", attempt.external_job_id, run.name
+				)
 		frappe.db.commit()
-		values = {"status": "Cancelled", "completed_at": now(), "failure_class": "Cancelled", "error_summary": "Generation was stopped by the user."}
+		values = {
+			"status": "Cancelled",
+			"completed_at": now(),
+			"failure_class": "Cancelled",
+			"error_summary": "Generation was stopped by the user.",
+		}
 		# Conditional writes cannot overwrite a completion that won the race.
-		frappe.db.set_value("Generation Attempt", {"generation_task": ["in", jobs], "status": ["not in", TERMINAL_ATTEMPT_STATUSES]}, values, update_modified=False)
-		frappe.db.set_value("Generation Task", {"name": ["in", jobs], "status": ["not in", TERMINAL_JOB_STATUSES]}, values, update_modified=False)
+		frappe.db.set_value(
+			"Generation Attempt",
+			{"generation_task": ["in", jobs], "status": ["not in", TERMINAL_ATTEMPT_STATUSES]},
+			values,
+			update_modified=False,
+		)
+		frappe.db.set_value(
+			"Generation Task",
+			{"name": ["in", jobs], "status": ["not in", TERMINAL_JOB_STATUSES]},
+			values,
+			update_modified=False,
+		)
 	# Report the post-cancellation state, not the counters read before Stop.
 	_refresh_run_counters(run)
 	return _run_summary(run)
@@ -443,9 +491,8 @@ def refresh_active_runs():
 				"Unable to refresh Generation Run %s", run_name
 			)
 	from joymedia.services.generation.runner import reconcile_attempt_submission
-	for attempt_name in frappe.get_all(
-		"Generation Attempt", filters={"status": "Submitting"}, pluck="name"
-	):
+
+	for attempt_name in frappe.get_all("Generation Attempt", filters={"status": "Submitting"}, pluck="name"):
 		try:
 			reconcile_attempt_submission(attempt_name)
 			frappe.db.commit()
@@ -489,7 +536,6 @@ def _run_retry_reason(run_name):
 
 
 def _create_retry_attempt(run, jobs):
-
 	for job in jobs:
 		attempts = _get_job_attempts(job.name)
 		effective_attempt = get_effective_attempt_from_history(attempts)
@@ -512,8 +558,10 @@ def _create_retry_attempt(run, jobs):
 		job.save(ignore_permissions=True)
 		from joymedia.services.review.admission import quality_retry
 
-		create_retry_attempt_internal(effective_attempt.name,
-			"QA Rejection" if quality_retry(effective_attempt) else "Execution Failure")
+		create_retry_attempt_internal(
+			effective_attempt.name,
+			"QA Rejection" if quality_retry(effective_attempt) else "Execution Failure",
+		)
 		return True
 	return False
 
@@ -533,7 +581,9 @@ def _revive_cancelled_dependents(job_name):
 		pluck="name",
 	):
 		frappe.db.set_value(
-			"Generation Task", dependent, {"status": "Ready", "failure_class": None, "error_summary": None},
+			"Generation Task",
+			dependent,
+			{"status": "Ready", "failure_class": None, "error_summary": None},
 			update_modified=False,
 		)
 		revived.append(dependent)
@@ -545,9 +595,7 @@ def _retry_and_submit_latest_failed_attempts(job, reason):
 	"""Create and submit exactly one successor for each terminal failed attempt chain."""
 	_revive_cancelled_dependents(job.name)
 	attempts = _get_job_attempts(job.name)
-	if not job.get("inputs") and callable(
-		getattr(job, "get_shot_input_snapshot", None)
-	):
+	if not job.get("inputs") and callable(getattr(job, "get_shot_input_snapshot", None)):
 		ensure_generation_inputs(job)
 	if not attempts and job.status == "Failed":
 		# Preparation/configuration failures can leave a failed Job without an
@@ -570,7 +618,9 @@ def _retry_and_submit_latest_failed_attempts(job, reason):
 			)
 		return results
 	effective_attempt = get_effective_attempt_from_history(attempts)
-	failed_attempt_names = [effective_attempt.name] if effective_attempt and effective_attempt.status == "Failed" else []
+	failed_attempt_names = (
+		[effective_attempt.name] if effective_attempt and effective_attempt.status == "Failed" else []
+	)
 	results = []
 	for attempt_name in failed_attempt_names:
 		retry_attempt = create_retry_attempt_internal(attempt_name, reason)
@@ -596,6 +646,7 @@ def _submit_attempt_or_record_failure(attempt_name):
 			friendly_failure,
 			technical_message,
 		)
+
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
 		if attempt.status == "Pending":
 			failure_class = classify_failure(exc, "Generation")
@@ -629,7 +680,9 @@ def _update_job_summary(job):
 		job.status = "Cancelled" if effective_attempt.status == "Cancelled" else "Failed"
 		job.progress = 0
 		job.completed_at = job.completed_at or now()
-		job.failure_class = effective_attempt.get("failure_class") if effective_attempt.status == "Failed" else None
+		job.failure_class = (
+			effective_attempt.get("failure_class") if effective_attempt.status == "Failed" else None
+		)
 		failure_summary = effective_attempt.get("error_summary")
 		if effective_attempt.status == "Failed":
 			# Older attempts can predate classification of ComfyUI node failures.
@@ -644,7 +697,13 @@ def _update_job_summary(job):
 			technical_detail = str(effective_attempt.get("error_details") or failure_summary or "").lower()
 			is_authentication_failure = any(
 				token in technical_detail
-				for token in ("unauthorized", "forbidden", "please login", "authentication", "not authenticated")
+				for token in (
+					"unauthorized",
+					"forbidden",
+					"please login",
+					"authentication",
+					"not authenticated",
+				)
 			)
 			if detected_failure_class == "Workflow" and is_authentication_failure:
 				job.failure_class = detected_failure_class
@@ -692,10 +751,11 @@ def _finalize_completed_shots(run):
 	candidate_only = bool((frappe.parse_json(run.execution_scope_json or "{}") or {}).get("candidate_only"))
 
 	from joymedia.services.consistency.retention import needs_candidate_review
+
 	snapshot = frappe.parse_json(run.project_snapshot_json or "{}") or {}
-	scenes = {row.get("shot"):row for row in snapshot.get("shots",[])}
+	scenes = {row.get("shot"): row for row in snapshot.get("shots", [])}
 	for shot_name in dict.fromkeys(shot_names):
-		review_candidate = candidate_only or needs_candidate_review(scenes.get(shot_name,{ }))
+		review_candidate = candidate_only or needs_candidate_review(scenes.get(shot_name, {}))
 		if not review_candidate and _keeps_selected_output(run, shot_name):
 			continue
 		jobs = frappe.get_all(
@@ -704,11 +764,19 @@ def _finalize_completed_shots(run):
 			fields=["status"],
 		)
 		if jobs and all(job.status == "Completed" for job in jobs):
-			assembled_version = (compose_shot_segments(run.name, shot_name, select_output=False) if review_candidate
-				else compose_shot_segments(run.name, shot_name))
-			if (assembled_version and not review_candidate
-				and frappe.db.get_value("Shot", shot_name, "selected_output_asset_version") == assembled_version):
+			assembled_version = (
+				compose_shot_segments(run.name, shot_name, select_output=False)
+				if review_candidate
+				else compose_shot_segments(run.name, shot_name)
+			)
+			if (
+				assembled_version
+				and not review_candidate
+				and frappe.db.get_value("Shot", shot_name, "selected_output_asset_version")
+				== assembled_version
+			):
 				from joymedia.services.editing.timeline import update_timeline_source_for_shot
+
 				# Whole-video regeneration replaces the storyboard take. Keep the
 				# existing editorial ranges and positions, but bind each video clip
 				# to the newly selected Shot output immediately.
@@ -716,6 +784,7 @@ def _finalize_completed_shots(run):
 					update_timeline_source_for_shot(run.media_project, shot_name)
 				else:
 					from joymedia.services.editing.timeline import sync_timeline_source_for_shot
+
 					sync_timeline_source_for_shot(shot_name)
 
 
@@ -757,7 +826,9 @@ def _submission_order(run_name):
 		fields=["name", "workflow"],
 		order_by="creation asc",
 	)
-	return [row.name for row in sorted(rows, key=lambda row: row.workflow != rows[0].workflow)] if rows else []
+	return (
+		[row.name for row in sorted(rows, key=lambda row: row.workflow != rows[0].workflow)] if rows else []
+	)
 
 
 def _get_job_attempts(job_name):
@@ -844,13 +915,20 @@ def _has_submission_capacity(run):
 
 
 def _run_submission_limit(run):
-	generation_mode = frappe.db.get_value("Media Project", run.media_project, "generation_mode") or "Multi-shot"
+	generation_mode = (
+		frappe.db.get_value("Media Project", run.media_project, "generation_mode") or "Multi-shot"
+	)
 	if generation_mode in ("Continuous", "Consistency"):
 		return 1
 	try:
-		return max(1, int(frappe.conf.get(
-			"joymedia_max_independent_jobs_per_run", DEFAULT_MAX_INDEPENDENT_JOBS_IN_FLIGHT
-		)))
+		return max(
+			1,
+			int(
+				frappe.conf.get(
+					"joymedia_max_independent_jobs_per_run", DEFAULT_MAX_INDEPENDENT_JOBS_IN_FLIGHT
+				)
+			),
+		)
 	except (TypeError, ValueError):
 		return DEFAULT_MAX_INDEPENDENT_JOBS_IN_FLIGHT
 
@@ -864,9 +942,7 @@ def _global_submission_limit():
 
 
 def _has_global_submission_capacity():
-	active = frappe.db.count(
-		"Generation Attempt", {"status": ["in", ["Submitting", "Queued", "Running"]]}
-	)
+	active = frappe.db.count("Generation Attempt", {"status": ["in", ["Submitting", "Queued", "Running"]]})
 	return active < _global_submission_limit()
 
 
@@ -879,21 +955,26 @@ def _next_fair_run_name():
 	"""
 	candidates = []
 	for run in frappe.get_all(
-		"Generation Run", filters={"status": ["in", ACTIVE_RUN_STATUSES]},
-		fields=["name", "creation"], order_by="creation asc",
+		"Generation Run",
+		filters={"status": ["in", ACTIVE_RUN_STATUSES]},
+		fields=["name", "creation"],
+		order_by="creation asc",
 	):
 		if not _has_submittable_work(run.name):
 			continue
 		last_dispatch = frappe.db.get_value(
 			"Generation Attempt",
 			{"generation_task": ["in", _get_run_job_names(run.name)]},
-			"queued_at", order_by="queued_at desc",
+			"queued_at",
+			order_by="queued_at desc",
 		)
 		# A run that has never received capacity is always served first; creation
 		# is the deterministic tie-breaker. Keep timestamps as timestamps: Frappe
 		# returns ``datetime`` values here, so a string sentinel makes Python's
 		# tuple comparison fail as soon as both kinds are present.
-		candidates.append((0 if last_dispatch is None else 1, last_dispatch or run.creation, run.creation, run.name))
+		candidates.append(
+			(0 if last_dispatch is None else 1, last_dispatch or run.creation, run.creation, run.name)
+		)
 	return min(candidates)[3] if candidates else None
 
 
@@ -901,14 +982,18 @@ def _initial_seed(job):
 	"""The first frames a run draws share one seed, so the scenes start from the same noise and come out in one style; a
 	video, and a frame redrawn on its own (its own run), get a fresh one."""
 	if frappe.db.get_value("Generation Workflow", job.workflow, "output_media_type") == "Image":
-		scope = frappe.parse_json(frappe.db.get_value("Generation Run", job.generation_run, "execution_scope_json") or "{}")
+		scope = frappe.parse_json(
+			frappe.db.get_value("Generation Run", job.generation_run, "execution_scope_json") or "{}"
+		)
 		seed = scope.get("keyframe_seed") if isinstance(scope, dict) else None
 		if seed is not None:
 			if type(seed) is not int or not 0 <= seed < 2_147_483_648:
 				raise ValueError("Invalid frozen image seed.")
 			return seed
 		return int(hashlib.sha256(str(job.generation_run).encode()).hexdigest()[:8], 16) % 2_147_483_648
-	scope = frappe.parse_json(frappe.db.get_value("Generation Run", job.generation_run, "execution_scope_json") or "{}")
+	scope = frappe.parse_json(
+		frappe.db.get_value("Generation Run", job.generation_run, "execution_scope_json") or "{}"
+	)
 	seed = scope.get("video_seed") if isinstance(scope, dict) else None
 	if seed is not None:
 		if type(seed) is not int or not 0 <= seed < 2_147_483_648:
@@ -924,26 +1009,36 @@ def _new_seed():
 @frappe.whitelist()
 def retry_finalization(run_name):
 	"""Retry processing saved results, without submitting another model job."""
-	run=frappe.get_doc("Generation Run",run_name)
-	_require_project_generation_authorization(frappe.get_doc("Media Project",run.media_project))
+	run = frappe.get_doc("Generation Run", run_name)
+	_require_project_generation_authorization(frappe.get_doc("Media Project", run.media_project))
 	_require_run_plan_unchanged(run)
 	with filelock(f"joymedia-refresh-run-{run.name}"):
 		frappe.db.commit()
 		run.reload()
-		if run.status!="Failed" or run.failure_class!="Finalization":
+		if run.status != "Failed" or run.failure_class != "Finalization":
 			frappe.throw(_("Only failed output processing can be resumed."))
-		jobs=frappe.get_all("Generation Task",filters={"generation_run":run.name},fields=["name","shot","status"])
-		if not jobs or any(row.status!="Completed" for row in jobs):
+		jobs = frappe.get_all(
+			"Generation Task", filters={"generation_run": run.name}, fields=["name", "shot", "status"]
+		)
+		if not jobs or any(row.status != "Completed" for row in jobs):
 			frappe.throw(_("Finish the scene generation before retrying its output processing."))
 		# A take may already have committed before a later editorial swap failed.
 		# Patch only this run's selected output; never override another selection.
 		from joymedia.services.editing.timeline import update_timeline_source_for_shot
+
 		for shot in {row.shot for row in jobs}:
-			selected=frappe.db.get_value("Shot",shot,"selected_output_asset_version")
-			attempt=frappe.db.get_value("Asset Version",selected,"source_generation_attempt") if selected else None
-			task=frappe.db.get_value("Generation Attempt",attempt,"generation_task") if attempt else None
-			if task and frappe.db.get_value("Generation Task",task,"generation_run")==run.name:
-				update_timeline_source_for_shot(run.media_project,shot)
-		run.db_set({"status":"Running","failure_class":None,"error_summary":None,"completed_at":None},update_modified=False)
+			selected = frappe.db.get_value("Shot", shot, "selected_output_asset_version")
+			attempt = (
+				frappe.db.get_value("Asset Version", selected, "source_generation_attempt")
+				if selected
+				else None
+			)
+			task = frappe.db.get_value("Generation Attempt", attempt, "generation_task") if attempt else None
+			if task and frappe.db.get_value("Generation Task", task, "generation_run") == run.name:
+				update_timeline_source_for_shot(run.media_project, shot)
+		run.db_set(
+			{"status": "Running", "failure_class": None, "error_summary": None, "completed_at": None},
+			update_modified=False,
+		)
 		frappe.db.commit()
 		return _advance_run(run)

@@ -145,9 +145,24 @@ def _make_video(path, seconds, color="black"):
 
 def _mean_luma(path, seconds):
 	output = subprocess.run(
-		["ffmpeg", "-v", "error", "-ss", str(seconds), "-i", str(path), "-frames:v", "1",
-		 "-vf", "format=gray,crop=iw:ih/3,scale=1:1:flags=area", "-f", "rawvideo", "-"],
-		capture_output=True, check=True,
+		[
+			"ffmpeg",
+			"-v",
+			"error",
+			"-ss",
+			str(seconds),
+			"-i",
+			str(path),
+			"-frames:v",
+			"1",
+			"-vf",
+			"format=gray,crop=iw:ih/3,scale=1:1:flags=area",
+			"-f",
+			"rawvideo",
+			"-",
+		],
+		capture_output=True,
+		check=True,
 	).stdout
 	return output[0]
 
@@ -185,9 +200,24 @@ class TestSceneCaptions(FrappeTestCase):
 
 			def lower_third(seconds):
 				pixels = subprocess.run(
-					["ffmpeg", "-v", "error", "-ss", str(seconds), "-i", str(output), "-frames:v", "1",
-					 "-vf", "format=gray,crop=iw:ih/6:0:ih*0.04", "-f", "rawvideo", "-"],
-					capture_output=True, check=True,
+					[
+						"ffmpeg",
+						"-v",
+						"error",
+						"-ss",
+						str(seconds),
+						"-i",
+						str(output),
+						"-frames:v",
+						"1",
+						"-vf",
+						"format=gray,crop=iw:ih/6:0:ih*0.04",
+						"-f",
+						"rawvideo",
+						"-",
+					],
+					capture_output=True,
+					check=True,
 				).stdout
 				return max(pixels)
 

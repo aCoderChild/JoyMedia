@@ -22,11 +22,17 @@ class TestVideoFeedback(ReviewCommentCase):
 		for value in (True, None, "0.5", float("nan"), float("inf"), -0.1, 1.1, [], {}):
 			with self.subTest(value=value), self.assertRaises(frappe.ValidationError):
 				feedback.annotation({"type": "point", "x": value, "y": 0.5})
-		for point in ({"type": "point", "x": 0.5}, {"type": "point", "x": 0.5, "y": 0.5, "width": 0.2}, {"type": "script", "x": 0.5, "y": 0.5}):
+		for point in (
+			{"type": "point", "x": 0.5},
+			{"type": "point", "x": 0.5, "y": 0.5, "width": 0.2},
+			{"type": "script", "x": 0.5, "y": 0.5},
+		):
 			with self.subTest(point=point), self.assertRaises(frappe.ValidationError):
 				feedback.annotation(point)
 		for x in (0, 1):
-			self.assertEqual(feedback.annotation({"type": "point", "x": x, "y": x}), {"type": "point", "x": x, "y": x})
+			self.assertEqual(
+				feedback.annotation({"type": "point", "x": x, "y": x}), {"type": "point", "x": x, "y": x}
+			)
 		with self.assertRaises(frappe.ValidationError):
 			feedback.annotation({"x": True, "y": 0, "width": 0.2, "height": 0.2})
 
@@ -54,13 +60,15 @@ class TestVideoFeedback(ReviewCommentCase):
 		self.assertEqual(row["annotation"], json.loads(doc.annotation_json))
 
 	def test_closed_filter_paginates_open_comments_but_explicit_links_still_work(self):
-		closed=self.add_feedback()
-		feedback.triage_feedback(closed["name"],"Dismissed","Automated verification")
-		active=self.add_feedback()
-		result=feedback.get_feedback(self.project.name,self.one_take.name,include_closed=False,focused_name=closed["name"])
-		self.assertEqual([row["name"] for row in result["items"]],[active["name"]])
-		self.assertEqual(result["focused"]["name"],closed["name"])
-		self.assertEqual(len(feedback.get_feedback(self.project.name,self.one_take.name)["items"]),2)
+		closed = self.add_feedback()
+		feedback.triage_feedback(closed["name"], "Dismissed", "Automated verification")
+		active = self.add_feedback()
+		result = feedback.get_feedback(
+			self.project.name, self.one_take.name, include_closed=False, focused_name=closed["name"]
+		)
+		self.assertEqual([row["name"] for row in result["items"]], [active["name"]])
+		self.assertEqual(result["focused"]["name"], closed["name"])
+		self.assertEqual(len(feedback.get_feedback(self.project.name, self.one_take.name)["items"]), 2)
 
 	def test_retry_is_idempotent_and_changed_payload_is_rejected(self):
 		key = frappe.generate_hash(length=24)

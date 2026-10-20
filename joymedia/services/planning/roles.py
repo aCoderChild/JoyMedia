@@ -12,29 +12,78 @@ import unicodedata
 
 # (key, English name, relative height, Vietnamese words, English words, how the role shows)
 ROLES = (
-	("grandfather", "grandfather", 0.95, ("ông nội", "ông ngoại", "ông"), ("grandfather", "grandpa", "granddad"),
-	 "an elderly full-grown adult, slightly stooped, slow and gentle movements, a kind wise expression"),
-	("grandmother", "grandmother", 0.9, ("bà nội", "bà ngoại", "bà"), ("grandmother", "grandma", "granny"),
-	 "an elderly full-grown adult, a little shorter and rounder, slow and gentle movements, a warm smile"),
-	("father", "father", 1.0, ("bố", "cha", "ba"), ("father", "dad", "daddy", "papa"),
-	 "a tall, sturdy broad-shouldered adult build, a protective, confident stance"),
-	("mother", "mother", 1.0, ("mẹ", "má"), ("mother", "mom", "mum", "mommy", "mama"),
-	 "a full-grown adult, tall and soft-bodied, a caring, protective posture"),
-	("older_child", "older child", 0.75, ("anh trai", "chị gái"), ("big brother", "big sister", "older brother", "older sister"),
-	 "clearly shorter than the adults, slimmer, lively movements"),
-	("child", "kid", 0.55, ("bé", "em bé", "nhí", "cháu", "con"),
-	 ("kid", "kids", "child", "children", "baby", "babies", "cub", "cubs", "son", "daughter", "toddler", "junior", "little"),
-	 "about half an adult's height, a small round body, a bigger head for its body, short arms and legs, "
-	 "playful childlike movements"),
+	(
+		"grandfather",
+		"grandfather",
+		0.95,
+		("ông nội", "ông ngoại", "ông"),
+		("grandfather", "grandpa", "granddad"),
+		"an elderly full-grown adult, slightly stooped, slow and gentle movements, a kind wise expression",
+	),
+	(
+		"grandmother",
+		"grandmother",
+		0.9,
+		("bà nội", "bà ngoại", "bà"),
+		("grandmother", "grandma", "granny"),
+		"an elderly full-grown adult, a little shorter and rounder, slow and gentle movements, a warm smile",
+	),
+	(
+		"father",
+		"father",
+		1.0,
+		("bố", "cha", "ba"),
+		("father", "dad", "daddy", "papa"),
+		"a tall, sturdy broad-shouldered adult build, a protective, confident stance",
+	),
+	(
+		"mother",
+		"mother",
+		1.0,
+		("mẹ", "má"),
+		("mother", "mom", "mum", "mommy", "mama"),
+		"a full-grown adult, tall and soft-bodied, a caring, protective posture",
+	),
+	(
+		"older_child",
+		"older child",
+		0.75,
+		("anh trai", "chị gái"),
+		("big brother", "big sister", "older brother", "older sister"),
+		"clearly shorter than the adults, slimmer, lively movements",
+	),
+	(
+		"child",
+		"kid",
+		0.55,
+		("bé", "em bé", "nhí", "cháu", "con"),
+		(
+			"kid",
+			"kids",
+			"child",
+			"children",
+			"baby",
+			"babies",
+			"cub",
+			"cubs",
+			"son",
+			"daughter",
+			"toddler",
+			"junior",
+			"little",
+		),
+		"about half an adult's height, a small round body, a bigger head for its body, short arms and legs, "
+		"playful childlike movements",
+	),
 )
 COUNTS = "một|hai|ba|bốn|năm|sáu|bảy|tám|chín|mười|các|những|mấy|mỗi|\\d+"
-KEEP_DESIGN = (
-	"keeping exactly the reference subject's face, colours, markings, accessories and body design from its picture"
-)
+KEEP_DESIGN = "keeping exactly the reference subject's face, colours, markings, accessories and body design from its picture"
 
 
 def _fold(text):
-	return "".join(c for c in unicodedata.normalize("NFKD", str(text or "").casefold()) if not unicodedata.combining(c)).replace("đ", "d")
+	return "".join(
+		c for c in unicodedata.normalize("NFKD", str(text or "").casefold()) if not unicodedata.combining(c)
+	).replace("đ", "d")
 
 
 def _vietnamese(word):
@@ -104,4 +153,11 @@ def role_look(label):
 
 def role_words(display_name):
 	"""The English words that mean a role-based display name, or ()."""
-	return next((english for _k, name, _s, _v, english, _l in ROLES if display_name in (f"the {name} character", f"the {name} mascot")), ())
+	return next(
+		(
+			english
+			for _k, name, _s, _v, english, _l in ROLES
+			if display_name in (f"the {name} character", f"the {name} mascot")
+		),
+		(),
+	)

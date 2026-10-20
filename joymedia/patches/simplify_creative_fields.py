@@ -1,6 +1,5 @@
 import frappe
 
-
 LEGACY_SHOT_FIELDS = (
 	("shot_instructions", "Shot Instructions"),
 	("subject_identity", "Subject"),
@@ -27,7 +26,7 @@ def _merge_media_specification_instructions():
 	]
 	if not legacy_fields:
 		return
-	columns = ", ".join(["name", "global_instructions"] + legacy_fields)
+	columns = ", ".join(["name", "global_instructions", *legacy_fields])
 	rows = frappe.db.sql(f"SELECT {columns} FROM `tabMedia Specification`", as_dict=True)
 	for row in rows:
 		parts = []
@@ -37,7 +36,11 @@ def _merge_media_specification_instructions():
 				parts.append(text)
 		if parts:
 			frappe.db.set_value(
-				"Media Specification", row.name, "global_instructions", "\n\n".join(parts), update_modified=False
+				"Media Specification",
+				row.name,
+				"global_instructions",
+				"\n\n".join(parts),
+				update_modified=False,
 			)
 
 

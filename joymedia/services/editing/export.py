@@ -40,6 +40,7 @@ def compose_project_timeline_internal(project_name: str, *, require_brand_approv
 	project = frappe.get_doc("Media Project", project_name)
 	from joymedia.services.editing.post_production import timeline_signature
 	from joymedia.services.editing.timeline import _ensure_source_audio_clips, _timeline_clip_rows
+
 	_timeline_rows = _timeline_clip_rows(project.name)
 	_ensure_source_audio_clips(project, _timeline_rows)
 	# Source-audio backfill can make a legitimate first-time edit.  Snapshot only
@@ -69,6 +70,7 @@ def compose_project_timeline_internal(project_name: str, *, require_brand_approv
 		order_by="clip_order asc, creation asc",
 	)
 	from joymedia.services.project.versions import export_manifest
+
 	edit_manifest = json.loads(export_manifest(project, clips, started_timeline_signature))
 	video_clips = [clip for clip in clips if (clip.track_type or "Video") == "Video"]
 	audio_clips = [clip for clip in clips if clip.track_type == "Audio"]
@@ -91,7 +93,10 @@ def compose_project_timeline_internal(project_name: str, *, require_brand_approv
 	# Authored timelines are held to the requested duration rather than ending at the last clip.
 	target_frames = round(float(project.get("total_duration_seconds") or 0) * render["fps"])
 	last_end = max(
-		(int(clip.timeline_start_frame or 0) + frames for clip, frames in zip(video_clips, clip_frames)),
+		(
+			int(clip.timeline_start_frame or 0) + frames
+			for clip, frames in zip(video_clips, clip_frames, strict=False)
+		),
 		default=0,
 	)
 	positioned = _has_persisted_positions(video_clips) and (
@@ -99,7 +104,9 @@ def compose_project_timeline_internal(project_name: str, *, require_brand_approv
 		or target_frames - last_end >= round(TAIL_HOLD_MIN_SECONDS * render["fps"])
 	)
 	if positioned:
-		for previous, current, previous_frames in zip(video_clips, video_clips[1:], clip_frames):
+		for previous, current, previous_frames in zip(
+			video_clips, video_clips[1:], clip_frames, strict=False
+		):
 			previous_end = int(previous.timeline_start_frame or 0) + previous_frames
 			if int(current.timeline_start_frame or 0) < previous_end:
 				frappe.throw(_("Video clips may not overlap on the single video track."))
@@ -110,13 +117,23 @@ def compose_project_timeline_internal(project_name: str, *, require_brand_approv
 	# Freeze the renderer's actual timing, including dissolves and positioned gaps.
 	# Historical reviews must never be mapped using a project's later storyboard.
 	from joymedia.services.review.timeline import rendered_segments
-	edit_manifest['render_timeline'] = {'segments': rendered_segments(video_clips, clip_frames, transition_frames, positioned, render['fps'], edit_manifest['selected_takes'])}
+
+	edit_manifest["render_timeline"] = {
+		"segments": rendered_segments(
+			video_clips,
+			clip_frames,
+			transition_frames,
+			positioned,
+			render["fps"],
+			edit_manifest["selected_takes"],
+		)
+	}
 
 	try:
 		with tempfile.TemporaryDirectory(prefix="joymedia-timeline-") as temp_dir:
 			temp_path = Path(temp_dir)
 			normalized_paths = []
-			for index, (clip, frame_count) in enumerate(zip(video_clips, clip_frames), start=1):
+			for index, (clip, frame_count) in enumerate(zip(video_clips, clip_frames, strict=False), start=1):
 				source_path = _asset_version_path(clip.source_asset_version)
 				normalized_path = temp_path / f"{index:04d}-{clip.name}.mp4"
 				_normalize_clip(
@@ -144,30 +161,35 @@ def compose_project_timeline_internal(project_name: str, *, require_brand_approv
 			output_frames = expected_frames
 			if studio:
 				finished_master = temp_path / f"{project.name}-timeline-studio.mp4"
-				finishing.finish_video(silent_master, finished_master, expected_frames, render["fps"], temp_path)
+				finishing.finish_video(
+					silent_master, finished_master, expected_frames, render["fps"], temp_path
+				)
 				output_frames = finishing.finished_frame_count(expected_frames, render["fps"])
 				_validate_normalized_video(finished_master, output_profile, expected_frames=output_frames)
 				silent_master = finished_master
 			ended_master = temp_path / f"{project.name}-timeline-ending.mp4"
-			cues = _caption_cues(project, video_clips, clip_frames, transition_frames, positioned, render["fps"])
+			cues = _caption_cues(
+				project, video_clips, clip_frames, transition_frames, positioned, render["fps"]
+			)
 			_apply_ending(silent_master, ended_master, output_profile, temp_path, cues)
 			_validate_normalized_video(ended_master, output_profile, expected_frames=output_frames)
 			silent_master = ended_master
 
 			delivery_path = silent_master
 			video_duration = _get_video_duration(silent_master)
-			audio_sources = _get_audio_sources(
-				project, video_duration, audio_clips, profile["fps"]
-			)
+			audio_sources = _get_audio_sources(project, video_duration, audio_clips, profile["fps"])
 			if audio_sources:
 				delivery_path = temp_path / f"{project.name}-timeline.mp4"
 				_mix_audio(
-					silent_master, audio_sources, delivery_path,
+					silent_master,
+					audio_sources,
+					delivery_path,
 					ending=(max(0.0, video_duration - ENDING_FADE_SECONDS), ENDING_FADE_SECONDS),
 				)
 				_validate_normalized_video(delivery_path, output_profile, expected_frames=output_frames)
 
 			from joymedia.services.editing.delivery import delivery_contract, transform_delivery
+
 			delivery = delivery_contract(frappe.get_doc("Generation Workflow", project.workflow))
 			if delivery:
 				transformed = temp_path / f"{project.name}-delivery-master.mp4"
@@ -199,7 +221,10 @@ def compose_project_timeline_internal(project_name: str, *, require_brand_approv
 
 		# Render inputs must still match the edit after ending the old read snapshot.
 		frappe.db.sql("select name from `tabMedia Project` where name=%s for update", project.name)
-		frappe.db.sql("select name from `tabTimeline Clip` where media_project=%s order by name for update", project.name)
+		frappe.db.sql(
+			"select name from `tabTimeline Clip` where media_project=%s order by name for update",
+			project.name,
+		)
 		_assert_timeline_unchanged(project.name, started_timeline_signature)
 		try:
 			release = release_evidence(project.name, clips, lock=True)
@@ -280,7 +305,7 @@ def _caption_cues(project, video_clips, clip_frames, transition_frames, position
 	}
 	cues = []
 	cursor = 0
-	for index, (clip, frame_count) in enumerate(zip(video_clips, clip_frames)):
+	for index, (clip, frame_count) in enumerate(zip(video_clips, clip_frames, strict=False)):
 		text = captions.get(clip.get("shot"), "")
 		start = int(clip.timeline_start_frame or 0) if positioned else cursor
 		if text and frame_count / fps >= MIN_CAPTION_SECONDS:
@@ -297,7 +322,9 @@ def _apply_ending(source_path, output_path, profile, temp_path, captions=()):
 	filters = []
 	for index, (begin, end, text) in enumerate(captions):
 		lines = [line.strip() for line in text.splitlines() if line.strip()] or [text]
-		size = round(min(height * 0.045, profile["width"] * 0.8 / (0.68 * max(max(len(line) for line in lines), 1))))
+		size = round(
+			min(height * 0.045, profile["width"] * 0.8 / (0.68 * max(max(len(line) for line in lines), 1)))
+		)
 		show, hide = begin + 0.3, end - 0.3
 		if hide - show < 1.0:
 			continue
@@ -323,7 +350,7 @@ def _apply_ending(source_path, output_path, profile, temp_path, captions=()):
 	if fade_seconds < 0 or fade_seconds > duration:
 		raise ValueError("Ending fade must fit within the exported video.")
 	if fade_seconds:
-		filters.append(f"fade=t=out:st={duration-fade_seconds:.3f}:d={fade_seconds}")
+		filters.append(f"fade=t=out:st={duration - fade_seconds:.3f}:d={fade_seconds}")
 	_run_ffmpeg(
 		[
 			"ffmpeg",
@@ -356,7 +383,7 @@ def _has_persisted_positions(clips):
 
 def _requires_positioned_render(clips, clip_frames):
 	cursor = 0
-	for clip, frame_count in zip(clips, clip_frames):
+	for clip, frame_count in zip(clips, clip_frames, strict=False):
 		if int(clip.timeline_start_frame or 0) != cursor:
 			return True
 		cursor += frame_count
@@ -451,7 +478,9 @@ def _validated_transition_frames(clips, clip_frames):
 	return values
 
 
-def _render_sequence(paths, clips, clip_frames, transition_frames, output_path, profile, positioned=False, total_frames=0):
+def _render_sequence(
+	paths, clips, clip_frames, transition_frames, output_path, profile, positioned=False, total_frames=0
+):
 	if positioned:
 		return _render_positioned_sequence(paths, clips, clip_frames, output_path, profile, total_frames)
 	if len(paths) == 1:
@@ -493,9 +522,7 @@ def _render_sequence(paths, clips, clip_frames, transition_frames, output_path, 
 		transition = previous_clip.transition_to_next or "Cut"
 		transition_count = transition_frames[index - 1]
 		if transition == "Cut" or transition_count == 0:
-			filter_parts.append(
-				f"[{current_label}][in{index}]concat=n=2:v=1:a=0[{out_label}]"
-			)
+			filter_parts.append(f"[{current_label}][in{index}]concat=n=2:v=1:a=0[{out_label}]")
 			current_frames += clip_frames[index]
 		else:
 			duration = transition_count / profile["fps"]
@@ -544,7 +571,7 @@ def _render_positioned_sequence(paths, clips, clip_frames, output_path, profile,
 
 	filter_parts = []
 	labels = []
-	for index, (clip, frame_count) in enumerate(zip(clips, clip_frames)):
+	for index, (clip, frame_count) in enumerate(zip(clips, clip_frames, strict=False)):
 		start = int(clip.timeline_start_frame or 0)
 		if index + 1 < len(clips):
 			next_start = int(clips[index + 1].timeline_start_frame or 0)
@@ -559,9 +586,7 @@ def _render_positioned_sequence(paths, clips, clip_frames, output_path, profile,
 		filter_parts.append(f"[{index}:v]settb=AVTB,setpts=PTS-STARTPTS{pad}[{clip_label}]")
 		labels.append(f"[{clip_label}]")
 
-	filter_parts.append(
-		f"{''.join(labels)}concat=n={len(labels)}:v=1:a=0[video]"
-	)
+	filter_parts.append(f"{''.join(labels)}concat=n={len(labels)}:v=1:a=0[video]")
 	command.extend(
 		[
 			"-filter_complex",

@@ -14,7 +14,8 @@ import frappe
 import requests
 from frappe import _
 
-from joymedia.services.runtime.endpoints import endpoint, is_configured as endpoint_is_configured
+from joymedia.services.runtime.endpoints import endpoint
+from joymedia.services.runtime.endpoints import is_configured as endpoint_is_configured
 
 MAX_IMAGE_EDGE = 1024
 VALID_KINDS = {"person", "place", "product", "other"}
@@ -84,14 +85,18 @@ def _is_current(version, as_product=False):
 		analysis = json.loads(version.analysis_json or "{}")
 	except ValueError:
 		return False
-	return analysis.get("version") == ANALYSIS_VERSION and (not as_product or analysis.get("kind") == "product")
+	return analysis.get("version") == ANALYSIS_VERSION and (
+		not as_product or analysis.get("kind") == "product"
+	)
 
 
 def analyse_asset_version(asset_version_name, as_product=False):
 	"""Analyse one image Asset Version and store the result. Failures are recorded, not raised."""
 	file_url = frappe.db.get_value("Asset Version", asset_version_name, "file")
 	try:
-		analysis = describe_image(_image_data_url(file_url), PRODUCT_ANALYSIS_PROMPT if as_product else ANALYSIS_PROMPT)
+		analysis = describe_image(
+			_image_data_url(file_url), PRODUCT_ANALYSIS_PROMPT if as_product else ANALYSIS_PROMPT
+		)
 	except Exception as exc:
 		frappe.logger("joymedia.vision").warning(
 			"Image analysis failed for Asset Version %s: %s", asset_version_name, exc

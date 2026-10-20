@@ -19,11 +19,41 @@ def automatic_planning_input_contract():
 	concrete graph and enforces its real contract.
 	"""
 	return [
-		{"role": "character", "accepted_media_type": "Image", "min_count": 0, "max_count": 0, "allow_multiple": True},
-		{"role": "person", "accepted_media_type": "Image", "min_count": 0, "max_count": 0, "allow_multiple": True},
-		{"role": "product", "accepted_media_type": "Image", "min_count": 0, "max_count": 0, "allow_multiple": True},
-		{"role": "environment", "accepted_media_type": "Image", "min_count": 0, "max_count": 0, "allow_multiple": True},
-		{"role": "reference_board", "accepted_media_type": "Image", "min_count": 0, "max_count": 0, "allow_multiple": True},
+		{
+			"role": "character",
+			"accepted_media_type": "Image",
+			"min_count": 0,
+			"max_count": 0,
+			"allow_multiple": True,
+		},
+		{
+			"role": "person",
+			"accepted_media_type": "Image",
+			"min_count": 0,
+			"max_count": 0,
+			"allow_multiple": True,
+		},
+		{
+			"role": "product",
+			"accepted_media_type": "Image",
+			"min_count": 0,
+			"max_count": 0,
+			"allow_multiple": True,
+		},
+		{
+			"role": "environment",
+			"accepted_media_type": "Image",
+			"min_count": 0,
+			"max_count": 0,
+			"allow_multiple": True,
+		},
+		{
+			"role": "reference_board",
+			"accepted_media_type": "Image",
+			"min_count": 0,
+			"max_count": 0,
+			"allow_multiple": True,
+		},
 	]
 
 
@@ -43,7 +73,9 @@ def normalize_reference_role(value):
 	return aliases.get(role, role or "general")
 
 
-def resolve_shot_render_route(default_workflow, references, *, handoff_type="", motion_plan_json="", pipeline_name=None):
+def resolve_shot_render_route(
+	default_workflow, references, *, handoff_type="", motion_plan_json="", pipeline_name=None
+):
 	"""Return the one configured production pipeline for a shot.
 
 	Reference quantity never selects a model.  The first stage's declared binding
@@ -54,7 +86,11 @@ def resolve_shot_render_route(default_workflow, references, *, handoff_type="", 
 	from joymedia.services.workflows.resolver import get_workflow_input_contract
 
 	try:
-		pipeline = frappe.get_doc("Generation Pipeline", pipeline_name) if pipeline_name else get_active_generation_pipeline()
+		pipeline = (
+			frappe.get_doc("Generation Pipeline", pipeline_name)
+			if pipeline_name
+			else get_active_generation_pipeline()
+		)
 	except frappe.ValidationError as exc:
 		# Storyboards remain editable before an operator promotes a pipeline. This
 		# is not a rendering fallback: MediaProject.generate_video requires the
@@ -68,7 +104,8 @@ def resolve_shot_render_route(default_workflow, references, *, handoff_type="", 
 			"generation_pipeline": "",
 			"references": _map_pipeline_references(references, contract),
 			"reason": "Storyboard draft awaiting an explicitly promoted production pipeline.",
-			"requires_recomposition": str(handoff_type or "").casefold() in {"new_scene", "new scene", "scene_reset"},
+			"requires_recomposition": str(handoff_type or "").casefold()
+			in {"new_scene", "new scene", "scene_reset"},
 		}
 	steps = get_pipeline_steps(pipeline.name)
 	if len(steps) < 2:
@@ -76,10 +113,19 @@ def resolve_shot_render_route(default_workflow, references, *, handoff_type="", 
 	workflow = frappe.get_doc("Generation Workflow", steps[-1].workflow)
 	keyframe = frappe.get_doc("Generation Workflow", steps[0].workflow)
 	from joymedia.services.workflows.capabilities import controls
+
 	reference_only = "reference_only" in controls(workflow)
-	if reference_only and any(normalize_reference_role(r.get("reference_role") or r.get("input_role")) in {"first_frame", "last_frame"} for r in references):
-		frappe.throw("This reference-only workflow does not anchor authored first/last frames. Use an anchored profile or remove those controls explicitly.")
-	contract = {item["role"]: item for item in get_workflow_input_contract(workflow if reference_only else keyframe)}
+	if reference_only and any(
+		normalize_reference_role(r.get("reference_role") or r.get("input_role"))
+		in {"first_frame", "last_frame"}
+		for r in references
+	):
+		frappe.throw(
+			"This reference-only workflow does not anchor authored first/last frames. Use an anchored profile or remove those controls explicitly."
+		)
+	contract = {
+		item["role"]: item for item in get_workflow_input_contract(workflow if reference_only else keyframe)
+	}
 	normalized = _map_pipeline_references(references, contract)
 	new_scene = str(handoff_type or "").casefold() in {"new_scene", "new scene", "scene_reset"}
 	return {
@@ -119,8 +165,9 @@ def _map_pipeline_references(references, contract):
 			item["reference_role"] = board_role
 		else:
 			frappe.throw(
-				frappe._("The active pipeline's first-stage workflow has no binding for reference role '{0}'. ")
-				.format(role)
+				frappe._(
+					"The active pipeline's first-stage workflow has no binding for reference role '{0}'. "
+				).format(role)
 				+ frappe._("Configure a multi-reference binding or remove that reference explicitly.")
 			)
 		mapped.append(item)

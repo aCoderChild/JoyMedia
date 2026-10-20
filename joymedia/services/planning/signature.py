@@ -13,13 +13,26 @@ import frappe
 from frappe import _
 
 PROJECT_FIELDS = (
-	"workflow", "generation_pipeline", "delivery_width", "delivery_height", "quality_mode", "generation_mode",
+	"workflow",
+	"generation_pipeline",
+	"delivery_width",
+	"delivery_height",
+	"quality_mode",
+	"generation_mode",
 	"storyboard_source_json",
 )
 # planned_frame_count is derived from duration at generation time, so it is not part of the plan.
 SHOT_FIELDS = (
-	"shot_number", "storyboard_action", "image_prompt", "generation_prompt", "motion_plan_json", "start_state", "end_state",
-	"handoff_type", "continuity_mode", "duration_seconds",
+	"shot_number",
+	"storyboard_action",
+	"image_prompt",
+	"generation_prompt",
+	"motion_plan_json",
+	"start_state",
+	"end_state",
+	"handoff_type",
+	"continuity_mode",
+	"duration_seconds",
 )
 
 
@@ -27,7 +40,10 @@ def compute_plan_signature(project_name):
 	project = frappe.db.get_value("Media Project", project_name, list(PROJECT_FIELDS), as_dict=True)
 	shots = []
 	for shot_name in frappe.get_all(
-		"Shot", filters={"media_project": project_name, "is_removed": 0}, pluck="name", order_by="shot_number asc"
+		"Shot",
+		filters={"media_project": project_name, "is_removed": 0},
+		pluck="name",
+		order_by="shot_number asc",
 	):
 		shot = frappe.get_doc("Shot", shot_name)
 		entry = {field: _plain(shot.get(field)) for field in SHOT_FIELDS}
@@ -45,7 +61,11 @@ def assert_plan_matches_approval(project):
 	# Projects approved before signatures existed have nothing to compare against.
 	if approved and approved != compute_plan_signature(project.name):
 		frappe.db.set_value(
-			"Media Project", project.name, "storyboard_approval_status", "Ready for Review", update_modified=False
+			"Media Project",
+			project.name,
+			"storyboard_approval_status",
+			"Ready for Review",
+			update_modified=False,
 		)
 		frappe.throw(_("The storyboard changed after it was approved. Review and approve it again."))
 

@@ -117,8 +117,14 @@ def restore_video(
 
 	if not isinstance(blend_mode, str) or blend_mode not in {"source", "seamless"}:
 		raise PreservationError("Unsupported surface blend mode.")
-	if not isinstance(tracking_mode, str) or tracking_mode not in {"tracked", "fixed"} or (tracking_mode == "fixed" and tracking_quad is not None):
-		raise PreservationError("Choose tracked artwork or an explicitly fixed plane without tracking controls.")
+	if (
+		not isinstance(tracking_mode, str)
+		or tracking_mode not in {"tracked", "fixed"}
+		or (tracking_mode == "fixed" and tracking_quad is not None)
+	):
+		raise PreservationError(
+			"Choose tracked artwork or an explicitly fixed plane without tracking controls."
+		)
 	output = Path(output)
 	if output.resolve() in {Path(video).resolve(), Path(artwork).resolve()}:
 		raise PreservationError("Restoration output cannot replace a source file.")
@@ -179,7 +185,9 @@ def restore_video(
 		ok, first = cap.read()
 		if not ok:
 			raise PreservationError("Cannot decode the source video.")
-		anchor = _features(cv2.cvtColor(first, cv2.COLOR_BGR2GRAY), region) if tracking_mode == "tracked" else None
+		anchor = (
+			_features(cv2.cvtColor(first, cv2.COLOR_BGR2GRAY), region) if tracking_mode == "tracked" else None
+		)
 		alpha = (
 			art[:, :, 3].astype(np.float32) / 255 if art.shape[2] == 4 else np.ones(art.shape[:2], np.float32)
 		)
@@ -211,7 +219,9 @@ def restore_video(
 				if any(start <= index <= end for start, end in ranges):
 					try:
 						matrix, quality = (
-							track_homography(anchor, frame, region) if index and tracking_mode == "tracked" else (np.eye(3), {"error": 0})
+							track_homography(anchor, frame, region)
+							if index and tracking_mode == "tracked"
+							else (np.eye(3), {"error": 0})
 						)
 						transform = matrix @ base_transform
 						paint = cv2.warpPerspective(art[:, :, :3], transform, (width, height))

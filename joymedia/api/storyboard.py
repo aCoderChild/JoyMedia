@@ -40,10 +40,16 @@ def sheet_row_pictures(path, sheet_name, project_name):
 		data = image._data()
 		with Image.open(io.BytesIO(data)) as picture:
 			extension = (picture.format or "png").lower().replace("jpeg", "jpg")
-		saved = frappe.get_doc({
-			"doctype": "File", "file_name": f"{project_name}-sheet-row{row}-{number}.{extension}", "content": data, "is_private": 1,
-			"attached_to_doctype": "Media Project", "attached_to_name": project_name,
-		}).insert(ignore_permissions=True)
+		saved = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"{project_name}-sheet-row{row}-{number}.{extension}",
+				"content": data,
+				"is_private": 1,
+				"attached_to_doctype": "Media Project",
+				"attached_to_name": project_name,
+			}
+		).insert(ignore_permissions=True)
 		pictures.setdefault(row, saved.file_url)
 	return pictures
 
@@ -54,7 +60,9 @@ def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
 	if frappe.db.exists("Generation Run", {"media_project": project.name}):
-		frappe.throw(_("A storyboard with generation history cannot be replaced. Create a new project revision."))
+		frappe.throw(
+			_("A storyboard with generation history cannot be replaced. Create a new project revision.")
+		)
 	file_doc = frappe.get_doc("File", workbook_file)
 	file_doc.check_permission("read")
 	if Path(file_doc.file_name or "").suffix.lower() != ".xlsx":
@@ -62,16 +70,25 @@ def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
 	if int(file_doc.file_size or 0) > 10 * 1024 * 1024:
 		frappe.throw(_("Storyboard workbook must be 10 MB or smaller."))
 	from joymedia.services.planning.workbook import missing_required, read_workbook
+
 	try:
 		parsed = read_workbook(file_doc.get_full_path())
 	except (OSError, ValueError) as exc:
 		frappe.throw(_("Could not read the storyboard workbook: {0}").format(str(exc)))
-	demo = next((item for item in parsed["demos"] if item["name"].casefold() == str(demo_name).casefold()), None) if demo_name else (
-		parsed["demos"][0] if len(parsed["demos"]) == 1 else next((i for i in parsed["demos"] if i["name"].casefold() == "demo 1"), None)
+	demo = (
+		next((item for item in parsed["demos"] if item["name"].casefold() == str(demo_name).casefold()), None)
+		if demo_name
+		else (
+			parsed["demos"][0]
+			if len(parsed["demos"]) == 1
+			else next((i for i in parsed["demos"] if i["name"].casefold() == "demo 1"), None)
+		)
 	)
 	if not demo:
 		available = ", ".join(item["name"] for item in parsed["demos"])
-		frappe.throw(_("Storyboard demo '{0}' was not found. Available sheets: {1}.").format(demo_name, available))
+		frappe.throw(
+			_("Storyboard demo '{0}' was not found. Available sheets: {1}.").format(demo_name, available)
+		)
 	missing = missing_required(demo["metadata"])
 	if missing:
 		frappe.throw(_("The sheet is missing these must-have fields: {0}.").format(", ".join(missing)))
@@ -80,8 +97,10 @@ def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
 		# A brief without a scene table: the scenes are drafted from the brief.
 		from joymedia.services.planning.production import looks_english
 		from joymedia.services.planning.scene_draft import draft_scenes
+
 		scenes = draft_scenes(
-			demo["metadata"], lang_is_english=looks_english(" ".join(str(v) for v in demo["metadata"].values())),
+			demo["metadata"],
+			lang_is_english=looks_english(" ".join(str(v) for v in demo["metadata"].values())),
 			brand=parsed.get("brand") or {},
 		)
 		demo["scenes"] = scenes
@@ -90,31 +109,40 @@ def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
 	pictures = sheet_row_pictures(file_doc.get_full_path(), demo["name"], project.name)
 	for position, scene in enumerate(scenes, start=1):
 		prompt = _imported_scene_prompt(scene)
-		frappe.get_doc({
-			"doctype": "Shot",
-			"media_project": project.name,
-			"shot_number": position,
-			"shot_name": scene["beat_name"],
-			"storyboard_beat": scene["beat_name"],
-			"source_timing": scene["source_timing"],
-			"source_start_seconds": scene["start_seconds"],
-			"source_end_seconds": scene["end_seconds"],
-			"duration_seconds": scene["duration_seconds"],
-			"continuity_mode": scene["continuity_mode"],
-			"generation_prompt": prompt,
-			"image_prompt": _imported_image_prompt(scene),
-			"caption": scene["on_screen_text"][:120],
-			"voice_over": scene["voice_over"],
-			"illustration": "\n".join(filter(None, (scene.get("illustration_reference"), pictures.get(scene.get("source_row"))))),
-			"audio_cues": scene["audio_cues"],
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Shot",
+				"media_project": project.name,
+				"shot_number": position,
+				"shot_name": scene["beat_name"],
+				"storyboard_beat": scene["beat_name"],
+				"source_timing": scene["source_timing"],
+				"source_start_seconds": scene["start_seconds"],
+				"source_end_seconds": scene["end_seconds"],
+				"duration_seconds": scene["duration_seconds"],
+				"continuity_mode": scene["continuity_mode"],
+				"generation_prompt": prompt,
+				"image_prompt": _imported_image_prompt(scene),
+				"caption": scene["on_screen_text"][:120],
+				"voice_over": scene["voice_over"],
+				"illustration": "\n".join(
+					filter(None, (scene.get("illustration_reference"), pictures.get(scene.get("source_row"))))
+				),
+				"audio_cues": scene["audio_cues"],
+			}
+		).insert(ignore_permissions=True)
 	metadata = demo["metadata"]
 	project.storyboard_source_file = file_doc.name
-	project.storyboard_source_json = json.dumps({
-		"selected_demo": demo, "all_demos": parsed["demos"],
-		# Shared by every storyboard sheet of the workbook: the named pictures and places, and the brand's rules.
-		"references": parsed.get("references") or [], "brand": parsed.get("brand") or {},
-	}, ensure_ascii=False)
+	project.storyboard_source_json = json.dumps(
+		{
+			"selected_demo": demo,
+			"all_demos": parsed["demos"],
+			# Shared by every storyboard sheet of the workbook: the named pictures and places, and the brand's rules.
+			"references": parsed.get("references") or [],
+			"brand": parsed.get("brand") or {},
+		},
+		ensure_ascii=False,
+	)
 	project.storyboard_timing_warnings = json.dumps(demo["timing_warnings"], ensure_ascii=False)
 	project.storyboard_approval_status = "Ready for Review"
 	# The advertiser wrote the scenes: keep them, only translate (see production_planner.follow_the_sheet).
@@ -126,10 +154,14 @@ def import_storyboard_workbook(project_name, workbook_file, demo_name=None):
 	project.video_idea = brief_text(metadata, parsed.get("brand")) or project.video_idea
 	if metadata.get("duration"):
 		from joymedia.services.planning.workbook import parse_duration_seconds
-		project.total_duration_seconds = parse_duration_seconds(metadata["duration"]) or project.total_duration_seconds
+
+		project.total_duration_seconds = (
+			parse_duration_seconds(metadata["duration"]) or project.total_duration_seconds
+		)
 	project.save(ignore_permissions=True)
 	# The workbook states its own format (for example 9:16); the client should not have to repeat it.
 	from joymedia.services.intake.project import apply_workbook_format
+
 	project.reload()
 	apply_workbook_format(project)
 	# Pictures already in the project take their names and rules from the References sheet.
@@ -174,7 +206,9 @@ def approve_project_storyboard(project_name, acknowledge_timing_warnings=False, 
 
 
 def _imported_scene_prompt(scene):
-	return "\n".join(filter(None, (scene.get("visual_camera"), scene.get("action"), scene.get("audio_cues")))).strip()
+	return "\n".join(
+		filter(None, (scene.get("visual_camera"), scene.get("action"), scene.get("audio_cues")))
+	).strip()
 
 
 def _imported_image_prompt(scene):
@@ -196,7 +230,10 @@ def _plan_project(project, wanted, apply, progress=None):
 	shots = [
 		frappe.get_doc("Shot", name)
 		for name in frappe.get_all(
-			"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name", order_by="shot_number asc"
+			"Shot",
+			filters={"media_project": project.name, "is_removed": 0},
+			pluck="name",
+			order_by="shot_number asc",
 		)
 	]
 	references = production_planner.project_reference_options(project)
@@ -210,21 +247,29 @@ def _plan_project(project, wanted, apply, progress=None):
 				previous_setting = shot.setting_prompt
 			continue
 		if shot.name in busy:
-			frappe.throw(_("Scene {0} is still being rendered. Please wait until it is ready.").format(shot.shot_name))
+			frappe.throw(
+				_("Scene {0} is still being rendered. Please wait until it is ready.").format(shot.shot_name)
+			)
 		from joymedia.services.planning.signature import compute_plan_signature
 
 		frappe.db.commit()
 		expected_plan = compute_plan_signature(project.name) if apply else None
 		frappe.db.commit()  # release database transactions before remote planning
 		plan = production_planner.plan_production_shot(
-			project, shot, previous_end_state=previous_end_state, references=references, previous_setting=previous_setting
+			project,
+			shot,
+			previous_end_state=previous_end_state,
+			references=references,
+			previous_setting=previous_setting,
 		)
 		if not any("Needs editing" in note for note in plan.get("notes") or []):
 			previous_setting = plan.get("setting_prompt") or previous_setting
 		if apply and not plan["held_back"]:
 			frappe.db.commit()  # discard the read snapshot opened during model I/O
 			if compute_plan_signature(project.name) != expected_plan:
-				frappe.throw(_("The storyboard changed while planning. Review the changes and plan this scene again."))
+				frappe.throw(
+					_("The storyboard changed while planning. Review the changes and plan this scene again.")
+				)
 			production_planner.apply_production_shot(project, shot, plan)
 			_mark_storyboard_needs_review(project)
 			frappe.db.commit()  # completed scenes stay saved if a later scene fails
@@ -239,7 +284,11 @@ def _plan_project(project, wanted, apply, progress=None):
 
 
 def _parse_shot_names(shot_names):
-	return set(frappe.parse_json(shot_names)) if isinstance(shot_names, str) and shot_names else set(shot_names or [])
+	return (
+		set(frappe.parse_json(shot_names))
+		if isinstance(shot_names, str) and shot_names
+		else set(shot_names or [])
+	)
 
 
 def _planning_job_id(project_name, shot_names):
@@ -268,8 +317,13 @@ def start_project_planning(project_name, shot_names=None):
 	ensure_shot_planning_editable(project.name)
 	frappe.enqueue(
 		"joymedia.api.storyboard.run_planning_job",
-		queue="long", timeout=3600, job_id=_planning_job_id(project.name, shot_names), deduplicate=True,
-		project_name=project.name, shot_names=shot_names, user=frappe.session.user,
+		queue="long",
+		timeout=3600,
+		job_id=_planning_job_id(project.name, shot_names),
+		deduplicate=True,
+		project_name=project.name,
+		shot_names=shot_names,
+		user=frappe.session.user,
 	)
 	return {"queued": True}
 
@@ -282,21 +336,39 @@ def run_planning_job(project_name, shot_names, user):
 	project = frappe.get_doc("Media Project", project_name)
 
 	def progress(done, total, result):
-		publish_project_event(project_name, PLANNING_PROGRESS, {
-			"state": "running", "done": done, "total": total, "shot_name": result["shot_name"],
-			"held_back": result["held_back"], "notes": result["notes"],
-		}, after_commit=False)
+		publish_project_event(
+			project_name,
+			PLANNING_PROGRESS,
+			{
+				"state": "running",
+				"done": done,
+				"total": total,
+				"shot_name": result["shot_name"],
+				"held_back": result["held_back"],
+				"notes": result["notes"],
+			},
+			after_commit=False,
+		)
 
 	publish_project_event(project_name, PLANNING_PROGRESS, {"state": "started"}, after_commit=False)
 	try:
 		results = _plan_project(project, _parse_shot_names(shot_names), True, progress)
 	except Exception as exc:
 		frappe.db.rollback()
-		publish_project_event(project_name, PLANNING_PROGRESS, {"state": "failed", "error": str(exc)}, after_commit=False)
+		publish_project_event(
+			project_name, PLANNING_PROGRESS, {"state": "failed", "error": str(exc)}, after_commit=False
+		)
 		raise
-	publish_project_event(project_name, PLANNING_PROGRESS, {
-		"state": "done", "total": len(results), "held_back": sum(1 for r in results if r["held_back"]),
-	}, after_commit=False)
+	publish_project_event(
+		project_name,
+		PLANNING_PROGRESS,
+		{
+			"state": "done",
+			"total": len(results),
+			"held_back": sum(1 for r in results if r["held_back"]),
+		},
+		after_commit=False,
+	)
 
 
 @frappe.whitelist()
@@ -334,9 +406,13 @@ def _assign_shot_references(project, assignments, *, view_keys=None):
 			frappe.throw(_("Unknown project reference(s) for {0}: {1}").format(shot_name, ", ".join(unknown)))
 		shot.set("generation_inputs", [])
 		for reference in expand_reference_keys(project.selected_media, keys, view_keys=view_keys):
-			shot.append("generation_inputs", {
-				"reference_role": reference.reference_role or "General", "asset_version": reference.asset_version,
-			})
+			shot.append(
+				"generation_inputs",
+				{
+					"reference_role": reference.reference_role or "General",
+					"asset_version": reference.asset_version,
+				},
+			)
 		shot.save(ignore_permissions=True)
 	return set(assignments)
 
@@ -352,7 +428,10 @@ def shot_reference_problems(project):
 	default_workflow = frappe.get_doc("Generation Workflow", project.workflow)
 	errors = []
 	for shot_name in frappe.get_all(
-		"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name", order_by="shot_number asc"
+		"Shot",
+		filters={"media_project": project.name, "is_removed": 0},
+		pluck="name",
+		order_by="shot_number asc",
 	):
 		shot = frappe.get_doc("Shot", shot_name)
 		references = [
@@ -361,35 +440,45 @@ def shot_reference_problems(project):
 		]
 		try:
 			from joymedia.services.planning.shot_structure import require_scene_references
+
 			require_scene_references(
-				{'references': [r.as_dict() for r in project.selected_media or []]},
-				{'motion_plan_json': shot.motion_plan_json, 'references': references})
+				{"references": [r.as_dict() for r in project.selected_media or []]},
+				{"motion_plan_json": shot.motion_plan_json, "references": references},
+			)
 			route = resolve_shot_render_route(
-				default_workflow, references, handoff_type=shot.handoff_type or "",
+				default_workflow,
+				references,
+				handoff_type=shot.handoff_type or "",
 				pipeline_name=project.generation_pipeline or None,
 			)
 			if not route["generation_pipeline"]:
 				continue
 			from joymedia.services.workflows.capabilities import controls
+
 			last_stage = frappe.get_doc("Generation Workflow", route["workflow"])
 			if "reference_only" in controls(last_stage):
 				from joymedia.services.generation.preparation import video_reference_inputs
+
 				video_reference_inputs(frappe._dict(references=route["references"]), last_stage)
 				continue
 			if any(frappe.scrub(r.get("reference_role") or "") == "first_frame" for r in route["references"]):
 				from joymedia.services.generation.preparation import authored_video_inputs
+
 				last_stage = frappe.get_doc("Generation Workflow", route["workflow"])
 				authored_video_inputs(frappe._dict(references=route["references"]), last_stage)
 				continue
 			first_stage = frappe.get_doc(
-				"Generation Workflow", frappe.get_doc("Generation Pipeline", route["generation_pipeline"]).steps[0].workflow
+				"Generation Workflow",
+				frappe.get_doc("Generation Pipeline", route["generation_pipeline"]).steps[0].workflow,
 			)
 			mapped = _pipeline_reference_inputs(frappe._dict(references=route["references"]), first_stage)
 			# A continuing shot starts from its predecessor's last frame, not from a keyframe.
 			continues = shot.continuity_mode == "Continue" and shot.shot_number > 1
 			for item in [] if continues else get_workflow_input_contract(first_stage):
 				if item.get("required") and item["role"] != "first_frame" and not mapped.get(item["role"]):
-					frappe.throw(_("no reference is assigned for the required role '{0}'.").format(item["role"]))
+					frappe.throw(
+						_("no reference is assigned for the required role '{0}'.").format(item["role"])
+					)
 		except (frappe.ValidationError, ValueError) as exc:
 			errors.append(f"{shot.shot_name or shot.name}: {frappe.utils.strip_html(str(exc))}")
 	return errors
@@ -403,7 +492,7 @@ def _validate_shot_reference_contracts(project):
 	"""
 	errors = shot_reference_problems(project)
 	if errors:
-		frappe.throw("<br>".join([_("Fix these shot reference assignments before approval:")] + errors))
+		frappe.throw("<br>".join([_("Fix these shot reference assignments before approval:"), *errors]))
 
 
 def _bind_unassigned_project_references(project, skip=()):
@@ -420,11 +509,14 @@ def _bind_unassigned_project_references(project, skip=()):
 			references.append((row.reference_role or "General", row.asset_version))
 	if not references:
 		return
-	for shot_name in frappe.get_all("Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"):
+	for shot_name in frappe.get_all(
+		"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"
+	):
 		shot = frappe.get_doc("Shot", shot_name)
 		if shot_name in skip or shot.generation_inputs:
 			continue
 		from joymedia.services.planning.shot_structure import structure_for
+
 		if structure_for(shot):
 			# A planned material-only shot can intentionally have no picture inputs.
 			# Approval must not turn that decision into every project reference.
@@ -442,12 +534,14 @@ def revise_project_storyboard(project_name, instruction=None, use_current_workfl
 @frappe.whitelist()
 def revise_project_shot_with_ai(project_name, shot_name, instruction):
 	from joymedia.services.planning.revisions import revise_project_shot_with_ai as revise
+
 	return revise(project_name, shot_name, instruction)
 
 
 @frappe.whitelist()
 def apply_project_shot_ai_revision(project_name, shot_name, values, regenerate=False):
 	from joymedia.services.planning.revisions import apply_project_shot_ai_revision as apply_revision
+
 	return apply_revision(project_name, shot_name, values, regenerate)
 
 
@@ -471,7 +565,11 @@ def update_project_shot(project_name, shot_name, values):
 		if not isinstance(plan, dict):
 			frappe.throw(_("Motion plan must be a JSON object."))
 		try:
-			plan = frappe.as_json(_normalized_motion_plan(plan, shot.duration_seconds, values.get("generation_prompt") or shot.generation_prompt))
+			plan = frappe.as_json(
+				_normalized_motion_plan(
+					plan, shot.duration_seconds, values.get("generation_prompt") or shot.generation_prompt
+				)
+			)
 		except ValueError as exc:
 			frappe.throw(str(exc))
 		contract_changed = plan != (shot.motion_plan_json or "")
@@ -517,7 +615,14 @@ def update_project_shot(project_name, shot_name, values):
 		shot.continuity_mode = continuity_mode
 	else:
 		continuity_changed = False
-	if action_changed or changed or contract_changed or image_prompt_changed or caption_changed or continuity_changed:
+	if (
+		action_changed
+		or changed
+		or contract_changed
+		or image_prompt_changed
+		or caption_changed
+		or continuity_changed
+	):
 		shot.save(ignore_permissions=True)
 	# Captions are finishing-only; the approved plan signature already covers generation inputs.
 	if action_changed or changed or contract_changed or image_prompt_changed or continuity_changed:
@@ -536,7 +641,10 @@ def update_project_shot(project_name, shot_name, values):
 		"motion_plan_json": shot.motion_plan_json or "",
 		"caption": shot.caption or "",
 		"continuity_mode": shot.continuity_mode or "New Scene",
-		"is_outdated": bool((action_changed or changed or contract_changed or image_prompt_changed or continuity_changed) and shot.selected_output_asset_version),
+		"is_outdated": bool(
+			(action_changed or changed or contract_changed or image_prompt_changed or continuity_changed)
+			and shot.selected_output_asset_version
+		),
 	}
 
 
@@ -550,22 +658,37 @@ def set_project_shot_keyframe(project_name, shot_name, frame_role, asset_version
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
 	from joymedia.services.planning.durations import ensure_shot_planning_editable
+
 	ensure_shot_planning_editable(project.name)
 	asset = frappe.db.get_value("Asset Version", asset_version, ["name", "media_asset"], as_dict=True)
 	if not asset or frappe.db.get_value("Media Asset", asset.media_asset, "media_type") != "Image":
 		frappe.throw(_("Keyframes must use an Image Asset Version."))
 	from joymedia.services.consistency.repair import _project_asset_path
+
 	_project_asset_path(project, asset.name)
 	current_asset = next(
-		(row.asset_version for row in shot.generation_inputs or [] if frappe.scrub(row.reference_role or "") == frame_role),
+		(
+			row.asset_version
+			for row in shot.generation_inputs or []
+			if frappe.scrub(row.reference_role or "") == frame_role
+		),
 		None,
 	)
 	if current_asset == asset.name:
-		return {"shot_name": shot.name, "shot_number": shot.shot_number, "frame_role": frame_role, "is_outdated": False}
-	shot.set("generation_inputs", [
-				{"reference_role": row.reference_role, "asset_version": row.asset_version}
-		for row in shot.generation_inputs or [] if frappe.scrub(row.reference_role or "") != frame_role
-	])
+		return {
+			"shot_name": shot.name,
+			"shot_number": shot.shot_number,
+			"frame_role": frame_role,
+			"is_outdated": False,
+		}
+	shot.set(
+		"generation_inputs",
+		[
+			{"reference_role": row.reference_role, "asset_version": row.asset_version}
+			for row in shot.generation_inputs or []
+			if frappe.scrub(row.reference_role or "") != frame_role
+		],
+	)
 	shot.append("generation_inputs", {"reference_role": frame_role, "asset_version": asset.name})
 	shot.save(ignore_permissions=True)
 	_mark_storyboard_needs_review(project)
@@ -591,6 +714,7 @@ def update_project_shot_timing(project_name, shot_name, duration_seconds):
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."))
 	from joymedia.services.planning.durations import rebalance_shot_duration
+
 	result = rebalance_shot_duration(project.name, shot.name, duration_seconds)
 	_mark_storyboard_needs_review(project)
 	return {"shot_name": shot.name, "shot_number": shot.shot_number, **result}
@@ -644,6 +768,7 @@ def remove_project_scene(project_name, shot_name, confirm_continuation=False):
 			}
 
 	from joymedia.services.editing.timeline import _remove_shot_timeline_clips
+
 	_remove_shot_timeline_clips(project.name, shot.name)
 	frappe.db.set_value("Shot", shot.name, "is_removed", 1, update_modified=False)
 	_renumber_active_shots(project.name)
@@ -657,6 +782,7 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
 	from joymedia.services.planning.durations import ensure_shot_planning_editable
+
 	ensure_shot_planning_editable(project.name)
 	try:
 		target_shot_number = int(target_shot_number)
@@ -678,7 +804,9 @@ def reorder_project_shot(project_name, shot_name, target_shot_number):
 	first = ordered[0]
 	if frappe.db.get_value("Shot", first.name, "continuity_mode") == "Continue":
 		frappe.db.set_value("Shot", first.name, "continuity_mode", "New Scene", update_modified=False)
-		frappe.msgprint(_("Shot {0} is now first, so its continuity was reset to New Scene.").format(first.name))
+		frappe.msgprint(
+			_("Shot {0} is now first, so its continuity was reset to New Scene.").format(first.name)
+		)
 	_mark_storyboard_needs_review(project)
 	frappe.db.commit()
 	return {"shot_name": shot.name, "shot_number": target_shot_number}

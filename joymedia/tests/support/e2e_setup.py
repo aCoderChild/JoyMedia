@@ -14,14 +14,28 @@ def _generate_video_bytes(duration_seconds: int = 2, color: str = "blue", unique
 	output_path = get_site_path("private", "files", f"tmp_e2e_{frappe.generate_hash(length=8)}.mp4")
 	os.makedirs(os.path.dirname(output_path), exist_ok=True)
 	cmd = [
-		"ffmpeg", "-y",
-		"-f", "lavfi", "-i", f"color=c={color}:s=320x240:d={duration_seconds}:r=24",
-		"-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-		"-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", output_path,
+		"ffmpeg",
+		"-y",
+		"-f",
+		"lavfi",
+		"-i",
+		f"color=c={color}:s=320x240:d={duration_seconds}:r=24",
+		"-f",
+		"lavfi",
+		"-i",
+		"anullsrc=r=44100:cl=stereo",
+		"-c:v",
+		"libx264",
+		"-pix_fmt",
+		"yuv420p",
+		"-c:a",
+		"aac",
+		"-shortest",
+		output_path,
 	]
 	if unique_tag:
 		cmd[-1:-1] = ["-metadata", f"comment={unique_tag}"]
-	subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	subprocess.run(cmd, check=True, capture_output=True)
 	with open(output_path, "rb") as file_handle:
 		data = file_handle.read()
 	os.remove(output_path)
@@ -32,6 +46,7 @@ def _generate_image_bytes() -> bytes:
 	import io
 
 	from PIL import Image
+
 	img = Image.new("RGB", (320, 240), color=(200, 50, 80))
 	buf = io.BytesIO()
 	img.save(buf, format="PNG")
@@ -39,28 +54,34 @@ def _generate_image_bytes() -> bytes:
 
 
 def _create_output_asset(project, name, file_name, duration_seconds: int = 4, color: str = "blue"):
-	asset = frappe.get_doc({
-		"doctype": "Media Asset",
-		"asset_name": name,
-		"media_project": project.name,
-		"media_type": "Video",
-		"asset_category": "Other",
-		"asset_scope": "Project Output",
-	}).insert(ignore_permissions=True)
-	file_doc = frappe.get_doc({
-		"doctype": "File",
-		"file_name": f"{project.name}-{file_name}",
-		"content": _generate_video_bytes(duration_seconds, color=color, unique_tag=project.name),
-		"is_private": 1,
-		"attached_to_doctype": "Media Asset",
-		"attached_to_name": asset.name,
-	}).insert(ignore_permissions=True)
-	return frappe.get_doc({
-		"doctype": "Asset Version",
-		"media_asset": asset.name,
-		"file": file_doc.file_url,
-		"source": "Generated",
-	}).insert(ignore_permissions=True)
+	asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": name,
+			"media_project": project.name,
+			"media_type": "Video",
+			"asset_category": "Other",
+			"asset_scope": "Project Output",
+		}
+	).insert(ignore_permissions=True)
+	file_doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"{project.name}-{file_name}",
+			"content": _generate_video_bytes(duration_seconds, color=color, unique_tag=project.name),
+			"is_private": 1,
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": asset.name,
+		}
+	).insert(ignore_permissions=True)
+	return frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": asset.name,
+			"file": file_doc.file_url,
+			"source": "Generated",
+		}
+	).insert(ignore_permissions=True)
 
 
 def _configure_project(project, total_duration_seconds=8):
@@ -83,14 +104,16 @@ def _configure_project(project, total_duration_seconds=8):
 
 
 def _create_shot(project, number, prompt, output_version, duration_seconds=4.0):
-	shot = frappe.get_doc({
-		"doctype": "Shot",
-		"media_project": project.name,
-		"shot_number": number,
-		"shot_name": f"Shot {number}",
-		"generation_prompt": prompt,
-		"duration_seconds": duration_seconds,
-	}).insert(ignore_permissions=True)
+	shot = frappe.get_doc(
+		{
+			"doctype": "Shot",
+			"media_project": project.name,
+			"shot_number": number,
+			"shot_name": f"Shot {number}",
+			"generation_prompt": prompt,
+			"duration_seconds": duration_seconds,
+		}
+	).insert(ignore_permissions=True)
 	shot.db_set("selected_output_asset_version", output_version.name, update_modified=False)
 	return shot
 
@@ -98,13 +121,15 @@ def _create_shot(project, number, prompt, output_version, duration_seconds=4.0):
 def setup_e2e_project(project_name="E2E-STUDIO-TEST-1", duration_seconds=8):
 	frappe.set_user("Administrator")
 	cleanup_e2e_project(project_name)
-	project = frappe.get_doc({
-		"doctype": "Media Project",
-		"project_name": "E2E Studio Project",
-		"product_name": "E2E Headphones",
-		"video_idea": "Create an E2E product showcase.",
-		"status": "Draft",
-	})
+	project = frappe.get_doc(
+		{
+			"doctype": "Media Project",
+			"project_name": "E2E Studio Project",
+			"product_name": "E2E Headphones",
+			"video_idea": "Create an E2E product showcase.",
+			"status": "Draft",
+		}
+	)
 	project.name = project_name
 	project.insert(ignore_permissions=True)
 	_configure_project(project, total_duration_seconds=duration_seconds)
@@ -121,44 +146,57 @@ def setup_e2e_project(project_name="E2E-STUDIO-TEST-1", duration_seconds=8):
 	# Generation Run itself owns only generation state; delivery stays on Media Project.
 	project.current_output_asset_version = final_version.name
 	project.save(ignore_permissions=True)
-	audio_asset = frappe.get_doc({
-		"doctype": "Media Asset",
-		"asset_name": "Upbeat Cinematic Music",
-		"media_type": "Audio",
-		"asset_category": "Audio",
-		"asset_scope": "Library",
-	}).insert(ignore_permissions=True)
-	audio_file_doc = frappe.get_doc({
-		"doctype": "File",
-		"file_name": "bgm.mp3",
-		"content": _generate_video_bytes(2),
-		"is_private": 0,
-		"attached_to_doctype": "Media Asset",
-		"attached_to_name": audio_asset.name,
-	}).insert(ignore_permissions=True)
-	audio_version = frappe.get_doc({
-		"doctype": "Asset Version",
-		"media_asset": audio_asset.name,
-		"file": audio_file_doc.file_url,
-		"source": "Uploaded",
-		"duration_seconds": 15.0,
-	}).insert(ignore_permissions=True)
+	audio_asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": "Upbeat Cinematic Music",
+			"media_type": "Audio",
+			"asset_category": "Audio",
+			"asset_scope": "Library",
+		}
+	).insert(ignore_permissions=True)
+	audio_file_doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": "bgm.mp3",
+			"content": _generate_video_bytes(2),
+			"is_private": 0,
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": audio_asset.name,
+		}
+	).insert(ignore_permissions=True)
+	audio_version = frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": audio_asset.name,
+			"file": audio_file_doc.file_url,
+			"source": "Uploaded",
+			"duration_seconds": 15.0,
+		}
+	).insert(ignore_permissions=True)
 	from joymedia.api.assets import select_project_reference
+
 	select_project_reference(project.name, audio_asset.name, reference_role="Audio")
 	from joymedia.services.project.context import build_project_snapshot
+
 	project_snapshot_json, project_snapshot_hash = build_project_snapshot(project)
-	frappe.get_doc({
-		"doctype": "Generation Run",
-		"media_project": project.name,
-		"project_snapshot_json": project_snapshot_json,
-		"project_snapshot_hash": project_snapshot_hash,
-		"workflow": project.workflow,
-		"requested_by": "Administrator",
-		"status": "Completed",
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Generation Run",
+			"media_project": project.name,
+			"project_snapshot_json": project_snapshot_json,
+			"project_snapshot_hash": project_snapshot_hash,
+			"workflow": project.workflow,
+			"requested_by": "Administrator",
+			"status": "Completed",
+		}
+	).insert(ignore_permissions=True)
 	from joymedia.services.editing.timeline import add_timeline_audio_clip, get_project_timeline
+
 	get_project_timeline(project.name)
-	timeline = add_timeline_audio_clip(project.name, audio_version.name, timeline_start_frame=0, audio_role="BGM")
+	timeline = add_timeline_audio_clip(
+		project.name, audio_version.name, timeline_start_frame=0, audio_role="BGM"
+	)
 	project.db_set("current_output_asset_version", final_version.name, update_modified=False)
 	frappe.db.commit()
 	return {"project_name": project.name, "timeline": timeline}
@@ -167,38 +205,47 @@ def setup_e2e_project(project_name="E2E-STUDIO-TEST-1", duration_seconds=8):
 def setup_fresh_empty_project(project_name="E2E-FRESH-EMPTY-1"):
 	frappe.set_user("Administrator")
 	cleanup_e2e_project(project_name)
-	project = frappe.get_doc({
-		"doctype": "Media Project",
-		"project_name": "Fresh Lipstick Project",
-		"product_name": "Luxury Lipstick",
-		"video_idea": "",
-		"status": "Draft",
-	})
+	project = frappe.get_doc(
+		{
+			"doctype": "Media Project",
+			"project_name": "Fresh Lipstick Project",
+			"product_name": "Luxury Lipstick",
+			"video_idea": "",
+			"status": "Draft",
+		}
+	)
 	project.name = project_name
 	project.insert(ignore_permissions=True)
 	_configure_project(project)
-	img_asset = frappe.get_doc({
-		"doctype": "Media Asset",
-		"asset_name": "Lipstick Product Photo",
-		"media_type": "Image",
-		"asset_category": "Product",
-		"asset_scope": "Library",
-	}).insert(ignore_permissions=True)
-	img_file = frappe.get_doc({
-		"doctype": "File",
-		"file_name": "lipstick.png",
-		"content": _generate_image_bytes(),
-		"is_private": 0,
-		"attached_to_doctype": "Media Asset",
-		"attached_to_name": img_asset.name,
-	}).insert(ignore_permissions=True)
-	frappe.get_doc({
-		"doctype": "Asset Version",
-		"media_asset": img_asset.name,
-		"file": img_file.file_url,
-		"source": "Uploaded",
-	}).insert(ignore_permissions=True)
+	img_asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": "Lipstick Product Photo",
+			"media_type": "Image",
+			"asset_category": "Product",
+			"asset_scope": "Library",
+		}
+	).insert(ignore_permissions=True)
+	img_file = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": "lipstick.png",
+			"content": _generate_image_bytes(),
+			"is_private": 0,
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": img_asset.name,
+		}
+	).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": img_asset.name,
+			"file": img_file.file_url,
+			"source": "Uploaded",
+		}
+	).insert(ignore_permissions=True)
 	from joymedia.api.assets import select_project_reference
+
 	select_project_reference(project.name, img_asset.name, reference_role="Product")
 	frappe.db.commit()
 	return {"project_name": project.name}

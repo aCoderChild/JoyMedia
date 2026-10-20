@@ -36,9 +36,7 @@ def execute():
 				},
 			):
 				continue
-			clip_order = (
-				frappe.db.count("Timeline Clip", {"media_project": row.parent}) + 1
-			)
+			clip_order = frappe.db.count("Timeline Clip", {"media_project": row.parent}) + 1
 			frappe.get_doc(
 				{
 					"doctype": "Timeline Clip",

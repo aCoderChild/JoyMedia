@@ -4,6 +4,7 @@
 Run in Bench with env/bin/python. This does not submit generation or select takes.
 The configured vision capability is used; no benchmark checkpoints are loaded.
 """
+
 import argparse
 import json
 import time
@@ -41,11 +42,20 @@ def main():
 			frappe.db.commit()
 			path = args.manifest.parent / f"case-{index + 1}-evidence.json"
 			path.write_text(json.dumps(report, ensure_ascii=False, indent=2))
-			results.append({"case": case, "status": report["status"], "report": str(path), "seconds": time.monotonic() - started})
+			results.append(
+				{
+					"case": case,
+					"status": report["status"],
+					"report": str(path),
+					"seconds": time.monotonic() - started,
+				}
+			)
 			(args.manifest.parent / "evaluation-summary.json").write_text(json.dumps(results, indent=2))
 			print(json.dumps(results[-1]), flush=True)
 			if case.get("expected") and report["status"] != case["expected"]:
-				raise AssertionError(f"Case {index + 1} expected {case['expected']}, got {report['status']}; evidence was preserved.")
+				raise AssertionError(
+					f"Case {index + 1} expected {case['expected']}, got {report['status']}; evidence was preserved."
+				)
 	finally:
 		frappe.destroy()
 

@@ -10,7 +10,11 @@ import math
 def execution_spec(workflow):
 	import json
 
-	value = workflow.get("execution_spec") if hasattr(workflow, "get") else getattr(workflow, "execution_spec", None)
+	value = (
+		workflow.get("execution_spec")
+		if hasattr(workflow, "get")
+		else getattr(workflow, "execution_spec", None)
+	)
 	spec = json.loads(value or "{}") if isinstance(value, str) else (value or {})
 	if not isinstance(spec, dict):
 		raise ValueError("Workflow execution_spec must be an object.")

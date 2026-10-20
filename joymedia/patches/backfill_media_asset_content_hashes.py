@@ -28,4 +28,6 @@ def execute():
 		with file_path.open("rb") as file_handle:
 			for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
 				digest.update(chunk)
-		frappe.db.set_value("Media Asset", asset.name, "content_hash", digest.hexdigest(), update_modified=False)
+		frappe.db.set_value(
+			"Media Asset", asset.name, "content_hash", digest.hexdigest(), update_modified=False
+		)

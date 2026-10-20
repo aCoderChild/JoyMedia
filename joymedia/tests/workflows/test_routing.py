@@ -19,7 +19,8 @@ class TestWorkflowRouting(FrappeTestCase):
 		from joymedia.services.workflows.routing import _map_pipeline_references
 
 		with self.assertRaises(frappe.ValidationError):
-			_map_pipeline_references([_reference("Character", 1)], {"person": {"allow_multiple":True}})
+			_map_pipeline_references([_reference("Character", 1)], {"person": {"allow_multiple": True}})
+
 	def test_planner_keeps_multiple_characters_as_semantic_inputs(self):
 		contract = automatic_planning_input_contract()
 		person = next(item for item in contract if item["role"] == "person")
@@ -51,7 +52,9 @@ class TestWorkflowRouting(FrappeTestCase):
 
 		self.assertEqual("promoted_linear_pipeline", route["strategy"])
 		self.assertEqual("PIPE-FLUX-H3", route["generation_pipeline"])
-		self.assertEqual(["character", "character", "product"], [item["reference_role"] for item in route["references"]])
+		self.assertEqual(
+			["character", "character", "product"], [item["reference_role"] for item in route["references"]]
+		)
 		self.assertTrue(route["requires_recomposition"])
 
 	@patch("joymedia.services.workflows.routing.frappe.get_doc")
@@ -87,14 +90,13 @@ class TestWorkflowRouting(FrappeTestCase):
 	def test_explicit_pipeline_pin_is_not_replaced_by_current_active_pipeline(
 		self, active_pipeline, pipeline_steps, _input_contract, get_doc
 	):
-		pipeline_steps.return_value = [SimpleNamespace(workflow="WF-IMAGE"), SimpleNamespace(workflow="WF-VIDEO")]
-		get_doc.side_effect = lambda doctype, name: (
-			SimpleNamespace(name=name) if doctype == "Generation Pipeline" else SimpleNamespace(name=name)
-		)
+		pipeline_steps.return_value = [
+			SimpleNamespace(workflow="WF-IMAGE"),
+			SimpleNamespace(workflow="WF-VIDEO"),
+		]
+		get_doc.side_effect = lambda doctype, name: SimpleNamespace(name=name)
 
-		route = resolve_shot_render_route(
-			SimpleNamespace(name="WF-VIDEO"), [], pipeline_name="PIPE-PINNED"
-		)
+		route = resolve_shot_render_route(SimpleNamespace(name="WF-VIDEO"), [], pipeline_name="PIPE-PINNED")
 
 		self.assertEqual("PIPE-PINNED", route["generation_pipeline"])
 		active_pipeline.assert_not_called()

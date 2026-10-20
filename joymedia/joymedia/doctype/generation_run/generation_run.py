@@ -50,9 +50,7 @@ class GenerationRun(Document):
 		self._validate_snapshot()
 
 	def _validate_immutable_fields(self):
-		previous = frappe.db.get_value(
-			"Generation Run", self.name, list(self.IMMUTABLE_FIELDS), as_dict=True
-		)
+		previous = frappe.db.get_value("Generation Run", self.name, list(self.IMMUTABLE_FIELDS), as_dict=True)
 		if not previous:
 			return
 		for fieldname in self.IMMUTABLE_FIELDS:
@@ -71,16 +69,25 @@ class GenerationRun(Document):
 		try:
 			snapshot = frappe.parse_json(self.project_snapshot_json)
 		except (TypeError, ValueError):
-			frappe.throw(_("Generation Run {0} has invalid project snapshot JSON.").format(self.name or "new"))
+			frappe.throw(
+				_("Generation Run {0} has invalid project snapshot JSON.").format(self.name or "new")
+			)
 		canonical = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
 		expected_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 		if self.project_snapshot_hash != expected_hash:
-			frappe.throw(_("Generation Run {0} project snapshot hash does not match its snapshot.").format(self.name or "new"))
+			frappe.throw(
+				_("Generation Run {0} project snapshot hash does not match its snapshot.").format(
+					self.name or "new"
+				)
+			)
 		if snapshot.get("media_project") != self.media_project:
 			frappe.throw(_("Generation Run project snapshot belongs to another Media Project."))
 		if snapshot.get("workflow") != self.workflow:
 			frappe.throw(_("Generation Run project snapshot workflow does not match the Run workflow."))
-		if snapshot.get("generation_pipeline") and snapshot.get("generation_pipeline") != self.generation_pipeline:
+		if (
+			snapshot.get("generation_pipeline")
+			and snapshot.get("generation_pipeline") != self.generation_pipeline
+		):
 			frappe.throw(_("Generation Run project snapshot pipeline does not match the Run pipeline."))
 		if self.generation_pipeline:
 			from joymedia.services.workflows.pipeline import get_pipeline_steps
@@ -92,6 +99,8 @@ class GenerationRun(Document):
 			try:
 				scope = frappe.parse_json(self.execution_scope_json)
 			except (TypeError, ValueError):
-				frappe.throw(_("Generation Run {0} has invalid execution scope JSON.").format(self.name or "new"))
+				frappe.throw(
+					_("Generation Run {0} has invalid execution scope JSON.").format(self.name or "new")
+				)
 			if not isinstance(scope, dict):
 				frappe.throw(_("Generation Run execution scope must be a JSON object."))

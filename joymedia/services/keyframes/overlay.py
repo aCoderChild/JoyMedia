@@ -34,7 +34,11 @@ def usable_setting(text):
 	"""The setting with every clause that names a subject left out: a pack, a person or a character in it would be
 	drawn into the empty room (the real one is pasted or drawn from its own picture). The room and its furniture and
 	objects stay ("a warm room with a table; a plate of cookies, a glass of water"). Nothing left: the default room."""
-	clauses = [part.strip() for part in re.split(r"(?<=[.;])\s+|,\s+(?:and\s+)?", str(text or "").strip()) if part.strip()]
+	clauses = [
+		part.strip()
+		for part in re.split(r"(?<=[.;])\s+|,\s+(?:and\s+)?", str(text or "").strip())
+		if part.strip()
+	]
 	kept = [clause for clause in clauses if not SUBJECT_WORDS.search(clause)]
 	if not kept:
 		return DEFAULT_SETTING
@@ -69,10 +73,22 @@ def _cutout_path(asset_version):
 
 
 PALETTE = {
-	"white": (245, 245, 245), "cream": (240, 225, 200), "beige": (225, 200, 170), "light brown": (190, 140, 100),
-	"brown": (120, 80, 50), "dark brown": (60, 40, 30), "grey": (140, 140, 140), "black": (20, 20, 20),
-	"red": (200, 40, 40), "orange": (230, 130, 40), "yellow": (240, 210, 60), "green": (60, 160, 90),
-	"teal": (60, 170, 160), "blue": (50, 100, 190), "pink": (240, 150, 180), "purple": (130, 80, 170),
+	"white": (245, 245, 245),
+	"cream": (240, 225, 200),
+	"beige": (225, 200, 170),
+	"light brown": (190, 140, 100),
+	"brown": (120, 80, 50),
+	"dark brown": (60, 40, 30),
+	"grey": (140, 140, 140),
+	"black": (20, 20, 20),
+	"red": (200, 40, 40),
+	"orange": (230, 130, 40),
+	"yellow": (240, 210, 60),
+	"green": (60, 160, 90),
+	"teal": (60, 170, 160),
+	"blue": (50, 100, 190),
+	"pink": (240, 150, 180),
+	"purple": (130, 80, 170),
 }
 
 
@@ -93,12 +109,17 @@ def describe_colours(asset_version):
 	counts = {}
 	for red, green, blue, alpha in image.getdata():
 		if alpha > 128:
-			name = min(PALETTE, key=lambda n: sum((a - b) ** 2 for a, b in zip(PALETTE[n], (red, green, blue))))
+			name = min(
+				PALETTE,
+				key=lambda n: sum((a - b) ** 2 for a, b in zip(PALETTE[n], (red, green, blue), strict=False)),
+			)
 			counts[name] = counts.get(name, 0) + 1
 	total = sum(counts.values())
 	if not total:
 		return ""
-	ranked = [name for name, count in sorted(counts.items(), key=lambda item: -item[1]) if count / total >= 0.08]
+	ranked = [
+		name for name, count in sorted(counts.items(), key=lambda item: -item[1]) if count / total >= 0.08
+	]
 	main = [name for name in ranked if counts[name] / total >= 0.25] or ranked[:1]
 	details = [name for name in ranked if name not in main][:2]
 	return f"mostly {' and '.join(main)}" + (f", with {' and '.join(details)} details" if details else "")
@@ -112,6 +133,7 @@ def scene_mode(references, character_mode=PASTE):
 
 def closes_film(shot, project=None):
 	"""Whether this is the film's last scene: the advertisement's end card, where the product is the hero."""
+
 	def field(row, key):
 		return row.get(key) if hasattr(row, "get") else getattr(row, key, None)
 
@@ -120,8 +142,18 @@ def closes_film(shot, project=None):
 	if isinstance(shots, list) and shots:
 		last = max(int(field(row, "shot_number") or 0) for row in shots)
 	else:
-		name = (field(project, "media_project") or field(project, "name")) if project is not None else field(shot, "media_project")
-		last = frappe.db.sql("select max(shot_number) from `tabShot` where media_project = %s and is_removed = 0", name)[0][0] if name else None
+		name = (
+			(field(project, "media_project") or field(project, "name"))
+			if project is not None
+			else field(shot, "media_project")
+		)
+		last = (
+			frappe.db.sql(
+				"select max(shot_number) from `tabShot` where media_project = %s and is_removed = 0", name
+			)[0][0]
+			if name
+			else None
+		)
 	return bool(number) and number == int(last or 0)
 
 
@@ -168,7 +200,9 @@ def closing_subjects(references):
 		cutout = _cutout_path(version)
 		path = cutout or _any_image_path(version)
 		if path:
-			subjects.append({"role": role, "asset_version": version, "path": path, "opaque": not bool(cutout)})
+			subjects.append(
+				{"role": role, "asset_version": version, "path": path, "opaque": not bool(cutout)}
+			)
 	return subjects
 
 
@@ -189,7 +223,12 @@ def character_board(references, scales=None, role="character"):
 			with Image.open(path) as source:
 				image = source.convert("RGBA")
 			box = image.getchannel("A").point(lambda v: 255 if v > 8 else 0).getbbox()
-			items.append((image.crop(box) if box else image, (scales or {}).get(reference.get("asset_version"), 1) or 1))
+			items.append(
+				(
+					image.crop(box) if box else image,
+					(scales or {}).get(reference.get("asset_version"), 1) or 1,
+				)
+			)
 	if not items:
 		return None
 	largest = max(scale for _image, scale in items)
@@ -197,7 +236,12 @@ def character_board(references, scales=None, role="character"):
 	tiles = []
 	for image, scale in items:
 		tile_height = round(height * 0.86 * scale / largest)
-		tiles.append(image.resize((max(1, round(image.width * tile_height / image.height)), tile_height), Image.Resampling.LANCZOS))
+		tiles.append(
+			image.resize(
+				(max(1, round(image.width * tile_height / image.height)), tile_height),
+				Image.Resampling.LANCZOS,
+			)
+		)
 	width = sum(tile.width for tile in tiles) + gap * (len(tiles) + 1)
 	board = Image.new("RGB", (width, height), (236, 232, 226))
 	x = gap
@@ -207,7 +251,13 @@ def character_board(references, scales=None, role="character"):
 	folder = Path(frappe.get_site_path("private", "joymedia-boards"))
 	folder.mkdir(parents=True, exist_ok=True)
 	digest = hashlib.sha256(
-		(f"{role}|" + "|".join(f"{r.get('asset_version')}:{(scales or {}).get(r.get('asset_version'), 1)}" for r in references)).encode()
+		(
+			f"{role}|"
+			+ "|".join(
+				f"{r.get('asset_version')}:{(scales or {}).get(r.get('asset_version'), 1)}"
+				for r in references
+			)
+		).encode()
 	).hexdigest()[:16]
 	output = folder / f"{role}s-{digest}.png"
 	board.save(output, "PNG")
@@ -238,7 +288,12 @@ def scene_role_count(job, role):
 
 def _run_snapshot(run_name):
 	try:
-		return frappe.parse_json(frappe.db.get_value("Generation Run", run_name, "project_snapshot_json") or "{}") or {}
+		return (
+			frappe.parse_json(
+				frappe.db.get_value("Generation Run", run_name, "project_snapshot_json") or "{}"
+			)
+			or {}
+		)
 	except (TypeError, ValueError):
 		return {}
 
@@ -257,7 +312,9 @@ def hero_layout(canvas, sizes_by_role):
 	No assumptions about a brand, species or particular number of references.
 	"""
 	w, h = canvas
-	groups = [[i for i, item in enumerate(sizes_by_role) if item[0] == role] for role in ("character", "product")]
+	groups = [
+		[i for i, item in enumerate(sizes_by_role) if item[0] == role] for role in ("character", "product")
+	]
 	groups = [group for group in groups if group]
 	if sum(map(len, groups)) != len(sizes_by_role):
 		raise ValueError("Hero composition supports character and product artwork only")
@@ -265,15 +322,24 @@ def hero_layout(canvas, sizes_by_role):
 	portrait = h >= w
 	for group_index, group in enumerate(groups):
 		if len(groups) == 1:
-			cell = (.08 * w, .16 * h, .84 * w, .68 * h)
+			cell = (0.08 * w, 0.16 * h, 0.84 * w, 0.68 * h)
 		elif portrait:
 			# A marketing end card gives the product the primary presentation cell.
-			cell = ((.275 if group_index == 0 else .05)*w, (.19 if group_index == 0 else .46)*h,
-				(.45 if group_index == 0 else .90)*w, (.23 if group_index == 0 else .36)*h)
+			cell = (
+				(0.275 if group_index == 0 else 0.05) * w,
+				(0.19 if group_index == 0 else 0.46) * h,
+				(0.45 if group_index == 0 else 0.90) * w,
+				(0.23 if group_index == 0 else 0.36) * h,
+			)
 		else:
-			cell = ((.04 if group_index == 0 else .36)*w, .16*h, (.26 if group_index == 0 else .60)*w, .68*h)
+			cell = (
+				(0.04 if group_index == 0 else 0.36) * w,
+				0.16 * h,
+				(0.26 if group_index == 0 else 0.60) * w,
+				0.68 * h,
+			)
 		x, y, width, height = cell
-		gap = min(w, h) * .025
+		gap = min(w, h) * 0.025
 		available = width - gap * (len(group) - 1)
 		shapes = []
 		for index in group:
@@ -309,7 +375,10 @@ def layout(canvas, sizes_by_role, product_center=None, product_hero=False, front
 		return hero_layout(canvas, sizes_by_role)
 	canvas_width, canvas_height = canvas
 	boxes = [None] * len(sizes_by_role)
-	groups = {role: [i for i, item in enumerate(sizes_by_role) if item[0] == role] for role in ("character", "product")}
+	groups = {
+		role: [i for i, item in enumerate(sizes_by_role) if item[0] == role]
+		for role in ("character", "product")
+	}
 	for _rank, index in enumerate(groups["character"]):
 		_role_name, width, height, *rest = sizes_by_role[index]
 		count = len(groups["character"])
@@ -319,11 +388,19 @@ def layout(canvas, sizes_by_role, product_center=None, product_hero=False, front
 		# The width budget is shared in proportion to each character's relative size.
 		share = scale / sum(value / max(scales) for value in scales)
 		box_width, box_height = _fit(
-			width, height, tune("character_width") * canvas_width * share, tune("character_height") * canvas_height * scale
+			width,
+			height,
+			tune("character_width") * canvas_width * share,
+			tune("character_height") * canvas_height * scale,
 		)
 		center = (_rank + 1) * canvas_width / (count + 1)
 		baseline = tune("character_baseline")
-		boxes[index] = (round(center - box_width / 2), round(baseline * canvas_height) - box_height, box_width, box_height)
+		boxes[index] = (
+			round(center - box_width / 2),
+			round(baseline * canvas_height) - box_height,
+			box_width,
+			box_height,
+		)
 	hero = boxes[groups["character"][0]] if groups["character"] else None
 	if front:
 		product_center = 0.5
@@ -335,7 +412,9 @@ def layout(canvas, sizes_by_role, product_center=None, product_hero=False, front
 		scale = rest[0] if rest else 1
 		size_key = "front_product" if front else "product" if hero else "hero_product"
 		box_width, box_height = _fit(
-			width, height, tune(f"{size_key}_width") * canvas_width / max(1, count * 0.75) * scale,
+			width,
+			height,
+			tune(f"{size_key}_width") * canvas_width / max(1, count * 0.75) * scale,
 			tune(f"{size_key}_height") * canvas_height * scale,
 		)
 		if hero and count == 1:
@@ -355,12 +434,20 @@ def layout(canvas, sizes_by_role, product_center=None, product_hero=False, front
 	for index in groups["product"]:
 		center, box_width, box_height = boxes[index]
 		bottom = (
-			(hero[1] + hero[3] + tune("product_near") * canvas_height) if hero
-			else tune("front_product_baseline") * canvas_height if front else tune("product_baseline") * canvas_height
+			(hero[1] + hero[3] + tune("product_near") * canvas_height)
+			if hero
+			else tune("front_product_baseline") * canvas_height
+			if front
+			else tune("product_baseline") * canvas_height
 		)
 		margin = tune("edge_margin") * canvas_width
 		x = min(max(center - box_width / 2, margin), canvas_width - margin - box_width)
-		boxes[index] = (round(x), round(min(bottom, 0.97 * canvas_height)) - box_height, box_width, box_height)
+		boxes[index] = (
+			round(x),
+			round(min(bottom, 0.97 * canvas_height)) - box_height,
+			box_width,
+			box_height,
+		)
 	return boxes
 
 
@@ -371,10 +458,12 @@ def _contact_shadow(canvas, x, y, width, height):
 	shadow = Image.new("L", canvas.size, 0)
 	rim = max(3, round(height * 0.035))
 	base = y + height - round(rim * 1.3)
-	ImageDraw.Draw(shadow).ellipse((x + width * .05, base - rim, x + width * .95, base + rim * 2), fill=55)
+	ImageDraw.Draw(shadow).ellipse((x + width * 0.05, base - rim, x + width * 0.95, base + rim * 2), fill=55)
 	shadow = shadow.filter(ImageFilter.GaussianBlur(rim * 1.6))
 	tight = Image.new("L", canvas.size, 0)
-	ImageDraw.Draw(tight).ellipse((x + width * .15, base - rim * .3, x + width * .85, base + rim * .5), fill=75)
+	ImageDraw.Draw(tight).ellipse(
+		(x + width * 0.15, base - rim * 0.3, x + width * 0.85, base + rim * 0.5), fill=75
+	)
 	tight = tight.filter(ImageFilter.GaussianBlur(rim * 0.5))
 	for layer in (shadow, tight):
 		canvas.paste(Image.new("RGBA", canvas.size, (0, 0, 0, 255)), (0, 0), layer)
@@ -402,24 +491,41 @@ def shared_ground_layout(canvas, sizes):
 	shapes = []
 	for _role, width, height, *scale in sizes:
 		relative = scale[0] if scale else 1
-		if any(type(value) not in (int,float) or not math.isfinite(value) or value <= 0 for value in (width,height,relative)) or relative > 100:
+		if (
+			any(
+				type(value) not in (int, float) or not math.isfinite(value) or value <= 0
+				for value in (width, height, relative)
+			)
+			or relative > 100
+		):
 			raise ValueError("Artwork dimensions and relative scale must be positive")
 		shapes.append((width / height * relative, relative))
-	gap = min(w, h) * .035
-	unit = min((w * .84 - gap * (len(shapes)-1)) / sum(x for x, _ in shapes), h * .52 / max(y for _, y in shapes))
+	gap = min(w, h) * 0.035
+	unit = min(
+		(w * 0.84 - gap * (len(shapes) - 1)) / sum(x for x, _ in shapes), h * 0.52 / max(y for _, y in shapes)
+	)
 	if unit <= 0:
 		raise ValueError("Too many subjects for the studio ground")
-	cursor = (w - unit * sum(x for x, _ in shapes) - gap * (len(shapes)-1)) / 2
-	baseline = round(h * .72)
+	cursor = (w - unit * sum(x for x, _ in shapes) - gap * (len(shapes) - 1)) / 2
+	baseline = round(h * 0.72)
 	boxes = []
 	for width, height in shapes:
 		bw, bh = max(1, round(unit * width)), max(1, round(unit * height))
-		boxes.append((round(cursor), baseline-bh, bw, bh))
+		boxes.append((round(cursor), baseline - bh, bw, bh))
 		cursor += bw + gap
 	return boxes
 
 
-def composite_subjects(background_bytes, subjects, shadows=True, hero=False, front=False, lock=None, shared_ground=False, placements=None):
+def composite_subjects(
+	background_bytes,
+	subjects,
+	shadows=True,
+	hero=False,
+	front=False,
+	lock=None,
+	shared_ground=False,
+	placements=None,
+):
 	"""PNG bytes of the background with the subjects pasted at their exact aspect ratio.
 
 	`hero` makes the product the large centre of a closing scene; `front` stands it in front of drawn characters. When
@@ -436,14 +542,25 @@ def composite_subjects(background_bytes, subjects, shadows=True, hero=False, fro
 		with Image.open(subject["path"]) as source:
 			asset = source.convert("RGBA")
 		if shared_ground and asset.getchannel("A").getextrema()[0] >= 250:
-			raise ValueError("Shared studio ground requires transparent prepared artwork, not photograph panels")
+			raise ValueError(
+				"Shared studio ground requires transparent prepared artwork, not photograph panels"
+			)
 		# Sizes and placement follow the visible subject, not the transparent margin around it.
 		assets.append(asset.crop(asset.getchannel("A").point(lambda a: 255 if a > 8 else 0).getbbox()))
 	has_character = any(s["role"] == "character" for s in subjects)
-	sizes = [(s["role"], a.width, a.height, s.get("scale", 1)) for s, a in zip(subjects, assets)]
-	boxes = shared_ground_layout(canvas.size, sizes) if shared_ground else layout(
-		canvas.size, sizes,
-		product_center=None if has_character or front else (0.5 if hero else _emptier_side(canvas)), product_hero=hero, front=front,
+	sizes = [
+		(s["role"], a.width, a.height, s.get("scale", 1)) for s, a in zip(subjects, assets, strict=False)
+	]
+	boxes = (
+		shared_ground_layout(canvas.size, sizes)
+		if shared_ground
+		else layout(
+			canvas.size,
+			sizes,
+			product_center=None if has_character or front else (0.5 if hero else _emptier_side(canvas)),
+			product_hero=hero,
+			front=front,
+		)
 	)
 	if placements:
 		from joymedia.services.scene.artwork import fit_box
@@ -452,7 +569,7 @@ def composite_subjects(background_bytes, subjects, shadows=True, hero=False, fro
 		available = {subject.get("asset_version") for subject in subjects}
 		if set(requested) - available:
 			raise ValueError("Artwork placement must name a selected transparent source asset.")
-		for index, (subject, asset) in enumerate(zip(subjects, assets)):
+		for index, (subject, asset) in enumerate(zip(subjects, assets, strict=False)):
 			if subject.get("asset_version") in requested:
 				if asset.getchannel("A").getextrema()[0] >= 250:
 					raise ValueError("Placed artwork requires a transparent cutout, not a photo panel.")
@@ -461,18 +578,28 @@ def composite_subjects(background_bytes, subjects, shadows=True, hero=False, fro
 		lock.update({"canvas": list(canvas.size), "items": []})
 	# Painting order: characters, then products; on the end card the centre product (the first) is painted last, in front.
 	products = [i for i, s in enumerate(subjects) if s["role"] == "product"]
-	order = [i for i, s in enumerate(subjects) if s["role"] != "product"] + (products[1:] + products[:1] if hero else products)
+	order = [i for i, s in enumerate(subjects) if s["role"] != "product"] + (
+		products[1:] + products[:1] if hero else products
+	)
 	for subject, asset, (x, y, width, height) in ((subjects[i], assets[i], boxes[i]) for i in order):
 		resized = asset.resize((width, height), Image.Resampling.LANCZOS)
 		# A softer edge and a touch of the room's colour make the cutout sit in the scene instead of on it.
 		alpha = resized.getchannel("A").filter(ImageFilter.GaussianBlur(0.7))
-		room = canvas.crop((max(0, x), max(0, y), min(canvas.width, x + width), min(canvas.height, y + height)))
-		tint = Image.new("RGB", resized.size, room.convert("RGB").resize((1, 1), Image.Resampling.BOX).getpixel((0, 0)))
+		room = canvas.crop(
+			(max(0, x), max(0, y), min(canvas.width, x + width), min(canvas.height, y + height))
+		)
+		tint = Image.new(
+			"RGB", resized.size, room.convert("RGB").resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))
+		)
 		rgb = resized.convert("RGB")
 		if subject["role"] != "product" and not hero:
 			rgb = Image.blend(rgb, tint, tune("colour_match"))
 		# Light falls off toward the floor: darken the lowest quarter a little, as in contact with the ground.
-		ramp = Image.linear_gradient("L").resize(rgb.size).point(lambda v: round((v - 190) * 0.6) if v > 190 else 0)
+		ramp = (
+			Image.linear_gradient("L")
+			.resize(rgb.size)
+			.point(lambda v: round((v - 190) * 0.6) if v > 190 else 0)
+		)
 		if subject["role"] != "product" and not hero:
 			rgb = Image.composite(Image.new("RGB", rgb.size, (0, 0, 0)), rgb, ramp)
 		resized = Image.merge("RGBA", (*rgb.split(), alpha))
@@ -482,7 +609,13 @@ def composite_subjects(background_bytes, subjects, shadows=True, hero=False, fro
 		if lock is not None and subject["role"] == "product":
 			patch = io.BytesIO()
 			resized.save(patch, "PNG")
-			lock["items"].append({"box": [max(0, x), max(0, y), width, height], "png": patch.getvalue(), "source_asset_version": subject.get("asset_version")})
+			lock["items"].append(
+				{
+					"box": [max(0, x), max(0, y), width, height],
+					"png": patch.getvalue(),
+					"source_asset_version": subject.get("asset_version"),
+				}
+			)
 	output = io.BytesIO()
 	canvas.convert("RGB").save(output, "PNG")
 	return output.getvalue()
@@ -496,35 +629,59 @@ def paste_subjects_into_keyframe(attempt, image_bytes, lock=None):
 	task = frappe.db.get_value("Generation Attempt", attempt.name, ["generation_task"], as_dict=True)
 	shot, run = frappe.db.get_value("Generation Task", task.generation_task, ["shot", "generation_run"])
 	try:
-		snapshot = frappe.parse_json(frappe.db.get_value("Generation Run", run, "project_snapshot_json") or "{}")
+		snapshot = frappe.parse_json(
+			frappe.db.get_value("Generation Run", run, "project_snapshot_json") or "{}"
+		)
 	except (TypeError, ValueError):
 		snapshot = {}
 	shot_snapshot = next((row for row in (snapshot or {}).get("shots") or [] if row.get("shot") == shot), {})
-	from joymedia.services.consistency.retention import retain, required_sources, RetentionRejected
+	from joymedia.services.consistency.retention import RetentionRejected, required_sources, retain
 	from joymedia.services.scene.artwork import placements
 
 	# Draw-in-scene packshots use the same measured placement/matting as every
 	# other shot. The final scene number does not authorize a white photo collage.
 	staged = scene_mode(shot_snapshot.get("references"), shot_snapshot.get("character_mode") or PASTE) == DRAW
-	if (staged or not closes_film(shot_snapshot, snapshot)) and shot_snapshot.get("reference_retention") and required_sources(shot_snapshot.get("references")) and not placements(shot_snapshot.get("motion_plan_json")):
+	if (
+		(staged or not closes_film(shot_snapshot, snapshot))
+		and shot_snapshot.get("reference_retention")
+		and required_sources(shot_snapshot.get("references"))
+		and not placements(shot_snapshot.get("motion_plan_json"))
+	):
 		# Keep the provider's staging as a proposal, but never its package artwork.
 		try:
-			return retain(attempt, image_bytes, shot_snapshot.get("references"), shot_snapshot["reference_retention"], lock if lock is not None else {})
+			return retain(
+				attempt,
+				image_bytes,
+				shot_snapshot.get("references"),
+				shot_snapshot["reference_retention"],
+				lock if lock is not None else {},
+			)
 		except ValueError as exc:
 			raise RetentionRejected(str(exc)) from exc
 	hero = closes_film(shot_snapshot, snapshot) and not staged
 	mode = scene_mode(shot_snapshot.get("references"), shot_snapshot.get("character_mode") or PASTE)
-	subjects = closing_subjects(shot_snapshot.get("references")) if hero else pasted_references(
-		shot_snapshot.get("references"), shot_snapshot.get("character_mode") or PASTE
+	subjects = (
+		closing_subjects(shot_snapshot.get("references"))
+		if hero
+		else pasted_references(shot_snapshot.get("references"), shot_snapshot.get("character_mode") or PASTE)
 	)
-	scales = {row.get("asset_version"): row.get("scale") or 1 for row in (snapshot or {}).get("references") or []}
+	scales = {
+		row.get("asset_version"): row.get("scale") or 1 for row in (snapshot or {}).get("references") or []
+	}
 	for subject in subjects:
 		subject["scale"] = scales.get(subject["asset_version"], 1)
 	from joymedia.services.keyframes.locations import shot_views
 
 	views = shot_views(shot_snapshot)
 	if views:
-		return split_screen_keyframe(image_bytes, views, shot_snapshot.get("setting_prompt"), snapshot.get("media_project"), subjects, lock)
+		return split_screen_keyframe(
+			image_bytes,
+			views,
+			shot_snapshot.get("setting_prompt"),
+			snapshot.get("media_project"),
+			subjects,
+			lock,
+		)
 	from joymedia.services.planning.prompts import holds_product
 
 	if holds_product(frappe._dict(shot_snapshot)):
@@ -535,8 +692,9 @@ def paste_subjects_into_keyframe(attempt, image_bytes, lock=None):
 
 	authored = placements(shot_snapshot.get("motion_plan_json"))
 	if authored:
-		from joymedia.services.scene.artwork import validate_surface_contact, fit_box
 		from PIL import Image
+
+		from joymedia.services.scene.artwork import fit_box, validate_surface_contact
 
 		with Image.open(io.BytesIO(image_bytes)) as canvas:
 			canvas_size = canvas.size
@@ -551,17 +709,31 @@ def paste_subjects_into_keyframe(attempt, image_bytes, lock=None):
 				asset = asset.crop(asset.getchannel("A").point(lambda a: 255 if a > 8 else 0).getbbox())
 				if not row:
 					raise ValueError("A product has no explicit source placement.")
-				proof = validate_surface_contact(image_bytes, canvas_size, asset, fit_box(canvas_size, asset.size, row["box"]), row.get("support_surface"))
+				proof = validate_surface_contact(
+					image_bytes,
+					canvas_size,
+					asset,
+					fit_box(canvas_size, asset.size, row["box"]),
+					row.get("support_surface"),
+				)
 				if lock is not None:
-					lock.setdefault("provenance", []).append({**proof, "source_asset_version": subject["asset_version"]})
+					lock.setdefault("provenance", []).append(
+						{**proof, "source_asset_version": subject["asset_version"]}
+					)
 		except ValueError as exc:
 			raise RetentionRejected(str(exc)) from exc
 		return composite_subjects(image_bytes, subjects, lock=lock, placements=authored)
 	if not hero and any(subject["role"] == "product" for subject in subjects):
-		raise RetentionRejected("No measured product surface is available. Heuristic product placement in a scene is disabled.")
+		raise RetentionRejected(
+			"No measured product surface is available. Heuristic product placement in a scene is disabled."
+		)
 	# The closing scene makes the product the hero; elsewhere a drawn scene stands it in front of the cast.
 	front = mode == DRAW and not hero
-	return composite_subjects(image_bytes, subjects, hero=hero, front=front, lock=lock) if subjects else image_bytes
+	return (
+		composite_subjects(image_bytes, subjects, hero=hero, front=front, lock=lock)
+		if subjects
+		else image_bytes
+	)
 
 
 def paste_held_product(image_bytes, subjects, lock=None):
@@ -593,7 +765,12 @@ def paste_held_product(image_bytes, subjects, lock=None):
 	if lock is not None:
 		patch = io.BytesIO()
 		resized.save(patch, "PNG")
-		lock.update({"canvas": list(canvas.size), "items": [{"box": [max(0, x), max(0, y), width, height], "png": patch.getvalue()}]})
+		lock.update(
+			{
+				"canvas": list(canvas.size),
+				"items": [{"box": [max(0, x), max(0, y), width, height], "png": patch.getvalue()}],
+			}
+		)
 	output = io.BytesIO()
 	canvas.convert("RGB").save(output, "PNG")
 	return output.getvalue()
@@ -614,8 +791,12 @@ def split_screen_keyframe(image_bytes, views, setting, project_name, subjects, l
 		width, height = drawn.size
 	gap = max(4, round(height * 0.006))
 	band = (height - gap * (len(views) - 1)) // len(views)
-	project = frappe.get_doc("Media Project", project_name) if project_name else frappe._dict(selected_media=[])
-	pictures = {row.reference_key: row.asset_version for row in project.selected_media or [] if row.reference_key}
+	project = (
+		frappe.get_doc("Media Project", project_name) if project_name else frappe._dict(selected_media=[])
+	)
+	pictures = {
+		row.reference_key: row.asset_version for row in project.selected_media or [] if row.reference_key
+	}
 	frame = Image.new("RGB", (width, height), "white")
 	if lock is not None:
 		lock.update({"canvas": [width, height], "items": []})
@@ -628,7 +809,11 @@ def split_screen_keyframe(image_bytes, views, setting, project_name, subjects, l
 		buffer = io.BytesIO()
 		panel.save(buffer, "PNG")
 		panel_lock = {} if lock is not None else None
-		filled = composite_subjects(buffer.getvalue(), subjects, hero=True, lock=panel_lock) if subjects else buffer.getvalue()
+		filled = (
+			composite_subjects(buffer.getvalue(), subjects, hero=True, lock=panel_lock)
+			if subjects
+			else buffer.getvalue()
+		)
 		top = index * (band + gap)
 		with Image.open(io.BytesIO(filled)) as panel:
 			frame.paste(panel.convert("RGB"), (0, top))
@@ -646,12 +831,34 @@ def store_product_lock(artifact, lock):
 
 	items = []
 	for number, item in enumerate(lock["items"], 1):
-		file_doc = frappe.get_doc({
-			"doctype": "File", "file_name": f"{artifact.name}-product-{number}.png", "content": item["png"], "is_private": 1,
-			"attached_to_doctype": "Generation Artifact", "attached_to_name": artifact.name,
-		}).insert(ignore_permissions=True)
-		items.append({"box": item["box"], "file": file_doc.file_url, **({"source_asset_version": item["source_asset_version"]} if item.get("source_asset_version") else {})})
-	return json.dumps({"canvas": lock["canvas"], "items": items, **({"provenance": lock["provenance"]} if lock.get("provenance") else {})})
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"{artifact.name}-product-{number}.png",
+				"content": item["png"],
+				"is_private": 1,
+				"attached_to_doctype": "Generation Artifact",
+				"attached_to_name": artifact.name,
+			}
+		).insert(ignore_permissions=True)
+		items.append(
+			{
+				"box": item["box"],
+				"file": file_doc.file_url,
+				**(
+					{"source_asset_version": item["source_asset_version"]}
+					if item.get("source_asset_version")
+					else {}
+				),
+			}
+		)
+	return json.dumps(
+		{
+			"canvas": lock["canvas"],
+			"items": items,
+			**({"provenance": lock["provenance"]} if lock.get("provenance") else {}),
+		}
+	)
 
 
 class SourceArtCoverageError(ValueError):
@@ -667,12 +874,23 @@ def _region_thumbnails(video_path, box):
 
 	x, y, width, height = box
 	raw = subprocess.run(
-		["ffmpeg", "-v", "error", "-i", str(video_path), "-vf", f"crop={width}:{height}:{x}:{y},scale={THUMB}:{THUMB},format=gray",
-		 "-f", "rawvideo", "-"],
-		capture_output=True, check=True,
+		[
+			"ffmpeg",
+			"-v",
+			"error",
+			"-i",
+			str(video_path),
+			"-vf",
+			f"crop={width}:{height}:{x}:{y},scale={THUMB}:{THUMB},format=gray",
+			"-f",
+			"rawvideo",
+			"-",
+		],
+		capture_output=True,
+		check=True,
 	).stdout
 	size = THUMB * THUMB
-	return [raw[i:i + size] for i in range(0, len(raw) - size + 1, size)]
+	return [raw[i : i + size] for i in range(0, len(raw) - size + 1, size)]
 
 
 def pack_still_frames(thumbs, mask=None, tolerance=None):
@@ -691,10 +909,10 @@ def pack_still_frames(thumbs, mask=None, tolerance=None):
 	pixels = [i for i in range(len(first)) if mask is None or mask[i]] or list(range(len(first)))
 	still = [sum(abs(frame[i] - first[i]) for i in pixels) / len(pixels) < tolerance for frame in thumbs]
 	for index in range(1, len(still) - 1):  # bridge short dropouts (a paw passing, a flicker)
-		if not still[index] and any(still[max(0, index - 3):index]) and any(still[index + 1:index + 4]):
+		if not still[index] and any(still[max(0, index - 3) : index]) and any(still[index + 1 : index + 4]):
 			still[index] = True
 	ranges, start = [], None
-	for index, ok in enumerate(still + [False]):
+	for index, ok in enumerate([*still, False]):
 		if ok and start is None:
 			start = index
 		elif not ok and start is not None:
@@ -717,8 +935,21 @@ def lock_products_in_video(video_path, lock, output_path, fps):
 
 	lock = json.loads(lock) if isinstance(lock, str) else lock
 	probe = subprocess.run(
-		["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", str(video_path)],
-		capture_output=True, text=True, check=True,
+		[
+			"ffprobe",
+			"-v",
+			"error",
+			"-select_streams",
+			"v:0",
+			"-show_entries",
+			"stream=width,height",
+			"-of",
+			"csv=p=0",
+			str(video_path),
+		],
+		capture_output=True,
+		text=True,
+		check=True,
 	)
 	video_width, video_height = (int(value) for value in probe.stdout.strip().split(",")[:2])
 	scale_x, scale_y = video_width / lock["canvas"][0], video_height / lock["canvas"][1]
@@ -728,7 +959,12 @@ def lock_products_in_video(video_path, lock, output_path, fps):
 	for item in lock["items"]:
 		path = frappe.get_doc("File", {"file_url": item["file"]}).get_full_path()
 		x, y, width, height = item["box"]
-		box = (round(x * scale_x), round(y * scale_y), max(2, round(width * scale_x)), max(2, round(height * scale_y)))
+		box = (
+			round(x * scale_x),
+			round(y * scale_y),
+			max(2, round(width * scale_x)),
+			max(2, round(height * scale_y)),
+		)
 		box = (box[0], box[1], min(box[2], video_width - box[0]), min(box[3], video_height - box[1]))
 		with Image.open(path) as patch:
 			mask = [value > 128 for value in patch.getchannel("A").resize((THUMB, THUMB)).tobytes()]
@@ -738,24 +974,53 @@ def lock_products_in_video(video_path, lock, output_path, fps):
 			raise ValueError("Unknown protected artwork coordinate space.")
 		if space == "screen" and item.get("kind") != "typography":
 			raise ValueError("Screen-space protection requires declared typography.")
-		ranges = [(0,len(thumbs)-1)] if space == "screen" and thumbs else pack_still_frames(thumbs, mask)
+		ranges = [(0, len(thumbs) - 1)] if space == "screen" and thumbs else pack_still_frames(thumbs, mask)
 		# A partial overlay is not an exact-art lock. Refuse the take instead of
 		# silently leaving distorted label frames in a supposedly protected clip.
 		covered = {frame for start, end in ranges for frame in range(start, end + 1)}
 		if len(covered) != len(thumbs) or not thumbs:
-			raise SourceArtCoverageError("Product source-art lock lost coverage. Use tracked source-art repair with explicit occlusion controls; this take was not protected.")
+			raise SourceArtCoverageError(
+				"Product source-art lock lost coverage. Use tracked source-art repair with explicit occlusion controls; this take was not protected."
+			)
 		index = len(inputs) // 6  # one "-loop 1 -framerate fps -i path" group per pack placed so far
 		# The still must run at the video's rate: at ffmpeg's default 25 fps the overlay drifts and drops near the end.
 		inputs += ["-loop", "1", "-framerate", f"{fps:g}", "-i", path]
 		enable = "+".join(f"between(n,{first},{last})" for first, last in ranges)
 		graph.append(f"[{index + 1}:v]scale={box[2]}:{box[3]}:flags=lanczos,format=rgba[pack{index}]")
-		graph.append(f"[{label}][pack{index}]overlay=x={box[0]}:y={box[1]}:shortest=1:enable='{enable}'[locked{index}]")
+		graph.append(
+			f"[{label}][pack{index}]overlay=x={box[0]}:y={box[1]}:shortest=1:enable='{enable}'[locked{index}]"
+		)
 		label = f"locked{index}"
 	if not graph:
 		return None
 	subprocess.run(
-		["ffmpeg", "-v", "error", "-y", "-i", str(video_path), *inputs, "-filter_complex", ";".join(graph), "-map", f"[{label}]", "-map", "0:a?",
-		 "-c:a", "copy", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", "-r", f"{fps:g}", str(output_path)],
-		check=True, capture_output=True,
+		[
+			"ffmpeg",
+			"-v",
+			"error",
+			"-y",
+			"-i",
+			str(video_path),
+			*inputs,
+			"-filter_complex",
+			";".join(graph),
+			"-map",
+			f"[{label}]",
+			"-map",
+			"0:a?",
+			"-c:a",
+			"copy",
+			"-c:v",
+			"libx264",
+			"-pix_fmt",
+			"yuv420p",
+			"-crf",
+			"16",
+			"-r",
+			f"{fps:g}",
+			str(output_path),
+		],
+		check=True,
+		capture_output=True,
 	)
 	return output_path

@@ -23,10 +23,12 @@ class TestWorkflowResolutionExecution(FrappeTestCase):
 
 		run = MagicMock()
 		run.name = "RUN-00001"
-		run.project_snapshot_json = json.dumps({
-			"delivery_width": 1280,
-			"delivery_height": 720,
-		})
+		run.project_snapshot_json = json.dumps(
+			{
+				"delivery_width": 1280,
+				"delivery_height": 720,
+			}
+		)
 
 		workflow_graph = {
 			"114": {
@@ -45,10 +47,12 @@ class TestWorkflowResolutionExecution(FrappeTestCase):
 		workflow_version = frappe._dict(
 			name="WF-00001",
 			adapter_key="comfyui_generic",
-			execution_spec=json.dumps({
-				"parameters": [],
-				"outputs": {"primary": {"node_key": "105:104", "media_type": "Video"}},
-			}),
+			execution_spec=json.dumps(
+				{
+					"parameters": [],
+					"outputs": {"primary": {"node_key": "105:104", "media_type": "Video"}},
+				}
+			),
 			workflow_json=json.dumps(workflow_graph),
 			bindings=[
 				frappe._dict(
@@ -82,13 +86,16 @@ class TestWorkflowResolutionExecution(FrappeTestCase):
 		}
 
 		adapter = MagicMock()
-		with patch(
-			"joymedia.services.workflows.resolver.frappe.get_doc",
-			side_effect=lambda doctype, name: docs[doctype],
-		), patch(
-			"joymedia.services.workflows.resolver.get_workflow_adapter",
-			return_value=adapter,
-		) as get_adapter:
+		with (
+			patch(
+				"joymedia.services.workflows.resolver.frappe.get_doc",
+				side_effect=lambda doctype, name: docs[doctype],
+			),
+			patch(
+				"joymedia.services.workflows.resolver.get_workflow_adapter",
+				return_value=adapter,
+			) as get_adapter,
+		):
 			resolved = resolve_attempt(
 				attempt.name,
 				staged_inputs={"first_frame": ["ComfyUI/input/product.png"]},

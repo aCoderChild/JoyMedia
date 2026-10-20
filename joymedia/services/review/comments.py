@@ -67,7 +67,9 @@ def _scene(project, shot_name):
 def _frame_limit(project, shot):
 	"""Number of frames in the scene's selected take."""
 	fps = _project_fps(project.name)
-	return _source_max_frames(shot.selected_output_asset_version, fps) or round(float(shot.duration_seconds or 0) * fps), fps
+	return _source_max_frames(shot.selected_output_asset_version, fps) or round(
+		float(shot.duration_seconds or 0) * fps
+	), fps
 
 
 def _as_frame(value, name):
@@ -101,6 +103,7 @@ def add_review_comment(project_name, shot_name, comment, start_frame=None, end_f
 		if limit and start >= limit:
 			frappe.throw(_("This take has {0} frames; frame {1} is past its end.").format(limit, start))
 		end = min(end, limit - 1) if limit else end
+
 	def insert():
 		# The limit check and the insert are one step per scene, or simultaneous requests would all see room:
 		# the scene's row lock queues them, and a locking read sees comments committed while one waited.
@@ -110,12 +113,23 @@ def add_review_comment(project_name, shot_name, comment, start_frame=None, end_f
 			(shot.name, shot.selected_output_asset_version),
 		)[0][0]
 		if open_count >= MAX_OPEN_PER_SCENE:
-			frappe.throw(_("This scene already has {0} open comments. Apply or resolve them first.").format(MAX_OPEN_PER_SCENE))
-		return frappe.get_doc({
-			"doctype": "Review Comment", "media_project": project.name, "shot": shot.name,
-			"output_asset_version": shot.selected_output_asset_version, "start_frame": start, "end_frame": end,
-			"scope": "Scene" if whole else "Frames", "comment": " ".join(strip_html_tags(str(comment or "")).split()),
-		}).insert(ignore_permissions=True)
+			frappe.throw(
+				_("This scene already has {0} open comments. Apply or resolve them first.").format(
+					MAX_OPEN_PER_SCENE
+				)
+			)
+		return frappe.get_doc(
+			{
+				"doctype": "Review Comment",
+				"media_project": project.name,
+				"shot": shot.name,
+				"output_asset_version": shot.selected_output_asset_version,
+				"start_frame": start,
+				"end_frame": end,
+				"scope": "Scene" if whole else "Frames",
+				"comment": " ".join(strip_html_tags(str(comment or "")).split()),
+			}
+		).insert(ignore_permissions=True)
 
 	doc = _retrying(insert)
 	frappe.db.commit()
@@ -126,13 +140,20 @@ def add_review_comment(project_name, shot_name, comment, start_frame=None, end_f
 def _row(row, current_take, fps):
 	frames = row.get("scope") != "Scene" and row["start_frame"] is not None
 	return {
-		"name": row["name"], "shot": row["shot"], "output_asset_version": row["output_asset_version"],
+		"name": row["name"],
+		"shot": row["shot"],
+		"output_asset_version": row["output_asset_version"],
 		"scope": "Frames" if frames else "Scene",
-		"start_frame": row["start_frame"] if frames else None, "end_frame": row["end_frame"] if frames else None,
+		"start_frame": row["start_frame"] if frames else None,
+		"end_frame": row["end_frame"] if frames else None,
 		"start_seconds": round(row["start_frame"] / fps, 3) if frames else None,
 		"end_seconds": round((row["end_frame"] + 1) / fps, 3) if frames else None,
-		"comment": row["comment"], "status": row["status"], "author": row["owner"], "author_name": get_fullname(row["owner"]),
-		"created": row["creation"], "current_take": row["output_asset_version"] == current_take,
+		"comment": row["comment"],
+		"status": row["status"],
+		"author": row["owner"],
+		"author_name": get_fullname(row["owner"]),
+		"created": row["creation"],
+		"current_take": row["output_asset_version"] == current_take,
 	}
 
 
@@ -144,13 +165,33 @@ def get_review_comments(project_name, shot_name=None):
 	if shot_name:
 		filters["shot"] = _scene(project, shot_name).name
 	rows = frappe.get_all(
-		"Review Comment", filters=filters, order_by="shot asc, start_frame asc, creation asc",
-		fields=["name", "shot", "output_asset_version", "scope", "start_frame", "end_frame", "comment", "status", "owner", "creation"],
+		"Review Comment",
+		filters=filters,
+		order_by="shot asc, start_frame asc, creation asc",
+		fields=[
+			"name",
+			"shot",
+			"output_asset_version",
+			"scope",
+			"start_frame",
+			"end_frame",
+			"comment",
+			"status",
+			"owner",
+			"creation",
+		],
 	)
 	if not rows:
 		return []
 	fps = _project_fps(project.name)
-	current = dict(frappe.get_all("Shot", filters={"name": ["in", {r["shot"] for r in rows}]}, fields=["name", "selected_output_asset_version"], as_list=True))
+	current = dict(
+		frappe.get_all(
+			"Shot",
+			filters={"name": ["in", {r["shot"] for r in rows}]},
+			fields=["name", "selected_output_asset_version"],
+			as_list=True,
+		)
+	)
 	return [_row(row, current.get(row["shot"]), fps) for row in rows]
 
 
@@ -173,10 +214,17 @@ def set_review_comment_status(project_name, comment_name, status):
 		frappe.throw(_("Status must be Open or Resolved."))
 	doc = _comment(project, comment_name)
 	resolved = status == "Resolved"
-	_retrying(lambda: frappe.db.set_value("Review Comment", doc.name, {
-		"status": status, "resolved_by": frappe.session.user if resolved else None,
-		"resolved_at": now_datetime() if resolved else None,
-	}))
+	_retrying(
+		lambda: frappe.db.set_value(
+			"Review Comment",
+			doc.name,
+			{
+				"status": status,
+				"resolved_by": frappe.session.user if resolved else None,
+				"resolved_at": now_datetime() if resolved else None,
+			},
+		)
+	)
 	frappe.db.commit()
 	publish_project_event(project.name, PROJECT_UPDATED, {"doctype": "Review Comment", "shot": doc.shot})
 	return {"name": doc.name, "status": status}
@@ -209,7 +257,11 @@ def _reseal_approved_plan(project_name):
 
 	if frappe.db.get_value("Media Project", project_name, "storyboard_approval_status") == "Approved":
 		frappe.db.set_value(
-			"Media Project", project_name, "approved_plan_signature", compute_plan_signature(project_name), update_modified=False
+			"Media Project",
+			project_name,
+			"approved_plan_signature",
+			compute_plan_signature(project_name),
+			update_modified=False,
 		)
 
 
@@ -221,7 +273,9 @@ def _when(row, fps):
 	if row.get("scope") == "Scene" or row.get("start_frame") is None:
 		return "for the whole scene"
 	start, end = row["start_frame"] / fps, (row["end_frame"] + 1) / fps
-	return f"at {start:.1f}s" if row["end_frame"] == row["start_frame"] else f"from {start:.1f}s to {end:.1f}s"
+	return (
+		f"at {start:.1f}s" if row["end_frame"] == row["start_frame"] else f"from {start:.1f}s to {end:.1f}s"
+	)
 
 
 def strip_corrections(prompt):
@@ -244,12 +298,20 @@ def with_corrections(prompt, rows, fps):
 		line = f"- {_when(row, fps)}: {row['english']}"
 		if used + len(line) + 1 > MAX_CORRECTIONS_CHARS:
 			if row["status"] == "Open":
-				frappe.throw(_("These comments are too long to apply together. Shorten them or apply fewer at a time."))
+				frappe.throw(
+					_("These comments are too long to apply together. Shorten them or apply fewer at a time.")
+				)
 			continue
 		lines.append((row, line))
 		used += len(line) + 1
 	# Whole-scene requests first, then the rest in the order they happen.
-	lines.sort(key=lambda pair: (pair[0]["start_frame"] is not None, pair[0]["start_frame"] or 0, pair[0]["creation"]))
+	lines.sort(
+		key=lambda pair: (
+			pair[0]["start_frame"] is not None,
+			pair[0]["start_frame"] or 0,
+			pair[0]["creation"],
+		)
+	)
 	return base + "\n\n" + CORRECTIONS_MARKER + "\n" + "\n".join(line for _row, line in lines)
 
 
@@ -278,45 +340,99 @@ def apply_review_comments(project_name, shot_names=None):
 	from joymedia.services.generation.takes import _ensure_scene_free, regenerate_scene_with_reason
 
 	project = _project(project_name, write=True)
-	wanted = set(frappe.parse_json(shot_names)) if isinstance(shot_names, str) and shot_names else set(shot_names or [])
+	wanted = (
+		set(frappe.parse_json(shot_names))
+		if isinstance(shot_names, str) and shot_names
+		else set(shot_names or [])
+	)
 	with _applying(project.name):
 		fps = _project_fps(project.name)
 		plans = []
 		for shot in frappe.get_all(
-			"Shot", filters={"media_project": project.name, "is_removed": 0}, order_by="shot_number asc",
+			"Shot",
+			filters={"media_project": project.name, "is_removed": 0},
+			order_by="shot_number asc",
 			fields=["name", "shot_name", "selected_output_asset_version"],
 		):
 			if wanted and shot.name not in wanted:
 				continue
 			rows = frappe.get_all(
-				"Review Comment", filters={"shot": shot.name, "status": ["in", ["Open", "Addressed"]]},
-				fields=["name", "scope", "start_frame", "end_frame", "comment", "status", "output_asset_version", "creation"],
+				"Review Comment",
+				filters={"shot": shot.name, "status": ["in", ["Open", "Addressed"]]},
+				fields=[
+					"name",
+					"scope",
+					"start_frame",
+					"end_frame",
+					"comment",
+					"status",
+					"output_asset_version",
+					"creation",
+				],
 				order_by="creation asc",
 			)
-			opened = [row for row in rows if row["status"] == "Open" and row["output_asset_version"] == shot.selected_output_asset_version]
+			opened = [
+				row
+				for row in rows
+				if row["status"] == "Open"
+				and row["output_asset_version"] == shot.selected_output_asset_version
+			]
 			if shot.selected_output_asset_version and opened:
-				plans.append((frappe.get_doc("Shot", shot.name), opened, [row for row in rows if row["status"] == "Addressed"] + opened))
+				plans.append(
+					(
+						frappe.get_doc("Shot", shot.name),
+						opened,
+						[row for row in rows if row["status"] == "Addressed"] + opened,
+					)
+				)
 		if not plans:
 			frappe.throw(_("There are no open comments to apply."))
 		for shot, _opened, _all in plans:
 			_ensure_scene_free(project, shot)
 		wording = [revised_generation_prompt(shot, rows, fps) for shot, _opened, rows in plans]
 		results = []
-		for (shot, opened, _all), generation_prompt in zip(plans, wording):
-			before = {field: shot.get(field) for field in ("generation_prompt", "motion_plan_json", "end_state", "handoff_type")}
-			frappe.db.set_value("Shot", shot.name, {"generation_prompt": generation_prompt,
-				"motion_plan_json": None, "end_state": None, "handoff_type": None}, update_modified=True)
+		for (shot, opened, _all), generation_prompt in zip(plans, wording, strict=False):
+			before = {
+				field: shot.get(field)
+				for field in ("generation_prompt", "motion_plan_json", "end_state", "handoff_type")
+			}
+			frappe.db.set_value(
+				"Shot",
+				shot.name,
+				{
+					"generation_prompt": generation_prompt,
+					"motion_plan_json": None,
+					"end_state": None,
+					"handoff_type": None,
+				},
+				update_modified=True,
+			)
 			_reseal_approved_plan(project.name)
 			try:
 				regenerate_scene_with_reason(project.name, shot.name, retry_reason="QA Rejection")
 			except Exception as exc:
 				frappe.db.set_value("Shot", shot.name, before, update_modified=True)
 				_reseal_approved_plan(project.name)
-				results.append({"shot": shot.name, "shot_name": shot.shot_name, "applied": False, "error": str(exc), "comments": len(opened)})
+				results.append(
+					{
+						"shot": shot.name,
+						"shot_name": shot.shot_name,
+						"applied": False,
+						"error": str(exc),
+						"comments": len(opened),
+					}
+				)
 				continue
 			for row in opened:
-				frappe.db.set_value("Review Comment", row["name"], {"status": "Addressed", "addressed_at": now_datetime()}, update_modified=True)
-			results.append({"shot": shot.name, "shot_name": shot.shot_name, "applied": True, "comments": len(opened)})
+				frappe.db.set_value(
+					"Review Comment",
+					row["name"],
+					{"status": "Addressed", "addressed_at": now_datetime()},
+					update_modified=True,
+				)
+			results.append(
+				{"shot": shot.name, "shot_name": shot.shot_name, "applied": True, "comments": len(opened)}
+			)
 		frappe.db.commit()
 	publish_project_event(project.name, PROJECT_UPDATED, {"doctype": "Review Comment"})
 	return {"scenes": results, "applied": sum(1 for row in results if row["applied"])}

@@ -20,18 +20,31 @@ class TestStoryboardApprovalWorkflow(FrappeTestCase):
 		self.addCleanup(commit.stop)
 		frappe.set_user("Administrator")
 		if not frappe.db.exists("User", self.EMAIL):
-			user = frappe.get_doc({"doctype": "User", "email": self.EMAIL, "first_name": "Client", "send_welcome_email": 0})
+			user = frappe.get_doc(
+				{"doctype": "User", "email": self.EMAIL, "first_name": "Client", "send_welcome_email": 0}
+			)
 			user.append("roles", {"role": "JoyMedia User"})
 			user.insert(ignore_permissions=True)
 		frappe.set_user(self.EMAIL)
-		self.project = frappe.get_doc({
-			"doctype": "Media Project", "project_name": "Workflow", "workflow": _create_workflow(),
-			"total_duration_seconds": 3, "delivery_preset": "Landscape", "video_idea": "An idea",
-		}).insert(ignore_permissions=True)
-		self.shot = frappe.get_doc({
-			"doctype": "Shot", "media_project": self.project.name, "shot_number": 1, "generation_prompt": "A scene.",
-			"duration_seconds": 3.0,
-		}).insert(ignore_permissions=True)
+		self.project = frappe.get_doc(
+			{
+				"doctype": "Media Project",
+				"project_name": "Workflow",
+				"workflow": _create_workflow(),
+				"total_duration_seconds": 3,
+				"delivery_preset": "Landscape",
+				"video_idea": "An idea",
+			}
+		).insert(ignore_permissions=True)
+		self.shot = frappe.get_doc(
+			{
+				"doctype": "Shot",
+				"media_project": self.project.name,
+				"shot_number": 1,
+				"generation_prompt": "A scene.",
+				"duration_seconds": 3.0,
+			}
+		).insert(ignore_permissions=True)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -53,12 +66,26 @@ class TestStoryboardApprovalWorkflow(FrappeTestCase):
 		self.assertEqual("Approved", self._status())
 
 		# Editing an approved plan reopens it through the project controller; the workflow must allow that.
-		storyboard.update_project_shot(self.project.name, self.shot.name, {"generation_prompt": "A changed scene."})
+		storyboard.update_project_shot(
+			self.project.name, self.shot.name, {"generation_prompt": "A changed scene."}
+		)
 		self.assertEqual("Ready for Review", self._status())
 
 	def test_a_direction_edit_cannot_keep_a_contradictory_older_motion_plan(self):
-		frappe.db.set_value("Shot", self.shot.name, {"motion_plan_json": '{"actions":[{"action":"Old gesture","start":0,"end":2}]}', "end_state":"Old expression", "handoff_type":"motion_continuation"})
-		storyboard.update_project_shot(self.project.name, self.shot.name, {"generation_prompt": "A different gesture with an unchanged expression."})
+		frappe.db.set_value(
+			"Shot",
+			self.shot.name,
+			{
+				"motion_plan_json": '{"actions":[{"action":"Old gesture","start":0,"end":2}]}',
+				"end_state": "Old expression",
+				"handoff_type": "motion_continuation",
+			},
+		)
+		storyboard.update_project_shot(
+			self.project.name,
+			self.shot.name,
+			{"generation_prompt": "A different gesture with an unchanged expression."},
+		)
 		shot = frappe.get_doc("Shot", self.shot.name)
 		self.assertFalse(shot.motion_plan_json)
 		self.assertFalse(shot.end_state)
@@ -74,11 +101,18 @@ class TestStoryboardApprovalWorkflow(FrappeTestCase):
 	def test_explicit_reconfirmation_preserves_plan_when_image_direction_changes(self):
 		plan = {"actions": [{"action": "Move", "start": 0, "end": 3}]}
 		storyboard.update_project_shot(self.project.name, self.shot.name, {"motion_plan_json": plan})
-		response = storyboard.update_project_shot(self.project.name, self.shot.name, {
-			"image_prompt": "A reachable starting pose.", "motion_plan_json": plan,
-		})
+		response = storyboard.update_project_shot(
+			self.project.name,
+			self.shot.name,
+			{
+				"image_prompt": "A reachable starting pose.",
+				"motion_plan_json": plan,
+			},
+		)
 		self.assertEqual(frappe.parse_json(response["motion_plan_json"]), plan)
-		self.assertEqual(frappe.parse_json(frappe.db.get_value("Shot", self.shot.name, "motion_plan_json")), plan)
+		self.assertEqual(
+			frappe.parse_json(frappe.db.get_value("Shot", self.shot.name, "motion_plan_json")), plan
+		)
 
 	def test_a_jump_the_workflow_does_not_define_is_refused(self):
 		storyboard.approve_project_storyboard(self.project.name, True)

@@ -21,9 +21,11 @@ class TestStoryboardJob(FrappeTestCase):
 		super().tearDown()
 
 	def _run(self, project):
-		with patch.object(storyboard_job.frappe, "get_doc", return_value=project), patch.object(
-			storyboard_job.frappe.db, "rollback"
-		), patch.object(storyboard_job.frappe, "log_error"):
+		with (
+			patch.object(storyboard_job.frappe, "get_doc", return_value=project),
+			patch.object(storyboard_job.frappe.db, "rollback"),
+			patch.object(storyboard_job.frappe, "log_error"),
+		):
 			storyboard_job.plan_and_generate(self.project.name)
 		return frappe.db.get_value("Media Project", self.project.name, ["planning_status", "planning_error"])
 
@@ -41,7 +43,9 @@ class TestStoryboardJob(FrappeTestCase):
 	def test_user_facing_problems_are_shown_as_written(self):
 		project = MagicMock()
 		project.name = self.project.name
-		project._use_reference_video_for_story_film.side_effect = frappe.ValidationError("Add at least one image.")
+		project._use_reference_video_for_story_film.side_effect = frappe.ValidationError(
+			"Add at least one image."
+		)
 
 		self.assertEqual(("Failed", "Add at least one image."), self._run(project))
 

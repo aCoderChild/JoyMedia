@@ -80,8 +80,7 @@ def _serialize_timeline(project, clips):
 	latest_run = _latest_fully_generated_run(project.name)
 	enabled_clips = _enabled_clips(clips)
 	visible_clips = enabled_clips + [
-		clip for clip in clips
-		if not clip.enabled and clip.track_type == "Audio"
+		clip for clip in clips if not clip.enabled and clip.track_type == "Audio"
 	]
 	if not enabled_clips:
 		return {
@@ -112,15 +111,13 @@ def _serialize_timeline(project, clips):
 		source_total_frames = _source_max_frames(clip.source_asset_version, fps)
 		min_duration_frames = _minimum_clip_frames(fps)
 		media_asset = (
-			frappe.db.get_value("Media Asset", asset.media_asset, ["asset_name", "asset_category"], as_dict=True)
+			frappe.db.get_value(
+				"Media Asset", asset.media_asset, ["asset_name", "asset_category"], as_dict=True
+			)
 			if asset
 			else None
 		)
-		shot_number = (
-			frappe.db.get_value("Shot", clip.shot, "shot_number")
-			if clip.shot
-			else None
-		)
+		shot_number = frappe.db.get_value("Shot", clip.shot, "shot_number") if clip.shot else None
 		start = int(clip.timeline_start_frame or 0)
 		end = start + length
 		source_has_audio = False
@@ -157,12 +154,16 @@ def _serialize_timeline(project, clips):
 				"source_duration_seconds": float(asset.duration_seconds or 0) if asset else 0,
 				"source_fps": float(asset.fps or 0) if asset else 0,
 				"available_head_frames": max(0, int(clip.source_in_frame)),
-				"available_tail_frames": max(0, int(source_total_frames or clip.source_out_frame) - int(clip.source_out_frame)),
+				"available_tail_frames": max(
+					0, int(source_total_frames or clip.source_out_frame) - int(clip.source_out_frame)
+				),
 				"min_duration_frames": min_duration_frames,
 				"duration_frames": length,
 				"duration_seconds": length / fps,
 				"timeline_start_frame": start,
-				"initial_timeline_start_frame": int(clip.initial_timeline_start_frame or clip.timeline_start_frame or 0),
+				"initial_timeline_start_frame": int(
+					clip.initial_timeline_start_frame or clip.timeline_start_frame or 0
+				),
 				"timeline_end_frame": end,
 				"transition_to_next": transition,
 				"transition_frames": transition_frames,

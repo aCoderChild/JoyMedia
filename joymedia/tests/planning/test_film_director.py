@@ -10,23 +10,49 @@ from joymedia.services.planning.prompts import compile_segment_prompt_from_snaps
 from joymedia.services.project import context as project_context
 from joymedia.services.workflows.routing import automatic_planning_input_contract
 
-R2V_CONTRACT = [{
-	"role": "product_reference",
-	"value_type": "File Path",
-	"required": True,
-	"accepted_media_type": "Image",
-	"allow_multiple": True,
-	"min_count": 2,
-	"max_count": 2,
-}]
+R2V_CONTRACT = [
+	{
+		"role": "product_reference",
+		"value_type": "File Path",
+		"required": True,
+		"accepted_media_type": "Image",
+		"allow_multiple": True,
+		"min_count": 2,
+		"max_count": 2,
+	}
+]
 
 # Roles left "General" (automatic): the category, then the image analysis decide.
 REFERENCES = [
-	{"reference_key": "model", "media_type": "Image", "asset_category": "Character", "reference_role": "General", "asset_name": "model"},
-	{"reference_key": "tower", "media_type": "Image", "asset_category": "Reference", "reference_role": "General", "asset_name": "tower",
-	 "analysis": {"kind": "place", "description": "Cream high-rise tower at golden hour"}},
-	{"reference_key": "bedroom", "media_type": "Image", "asset_category": "Background", "reference_role": "General", "asset_name": "bedroom"},
-	{"reference_key": "logo", "media_type": "Image", "asset_category": "Brand", "reference_role": "General", "asset_name": "logo"},
+	{
+		"reference_key": "model",
+		"media_type": "Image",
+		"asset_category": "Character",
+		"reference_role": "General",
+		"asset_name": "model",
+	},
+	{
+		"reference_key": "tower",
+		"media_type": "Image",
+		"asset_category": "Reference",
+		"reference_role": "General",
+		"asset_name": "tower",
+		"analysis": {"kind": "place", "description": "Cream high-rise tower at golden hour"},
+	},
+	{
+		"reference_key": "bedroom",
+		"media_type": "Image",
+		"asset_category": "Background",
+		"reference_role": "General",
+		"asset_name": "bedroom",
+	},
+	{
+		"reference_key": "logo",
+		"media_type": "Image",
+		"asset_category": "Brand",
+		"reference_role": "General",
+		"asset_name": "logo",
+	},
 ]
 
 
@@ -37,12 +63,15 @@ def _response(payload, ok=True):
 
 
 class TestFilmDirector(FrappeTestCase):
-
 	def test_product_director_routing_uses_reference_roles_not_reference_mode(self):
 		project = frappe._dict(reference_mode="Single-reference")
 		person_and_product = [
-			{"reference_key": "person", "media_type": "Image", "reference_role": "General",
-			 "analysis": {"kind": "person"}},
+			{
+				"reference_key": "person",
+				"media_type": "Image",
+				"reference_role": "General",
+				"analysis": {"kind": "person"},
+			},
 			{"reference_key": "item", "media_type": "Image", "reference_role": "Product"},
 		]
 		with (
@@ -54,9 +83,7 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertEqual(person_and_product, references)
 		self.assertTrue(director_mode)
 		self.assertTrue(film_director.is_product_film(references))
-		product_instruction = film_director.build_director_instruction(
-			references, "product_reference", 10
-		)
+		product_instruction = film_director.build_director_instruction(references, "product_reference", 10)
 		self.assertIn("VIDEO IDEA is the creative brief and has priority", product_instruction)
 		self.assertIn("do not substitute a related", product_instruction)
 		self.assertIn("actively presenting or demonstrating it to camera", product_instruction)
@@ -71,11 +98,20 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertEqual({"character": "person", "product": "product", "place": "environment"}, roles)
 
 		shots = [{"generation_prompt": "The woman presents the plate.", "references": []}]
-		film_director.normalize_story_references(shots, [
-			{"reference_key": "model", "reference_role": "General", "media_type": "Image",
-			 "analysis": {"kind": "person"}},
-			{"reference_key": "plate", "reference_role": "Product", "media_type": "Image"},
-		], "person", roles)
+		film_director.normalize_story_references(
+			shots,
+			[
+				{
+					"reference_key": "model",
+					"reference_role": "General",
+					"media_type": "Image",
+					"analysis": {"kind": "person"},
+				},
+				{"reference_key": "plate", "reference_role": "Product", "media_type": "Image"},
+			],
+			"person",
+			roles,
+		)
 		self.assertEqual(
 			[("model", "person"), ("plate", "product")],
 			[(ref["reference_key"], ref["usage_role"]) for ref in shots[0]["references"]],
@@ -83,7 +119,9 @@ class TestFilmDirector(FrappeTestCase):
 
 	def test_product_plan_gets_a_brief_compliance_review(self):
 		draft = {"shots": [{"shot_number": 1, "generation_prompt": "The woman exercises outdoors."}]}
-		corrected = {"shots": [{"shot_number": 1, "generation_prompt": "She presents the plate in a restaurant."}]}
+		corrected = {
+			"shots": [{"shot_number": 1, "generation_prompt": "She presents the plate in a restaurant."}]
+		}
 		sent = {}
 
 		def review(_base_url, payload, _timeout):
@@ -95,8 +133,11 @@ class TestFilmDirector(FrappeTestCase):
 			patch.object(qwen_client, "_request_plan", side_effect=review),
 		):
 			result = qwen_client._review_product_plan(
-				base_url="http://qwen/v1", model="planner", timeout=30,
-				product_name="decorative plate", video_idea="Promote the plate in a five-star restaurant.",
+				base_url="http://qwen/v1",
+				model="planner",
+				timeout=30,
+				product_name="decorative plate",
+				video_idea="Promote the plate in a five-star restaurant.",
 				plan=draft,
 			)
 
@@ -106,10 +147,12 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertIn("five-star restaurant", sent["messages"][1]["content"])
 
 	def test_explicit_product_brief_anchor_replaces_conflicting_image_prompt(self):
-		shots = [{
-			"generation_prompt": "The woman cooks noodles in a kitchen.",
-			"image_prompt": "A cosmetic cream in a bathroom.",
-		}]
+		shots = [
+			{
+				"generation_prompt": "The woman cooks noodles in a kitchen.",
+				"image_prompt": "A cosmetic cream in a bathroom.",
+			}
+		]
 		film_director.enforce_explicit_product_brief(
 			shots,
 			"Người phụ nữ quảng cáo cái đĩa trong bối cảnh khách sạn 5 sao sang trọng",
@@ -128,31 +171,50 @@ class TestFilmDirector(FrappeTestCase):
 		roster = film_director.build_roster(REFERENCES)
 
 		self.assertEqual(["model"], [item["reference_key"] for item in roster[film_director.CHARACTER]])
-		self.assertEqual(["tower", "bedroom"], [item["reference_key"] for item in roster[film_director.PLACE]])
+		self.assertEqual(
+			["tower", "bedroom"], [item["reference_key"] for item in roster[film_director.PLACE]]
+		)
 		self.assertTrue(film_director.is_story_film(REFERENCES))
 		self.assertFalse(film_director.is_story_film(REFERENCES[1:]))
 
 	def test_what_people_chose_beats_the_image_analysis(self):
 		# A product that is a painting of a harbour: the analysis sees a place.
-		painting = {"media_type": "Image", "reference_role": "Product", "asset_category": "Reference",
-			"analysis": {"kind": "place"}}
+		painting = {
+			"media_type": "Image",
+			"reference_role": "Product",
+			"asset_category": "Reference",
+			"analysis": {"kind": "place"},
+		}
 		self.assertEqual(film_director.PRODUCT, film_director.classify_reference(painting))
 		# Role left automatic: the category decides, then the analysis.
-		self.assertEqual(film_director.PRODUCT, film_director.classify_reference(
-			{**painting, "reference_role": "General", "asset_category": "Product"}))
-		self.assertEqual(film_director.PLACE, film_director.classify_reference(
-			{**painting, "reference_role": "General"}))
-		self.assertEqual(film_director.CHARACTER, film_director.classify_reference(
-			{"media_type": "Image", "reference_role": "General", "analysis": {"kind": "person"}}))
+		self.assertEqual(
+			film_director.PRODUCT,
+			film_director.classify_reference(
+				{**painting, "reference_role": "General", "asset_category": "Product"}
+			),
+		)
+		self.assertEqual(
+			film_director.PLACE, film_director.classify_reference({**painting, "reference_role": "General"})
+		)
+		self.assertEqual(
+			film_director.CHARACTER,
+			film_director.classify_reference(
+				{"media_type": "Image", "reference_role": "General", "analysis": {"kind": "person"}}
+			),
+		)
 
 	def test_takes_with_a_person_get_character_then_described_place(self):
 		shots = [
 			# The planner listed the place first and the character second.
-			{"generation_prompt": "She turns on the bedroom balcony.",
-			 "references": [{"reference_key": "bedroom"}, {"reference_key": "model"}]},
+			{
+				"generation_prompt": "She turns on the bedroom balcony.",
+				"references": [{"reference_key": "bedroom"}, {"reference_key": "model"}],
+			},
 			# The planner omitted the character although the prompt shows her.
-			{"generation_prompt": "The woman walks past the cream high-rise tower at golden hour.",
-			 "references": [{"reference_key": "bedroom"}, {"reference_key": "tower"}]},
+			{
+				"generation_prompt": "The woman walks past the cream high-rise tower at golden hour.",
+				"references": [{"reference_key": "bedroom"}, {"reference_key": "tower"}],
+			},
 			# No references at all: the place is chosen from the prompt text.
 			{"generation_prompt": "She relaxes in the bedroom.", "references": []},
 		]
@@ -163,9 +225,9 @@ class TestFilmDirector(FrappeTestCase):
 			[["model", "bedroom"], ["model", "tower"], ["model", "bedroom"]],
 			[[ref["reference_key"] for ref in shot["references"]] for shot in shots],
 		)
-		self.assertTrue(all(
-			ref["usage_role"] == "product_reference" for shot in shots for ref in shot["references"]
-		))
+		self.assertTrue(
+			all(ref["usage_role"] == "product_reference" for shot in shots for ref in shot["references"])
+		)
 
 	def test_story_planning_preserves_all_selected_characters_when_the_planner_does_not_narrow_them(self):
 		references = [
@@ -183,10 +245,12 @@ class TestFilmDirector(FrappeTestCase):
 		)
 
 	def test_takes_without_a_person_put_the_described_place_second(self):
-		shots = [{
-			"generation_prompt": "Rising aerial over the cream high-rise tower at golden hour.",
-			"references": [{"reference_key": "tower"}, {"reference_key": "bedroom"}],
-		}]
+		shots = [
+			{
+				"generation_prompt": "Rising aerial over the cream high-rise tower at golden hour.",
+				"references": [{"reference_key": "tower"}, {"reference_key": "bedroom"}],
+			}
+		]
 
 		film_director.normalize_story_references(shots, REFERENCES, "product_reference")
 
@@ -194,29 +258,48 @@ class TestFilmDirector(FrappeTestCase):
 
 	def test_tags_beyond_the_sent_images_point_at_the_place(self):
 		# Planners confuse place keys named "3"/"4" with picture numbers.
-		shots = [{"generation_prompt": "The person from <Picture 1> walks through the place from <Picture 4>.",
-		          "references": [{"reference_key": "model"}, {"reference_key": "bedroom"}]}]
+		shots = [
+			{
+				"generation_prompt": "The person from <Picture 1> walks through the place from <Picture 4>.",
+				"references": [{"reference_key": "model"}, {"reference_key": "bedroom"}],
+			}
+		]
 
 		film_director.normalize_story_references(shots, REFERENCES, "product_reference")
 
-		self.assertTrue(shots[0]["generation_prompt"].startswith(
-			"The person from <Picture 1> walks through the place from <Picture 2>. One continuous shot with no cuts"
-		))
+		self.assertTrue(
+			shots[0]["generation_prompt"].startswith(
+				"The person from <Picture 1> walks through the place from <Picture 2>. One continuous shot with no cuts"
+			)
+		)
 
 	def test_plan_problems_catch_short_repeated_and_overused_plans(self):
-		take = lambda prompt, place: {"generation_prompt": prompt, "references": [{"reference_key": "model"}, {"reference_key": place}]}
+		def take(prompt, place):
+			return {
+				"generation_prompt": prompt,
+				"references": [{"reference_key": "model"}, {"reference_key": place}],
+			}
 
-		self.assertEqual([], film_director.plan_problems([take("a", "p1"), take("b", "p2"), take("c", "p1")], 3))
+		self.assertEqual(
+			[], film_director.plan_problems([take("a", "p1"), take("b", "p2"), take("c", "p1")], 3)
+		)
 		problems = film_director.plan_problems([take("same", "p1"), take("same", "p1"), take("x", "p1")], 4)
 		self.assertEqual(3, len(problems))
 
 	def test_roster_flags_images_without_a_description(self):
 		references = [
 			{"reference_key": "3", "media_type": "Image", "asset_category": "Background", "asset_name": "3"},
-			{"reference_key": "lobby", "media_type": "Image", "asset_category": "Background", "asset_name": "lobby"},
+			{
+				"reference_key": "lobby",
+				"media_type": "Image",
+				"asset_category": "Background",
+				"asset_name": "lobby",
+			},
 		]
 
-		self.assertEqual("- key=3: (no visual description available)", film_director._roster_line(references[0]))
+		self.assertEqual(
+			"- key=3: (no visual description available)", film_director._roster_line(references[0])
+		)
 		self.assertEqual("- key=lobby: lobby", film_director._roster_line(references[1]))
 
 	def test_director_instruction_lists_roster_and_role(self):
@@ -239,7 +322,10 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertEqual((1, 1), film_director.take_count_range(5))
 
 	def test_story_plans_one_take_per_place_within_the_renderable_range(self):
-		places = [{"reference_key": f"p{n}", "media_type": "Image", "asset_category": "Background"} for n in range(6)]
+		places = [
+			{"reference_key": f"p{n}", "media_type": "Image", "asset_category": "Background"}
+			for n in range(6)
+		]
 
 		# One storyboard scene equals one 124-frame H3 render.
 		self.assertEqual(6, film_director.story_take_count(30, places))
@@ -250,8 +336,12 @@ class TestFilmDirector(FrappeTestCase):
 	def test_every_film_has_an_opening_a_peak_and_an_ending(self):
 		self.assertEqual(["OPENING", "CLOSING"], film_director.story_beats(2))
 		self.assertEqual(["OPENING", "CLIMAX", "CLOSING"], film_director.story_beats(3))
-		self.assertEqual(["OPENING", "BUILD", "CLIMAX", "RESOLUTION", "CLOSING"], film_director.story_beats(5))
-		self.assertEqual(["OPENING", "BUILD", "BUILD", "CLIMAX", "RESOLUTION", "CLOSING"], film_director.story_beats(6))
+		self.assertEqual(
+			["OPENING", "BUILD", "CLIMAX", "RESOLUTION", "CLOSING"], film_director.story_beats(5)
+		)
+		self.assertEqual(
+			["OPENING", "BUILD", "BUILD", "CLIMAX", "RESOLUTION", "CLOSING"], film_director.story_beats(6)
+		)
 
 		instruction = film_director.build_director_instruction(REFERENCES, "product_reference", 25)
 		self.assertIn("- Take 1 OPENING:", instruction)
@@ -259,7 +349,10 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertIn("- Take 5 CLOSING:", instruction)
 
 	def test_take_durations_are_renderable_and_keep_the_total(self):
-		shots = [{"duration_seconds": value, "shot_number": index} for index, value in enumerate((12.33, 3.42, 5.08, 4.17), 1)]
+		shots = [
+			{"duration_seconds": value, "shot_number": index}
+			for index, value in enumerate((12.33, 3.42, 5.08, 4.17), 1)
+		]
 
 		balanced = film_director.balance_take_durations(shots, 25)
 
@@ -269,7 +362,9 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertEqual(5, len(durations))
 
 	def test_too_many_takes_for_the_total_drops_short_middle_takes(self):
-		shots = [{"duration_seconds": value, "shot_number": index} for index, value in enumerate((4, 1, 3, 4), 1)]
+		shots = [
+			{"duration_seconds": value, "shot_number": index} for index, value in enumerate((4, 1, 3, 4), 1)
+		]
 
 		balanced = film_director.balance_take_durations(shots, 12)
 
@@ -277,10 +372,12 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertAlmostEqual(12, sum(shot["duration_seconds"] for shot in balanced))
 
 	def test_product_words_are_not_mistaken_for_the_character(self):
-		shots = [{
-			"generation_prompt": "Slow orbit around the new car model parked in the tower driveway; no extra people.",
-			"references": [{"reference_key": "tower"}],
-		}]
+		shots = [
+			{
+				"generation_prompt": "Slow orbit around the new car model parked in the tower driveway; no extra people.",
+				"references": [{"reference_key": "tower"}],
+			}
+		]
 
 		film_director.normalize_story_references(shots, REFERENCES, "product_reference")
 
@@ -291,8 +388,13 @@ class TestFilmDirector(FrappeTestCase):
 		roles = {film_director.CHARACTER: "person", film_director.PRODUCT: "product"}
 		references = [
 			*REFERENCES[:1],
-			{"reference_key": "plate", "media_type": "Image", "asset_category": "Reference",
-			 "reference_role": "Product", "asset_name": "plate"},
+			{
+				"reference_key": "plate",
+				"media_type": "Image",
+				"asset_category": "Reference",
+				"reference_role": "Product",
+				"asset_name": "plate",
+			},
 		]
 
 		film_director.normalize_story_references(shots, references, "first_frame", roles)
@@ -309,21 +411,37 @@ class TestFilmDirector(FrappeTestCase):
 		]
 
 		film_director.enforce_requested_product_presentation(
-			shots, "Người mẫu quảng cáo và giới thiệu chiếc đĩa", [*REFERENCES[:1],
-			{"reference_key": "plate", "asset_category": "Reference", "reference_role": "Product"}],
+			shots,
+			"Người mẫu quảng cáo và giới thiệu chiếc đĩa",
+			[
+				*REFERENCES[:1],
+				{"reference_key": "plate", "asset_category": "Reference", "reference_role": "Product"},
+			],
 		)
 
 		self.assertIn("holding it securely", shots[0]["generation_prompt"])
 		self.assertIn("keeps the product presented to camera", shots[1]["generation_prompt"])
 
 	def test_story_film_plan_uses_director_prompt_and_orders_references(self):
-		plan = {"shots": [
-			{"shot_number": 1, "duration_seconds": 8, "generation_prompt": "She smiles at the cream high-rise tower.",
-			 "references": [{"reference_key": "tower", "usage_role": "product_reference"},
-			                {"reference_key": "model", "usage_role": "product_reference"}]},
-			{"shot_number": 2, "duration_seconds": 7, "generation_prompt": "She wakes in the bedroom.",
-			 "references": [{"reference_key": "bedroom", "usage_role": "product_reference"}]},
-		]}
+		plan = {
+			"shots": [
+				{
+					"shot_number": 1,
+					"duration_seconds": 8,
+					"generation_prompt": "She smiles at the cream high-rise tower.",
+					"references": [
+						{"reference_key": "tower", "usage_role": "product_reference"},
+						{"reference_key": "model", "usage_role": "product_reference"},
+					],
+				},
+				{
+					"shot_number": 2,
+					"duration_seconds": 7,
+					"generation_prompt": "She wakes in the bedroom.",
+					"references": [{"reference_key": "bedroom", "usage_role": "product_reference"}],
+				},
+			]
+		}
 		sent = {}
 
 		def fake_post(url, json=None, timeout=None):
@@ -366,15 +484,23 @@ class TestFilmDirector(FrappeTestCase):
 	def test_completion_budget_fits_context_window(self):
 		payload = {"model": "planner", "messages": [{"role": "user", "content": "x"}], "max_tokens": 3000}
 
-		with patch.object(qwen_client.requests, "post", return_value=_response({"count": 1500, "max_model_len": 4096})):
+		with patch.object(
+			qwen_client.requests, "post", return_value=_response({"count": 1500, "max_model_len": 4096})
+		):
 			self.assertEqual(4096 - 1500 - 64, qwen_client._completion_budget("http://qwen/v1", payload))
 
-		with patch.object(qwen_client.requests, "post", return_value=_response({"count": 3500, "max_model_len": 4096})):
+		with patch.object(
+			qwen_client.requests, "post", return_value=_response({"count": 3500, "max_model_len": 4096})
+		):
 			with self.assertRaises(frappe.ValidationError):
 				qwen_client._completion_budget("http://qwen/v1", payload)
 
 	def test_completion_budget_estimates_without_tokenize_endpoint(self):
-		payload = {"model": "planner", "messages": [{"role": "user", "content": "x" * 300}], "max_tokens": 3000}
+		payload = {
+			"model": "planner",
+			"messages": [{"role": "user", "content": "x" * 300}],
+			"max_tokens": 3000,
+		}
 
 		with (
 			patch.object(qwen_client.requests, "post", side_effect=qwen_client.requests.ConnectionError()),
@@ -383,27 +509,39 @@ class TestFilmDirector(FrappeTestCase):
 			self.assertEqual(3000, qwen_client._completion_budget("http://qwen/v1", payload))
 
 	def _snapshot(self, reference_mode="Multi-reference"):
-		return frappe._dict({
-			"reference_mode": reference_mode,
-			"global_instructions": "Tour the tower, the pool and the lobby.",
-			"references": [
-				{"asset_version": "AV-MODEL", "reference_role": "Character", "label": ""},
-				{"asset_version": "AV-ROOM", "reference_role": "Environment", "label": "bedroom"},
-			],
-			"shots": [{"shot": "SHOT-1", "references": [
-				{"reference_role": "product_reference", "asset_version": "AV-MODEL"},
-				{"reference_role": "product_reference", "asset_version": "AV-ROOM"},
-			]}],
-		})
+		return frappe._dict(
+			{
+				"reference_mode": reference_mode,
+				"global_instructions": "Tour the tower, the pool and the lobby.",
+				"references": [
+					{"asset_version": "AV-MODEL", "reference_role": "Character", "label": ""},
+					{"asset_version": "AV-ROOM", "reference_role": "Environment", "label": "bedroom"},
+				],
+				"shots": [
+					{
+						"shot": "SHOT-1",
+						"references": [
+							{"reference_role": "product_reference", "asset_version": "AV-MODEL"},
+							{"reference_role": "product_reference", "asset_version": "AV-ROOM"},
+						],
+					}
+				],
+			}
+		)
 
 	def _compile(self, snapshot, segment_index=1, segment_count=1):
-		shot = frappe._dict(name="SHOT-1", shot_number=1,
-		                    generation_prompt="The person from <Picture 1> rests in the place from <Picture 2>.")
+		shot = frappe._dict(
+			name="SHOT-1",
+			shot_number=1,
+			generation_prompt="The person from <Picture 1> rests in the place from <Picture 2>.",
+		)
 		with patch.object(
 			film_director,
 			"_asset_version_context",
 			side_effect=lambda version, reference: {
-				"media_type": "Image", "reference_role": reference.get("reference_role"), "analysis": {},
+				"media_type": "Image",
+				"reference_role": reference.get("reference_role"),
+				"analysis": {},
 			},
 		):
 			return compile_segment_prompt_from_snapshot(shot, snapshot, segment_index, segment_count)
@@ -434,7 +572,11 @@ class TestFilmDirector(FrappeTestCase):
 		with patch.object(
 			film_director,
 			"_asset_version_context",
-			side_effect=lambda version, reference: {"media_type": "Image", "asset_category": "Product", "analysis": {}},
+			side_effect=lambda version, reference: {
+				"media_type": "Image",
+				"asset_category": "Product",
+				"analysis": {},
+			},
 		):
 			product_preamble = film_director.reference_preamble(["AV-MODEL"], [])
 		self.assertEqual(
@@ -447,6 +589,7 @@ class TestFilmDirector(FrappeTestCase):
 
 	def test_reference_to_video_takes_render_in_short_segments(self):
 		from joymedia.services.generation.segments import plan_generation_segments
+
 		# Segmentation is driven by the workflow's declared frame limit, not an adapter class.
 		frame_count = 124
 		segments = plan_generation_segments(
@@ -465,8 +608,18 @@ class TestRoleInputCount(FrappeTestCase):
 		from joymedia.services.workflows.resolver import validate_role_input_count
 
 		workflow = self._workflow(
-			{"binding_key": "reference_image_1", "required_input_role": "product_reference", "required": 1, "value_type": "File Path"},
-			{"binding_key": "reference_image_2", "required_input_role": "product_reference", "required": 1, "value_type": "File Path"},
+			{
+				"binding_key": "reference_image_1",
+				"required_input_role": "product_reference",
+				"required": 1,
+				"value_type": "File Path",
+			},
+			{
+				"binding_key": "reference_image_2",
+				"required_input_role": "product_reference",
+				"required": 1,
+				"value_type": "File Path",
+			},
 		)
 
 		validate_role_input_count(workflow, "product_reference", 2)
@@ -479,7 +632,12 @@ class TestRoleInputCount(FrappeTestCase):
 		from joymedia.services.workflows.resolver import validate_role_input_count
 
 		workflow = self._workflow(
-			{"binding_key": "first_frame", "required_input_role": "first_frame", "required": 1, "value_type": "File Path"},
+			{
+				"binding_key": "first_frame",
+				"required_input_role": "first_frame",
+				"required": 1,
+				"value_type": "File Path",
+			},
 		)
 
 		validate_role_input_count(workflow, "first_frame", 1)
@@ -490,7 +648,12 @@ class TestRoleInputCount(FrappeTestCase):
 class TestVisionAnalysis(FrappeTestCase):
 	def test_analysis_is_normalized(self):
 		analysis = vision_analysis.normalize_analysis(
-			{"kind": "Person", "description": "A woman in a white ao dai", "outfit": "white ao dai", "extra": 1}
+			{
+				"kind": "Person",
+				"description": "A woman in a white ao dai",
+				"outfit": "white ao dai",
+				"extra": 1,
+			}
 		)
 
 		self.assertEqual("person", analysis["kind"])
@@ -503,12 +666,17 @@ class TestVisionAnalysis(FrappeTestCase):
 
 		def fake_post(url, json=None, timeout=None):
 			sent["url"], sent["payload"] = url, json
-			response = _response({"choices": [{"message": {"content": '{"kind": "place", "description": "Pool"}'}}]})
+			response = _response(
+				{"choices": [{"message": {"content": '{"kind": "place", "description": "Pool"}'}}]}
+			)
 			response.raise_for_status = MagicMock()
 			return response
 
 		with (
-			patch.dict(frappe.conf, {"joymedia_vision": None, "qwen_vl_base_url": "http://vl/v1", "qwen_vl_model": "qwen-vl"}),
+			patch.dict(
+				frappe.conf,
+				{"joymedia_vision": None, "qwen_vl_base_url": "http://vl/v1", "qwen_vl_model": "qwen-vl"},
+			),
 			patch.object(vision_analysis.requests, "post", side_effect=fake_post),
 		):
 			analysis = vision_analysis.describe_image("data:image/jpeg;base64,AAAA")
@@ -520,7 +688,9 @@ class TestVisionAnalysis(FrappeTestCase):
 
 	def test_unconfigured_vision_model_skips_analysis(self):
 		with patch.dict(frappe.conf, {"qwen_vl_base_url": None, "qwen_vl_model": None}):
-			self.assertEqual([], vision_analysis.ensure_project_image_analysis(frappe._dict(selected_media=[])))
+			self.assertEqual(
+				[], vision_analysis.ensure_project_image_analysis(frappe._dict(selected_media=[]))
+			)
 
 
 class TestFilmEnding(FrappeTestCase):
@@ -553,7 +723,9 @@ class TestProjectNaming(FrappeTestCase):
 		for project in (untitled, named):
 			_name_untitled_project(project, "Sắc xuân bên hồ")
 
-		self.assertEqual("Sắc xuân bên hồ", frappe.db.get_value("Media Project", untitled.name, "project_name"))
+		self.assertEqual(
+			"Sắc xuân bên hồ", frappe.db.get_value("Media Project", untitled.name, "project_name")
+		)
 		self.assertEqual("Spring launch", frappe.db.get_value("Media Project", named.name, "project_name"))
 
 	def test_project_without_product_name_can_be_deleted(self):
@@ -589,37 +761,63 @@ class TestTakeLengthsFitRenderJobs(FrappeTestCase):
 
 
 class TestDirectorGuards(FrappeTestCase):
-
-
-
-
 	def test_undocumented_property_references_use_selected_order_without_guessing(self):
 		references = [
-			{"reference_key": "host", "media_type": "Image", "asset_category": "Character", "reference_role": "General"},
+			{
+				"reference_key": "host",
+				"media_type": "Image",
+				"asset_category": "Character",
+				"reference_role": "General",
+			},
 			*[
-				{"reference_key": str(index), "media_type": "Image", "asset_category": "Reference", "reference_role": "Environment"}
+				{
+					"reference_key": str(index),
+					"media_type": "Image",
+					"asset_category": "Reference",
+					"reference_role": "Environment",
+				}
 				for index in range(1, 6)
 			],
 		]
-		shots = [{"generation_prompt": "The woman walks through a garden.", "references": []} for _ in range(6)]
+		shots = [
+			{"generation_prompt": "The woman walks through a garden.", "references": []} for _ in range(6)
+		]
 
 		film_director.normalize_story_references(shots, references, "person")
 
 		self.assertEqual(
-			[["host", "1"], ["host", "1", "2"], ["host", "2", "3"],
-			 ["host", "3", "4"], ["host", "4", "5"], ["host", "5"]],
+			[
+				["host", "1"],
+				["host", "1", "2"],
+				["host", "2", "3"],
+				["host", "3", "4"],
+				["host", "4", "5"],
+				["host", "5"],
+			],
 			[[reference["reference_key"] for reference in shot["references"]] for shot in shots],
 		)
 
 	def test_short_property_tour_keeps_all_areas_in_order(self):
 		references = [
-			{"reference_key": "host", "media_type": "Image", "asset_category": "Character", "reference_role": "General"},
+			{
+				"reference_key": "host",
+				"media_type": "Image",
+				"asset_category": "Character",
+				"reference_role": "General",
+			},
 			*[
-				{"reference_key": str(index), "media_type": "Image", "asset_category": "Reference", "reference_role": "Environment"}
+				{
+					"reference_key": str(index),
+					"media_type": "Image",
+					"asset_category": "Reference",
+					"reference_role": "Environment",
+				}
 				for index in range(1, 6)
 			],
 		]
-		shots = [{"generation_prompt": "The woman presents the property.", "references": []} for _ in range(2)]
+		shots = [
+			{"generation_prompt": "The woman presents the property.", "references": []} for _ in range(2)
+		]
 
 		film_director.normalize_story_references(shots, references, "person")
 
@@ -638,26 +836,38 @@ class TestDirectorGuards(FrappeTestCase):
 		self.assertEqual("environment", roles["place"])
 
 	def test_take_drifting_out_of_its_place_is_reported(self):
-		shots = [{"generation_prompt": "She steps onto the balcony at sunset.", "references": [{"reference_key": "lobby"}]}]
+		shots = [
+			{
+				"generation_prompt": "She steps onto the balcony at sunset.",
+				"references": [{"reference_key": "lobby"}],
+			}
+		]
 		places = {"lobby": "lobby a modern interior with a reception desk and wooden paneling"}
 
 		problems = film_director.plan_problems(shots, 1, places)
 
 		self.assertEqual(1, len(problems))
 		self.assertIn("balcony", problems[0])
-		self.assertEqual([], film_director.invented_places("She waits by the reception desk.", places["lobby"]))
+		self.assertEqual(
+			[], film_director.invented_places("She waits by the reception desk.", places["lobby"])
+		)
 
 	def test_beat_words_follow_the_story_arc_whatever_the_planner_wrote(self):
 		shots = [{"shot_name": "Biến thể 1: Dạo bước"}, {"shot_name": "Khoảnh khắc cuối"}]
 
 		film_director.name_story_beats(shots)
 
-		self.assertEqual(["OPENING: Dạo bước", "CLOSING: Khoảnh khắc cuối"], [shot["shot_name"] for shot in shots])
+		self.assertEqual(
+			["OPENING: Dạo bước", "CLOSING: Khoảnh khắc cuối"], [shot["shot_name"] for shot in shots]
+		)
 
 	def test_character_roster_gives_the_look_not_the_photo_background(self):
 		context = {
 			"reference_key": "nu_ao_dai",
-			"analysis": {"description": "A woman stands outdoors among lotus flowers.", "outfit": "white ao dai, long hair"},
+			"analysis": {
+				"description": "A woman stands outdoors among lotus flowers.",
+				"outfit": "white ao dai, long hair",
+			},
 		}
 
 		line = film_director._roster_line(context, person=True)
@@ -672,12 +882,22 @@ class TestPlannerCutOff(FrappeTestCase):
 	@patch("joymedia.services.planning.llm.requests.post")
 	def test_cut_off_plan_is_requested_again_without_replaying_it(self, post, config, budget):
 		cut_off = MagicMock(ok=True)
-		cut_off.json.return_value = {"choices": [{"message": {"content": '{"shots": [{"generation_prompt": "A lo'}}]}
+		cut_off.json.return_value = {
+			"choices": [{"message": {"content": '{"shots": [{"generation_prompt": "A lo'}}]
+		}
 		good = MagicMock(ok=True)
-		good.json.return_value = {"choices": [{"message": {"content": (
-			'{"film_title": "Buổi sáng", "shots": [{"shot_number": 1, "shot_name": "Mở", "duration_seconds": 5,'
-			' "generation_prompt": "A slow push-in on the product.", "references": []}]}'
-		)}}]}
+		good.json.return_value = {
+			"choices": [
+				{
+					"message": {
+						"content": (
+							'{"film_title": "Buổi sáng", "shots": [{"shot_number": 1, "shot_name": "Mở", "duration_seconds": 5,'
+							' "generation_prompt": "A slow push-in on the product.", "references": []}]}'
+						)
+					}
+				}
+			]
+		}
 		post.side_effect = [cut_off, good]
 
 		with patch("joymedia.services.planning.llm._validate_video_plan"):
@@ -691,7 +911,6 @@ class TestPlannerCutOff(FrappeTestCase):
 		self.assertIn("compact complete JSON plan", retry_messages[1]["content"])
 		self.assertIn("image_prompt under 30 words", retry_messages[1]["content"])
 		self.assertIn("Do not omit shots", retry_messages[1]["content"])
-
 
 	@patch("joymedia.services.planning.llm._completion_budget", return_value=1000)
 	@patch("joymedia.services.planning.llm._qwen_config", return_value=("http://qwen/v1", "m", 60))
@@ -713,14 +932,20 @@ class TestPlannerCutOff(FrappeTestCase):
 
 class TestPlannerOutputCleanup(FrappeTestCase):
 	def test_leaked_example_numbering_is_removed_from_titles(self):
-		self.assertEqual("Áo dài trắng dạo quanh căn hộ", qwen_client.clean_title("Biến thể TVC 179: Áo dài trắng dạo quanh căn hộ"))
+		self.assertEqual(
+			"Áo dài trắng dạo quanh căn hộ",
+			qwen_client.clean_title("Biến thể TVC 179: Áo dài trắng dạo quanh căn hộ"),
+		)
 		self.assertEqual("Sống xanh 2024", qwen_client.clean_title("Sống xanh 2024"))
 		self.assertEqual("", qwen_client.clean_title("Biến thể TVC 297"))
 		self.assertEqual("Đẹp", qwen_client.clean_title("Biến thể Đẹp"))
 		self.assertEqual("Biển xanh", qwen_client.clean_title("Biển xanh"))
 
 	def test_empty_captions_fall_back_to_the_scene_title_except_the_last(self):
-		shots = [{"shot_name": "OPENING: Bước đi tự tin", "caption": ""}, {"shot_name": "CLOSING: Hoàng hôn", "caption": ""}]
+		shots = [
+			{"shot_name": "OPENING: Bước đi tự tin", "caption": ""},
+			{"shot_name": "CLOSING: Hoàng hôn", "caption": ""},
+		]
 
 		qwen_client.default_captions(shots)
 
@@ -728,15 +953,27 @@ class TestPlannerOutputCleanup(FrappeTestCase):
 
 	@patch("joymedia.services.planning.llm.requests.post")
 	def test_english_ideas_go_to_the_planner_unchanged(self, post):
-		self.assertEqual("A sunset tour of the tower.", qwen_client._idea_for_planner("A sunset tour of the tower."))
+		self.assertEqual(
+			"A sunset tour of the tower.", qwen_client._idea_for_planner("A sunset tour of the tower.")
+		)
 		post.assert_not_called()
 
 
 PRODUCT_FILM = [
-	{"reference_key": "nu_ao_dai", "media_type": "Image", "reference_role": "Character", "asset_name": "nữ áo dài",
-	 "analysis": {"kind": "person", "outfit": "white ao dai"}},
-	{"reference_key": "tranh", "media_type": "Image", "reference_role": "Product", "asset_name": "1",
-	 "analysis": {"kind": "place", "description": "A coastal town at sunset with boats and a lighthouse."}},
+	{
+		"reference_key": "nu_ao_dai",
+		"media_type": "Image",
+		"reference_role": "Character",
+		"asset_name": "nữ áo dài",
+		"analysis": {"kind": "person", "outfit": "white ao dai"},
+	},
+	{
+		"reference_key": "tranh",
+		"media_type": "Image",
+		"reference_role": "Product",
+		"asset_name": "1",
+		"analysis": {"kind": "place", "description": "A coastal town at sunset with boats and a lighthouse."},
+	},
 ]
 
 
@@ -769,7 +1006,12 @@ class TestProductFilm(FrappeTestCase):
 			{"reference_key": "baby", "media_type": "Image", "reference_role": "Character"},
 			{"reference_key": "shera_pack", "media_type": "Image", "reference_role": "Product"},
 		]
-		shots = [{"generation_prompt": "The mother polar bear reassures her baby while presenting Shera.", "references": []}]
+		shots = [
+			{
+				"generation_prompt": "The mother polar bear reassures her baby while presenting Shera.",
+				"references": [],
+			}
+		]
 		film_director.normalize_story_references(shots, references, "reference_board")
 		self.assertEqual(
 			["mother", "baby", "shera_pack"],
@@ -781,21 +1023,40 @@ class TestGroundedWords(FrappeTestCase):
 	@patch("joymedia.services.planning.llm._qwen_config", return_value=("http://qwen/v1", "m", 60))
 	@patch("joymedia.services.planning.llm.requests.post")
 	def test_titles_and_captions_come_from_what_the_scenes_show(self, post, config):
-		post.return_value = _response({"choices": [{"message": {"content": frappe.as_json({
-			"film_title": "Ánh hoàng hôn",
-			"scenes": [{"title": "Nâng niu tác phẩm", "caption": "Tinh tế từng chi tiết"},
-				{"title": "Cận cảnh viền đá", "caption": "Kết thúc"}],
-		})}}]})
+		post.return_value = _response(
+			{
+				"choices": [
+					{
+						"message": {
+							"content": frappe.as_json(
+								{
+									"film_title": "Ánh hoàng hôn",
+									"scenes": [
+										{"title": "Nâng niu tác phẩm", "caption": "Tinh tế từng chi tiết"},
+										{"title": "Cận cảnh viền đá", "caption": "Kết thúc"},
+									],
+								}
+							)
+						}
+					}
+				]
+			}
+		)
 		shots = [
 			{"shot_name": "OPENING: Siêu xe tăng tốc", "generation_prompt": "She lifts the artwork."},
-			{"shot_name": "CLOSING: Nhẫn kim cương", "generation_prompt": "A close-up of the artwork's border."},
+			{
+				"shot_name": "CLOSING: Nhẫn kim cương",
+				"generation_prompt": "A close-up of the artwork's border.",
+			},
 		]
 
 		words = qwen_client.write_titles_and_captions(shots, "Quảng cáo sản phẩm")
 		qwen_client.default_captions(shots)
 
 		self.assertEqual("Ánh hoàng hôn", words["film_title"])
-		self.assertEqual(["OPENING: Nâng niu tác phẩm", "CLOSING: Cận cảnh viền đá"], [s["shot_name"] for s in shots])
+		self.assertEqual(
+			["OPENING: Nâng niu tác phẩm", "CLOSING: Cận cảnh viền đá"], [s["shot_name"] for s in shots]
+		)
 		self.assertEqual(["Tinh tế từng chi tiết", ""], [s["caption"] for s in shots])
 
 
@@ -804,8 +1065,13 @@ class TestProductAnalysis(FrappeTestCase):
 	@patch("joymedia.services.intake.vision.is_configured", return_value=True)
 	def test_product_references_are_described_as_objects(self, configured, analyse):
 		project = frappe._dict(selected_media=[frappe._dict(asset_version="AV-1", reference_role="Product")])
-		version = frappe._dict(name="AV-1", media_asset="MA-1", file="/f.png", analysis_status="Ready",
-			analysis_json='{"kind": "place", "version": 2}')
+		version = frappe._dict(
+			name="AV-1",
+			media_asset="MA-1",
+			file="/f.png",
+			analysis_status="Ready",
+			analysis_json='{"kind": "place", "version": 2}',
+		)
 		with patch.object(vision_analysis.frappe.db, "get_value", side_effect=[version, "Image"]):
 			vision_analysis.ensure_project_image_analysis(project)
 

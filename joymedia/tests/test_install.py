@@ -17,8 +17,14 @@ class TestInstall(FrappeTestCase):
 		self.assertIsNotNone(first["pipeline"])
 
 	def test_promotion_writes_the_site_config_only_with_the_flag(self):
-		with patch("joymedia.install.frappe.db.commit"), patch("frappe.installer.update_site_config") as update, patch.object(
-			frappe, "conf", frappe._dict(joymedia_active_generation_pipeline="PIPE-OLD", comfyui_base_url="http://x")
+		with (
+			patch("joymedia.install.frappe.db.commit"),
+			patch("frappe.installer.update_site_config") as update,
+			patch.object(
+				frappe,
+				"conf",
+				frappe._dict(joymedia_active_generation_pipeline="PIPE-OLD", comfyui_base_url="http://x"),
+			),
 		):
 			install.setup()
 			update.assert_not_called()

@@ -19,8 +19,7 @@ PROMPT_BINDING_KEY = "generation_prompt"
 def workflow_supports_continuation(workflow):
 	"""Return whether a workflow has a required first-frame input binding."""
 	return any(
-		frappe.scrub(binding.required_input_role or "") == "first_frame"
-		and bool(binding.required)
+		frappe.scrub(binding.required_input_role or "") == "first_frame" and bool(binding.required)
 		for binding in workflow.bindings
 	)
 
@@ -101,7 +100,9 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 	height = run_snapshot.get("delivery_height")
 	fps = run_snapshot.get("output_fps") or workflow_version.output_fps or 24
 	if not width or not height:
-		frappe.throw(_("Generation Run {0} has no valid delivery dimensions in its snapshot.").format(run.name))
+		frappe.throw(
+			_("Generation Run {0} has no valid delivery dimensions in its snapshot.").format(run.name)
+		)
 	from joymedia.services.review.admission import retry_prompt
 
 	workflow = build_execution_workflow(
@@ -126,7 +127,9 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		if not isinstance(inputs, dict):
 			continue
 		for input_name in list(inputs):
-			if any(token in str(input_name).lower() for token in ("api_key", "auth_token", "token_comfy_org")):
+			if any(
+				token in str(input_name).lower() for token in ("api_key", "auth_token", "token_comfy_org")
+			):
 				inputs[input_name] = "<redacted>"
 	canonical = canonical_workflow_json(recorded_workflow)
 	attempt.resolved_workflow_json = json.dumps(recorded_workflow, indent=2, ensure_ascii=False)
@@ -210,11 +213,7 @@ def validate_workflow_for_execution(workflow_version, workflow=None):
 		try:
 			workflow = json.loads(workflow_version.workflow_json)
 		except json.JSONDecodeError as exc:
-			frappe.throw(
-				_("Invalid Workflow JSON for {0}: {1}").format(
-					workflow_version.name, str(exc)
-				)
-			)
+			frappe.throw(_("Invalid Workflow JSON for {0}: {1}").format(workflow_version.name, str(exc)))
 
 	if not isinstance(workflow, dict) or not workflow:
 		frappe.throw(
@@ -278,28 +277,29 @@ def validate_workflow_for_execution(workflow_version, workflow=None):
 def validate_workflow_node_types_available(workflow_version, object_info):
 	"""Fail before queueing when the target server lacks a graph node type."""
 	workflow = validate_workflow_for_execution(workflow_version)
-	missing = sorted({
-		node.get("class_type")
-		for node in workflow.values()
-		if node.get("class_type") not in object_info
-	})
+	missing = sorted(
+		{node.get("class_type") for node in workflow.values() if node.get("class_type") not in object_info}
+	)
 	if missing:
 		frappe.throw(
-			_("Workflow {0} references node type(s) not installed on the configured ComfyUI server: {1}. ").format(
-				workflow_version.name, ", ".join(missing)
-			)
+			_(
+				"Workflow {0} references node type(s) not installed on the configured ComfyUI server: {1}. "
+			).format(workflow_version.name, ", ".join(missing))
 			+ _("Export a server-compatible API workflow or install the required nodes before generating.")
 		)
 	from joymedia.services.workflows.schema import graph_schema_errors
 
 	errors = graph_schema_errors(
-		workflow, object_info,
+		workflow,
+		object_info,
 		bound_inputs=[(row.node_key, row.input_name) for row in (workflow_version.get("bindings") or [])],
 	)
 	if errors:
-		frappe.throw(_("Workflow {0} is incompatible with the configured ComfyUI server: {1}").format(
-			workflow_version.name, "; ".join(errors)
-		))
+		frappe.throw(
+			_("Workflow {0} is incompatible with the configured ComfyUI server: {1}").format(
+				workflow_version.name, "; ".join(errors)
+			)
+		)
 
 
 def _validate_node_references(workflow):
@@ -320,9 +320,7 @@ def _validate_node_references(workflow):
 
 	if missing_references:
 		frappe.throw(
-			_("Workflow contains references to missing nodes: {0}").format(
-				", ".join(missing_references)
-			)
+			_("Workflow contains references to missing nodes: {0}").format(", ".join(missing_references))
 		)
 
 
@@ -333,14 +331,16 @@ def _validate_workflow_bindings(workflow_version, workflow):
 		if not binding_key:
 			frappe.throw(_("Every Workflow Binding requires a Binding Key."))
 		if binding_key != PROMPT_BINDING_KEY and not binding.required_input_role:
-			frappe.throw(
-				_("Workflow Binding {0} requires an Input Role.").format(binding.binding_key)
-			)
+			frappe.throw(_("Workflow Binding {0} requires an Input Role.").format(binding.binding_key))
 		accepted_media_type = getattr(binding, "accepted_media_type", None)
 		if accepted_media_type not in (None, "", "Any", "Image", "Video", "Audio"):
 			frappe.throw(_("Unsupported Accepted Media Type: {0}").format(accepted_media_type))
 		if getattr(binding, "allow_multiple", 0) and getattr(binding, "value_type", None) != "File Paths":
-			frappe.throw(_("Workflow Binding {0} must use File Paths when Allow Multiple is enabled.").format(binding.binding_key))
+			frappe.throw(
+				_("Workflow Binding {0} must use File Paths when Allow Multiple is enabled.").format(
+					binding.binding_key
+				)
+			)
 		node = workflow.get(binding.node_key)
 		if node is None or binding.input_name not in node.get("inputs", {}):
 			frappe.throw(
@@ -384,6 +384,8 @@ def _resolve_declared_binding(binding, inputs, role_slot=0):
 		allow_multiple=bool(getattr(binding, "allow_multiple", 0)),
 		role_slot=role_slot,
 	)
+
+
 def _role_slot_index(bindings, binding):
 	"""Return a role-local slot index without encoding order in a binding name."""
 	role = frappe.scrub(getattr(binding, "required_input_role", None) or "")
@@ -403,8 +405,12 @@ def _role_slot_index(bindings, binding):
 
 
 def _resolve_input_value(
-	required_role, inputs, value_type="File Path", required=True,
-	allow_multiple=False, role_slot=0,
+	required_role,
+	inputs,
+	value_type="File Path",
+	required=True,
+	allow_multiple=False,
+	role_slot=0,
 ):
 	if not required_role:
 		frappe.throw(_("Generation Input binding requires Required Input Role."))

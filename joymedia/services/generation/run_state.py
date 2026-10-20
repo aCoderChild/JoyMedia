@@ -16,14 +16,18 @@ def sync_media_project_status_for_run(run_name: str):
 	if frappe.db.get_value("Media Project", media_project, "status") == "Archived":
 		return
 	latest = frappe.get_all(
-		"Generation Run", filters={"media_project": media_project}, fields=["name", "status"],
-		order_by="creation desc", limit_page_length=1,
+		"Generation Run",
+		filters={"media_project": media_project},
+		fields=["name", "status"],
+		order_by="creation desc",
+		limit_page_length=1,
 	)
 	if not latest:
 		status = "Draft"
 	elif latest[0].status in ACTIVE_RUN_STATUSES or frappe.db.exists(
 		# Several scenes may be regenerating in separate runs.
-		"Generation Run", {"media_project": media_project, "status": ["in", ACTIVE_RUN_STATUSES]}
+		"Generation Run",
+		{"media_project": media_project, "status": ["in", ACTIVE_RUN_STATUSES]},
 	):
 		status = "Generating"
 	elif latest[0].status == "Completed":
@@ -64,18 +68,16 @@ def _refresh_run_counters(run):
 		run.status = "Running" if active_tasks else "Failed"
 		run.completed_at = None if active_tasks else (run.completed_at or now())
 		latest_failed_job = next(
-			(
-				job
-				for job in reversed(jobs)
-				if job.status == "Failed" and job.error_summary
-			),
+			(job for job in reversed(jobs) if job.status == "Failed" and job.error_summary),
 			None,
 		)
 		run.failure_class = latest_failed_job.failure_class if latest_failed_job else None
 		run.error_summary = (
 			"Some scenes need attention while other scenes are still rendering."
 			if active_tasks
-			else latest_failed_job.error_summary if latest_failed_job else None
+			else latest_failed_job.error_summary
+			if latest_failed_job
+			else None
 		)
 	elif run.total_tasks and any(job.status == "Running" for job in jobs):
 		run.status = "Running"
@@ -88,15 +90,22 @@ def _refresh_run_counters(run):
 	# Cancellation is durable user intent. A poll that began before Stop may
 	# derive Running from its old snapshot, but cannot overwrite Cancelled in SQL.
 	values = {
-		"total_tasks": run.total_tasks, "completed_tasks": run.completed_tasks,
-		"failed_tasks": run.failed_tasks, "running_tasks": run.running_tasks, "progress": run.progress,
+		"total_tasks": run.total_tasks,
+		"completed_tasks": run.completed_tasks,
+		"failed_tasks": run.failed_tasks,
+		"running_tasks": run.running_tasks,
+		"progress": run.progress,
 	}
 	if run.status == "Cancelled":
 		filters = {"name": run.name, "status": "Cancelled"}
 	else:
 		filters = {"name": run.name, "status": ["!=", "Cancelled"]}
-		values.update(status=run.status, completed_at=run.completed_at,
-			failure_class=run.failure_class, error_summary=run.error_summary)
+		values.update(
+			status=run.status,
+			completed_at=run.completed_at,
+			failure_class=run.failure_class,
+			error_summary=run.error_summary,
+		)
 	frappe.db.set_value("Generation Run", filters, values, update_modified=False)
 
 
@@ -112,19 +121,32 @@ def _run_outputs_are_selected(run_name):
 		return True  # a keyframe run selects no video
 	run = frappe.get_doc("Generation Run", run_name)
 	from joymedia.services.consistency.retention import needs_candidate_review
+
 	snapshot = frappe.parse_json(run.project_snapshot_json or "{}") or {}
-	scenes = {row.get("shot"):row for row in snapshot.get("shots",[])}
+	scenes = {row.get("shot"): row for row in snapshot.get("shots", [])}
 	scope = frappe.parse_json(run.execution_scope_json or "{}") or {}
 	seen_candidates = set()
-	for job in frappe.get_all("Generation Task", filters={"generation_run":run_name}, fields=["name","shot","workflow","segment_index"], order_by="segment_index desc, creation desc"):
-		if scope.get("candidate_only") or needs_candidate_review(scenes.get(job.shot,{})):
-			if frappe.db.get_value("Generation Workflow",job.workflow,"output_media_type") != "Video":
+	for job in frappe.get_all(
+		"Generation Task",
+		filters={"generation_run": run_name},
+		fields=["name", "shot", "workflow", "segment_index"],
+		order_by="segment_index desc, creation desc",
+	):
+		if scope.get("candidate_only") or needs_candidate_review(scenes.get(job.shot, {})):
+			if frappe.db.get_value("Generation Workflow", job.workflow, "output_media_type") != "Video":
 				continue
 			if job.shot in seen_candidates:
 				continue
 			seen_candidates.add(job.shot)
-			attempt = frappe.db.get_value("Generation Attempt",{"generation_task":job.name,"status":"Completed"},"name",order_by="creation desc")
-			if not attempt or not frappe.db.exists("Asset Version",{"source_generation_attempt":attempt,"source":"Composed"}):
+			attempt = frappe.db.get_value(
+				"Generation Attempt",
+				{"generation_task": job.name, "status": "Completed"},
+				"name",
+				order_by="creation desc",
+			)
+			if not attempt or not frappe.db.exists(
+				"Asset Version", {"source_generation_attempt": attempt, "source": "Composed"}
+			):
 				return False
 			continue
 		if not frappe.db.get_value("Shot", job.shot, "selected_output_asset_version"):

@@ -51,9 +51,13 @@ class GenerationTask(Document):
 			frappe.throw(_("Segment Start Frame cannot be negative."))
 		if int(self.segment_effective_frames or 0) < 1:
 			frappe.throw(_("Segment Effective Frames must be positive."))
-		if int(self.overlap_frames or 0) < 0 or int(self.overlap_frames or 0) >= int(self.segment_frame_count):
+		if int(self.overlap_frames or 0) < 0 or int(self.overlap_frames or 0) >= int(
+			self.segment_frame_count
+		):
 			frappe.throw(_("Overlap Frames must be less than Segment Frame Count."))
-		if int(self.segment_effective_frames or 0) + int(self.overlap_frames or 0) != int(self.segment_frame_count):
+		if int(self.segment_effective_frames or 0) + int(self.overlap_frames or 0) != int(
+			self.segment_frame_count
+		):
 			frappe.throw(_("Segment Frame Count must equal effective frames plus overlap frames."))
 
 	def _validate_execution_references(self):
@@ -99,7 +103,9 @@ class GenerationTask(Document):
 					# The scene's reviewed keyframe, drawn by an earlier keyframe run.
 					self._validate_keyframe_dependency(dependency)
 				elif not (isinstance(scope, dict) and scope.get("continuation_from_task") == dependency.name):
-					frappe.throw(_("A chained Generation Task dependency must belong to the same Generation Run."))
+					frappe.throw(
+						_("A chained Generation Task dependency must belong to the same Generation Run.")
+					)
 				else:
 					self._validate_cross_run_dependency(dependency, project)
 			if dependency.name == self.name:
@@ -129,7 +135,9 @@ class GenerationTask(Document):
 		)
 		duplicate = duplicate_rows[0].name if duplicate_rows else None
 		if duplicate:
-			frappe.throw(_("Only one Generation Task may exist for each pipeline step of a shot segment in a run."))
+			frappe.throw(
+				_("Only one Generation Task may exist for each pipeline step of a shot segment in a run.")
+			)
 		return workflow
 
 	def _validate_keyframe_dependency(self, dependency):
@@ -139,7 +147,11 @@ class GenerationTask(Document):
 		attempt = get_effective_attempt(dependency.name)
 		if not attempt or not frappe.db.exists(
 			"Generation Artifact",
-			{"generation_attempt": attempt.name, "artifact_role": "Primary Image", "frappe_file": ["is", "set"]},
+			{
+				"generation_attempt": attempt.name,
+				"artifact_role": "Primary Image",
+				"frappe_file": ["is", "set"],
+			},
 		):
 			frappe.throw(_("The keyframe dependency has no stored image."))
 
@@ -155,8 +167,13 @@ class GenerationTask(Document):
 		attempt = frappe.db.get_value(
 			"Asset Version", dependency_shot.selected_output_asset_version, "source_generation_attempt"
 		)
-		if not attempt or frappe.db.get_value("Generation Attempt", attempt, "generation_task") != dependency.name:
-			frappe.throw(_("The continuation dependency is not the generation lineage of the selected output."))
+		if (
+			not attempt
+			or frappe.db.get_value("Generation Attempt", attempt, "generation_task") != dependency.name
+		):
+			frappe.throw(
+				_("The continuation dependency is not the generation lineage of the selected output.")
+			)
 		if not frappe.db.exists(
 			"Generation Artifact",
 			{"generation_attempt": attempt, "artifact_role": "Last Frame", "frappe_file": ["is", "set"]},
@@ -185,30 +202,34 @@ class GenerationTask(Document):
 
 			allowed_workflows = allowed_workflows_for_shot(snapshot, shot_snapshot)
 			pipeline_workflows = self._pipeline_workflows(run, shot_snapshot)
-			if workflow.name not in {candidate.name for candidate in allowed_workflows} and workflow.name not in pipeline_workflows:
+			if (
+				workflow.name not in {candidate.name for candidate in allowed_workflows}
+				and workflow.name not in pipeline_workflows
+			):
 				frappe.throw(
 					_("Generation Task Workflow {0} is not valid for Shot {1} in this run.").format(
 						workflow.name, self.shot
 					)
 				)
 			return workflow
-		if run.workflow != self.workflow and frappe.db.get_value(
-			"Generation Workflow", run.workflow, "continuation_workflow"
-		) != self.workflow:
+		if (
+			run.workflow != self.workflow
+			and frappe.db.get_value("Generation Workflow", run.workflow, "continuation_workflow")
+			!= self.workflow
+		):
 			frappe.throw(_("Generation Run Workflow must match the Generation Task Workflow."))
 		return workflow
 
 	@staticmethod
 	def _pipeline_workflows(run, shot_snapshot=None):
-		pipeline_name = (
-			(shot_snapshot or {}).get("generation_pipeline")
-			or getattr(run, "generation_pipeline", None)
+		pipeline_name = (shot_snapshot or {}).get("generation_pipeline") or getattr(
+			run, "generation_pipeline", None
 		)
 		if not pipeline_name:
 			return set()
-		return set(frappe.get_all(
-			"Generation Pipeline Step", filters={"parent": pipeline_name}, pluck="workflow"
-		))
+		return set(
+			frappe.get_all("Generation Pipeline Step", filters={"parent": pipeline_name}, pluck="workflow")
+		)
 
 	def get_shot_input_snapshot(self):
 		shot = frappe.get_doc("Shot", self.shot)
@@ -228,7 +249,9 @@ class GenerationTask(Document):
 			if not input_role:
 				frappe.throw(_("Generation Input requires an Input Role."))
 			if bool(row.asset_version) == bool(row.generation_artifact):
-				frappe.throw(_("Generation Input must reference exactly one Asset Version or Generation Artifact."))
+				frappe.throw(
+					_("Generation Input must reference exactly one Asset Version or Generation Artifact.")
+				)
 			snapshot.setdefault(input_role, []).append(row.asset_version or row.generation_artifact)
 		return snapshot
 
@@ -241,8 +264,7 @@ class GenerationTask(Document):
 		required_roles = {
 			frappe.scrub(binding.required_input_role)
 			for binding in workflow.bindings
-			if binding.required
-			and binding.required_input_role
+			if binding.required and binding.required_input_role
 		}
 		for role in required_roles:
 			if self.depends_on_task and role == "first_frame":
@@ -256,8 +278,11 @@ class GenerationTask(Document):
 					_("Generation Task {0} requires usable input(s) with role '{1}'.").format(self.name, role)
 				)
 			binding = next(
-				(binding for binding in workflow.bindings
-				 if binding.required and frappe.scrub(binding.required_input_role or "") == role),
+				(
+					binding
+					for binding in workflow.bindings
+					if binding.required and frappe.scrub(binding.required_input_role or "") == role
+				),
 				None,
 			)
 			accepted_media_type = getattr(binding, "accepted_media_type", None) if binding else None

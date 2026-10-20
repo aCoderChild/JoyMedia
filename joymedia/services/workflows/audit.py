@@ -47,7 +47,13 @@ def api_graph(export, object_info):
 					options = contract[1] if len(contract) > 1 and isinstance(contract[1], dict) else {}
 					if name in inputs or options.get("forceInput"):
 						continue
-					if not isinstance(kind_name, list) and kind_name not in ("INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"):
+					if not isinstance(kind_name, list) and kind_name not in (
+						"INT",
+						"FLOAT",
+						"STRING",
+						"BOOLEAN",
+						"COMBO",
+					):
 						continue
 					if cursor >= len(widgets):
 						if group == "required":
@@ -56,12 +62,19 @@ def api_graph(export, object_info):
 					inputs[name] = widgets[cursor]
 					cursor += 1
 					if options.get("control_after_generate") or name in ("seed", "noise_seed"):
-						if cursor < len(widgets) and widgets[cursor] in ("fixed", "increment", "decrement", "randomize"):
+						if cursor < len(widgets) and widgets[cursor] in (
+							"fixed",
+							"increment",
+							"decrement",
+							"randomize",
+						):
 							cursor += 1
 			if cursor < len(widgets):
 				# LoadImage's upload button has a UI-only widget; it is not an API input.
 				if not (kind == "LoadImage" and widgets[cursor:] == ["image"]):
-					raise ValueError(f"{key}: {len(widgets) - cursor} unrecognized UI widget values; export API format from this server")
+					raise ValueError(
+						f"{key}: {len(widgets) - cursor} unrecognized UI widget values; export API format from this server"
+					)
 		graph[key] = {"class_type": kind, "inputs": inputs}
 	return graph
 
@@ -83,7 +96,9 @@ def main():
 			print(f"PASS {path}: {len(graph)} nodes")
 			if args.output_dir:
 				args.output_dir.mkdir(parents=True, exist_ok=True)
-				(args.output_dir / f"{path.stem}_api.json").write_text(json.dumps(graph, ensure_ascii=False, indent=2) + "\n")
+				(args.output_dir / f"{path.stem}_api.json").write_text(
+					json.dumps(graph, ensure_ascii=False, indent=2) + "\n"
+				)
 		except (ValueError, KeyError, TypeError) as exc:
 			failed = True
 			print(f"FAIL {path}: {exc}")

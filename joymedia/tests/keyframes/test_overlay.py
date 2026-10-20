@@ -1,6 +1,7 @@
-import unittest
 import io
+import itertools
 import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,7 +17,9 @@ class TestLayout(FrappeTestCase):
 	def test_every_subject_keeps_its_aspect_ratio_and_stays_inside_the_canvas(self):
 		for canvas in ((720, 1280), (1280, 720), (1000, 1000)):
 			sizes = [("character", 464, 560), ("product", 300, 420), ("product", 900, 200)]
-			for (role, width, height), (x, y, box_width, box_height) in zip(sizes, layout(canvas, sizes)):
+			for (role, width, height), (x, y, box_width, box_height) in zip(
+				sizes, layout(canvas, sizes), strict=False
+			):
 				# Pixel rounding only: each side is within one pixel of the exact proportional size.
 				self.assertLessEqual(abs(box_height - box_width * height / width), 1, f"{role} on {canvas}")
 				self.assertGreaterEqual(x, 0)
@@ -37,11 +40,11 @@ class TestLayout(FrappeTestCase):
 
 	def test_several_products_stand_together_in_the_middle(self):
 		boxes = layout((720, 1280), [("character", 464, 560)] + [("product", 1076, 717)] * 3)[1:]
-		for left, right in zip(boxes, boxes[1:]):
+		for left, right in itertools.pairwise(boxes):
 			self.assertLess(right[0], left[0] + left[2])  # each overlaps its neighbour a little
 		centre = sum(x + w / 2 for x, _y, w, _h in boxes) / 3
 		self.assertAlmostEqual(360, centre, delta=40)
-		for x, y, w, h in boxes:
+		for x, _y, w, _h in boxes:
 			self.assertGreaterEqual(x, 0)
 			self.assertLessEqual(x + w, 720)
 
@@ -75,13 +78,25 @@ class TestComposite(FrappeTestCase):
 					asset.putpixel((x, y), (0, 0, 0, 0))
 			path = Path(folder) / "asset.png"
 			asset.save(path)
-			result = Image.open(io.BytesIO(composite_subjects(
-				self._png("RGB", (400, 800), (0, 0, 255)), [{"role": "character", "path": str(path)}]
-			))).convert("RGB")
+			result = Image.open(
+				io.BytesIO(
+					composite_subjects(
+						self._png("RGB", (400, 800), (0, 0, 255)), [{"role": "character", "path": str(path)}]
+					)
+				)
+			).convert("RGB")
 			x, y, width, height = layout((400, 800), [("character", 200, 300)])[0]
 			self.assertEqual(result.size, (400, 800))
 			# Pasted pixels keep the asset's colour apart from a slight match to the room.
-			self.assertLess(sum(abs(a - b) for a, b in zip((255, 0, 0), result.getpixel((x + width - 5, y + height // 2)))), 90)
+			self.assertLess(
+				sum(
+					abs(a - b)
+					for a, b in zip(
+						(255, 0, 0), result.getpixel((x + width - 5, y + height // 2)), strict=False
+					)
+				),
+				90,
+			)
 			self.assertEqual((0, 0, 255), result.getpixel((x + 2, y + 2)))
 
 
@@ -102,7 +117,11 @@ class TestPastedReferences(FrappeTestCase):
 		from joymedia.services.planning.prompts import compile_prompt_for_documents
 
 		shot = frappe._dict(
-			name="S", shot_number=1, image_prompt="A room with a hand.", setting_prompt="A bright room.", generation_prompt="A room.",
+			name="S",
+			shot_number=1,
+			image_prompt="A room with a hand.",
+			setting_prompt="A bright room.",
+			generation_prompt="A room.",
 			references=[{"reference_role": "Character", "asset_version": "AV1"}],
 		)
 		with patch.object(subject_overlay, "_cutout_path", return_value="/a.png"):
@@ -111,50 +130,79 @@ class TestPastedReferences(FrappeTestCase):
 			self.assertNotIn("hand", prompt.split(subject_overlay.EMPTY_SETTING)[0])
 		shot.setting_prompt = ""
 		with patch.object(subject_overlay, "_cutout_path", return_value="/a.png"):
-			self.assertIn(subject_overlay.DEFAULT_SETTING, compile_prompt_for_documents(shot, {}, prompt_source="image"))
+			self.assertIn(
+				subject_overlay.DEFAULT_SETTING, compile_prompt_for_documents(shot, {}, prompt_source="image")
+			)
 		with patch.object(subject_overlay, "_cutout_path", return_value=None):
-			self.assertNotIn(subject_overlay.EMPTY_SETTING, compile_prompt_for_documents(shot, {}, prompt_source="image"))
+			self.assertNotIn(
+				subject_overlay.EMPTY_SETTING, compile_prompt_for_documents(shot, {}, prompt_source="image")
+			)
 
 
 class TestKeyframeIngest(FrappeTestCase):
 	def test_the_run_snapshot_decides_what_is_pasted(self):
-		snapshot = {"shots": [{"shot": "S1", "references": [{"reference_role": "character", "asset_version": "AV1"}]}]}
+		snapshot = {
+			"shots": [{"shot": "S1", "references": [{"reference_role": "character", "asset_version": "AV1"}]}]
+		}
 		values = {
 			("Generation Attempt", "ATT"): frappe._dict(generation_task="TASK"),
 			("Generation Task", "TASK"): ("S1", "RUN"),
 			("Generation Run", "RUN"): frappe.as_json(snapshot),
 		}
-		with patch.object(frappe.db, "get_value", side_effect=lambda doctype, name, *a, **k: values[(doctype, name)]), patch.object(
-			subject_overlay, "_cutout_path", return_value="/a.png"
-		), patch.object(subject_overlay, "composite_subjects", return_value=b"done") as composite:
+		with (
+			patch.object(
+				frappe.db, "get_value", side_effect=lambda doctype, name, *a, **k: values[(doctype, name)]
+			),
+			patch.object(subject_overlay, "_cutout_path", return_value="/a.png"),
+			patch.object(subject_overlay, "composite_subjects", return_value=b"done") as composite,
+		):
 			result = subject_overlay.paste_subjects_into_keyframe(frappe._dict(name="ATT"), b"raw")
 		self.assertEqual(b"done", result)
 		self.assertEqual("character", composite.call_args.args[1][0]["role"])
 
 	def test_a_shot_without_cutouts_is_left_untouched(self):
-		with patch.object(frappe.db, "get_value", side_effect=[frappe._dict(generation_task="T"), ("S1", "R"), "{}"]):
-			self.assertEqual(b"raw", subject_overlay.paste_subjects_into_keyframe(frappe._dict(name="A"), b"raw"))
+		with patch.object(
+			frappe.db, "get_value", side_effect=[frappe._dict(generation_task="T"), ("S1", "R"), "{}"]
+		):
+			self.assertEqual(
+				b"raw", subject_overlay.paste_subjects_into_keyframe(frappe._dict(name="A"), b"raw")
+			)
 
 	def test_pasted_references_are_not_inputs_of_the_image_stage(self):
 		from joymedia.services.generation.orchestrator import _pipeline_reference_inputs
 
 		workflow = frappe._dict(name="W")
-		contract = [{"role": "product", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False}]
-		references = frappe._dict(character_mode="Paste exact art", references=[
-			{"reference_role": "Product", "asset_version": "AV1"}, {"reference_role": "Logo", "asset_version": "AV2"},
-			{"reference_role": "Product", "asset_version": "AV3"},
-		])
-		with patch("joymedia.services.workflows.resolver.get_workflow_input_contract", return_value=contract), patch.object(
-			subject_overlay, "_cutout_path", side_effect=lambda av: "/x.png" if av == "AV1" else None
+		contract = [
+			{"role": "product", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False}
+		]
+		references = frappe._dict(
+			character_mode="Paste exact art",
+			references=[
+				{"reference_role": "Product", "asset_version": "AV1"},
+				{"reference_role": "Logo", "asset_version": "AV2"},
+				{"reference_role": "Product", "asset_version": "AV3"},
+			],
+		)
+		with (
+			patch("joymedia.services.workflows.resolver.get_workflow_input_contract", return_value=contract),
+			patch.object(
+				subject_overlay, "_cutout_path", side_effect=lambda av: "/x.png" if av == "AV1" else None
+			),
 		):
 			self.assertEqual({"product": ["AV3"]}, _pipeline_reference_inputs(references, workflow))
 
 
 class TestUsableSetting(FrappeTestCase):
 	def test_a_setting_that_names_a_subject_is_replaced_by_the_default(self):
-		self.assertEqual(subject_overlay.DEFAULT_SETTING, subject_overlay.usable_setting("Macro close-up on hand pulling tissue."))
+		self.assertEqual(
+			subject_overlay.DEFAULT_SETTING,
+			subject_overlay.usable_setting("Macro close-up on hand pulling tissue."),
+		)
 		self.assertEqual(subject_overlay.DEFAULT_SETTING, subject_overlay.usable_setting(""))
-		self.assertEqual("A warm kitchen with window light.", subject_overlay.usable_setting("A warm kitchen with window light."))
+		self.assertEqual(
+			"A warm kitchen with window light.",
+			subject_overlay.usable_setting("A warm kitchen with window light."),
+		)
 
 
 class TestDescribeColours(FrappeTestCase):
@@ -170,20 +218,27 @@ class TestDescribeColours(FrappeTestCase):
 			path = Path(folder) / "a.png"
 			image.save(path)
 			subject_overlay.describe_colours.cache_clear()
-			with patch.object(frappe.db, "get_value", return_value="/f.png"), patch.object(
-				frappe, "get_doc", return_value=frappe._dict(get_full_path=lambda: str(path))
+			with (
+				patch.object(frappe.db, "get_value", return_value="/f.png"),
+				patch.object(frappe, "get_doc", return_value=frappe._dict(get_full_path=lambda: str(path))),
 			):
-				self.assertEqual("mostly cream, with brown details", subject_overlay.describe_colours("AV-COLOUR"))
+				self.assertEqual(
+					"mostly cream, with brown details", subject_overlay.describe_colours("AV-COLOUR")
+				)
 
 
 class TestCharacterMode(FrappeTestCase):
 	def test_the_real_product_pack_is_always_pasted_and_characters_only_in_paste_mode(self):
 		references = [
-			{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Product", "asset_version": "AV2"},
+			{"reference_role": "Character", "asset_version": "AV1"},
+			{"reference_role": "Product", "asset_version": "AV2"},
 			{"reference_role": "Logo", "asset_version": "AV3"},
 		]
 		with patch.object(subject_overlay, "_cutout_path", return_value="/a.png"):
-			self.assertEqual(["character", "product"], [p["role"] for p in pasted_references(references, "Paste exact art")])
+			self.assertEqual(
+				["character", "product"],
+				[p["role"] for p in pasted_references(references, "Paste exact art")],
+			)
 			self.assertEqual(["product"], [p["role"] for p in pasted_references(references, "Draw in scene")])
 
 	def test_the_character_board_keeps_each_picture_uncropped_and_the_mother_larger(self):
@@ -192,15 +247,22 @@ class TestCharacterMode(FrappeTestCase):
 			Image.new("RGBA", (200, 300), (250, 240, 230, 255)).save(mother)
 			Image.new("RGBA", (200, 300), (250, 240, 230, 255)).save(kid)
 			paths = {"AVM": str(mother), "AVK": str(kid)}
-			references = [{"reference_role": "Character", "asset_version": "AVM"}, {"reference_role": "Character", "asset_version": "AVK"}]
-			with patch.object(subject_overlay, "_any_image_path", side_effect=paths.get), patch.object(
-				frappe, "get_site_path", return_value=folder
+			references = [
+				{"reference_role": "Character", "asset_version": "AVM"},
+				{"reference_role": "Character", "asset_version": "AVK"},
+			]
+			with (
+				patch.object(subject_overlay, "_any_image_path", side_effect=paths.get),
+				patch.object(frappe, "get_site_path", return_value=folder),
 			):
 				board = subject_overlay.character_board(references, {"AVM": 1, "AVK": 0.5})
 			image = Image.open(board)
 			self.assertEqual(768, image.height)
+
 			# The mother's tile is twice as tall as the kid's, both from the same baseline.
-			column = lambda x: [y for y in range(image.height) if image.getpixel((x, y)) != (236, 232, 226)]
+			def column(x):
+				return [y for y in range(image.height) if image.getpixel((x, y)) != (236, 232, 226)]
+
 			mother_x, kid_x = 40 + 60, image.width - 40 - 30
 			self.assertGreater(len(column(mother_x)), 1.8 * len(column(kid_x)))
 
@@ -223,7 +285,9 @@ class TestTuning(FrappeTestCase):
 		from joymedia.services.project.tuning import DEFAULTS, tune
 
 		self.assertEqual(DEFAULTS["character_height"], tune("character_height"))
-		with patch.object(frappe, "conf", frappe._dict(joymedia_tuning={"character_height": 0.5, "nonsense": 1})):
+		with patch.object(
+			frappe, "conf", frappe._dict(joymedia_tuning={"character_height": 0.5, "nonsense": 1})
+		):
 			self.assertEqual(0.5, tune("character_height"))
 			self.assertEqual(DEFAULTS["product_height"], tune("product_height"))
 		small = layout((720, 1280), [("character", 464, 560)])[0]
@@ -235,7 +299,11 @@ class TestTuning(FrappeTestCase):
 class TestProductPlacement(FrappeTestCase):
 	def test_on_the_closing_scene_the_product_is_large_in_the_centre_and_the_cast_at_the_sides(self):
 		canvas = (720, 1280)
-		mother, kid, product = layout(canvas, [("character", 464, 560, 1), ("character", 464, 560, 0.55), ("product", 1076, 717, 1)], product_hero=True)
+		mother, kid, product = layout(
+			canvas,
+			[("character", 464, 560, 1), ("character", 464, 560, 0.55), ("product", 1076, 717, 1)],
+			product_hero=True,
+		)
 		self.assertAlmostEqual(0.5 * canvas[0], product[0] + product[2] / 2, delta=2)
 		normal = layout(canvas, [("character", 464, 560), ("product", 1076, 717)])[1]
 		self.assertGreater(product[3], 1.5 * normal[3])
@@ -259,18 +327,29 @@ class TestProductPlacement(FrappeTestCase):
 		self.assertAlmostEqual(360, front[0] + front[2] / 2, delta=2)
 		self.assertGreater(front[1] + front[3], 0.9 * 1280)
 		self.assertLess(front[3], closing[3])
-		self.assertEqual(front, layout(canvas, [("product", 1076, 717)], front=True)[0])  # same inputs, same place
+		self.assertEqual(
+			front, layout(canvas, [("product", 1076, 717)], front=True)[0]
+		)  # same inputs, same place
 
 	def test_a_drawn_scene_keeps_the_floor_clear_for_the_pack_and_the_closing_scene_its_centre(self):
 		from joymedia.services.planning.prompts import _product_note
 
 		project = {"shots": [{"shot_number": 1}, {"shot_number": 2}]}
-		refs = [{"reference_role": "Product", "asset_version": "AV1"}, {"reference_role": "Character", "asset_version": "AV2"}]
+		refs = [
+			{"reference_role": "Product", "asset_version": "AV1"},
+			{"reference_role": "Character", "asset_version": "AV2"},
+		]
 		with patch.object(subject_overlay, "_cutout_path", return_value="/p.png"):
-			story = _product_note(frappe._dict(shot_number=1, references=refs, character_mode="Draw in scene"), project)
-			closing = _product_note(frappe._dict(shot_number=2, references=refs, character_mode="Draw in scene"), project)
+			story = _product_note(
+				frappe._dict(shot_number=1, references=refs, character_mode="Draw in scene"), project
+			)
+			closing = _product_note(
+				frappe._dict(shot_number=2, references=refs, character_mode="Draw in scene"), project
+			)
 		with patch.object(subject_overlay, "_cutout_path", return_value=None):
-			no_cutout = _product_note(frappe._dict(shot_number=1, references=refs, character_mode="Draw in scene"), project)
+			no_cutout = _product_note(
+				frappe._dict(shot_number=1, references=refs, character_mode="Draw in scene"), project
+			)
 		self.assertIn("unobstructed area", story)
 		self.assertIn("do not draw a substitute product", story)
 		self.assertIn("central area clear", closing)
@@ -288,6 +367,7 @@ class TestProductLock(FrappeTestCase):
 
 	def test_authored_surface_placement_overrides_default_floor_without_changing_art(self):
 		from joymedia.services.keyframes.overlay import composite_subjects
+
 		with tempfile.TemporaryDirectory() as folder:
 			path = Path(folder) / "source.png"
 			picture = Image.new("RGBA", (100, 50), (10, 50, 200, 255))
@@ -296,11 +376,21 @@ class TestProductLock(FrappeTestCase):
 			background = io.BytesIO()
 			Image.new("RGB", (400, 400), "white").save(background, "PNG")
 			lock = {}
-			result = composite_subjects(background.getvalue(), [{"role":"product", "path":str(path), "asset_version":"SOURCE"}], shadows=False, lock=lock, placements=[{"asset_version":"SOURCE", "box":[.1,.2,.5,.25]}])
+			result = composite_subjects(
+				background.getvalue(),
+				[{"role": "product", "path": str(path), "asset_version": "SOURCE"}],
+				shadows=False,
+				lock=lock,
+				placements=[{"asset_version": "SOURCE", "box": [0.1, 0.2, 0.5, 0.25]}],
+			)
 			self.assertEqual([40, 80, 200, 100], list(lock["items"][0]["box"]))
 			self.assertEqual((10, 50, 200), Image.open(io.BytesIO(result)).getpixel((100, 120)))
 			with self.assertRaises(ValueError):
-				composite_subjects(background.getvalue(), [], placements=[{"asset_version":"UNSELECTED", "box":[.1,.2,.5,.25]}])
+				composite_subjects(
+					background.getvalue(),
+					[],
+					placements=[{"asset_version": "UNSELECTED", "box": [0.1, 0.2, 0.5, 0.25]}],
+				)
 
 	def test_the_paste_records_the_exact_pack_pixels_and_place(self):
 		import tempfile
@@ -309,10 +399,12 @@ class TestProductLock(FrappeTestCase):
 		with tempfile.TemporaryDirectory() as folder:
 			background, pack = self._assets(Path(folder))
 			lock = {}
-			composite_subjects(background.read_bytes(), [{"role": "product", "path": str(pack)}], front=True, lock=lock)
+			composite_subjects(
+				background.read_bytes(), [{"role": "product", "path": str(pack)}], front=True, lock=lock
+			)
 		self.assertEqual([360, 640], lock["canvas"])
 		self.assertEqual(1, len(lock["items"]))
-		x, y, width, height = lock["items"][0]["box"]
+		x, _y, width, _height = lock["items"][0]["box"]
 		self.assertAlmostEqual(180, x + width / 2, delta=2)
 		self.assertTrue(lock["items"][0]["png"].startswith(b"\x89PNG"))
 
@@ -325,10 +417,34 @@ class TestProductLock(FrappeTestCase):
 
 		video, locked, patch_file = folder / "in.mp4", folder / "out.mp4", folder / "patch.png"
 		# The video is twice the keyframe's size: the box scales with it.
-		subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", source, "-t", "2", "-pix_fmt", "yuv420p", str(video)], check=True)
+		subprocess.run(
+			[
+				"ffmpeg",
+				"-v",
+				"error",
+				"-y",
+				"-f",
+				"lavfi",
+				"-i",
+				source,
+				"-t",
+				"2",
+				"-pix_fmt",
+				"yuv420p",
+				str(video),
+			],
+			check=True,
+		)
 		Image.new("RGBA", (50, 40), (255, 0, 0, 255)).save(patch_file)
-		lock = {"canvas": [360, 640], "items": [{"box": [100, 500, 50, 40], "file": "/private/files/patch.png"}]}
-		with patch.object(subject_overlay.frappe, "get_doc", return_value=frappe._dict(get_full_path=lambda: str(patch_file))):
+		lock = {
+			"canvas": [360, 640],
+			"items": [{"box": [100, 500, 50, 40], "file": "/private/files/patch.png"}],
+		}
+		with patch.object(
+			subject_overlay.frappe,
+			"get_doc",
+			return_value=frappe._dict(get_full_path=lambda: str(patch_file)),
+		):
 			return lock_products_in_video(video, lock, locked, 24), locked
 
 	def _pixel(self, folder, video, second):
@@ -337,7 +453,10 @@ class TestProductLock(FrappeTestCase):
 		from PIL import Image
 
 		frame = folder / f"f{second}.png"
-		subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", second, "-i", str(video), "-frames:v", "1", str(frame)], check=True)
+		subprocess.run(
+			["ffmpeg", "-v", "error", "-y", "-ss", second, "-i", str(video), "-frames:v", "1", str(frame)],
+			check=True,
+		)
 		with Image.open(frame) as image:
 			return image.convert("RGB").getpixel((200 + 50, 1000 + 40))
 
@@ -361,7 +480,9 @@ class TestProductLock(FrappeTestCase):
 		with tempfile.TemporaryDirectory() as folder:
 			# The shot cuts to something else after 0.15 s, before the pack has stayed a quarter second.
 			with self.assertRaisesRegex(ValueError, "lost coverage"):
-				self._lock(Path(folder), "nullsrc=s=720x1280:r=24,geq=lum='if(lt(T,0.15),128,235)':cb=128:cr=128")
+				self._lock(
+					Path(folder), "nullsrc=s=720x1280:r=24,geq=lum='if(lt(T,0.15),128,235)':cb=128:cr=128"
+				)
 			self.assertFalse((Path(folder) / "out.mp4").exists())
 
 	def test_only_the_frames_that_still_show_the_pack_are_kept(self):
@@ -379,8 +500,17 @@ class TestEndCard(FrappeTestCase):
 		from joymedia.services.project.context import _compose_end_card
 
 		shots = [
-			{"shot_number": 1, "character_mode": "Draw in scene", "references": [{"reference_role": "Product"}]},
-			{"shot_number": 2, "duration_seconds": 5, "character_mode": "Draw in scene", "references": [{"reference_role": "Product"}, {"reference_role": "Character"}]},
+			{
+				"shot_number": 1,
+				"character_mode": "Draw in scene",
+				"references": [{"reference_role": "Product"}],
+			},
+			{
+				"shot_number": 2,
+				"duration_seconds": 5,
+				"character_mode": "Draw in scene",
+				"references": [{"reference_role": "Product"}, {"reference_role": "Character"}],
+			},
 		]
 		_compose_end_card(shots)
 		self.assertEqual(["Draw in scene", "Draw in scene"], [row["character_mode"] for row in shots])
@@ -390,7 +520,13 @@ class TestEndCard(FrappeTestCase):
 	def test_a_last_scene_without_a_product_keeps_its_mode(self):
 		from joymedia.services.project.context import _compose_end_card
 
-		shots = [{"shot_number": 1, "character_mode": "Draw in scene", "references": [{"reference_role": "Character"}]}]
+		shots = [
+			{
+				"shot_number": 1,
+				"character_mode": "Draw in scene",
+				"references": [{"reference_role": "Character"}],
+			}
+		]
 		_compose_end_card(shots)
 		self.assertEqual("Draw in scene", shots[0]["character_mode"])
 
@@ -412,8 +548,12 @@ class TestSplitScreenKeyframe(FrappeTestCase):
 			cutout.save(pack.name)
 			lock = {}
 			frame = split_screen_keyframe(
-				drawn.getvalue(), [{"text": "A"}, {"text": "B"}, {"text": "C"}], "A room.", None,
-				[{"role": "product", "path": pack.name, "asset_version": "AV-PACK"}], lock,
+				drawn.getvalue(),
+				[{"text": "A"}, {"text": "B"}, {"text": "C"}],
+				"A room.",
+				None,
+				[{"role": "product", "path": pack.name, "asset_version": "AV-PACK"}],
+				lock,
 			)
 		image = Image.open(io.BytesIO(frame)).convert("RGB")
 		self.assertEqual((720, 1280), image.size)
@@ -422,24 +562,39 @@ class TestSplitScreenKeyframe(FrappeTestCase):
 		tops = [item["box"][1] for item in lock["items"]]
 		band = (1280 - 8 * 2) // 3
 		for number, top in enumerate(tops):
-			self.assertTrue(number * band <= top < (number + 1) * (band + 8), tops)  # each pack inside its own panel
+			self.assertTrue(
+				number * band <= top < (number + 1) * (band + 8), tops
+			)  # each pack inside its own panel
 		self.assertEqual((255, 255, 255), image.getpixel((360, band + 3)))  # the line between panels 1 and 2
 
 
 class TestHeldProduct(FrappeTestCase):
 	def _shot(self, action):
 		return frappe._dict(
-			generation_prompt=f"{action} Camera: Wide shot.\n\nAudio: a pop.", views_json="", character_mode="Draw in scene",
-			references=[{"reference_role": "Character", "asset_version": "AV-ME"}, {"reference_role": "Product", "asset_version": "AV-PACK"}],
+			generation_prompt=f"{action} Camera: Wide shot.\n\nAudio: a pop.",
+			views_json="",
+			character_mode="Draw in scene",
+			references=[
+				{"reference_role": "Character", "asset_version": "AV-ME"},
+				{"reference_role": "Product", "asset_version": "AV-PACK"},
+			],
 		)
 
 	def test_a_scene_whose_character_holds_the_product_is_recognised(self):
 		from joymedia.services.planning.prompts import holds_product
 
 		with patch("joymedia.services.keyframes.overlay._cutout_path", return_value="/tmp/x.png"):
-			self.assertTrue(holds_product(self._shot("The mother mascot beams and cradles in arms a giant jumbo bag of Shera soft pack.")))
+			self.assertTrue(
+				holds_product(
+					self._shot(
+						"The mother mascot beams and cradles in arms a giant jumbo bag of Shera soft pack."
+					)
+				)
+			)
 			self.assertTrue(holds_product(self._shot("The mother holds the product up to the camera.")))
-			self.assertFalse(holds_product(self._shot("The kid spills juice. Later she holds the pack.")))  # not the opening action
+			self.assertFalse(
+				holds_product(self._shot("The kid spills juice. Later she holds the pack."))
+			)  # not the opening action
 			self.assertFalse(holds_product(self._shot("The mother smiles beside the table.")))
 
 	def test_the_real_pack_covers_the_pack_the_character_was_drawn_holding(self):
@@ -458,34 +613,38 @@ class TestHeldProduct(FrappeTestCase):
 			with patch("joymedia.services.review.consistency.locate", return_value=(200, 600, 500, 800)):
 				frame = paste_held_product(drawn.getvalue(), [{"role": "product", "path": pack.name}], lock)
 			with patch("joymedia.services.review.consistency.locate", return_value=None):
-				self.assertIsNone(paste_held_product(drawn.getvalue(), [{"role": "product", "path": pack.name}]))
+				self.assertIsNone(
+					paste_held_product(drawn.getvalue(), [{"role": "product", "path": pack.name}])
+				)
 		image = Image.open(io.BytesIO(frame)).convert("RGB")
 		self.assertEqual((20, 200, 180), image.getpixel((350, 700)))
 		self.assertEqual([[200, 600, 300, 200]], [item["box"] for item in lock["items"]])
 
 
 class TestSharedStudioGround(unittest.TestCase):
- def test_product_hero_uses_the_primary_cell_without_distorting_artwork(self):
-  from joymedia.services.keyframes.overlay import hero_layout
-  for canvas in [(720,1280),(1280,720),(720,720)]:
-   sizes=[('character',1000,1000),('product',1500,900)]
-   boxes=hero_layout(canvas,sizes)
-   actor,product=boxes
-   self.assertGreater(product[2]*product[3],actor[2]*actor[3])
-   self.assertTrue(actor[0]+actor[2]<=product[0] or actor[1]+actor[3]<=product[1])
-   for (_,w,h),(x,y,bw,bh) in zip(sizes,boxes):
-    self.assertLess(abs(bw/bh-w/h),.01)
-    self.assertTrue(0<=x and 0<=y and x+bw<=canvas[0] and y+bh<=canvas[1])
+	def test_product_hero_uses_the_primary_cell_without_distorting_artwork(self):
+		from joymedia.services.keyframes.overlay import hero_layout
 
- def test_all_subjects_keep_proportions_and_one_baseline_without_overlap(self):
-  from joymedia.services.keyframes.overlay import shared_ground_layout
-  for canvas in [(720,1280),(1280,720),(512,512)]:
-   sizes=[('character',400,600,1),('product',600,400,.65)]
-   boxes=shared_ground_layout(canvas,sizes)
-   self.assertEqual(boxes[0][1]+boxes[0][3],boxes[1][1]+boxes[1][3])
-   self.assertLessEqual(boxes[0][0]+boxes[0][2],boxes[1][0])
-   for (_,w,h,_),(x,y,bw,bh) in zip(sizes,boxes):
-    self.assertLess(abs(bw/bh-w/h),.01)
-    self.assertGreaterEqual(min(x,y),0)
-    self.assertLessEqual(x+bw,canvas[0])
-    self.assertLessEqual(y+bh,canvas[1])
+		for canvas in [(720, 1280), (1280, 720), (720, 720)]:
+			sizes = [("character", 1000, 1000), ("product", 1500, 900)]
+			boxes = hero_layout(canvas, sizes)
+			actor, product = boxes
+			self.assertGreater(product[2] * product[3], actor[2] * actor[3])
+			self.assertTrue(actor[0] + actor[2] <= product[0] or actor[1] + actor[3] <= product[1])
+			for (_, w, h), (x, y, bw, bh) in zip(sizes, boxes, strict=False):
+				self.assertLess(abs(bw / bh - w / h), 0.01)
+				self.assertTrue(0 <= x and 0 <= y and x + bw <= canvas[0] and y + bh <= canvas[1])
+
+	def test_all_subjects_keep_proportions_and_one_baseline_without_overlap(self):
+		from joymedia.services.keyframes.overlay import shared_ground_layout
+
+		for canvas in [(720, 1280), (1280, 720), (512, 512)]:
+			sizes = [("character", 400, 600, 1), ("product", 600, 400, 0.65)]
+			boxes = shared_ground_layout(canvas, sizes)
+			self.assertEqual(boxes[0][1] + boxes[0][3], boxes[1][1] + boxes[1][3])
+			self.assertLessEqual(boxes[0][0] + boxes[0][2], boxes[1][0])
+			for (_, w, h, _), (x, y, bw, bh) in zip(sizes, boxes, strict=False):
+				self.assertLess(abs(bw / bh - w / h), 0.01)
+				self.assertGreaterEqual(min(x, y), 0)
+				self.assertLessEqual(x + bw, canvas[0])
+				self.assertLessEqual(y + bh, canvas[1])

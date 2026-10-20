@@ -9,14 +9,27 @@ from joymedia.tests.editing.test_timeline import _create_output_version, _create
 
 
 def _scene(project, number, prompt="Original."):
-	shot = frappe.get_doc({
-		"doctype": "Shot", "media_project": project.name, "shot_number": number, "shot_name": f"Scene {number}",
-		"generation_prompt": prompt, "image_prompt": prompt, "duration_seconds": 2,
-	}).insert(ignore_permissions=True)
-	asset = frappe.get_doc({
-		"doctype": "Media Asset", "asset_name": f"{shot.name} Output", "media_type": "Video", "asset_category": "Other",
-		"asset_scope": "Project Output", "media_project": project.name,
-	}).insert(ignore_permissions=True)
+	shot = frappe.get_doc(
+		{
+			"doctype": "Shot",
+			"media_project": project.name,
+			"shot_number": number,
+			"shot_name": f"Scene {number}",
+			"generation_prompt": prompt,
+			"image_prompt": prompt,
+			"duration_seconds": 2,
+		}
+	).insert(ignore_permissions=True)
+	asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": f"{shot.name} Output",
+			"media_type": "Video",
+			"asset_category": "Other",
+			"asset_scope": "Project Output",
+			"media_project": project.name,
+		}
+	).insert(ignore_permissions=True)
 	output = _create_output_version(project, f"out-{number}.mp4", 1, asset)[1]
 	shot.db_set("selected_output_asset_version", output.name, update_modified=False)
 	return shot, output
@@ -29,10 +42,15 @@ class ReviewCommentCase(FrappeTestCase):
 		commit.start()
 		self.addCleanup(commit.stop)
 		frappe.set_user("Administrator")
-		self.project = frappe.get_doc({
-			"doctype": "Media Project", "project_name": "Comments", "workflow": _create_workflow(),
-			"total_duration_seconds": 4, "delivery_preset": "Landscape",
-		}).insert(ignore_permissions=True)
+		self.project = frappe.get_doc(
+			{
+				"doctype": "Media Project",
+				"project_name": "Comments",
+				"workflow": _create_workflow(),
+				"total_duration_seconds": 4,
+				"delivery_preset": "Landscape",
+			}
+		).insert(ignore_permissions=True)
 		self.one, self.one_take = _scene(self.project, 1)
 		self.two, self.two_take = _scene(self.project, 2)
 		self.limit, self.fps = review._frame_limit(self.project, self.one)
@@ -83,12 +101,28 @@ class TestAddingComments(ReviewCommentCase):
 		self.assertTrue(row["comment"].startswith("Tighten") and row["comment"].endswith("the shot"))
 
 	def test_a_scene_without_a_take_cannot_be_commented(self):
-		bare = frappe.get_doc({"doctype": "Shot", "media_project": self.project.name, "shot_number": 3, "duration_seconds": 2, "generation_prompt": "x"}).insert(ignore_permissions=True)
+		bare = frappe.get_doc(
+			{
+				"doctype": "Shot",
+				"media_project": self.project.name,
+				"shot_number": 3,
+				"duration_seconds": 2,
+				"generation_prompt": "x",
+			}
+		).insert(ignore_permissions=True)
 		with self.assertRaises(frappe.ValidationError):
 			self.add(shot=bare)
 
 	def test_a_scene_of_another_project_is_refused(self):
-		other = frappe.get_doc({"doctype": "Media Project", "project_name": "Other", "workflow": self.project.workflow, "total_duration_seconds": 4, "delivery_preset": "Landscape"}).insert(ignore_permissions=True)
+		other = frappe.get_doc(
+			{
+				"doctype": "Media Project",
+				"project_name": "Other",
+				"workflow": self.project.workflow,
+				"total_duration_seconds": 4,
+				"delivery_preset": "Landscape",
+			}
+		).insert(ignore_permissions=True)
 		foreign, _take = _scene(other, 1)
 		with self.assertRaises(frappe.ValidationError):
 			self.add(shot=foreign)
@@ -108,12 +142,20 @@ class TestListingAndStatus(ReviewCommentCase):
 		self.add(start=2, end=10, text="early")
 		rows = review.get_review_comments(self.project.name)
 		self.assertEqual(["early", "late", "Make it brighter."], [r["comment"] for r in rows])
-		self.assertEqual((round(2 / self.fps, 3), round(11 / self.fps, 3)), (rows[0]["start_seconds"], rows[0]["end_seconds"]))
+		self.assertEqual(
+			(round(2 / self.fps, 3), round(11 / self.fps, 3)),
+			(rows[0]["start_seconds"], rows[0]["end_seconds"]),
+		)
 		self.assertEqual(1, len(review.get_review_comments(self.project.name, self.two.name)))
 
 	def test_a_comment_on_an_older_take_is_marked_not_current(self):
 		row = self.add()
-		new_take = _create_output_version(self.project, "second.mp4", 2, frappe.get_doc("Media Asset", {"asset_name": f"{self.one.name} Output"}))[1]
+		new_take = _create_output_version(
+			self.project,
+			"second.mp4",
+			2,
+			frappe.get_doc("Media Asset", {"asset_name": f"{self.one.name} Output"}),
+		)[1]
 		self.one.db_set("selected_output_asset_version", new_take.name, update_modified=False)
 		listed = review.get_review_comments(self.project.name, self.one.name)
 		self.assertEqual([(row["name"], False)], [(r["name"], r["current_take"]) for r in listed])
@@ -131,7 +173,15 @@ class TestListingAndStatus(ReviewCommentCase):
 		self.assertFalse(frappe.db.exists("Review Comment", row["name"]))
 
 	def test_a_comment_of_another_project_cannot_be_changed(self):
-		other = frappe.get_doc({"doctype": "Media Project", "project_name": "Other", "workflow": self.project.workflow, "total_duration_seconds": 4, "delivery_preset": "Landscape"}).insert(ignore_permissions=True)
+		other = frappe.get_doc(
+			{
+				"doctype": "Media Project",
+				"project_name": "Other",
+				"workflow": self.project.workflow,
+				"total_duration_seconds": 4,
+				"delivery_preset": "Landscape",
+			}
+		).insert(ignore_permissions=True)
 		row = self.add()
 		for call in (
 			lambda: review.set_review_comment_status(other.name, row["name"], "Resolved"),
@@ -144,7 +194,15 @@ class TestListingAndStatus(ReviewCommentCase):
 class TestPermissions(ReviewCommentCase):
 	def _user(self, email):
 		if not frappe.db.exists("User", email):
-			frappe.get_doc({"doctype": "User", "email": email, "first_name": "Stranger", "send_welcome_email": 0, "roles": [{"role": "JoyMedia User"}]}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "User",
+					"email": email,
+					"first_name": "Stranger",
+					"send_welcome_email": 0,
+					"roles": [{"role": "JoyMedia User"}],
+				}
+			).insert(ignore_permissions=True)
 		return email
 
 	def test_someone_who_does_not_own_the_project_can_neither_read_nor_write_comments(self):
@@ -162,12 +220,21 @@ class TestPermissions(ReviewCommentCase):
 
 
 def _row(start, end, text, status="Open", created="2026-01-01 00:00:00", english=None):
-	return {"start_frame": start, "end_frame": end, "comment": text, "english": english or text, "status": status, "creation": created}
+	return {
+		"start_frame": start,
+		"end_frame": end,
+		"comment": text,
+		"english": english or text,
+		"status": status,
+		"creation": created,
+	}
 
 
 class TestWording(FrappeTestCase):
 	def test_requests_are_written_into_the_prompt_with_their_times(self):
-		text = review.with_corrections("A kid smiles.", [_row(24, 24, "Too dark"), _row(48, 71, "Mascot drifts")], 24)
+		text = review.with_corrections(
+			"A kid smiles.", [_row(24, 24, "Too dark"), _row(48, 71, "Mascot drifts")], 24
+		)
 		self.assertTrue(text.startswith("A kid smiles.\n\n" + review.CORRECTIONS_MARKER))
 		self.assertIn("- at 1.0s: Too dark", text)
 		self.assertIn("- from 2.0s to 3.0s: Mascot drifts", text)
@@ -180,31 +247,40 @@ class TestWording(FrappeTestCase):
 		self.assertEqual("A kid smiles.", review.strip_corrections(twice))
 
 	def test_without_comments_the_original_prompt_comes_back(self):
-		self.assertEqual("A kid smiles.", review.with_corrections(review.with_corrections("A kid smiles.", [_row(0, 0, "x")], 24), [], 24))
+		self.assertEqual(
+			"A kid smiles.",
+			review.with_corrections(review.with_corrections("A kid smiles.", [_row(0, 0, "x")], 24), [], 24),
+		)
 
 	def test_open_requests_are_never_dropped_and_old_ones_give_way(self):
 		old = [_row(0, 0, "old " + "w" * 300, "Addressed", f"2026-01-0{n} 00:00:00") for n in range(1, 8)]
 		new = _row(5, 5, "must stay", "Open", "2026-02-01 00:00:00")
-		text = review.with_corrections("P", old + [new], 24)
+		text = review.with_corrections("P", [*old, new], 24)
 		self.assertIn("must stay", text)
 		self.assertLessEqual(len(text) - 1, review.MAX_CORRECTIONS_CHARS + 10)
 		self.assertLess(text.count("old "), 7)
 
 	def test_open_requests_that_cannot_fit_are_refused_loudly(self):
 		with self.assertRaises(frappe.ValidationError):
-			review.with_corrections("P", [_row(i, i, "x" * 400, created=f"2026-01-01 00:00:{i:02d}") for i in range(6)], 24)
+			review.with_corrections(
+				"P", [_row(i, i, "x" * 400, created=f"2026-01-01 00:00:{i:02d}") for i in range(6)], 24
+			)
 
 	def test_the_approved_starting_picture_is_never_touched(self):
 		shot = frappe._dict(generation_prompt="Video.", image_prompt="Picture.")
 		with patch("joymedia.services.planning.llm.to_english", side_effect=lambda text: text):
-			video = review.revised_generation_prompt(shot, [_row(0, 0, "Brighter look"), _row(60, 70, "Pack in hand")], 24)
+			video = review.revised_generation_prompt(
+				shot, [_row(0, 0, "Brighter look"), _row(60, 70, "Pack in hand")], 24
+			)
 		self.assertIn("Brighter look", video)
 		self.assertIn("Pack in hand", video)
 		self.assertEqual("Picture.", shot.image_prompt)
 
 	def test_other_languages_are_put_into_english_for_the_model(self):
 		shot = frappe._dict(generation_prompt="Video.", image_prompt="Picture.")
-		with patch("joymedia.services.planning.llm.to_english", return_value="Make the bear smile more") as translate:
+		with patch(
+			"joymedia.services.planning.llm.to_english", return_value="Make the bear smile more"
+		) as translate:
 			video = review.revised_generation_prompt(shot, [_row(0, 0, "Cho gấu cười nhiều hơn")], 24)
 		translate.assert_called_once_with("Cho gấu cười nhiều hơn")
 		self.assertIn("Make the bear smile more", video)
@@ -215,7 +291,9 @@ class TestWording(FrappeTestCase):
 @patch("joymedia.services.generation.takes._ensure_scene_free")
 @patch("joymedia.services.generation.takes.regenerate_scene_with_reason", return_value={"run": "RUN-X"})
 class TestApplying(ReviewCommentCase):
-	def test_open_comments_are_written_into_the_prompts_a_new_take_starts_and_the_comments_become_history(self, regenerate, free, english):
+	def test_open_comments_are_written_into_the_prompts_a_new_take_starts_and_the_comments_become_history(
+		self, regenerate, free, english
+	):
 		first, second = self.add(start=0, text="Brighter"), self.add(start=10, end=20, text="Fix paws")
 		result = review.apply_review_comments(self.project.name)
 
@@ -226,28 +304,53 @@ class TestApplying(ReviewCommentCase):
 			self.assertIn(wanted, video)
 		self.assertTrue(video.startswith("Original."))
 		regenerate.assert_called_once_with(self.project.name, self.one.name, retry_reason="QA Rejection")
-		self.assertEqual({"Addressed"}, {frappe.db.get_value("Review Comment", n["name"], "status") for n in (first, second)})
+		self.assertEqual(
+			{"Addressed"},
+			{frappe.db.get_value("Review Comment", n["name"], "status") for n in (first, second)},
+		)
 
-	def test_a_second_round_keeps_the_first_rounds_fixes_without_repeating_them(self, regenerate, free, english):
+	def test_a_second_round_keeps_the_first_rounds_fixes_without_repeating_them(
+		self, regenerate, free, english
+	):
 		self.add(start=0, text="Brighter")
 		review.apply_review_comments(self.project.name)
-		new_take = _create_output_version(self.project, "round2.mp4", 3, frappe.get_doc("Media Asset", {"asset_name": f"{self.one.name} Output"}))[1]
+		new_take = _create_output_version(
+			self.project,
+			"round2.mp4",
+			3,
+			frappe.get_doc("Media Asset", {"asset_name": f"{self.one.name} Output"}),
+		)[1]
 		self.one.db_set("selected_output_asset_version", new_take.name, update_modified=False)
 		self.add(start=5, text="Smile more")
 		review.apply_review_comments(self.project.name)
 		video = frappe.db.get_value("Shot", self.one.name, "generation_prompt")
-		self.assertEqual((1, 1, 1), (video.count("Brighter"), video.count("Smile more"), video.count(review.CORRECTIONS_MARKER)))
+		self.assertEqual(
+			(1, 1, 1),
+			(video.count("Brighter"), video.count("Smile more"), video.count(review.CORRECTIONS_MARKER)),
+		)
 
 	def test_an_approved_storyboard_stays_approved_after_the_revision(self, regenerate, free, english):
 		from joymedia.services.planning.signature import compute_plan_signature
 
-		self.project.db_set({"storyboard_approval_status": "Approved", "approved_plan_signature": compute_plan_signature(self.project.name)})
+		self.project.db_set(
+			{
+				"storyboard_approval_status": "Approved",
+				"approved_plan_signature": compute_plan_signature(self.project.name),
+			}
+		)
 		self.add()
 		review.apply_review_comments(self.project.name)
-		self.assertEqual("Approved", frappe.db.get_value("Media Project", self.project.name, "storyboard_approval_status"))
-		self.assertEqual(compute_plan_signature(self.project.name), frappe.db.get_value("Media Project", self.project.name, "approved_plan_signature"))
+		self.assertEqual(
+			"Approved", frappe.db.get_value("Media Project", self.project.name, "storyboard_approval_status")
+		)
+		self.assertEqual(
+			compute_plan_signature(self.project.name),
+			frappe.db.get_value("Media Project", self.project.name, "approved_plan_signature"),
+		)
 
-	def test_a_failed_render_restores_the_prompts_and_the_approved_plan_exactly(self, regenerate, free, english):
+	def test_a_failed_render_restores_the_prompts_and_the_approved_plan_exactly(
+		self, regenerate, free, english
+	):
 		from joymedia.services.planning.signature import compute_plan_signature
 
 		regenerate.side_effect = frappe.ValidationError("gpu busy")
@@ -257,7 +360,9 @@ class TestApplying(ReviewCommentCase):
 		result = review.apply_review_comments(self.project.name)
 		self.assertFalse(result["scenes"][0]["applied"])
 		self.assertEqual("Original.", frappe.db.get_value("Shot", self.one.name, "generation_prompt"))
-		self.assertEqual(before, frappe.db.get_value("Media Project", self.project.name, "approved_plan_signature"))
+		self.assertEqual(
+			before, frappe.db.get_value("Media Project", self.project.name, "approved_plan_signature")
+		)
 		self.assertEqual("Open", frappe.db.get_value("Review Comment", row["name"], "status"))
 
 	def test_applying_twice_does_not_render_twice(self, regenerate, free, english):
@@ -271,7 +376,12 @@ class TestApplying(ReviewCommentCase):
 		stale = self.add(text="old take")
 		done = self.add(text="done by hand")
 		review.set_review_comment_status(self.project.name, done["name"], "Resolved")
-		new_take = _create_output_version(self.project, "third.mp4", 3, frappe.get_doc("Media Asset", {"asset_name": f"{self.one.name} Output"}))[1]
+		new_take = _create_output_version(
+			self.project,
+			"third.mp4",
+			3,
+			frappe.get_doc("Media Asset", {"asset_name": f"{self.one.name} Output"}),
+		)[1]
 		self.one.db_set("selected_output_asset_version", new_take.name, update_modified=False)
 		with self.assertRaises(frappe.ValidationError):
 			review.apply_review_comments(self.project.name)
@@ -295,7 +405,9 @@ class TestApplying(ReviewCommentCase):
 		self.assertEqual("Original.", frappe.db.get_value("Shot", self.one.name, "generation_prompt"))
 		regenerate.assert_not_called()
 
-	def test_a_scene_that_cannot_render_keeps_its_prompts_and_comments_while_the_others_go_ahead(self, regenerate, free, english):
+	def test_a_scene_that_cannot_render_keeps_its_prompts_and_comments_while_the_others_go_ahead(
+		self, regenerate, free, english
+	):
 		regenerate.side_effect = [frappe.ValidationError("gpu busy"), {"run": "RUN-2"}]
 		a, b = self.add(shot=self.one), self.add(shot=self.two)
 		result = review.apply_review_comments(self.project.name)
@@ -316,29 +428,46 @@ class TestStress(ReviewCommentCase):
 		started = time.monotonic()
 		for shot in scenes:
 			for index in range(review.MAX_OPEN_PER_SCENE):
-				review.add_review_comment(self.project.name, shot.name, f"Note {index} " + "word " * 50, index % self.limit)
+				review.add_review_comment(
+					self.project.name, shot.name, f"Note {index} " + "word " * 50, index % self.limit
+				)
 		built = time.monotonic() - started
 		started = time.monotonic()
 		rows = review.get_review_comments(self.project.name)
 		listed = time.monotonic() - started
 		self.assertEqual(len(scenes) * review.MAX_OPEN_PER_SCENE, len(rows))
-		self.assertLess(listed, 3.0, f"listing {len(rows)} comments took {listed:.2f}s (adding took {built:.1f}s)")
+		self.assertLess(
+			listed, 3.0, f"listing {len(rows)} comments took {listed:.2f}s (adding took {built:.1f}s)"
+		)
 		one_scene = [r for r in rows if r["shot"] == self.one.name]
-		wording = review.with_corrections("P", [{**r, "english": r["comment"], "creation": r["created"]} for r in one_scene[:3]], self.fps)
+		wording = review.with_corrections(
+			"P", [{**r, "english": r["comment"], "creation": r["created"]} for r in one_scene[:3]], self.fps
+		)
 		self.assertLessEqual(len(wording), review.MAX_CORRECTIONS_CHARS + 50)
 
 
 class TestWholeSceneComments(ReviewCommentCase):
 	def test_a_comment_can_be_about_the_whole_scene(self):
-		row = review.add_review_comment(self.project.name, self.one.name, "Warmer light overall", whole_scene=1)
-		self.assertEqual(("Scene", None, None, None), (row["scope"], row["start_frame"], row["end_frame"], row["start_seconds"]))
+		row = review.add_review_comment(
+			self.project.name, self.one.name, "Warmer light overall", whole_scene=1
+		)
+		self.assertEqual(
+			("Scene", None, None, None),
+			(row["scope"], row["start_frame"], row["end_frame"], row["start_seconds"]),
+		)
 
 	def test_whole_scene_requests_come_first_in_the_prompt(self):
-		text = review.with_corrections("P", [
-			_row(10, 10, "Fix the paw", created="2026-01-02 00:00:00"),
-			{**_row(None, None, "Warmer light overall", created="2026-01-03 00:00:00"), "scope": "Scene"},
-		], 24)
-		self.assertLess(text.index("for the whole scene: Warmer light overall"), text.index("at 0.4s: Fix the paw"))
+		text = review.with_corrections(
+			"P",
+			[
+				_row(10, 10, "Fix the paw", created="2026-01-02 00:00:00"),
+				{**_row(None, None, "Warmer light overall", created="2026-01-03 00:00:00"), "scope": "Scene"},
+			],
+			24,
+		)
+		self.assertLess(
+			text.index("for the whole scene: Warmer light overall"), text.index("at 0.4s: Fix the paw")
+		)
 
 	@patch("joymedia.services.planning.llm.to_english", side_effect=lambda text: text)
 	@patch("joymedia.services.generation.takes._ensure_scene_free")

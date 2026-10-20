@@ -21,8 +21,6 @@ def blend_surface(frame, paint, opacity, *, mode="source"):
 		x, y, width, height = cv2.boundingRect(mask)
 		if width < 3 or height < 3:
 			raise PreservationError("Surface blend has no usable visible region.")
-		paint = cv2.seamlessClone(
-			paint, frame, mask, (x + width // 2, y + height // 2), cv2.NORMAL_CLONE
-		)
+		paint = cv2.seamlessClone(paint, frame, mask, (x + width // 2, y + height // 2), cv2.NORMAL_CLONE)
 	alpha = opacity[:, :, None]
 	return np.clip(frame * (1 - alpha) + paint * alpha, 0, 255).astype(np.uint8)

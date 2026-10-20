@@ -6,10 +6,7 @@ def execute():
 	if not frappe.db.table_exists("Media Project") or not frappe.db.table_exists("Campaign"):
 		return
 
-	columns = {
-		row[0]
-		for row in frappe.db.sql("SHOW COLUMNS FROM `tabMedia Project`", as_list=True)
-	}
+	columns = {row[0] for row in frappe.db.sql("SHOW COLUMNS FROM `tabMedia Project`", as_list=True)}
 	if "product_name" not in columns:
 		frappe.db.sql("ALTER TABLE `tabMedia Project` ADD COLUMN `product_name` varchar(140)")
 	if "campaign_brief" not in columns:

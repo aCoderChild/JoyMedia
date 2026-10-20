@@ -22,7 +22,10 @@ def scene_takes(project_name, shot_name):
 	if not asset:
 		return []
 	return frappe.get_all(
-		"Asset Version", filters={"media_asset": asset}, fields=["name", "file", "creation"], order_by="creation asc"
+		"Asset Version",
+		filters={"media_asset": asset},
+		fields=["name", "file", "creation"],
+		order_by="creation asc",
 	)
 
 
@@ -38,7 +41,12 @@ def regenerate_scene(project_name, shot_name, automatic=False, seed=None):
 	"""Render a new take of one scene from its current prompt (`automatic`: asked by the consistency check)."""
 	project, shot = _project_shot(project_name, shot_name)
 	_ensure_scene_free(project, shot)
-	return {**_start_takes_run(project, [shot.name], reset_review_retries=not automatic, video_seed=_video_seed(seed)), "shot_name": shot.name}
+	return {
+		**_start_takes_run(
+			project, [shot.name], reset_review_retries=not automatic, video_seed=_video_seed(seed)
+		),
+		"shot_name": shot.name,
+	}
 
 
 def _video_seed(value):
@@ -61,7 +69,15 @@ def regenerate_scene_with_reason(project_name, shot_name, retry_reason="Manual R
 	return {**result, "shot_name": shot.name}
 
 
-def _start_takes_run(project, shot_names, retry_reason=None, stage=None, reset_review_retries=False, keyframe_seed=None, video_seed=None):
+def _start_takes_run(
+	project,
+	shot_names,
+	retry_reason=None,
+	stage=None,
+	reset_review_retries=False,
+	keyframe_seed=None,
+	video_seed=None,
+):
 	"""Serialize short admission decisions while GPU jobs remain independent.
 
 	Two tabs must not both pass the scene-free check or hold Shot/Series rows
@@ -70,7 +86,9 @@ def _start_takes_run(project, shot_names, retry_reason=None, stage=None, reset_r
 	"""
 	frappe.db.commit()
 	lock = frappe.cache.lock(
-		f"joymedia-take-admission:{frappe.local.site}:{project.name}", timeout=600, blocking_timeout=120,
+		f"joymedia-take-admission:{frappe.local.site}:{project.name}",
+		timeout=600,
+		blocking_timeout=120,
 	)
 	if not lock.acquire():
 		frappe.throw(_("Another generation request is being prepared. Please try again shortly."))
@@ -84,12 +102,21 @@ def _start_takes_run(project, shot_names, retry_reason=None, stage=None, reset_r
 
 			for shot_name in shot_names:
 				reset_redos(shot_name)
-		return _start_takes_run_locked(project, shot_names, retry_reason=retry_reason, stage=stage, video_seed=video_seed, **({"keyframe_seed": keyframe_seed} if keyframe_seed is not None else {}))
+		return _start_takes_run_locked(
+			project,
+			shot_names,
+			retry_reason=retry_reason,
+			stage=stage,
+			video_seed=video_seed,
+			**({"keyframe_seed": keyframe_seed} if keyframe_seed is not None else {}),
+		)
 	finally:
 		lock.release()
 
 
-def _start_takes_run_locked(project, shot_names, retry_reason=None, stage=None, keyframe_seed=None, video_seed=None):
+def _start_takes_run_locked(
+	project, shot_names, retry_reason=None, stage=None, keyframe_seed=None, video_seed=None
+):
 	"""A run that renders new takes of these scenes, replacing each one's take when ready.
 
 	With stage="keyframe" it draws only the scenes' first frames, for review before any video."""
@@ -100,7 +127,10 @@ def _start_takes_run_locked(project, shot_names, retry_reason=None, stage=None, 
 	from joymedia.services.project.context import build_project_snapshot
 
 	# Like a whole film, a take or first frame follows the pipeline the site now uses (re-sealed: not an edit of the plan).
-	matched = bool(project.get("approved_plan_signature")) and compute_plan_signature(project.name) == project.approved_plan_signature
+	matched = (
+		bool(project.get("approved_plan_signature"))
+		and compute_plan_signature(project.name) == project.approved_plan_signature
+	)
 	project.follow_active_pipeline()
 	if matched:
 		project.reload()
@@ -121,16 +151,22 @@ def _start_takes_run_locked(project, shot_names, retry_reason=None, stage=None, 
 			"project_snapshot_json": snapshot_json,
 			"project_snapshot_hash": snapshot_hash,
 			# replace_selection: each new take replaces the current one once it is ready.
-			"execution_scope_json": json.dumps({
-				"shot_names": shot_names,
-				"replace_selection": stage != "keyframe",
-				"stage": stage,
-				"retry_reason": retry_reason or None,
-				"continuation_from_task": continuation_from_task,
-				"plan_signature": compute_plan_signature(project.name),
-				**({"video_seed": _video_seed(video_seed)} if video_seed is not None else {}),
-				**({"keyframe_seed": keyframe_seed} if stage == "keyframe" and keyframe_seed is not None else {}),
-			}),
+			"execution_scope_json": json.dumps(
+				{
+					"shot_names": shot_names,
+					"replace_selection": stage != "keyframe",
+					"stage": stage,
+					"retry_reason": retry_reason or None,
+					"continuation_from_task": continuation_from_task,
+					"plan_signature": compute_plan_signature(project.name),
+					**({"video_seed": _video_seed(video_seed)} if video_seed is not None else {}),
+					**(
+						{"keyframe_seed": keyframe_seed}
+						if stage == "keyframe" and keyframe_seed is not None
+						else {}
+					),
+				}
+			),
 			"workflow": project.workflow,
 			"generation_pipeline": pipeline_name,
 			"requested_by": frappe.session.user,
@@ -171,7 +207,9 @@ def _continuation_source_task(project, shot_names):
 		frappe.throw(_("A continuing scene needs a preceding scene."))
 	previous = previous[0]
 	if not previous.selected_output_asset_version:
-		frappe.throw(_("The preceding scene needs a generated output before this continuation can regenerate."))
+		frappe.throw(
+			_("The preceding scene needs a generated output before this continuation can regenerate.")
+		)
 	attempt_name = frappe.db.get_value(
 		"Asset Version", previous.selected_output_asset_version, "source_generation_attempt"
 	)
@@ -179,7 +217,8 @@ def _continuation_source_task(project, shot_names):
 		frappe.throw(_("The preceding scene output has no generation lineage for frame continuation."))
 	task_name = frappe.db.get_value("Generation Attempt", attempt_name, "generation_task")
 	if not task_name or not frappe.db.exists(
-		"Generation Artifact", {"generation_attempt": attempt_name, "artifact_role": "Last Frame", "frappe_file": ["is", "set"]}
+		"Generation Artifact",
+		{"generation_attempt": attempt_name, "artifact_role": "Last Frame", "frappe_file": ["is", "set"]},
 	):
 		frappe.throw(_("The preceding scene has no usable Last Frame artifact for continuation."))
 	return task_name
@@ -228,7 +267,9 @@ def stale_downstream_shots(shot):
 		"Asset Version", shot.selected_output_asset_version, "source_generation_attempt"
 	)
 	selected_task = (
-		frappe.db.get_value("Generation Attempt", selected_attempt, "generation_task") if selected_attempt else None
+		frappe.db.get_value("Generation Attempt", selected_attempt, "generation_task")
+		if selected_attempt
+		else None
 	)
 	upstream_tasks = frappe.get_all("Generation Task", filters={"shot": shot.name}, pluck="name")
 	if not upstream_tasks:
@@ -246,9 +287,13 @@ def stale_downstream_shots(shot):
 		)
 		if not downstream or downstream.is_removed or downstream.media_project != shot.media_project:
 			continue
-		attempt = frappe.db.get_value(
-			"Asset Version", downstream.selected_output_asset_version, "source_generation_attempt"
-		) if downstream.selected_output_asset_version else None
+		attempt = (
+			frappe.db.get_value(
+				"Asset Version", downstream.selected_output_asset_version, "source_generation_attempt"
+			)
+			if downstream.selected_output_asset_version
+			else None
+		)
 		if attempt and frappe.db.get_value("Generation Attempt", attempt, "generation_task") == task.name:
 			stale.append(task.shot)
 	return stale
@@ -283,7 +328,9 @@ def _ensure_scene_free(project, shot):
 def use_reviewed_take(project_name, shot_name, asset_version, expected_current):
 	"""Select a reviewed immutable candidate, guarded against stale history tabs."""
 	project, shot = _project_shot(project_name, shot_name)
-	selected = frappe.db.sql("select selected_output_asset_version from `tabShot` where name=%s for update", shot.name)[0][0]
+	selected = frappe.db.sql(
+		"select selected_output_asset_version from `tabShot` where name=%s for update", shot.name
+	)[0][0]
 	if (selected or "") != (expected_current or ""):
 		frappe.throw(_("The selected take changed. Reload the scene history."))
 	names = [row.name for row in scene_takes(project.name, shot.name)]

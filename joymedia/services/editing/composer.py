@@ -23,8 +23,13 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 				"shot": shot.name,
 			},
 			fields=[
-				"name", "workflow", "segment_index", "segment_frame_count",
-				"segment_effective_frames", "overlap_frames", "status",
+				"name",
+				"workflow",
+				"segment_index",
+				"segment_frame_count",
+				"segment_effective_frames",
+				"overlap_frames",
+				"status",
 			],
 			order_by="segment_index asc",
 		)
@@ -33,7 +38,8 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 		# A multi-stage pipeline can include image/audio preparation tasks. Only
 		# primary-video tasks belong on the visible Shot timeline.
 		jobs = [
-			job for job in all_jobs
+			job
+			for job in all_jobs
 			if frappe.db.get_value("Generation Workflow", job.workflow, "output_media_type") == "Video"
 		]
 		if not jobs:
@@ -60,8 +66,16 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 
 		shot_asset = _get_or_create_shot_output_asset(shot, project.name)
 		if not select_output:
-			existing = frappe.db.get_value("Asset Version", {"media_asset": shot_asset.name,
-				"source_generation_attempt": segments[-1][1].generation_attempt, "source": "Composed"}, "name", order_by="creation asc")
+			existing = frappe.db.get_value(
+				"Asset Version",
+				{
+					"media_asset": shot_asset.name,
+					"source_generation_attempt": segments[-1][1].generation_attempt,
+					"source": "Composed",
+				},
+				"name",
+				order_by="creation asc",
+			)
 			if existing:
 				return existing
 		if len(segments) == 1:
@@ -79,11 +93,23 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 						preserve_audio=True,
 					)
 					_validate_normalized_video(normalized_path, profile, expected_frames=expected_frames)
-					normalized_path = _with_locked_product(normalized_path, generation_run_name, shot, all_jobs, profile, expected_frames)
-					normalized_path = _with_closing_hold(normalized_path, generation_run_name, shot.name, profile, expected_frames)
-					normalized_path = _with_graphics(normalized_path, generation_run_name, shot.name, profile, expected_frames)
+					normalized_path = _with_locked_product(
+						normalized_path, generation_run_name, shot, all_jobs, profile, expected_frames
+					)
+					normalized_path = _with_closing_hold(
+						normalized_path, generation_run_name, shot.name, profile, expected_frames
+					)
+					normalized_path = _with_graphics(
+						normalized_path, generation_run_name, shot.name, profile, expected_frames
+					)
 					from joymedia.services.review.admission import screen_composition
-					can_select = screen_composition(normalized_path, generation_run_name, shot.name, segments[-1][1].name) is not False
+
+					can_select = (
+						screen_composition(
+							normalized_path, generation_run_name, shot.name, segments[-1][1].name
+						)
+						is not False
+					)
 					video_bytes = normalized_path.read_bytes()
 					video_duration = _get_video_duration(normalized_path)
 			except (OSError, subprocess.CalledProcessError, ValueError) as exc:
@@ -107,7 +133,11 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 					"duration_seconds": video_duration,
 					"fps": profile["fps"],
 					"source_generation_attempt": segments[-1][1].generation_attempt,
-					"preservation_evidence_json": None if can_select else json.dumps({"visual_admission": "Review Required", "generation_artifact": segments[-1][1].name}),
+					"preservation_evidence_json": None
+					if can_select
+					else json.dumps(
+						{"visual_admission": "Review Required", "generation_artifact": segments[-1][1].name}
+					),
 				}
 			).insert(ignore_permissions=True)
 			if select_output and can_select:
@@ -123,7 +153,9 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 				for index, (job, artifact) in enumerate(segments):
 					generated_frames = int(job.segment_frame_count or 0)
 					overlap_frames = int(job.overlap_frames or 0) if index > 0 else 0
-					effective_frames = int(job.segment_effective_frames or (generated_frames - overlap_frames))
+					effective_frames = int(
+						job.segment_effective_frames or (generated_frames - overlap_frames)
+					)
 					if effective_frames <= 0:
 						raise ValueError(f"Generation Task {job.name} has no effective segment frames")
 					normalized_path = temporary_path / f"{index + 1:04d}-{job.name}.mp4"
@@ -140,13 +172,25 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 					expected_frames += effective_frames
 
 				assembled_path = temporary_path / f"{shot.name}.mp4"
-				_concatenate_normalized_shots(normalized_paths, assembled_path, profile, expected_frames=expected_frames)
+				_concatenate_normalized_shots(
+					normalized_paths, assembled_path, profile, expected_frames=expected_frames
+				)
 				_validate_normalized_video(assembled_path, profile, expected_frames=expected_frames)
-				assembled_path = _with_locked_product(assembled_path, generation_run_name, shot, all_jobs, profile, expected_frames)
-				assembled_path = _with_closing_hold(assembled_path, generation_run_name, shot.name, profile, expected_frames)
-				assembled_path = _with_graphics(assembled_path, generation_run_name, shot.name, profile, expected_frames)
+				assembled_path = _with_locked_product(
+					assembled_path, generation_run_name, shot, all_jobs, profile, expected_frames
+				)
+				assembled_path = _with_closing_hold(
+					assembled_path, generation_run_name, shot.name, profile, expected_frames
+				)
+				assembled_path = _with_graphics(
+					assembled_path, generation_run_name, shot.name, profile, expected_frames
+				)
 				from joymedia.services.review.admission import screen_composition
-				can_select = screen_composition(assembled_path, generation_run_name, shot.name, segments[-1][1].name) is not False
+
+				can_select = (
+					screen_composition(assembled_path, generation_run_name, shot.name, segments[-1][1].name)
+					is not False
+				)
 				video_bytes = assembled_path.read_bytes()
 				video_duration = _get_video_duration(assembled_path)
 		except (OSError, subprocess.CalledProcessError, ValueError) as exc:
@@ -171,7 +215,11 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 				"duration_seconds": video_duration,
 				"fps": profile["fps"],
 				"source_generation_attempt": segments[-1][1].generation_attempt,
-				"preservation_evidence_json": None if can_select else json.dumps({"visual_admission": "Review Required", "generation_artifact": segments[-1][1].name}),
+				"preservation_evidence_json": None
+				if can_select
+				else json.dumps(
+					{"visual_admission": "Review Required", "generation_artifact": segments[-1][1].name}
+				),
 			}
 		).insert(ignore_permissions=True)
 		if select_output and can_select:
@@ -182,13 +230,24 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 def product_lock_for(generation_run_name, shot_name, jobs):
 	"""The product lock of the first frame this scene's video started from: the keyframe drawn in this run, else the
 	approved keyframe the run's snapshot names."""
-	snapshot = frappe.parse_json(frappe.db.get_value("Generation Run", generation_run_name, "project_snapshot_json") or "{}") or {}
+	snapshot = (
+		frappe.parse_json(
+			frappe.db.get_value("Generation Run", generation_run_name, "project_snapshot_json") or "{}"
+		)
+		or {}
+	)
 	row = next((row for row in snapshot.get("shots") or [] if row.get("shot") == shot_name), {})
-	frames = [r["asset_version"] for r in row.get("references") or [] if frappe.scrub(r.get("reference_role") or r.get("input_role") or "") == "first_frame" and r.get("asset_version")]
+	frames = [
+		r["asset_version"]
+		for r in row.get("references") or []
+		if frappe.scrub(r.get("reference_role") or r.get("input_role") or "") == "first_frame"
+		and r.get("asset_version")
+	]
 	if frames:
 		if len(frames) != 1:
 			raise ValueError("A source frame must be unambiguous.")
 		from joymedia.services.consistency.repair import _project_asset_path
+
 		project = frappe.get_doc("Media Project", snapshot["media_project"])
 		_project_asset_path(project, frames[0])
 		frame = frappe.get_doc("Asset Version", frames[0])
@@ -206,25 +265,51 @@ def product_lock_for(generation_run_name, shot_name, jobs):
 	for job in jobs:
 		if frappe.db.get_value("Generation Workflow", job.workflow, "output_media_type") != "Image":
 			continue
-		attempt = frappe.db.get_value("Generation Attempt", {"generation_task": job.name, "status": "Completed"}, "name", order_by="creation desc")
-		lock = frappe.db.get_value("Generation Artifact", {"generation_attempt": attempt, "artifact_role": "Primary Image"}, "product_lock_json") if attempt else None
+		attempt = frappe.db.get_value(
+			"Generation Attempt",
+			{"generation_task": job.name, "status": "Completed"},
+			"name",
+			order_by="creation desc",
+		)
+		lock = (
+			frappe.db.get_value(
+				"Generation Artifact",
+				{"generation_attempt": attempt, "artifact_role": "Primary Image"},
+				"product_lock_json",
+			)
+			if attempt
+			else None
+		)
 		if lock:
 			return lock
-	snapshot = frappe.parse_json(frappe.db.get_value("Generation Run", generation_run_name, "project_snapshot_json") or "{}") or {}
-	keyframe = next((row.get("keyframe_artifact") for row in snapshot.get("shots") or [] if row.get("shot") == shot_name), None)
+	snapshot = (
+		frappe.parse_json(
+			frappe.db.get_value("Generation Run", generation_run_name, "project_snapshot_json") or "{}"
+		)
+		or {}
+	)
+	keyframe = next(
+		(row.get("keyframe_artifact") for row in snapshot.get("shots") or [] if row.get("shot") == shot_name),
+		None,
+	)
 	return frappe.db.get_value("Generation Artifact", keyframe, "product_lock_json") if keyframe else None
 
 
 def _with_locked_product(path, generation_run_name, shot, jobs, profile, expected_frames):
 	"""The scene's video with the keyframe's exact product pack laid back over every frame (unchanged without one)."""
-	from joymedia.services.keyframes.overlay import lock_products_in_video, SourceArtCoverageError
+	from joymedia.services.keyframes.overlay import SourceArtCoverageError, lock_products_in_video
 
 	seconds, _image = _closing_hold_source(generation_run_name, shot.name)
 	if seconds >= expected_frames / profile["fps"]:
 		# Every output frame will use the frozen source card. Inspecting the
 		# discarded generated package first can incorrectly block this repair.
 		return path
-	snapshot = frappe.parse_json(frappe.db.get_value("Generation Run", generation_run_name, "project_snapshot_json") or "{}") or {}
+	snapshot = (
+		frappe.parse_json(
+			frappe.db.get_value("Generation Run", generation_run_name, "project_snapshot_json") or "{}"
+		)
+		or {}
+	)
 	row = next((item for item in snapshot.get("shots") or [] if item.get("shot") == shot.name), {})
 	from joymedia.services.consistency.retention import require_coverage
 
@@ -238,11 +323,20 @@ def _with_locked_product(path, generation_run_name, shot, jobs, profile, expecte
 			raise ValueError("Required source-art product lock produced no protected output.")
 	except SourceArtCoverageError:
 		from joymedia.services.consistency.repair import track_product_lock
-		certificates = track_product_lock(path, lock, locked, frappe.get_doc('Media Project',shot.media_project))
+
+		certificates = track_product_lock(
+			path, lock, locked, frappe.get_doc("Media Project", shot.media_project)
+		)
 		# The normal post-composition visual gate still checks geometry/occlusion.
 		from frappe.utils.file_manager import save_file
-		save_file(f'{generation_run_name}-{shot.name}-tracked-source-art.json',
-			json.dumps(certificates,sort_keys=True).encode(), 'Generation Run',generation_run_name,is_private=1)
+
+		save_file(
+			f"{generation_run_name}-{shot.name}-tracked-source-art.json",
+			json.dumps(certificates, sort_keys=True).encode(),
+			"Generation Run",
+			generation_run_name,
+			is_private=1,
+		)
 	_validate_normalized_video(locked, profile, expected_frames=expected_frames)
 	return locked
 
@@ -250,7 +344,10 @@ def _with_locked_product(path, generation_run_name, shot, jobs, profile, expecte
 def _with_graphics(path, run_name, shot_name, profile, expected_frames):
 	from joymedia.services.editing.graphics import apply_graphic_overlays
 
-	snapshot = frappe.parse_json(frappe.db.get_value("Generation Run", run_name, "project_snapshot_json") or "{}") or {}
+	snapshot = (
+		frappe.parse_json(frappe.db.get_value("Generation Run", run_name, "project_snapshot_json") or "{}")
+		or {}
+	)
 	row = next((item for item in snapshot.get("shots") or [] if item.get("shot") == shot_name), {})
 	if not row.get("graphic_overlays"):
 		return path
@@ -262,36 +359,60 @@ def _with_graphics(path, run_name, shot_name, profile, expected_frames):
 
 def _closing_hold_source(run_name, shot_name):
 	"""Resolve the actual immutable image condition, never a later edited frame."""
-	snapshot = frappe.parse_json(frappe.db.get_value("Generation Run", run_name, "project_snapshot_json") or "{}") or {}
+	snapshot = (
+		frappe.parse_json(frappe.db.get_value("Generation Run", run_name, "project_snapshot_json") or "{}")
+		or {}
+	)
 	row = next((item for item in snapshot.get("shots") or [] if item.get("shot") == shot_name), {})
 	seconds = float(row.get("closing_hold_seconds") or 0)
 	if seconds <= 0:
 		return 0, None
 	if row.get("closing_hold_mode") == "generated_pose":
 		return seconds, None
-	frames = [r["asset_version"] for r in row.get("references") or [] if frappe.scrub(r.get("reference_role") or r.get("input_role") or "") == "first_frame" and r.get("asset_version")]
+	frames = [
+		r["asset_version"]
+		for r in row.get("references") or []
+		if frappe.scrub(r.get("reference_role") or r.get("input_role") or "") == "first_frame"
+		and r.get("asset_version")
+	]
 	if frames:
 		if len(frames) != 1:
 			raise ValueError("The closing source frame must be unambiguous.")
 		from joymedia.services.consistency.repair import _project_asset_path
+
 		project = frappe.get_doc("Media Project", snapshot["media_project"])
 		return seconds, _project_asset_path(project, frames[0])
 	keyframe = row.get("keyframe_artifact")
 	if not keyframe:
 		# A run that draws its own opening cannot put its future artifact ID in
 		# the snapshot. Follow the video's frozen Primary Image dependency.
-		for task in frappe.get_all("Generation Task", filters={"generation_run": run_name, "shot": shot_name},
-			fields=["name", "workflow", "depends_on_task", "dependency_artifact_role"], order_by="segment_index asc, creation asc"):
+		for task in frappe.get_all(
+			"Generation Task",
+			filters={"generation_run": run_name, "shot": shot_name},
+			fields=["name", "workflow", "depends_on_task", "dependency_artifact_role"],
+			order_by="segment_index asc, creation asc",
+		):
 			if frappe.db.get_value("Generation Workflow", task.workflow, "output_media_type") != "Video":
 				continue
 			if task.depends_on_task and task.dependency_artifact_role == "Primary Image":
-				attempt = frappe.db.get_value("Generation Attempt", {"generation_task": task.depends_on_task, "status": "Completed"}, "name", order_by="creation desc")
+				attempt = frappe.db.get_value(
+					"Generation Attempt",
+					{"generation_task": task.depends_on_task, "status": "Completed"},
+					"name",
+					order_by="creation desc",
+				)
 				if attempt:
-					keyframe = frappe.db.get_value("Generation Artifact", {"generation_attempt": attempt, "artifact_role": "Primary Image"}, "name")
+					keyframe = frappe.db.get_value(
+						"Generation Artifact",
+						{"generation_attempt": attempt, "artifact_role": "Primary Image"},
+						"name",
+					)
 			break
 	file_url = frappe.db.get_value("Generation Artifact", keyframe, "frappe_file") if keyframe else None
 	if not file_url:
-		raise ValueError("The required closing artwork has no frozen source image; this take was not protected.")
+		raise ValueError(
+			"The required closing artwork has no frozen source image; this take was not protected."
+		)
 	image = frappe.get_doc("File", {"file_url": file_url}).get_full_path()
 	if not Path(image).is_file():
 		raise ValueError("The required closing artwork file is unavailable.")
@@ -310,7 +431,24 @@ def _with_closing_hold(path, run_name, shot_name, profile, expected_frames):
 		# to the opening image would erase the action or introduce a pose jump.
 		index = max(0, expected_frames - round(seconds * profile["fps"]) - 1)
 		image = path.with_name(f"{path.stem}-hold-pose.png")
-		subprocess.run(["ffmpeg","-v","error","-y","-i",str(path),"-vf",f"select=eq(n\\,{index})","-frames:v","1",str(image)],check=True,capture_output=True,timeout=60)
+		subprocess.run(
+			[
+				"ffmpeg",
+				"-v",
+				"error",
+				"-y",
+				"-i",
+				str(path),
+				"-vf",
+				f"select=eq(n\\,{index})",
+				"-frames:v",
+				"1",
+				str(image),
+			],
+			check=True,
+			capture_output=True,
+			timeout=60,
+		)
 	hold_brand_card(path, image, output, profile, expected_frames, seconds)
 	_validate_normalized_video(output, profile, expected_frames=expected_frames)
 	return output
@@ -324,10 +462,42 @@ def hold_brand_card(video, image, output, profile, frames, seconds=2):
 		f"[0:v][card]overlay=enable='gte(n,{start})':shortest=1[v]"
 	)
 	subprocess.run(
-		["ffmpeg", "-v", "error", "-y", "-i", str(video), "-loop", "1", "-framerate", str(fps), "-i", str(image),
-		 "-filter_complex", filters, "-map", "[v]", "-map", "0:a?", "-frames:v", str(frames), "-r", str(fps),
-		 "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", "-c:a", "copy", str(output)],
-		check=True, capture_output=True, timeout=180,
+		[
+			"ffmpeg",
+			"-v",
+			"error",
+			"-y",
+			"-i",
+			str(video),
+			"-loop",
+			"1",
+			"-framerate",
+			str(fps),
+			"-i",
+			str(image),
+			"-filter_complex",
+			filters,
+			"-map",
+			"[v]",
+			"-map",
+			"0:a?",
+			"-frames:v",
+			str(frames),
+			"-r",
+			str(fps),
+			"-c:v",
+			"libx264",
+			"-crf",
+			"16",
+			"-pix_fmt",
+			"yuv420p",
+			"-c:a",
+			"copy",
+			str(output),
+		],
+		check=True,
+		capture_output=True,
+		timeout=180,
 	)
 	return output
 
@@ -365,7 +535,6 @@ def _get_or_create_shot_output_asset(shot, media_project):
 			"status": "Active",
 		}
 	).insert(ignore_permissions=True)
-
 
 
 def _get_delivery_profile(project, generation_run_name=None):
@@ -422,8 +591,23 @@ AUDIBLE_FLOOR_DB = -55
 def _is_audible(path, seconds):
 	"""Whether the first `seconds` of an audio source contain real sound."""
 	result = subprocess.run(
-		["ffmpeg", "-v", "info", "-t", f"{seconds:.3f}", "-i", str(path), "-vn", "-af", "volumedetect", "-f", "null", "-"],
-		capture_output=True, text=True,
+		[
+			"ffmpeg",
+			"-v",
+			"info",
+			"-t",
+			f"{seconds:.3f}",
+			"-i",
+			str(path),
+			"-vn",
+			"-af",
+			"volumedetect",
+			"-f",
+			"null",
+			"-",
+		],
+		capture_output=True,
+		text=True,
 	)
 	try:
 		return float(result.stderr.split("mean_volume:")[1].split("dB")[0]) > AUDIBLE_FLOOR_DB
@@ -469,7 +653,8 @@ def _get_audio_sources(project, video_duration, timeline_clips=None, fps=None):
 				"loop": clip.audio_role == "BGM",
 				# Levelling lifts quiet scenes toward a common loudness; a scene with no audible sound must be
 				# left silent, not amplified into noise.
-				"normalize_loudness": clip.audio_role == "Source" and _is_audible(_get_timeline_audio_path(clip), cue_duration),
+				"normalize_loudness": clip.audio_role == "Source"
+				and _is_audible(_get_timeline_audio_path(clip), cue_duration),
 			}
 		)
 	return sources
@@ -629,10 +814,7 @@ def _mix_audio(silent_master_path, audio_sources, delivery_path, ending=None):
 
 		source_start = source.get("source_start_seconds", 0)
 		if source_start:
-			trim = (
-				f"atrim=start={source_start:.6f}:"
-				f"duration={source['duration_seconds']:.6f}"
-			)
+			trim = f"atrim=start={source_start:.6f}:duration={source['duration_seconds']:.6f}"
 		else:
 			trim = f"atrim=duration={source['duration_seconds']:.6f}"
 		filter = f"[{index}:a]{trim},asetpts=PTS-STARTPTS"
@@ -669,7 +851,9 @@ def _mix_audio(silent_master_path, audio_sources, delivery_path, ending=None):
 		start, seconds = ending
 		# The audio must span the whole film even when the only sound is a short effect; players handle a
 		# stream that ends early badly.
-		filter_parts.append(f"[mixed]apad=whole_dur={start + seconds:.6f},afade=t=out:st={start:.6f}:d={seconds:.6f}[ending]")
+		filter_parts.append(
+			f"[mixed]apad=whole_dur={start + seconds:.6f},afade=t=out:st={start:.6f}:d={seconds:.6f}[ending]"
+		)
 		output_label = "[ending]"
 	# Summing individually safe voices/effects can exceed full scale. Protect the
 	# final mix with headroom for AAC reconstruction, without automatic makeup gain.

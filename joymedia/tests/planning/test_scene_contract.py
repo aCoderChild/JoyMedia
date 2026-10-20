@@ -11,18 +11,34 @@ from joymedia.services.planning.scene_contract import instruction, read_contract
 
 
 def example():
-	return {"scene_contract": {
-		"version": 1,
-		"entities": [{"id": k, "label": v} for k, v in (
-			("actor", "the operator"), ("part", "the operator's gripper"),
-			("vessel", "the vessel"), ("material", "the liquid"))],
-		"relations": [
-			{"kind": "attached_to", "subject": "part", "object": "actor"},
-			{"kind": "flows_from", "subject": "material", "object": "vessel"}],
-		"events": [
-			{"id": "tilt", "description": "The vessel tilts", "start": 0, "end": 1, "after": []},
-			{"id": "flow", "description": "Liquid exits the rim", "start": 1, "end": 3, "after": ["tilt"]}],
-	}}
+	return {
+		"scene_contract": {
+			"version": 1,
+			"entities": [
+				{"id": k, "label": v}
+				for k, v in (
+					("actor", "the operator"),
+					("part", "the operator's gripper"),
+					("vessel", "the vessel"),
+					("material", "the liquid"),
+				)
+			],
+			"relations": [
+				{"kind": "attached_to", "subject": "part", "object": "actor"},
+				{"kind": "flows_from", "subject": "material", "object": "vessel"},
+			],
+			"events": [
+				{"id": "tilt", "description": "The vessel tilts", "start": 0, "end": 1, "after": []},
+				{
+					"id": "flow",
+					"description": "Liquid exits the rim",
+					"start": 1,
+					"end": 3,
+					"after": ["tilt"],
+				},
+			],
+		}
+	}
 
 
 class TestSceneContract(TestCase):
@@ -40,7 +56,9 @@ class TestSceneContract(TestCase):
 		shot = {"duration_seconds": 6, "motion_plan": _normalized_motion_plan(example(), 3, "Move")}
 		_rescale_motion_plan(shot, 3)
 		self.assertEqual(read_contract(shot["motion_plan"], 6)["events"][1]["end"], 6)
-		self.assertEqual(shot["motion_plan"]["scene_contract"]["relations"], example()["scene_contract"]["relations"])
+		self.assertEqual(
+			shot["motion_plan"]["scene_contract"]["relations"], example()["scene_contract"]["relations"]
+		)
 
 	def test_continuation_keeps_sources_without_replaying_prior_cause(self):
 		text = instruction(example(), 3, 1, 3)
@@ -65,7 +83,8 @@ class TestSceneContract(TestCase):
 	def test_invalid_contracts_fail_before_generation(self):
 		base = example()["scene_contract"]
 		mutations = [
-			lambda c: c.update(version=True), lambda c: c.update(version=2),
+			lambda c: c.update(version=True),
+			lambda c: c.update(version=2),
 			lambda c: c.update(entities=c["entities"] * 5),
 			lambda c: c["entities"].append(c["entities"][0]),
 			lambda c: c["entities"][0].update(id="bad id"),
@@ -101,25 +120,43 @@ class TestSceneContract(TestCase):
 				read_contract(plan)
 
 	def test_frozen_segment_compilation_uses_same_contract(self):
-		shot = frappe._dict(name="S", shot_number=1, generation_prompt="Move.",
-			motion_plan_json=json.dumps(example()), duration_seconds=3, references=[])
+		shot = frappe._dict(
+			name="S",
+			shot_number=1,
+			generation_prompt="Move.",
+			motion_plan_json=json.dumps(example()),
+			duration_seconds=3,
+			references=[],
+		)
 		project = frappe._dict(references=[], global_instructions="", generation_mode="Multi-shot")
 		for count in (1, 2):
-			prompt = compile_segment_prompt_from_snapshot(shot, project, count, count,
-				segment_start_frame=24, segment_effective_frames=48, fps=24)
+			prompt = compile_segment_prompt_from_snapshot(
+				shot, project, count, count, segment_start_frame=24, segment_effective_frames=48, fps=24
+			)
 			self.assertIn("liquid originates only from the vessel", prompt)
 			self.assertEqual(prompt.count("Physical staging:"), 1)
 			if count == 2:
 				self.assertNotIn("The vessel tilts", prompt)
+
 
 class TestObservableStaging(TestCase):
 	def test_opening_and_motion_have_separate_authored_requirements(self):
 		from joymedia.services.planning.scene_contract import opening_instruction
 		from joymedia.services.review.temporal import SequenceCheck, batches, claims_for
 
-		plan = {"scene_contract": {"version": 1, "checks": [
-			{"id": "fit", "scope": "opening", "claim": "The operator is behind the support plane."},
-			{"id": "cause", "scope": "sequence", "claim": "The gripper bumps rather than grasps the vessel."}]}}
+		plan = {
+			"scene_contract": {
+				"version": 1,
+				"checks": [
+					{"id": "fit", "scope": "opening", "claim": "The operator is behind the support plane."},
+					{
+						"id": "cause",
+						"scope": "sequence",
+						"claim": "The gripper bumps rather than grasps the vessel.",
+					},
+				],
+			}
+		}
 		opening = opening_instruction(plan, 3)
 		self.assertIn("behind the support", opening)
 		self.assertNotIn("bumps", opening)
@@ -139,16 +176,27 @@ class TestObservableStaging(TestCase):
 			with self.assertRaises(ValueError):
 				read_contract({"scene_contract": {"version": 1, "checks": checks}})
 
+
 class TestSupportAndProportions(TestCase):
 	def plan(self):
-		return {"scene_contract": {"version": 1, "entities": [
-			{"id": "actor", "label": "the seated operator"},
-			{"id": "seat", "label": "the chair seat below the work surface"},
-			{"id": "vessel", "label": "the vessel"},
-			{"id": "liquid", "label": "the liquid"}], "relations": [
-			{"kind": "supported_by", "subject": "actor", "object": "seat"},
-			{"kind": "flows_from", "subject": "liquid", "object": "vessel"}],
-			"proportions": [{"subject": "vessel", "reference": "actor", "axis": "height", "min": 0.12, "max": 0.2}]}}
+		return {
+			"scene_contract": {
+				"version": 1,
+				"entities": [
+					{"id": "actor", "label": "the seated operator"},
+					{"id": "seat", "label": "the chair seat below the work surface"},
+					{"id": "vessel", "label": "the vessel"},
+					{"id": "liquid", "label": "the liquid"},
+				],
+				"relations": [
+					{"kind": "supported_by", "subject": "actor", "object": "seat"},
+					{"kind": "flows_from", "subject": "liquid", "object": "vessel"},
+				],
+				"proportions": [
+					{"subject": "vessel", "reference": "actor", "axis": "height", "min": 0.12, "max": 0.2}
+				],
+			}
+		}
 
 	def test_static_support_and_scale_reach_opening_without_future_flow(self):
 		from joymedia.services.planning.scene_contract import opening_instruction
@@ -171,10 +219,20 @@ class TestSupportAndProportions(TestCase):
 
 	def test_malformed_dimensions_fail_before_admission(self):
 		mutations = [
-			{"subject": "missing"}, {"reference": "vessel"}, {"axis": "area"},
-			{"axis": []}, {"min": True}, {"min": -1}, {"min": 0},
-			{"max": math.inf}, {"min": math.nan}, {"min": 0.5, "max": 0.2},
-			{"max": 101}, {"max": "0.2"}, {"min": 10 ** 400}, {"max": -(10 ** 400)},
+			{"subject": "missing"},
+			{"reference": "vessel"},
+			{"axis": "area"},
+			{"axis": []},
+			{"min": True},
+			{"min": -1},
+			{"min": 0},
+			{"max": math.inf},
+			{"min": math.nan},
+			{"min": 0.5, "max": 0.2},
+			{"max": 101},
+			{"max": "0.2"},
+			{"min": 10**400},
+			{"max": -(10**400)},
 		]
 		for mutation in mutations:
 			with self.subTest(mutation=mutation):
@@ -182,8 +240,10 @@ class TestSupportAndProportions(TestCase):
 				plan["scene_contract"]["proportions"][0].update(mutation)
 				with self.assertRaises(ValueError):
 					read_contract(plan)
-		for extra in [{"subject": "vessel", "reference": "actor", "axis": "height", "min": 0.1, "max": 0.3},
-			{"subject": "actor", "reference": "vessel", "axis": "height", "min": 5, "max": 8}]:
+		for extra in [
+			{"subject": "vessel", "reference": "actor", "axis": "height", "min": 0.1, "max": 0.3},
+			{"subject": "actor", "reference": "vessel", "axis": "height", "min": 5, "max": 8},
+		]:
 			plan = self.plan()
 			plan["scene_contract"]["proportions"].append(extra)
 			with self.assertRaises(ValueError):
@@ -192,7 +252,9 @@ class TestSupportAndProportions(TestCase):
 	def test_scale_edit_invalidates_approved_preview_signature(self):
 		from joymedia.services.keyframes.stage import keyframe_signature
 
-		shot = frappe._dict(image_prompt="Seated at work surface", generation_inputs=[], motion_plan_json=self.plan())
+		shot = frappe._dict(
+			image_prompt="Seated at work surface", generation_inputs=[], motion_plan_json=self.plan()
+		)
 		before = keyframe_signature(shot)
 		shot.motion_plan_json["scene_contract"]["proportions"][0]["max"] = 0.3
 		self.assertNotEqual(before, keyframe_signature(shot))
@@ -203,7 +265,10 @@ class TestSupportAndProportions(TestCase):
 		from joymedia.services.review.consistency import frame_checks
 
 		shot = frappe._dict(keyframe_artifact="ART", generation_inputs=[], motion_plan_json=self.plan())
-		with patch("frappe.db.get_value", return_value="/private/frame.png"), patch("joymedia.services.keyframes.locations.shot_views", return_value=[]):
+		with (
+			patch("frappe.db.get_value", return_value="/private/frame.png"),
+			patch("joymedia.services.keyframes.locations.shot_views", return_value=[]),
+		):
 			checks = frame_checks(shot)
 		self.assertEqual(len(checks), 2)
 		self.assertTrue(all(row[2] is True and len(row) == 4 for row in checks))
@@ -215,10 +280,16 @@ class TestSupportAndProportions(TestCase):
 
 		from joymedia.services.planning.prompts import compile_prompt_for_documents
 
-		shot = frappe._dict(name="S", shot_number=1, image_prompt="The operator waits behind the table.",
-			generation_prompt="The operator lifts the vessel.", setting_prompt="A workroom.",
-			character_mode="Draw in scene", references=[{"reference_role": "Character", "asset_version": "REF"}],
-			motion_plan_json=self.plan())
+		shot = frappe._dict(
+			name="S",
+			shot_number=1,
+			image_prompt="The operator waits behind the table.",
+			generation_prompt="The operator lifts the vessel.",
+			setting_prompt="A workroom.",
+			character_mode="Draw in scene",
+			references=[{"reference_role": "Character", "asset_version": "REF"}],
+			motion_plan_json=self.plan(),
+		)
 		project = frappe._dict(references=[{"asset_version": "REF", "label": "Operator"}])
 		with patch("joymedia.services.keyframes.overlay.describe_colours", return_value=""):
 			prompt = compile_prompt_for_documents(shot, project, prompt_source="image")

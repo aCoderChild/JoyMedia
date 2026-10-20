@@ -5,7 +5,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-
 IDENTITY_FIELDS = (
 	"artifact_key",
 	"artifact_role",
@@ -16,7 +15,6 @@ IDENTITY_FIELDS = (
 
 
 class GenerationArtifact(Document):
-
 	def validate(self):
 		if not self.artifact_role:
 			frappe.throw(_("Artifact Role is required."))

@@ -15,11 +15,20 @@ def execute():
 		rows = frappe.get_all(
 			"Timeline Clip",
 			filters={"media_project": project_name},
-			fields=["name", "clip_order", "shot", "source_asset_version", "source_in_frame", "source_out_frame"],
+			fields=[
+				"name",
+				"clip_order",
+				"shot",
+				"source_asset_version",
+				"source_in_frame",
+				"source_out_frame",
+			],
 			order_by="clip_order asc, creation asc",
 		)
 		for row in rows:
-			selected = frappe.db.get_value("Shot", row.shot, "selected_output_asset_version") if row.shot else None
+			selected = (
+				frappe.db.get_value("Shot", row.shot, "selected_output_asset_version") if row.shot else None
+			)
 			frappe.db.set_value(
 				"Timeline Clip",
 				row.name,

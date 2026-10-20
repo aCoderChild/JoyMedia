@@ -22,7 +22,7 @@ def _box_cutout(color=(200, 40, 40)):
 
 	image = Image.new("RGBA", (420, 560), (0, 0, 0, 0))
 	draw = ImageDraw.Draw(image)
-	draw.rounded_rectangle((30, 20, 390, 540), 18, fill=color + (255,))
+	draw.rounded_rectangle((30, 20, 390, 540), 18, fill=(*color, 255))
 	for y in range(80, 480, 60):
 		draw.rectangle((60, y, 360, y + 24), fill=(250, 240, 220, 255))
 	return image
@@ -44,14 +44,25 @@ def _generated_face():
 	from joymedia.services.workflows.comfyui import run_workflow_to_bytes
 	from joymedia.services.workflows.resolver import build_execution_workflow
 
-	name = frappe.db.get_value("Generation Workflow", {"workflow_key": "flux_pulid_keyframe"}, "name", order_by="version_number desc")
+	name = frappe.db.get_value(
+		"Generation Workflow", {"workflow_key": "flux_pulid_keyframe"}, "name", order_by="version_number desc"
+	)
 	workflow = build_execution_workflow(
 		frappe.get_doc("Generation Workflow", name),
-		inputs={"generation_prompt": "A studio portrait photograph of a friendly woman in her thirties with short dark hair, "
-			"facing the camera, neutral grey background, soft light, sharp focus."},
-		seed=4242, width=768, height=1024, fps=24, frame_count=1, output_prefix="joymedia/regression_face",
+		inputs={
+			"generation_prompt": "A studio portrait photograph of a friendly woman in her thirties with short dark hair, "
+			"facing the camera, neutral grey background, soft light, sharp focus."
+		},
+		seed=4242,
+		width=768,
+		height=1024,
+		fps=24,
+		frame_count=1,
+		output_prefix="joymedia/regression_face",
 	)
-	return Image.open(io.BytesIO(run_workflow_to_bytes(workflow, "50", timeout=900, forget=True))).convert("RGB")
+	return Image.open(io.BytesIO(run_workflow_to_bytes(workflow, "50", timeout=900, forget=True))).convert(
+		"RGB"
+	)
 
 
 def _png(image):
@@ -64,9 +75,14 @@ def _add_reference(project, label, role, content, category):
 	from joymedia.api.assets import select_project_asset
 	from joymedia.services.intake.assets import create_media_asset
 
-	file_doc = frappe.get_doc({
-		"doctype": "File", "file_name": f"{label}.png", "content": content, "is_private": 1,
-	}).insert(ignore_permissions=True)
+	file_doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"{label}.png",
+			"content": content,
+			"is_private": 1,
+		}
+	).insert(ignore_permissions=True)
 	asset = create_media_asset(label, category, file_url=file_doc.file_url, file_name=file_doc.name)
 	select_project_asset(project.name, asset["media_asset"], role, label)
 
@@ -75,7 +91,10 @@ CASES = {
 	"box-product-landscape": {
 		"preset": "Landscape",
 		"idea": "A cereal advertisement.",
-		"references": [("Cereal box", "Product", "Product", _box_cutout), ("Brand logo", "Logo", "Brand", _logo_cutout)],
+		"references": [
+			("Cereal box", "Product", "Product", _box_cutout),
+			("Brand logo", "Logo", "Brand", _logo_cutout),
+		],
 		"setting": "A sunny kitchen counter in the morning.",
 		"video_prompt": "She opens the box and pours cereal. The camera slowly zooms in.",
 		"expect": {"pasted": ["Cereal box", "Brand logo"], "keeps_box_noun": True},
@@ -111,11 +130,20 @@ def build_case(name):
 	for label, role, category, make in case["references"]:
 		_add_reference(project, label, role, _png(make()), category)
 	project.reload()
-	shot = frappe.get_doc({
-		"doctype": "Shot", "media_project": project.name, "shot_number": 1, "shot_name": name, "duration_seconds": 5,
-		"image_prompt": case["setting"], "setting_prompt": case["setting"], "generation_prompt": case["video_prompt"],
-		"handoff_type": "ending", "continuity_mode": "New Scene",
-	}).insert(ignore_permissions=True)
+	shot = frappe.get_doc(
+		{
+			"doctype": "Shot",
+			"media_project": project.name,
+			"shot_number": 1,
+			"shot_name": name,
+			"duration_seconds": 5,
+			"image_prompt": case["setting"],
+			"setting_prompt": case["setting"],
+			"generation_prompt": case["video_prompt"],
+			"handoff_type": "ending",
+			"continuity_mode": "New Scene",
+		}
+	).insert(ignore_permissions=True)
 	keys = [row.reference_key for row in project.selected_media]
 	if keys:
 		set_project_shot_references(project.name, shot.name, keys)
@@ -152,15 +180,27 @@ def evaluate(name, image_bytes, project_name):
 		return [("keyframe rendered", False, "no image")]
 	image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 	want = SHAPES[case["preset"]]
-	results.append(("shape", abs(image.width / image.height - want[0] / want[1]) < 0.02, f"{image.size} vs {want}"))
+	results.append(
+		("shape", abs(image.width / image.height - want[0] / want[1]) < 0.02, f"{image.size} vs {want}")
+	)
 	project = frappe.get_doc("Media Project", project_name)
-	shot = frappe.get_doc("Shot", frappe.get_all("Shot", filters={"media_project": project_name}, pluck="name")[0])
-	pasted = pasted_references([{"reference_role": r.reference_role, "asset_version": r.asset_version} for r in shot.generation_inputs])
+	shot = frappe.get_doc(
+		"Shot", frappe.get_all("Shot", filters={"media_project": project_name}, pluck="name")[0]
+	)
+	pasted = pasted_references(
+		[
+			{"reference_role": r.reference_role, "asset_version": r.asset_version}
+			for r in shot.generation_inputs
+		]
+	)
 	labels = {row.asset_version: row.label for row in project.selected_media}
-	results.append((
-		"pasted references", sorted(labels[p["asset_version"]] for p in pasted) == sorted(case["expect"]["pasted"]),
-		str(sorted(labels[p["asset_version"]] for p in pasted)),
-	))
+	results.append(
+		(
+			"pasted references",
+			sorted(labels[p["asset_version"]] for p in pasted) == sorted(case["expect"]["pasted"]),
+			str(sorted(labels[p["asset_version"]] for p in pasted)),
+		)
+	)
 	if pasted:
 		from PIL import Image as PILImage
 
@@ -177,15 +217,30 @@ def evaluate(name, image_bytes, project_name):
 			dominant = max(colours, key=colours.get)
 			close = sum(1 for r, g, b in image.getdata() if (r // 32, g // 32, b // 32) == dominant)
 			share = close / (image.width * image.height)
-			results.append((f"{labels[p['asset_version']]} appears in its own colours", share > 0.004, f"{share:.3%} of the frame"))
+			results.append(
+				(
+					f"{labels[p['asset_version']]} appears in its own colours",
+					share > 0.004,
+					f"{share:.3%} of the frame",
+				)
+			)
 	# The movement text must keep a box the scene's own product is, and drop a zoom that would enlarge a pasted product.
 	from joymedia.services.planning.prompts import compile_prompt_for_documents
 
 	shot_doc = frappe.get_doc("Shot", shot.name)
-	shot_doc.references = [{"reference_role": r.reference_role, "asset_version": r.asset_version} for r in shot_doc.generation_inputs]
-	motion = compile_prompt_for_documents(shot_doc, frappe._dict(
-		generation_mode="Multi-shot", global_instructions="", references=[{"asset_version": v, "label": l} for v, l in labels.items()]
-	), prompt_source="motion")
+	shot_doc.references = [
+		{"reference_role": r.reference_role, "asset_version": r.asset_version}
+		for r in shot_doc.generation_inputs
+	]
+	motion = compile_prompt_for_documents(
+		shot_doc,
+		frappe._dict(
+			generation_mode="Multi-shot",
+			global_instructions="",
+			references=[{"asset_version": v, "label": l} for v, l in labels.items()],
+		),
+		prompt_source="motion",
+	)
 	if case["expect"]["keeps_box_noun"]:
 		results.append(("a box product keeps its box in the movement text", "opens the box" in motion, ""))
 		results.append(("a zoom is removed when a product is pasted", "zooms in" not in motion, ""))
@@ -205,13 +260,45 @@ def discard_project(project_name):
 	already had generation history.
 	"""
 	runs = frappe.get_all("Generation Run", filters={"media_project": project_name}, pluck="name")
-	tasks = frappe.get_all("Generation Task", filters={"generation_run": ["in", runs]}, pluck="name") if runs else []
-	attempts = frappe.get_all("Generation Attempt", filters={"generation_task": ["in", tasks]}, pluck="name") if tasks else []
+	tasks = (
+		frappe.get_all("Generation Task", filters={"generation_run": ["in", runs]}, pluck="name")
+		if runs
+		else []
+	)
+	attempts = (
+		frappe.get_all("Generation Attempt", filters={"generation_task": ["in", tasks]}, pluck="name")
+		if tasks
+		else []
+	)
 	shots = frappe.get_all("Shot", filters={"media_project": project_name}, pluck="name")
-	doomed = [("Generation Artifact", frappe.get_all("Generation Artifact", filters={"generation_attempt": ["in", attempts]}, pluck="name") if attempts else [])]
-	doomed += [("Review Comment", frappe.get_all("Review Comment", filters={"media_project": project_name}, pluck="name"))]
-	doomed += [("Timeline Clip", frappe.get_all("Timeline Clip", filters={"media_project": project_name}, pluck="name"))]
-	doomed += [("Generation Attempt", attempts), ("Generation Task", tasks), ("Generation Run", runs), ("Shot", shots)]
+	doomed = [
+		(
+			"Generation Artifact",
+			frappe.get_all(
+				"Generation Artifact", filters={"generation_attempt": ["in", attempts]}, pluck="name"
+			)
+			if attempts
+			else [],
+		)
+	]
+	doomed += [
+		(
+			"Review Comment",
+			frappe.get_all("Review Comment", filters={"media_project": project_name}, pluck="name"),
+		)
+	]
+	doomed += [
+		(
+			"Timeline Clip",
+			frappe.get_all("Timeline Clip", filters={"media_project": project_name}, pluck="name"),
+		)
+	]
+	doomed += [
+		("Generation Attempt", attempts),
+		("Generation Task", tasks),
+		("Generation Run", runs),
+		("Shot", shots),
+	]
 	for doctype, names in doomed:
 		for name in names:
 			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)

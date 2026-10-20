@@ -51,7 +51,11 @@ def _continuation_settings(workflow):
 
 
 def _continuation_workflow(workflow):
-	return frappe.get_doc("Generation Workflow", workflow.continuation_workflow) if workflow.continuation_workflow else None
+	return (
+		frappe.get_doc("Generation Workflow", workflow.continuation_workflow)
+		if workflow.continuation_workflow
+		else None
+	)
 
 
 def _segment_plan(workflow, frame_count, continuation_workflow=None):
@@ -63,8 +67,12 @@ def _segment_plan(workflow, frame_count, continuation_workflow=None):
 		continuation_new_frames=settings["new_frames"],
 		continuation_max_segment_frames=capacity(continuation_workflow or workflow),
 	)
-	if len(segments) > 1 and not (continuation_workflow and workflow_supports_continuation(continuation_workflow)):
-		frappe.throw(_("This shot exceeds the workflow capacity, and its workflow has no continuation contract."))
+	if len(segments) > 1 and not (
+		continuation_workflow and workflow_supports_continuation(continuation_workflow)
+	):
+		frappe.throw(
+			_("This shot exceeds the workflow capacity, and its workflow has no continuation contract.")
+		)
 	return segments
 
 
@@ -86,12 +94,12 @@ def _pipeline_reference_inputs(shot, workflow):
 		(
 			item["role"]
 			for item in contract
-			if item.get("accepted_media_type") in ("Image", "Any")
-			and item.get("allow_multiple")
+			if item.get("accepted_media_type") in ("Image", "Any") and item.get("allow_multiple")
 		),
 		"first_frame",
 	)
 	from joymedia.services.scene.artwork import placements
+
 	auto_place = bool(shot.get("reference_retention") and not placements(shot.get("motion_plan_json")))
 	inputs = {}
 	for reference in shot.get("references") or []:
@@ -101,18 +109,25 @@ def _pipeline_reference_inputs(shot, workflow):
 		raw_role = frappe.scrub(reference.get("input_role") or reference.get("reference_role") or "")
 		# A last frame is a destination constraint for the video stage.  It is
 		# never a visual reference for the keyframe/image stage.
-		if raw_role == "last_frame" or (raw_role == "first_frame" and getattr(workflow, "output_media_type", None) == "Image"):
+		if raw_role == "last_frame" or (
+			raw_role == "first_frame" and getattr(workflow, "output_media_type", None) == "Image"
+		):
 			continue
-		if raw_role == "logo" or (pasted_references([reference], character_mode, context=shot.get("references")) and not (auto_place and raw_role == "product")):
+		if raw_role == "logo" or (
+			pasted_references([reference], character_mode, context=shot.get("references"))
+			and not (auto_place and raw_role == "product")
+		):
 			# A cutout is pasted over the keyframe and a logo over the film.  An opaque
 			# product cannot be composited without also pasting its background, so it
 			# must remain in the image workflow's dedicated product input.  Dropping it
 			# here makes the model invent packaging instead of receiving the approved
 			# reference at all.
 			continue
-		if scene_mode(shot.get("references"), character_mode) == DRAW and raw_role in ("character", "product") and len(
-			inputs.get(raw_role) or []
-		) >= max(1, role_limits.get(raw_role) or 1):
+		if (
+			scene_mode(shot.get("references"), character_mode) == DRAW
+			and raw_role in ("character", "product")
+			and len(inputs.get(raw_role) or []) >= max(1, role_limits.get(raw_role) or 1)
+		):
 			# As many pictures go in per role as the workflow has slots for; with more, every character (and every
 			# product) of the scene is combined into one board (the runner's boards_for_task).
 			continue
@@ -127,10 +142,10 @@ def _pipeline_reference_inputs(shot, workflow):
 		# The workflow contract uses zero for an unbounded File Paths role.
 		if max_count and len(values) >= max_count:
 			frappe.throw(
-				_("Workflow {0} accepts at most {1} reference input(s) for role '{2}', but Shot supplies more. "
-				  "Assign a supported reference board or remove the extra reference explicitly.").format(
-					workflow.name, max_count, role
-				)
+				_(
+					"Workflow {0} accepts at most {1} reference input(s) for role '{2}', but Shot supplies more. "
+					"Assign a supported reference board or remove the extra reference explicitly."
+				).format(workflow.name, max_count, role)
 			)
 		values.append(asset_version)
 	return inputs
@@ -150,6 +165,7 @@ def explicit_last_frame_assets(shot):
 def authored_video_inputs(shot, workflow):
 	"""Bind execution controls to declared video roles; keep cast references for review."""
 	from joymedia.services.workflows.resolver import get_workflow_input_contract
+
 	contract = get_workflow_input_contract(workflow)
 	roles = {item["role"] for item in contract}
 	inputs = {}
@@ -178,6 +194,7 @@ def video_reference_inputs(shot, workflow):
 	first/last frame with a static source image.
 	"""
 	from joymedia.services.workflows.resolver import get_workflow_input_contract
+
 	contract = get_workflow_input_contract(workflow)
 	roles = {item["role"] for item in contract} - {"first_frame", "last_frame"}
 	inputs = {}
@@ -203,10 +220,14 @@ def _bind_explicit_last_frame(job, workflow, shot):
 		return
 	contract = {item.get("role"): item for item in get_workflow_input_contract(workflow)}
 	if "last_frame" not in contract:
-		frappe.throw(_("Shot requests a last frame, but workflow {0} has no last-frame input.").format(workflow.name))
+		frappe.throw(
+			_("Shot requests a last frame, but workflow {0} has no last-frame input.").format(workflow.name)
+		)
 	max_count = int(contract["last_frame"].get("max_count") or 1)
 	if max_count and len(assets) > max_count:
-		frappe.throw(_("Shot supplies more last-frame images than workflow {0} accepts.").format(workflow.name))
+		frappe.throw(
+			_("Shot supplies more last-frame images than workflow {0} accepts.").format(workflow.name)
+		)
 	for asset_version in assets:
 		job.append("inputs", {"input_role": "last_frame", "asset_version": asset_version})
 
@@ -233,16 +254,22 @@ def _pipeline_steps_for_segment(
 		return []
 	if reference_only:
 		return [(pipeline_steps[-1], None, None, True)]
-	if explicit_first_frame and not previous_segment_job and not (cross_shot_continuity and previous_shot_tail_job):
+	if (
+		explicit_first_frame
+		and not previous_segment_job
+		and not (cross_shot_continuity and previous_shot_tail_job)
+	):
 		# An authored image is already the visual start state. Bind the immutable
 		# Asset Version instead of drawing a replacement in the image stage.
 		return [(pipeline_steps[-1], None, None, True)]
 	if keyframe_job and not previous_segment_job:
 		# The scene's approved keyframe replaces the pipeline's image stage.
 		return [(pipeline_steps[-1], keyframe_job, "Primary Image", False)]
-	continuation_source = None if force_full_pipeline else (previous_segment_job or (
-		previous_shot_tail_job if cross_shot_continuity else None
-	))
+	continuation_source = (
+		None
+		if force_full_pipeline
+		else (previous_segment_job or (previous_shot_tail_job if cross_shot_continuity else None))
+	)
 	if continuation_source:
 		return [(pipeline_steps[-1], continuation_source, "Last Frame", False)]
 
@@ -282,7 +309,9 @@ def _prepare_run(run_name: str):
 		_raise_run_error(run, _("Generation Run {0} has invalid project snapshot JSON.").format(run.name))
 		return _run_summary(run)
 	if snapshot.get("media_project") != run.media_project:
-		_raise_run_error(run, _("Generation Run {0} snapshot belongs to another Media Project.").format(run.name))
+		_raise_run_error(
+			run, _("Generation Run {0} snapshot belongs to another Media Project.").format(run.name)
+		)
 		return _run_summary(run)
 	workflow = frappe.get_doc(
 		"Generation Workflow",
@@ -318,11 +347,17 @@ def _prepare_run(run_name: str):
 		keyframe_stage = execution_scope.get("stage") == "keyframe"
 		for shot in shots:
 			from joymedia.services.planning.shot_structure import require_scene_references
+
 			require_scene_references(snapshot, shot)
 			from joymedia.services.review.admission import needs_frame_approval
+
 			shot_workflow = choose_shot_workflow(snapshot, shot)
-			if needs_frame_approval(snapshot, shot, keyframe_stage, reference_only="reference_only" in controls(shot_workflow)):
-				raise frappe.ValidationError(_("Review and approve this scene's first frame before animating its geometry."))
+			if needs_frame_approval(
+				snapshot, shot, keyframe_stage, reference_only="reference_only" in controls(shot_workflow)
+			):
+				raise frappe.ValidationError(
+					_("Review and approve this scene's first frame before animating its geometry.")
+				)
 			cross_shot_continuity = str(shot.get("continuity_mode") or "").casefold() == "continue"
 			shot_name = shot.get("shot")
 			shot_pipeline_name = shot.get("generation_pipeline") or run.generation_pipeline
@@ -347,7 +382,12 @@ def _prepare_run(run_name: str):
 			previous_segment_job = None
 			for segment in segments[:1] if keyframe_stage else segments:
 				if shot_pipeline_steps:
-					explicit_frames = [r["asset_version"] for r in shot.get("references") or [] if frappe.scrub(r.get("reference_role") or r.get("input_role") or "") == "first_frame" and r.get("asset_version")]
+					explicit_frames = [
+						r["asset_version"]
+						for r in shot.get("references") or []
+						if frappe.scrub(r.get("reference_role") or r.get("input_role") or "") == "first_frame"
+						and r.get("asset_version")
+					]
 					if len(explicit_frames) > 1:
 						raise ValueError("Choose one explicit first frame for a scene.")
 					previous_pipeline_job = None
@@ -358,14 +398,20 @@ def _prepare_run(run_name: str):
 						cross_shot_continuity=cross_shot_continuity,
 						# A scene reset needs a fresh keyframe only for its first
 						# technical segment. Later segments must use the prior last frame when the workflow supports it.
-						force_full_pipeline=bool(shot.get("requires_recomposition")) and segment["segment_index"] == 1,
+						force_full_pipeline=bool(shot.get("requires_recomposition"))
+						and segment["segment_index"] == 1,
 						keyframe_job=None if keyframe_stage else shot.get("keyframe_task"),
 						explicit_first_frame=bool(explicit_frames) and not keyframe_stage,
 						reference_only=not keyframe_stage and "reference_only" in controls(shot_workflow),
 					)
 					if keyframe_stage:
 						pipeline_stages = pipeline_stages[:1]
-					for pipeline_step, dependency_override, artifact_role_override, is_first_pipeline_step in pipeline_stages:
+					for (
+						pipeline_step,
+						dependency_override,
+						artifact_role_override,
+						is_first_pipeline_step,
+					) in pipeline_stages:
 						step_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
 						existing_job = frappe.db.get_value(
 							"Generation Task",
@@ -382,7 +428,8 @@ def _prepare_run(run_name: str):
 							continue
 						prompt_text = compile_segment_prompt_from_snapshot(
 							frappe._dict(
-								name=shot_name, shot_number=shot.get("shot_number"),
+								name=shot_name,
+								shot_number=shot.get("shot_number"),
 								generation_prompt=shot.get("generation_prompt"),
 								duration_seconds=shot.get("duration_seconds"),
 								image_prompt=shot.get("image_prompt"),
@@ -390,13 +437,18 @@ def _prepare_run(run_name: str):
 								character_mode=shot.get("character_mode"),
 								views_json=shot.get("views_json"),
 								motion_plan_json=shot.get("motion_plan_json"),
-								start_state=shot.get("start_state"), end_state=shot.get("end_state"),
+								start_state=shot.get("start_state"),
+								end_state=shot.get("end_state"),
 								handoff_type=shot.get("handoff_type"),
 								continuity_mode=shot.get("continuity_mode"),
 								references=shot.get("references") or [],
 							),
-							frappe._dict(snapshot), segment["segment_index"], len(segments),
-							prompt_source=prompt_source_for_workflow(step_workflow, pipeline_step.prompt_source),
+							frappe._dict(snapshot),
+							segment["segment_index"],
+							len(segments),
+							prompt_source=prompt_source_for_workflow(
+								step_workflow, pipeline_step.prompt_source
+							),
 							is_final=(
 								shot.get("shot_number") == len(snapshot.get("shots") or [])
 								and segment["segment_index"] == len(segments)
@@ -406,32 +458,42 @@ def _prepare_run(run_name: str):
 							fps=snapshot.get("output_fps") or 24,
 							workflow=step_workflow,
 						)
-						job = frappe.get_doc({
-							"doctype": "Generation Task",
-							"generation_run": run.name,
-							"shot": shot_name,
-							"workflow": pipeline_step.workflow,
-							"pipeline_step_key": pipeline_step.step_key,
-							"prompt_text": prompt_text,
-							"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
-							"status": "Draft",
-							"segment_index": segment["segment_index"],
-							"segment_frame_count": (
-								segment["segment_frame_count"]
-								if step_workflow.output_media_type == "Video" else max(1, int(step_workflow.frame_count or 1))
-							),
-							"segment_start_frame": segment["segment_start_frame"],
-							"segment_effective_frames": (
-								segment["segment_effective_frames"]
-								if step_workflow.output_media_type == "Video" else max(1, int(step_workflow.frame_count or 1))
-							),
-							"overlap_frames": segment["overlap_frames"] if step_workflow.output_media_type == "Video" else 0,
-							"depends_on_task": dependency_override or previous_pipeline_job,
-							"dependency_artifact_role": (
-								artifact_role_override
-								or (pipeline_step.consumes_artifact_role if previous_pipeline_job else None)
-							),
-						}).insert(ignore_permissions=True)
+						job = frappe.get_doc(
+							{
+								"doctype": "Generation Task",
+								"generation_run": run.name,
+								"shot": shot_name,
+								"workflow": pipeline_step.workflow,
+								"pipeline_step_key": pipeline_step.step_key,
+								"prompt_text": prompt_text,
+								"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
+								"status": "Draft",
+								"segment_index": segment["segment_index"],
+								"segment_frame_count": (
+									segment["segment_frame_count"]
+									if step_workflow.output_media_type == "Video"
+									else max(1, int(step_workflow.frame_count or 1))
+								),
+								"segment_start_frame": segment["segment_start_frame"],
+								"segment_effective_frames": (
+									segment["segment_effective_frames"]
+									if step_workflow.output_media_type == "Video"
+									else max(1, int(step_workflow.frame_count or 1))
+								),
+								"overlap_frames": segment["overlap_frames"]
+								if step_workflow.output_media_type == "Video"
+								else 0,
+								"depends_on_task": dependency_override or previous_pipeline_job,
+								"dependency_artifact_role": (
+									artifact_role_override
+									or (
+										pipeline_step.consumes_artifact_role
+										if previous_pipeline_job
+										else None
+									)
+								),
+							}
+						).insert(ignore_permissions=True)
 						if step_workflow.output_media_type == "Video":
 							_bind_explicit_last_frame(job, step_workflow, shot)
 						# Later video stages keep the upstream opening artifact AND any
@@ -439,15 +501,25 @@ def _prepare_run(run_name: str):
 						if is_first_pipeline_step:
 							if "reference_only" in controls(step_workflow) and not keyframe_stage:
 								inputs = video_reference_inputs(shot, step_workflow)
-							elif explicit_frames and not keyframe_stage and step_workflow.output_media_type == "Video":
+							elif (
+								explicit_frames
+								and not keyframe_stage
+								and step_workflow.output_media_type == "Video"
+							):
 								inputs = authored_video_inputs(shot, step_workflow)
 							else:
 								inputs = _pipeline_reference_inputs(shot, step_workflow)
 						else:
-							inputs = video_reference_inputs(shot, step_workflow) if step_workflow.output_media_type == "Video" else {}
+							inputs = (
+								video_reference_inputs(shot, step_workflow)
+								if step_workflow.output_media_type == "Video"
+								else {}
+							)
 						for input_role, asset_versions in inputs.items():
 							for asset_version in asset_versions:
-								job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
+								job.append(
+									"inputs", {"input_role": input_role, "asset_version": asset_version}
+								)
 						job.save(ignore_permissions=True)
 						jobs_to_prepare.append(job)
 						previous_pipeline_job = job.name
@@ -479,8 +551,7 @@ def _prepare_run(run_name: str):
 					shot_continuation_workflow
 					if shot_continuation_workflow
 					and (
-						segment["segment_index"] > 1
-						or (dependency and dependency == previous_shot_tail_job)
+						segment["segment_index"] > 1 or (dependency and dependency == previous_shot_tail_job)
 					)
 					else shot_workflow
 				)
@@ -495,7 +566,8 @@ def _prepare_run(run_name: str):
 						views_json=shot.get("views_json"),
 						setting_prompt=shot.get("setting_prompt"),
 						motion_plan_json=shot.get("motion_plan_json"),
-						start_state=shot.get("start_state"), end_state=shot.get("end_state"),
+						start_state=shot.get("start_state"),
+						end_state=shot.get("end_state"),
 						handoff_type=shot.get("handoff_type"),
 						continuity_mode=shot.get("continuity_mode"),
 						references=shot.get("references") or [],
@@ -517,7 +589,7 @@ def _prepare_run(run_name: str):
 					{
 						"doctype": "Generation Task",
 						"generation_run": run.name,
-					"shot": shot_name,
+						"shot": shot_name,
 						"workflow": segment_workflow.name,
 						"prompt_text": prompt_text,
 						"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
@@ -533,7 +605,10 @@ def _prepare_run(run_name: str):
 				job.set(
 					"inputs",
 					[
-						{"input_role": input_role_for_workflow(shot_workflow), "asset_version": reference.get("asset_version")}
+						{
+							"input_role": input_role_for_workflow(shot_workflow),
+							"asset_version": reference.get("asset_version"),
+						}
 						for reference in references_for_workflow(shot_workflow, shot.get("references"))
 						if reference.get("reference_role") and reference.get("asset_version")
 					],
@@ -593,6 +668,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 
 	from joymedia.services.project.context import build_project_snapshot
 	from joymedia.services.workflows.profiles import choose_shot_workflow
+
 	try:
 		snapshot = json.loads(build_project_snapshot(project, require_production_pipeline=True)[0])
 	except (TypeError, ValueError):
@@ -603,19 +679,24 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 
 	for shot_row in shots:
 		shot = frappe.get_doc("Shot", shot_row.name)
-		shot_snapshot = snapshot_shots.get(shot.name, {
-			"shot": shot.name,
-			"shot_number": shot.shot_number,
-			"planned_frame_count": shot.planned_frame_count,
-			"generation_prompt": shot.generation_prompt,
-			"references": [
-				{"reference_role": row.reference_role, "asset_version": row.asset_version}
-				for row in shot.generation_inputs or []
-			],
-		})
+		shot_snapshot = snapshot_shots.get(
+			shot.name,
+			{
+				"shot": shot.name,
+				"shot_number": shot.shot_number,
+				"planned_frame_count": shot.planned_frame_count,
+				"generation_prompt": shot.generation_prompt,
+				"references": [
+					{"reference_role": row.reference_role, "asset_version": row.asset_version}
+					for row in shot.generation_inputs or []
+				],
+			},
+		)
 		shot_workflow = choose_shot_workflow(snapshot, shot_snapshot)
 		shot_pipeline_name = shot_snapshot.get("generation_pipeline")
-		shot_pipeline = frappe.get_doc("Generation Pipeline", shot_pipeline_name) if shot_pipeline_name else None
+		shot_pipeline = (
+			frappe.get_doc("Generation Pipeline", shot_pipeline_name) if shot_pipeline_name else None
+		)
 		pipeline_steps = get_pipeline_steps(shot_pipeline.name) if shot_pipeline else []
 		validate_workflow_for_execution(shot_workflow)
 		validate_workflow_bindings(shot_workflow)
@@ -637,7 +718,8 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 			validate_workflow_bindings(continuation_workflow)
 		input_workflow = (
 			frappe.get_doc("Generation Workflow", pipeline_steps[0].workflow)
-			if pipeline_steps else shot_workflow
+			if pipeline_steps
+			else shot_workflow
 		)
 		required_roles = {
 			frappe.scrub(binding.required_input_role)
@@ -654,7 +736,9 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 		# Match the exact binding behaviour used when the Generation Task is
 		# prepared.  This also lets an older multi-reference storyboard fall back
 		# to its first image when the optional Ref2V backend is not installed.
-		mappings = _pipeline_reference_inputs(frappe._dict(references=shot_snapshot.get("references") or []), input_workflow)
+		mappings = _pipeline_reference_inputs(
+			frappe._dict(references=shot_snapshot.get("references") or []), input_workflow
+		)
 		for role in required_roles:
 			if pipeline_steps and role == "first_frame":
 				# The pipeline's upstream image workflow creates this input.
@@ -674,11 +758,7 @@ def validate_generation_preflight(project, workflow, shots, *, check_comfyui=Fal
 				not frappe.db.get_value("Asset Version", asset_version, "file")
 				for asset_version in asset_versions
 			):
-				frappe.throw(
-					_("Shot {0} requires usable input(s) with role '{1}'.").format(
-						shot.name, role
-					)
-				)
+				frappe.throw(_("Shot {0} requires usable input(s) with role '{1}'.").format(shot.name, role))
 			validate_role_input_count(input_workflow, role, len(asset_versions))
 
 		segments = _segment_plan(shot_workflow, shot_row.planned_frame_count, continuation_workflow)

@@ -279,12 +279,12 @@ scheduler_events = {
 
 # Reviewer role adds restrictions even when another customer role is also assigned.
 has_permission = {
-    "Media Project": "joymedia.services.partners.document_permission",
-    "Media Asset": "joymedia.services.partners.document_permission",
-    "Asset Version": "joymedia.services.partners.document_permission",
+	"Media Project": "joymedia.services.partners.document_permission",
+	"Media Asset": "joymedia.services.partners.document_permission",
+	"Asset Version": "joymedia.services.partners.document_permission",
 }
 permission_query_conditions = {
-    "Media Project": "joymedia.services.partners.project_query",
-    "Media Asset": "joymedia.services.partners.asset_query",
-    "Asset Version": "joymedia.services.partners.version_query",
+	"Media Project": "joymedia.services.partners.project_query",
+	"Media Asset": "joymedia.services.partners.asset_query",
+	"Asset Version": "joymedia.services.partners.version_query",
 }

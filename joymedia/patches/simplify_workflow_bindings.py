@@ -1,6 +1,5 @@
 import frappe
 
-
 SEMANTIC_BINDINGS = ("first_frame", "last_frame", "generation_prompt")
 
 

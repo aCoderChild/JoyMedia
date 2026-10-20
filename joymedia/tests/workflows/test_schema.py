@@ -1,16 +1,19 @@
-import unittest
 import json
+import unittest
 from pathlib import Path
 
-from joymedia.services.workflows.schema import graph_schema_errors
 from joymedia.services.workflows.audit import api_graph
+from joymedia.services.workflows.schema import graph_schema_errors
 
 
 class TestGraphSchema(unittest.TestCase):
 	def setUp(self):
 		self.info = {
 			"Loader": {"input": {"required": {"model": [["installed.safetensors"]]}}, "output": ["MODEL"]},
-			"Decode": {"input": {"required": {"samples": ["LATENT"], "count": ["INT", {"min": 1, "max": 124}]}}, "output": ["IMAGE"]},
+			"Decode": {
+				"input": {"required": {"samples": ["LATENT"], "count": ["INT", {"min": 1, "max": 124}]}},
+				"output": ["IMAGE"],
+			},
 		}
 
 	def test_reports_missing_models_and_wrong_socket_types(self):
@@ -35,20 +38,34 @@ class TestGraphSchema(unittest.TestCase):
 
 	def test_optional_null_and_v3_inputs_remain_server_validated(self):
 		info = {"Dynamic": {"input": {"optional": {"image": ["IMAGE"]}}, "output": []}}
-		graph = {"x": {"class_type": "Dynamic", "inputs": {"image": None, "images.image_1": "server-validated-value"}}}
+		graph = {
+			"x": {
+				"class_type": "Dynamic",
+				"inputs": {"image": None, "images.image_1": "server-validated-value"},
+			}
+		}
 		self.assertEqual([], graph_schema_errors(graph, info))
 
 	def test_valid_socket_types_do_not_allow_a_dependency_cycle(self):
 		info = {"Pass": {"input": {"required": {"image": ["IMAGE"]}}, "output": ["IMAGE"]}}
-		graph = {"a": {"class_type": "Pass", "inputs": {"image": ["b", 0]}}, "b": {"class_type": "Pass", "inputs": {"image": ["a", 0]}}}
+		graph = {
+			"a": {"class_type": "Pass", "inputs": {"image": ["b", 0]}},
+			"b": {"class_type": "Pass", "inputs": {"image": ["a", 0]}},
+		}
 		self.assertTrue(any("Dependency cycle" in error for error in graph_schema_errors(graph, info)))
 
 	def test_flattened_dynamic_input_satisfies_parent_and_polymorphic_socket(self):
 		info = {
 			"Math": {"input": {"required": {"values": ["COMFY_AUTOGROW_V3"]}}, "output": ["INT"]},
-			"Switch": {"input": {"required": {"on_true": ["COMFY_MATCHTYPE_V3"]}}, "output": ["COMFY_MATCHTYPE_V3"]},
+			"Switch": {
+				"input": {"required": {"on_true": ["COMFY_MATCHTYPE_V3"]}},
+				"output": ["COMFY_MATCHTYPE_V3"],
+			},
 		}
-		graph = {"m": {"class_type": "Math", "inputs": {"values.a": 5}}, "s": {"class_type": "Switch", "inputs": {"on_true": ["m", 0]}}}
+		graph = {
+			"m": {"class_type": "Math", "inputs": {"values.a": 5}},
+			"s": {"class_type": "Switch", "inputs": {"on_true": ["m", 0]}},
+		}
 		self.assertEqual([], graph_schema_errors(graph, info))
 
 	def test_ui_seed_control_does_not_become_prompt_text(self):
@@ -73,7 +90,13 @@ class TestGraphSchema(unittest.TestCase):
 		graph = json.loads((GRAPHS / "minimax_h3_i2v.json").read_text())
 		adapter = GenericComfyUIAdapter()
 		adapter.execution_spec = _h3_spec()
-		resolved = adapter.prepare_execution(graph, seed=5, width=720, height=1280, fps=24, frame_count=96, output_prefix="test")
-		self.assertEqual((768, 1344), (resolved["104"]["inputs"]["width"], resolved["104"]["inputs"]["height"]))
+		resolved = adapter.prepare_execution(
+			graph, seed=5, width=720, height=1280, fps=24, frame_count=96, output_prefix="test"
+		)
+		self.assertEqual(
+			(768, 1344), (resolved["104"]["inputs"]["width"], resolved["104"]["inputs"]["height"])
+		)
 		self.assertEqual(4, resolved["111"]["inputs"]["value"])
-		self.assertEqual({"model": ["122", 0], "shift_video": 12.0, "shift_audio": 3.0}, resolved["sigma_shift"]["inputs"])
+		self.assertEqual(
+			{"model": ["122", 0], "shift_video": 12.0, "shift_audio": 3.0}, resolved["sigma_shift"]["inputs"]
+		)

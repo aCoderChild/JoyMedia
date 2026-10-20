@@ -43,9 +43,23 @@ def _workbook_bytes(format_text="9:16 (dọc)", duration="10s"):
 	ws = wb.active
 	ws.title = "Demo 1"
 	for row in (
-		("Tên sản phẩm", "Khăn giấy Shera"), ("Mục tiêu", "Quảng cáo"), ("Thời lượng", duration), ("Định dạng", format_text),
-		("Tone & Mood", "Dễ thương"), ("USP chính", "Mềm và dai"), ("Nhân vật", "Gấu mẹ"), (),
-		("Phân cảnh", "Thời lượng", "Hình ảnh & Góc máy", "Hành động", "Lời thoại", "Âm thanh", "Chữ hiển thị"),
+		("Tên sản phẩm", "Khăn giấy Shera"),
+		("Mục tiêu", "Quảng cáo"),
+		("Thời lượng", duration),
+		("Định dạng", format_text),
+		("Tone & Mood", "Dễ thương"),
+		("USP chính", "Mềm và dai"),
+		("Nhân vật", "Gấu mẹ"),
+		(),
+		(
+			"Phân cảnh",
+			"Thời lượng",
+			"Hình ảnh & Góc máy",
+			"Hành động",
+			"Lời thoại",
+			"Âm thanh",
+			"Chữ hiển thị",
+		),
 		("Hook", "0:00 - 0:05", "Cận cảnh", "Gấu rút giấy", "", "", "x"),
 		("Kết", "0:05 - 0:10", "Trung cảnh", "Gấu cười", "", "", "x"),
 	):
@@ -68,7 +82,9 @@ class TestCreateFromBrief(FrappeTestCase):
 		super().tearDown()
 
 	def _file(self, name, content):
-		return frappe.get_doc({"doctype": "File", "file_name": name, "content": content, "is_private": 1}).insert(ignore_permissions=True)
+		return frappe.get_doc(
+			{"doctype": "File", "file_name": name, "content": content, "is_private": 1}
+		).insert(ignore_permissions=True)
 
 	def test_a_pdf_in_the_references_is_expanded_into_its_pictures(self):
 		from PIL import Image
@@ -78,9 +94,13 @@ class TestCreateFromBrief(FrappeTestCase):
 		pdf = self._file("products.pdf", buffer.getvalue())
 		extracted = [{"label": "products p1 box", "page": 1, "role": "Product", "has_alpha": True}]
 		with patch.object(project_intake, "add_pdf_images_to_project", return_value=extracted) as add_pdf:
-			result = project_intake.create_project_from_brief("Intake PDF", video_idea="A short ad", references=[{"file_name": pdf.name}])
+			result = project_intake.create_project_from_brief(
+				"Intake PDF", video_idea="A short ad", references=[{"file_name": pdf.name}]
+			)
 
-		add_pdf.assert_called_once_with(result["project"], pdf.name, pages=None)  # no References sheet: every page
+		add_pdf.assert_called_once_with(
+			result["project"], pdf.name, pages=None
+		)  # no References sheet: every page
 		self.assertEqual(extracted, result["references"])
 
 	def test_a_workbook_and_two_images_become_a_project_with_format_and_roles(self):
@@ -88,8 +108,12 @@ class TestCreateFromBrief(FrappeTestCase):
 		mascot = self._file("mascot.png", _generate_image_bytes())
 		pack = self._file("pack.png", _generate_image_bytes() + b"\x00")
 		result = project_intake.create_project_from_brief(
-			"Intake test", workbook_file=workbook.name,
-			references=[{"file_name": mascot.name, "label": "Gau Shera mascot"}, {"file_name": pack.name, "label": "Shera pack", "role": ""}],
+			"Intake test",
+			workbook_file=workbook.name,
+			references=[
+				{"file_name": mascot.name, "label": "Gau Shera mascot"},
+				{"file_name": pack.name, "label": "Shera pack", "role": ""},
+			],
 		)
 		project = frappe.get_doc("Media Project", result["project"])
 
@@ -98,14 +122,18 @@ class TestCreateFromBrief(FrappeTestCase):
 		self.assertEqual(10, project.total_duration_seconds)
 		self.assertEqual(2, frappe.db.count("Shot", {"media_project": project.name}))
 		self.assertEqual({"Character", "Product"}, {row.reference_role for row in project.selected_media})
-		self.assertEqual({"gau_shera_mascot", "shera_pack"}, {row.reference_key for row in project.selected_media})
+		self.assertEqual(
+			{"gau_shera_mascot", "shera_pack"}, {row.reference_key for row in project.selected_media}
+		)
 
 	def test_a_sheet_project_takes_its_brief_from_the_sheet_and_is_changed_only_by_the_sheet(self):
 		from joymedia.api.projects import update_project_brief
 		from joymedia.services.planning.revisions import improve_project_video_idea
 
 		workbook = self._file("story.xlsx", _workbook_bytes())
-		result = project_intake.create_project_from_brief("Sheet", video_idea="An unrelated drone video", workbook_file=workbook.name)
+		result = project_intake.create_project_from_brief(
+			"Sheet", video_idea="An unrelated drone video", workbook_file=workbook.name
+		)
 		project = frappe.get_doc("Media Project", result["project"])
 
 		self.assertTrue(project.follows_sheet())
@@ -127,8 +155,12 @@ class TestCreateFromBrief(FrappeTestCase):
 		mother = self._file("mother.png", _generate_image_bytes())
 		kid = self._file("kid.png", _generate_image_bytes() + b"\x01")
 		result = project_intake.create_project_from_brief(
-			"Sizes", video_idea="A short ad",
-			references=[{"file_name": mother.name, "label": "Gấu mẹ", "role": "Character"}, {"file_name": kid.name, "label": "Gấu con", "role": "Character"}],
+			"Sizes",
+			video_idea="A short ad",
+			references=[
+				{"file_name": mother.name, "label": "Gấu mẹ", "role": "Character"},
+				{"file_name": kid.name, "label": "Gấu con", "role": "Character"},
+			],
 		)
 		project = frappe.get_doc("Media Project", result["project"])
 		sizes = {row.label: row.relative_size for row in project.selected_media}
@@ -162,12 +194,18 @@ class TestIntakeIsAtomicAndPrivate(FrappeTestCase):
 		super().tearDown()
 
 	def test_a_failure_after_the_import_leaves_no_half_built_project(self):
-		file_doc = frappe.get_doc({"doctype": "File", "file_name": "w.xlsx", "content": _workbook_bytes(), "is_private": 1}).insert(ignore_permissions=True)
+		file_doc = frappe.get_doc(
+			{"doctype": "File", "file_name": "w.xlsx", "content": _workbook_bytes(), "is_private": 1}
+		).insert(ignore_permissions=True)
 		before = frappe.db.count("Media Project")
-		with patch("joymedia.services.intake.assets.create_media_asset", side_effect=frappe.ValidationError("boom")):
+		with patch(
+			"joymedia.services.intake.assets.create_media_asset", side_effect=frappe.ValidationError("boom")
+		):
 			with self.assertRaises(frappe.ValidationError):
 				project_intake.create_project_from_brief(
-					"Will fail", workbook_file=file_doc.name, references=[{"file_name": file_doc.name, "label": "x"}]
+					"Will fail",
+					workbook_file=file_doc.name,
+					references=[{"file_name": file_doc.name, "label": "x"}],
 				)
 		self.assertEqual(before, frappe.db.count("Media Project"))
 
@@ -177,12 +215,20 @@ class TestIntakeIsAtomicAndPrivate(FrappeTestCase):
 		book = Workbook()
 		sheet = book.active
 		sheet.title = "Demo 1"
-		for row in (("Tên sản phẩm", "Khăn giấy"), ("Mục tiêu", "Quảng cáo"), ("Thời lượng", "10s"), ("Phân cảnh", "Hành động"), ("Hook", "Gấu rút giấy")):
+		for row in (
+			("Tên sản phẩm", "Khăn giấy"),
+			("Mục tiêu", "Quảng cáo"),
+			("Thời lượng", "10s"),
+			("Phân cảnh", "Hành động"),
+			("Hook", "Gấu rút giấy"),
+		):
 			sheet.append(row)
 		buffer = io.BytesIO()
 		book.save(buffer)
 		frappe.set_user("Administrator")
-		workbook = frappe.get_doc({"doctype": "File", "file_name": "m.xlsx", "content": buffer.getvalue(), "is_private": 1}).insert(ignore_permissions=True)
+		workbook = frappe.get_doc(
+			{"doctype": "File", "file_name": "m.xlsx", "content": buffer.getvalue(), "is_private": 1}
+		).insert(ignore_permissions=True)
 		demo = project_intake.preview_workbook(workbook.name)["demos"][0]
 		self.assertFalse(demo["can_create"])
 		self.assertEqual(["usp", "format", "tone_mood", "characters"], demo["missing_required"])
@@ -205,10 +251,15 @@ class TestNamingAndLanguage(FrappeTestCase):
 
 	def test_a_project_without_a_name_is_named_from_its_workbook(self):
 		frappe.set_user("Administrator")
-		workbook = frappe.get_doc({"doctype": "File", "file_name": "n.xlsx", "content": _workbook_bytes(), "is_private": 1}).insert(ignore_permissions=True)
+		workbook = frappe.get_doc(
+			{"doctype": "File", "file_name": "n.xlsx", "content": _workbook_bytes(), "is_private": 1}
+		).insert(ignore_permissions=True)
 		with patch.object(frappe.db, "commit"):
 			result = project_intake.create_project_from_brief(workbook_file=workbook.name)
-		self.assertEqual("Khăn giấy Shera — Demo 1", frappe.db.get_value("Media Project", result["project"], "project_name"))
+		self.assertEqual(
+			"Khăn giấy Shera — Demo 1",
+			frappe.db.get_value("Media Project", result["project"], "project_name"),
+		)
 
 	def test_readiness_follows_the_requested_language(self):
 		frappe.set_user("Administrator")
@@ -227,7 +278,14 @@ class TestWorkbookPreview(FrappeTestCase):
 
 	def test_the_preview_reports_format_length_and_scenes_without_creating_anything(self):
 		frappe.set_user("Administrator")
-		workbook = frappe.get_doc({"doctype": "File", "file_name": "p.xlsx", "content": _workbook_bytes("16:9", "10s"), "is_private": 1}).insert(ignore_permissions=True)
+		workbook = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "p.xlsx",
+				"content": _workbook_bytes("16:9", "10s"),
+				"is_private": 1,
+			}
+		).insert(ignore_permissions=True)
 		before = frappe.db.count("Media Project")
 		demo = project_intake.preview_workbook(workbook.name)["demos"][0]
 
@@ -241,11 +299,15 @@ class TestWorkbookPreview(FrappeTestCase):
 		self.assertFalse(demo["scenes_drafted"])
 		fields = {f["key"]: f for f in demo["fields"]}
 		self.assertTrue(fields["product_name"]["required"] and fields["product_name"]["found"])
-		self.assertNotIn("asset_requirements", fields)  # pictures are uploaded; the "Tài nguyên" note is not asked
+		self.assertNotIn(
+			"asset_requirements", fields
+		)  # pictures are uploaded; the "Tài nguyên" note is not asked
 
 	def test_a_non_workbook_is_refused(self):
 		frappe.set_user("Administrator")
-		image = frappe.get_doc({"doctype": "File", "file_name": "a.png", "content": _generate_image_bytes(), "is_private": 1}).insert(ignore_permissions=True)
+		image = frappe.get_doc(
+			{"doctype": "File", "file_name": "a.png", "content": _generate_image_bytes(), "is_private": 1}
+		).insert(ignore_permissions=True)
 		with self.assertRaises(frappe.ValidationError):
 			project_intake.preview_workbook(image.name)
 
@@ -307,11 +369,17 @@ class TestStudioSettings(FrappeTestCase):
 
 		with patch.object(frappe.db, "commit"):
 			saved = save_project_video_settings(
-				self.project.name, 10, "Portrait", character_mode="Paste exact art", soundtrack_mode="Sound effects only",
+				self.project.name,
+				10,
+				"Portrait",
+				character_mode="Paste exact art",
+				soundtrack_mode="Sound effects only",
 				planning_mode="Follow the sheet",
 			)
-		self.assertEqual(("Paste exact art", "Sound effects only", "Follow the sheet"), (
-			saved["character_mode"], saved["soundtrack_mode"], saved["planning_mode"]))
+		self.assertEqual(
+			("Paste exact art", "Sound effects only", "Follow the sheet"),
+			(saved["character_mode"], saved["soundtrack_mode"], saved["planning_mode"]),
+		)
 		with self.assertRaises(frappe.ValidationError), patch.object(frappe.db, "commit"):
 			save_project_video_settings(self.project.name, 10, "Portrait", character_mode="Nonsense")
 
@@ -338,7 +406,9 @@ class TestSheetPictures(FrappeTestCase):
 
 		from joymedia.api.storyboard import sheet_row_pictures
 
-		project = frappe.get_doc({"doctype": "Media Project", "project_name": "Pictures", "total_duration_seconds": 10}).insert(ignore_permissions=True)
+		project = frappe.get_doc(
+			{"doctype": "Media Project", "project_name": "Pictures", "total_duration_seconds": 10}
+		).insert(ignore_permissions=True)
 		with tempfile.TemporaryDirectory() as folder:
 			Image.new("RGB", (40, 30), "red").save(f"{folder}/outro.png")
 			book = Workbook()
@@ -367,11 +437,13 @@ class TestStudioRefreshNeverWaitsOnARunLock(FrappeTestCase):
 
 		project = MagicMock(name="PRJ")
 		project.name = "PRJ"
-		with patch.object(frappe, "get_doc", return_value=project), \
-			patch.object(frappe, "get_all", return_value=[frappe._dict(name="RUN-1", status="Running")]), \
-			patch("frappe.utils.synchronization.filelock", held), \
-			patch("joymedia.services.generation.orchestrator.refresh_run") as refresh, \
-			patch.object(projects, "get_project_workspace", return_value={"project": "ok"}):
+		with (
+			patch.object(frappe, "get_doc", return_value=project),
+			patch.object(frappe, "get_all", return_value=[frappe._dict(name="RUN-1", status="Running")]),
+			patch("frappe.utils.synchronization.filelock", held),
+			patch("joymedia.services.generation.orchestrator.refresh_run") as refresh,
+			patch.object(projects, "get_project_workspace", return_value={"project": "ok"}),
+		):
 			self.assertEqual({"project": "ok"}, projects.refresh_project_studio("PRJ"))
 		refresh.assert_not_called()
 
@@ -396,14 +468,28 @@ class TestReferencesSheetIntake(FrappeTestCase):
 		book = load_workbook(io.BytesIO(build_template("vi")))
 		buffer = io.BytesIO()
 		book.save(buffer)
-		workbook = frappe.get_doc({"doctype": "File", "file_name": "kich_ban.xlsx", "content": buffer.getvalue(), "is_private": 1}).insert(ignore_permissions=True)
-		mai = frappe.get_doc({"doctype": "File", "file_name": "be_mai.png", "content": _generate_image_bytes(), "is_private": 1}).insert(ignore_permissions=True)
+		workbook = frappe.get_doc(
+			{"doctype": "File", "file_name": "kich_ban.xlsx", "content": buffer.getvalue(), "is_private": 1}
+		).insert(ignore_permissions=True)
+		mai = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "be_mai.png",
+				"content": _generate_image_bytes(),
+				"is_private": 1,
+			}
+		).insert(ignore_permissions=True)
 		result = project_intake.create_project_from_brief(
-			"References", workbook_file=workbook.name, references=[{"file_name": mai.name, "label": "IMG_0042"}],
+			"References",
+			workbook_file=workbook.name,
+			references=[{"file_name": mai.name, "label": "IMG_0042"}],
 		)
 		project = frappe.get_doc("Media Project", result["project"])
 		row = next(r for r in project.selected_media if r.label.startswith("Bé Mai"))
-		self.assertEqual(("Character", 0.55, "Giữ đúng gương mặt và áo vàng"), (row.reference_role, row.relative_size, row.keep_rule))
+		self.assertEqual(
+			("Character", 0.55, "Giữ đúng gương mặt và áo vàng"),
+			(row.reference_role, row.relative_size, row.keep_rule),
+		)
 		readiness = {step["key"]: step for step in result["readiness"]["steps"]}
 		# The template also names Mẹ Lan, the Sunny bottle and the logo PDF page, which were not uploaded.
 		self.assertIn("Mẹ Lan", readiness["sheet_pictures"]["detail"])

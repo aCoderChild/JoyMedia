@@ -20,7 +20,10 @@ def publish_project_event(project_name, event, payload=None, after_commit=True):
 	if not project_name:
 		return
 	frappe.publish_realtime(
-		event, {"project": project_name, **(payload or {})}, doctype="Media Project", docname=project_name,
+		event,
+		{"project": project_name, **(payload or {})},
+		doctype="Media Project",
+		docname=project_name,
 		after_commit=after_commit,
 	)
 

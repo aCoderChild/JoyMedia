@@ -50,37 +50,42 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		from joymedia.api.storyboard import _bind_unassigned_project_references
 
 		project, _ = _create_project("Imported Reference Binding", self.workflow)
-		asset, version = _create_asset_version(project, "Image", "png")
+		_asset, version = _create_asset_version(project, "Image", "png")
 		project.append("selected_media", {"asset_version": version.name, "reference_role": "Product"})
 		project.save(ignore_permissions=True)
-		shot = frappe.get_doc({
-			"doctype": "Shot",
-			"media_project": project.name,
-			"shot_number": 1,
-			"duration_seconds": 5,
-			"generation_prompt": "A product close-up.",
-		}).insert(ignore_permissions=True)
+		shot = frappe.get_doc(
+			{
+				"doctype": "Shot",
+				"media_project": project.name,
+				"shot_number": 1,
+				"duration_seconds": 5,
+				"generation_prompt": "A product close-up.",
+			}
+		).insert(ignore_permissions=True)
 
 		_bind_unassigned_project_references(project)
 		shot.reload()
 
-		self.assertEqual([(version.name, "Product")], [
-			(row.asset_version, row.reference_role) for row in shot.generation_inputs
-		])
+		self.assertEqual(
+			[(version.name, "Product")],
+			[(row.asset_version, row.reference_role) for row in shot.generation_inputs],
+		)
 
 	def test_changing_a_used_project_reference_role_requires_reapproval(self):
 		project, _ = _create_project("Reference Approval Invalidation", self.workflow)
 		_asset, version = _create_asset_version(project, "Image", "png")
 		project.append("selected_media", {"asset_version": version.name, "reference_role": "Product"})
 		project.save(ignore_permissions=True)
-		frappe.get_doc({
-			"doctype": "Shot",
-			"media_project": project.name,
-			"shot_number": 1,
-			"duration_seconds": 5,
-			"generation_prompt": "A product close-up.",
-			"generation_inputs": [{"asset_version": version.name, "reference_role": "Product"}],
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Shot",
+				"media_project": project.name,
+				"shot_number": 1,
+				"duration_seconds": 5,
+				"generation_prompt": "A product close-up.",
+				"generation_inputs": [{"asset_version": version.name, "reference_role": "Product"}],
+			}
+		).insert(ignore_permissions=True)
 		project.storyboard_approval_status = "Approved"
 		project.save(ignore_permissions=True)
 
@@ -94,7 +99,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 		project, _ = _create_project("Reference Media", self.workflow)
 		for media_type, extension in (("Image", "png"), ("Video", "mp4"), ("Audio", "wav")):
-			asset, version = _create_asset_version(project, media_type, extension)
+			_asset, version = _create_asset_version(project, media_type, extension)
 			project.append("selected_media", {"asset_version": version.name})
 		project.save(ignore_permissions=True)
 		selected = _get_project_selected_assets(project)
@@ -122,16 +127,21 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		from joymedia.services.workflows.routing import resolve_shot_render_route
 
 		project, _ = _create_project("Workspace", self.workflow)
-		asset, version = _create_asset_version(project, "Image", "png")
+		_asset, version = _create_asset_version(project, "Image", "png")
 		project.append("selected_media", {"asset_version": version.name})
 		project.save(ignore_permissions=True)
-		apply_video_plan(project.name, {
-			"shots": [{
-				"shot_number": 1,
-				"duration_seconds": 5,
-				"generation_prompt": "A clean product reveal.",
-			}]
-		})
+		apply_video_plan(
+			project.name,
+			{
+				"shots": [
+					{
+						"shot_number": 1,
+						"duration_seconds": 5,
+						"generation_prompt": "A clean product reveal.",
+					}
+				]
+			},
+		)
 		workspace = get_project_workspace(project.name)
 		shot = frappe.get_doc("Shot", workspace["storyboard"][0]["name"])
 		self.assertEqual(workspace["project"]["video_idea"], project.video_idea)
@@ -199,20 +209,29 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		project.append("selected_media", {"asset_version": second_version.name})
 		project.save(ignore_permissions=True)
 		keys = [row.reference_key for row in project.selected_media]
-		apply_video_plan(project.name, {
-			"shots": [{
-				"shot_number": 1,
-				"duration_seconds": 5,
-				"generation_prompt": "Show the shoe from multiple angles.",
-				"references": [
-					{"reference_key": keys[0], "usage_role": "product_reference"},
-					{"reference_key": keys[1], "usage_role": "product_reference"},
+		apply_video_plan(
+			project.name,
+			{
+				"shots": [
+					{
+						"shot_number": 1,
+						"duration_seconds": 5,
+						"generation_prompt": "Show the shoe from multiple angles.",
+						"references": [
+							{"reference_key": keys[0], "usage_role": "product_reference"},
+							{"reference_key": keys[1], "usage_role": "product_reference"},
+						],
+					}
 				],
-			}],
-		})
+			},
+		)
 		shot = frappe.get_doc("Shot", frappe.db.get_value("Shot", {"media_project": project.name}))
 		self.assertEqual(
-			[(row.reference_role, row.asset_version) for row in shot.generation_inputs if row.reference_role == "product_reference"],
+			[
+				(row.reference_role, row.asset_version)
+				for row in shot.generation_inputs
+				if row.reference_role == "product_reference"
+			],
 			[("product_reference", first_version.name), ("product_reference", second_version.name)],
 		)
 		# This is now a direct R2V shot: the two product references are its complete
@@ -224,13 +243,18 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 		project, _ = _create_project("Storyboard Revision", self.workflow)
 		_attach_image_reference(project, "Revision Reference")
-		apply_video_plan(project.name, {
-			"shots": [{
-				"shot_number": 1,
-				"duration_seconds": 5,
-				"generation_prompt": "Original shot prompt.",
-			}]
-		})
+		apply_video_plan(
+			project.name,
+			{
+				"shots": [
+					{
+						"shot_number": 1,
+						"duration_seconds": 5,
+						"generation_prompt": "Original shot prompt.",
+					}
+				]
+			},
+		)
 		project.db_set("status", "Completed", update_modified=False)
 
 		result = project.create_storyboard_revision()
@@ -241,34 +265,41 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		self.assertEqual(new_shot.generation_prompt, "Original shot prompt.")
 
 	def test_cancelled_unstarted_run_does_not_lock_storyboard_replacement(self):
-		from joymedia.services.project.context import build_project_snapshot
 		from joymedia.services.planning.video_plan import apply_video_plan
+		from joymedia.services.project.context import build_project_snapshot
 
 		project, _ = _create_project("Recover Cancelled Plan", self.workflow)
 		_attach_image_reference(project, "Recovery Reference")
-		apply_video_plan(project.name, {
-			"shots": [{"shot_number": 1, "duration_seconds": 5, "generation_prompt": "Incorrect plan."}],
-		})
+		apply_video_plan(
+			project.name,
+			{
+				"shots": [{"shot_number": 1, "duration_seconds": 5, "generation_prompt": "Incorrect plan."}],
+			},
+		)
 		snapshot_json, snapshot_hash = build_project_snapshot(project)
-		frappe.get_doc({
-			"doctype": "Generation Run",
-			"media_project": project.name,
-			"workflow": self.workflow,
-			"project_snapshot_json": snapshot_json,
-			"project_snapshot_hash": snapshot_hash,
-			"status": "Cancelled",
-			"requested_by": frappe.session.user,
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Generation Run",
+				"media_project": project.name,
+				"workflow": self.workflow,
+				"project_snapshot_json": snapshot_json,
+				"project_snapshot_hash": snapshot_hash,
+				"status": "Cancelled",
+				"requested_by": frappe.session.user,
+			}
+		).insert(ignore_permissions=True)
 
-		apply_video_plan(project.name, {
-			"shots": [{"shot_number": 1, "duration_seconds": 5, "generation_prompt": "Corrected plan."}],
-		})
+		apply_video_plan(
+			project.name,
+			{
+				"shots": [{"shot_number": 1, "duration_seconds": 5, "generation_prompt": "Corrected plan."}],
+			},
+		)
 
 		self.assertEqual(
 			"Corrected plan.",
 			frappe.db.get_value("Shot", {"media_project": project.name}, "generation_prompt"),
 		)
-
 
 	def test_generation_workflow_owns_adapter_without_model_profile_doctype(self):
 		workflow = frappe.get_doc("Generation Workflow", self.workflow)
@@ -277,22 +308,25 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 	@patch("joymedia.services.generation.orchestrator.start_run_internal")
 	@patch("joymedia.services.generation.orchestrator.validate_generation_preflight")
-	def test_generation_recalculates_shots_before_freezing_run_snapshot(
-		self, validate_preflight, start_run
-	):
-		from joymedia.services.project.context import build_project_snapshot
+	def test_generation_recalculates_shots_before_freezing_run_snapshot(self, validate_preflight, start_run):
 		from joymedia.services.planning.durations import recalculate_shot_durations
 		from joymedia.services.planning.video_plan import apply_video_plan
+		from joymedia.services.project.context import build_project_snapshot
 
 		project, _ = _create_project("Snapshot Duration Order", self.workflow)
 		_attach_image_reference(project, "Snapshot Reference")
-		apply_video_plan(project.name, {
-			"shots": [{
-				"shot_number": 1,
-				"duration_seconds": 5,
-				"generation_prompt": "A product reveal.",
-			}],
-		})
+		apply_video_plan(
+			project.name,
+			{
+				"shots": [
+					{
+						"shot_number": 1,
+						"duration_seconds": 5,
+						"generation_prompt": "A product reveal.",
+					}
+				],
+			},
+		)
 		project.reload()
 		project.storyboard_approval_status = "Approved"
 		project.save(ignore_permissions=True)
@@ -307,12 +341,15 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			return build_project_snapshot(current_project)
 
 		start_run.return_value = {"status": "Queued"}
-		with patch(
-			"joymedia.services.planning.durations.recalculate_shot_durations",
-			side_effect=recalculate,
-		), patch(
-			"joymedia.joymedia.doctype.media_project.media_project.build_project_snapshot",
-			side_effect=snapshot,
+		with (
+			patch(
+				"joymedia.services.planning.durations.recalculate_shot_durations",
+				side_effect=recalculate,
+			),
+			patch(
+				"joymedia.joymedia.doctype.media_project.media_project.build_project_snapshot",
+				side_effect=snapshot,
+			),
 		):
 			result = project.generate_video()
 
@@ -322,31 +359,35 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 
 
 def _create_project(label, workflow):
-	project = frappe.get_doc({
-		"doctype": "Media Project",
-		"project_name": label,
-		"product_name": "Test Product",
-		"video_idea": "Create a premium product showcase.",
-		"total_duration_seconds": 5,
-		"delivery_preset": "Landscape",
-		"delivery_width": 1344,
-		"delivery_height": 768,
-		"generation_mode": "Continuous",
-		"global_instructions": "Keep the product identity consistent.",
-		"workflow": workflow,
-	}).insert(ignore_permissions=True)
+	project = frappe.get_doc(
+		{
+			"doctype": "Media Project",
+			"project_name": label,
+			"product_name": "Test Product",
+			"video_idea": "Create a premium product showcase.",
+			"total_duration_seconds": 5,
+			"delivery_preset": "Landscape",
+			"delivery_width": 1344,
+			"delivery_height": 768,
+			"generation_mode": "Continuous",
+			"global_instructions": "Keep the product identity consistent.",
+			"workflow": workflow,
+		}
+	).insert(ignore_permissions=True)
 	return project, None
 
 
 def _create_asset_version(project, media_type, extension):
-	asset = frappe.get_doc({
-		"doctype": "Media Asset",
-		"asset_name": f"{media_type} Reference {frappe.generate_hash(length=5)}",
-		"media_type": media_type,
-		"asset_category": "Reference" if media_type != "Image" else "Product",
-		"asset_scope": "Library",
-		"status": "Active",
-	}).insert(ignore_permissions=True)
+	asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"asset_name": f"{media_type} Reference {frappe.generate_hash(length=5)}",
+			"media_type": media_type,
+			"asset_category": "Reference" if media_type != "Image" else "Product",
+			"asset_scope": "Library",
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
 
 	if media_type == "Image":
 		content = base64.b64decode(
@@ -355,18 +396,22 @@ def _create_asset_version(project, media_type, extension):
 	else:
 		# Metadata extraction for video is not the focus of this relationship test.
 		content = b"reference-media"
-	file_doc = frappe.get_doc({
-		"doctype": "File",
-		"file_name": f"reference-{frappe.generate_hash(length=5)}.{extension}",
-		"content": content,
-		"is_private": 1,
-	}).insert(ignore_permissions=True)
-	version = frappe.get_doc({
-		"doctype": "Asset Version",
-		"media_asset": asset.name,
-		"file": file_doc.file_url,
-		"source": "Uploaded",
-	})
+	file_doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"reference-{frappe.generate_hash(length=5)}.{extension}",
+			"content": content,
+			"is_private": 1,
+		}
+	).insert(ignore_permissions=True)
+	version = frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": asset.name,
+			"file": file_doc.file_url,
+			"source": "Uploaded",
+		}
+	)
 	if media_type in ("Video", "Audio"):
 		# Avoid media probing in this relation-only fixture.
 		with patch.object(version, "set_file_metadata"):
@@ -385,36 +430,41 @@ def _attach_image_reference(project, asset_name):
 
 
 def _ensure_workflow():
-	workflow = frappe.get_doc({
-		"doctype": "Generation Workflow",
-		"workflow_key": f"product_showcase_{frappe.generate_hash(length=5)}",
-		"adapter_key": "comfyui_generic",
-		"workflow_json": (
-			'{"load_img":{"inputs":{"image":""},"class_type":"VHS_LoadImagePath"},'
-			'"dec_video":{"inputs":{},"class_type":"VAEDecode"},'
-			'"save_video":{"inputs":{"images":["dec_video",0],"frame_rate":24,'
-			'"filename_prefix":"JoyMedia","loop_count":0,"format":"video/h264-mp4",'
-			'"pingpong":false,"save_output":true},"class_type":"VHS_VideoCombine"}}'
-		),
-		"execution_spec": '{"parameters":[],"metadata":{"frame_count":124,"output_fps":24,"produces_video":1},"outputs":{"primary":{"node_key":"save_video","media_type":"Video"}}}',
-		"bindings": [{
-			"binding_key": "first_frame",
-			"node_key": "load_img",
-			"input_name": "image",
-			"required_input_role": "first_frame",
-			"value_type": "File Path",
-			"required": 1,
-		}, {
-			"binding_key": "product_reference",
-			"node_key": "load_img",
-			"input_name": "image",
-			"required_input_role": "product_reference",
-			"value_type": "File Paths",
-			"accepted_media_type": "Image",
-			"allow_multiple": 1,
-			"required": 0,
-		}],
-	}).insert(ignore_permissions=True)
+	workflow = frappe.get_doc(
+		{
+			"doctype": "Generation Workflow",
+			"workflow_key": f"product_showcase_{frappe.generate_hash(length=5)}",
+			"adapter_key": "comfyui_generic",
+			"workflow_json": (
+				'{"load_img":{"inputs":{"image":""},"class_type":"VHS_LoadImagePath"},'
+				'"dec_video":{"inputs":{},"class_type":"VAEDecode"},'
+				'"save_video":{"inputs":{"images":["dec_video",0],"frame_rate":24,'
+				'"filename_prefix":"JoyMedia","loop_count":0,"format":"video/h264-mp4",'
+				'"pingpong":false,"save_output":true},"class_type":"VHS_VideoCombine"}}'
+			),
+			"execution_spec": '{"parameters":[],"metadata":{"frame_count":124,"output_fps":24,"produces_video":1},"outputs":{"primary":{"node_key":"save_video","media_type":"Video"}}}',
+			"bindings": [
+				{
+					"binding_key": "first_frame",
+					"node_key": "load_img",
+					"input_name": "image",
+					"required_input_role": "first_frame",
+					"value_type": "File Path",
+					"required": 1,
+				},
+				{
+					"binding_key": "product_reference",
+					"node_key": "load_img",
+					"input_name": "image",
+					"required_input_role": "product_reference",
+					"value_type": "File Paths",
+					"accepted_media_type": "Image",
+					"allow_multiple": 1,
+					"required": 0,
+				},
+			],
+		}
+	).insert(ignore_permissions=True)
 	return workflow.name
 
 
@@ -422,23 +472,51 @@ class IntegrationTestFollowActivePipeline(IntegrationTestCase):
 	def test_a_project_is_moved_to_the_pipeline_the_site_now_uses(self):
 		from joymedia.joymedia.doctype.media_project.media_project import MediaProject
 
-		project = MediaProject({"doctype": "Media Project", "workflow": "OLD", "generation_pipeline": "OLD-PIPE", "export_quality": "Draft 720p"})
+		project = MediaProject(
+			{
+				"doctype": "Media Project",
+				"workflow": "OLD",
+				"generation_pipeline": "OLD-PIPE",
+				"export_quality": "Draft 720p",
+			}
+		)
 		newest = frappe._dict(name="NEW")
 		with (
-			patch("joymedia.joymedia.doctype.media_project.media_project._get_customer_workflow_for_export_quality", return_value=newest),
-			patch("joymedia.services.workflows.pipeline.pipeline_for_final_workflow", return_value=frappe._dict(name="NEW-PIPE")),
+			patch(
+				"joymedia.joymedia.doctype.media_project.media_project._get_customer_workflow_for_export_quality",
+				return_value=newest,
+			),
+			patch(
+				"joymedia.services.workflows.pipeline.pipeline_for_final_workflow",
+				return_value=frappe._dict(name="NEW-PIPE"),
+			),
 			patch.object(MediaProject, "db_set") as db_set,
 		):
 			project.follow_active_pipeline()
-		db_set.assert_called_once_with({"workflow": "NEW", "generation_pipeline": "NEW-PIPE"}, update_modified=False)
+		db_set.assert_called_once_with(
+			{"workflow": "NEW", "generation_pipeline": "NEW-PIPE"}, update_modified=False
+		)
 
 	def test_a_project_already_on_the_active_pipeline_is_left_alone(self):
 		from joymedia.joymedia.doctype.media_project.media_project import MediaProject
 
-		project = MediaProject({"doctype": "Media Project", "workflow": "NEW", "generation_pipeline": "NEW-PIPE", "export_quality": "Draft 720p"})
+		project = MediaProject(
+			{
+				"doctype": "Media Project",
+				"workflow": "NEW",
+				"generation_pipeline": "NEW-PIPE",
+				"export_quality": "Draft 720p",
+			}
+		)
 		with (
-			patch("joymedia.joymedia.doctype.media_project.media_project._get_customer_workflow_for_export_quality", return_value=frappe._dict(name="NEW")),
-			patch("joymedia.services.workflows.pipeline.pipeline_for_final_workflow", return_value=frappe._dict(name="NEW-PIPE")),
+			patch(
+				"joymedia.joymedia.doctype.media_project.media_project._get_customer_workflow_for_export_quality",
+				return_value=frappe._dict(name="NEW"),
+			),
+			patch(
+				"joymedia.services.workflows.pipeline.pipeline_for_final_workflow",
+				return_value=frappe._dict(name="NEW-PIPE"),
+			),
 			patch.object(MediaProject, "db_set") as db_set,
 		):
 			project.follow_active_pipeline()

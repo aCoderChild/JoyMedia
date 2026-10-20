@@ -18,13 +18,23 @@ def execute():
 			continue
 		for binding in frappe.get_all(
 			"Workflow Binding",
-			filters={"parent": workflow.name, "parenttype": "Generation Workflow", "value_type": "File Paths", "allow_multiple": 1},
+			filters={
+				"parent": workflow.name,
+				"parenttype": "Generation Workflow",
+				"value_type": "File Paths",
+				"allow_multiple": 1,
+			},
 			fields=["name", "node_key", "input_name"],
 		):
 			node = graph.get(str(binding.node_key)) or {}
 			value = (node.get("inputs") or {}).get(binding.input_name)
 			if isinstance(value, str):
-				frappe.db.set_value("Workflow Binding", binding.name, {
-					"value_type": "File Path",
-					"allow_multiple": 0,
-				}, update_modified=False)
+				frappe.db.set_value(
+					"Workflow Binding",
+					binding.name,
+					{
+						"value_type": "File Path",
+						"allow_multiple": 0,
+					},
+					update_modified=False,
+				)

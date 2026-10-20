@@ -18,18 +18,37 @@ import requests
 def collect(project, base_url, directory, seen):
 	frappe.db.rollback()  # each sample sees current committed worker state
 	runs = frappe.get_all(
-		"Generation Run", filters={"media_project": project},
+		"Generation Run",
+		filters={"media_project": project},
 		fields=["name", "status", "creation", "completed_at", "error_summary"],
 	)
 	tasks = frappe.get_all(
-		"Generation Task", filters={"generation_run": ["in", [r.name for r in runs] or [""]]},
+		"Generation Task",
+		filters={"generation_run": ["in", [r.name for r in runs] or [""]]},
 		fields=["name", "generation_run", "shot", "status", "segment_frame_count", "error_summary"],
 	)
 	attempts = frappe.get_all(
-		"Generation Attempt", filters={"generation_task": ["in", [t.name for t in tasks] or [""]]},
-		fields=["name", "generation_task", "status", "external_job_id", "creation", "queued_at", "started_at", "completed_at", "error_summary", "seed"],
+		"Generation Attempt",
+		filters={"generation_task": ["in", [t.name for t in tasks] or [""]]},
+		fields=[
+			"name",
+			"generation_task",
+			"status",
+			"external_job_id",
+			"creation",
+			"queued_at",
+			"started_at",
+			"completed_at",
+			"error_summary",
+			"seed",
+		],
 	)
-	snapshot = {"at": datetime.datetime.now(datetime.UTC).isoformat(), "runs": runs, "tasks": tasks, "attempts": attempts}
+	snapshot = {
+		"at": datetime.datetime.now(datetime.UTC).isoformat(),
+		"runs": runs,
+		"tasks": tasks,
+		"attempts": attempts,
+	}
 	try:
 		response = requests.get(base_url.rstrip("/") + "/queue", timeout=10)
 		response.raise_for_status()
@@ -38,7 +57,11 @@ def collect(project, base_url, directory, seen):
 			for key, items in response.json().items()
 		}
 		for attempt in attempts:
-			if not attempt.external_job_id or attempt.external_job_id in seen or attempt.status not in {"Completed", "Failed", "Cancelled"}:
+			if (
+				not attempt.external_job_id
+				or attempt.external_job_id in seen
+				or attempt.status not in {"Completed", "Failed", "Cancelled"}
+			):
 				continue
 			response = requests.get(base_url.rstrip("/") + "/history/" + attempt.external_job_id, timeout=15)
 			response.raise_for_status()

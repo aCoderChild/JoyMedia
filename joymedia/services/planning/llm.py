@@ -20,7 +20,7 @@ from joymedia.services.planning.film_director import (
 	plan_problems,
 	story_take_count,
 )
-from joymedia.services.planning.plan_parsing import (  # noqa: E402,F401  (moved; kept importable from here)
+from joymedia.services.planning.plan_parsing import (
 	DEFAULT_MAX_MODEL_LEN,
 	MIN_PLAN_COMPLETION_TOKENS,
 	_completion_budget,
@@ -32,8 +32,8 @@ from joymedia.services.planning.plan_parsing import (  # noqa: E402,F401  (moved
 	_rescale_motion_plan,
 	_validate_video_plan,
 )
-from joymedia.services.scene.contract import PLANNING_RULES
 from joymedia.services.runtime.endpoints import endpoint
+from joymedia.services.scene.contract import PLANNING_RULES
 
 PLAN_CUT_OFF = (
 	"The previous JSON did not fit. Return a compact complete JSON plan: generation_prompt "
@@ -90,11 +90,15 @@ def generate_shot_revision(*, instruction, shot, product_name="", video_idea="")
 	try:
 		response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
 	except requests.Timeout:
-		frappe.throw(_("The AI planner did not return a shot revision within {0} seconds.").format(int(timeout)))
+		frappe.throw(
+			_("The AI planner did not return a shot revision within {0} seconds.").format(int(timeout))
+		)
 	except requests.RequestException as exc:
 		frappe.throw(_("The AI planner is unavailable at {0}: {1}").format(base_url, str(exc)))
 	if not response.ok:
-		frappe.throw(_("The AI planner request failed ({0}): {1}").format(response.status_code, response.text))
+		frappe.throw(
+			_("The AI planner request failed ({0}): {1}").format(response.status_code, response.text)
+		)
 	try:
 		result = json.loads(response.json()["choices"][0]["message"]["content"])
 	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -129,7 +133,7 @@ def improve_video_idea(
 		return {"improved_idea": fallback}
 
 	ref_lines = []
-	for ref in (references or []):
+	for ref in references or []:
 		key = ref.get("reference_key") or ref.get("asset_name") or ""
 		role = ref.get("reference_role") or ref.get("asset_category") or "Reference"
 		analysis = ref.get("analysis_summary") or ref.get("analysis") or ""
@@ -160,7 +164,10 @@ def improve_video_idea(
 	payload = {
 		"model": model,
 		"messages": [
-			{"role": "system", "content": "You are a professional AI commercial video director. Return JSON only with key 'improved_idea'."},
+			{
+				"role": "system",
+				"content": "You are a professional AI commercial video director. Return JSON only with key 'improved_idea'.",
+			},
 			{"role": "user", "content": user_prompt},
 		],
 		"response_format": {"type": "json_object"},
@@ -203,13 +210,14 @@ def write_titles_and_captions(shots, video_idea):
 	reads only what each scene actually contains. Keeps the planner's words on failure.
 	"""
 	scenes = "\n".join(
-		f"{index}. {str(shot.get('generation_prompt') or '')[:500]}" for index, shot in enumerate(shots, start=1)
+		f"{index}. {str(shot.get('generation_prompt') or '')[:500]}"
+		for index, shot in enumerate(shots, start=1)
 	)
 	request = (
 		"You write the on-screen words of a short commercial video.\n"
 		f"VIDEO IDEA (its language is the output language): {video_idea or 'none'}\n\n"
 		f"SCENES, as described to the video model:\n{scenes}\n\n"
-		"Return JSON: {\"film_title\": \"...\", \"scenes\": [{\"title\": \"...\", \"caption\": \"...\"}]} with one "
+		'Return JSON: {"film_title": "...", "scenes": [{"title": "...", "caption": "..."}]} with one '
 		"entry per scene, in order. film_title: at most 6 words. title: at most 6 words naming what the "
 		"scene shows. caption: at most 6 words of on-screen text, a feeling or benefit the scene shows. "
 		"Describe only what the scene text contains; never invent products, places, prices or brand "
@@ -222,7 +230,10 @@ def write_titles_and_captions(shots, video_idea):
 			json={
 				"model": model,
 				"messages": [
-					{"role": "system", "content": "You write short, accurate on-screen text. Return JSON only."},
+					{
+						"role": "system",
+						"content": "You write short, accurate on-screen text. Return JSON only.",
+					},
 					{"role": "user", "content": request},
 				],
 				"response_format": {"type": "json_object"},
@@ -239,7 +250,7 @@ def write_titles_and_captions(shots, video_idea):
 	entries = words.get("scenes") if isinstance(words, dict) else None
 	if not isinstance(entries, list) or len(entries) != len(shots):
 		return {}
-	for shot, entry in zip(shots, entries):
+	for shot, entry in zip(shots, entries, strict=False):
 		entry = entry if isinstance(entry, dict) else {}
 		title = clean_title(entry.get("title"))
 		if title:
@@ -303,8 +314,14 @@ def to_english(text):
 			json={
 				"model": model,
 				"messages": [
-					{"role": "system", "content": "You translate short creative descriptions into natural English. Return JSON only."},
-					{"role": "user", "content": f'Translate into English: {text}\nReturn {{"english": "..."}}'},
+					{
+						"role": "system",
+						"content": "You translate short creative descriptions into natural English. Return JSON only.",
+					},
+					{
+						"role": "user",
+						"content": f'Translate into English: {text}\nReturn {{"english": "..."}}',
+					},
 				],
 				"response_format": {"type": "json_object"},
 				"temperature": 0,
@@ -536,14 +553,16 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		f"TARGET FPS: {target_fps}\n"
 		f"SHOT COUNT GUIDANCE: {shot_count if shot_count is not None else f'Exactly {take_count} takes, one per place.' if take_count else 'Choose the appropriate number of creative shots; do not use model frame capacity to choose it.'}\n\n"
 		+ (
-			f"Return exactly {shot_count} shots. " if shot_count is not None
-			else f"Return exactly {take_count} takes as shots. " if take_count
+			f"Return exactly {shot_count} shots. "
+			if shot_count is not None
+			else f"Return exactly {take_count} takes as shots. "
+			if take_count
 			else "Choose a coherent storyboard structure, normally between 1 and 8 shots. "
 		)
 		+ "Organize the shots into a coherent narrative progression.\n\n"
-		+ PLANNING_RULES + "\n"
-		+
-		"IMPORTANT OUTPUT RULES:\n"
+		+ PLANNING_RULES
+		+ "\n"
+		+ "IMPORTANT OUTPUT RULES:\n"
 		"- Every shot MUST contain a positive integer shot_number.\n"
 		"- Every shot MUST contain one non-empty generation_prompt.\n"
 		"- Every shot MUST contain non-empty image_prompt and generation_prompt.\n"
@@ -604,7 +623,10 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	request_payload = {
 		"model": model,
 		"messages": [
-			{"role": "system", "content": "You produce structured JSON video plans. Do not include markdown fences or commentary."},
+			{
+				"role": "system",
+				"content": "You produce structured JSON video plans. Do not include markdown fences or commentary.",
+			},
 			{"role": "user", "content": user_prompt},
 		],
 		"response_format": {"type": "json_object"},
@@ -615,9 +637,11 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 
 	result = _request_plan(base_url, request_payload, timeout)
 	# Product films describe their settings in words, so there is no place photo to check.
-	places = {
-		context.get("reference_key"): place_text(context) for context in story_reference_contexts or []
-	} if story_film and not is_product_film(story_reference_contexts) else None
+	places = (
+		{context.get("reference_key"): place_text(context) for context in story_reference_contexts or []}
+		if story_film and not is_product_film(story_reference_contexts)
+		else None
+	)
 
 	def problems_of(plan):
 		if plan is None:
@@ -638,7 +662,10 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		system, user = request_payload["messages"][:2]
 		retry_payload = {
 			**request_payload,
-			"messages": [system, {**user, "content": f"{user['content']}\n\nCORRECTIONS TO APPLY:\n{corrections}"}],
+			"messages": [
+				system,
+				{**user, "content": f"{user['content']}\n\nCORRECTIONS TO APPLY:\n{corrections}"},
+			],
 		}
 		retry_payload["max_tokens"] = _completion_budget(base_url, retry_payload)
 		retry_result = _request_plan(base_url, retry_payload, timeout)
@@ -663,8 +690,10 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 			result["shots"], story_reference_contexts, story_reference_role, story_reference_roles
 		)
 		from joymedia.services.planning.film_director import enforce_requested_product_presentation
+
 		enforce_requested_product_presentation(result["shots"], video_idea, story_reference_contexts)
 		from joymedia.services.planning.film_director import enforce_explicit_product_brief
+
 		enforce_explicit_product_brief(result["shots"], video_idea)
 
 	film_title = clean_title(result.get("film_title")) if isinstance(result, dict) else ""

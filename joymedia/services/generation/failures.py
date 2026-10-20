@@ -1,5 +1,4 @@
-"""Classifies a failed attempt and turns a technical error into a message a customer can act on.
-"""
+"""Classifies a failed attempt and turns a technical error into a message a customer can act on."""
 
 import re
 
@@ -16,7 +15,10 @@ def classify_failure(error, default="Unknown"):
 	# Provider/node authentication cannot be fixed by submitting the same prompt
 	# again.  Treat it as a workflow configuration issue so the UI asks for the
 	# integration to be connected instead of claiming the render is still queued.
-	if any(token in lower_message for token in ("unauthorized", "forbidden", "please login", "authentication", "not authenticated")):
+	if any(
+		token in lower_message
+		for token in ("unauthorized", "forbidden", "please login", "authentication", "not authenticated")
+	):
 		return "Workflow"
 	if "workflow" in lower_message or "node" in lower_message:
 		return "Workflow"
@@ -36,12 +38,16 @@ def technical_message(error):
 
 def friendly_failure(failure_class, error_summary=None):
 	if str(error_summary or "").startswith("Visual admission rejected"):
-		return _("Automatic visual checks held this scene. Your previous video is preserved; the administrator can inspect the recorded evidence.")
+		return _(
+			"Automatic visual checks held this scene. Your previous video is preserved; the administrator can inspect the recorded evidence."
+		)
 	if failure_class == "Workflow" and any(
 		token in str(error_summary or "").lower()
 		for token in ("unauthorized", "forbidden", "please login", "authentication", "not authenticated")
 	):
-		return _("The image-generation provider is not connected. Ask an administrator to sign in, then retry.")
+		return _(
+			"The image-generation provider is not connected. Ask an administrator to sign in, then retry."
+		)
 	messages = {
 		"Infrastructure": "The render server dropped this job. It is safe to try again.",
 		"Workflow": "The selected video setup is unavailable. Please try again or contact support.",

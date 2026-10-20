@@ -2,6 +2,7 @@
 promoted pipeline and writes the shots. The brief-only path; a workbook goes through planning.workbook.
 """
 
+import itertools
 
 import frappe
 from frappe import _
@@ -22,8 +23,11 @@ def _assign_reference_pool_auto(plan, project_references):
 			{"reference_key": key, "usage_role": row.reference_role or "General"}
 			for key, row in project_references.items()
 			if frappe.db.get_value(
-				"Media Asset", frappe.db.get_value("Asset Version", row.asset_version, "media_asset"), "media_type"
-			) == "Image"
+				"Media Asset",
+				frappe.db.get_value("Asset Version", row.asset_version, "media_asset"),
+				"media_type",
+			)
+			== "Image"
 		]
 
 
@@ -43,13 +47,15 @@ def _route_and_validate_plan_shot(shot, project_references, default_workflow):
 		# carries no rendering meaning, so retain the planner's explicit person,
 		# product or environment role instead of collapsing it back to General.
 		role = planned_role if project_role in {"", "general", "keyframe_reference"} else project_role
-		references.append({
-			"reference_key": reference["reference_key"],
-			# Explicit Project Reference roles win; planner roles preserve automatic
-			# semantics where the durable role is still the generic default.
-			"reference_role": role or "General",
-			"asset_version": project_reference.asset_version,
-		})
+		references.append(
+			{
+				"reference_key": reference["reference_key"],
+				# Explicit Project Reference roles win; planner roles preserve automatic
+				# semantics where the durable role is still the generic default.
+				"reference_role": role or "General",
+				"asset_version": project_reference.asset_version,
+			}
+		)
 	route = resolve_shot_render_route(
 		default_workflow,
 		references,
@@ -86,19 +92,24 @@ def _route_and_validate_plan_shot(shot, project_references, default_workflow):
 			continue
 		count = counts.get(role, 0)
 		if count < int(item.get("min_count") or 0):
-			frappe.throw(_("Shot {0} needs {1} input(s) for role '{2}'.").format(
-				shot.get("shot_number"), item["min_count"], role
-			))
+			frappe.throw(
+				_("Shot {0} needs {1} input(s) for role '{2}'.").format(
+					shot.get("shot_number"), item["min_count"], role
+				)
+			)
 		maximum = int(item.get("max_count") or 0)
 		if maximum and count > maximum:
-			frappe.throw(_("Shot {0} supports at most {1} input(s) for role '{2}'.").format(
-				shot.get("shot_number"), maximum, role
-			))
+			frappe.throw(
+				_("Shot {0} supports at most {1} input(s) for role '{2}'.").format(
+					shot.get("shot_number"), maximum, role
+				)
+			)
 
 
-def apply_video_plan(media_project_name: str = None, plan: dict = None):
+def apply_video_plan(media_project_name: str | None = None, plan: dict | None = None):
 	project = frappe.get_doc("Media Project", media_project_name)
 	from joymedia.services.project.context import _project_settings
+
 	settings = _project_settings(project)
 	_validate_plan_shape(plan)
 	from joymedia.services.project.modes import normalize_generation_mode
@@ -155,9 +166,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 			and binding.required_input_role
 		}
 		if len(required_input_roles) > 1:
-			frappe.throw(
-				_("Video plan application requires exactly one required Generation Input role.")
-			)
+			frappe.throw(_("Video plan application requires exactly one required Generation Input role."))
 		required_input_role = next(iter(required_input_roles), None)
 
 	existing_shots = frappe.get_all(
@@ -230,17 +239,16 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 			)
 		if last_reference_index is not None and not last_asset_version:
 			frappe.throw(
-				_("Last-frame reference image index {0} could not be resolved.").format(
-					last_reference_index
-				)
+				_("Last-frame reference image index {0} could not be resolved.").format(last_reference_index)
 			)
 
-		if mode == "Multi-shot" and uses_keyframe_fields and reference_image_indexes and (
-			first_asset_version is None or last_asset_version is None
+		if (
+			mode == "Multi-shot"
+			and uses_keyframe_fields
+			and reference_image_indexes
+			and (first_asset_version is None or last_asset_version is None)
 		):
-			frappe.throw(
-				_("Multi-shot requires first-frame and last-frame references for every shot.")
-			)
+			frappe.throw(_("Multi-shot requires first-frame and last-frame references for every shot."))
 
 		if first_asset_version and (mode == "Multi-shot" or shot["shot_number"] == 1):
 			if not required_input_role:
@@ -271,7 +279,7 @@ def apply_video_plan(media_project_name: str = None, plan: dict = None):
 
 	if mode == "Multi-shot" and uses_keyframe_fields:
 		resolved_shot_inputs.sort(key=lambda item: item["shot_number"])
-		for current, following in zip(resolved_shot_inputs, resolved_shot_inputs[1:]):
+		for current, following in itertools.pairwise(resolved_shot_inputs):
 			if current["last_frame"] != following["first_frame"]:
 				frappe.throw(
 					_("Multi-shot boundary is invalid between shots {0} and {1}.").format(
@@ -313,9 +321,7 @@ def _may_replace_unrendered_storyboard(project_name):
 		return True
 	if any(run.status != "Cancelled" for run in runs):
 		return False
-	return not frappe.db.exists(
-		"Generation Task", {"generation_run": ["in", [run.name for run in runs]]}
-	)
+	return not frappe.db.exists("Generation Task", {"generation_run": ["in", [run.name for run in runs]]})
 
 
 # Names new projects get before anyone types one; they are replaced by the storyboard's title.
@@ -330,8 +336,8 @@ def _name_untitled_project(project, film_title):
 
 
 def append_video_plan(
-	media_project_name: str = None,
-	plan: dict = None,
+	media_project_name: str | None = None,
+	plan: dict | None = None,
 	start_after_shot_number: int = 0,
 ):
 	"""Append only new Shot documents without replacing the existing storyboard."""

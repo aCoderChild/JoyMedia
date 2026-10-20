@@ -8,13 +8,22 @@ from joymedia.services.generation.runner import _stage_generation_inputs, submit
 
 class TestGenerationRunner(FrappeTestCase):
 	@patch("joymedia.services.generation.runner.find_prompt_by_client_id", return_value=None)
-	@patch("joymedia.services.generation.runner.submit_workflow", side_effect=frappe.ValidationError("invalid graph"))
+	@patch(
+		"joymedia.services.generation.runner.submit_workflow",
+		side_effect=frappe.ValidationError("invalid graph"),
+	)
 	@patch("joymedia.services.generation.runner.endpoint_for_workflow", return_value="http://worker:8188")
 	@patch("joymedia.services.generation.runner.resolve_attempt", return_value={})
 	@patch("joymedia.services.generation.runner._stage_generation_inputs", return_value={})
 	@patch("joymedia.services.generation.runner.frappe.get_doc")
 	def test_rejected_comfy_prompt_marks_attempt_failed(
-		self, get_doc, stage_inputs, resolve_attempt, get_base_url, submit_workflow, find_prompt,
+		self,
+		get_doc,
+		stage_inputs,
+		resolve_attempt,
+		get_base_url,
+		submit_workflow,
+		find_prompt,
 	):
 		attempt = frappe._dict(name="ATT-00001", status="Pending", generation_task="JOB-00001")
 		attempt.reload = MagicMock()
@@ -29,7 +38,11 @@ class TestGenerationRunner(FrappeTestCase):
 		self.assertEqual("Rejected", attempt.submission_state)
 		self.assertTrue(attempt.error_summary)
 		find_prompt.assert_called_once_with("joymedia:ATT-00001", base_url="http://worker:8188")
-	@patch("joymedia.services.generation.runner.upload_frappe_file", return_value={"server_path": "previous_last.png"})
+
+	@patch(
+		"joymedia.services.generation.runner.upload_frappe_file",
+		return_value={"server_path": "previous_last.png"},
+	)
 	@patch("joymedia.services.generation.runner.get_attempt_artifact")
 	@patch("joymedia.services.generation.runner.get_effective_attempt")
 	@patch("joymedia.services.generation.runner.frappe.get_doc")
@@ -41,7 +54,9 @@ class TestGenerationRunner(FrappeTestCase):
 			execution_spec='{"input_preprocessing": {"compose_image_roles": ["reference_board"]}}',
 			bindings=[],
 		)
-		artifact = frappe._dict(name="GART-LAST", artifact_role="Last Frame", frappe_file="/private/files/last.png")
+		artifact = frappe._dict(
+			name="GART-LAST", artifact_role="Last Frame", frappe_file="/private/files/last.png"
+		)
 		get_doc.return_value = workflow
 		get_effective_attempt.return_value = frappe._dict(name="ATT-PREVIOUS", status="Completed")
 		get_attempt_artifact.return_value = artifact
@@ -58,13 +73,19 @@ class TestGenerationRunner(FrappeTestCase):
 
 		self.assertEqual({"first_frame": ["previous_last.png"]}, staged)
 		self.assertEqual(
-			{"first_frame": [{"source": "Generation Artifact", "artifact": "GART-LAST", "artifact_role": "Last Frame"}]},
+			{
+				"first_frame": [
+					{"source": "Generation Artifact", "artifact": "GART-LAST", "artifact_role": "Last Frame"}
+				]
+			},
 			frappe.parse_json(attempt.resolved_inputs_json),
 		)
 		get_attempt_artifact.assert_called_once_with("ATT-PREVIOUS", "Last Frame")
 		upload_frappe_file.assert_called_once_with("/private/files/last.png")
 
-	@patch("joymedia.services.generation.runner.upload_frappe_file", return_value={"server_path": "first.png"})
+	@patch(
+		"joymedia.services.generation.runner.upload_frappe_file", return_value={"server_path": "first.png"}
+	)
 	@patch("joymedia.services.generation.runner.frappe.get_doc")
 	@patch("joymedia.services.generation.runner.frappe.get_all")
 	def test_staged_input_roles_are_canonicalized(self, get_all, get_doc, upload_frappe_file):
@@ -91,9 +112,7 @@ class TestGenerationRunner(FrappeTestCase):
 			'{"first_frame": [{"asset_version": "ASTV-00001", "source": "Asset Version"}]}',
 			attempt.resolved_inputs_json,
 		)
-		upload_frappe_file.assert_called_once_with(
-			"/private/files/first.png"
-		)
+		upload_frappe_file.assert_called_once_with("/private/files/first.png")
 
 	@patch("joymedia.services.generation.runner.submit_workflow", return_value={"prompt_id": "comfy-1"})
 	@patch("joymedia.services.generation.runner.endpoint_for_workflow", return_value="http://legacy:8188")
@@ -131,8 +150,12 @@ class TestGenerationRunner(FrappeTestCase):
 		from joymedia.services.generation.runner import reconcile_attempt_submission
 
 		attempt = frappe._dict(
-			name="ATT-00001", status="Submitting", submission_token="joymedia:ATT-00001",
-			comfyui_endpoint_url="http://worker:8188", queued_at=None, save=MagicMock(),
+			name="ATT-00001",
+			status="Submitting",
+			submission_token="joymedia:ATT-00001",
+			comfyui_endpoint_url="http://worker:8188",
+			queued_at=None,
+			save=MagicMock(),
 		)
 		get_doc.return_value = attempt
 
@@ -156,8 +179,9 @@ class TestFrozenArtifactInputs(FrappeTestCase):
 		job.get_shot_input_snapshot.return_value = {}
 		appended = []
 		job.append.side_effect = lambda field, value: appended.append(value)
-		with patch("joymedia.services.generation.runner.frappe.get_doc", return_value=job), patch(
-			"joymedia.services.generation.runner.frappe.db.exists", return_value=False
+		with (
+			patch("joymedia.services.generation.runner.frappe.get_doc", return_value=job),
+			patch("joymedia.services.generation.runner.frappe.db.exists", return_value=False),
 		):
 			prepare_generation_task("TASK-1", [])
 		self.assertIn({"input_role": "last_frame", "generation_artifact": "GART-1"}, appended)

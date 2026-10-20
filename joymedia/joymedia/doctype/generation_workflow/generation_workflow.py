@@ -10,7 +10,6 @@ from frappe.model.document import Document
 from joymedia.workflow_adapters import get_workflow_adapter
 from joymedia.workflow_adapters.base import canonical_workflow_json
 
-
 IMMUTABLE_FIELDS = (
 	"workflow_key",
 	"version_number",
@@ -188,13 +187,7 @@ class GenerationWorkflow(Document):
 		if not previous:
 			return
 
-		changed_fields = [
-			fieldname
-			for fieldname in IMMUTABLE_FIELDS
-			if self.has_value_changed(fieldname)
-		]
+		changed_fields = [fieldname for fieldname in IMMUTABLE_FIELDS if self.has_value_changed(fieldname)]
 		if not changed_fields:
 			return
-		frappe.throw(
-			_("Generation Workflow {0} is immutable after creation.").format(self.name)
-		)
+		frappe.throw(_("Generation Workflow {0} is immutable after creation.").format(self.name))

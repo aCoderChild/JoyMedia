@@ -22,8 +22,8 @@ import frappe
 import requests
 
 from joymedia.services.project.realtime import PROJECT_UPDATED, publish_project_event
-from joymedia.services.scene.evidence import SequenceCheck
 from joymedia.services.runtime.endpoints import endpoint, is_configured, structured_response
+from joymedia.services.scene.evidence import SequenceCheck
 
 MAX_FRAME_REDOS = 2
 MAX_TAKE_REDOS = 1
@@ -35,13 +35,27 @@ def queue_check(shot_name, kind):
 	"""Check the scene's new first frame (`kind` "frame") or take ("take") in the background."""
 	if not is_configured("vision"):
 		return
-	subject = _subject(frappe.db.get_value("Shot", shot_name, ["keyframe_artifact", "selected_output_asset_version"], as_dict=True), kind)
-	frappe.db.set_value("Shot", shot_name, {"consistency_status": "Checking", "consistency_notes": ""}, update_modified=False)
+	subject = _subject(
+		frappe.db.get_value(
+			"Shot", shot_name, ["keyframe_artifact", "selected_output_asset_version"], as_dict=True
+		),
+		kind,
+	)
+	frappe.db.set_value(
+		"Shot", shot_name, {"consistency_status": "Checking", "consistency_notes": ""}, update_modified=False
+	)
 	# One job per frame or take: a redrawn frame gets its own check even while an earlier one is still queued.
 	frappe.enqueue(
-		"joymedia.services.review.consistency.check_scene", queue="long", timeout=1800,
-		job_id=f"joymedia-consistency-{shot_name}-{kind}-{subject}", deduplicate=True, enqueue_after_commit=True,
-		shot_name=shot_name, kind=kind, user=frappe.session.user, subject=subject,
+		"joymedia.services.review.consistency.check_scene",
+		queue="long",
+		timeout=1800,
+		job_id=f"joymedia-consistency-{shot_name}-{kind}-{subject}",
+		deduplicate=True,
+		enqueue_after_commit=True,
+		shot_name=shot_name,
+		kind=kind,
+		user=frappe.session.user,
+		subject=subject,
 	)
 
 
@@ -58,14 +72,27 @@ def check_scene(shot_name, kind, user, subject=None):
 		return  # the frame or take was replaced meanwhile; its own check follows
 	# Bind every later write to the evidence and direction read before vision I/O.
 	shot._consistency_evidence = {
-		key: shot.get(key) for key in ("keyframe_artifact", "keyframe_status", "selected_output_asset_version", "generation_prompt", "motion_plan_json", "consistency_retries")
+		key: shot.get(key)
+		for key in (
+			"keyframe_artifact",
+			"keyframe_status",
+			"selected_output_asset_version",
+			"generation_prompt",
+			"motion_plan_json",
+			"consistency_retries",
+		)
 	}
 	if kind == "frame" and shot.keyframe_artifact:
 		from joymedia.services.review.admission import report_for
+
 		attempt = frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "generation_attempt")
 		report = report_for(attempt) if attempt else None
 		if report and report.get("review_only"):
-			return _record(shot, "Needs Review", "Automatic screening does not qualify this geometry. Review the source frame before animation.")
+			return _record(
+				shot,
+				"Needs Review",
+				"Automatic screening does not qualify this geometry. Review the source frame before animation.",
+			)
 	try:
 		checks = (frame_checks if kind == "frame" else take_checks)(shot)
 		if not checks:
@@ -79,11 +106,19 @@ def check_scene(shot_name, kind, user, subject=None):
 	notes = "; ".join(failures)[:900]
 	from joymedia.services.scene.contract import read_contract
 
-	if read_contract(shot.get("motion_plan_json"), shot.get("duration_seconds")) or any(reason.startswith("Physical staging review:") for reason in failures):
+	if read_contract(shot.get("motion_plan_json"), shot.get("duration_seconds")) or any(
+		reason.startswith("Physical staging review:") for reason in failures
+	):
 		# These new relational/order questions are advisory until calibrated for
 		# the configured judge. Never spend GPU retries on an uncalibrated verdict.
 		return _record(shot, "Needs Review", notes)
-	if kind == "take" and shot.selected_output_asset_version and frappe.db.get_value("Asset Version", shot.selected_output_asset_version, "preservation_evidence_json"):
+	if (
+		kind == "take"
+		and shot.selected_output_asset_version
+		and frappe.db.get_value(
+			"Asset Version", shot.selected_output_asset_version, "preservation_evidence_json"
+		)
+	):
 		# A generic redraw discards authored tracking/masks and reintroduces label
 		# drift. Report the concern, never silently replace a source-art repair.
 		return _record(shot, "Needs Review", notes)
@@ -120,8 +155,10 @@ def redo_waiting(project_name):
 			return  # the next one starts when this run ends
 		for status, kind in ((REDRAW, "frame"), (REDO, "take")):
 			names = frappe.get_all(
-				"Shot", filters={"media_project": project_name, "is_removed": 0, "consistency_status": status},
-				pluck="name", order_by="shot_number asc",
+				"Shot",
+				filters={"media_project": project_name, "is_removed": 0, "consistency_status": status},
+				pluck="name",
+				order_by="shot_number asc",
 			)
 			if not names:
 				continue
@@ -137,10 +174,17 @@ def redo_waiting(project_name):
 				frappe.db.rollback()
 				for name in names:
 					notes = frappe.db.get_value("Shot", name, "consistency_notes") or ""
-					frappe.db.set_value("Shot", name, {
-						"consistency_status": "Needs Review",
-						"consistency_notes": f"{notes}; it could not be redone automatically: {str(exc)[:200]}"[:1000],
-					}, update_modified=False)
+					frappe.db.set_value(
+						"Shot",
+						name,
+						{
+							"consistency_status": "Needs Review",
+							"consistency_notes": f"{notes}; it could not be redone automatically: {str(exc)[:200]}"[
+								:1000
+							],
+						},
+						update_modified=False,
+					)
 				frappe.db.commit()
 			return
 	finally:
@@ -155,7 +199,9 @@ def _record(shot, status, notes):
 		frappe.db.commit()
 		row = frappe.db.sql(
 			"select keyframe_artifact, keyframe_status, selected_output_asset_version, generation_prompt, motion_plan_json, consistency_retries "
-			"from `tabShot` where name=%s for update", shot.name, as_dict=True,
+			"from `tabShot` where name=%s for update",
+			shot.name,
+			as_dict=True,
 		)
 		if not row or any(row[0].get(k) != v for k, v in expected.items()):
 			frappe.db.commit()
@@ -175,16 +221,31 @@ def reset_redos(shot_name):
 
 
 def _cast_size(shot):
-	rows = [row for row in shot.generation_inputs or [] if frappe.scrub(row.reference_role or "") in ("character", "person", "people", "talent")]
+	rows = [
+		row
+		for row in shot.generation_inputs or []
+		if frappe.scrub(row.reference_role or "") in ("character", "person", "people", "talent")
+	]
 	versions = [row.get("asset_version") for row in rows if row.get("asset_version")]
-	identities = {
-		row.asset_version: row.identity_key for row in frappe.get_all(
-			"Project Reference", filters={"parent": shot.media_project, "asset_version": ["in", versions]},
-			fields=["asset_version", "identity_key"],
-		)
-	} if versions else {}
+	identities = (
+		{
+			row.asset_version: row.identity_key
+			for row in frappe.get_all(
+				"Project Reference",
+				filters={"parent": shot.media_project, "asset_version": ["in", versions]},
+				fields=["asset_version", "identity_key"],
+			)
+		}
+		if versions
+		else {}
+	)
 	# Several approved views of one identity are still one cast member.
-	return len({identities.get(row.get("asset_version")) or row.get("asset_version") or f"unbound-{index}" for index, row in enumerate(rows)})
+	return len(
+		{
+			identities.get(row.get("asset_version")) or row.get("asset_version") or f"unbound-{index}"
+			for index, row in enumerate(rows)
+		}
+	)
 
 
 def _opening_action(shot):
@@ -196,22 +257,22 @@ def _opening_action(shot):
 
 
 COUNT = (
-	'How many distinct foreground people or animal actors are established by visible evidence? '
-	'Count actors, not body parts. Two hands, arms, paws or wings may belong to one actor and are not two actors '
-	'merely because they have different positions or actions. Count the minimum distinct actors actually '
-	'established by the visible anatomy; do not invent offscreen owners. '
-	'Rendered, animated and cartoon actors DO count, just like photographic actors. '
-	'Do not count products themselves or flat characters printed on packaging, a poster or a photograph within the scene. '
-	'Return a JSON object with count set to the observed nonnegative integer and reason explaining the visible evidence. Do not use a sample or default count.'
+	"How many distinct foreground people or animal actors are established by visible evidence? "
+	"Count actors, not body parts. Two hands, arms, paws or wings may belong to one actor and are not two actors "
+	"merely because they have different positions or actions. Count the minimum distinct actors actually "
+	"established by the visible anatomy; do not invent offscreen owners. "
+	"Rendered, animated and cartoon actors DO count, just like photographic actors. "
+	"Do not count products themselves or flat characters printed on packaging, a poster or a photograph within the scene. "
+	"Return a JSON object with count set to the observed nonnegative integer and reason explaining the visible evidence. Do not use a sample or default count."
 )
 # A cast of illustrated characters acts alone: a human hand or arm is a stranger the image or video model added.
 # Asked about the frame's edge: this model misses a stranger's arm when asked "is there a human hand?" but sees one
 # reaching in from outside the frame. This heuristic is not an anatomy certificate.
 OUTSIDER = (
-	'Does a real human person, human hand, fingers or arm appear physically in this picture, '
-	'including a partial hand reaching in from any edge? A hand alone counts. '
-	'Do not count illustrated animal paws or a person printed on packaging or a photograph. '
-	'Return a JSON object with answer set to true, false, or null for uncertainty, and reason explaining the evidence.'
+	"Does a real human person, human hand, fingers or arm appear physically in this picture, "
+	"including a partial hand reaching in from any edge? A hand alone counts. "
+	"Do not count illustrated animal paws or a person printed on packaging or a photograph. "
+	"Return a JSON object with answer set to true, false, or null for uncertainty, and reason explaining the evidence."
 )
 
 
@@ -225,20 +286,20 @@ def shows(action, sequence=False):
 	where = "these frames, read left to right and top to bottom," if sequence else "this picture"
 	return (
 		f'Does {where} clearly show this: "{action}"? Answer true only if it is clearly visible. '
-		'Return a JSON object with answer set to true if visibly supported, false if visibly contradicted, or null if hidden or ambiguous, and reason explaining the evidence.'
+		"Return a JSON object with answer set to true if visibly supported, false if visibly contradicted, or null if hidden or ambiguous, and reason explaining the evidence."
 	)
 
 
 def panels(count):
-	return f'Is this picture a split screen of {count} separate panels stacked top to bottom? Return a JSON object with answer set to true, false, or null for uncertainty, and reason explaining the evidence.'
+	return f"Is this picture a split screen of {count} separate panels stacked top to bottom? Return a JSON object with answer set to true, false, or null for uncertainty, and reason explaining the evidence."
 
 
 def shows_start(description):
 	return (
 		f'Is this a plausible starting frame for this scene direction: "{description}"? '
-		'Evaluate visible starting positions and objects. Future movements, changes, intentions, feelings and thoughts '
-		'need not have happened yet and cannot be inferred from a still image. '
-		'Return a JSON object with answer set to true if visibly supported, false if visibly contradicted, or null if hidden or ambiguous, and reason explaining the evidence.'
+		"Evaluate visible starting positions and objects. Future movements, changes, intentions, feelings and thoughts "
+		"need not have happened yet and cannot be inferred from a still image. "
+		"Return a JSON object with answer set to true if visibly supported, false if visibly contradicted, or null if hidden or ambiguous, and reason explaining the evidence."
 	)
 
 
@@ -246,22 +307,44 @@ def frame_checks(shot):
 	"""[(picture, question, expected answer, what a failure means)] for the scene's first frame."""
 	from joymedia.services.keyframes.locations import shot_views
 
-	file_url = frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "frappe_file") if shot.keyframe_artifact else None
+	file_url = (
+		frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "frappe_file")
+		if shot.keyframe_artifact
+		else None
+	)
 	if not file_url:
 		return []
 	views = shot_views(shot)
 	checks = []
 	if views:
-		checks.append((file_url, panels(len(views)), True, f"the frame is not split into the sheet's {len(views)} views"))
+		checks.append(
+			(
+				file_url,
+				panels(len(views)),
+				True,
+				f"the frame is not split into the sheet's {len(views)} views",
+			)
+		)
 	else:
 		cast = _cast_size(shot)
 		if cast:
-			checks.append((file_url, COUNT, cast, f"the frame does not show exactly the scene's {cast} character(s)"))
+			checks.append(
+				(file_url, COUNT, cast, f"the frame does not show exactly the scene's {cast} character(s)")
+			)
 		action = shot.get("start_state") or shot.get("image_prompt") or _opening_action(shot)
 		if action:
-			checks.append((file_url, shows_start(action), True, f'the frame is inconsistent with its starting direction: "{action}"'))
+			checks.append(
+				(
+					file_url,
+					shows_start(action),
+					True,
+					f'the frame is inconsistent with its starting direction: "{action}"',
+				)
+			)
 	if _illustrated_cast(shot):
-		checks.append((file_url, OUTSIDER, False, "a human hand, arm or person appears; only the cast may act"))
+		checks.append(
+			(file_url, OUTSIDER, False, "a human hand, arm or person appears; only the cast may act")
+		)
 	from joymedia.services.scene.contract import opening_claims
 
 	for claim in opening_claims(shot.get("motion_plan_json"), shot.get("duration_seconds")):
@@ -274,10 +357,15 @@ def take_checks(shot):
 	"""The checks for the scene's take, on frames sampled through it."""
 	from joymedia.services.keyframes.locations import shot_views
 
-	file_url = frappe.db.get_value("Asset Version", shot.selected_output_asset_version, "file") if shot.selected_output_asset_version else None
+	file_url = (
+		frappe.db.get_value("Asset Version", shot.selected_output_asset_version, "file")
+		if shot.selected_output_asset_version
+		else None
+	)
 	if not file_url:
 		return []
 	from joymedia.services.scene.contract import read_contract
+
 	if read_contract(shot.get("motion_plan_json"), shot.get("duration_seconds")):
 		return [temporal_check(shot, file_url)]
 	frames = sample_frames(frappe.get_doc("File", {"file_url": file_url}).get_full_path(), TAKE_SAMPLES)
@@ -286,20 +374,45 @@ def take_checks(shot):
 	for number, frame in enumerate(frames, 1):
 		if cast:
 			# At most: a close-up of an object rightly shows nobody; more is someone appearing or a duplicate.
-			checks.append((frame, COUNT, AtMost(cast), f"frame {number} of {len(frames)} shows more than the scene's {cast} character(s)"))
+			checks.append(
+				(
+					frame,
+					COUNT,
+					AtMost(cast),
+					f"frame {number} of {len(frames)} shows more than the scene's {cast} character(s)",
+				)
+			)
 	action = scene_action(shot)
 	if action and not shot_views(shot):
-		checks.append((contact_sheet(frames), shows(action, sequence=True), True, f'the clip does not show what the sheet describes: "{action}"'))
+		checks.append(
+			(
+				contact_sheet(frames),
+				shows(action, sequence=True),
+				True,
+				f'the clip does not show what the sheet describes: "{action}"',
+			)
+		)
 	if _illustrated_cast(shot):
-		checks.append((contact_sheet(frames), OUTSIDER, False, "a human hand, arm or person appears in the clip; only the cast may act"))
+		checks.append(
+			(
+				contact_sheet(frames),
+				OUTSIDER,
+				False,
+				"a human hand, arm or person appears in the clip; only the cast may act",
+			)
+		)
 	from joymedia.services.scene.contract import review_questions
 
 	for claim, question in review_questions(shot.get("motion_plan_json"), shot.get("duration_seconds")):
-		checks.append((
-			contact_sheet(frames), question + ' If occluded, ambiguous or not sampled, answer null. '
-			'Return only JSON: {"answer": null, "reason": "visible evidence or uncertainty"}',
-			True, "Physical staging review: " + claim,
-		))
+		checks.append(
+			(
+				contact_sheet(frames),
+				question + " If occluded, ambiguous or not sampled, answer null. "
+				'Return only JSON: {"answer": null, "reason": "visible evidence or uncertainty"}',
+				True,
+				"Physical staging review: " + claim,
+			)
+		)
 	return checks
 
 
@@ -325,18 +438,38 @@ def contact_sheet(frames):
 
 def sample_frames(video_path, count):
 	"""`count` frames spread evenly through a video, as PNG bytes (the first one at the start)."""
-	duration = float(subprocess.run(
-		["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video_path)],
-		check=True, capture_output=True, text=True, timeout=60,
-	).stdout.strip() or 0)
+	duration = float(
+		subprocess.run(
+			["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video_path)],
+			check=True,
+			capture_output=True,
+			text=True,
+			timeout=60,
+		).stdout.strip()
+		or 0
+	)
 	frames = []
 	with tempfile.TemporaryDirectory() as folder:
 		for index in range(count):
 			moment = max(0, duration - 1 / 24) * index / max(1, count - 1)
 			target = Path(folder) / f"{index}.png"
 			subprocess.run(
-				["ffmpeg", "-v", "error", "-y", "-ss", f"{moment:.3f}", "-i", str(video_path), "-frames:v", "1", str(target)],
-				check=True, capture_output=True, timeout=60,
+				[
+					"ffmpeg",
+					"-v",
+					"error",
+					"-y",
+					"-ss",
+					f"{moment:.3f}",
+					"-i",
+					str(video_path),
+					"-frames:v",
+					"1",
+					str(target),
+				],
+				check=True,
+				capture_output=True,
+				timeout=60,
 			)
 			frames.append(target.read_bytes())
 	return frames
@@ -352,14 +485,30 @@ def run_checks(checks):
 	for check in checks:
 		if isinstance(check, SequenceCheck):
 			report = run_temporal_check(check)
-			failures.extend("Physical staging review: " + row["claim"] + " (" + row["verdict"] + ": " + row["reason"] + ")" for row in report["results"] if row["verdict"] != "supported")
+			failures.extend(
+				"Physical staging review: "
+				+ row["claim"]
+				+ " ("
+				+ row["verdict"]
+				+ ": "
+				+ row["reason"]
+				+ ")"
+				for row in report["results"]
+				if row["verdict"] != "supported"
+			)
 			continue
 		picture, question, expected, meaning = check
 		answer = ask(picture, question)
 		counted = isinstance(expected, int) and not isinstance(expected, bool)
 		value = _value(answer.get("count") if counted else answer.get("answer"))
-		matches = type(value) is int and value <= expected and value >= 0 if isinstance(expected, AtMost) else (
-			type(value) is int and value == expected if counted else type(value) is bool and value is expected
+		matches = (
+			type(value) is int and value <= expected and value >= 0
+			if isinstance(expected, AtMost)
+			else (
+				type(value) is int and value == expected
+				if counted
+				else type(value) is bool and value is expected
+			)
 		)
 		if not matches:
 			reason = str(answer.get("reason") or "").strip()
@@ -384,16 +533,27 @@ def locate(image_bytes, thing):
 			f"{configured.base_url}/chat/completions",
 			json={
 				"model": configured.model,
-				"messages": [{"role": "user", "content": [
-					{"type": "image_url", "image_url": {"url": _data_url(image_bytes)}},
-					{"type": "text", "text": f'Locate {thing} in this image. Return only JSON: {{"bbox_2d": [x1, y1, x2, y2]}}'},
-				]}],
-				"temperature": 0, "max_tokens": 80,
+				"messages": [
+					{
+						"role": "user",
+						"content": [
+							{"type": "image_url", "image_url": {"url": _data_url(image_bytes)}},
+							{
+								"type": "text",
+								"text": f'Locate {thing} in this image. Return only JSON: {{"bbox_2d": [x1, y1, x2, y2]}}',
+							},
+						],
+					}
+				],
+				"temperature": 0,
+				"max_tokens": 80,
 			},
 			timeout=(10, configured.timeout),
 		)
 		response.raise_for_status()
-		found = re.search(r'"bbox_2d"\s*:\s*\[([^\]]+)\]', response.json()["choices"][0]["message"]["content"])
+		found = re.search(
+			r'"bbox_2d"\s*:\s*\[([^\]]+)\]', response.json()["choices"][0]["message"]["content"]
+		)
 		left, top, right, bottom = (float(v) * scale for v in found.group(1).split(",")[:4])
 	except Exception:
 		return None
@@ -433,11 +593,21 @@ def ask(picture, question, configured=None):
 		f"{configured.base_url}/chat/completions",
 		json={
 			"model": configured.model,
-			"messages": [{"role": "user", "content": [
-				*({"type": "image_url", "image_url": {"url": _data_url(image)}} for image in pictures),
-				{"type": "text", "text": question},
-			]}],
-			"response_format": {"type": "json_object"}, "temperature": 0, "max_tokens": 512,
+			"messages": [
+				{
+					"role": "user",
+					"content": [
+						*(
+							{"type": "image_url", "image_url": {"url": _data_url(image)}}
+							for image in pictures
+						),
+						{"type": "text", "text": question},
+					],
+				}
+			],
+			"response_format": {"type": "json_object"},
+			"temperature": 0,
+			"max_tokens": 512,
 		},
 		timeout=(10, configured.timeout),
 	)
@@ -450,7 +620,11 @@ def _data_url(image):
 	"""A JPEG data URL from a Frappe file URL or PNG bytes, at most IMAGE_EDGE pixels on its long side."""
 	from PIL import Image
 
-	source = io.BytesIO(image) if isinstance(image, bytes) else frappe.get_doc("File", {"file_url": image}).get_full_path()
+	source = (
+		io.BytesIO(image)
+		if isinstance(image, bytes)
+		else frappe.get_doc("File", {"file_url": image}).get_full_path()
+	)
 	with Image.open(source) as picture:
 		picture = picture.convert("RGB")
 		picture.thumbnail((IMAGE_EDGE, IMAGE_EDGE))
@@ -464,10 +638,26 @@ def temporal_check(shot, file_url):
 	from joymedia.services.scene.evidence import claims_for, digest, sample_times
 
 	path = Path(frappe.get_doc("File", {"file_url": file_url}).get_full_path())
-	probe = json.loads(subprocess.run(
-		["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate,duration:format=duration", "-of", "json", str(path)],
-		check=True, capture_output=True, text=True, timeout=60,
-	).stdout)
+	probe = json.loads(
+		subprocess.run(
+			[
+				"ffprobe",
+				"-v",
+				"error",
+				"-select_streams",
+				"v:0",
+				"-show_entries",
+				"stream=avg_frame_rate,duration:format=duration",
+				"-of",
+				"json",
+				str(path),
+			],
+			check=True,
+			capture_output=True,
+			text=True,
+			timeout=60,
+		).stdout
+	)
 	stream = probe["streams"][0]
 	numerator, denominator = stream["avg_frame_rate"].split("/")
 	fps = float(numerator) / float(denominator)
@@ -477,23 +667,64 @@ def temporal_check(shot, file_url):
 	with tempfile.TemporaryDirectory() as folder:
 		for index, moment in enumerate(moments):
 			target = Path(folder) / f"{index}.png"
-			subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{moment:.6f}", "-i", str(path), "-frames:v", "1", str(target)], check=True, capture_output=True, timeout=60)
+			subprocess.run(
+				[
+					"ffmpeg",
+					"-v",
+					"error",
+					"-y",
+					"-ss",
+					f"{moment:.6f}",
+					"-i",
+					str(path),
+					"-frames:v",
+					"1",
+					str(target),
+				],
+				check=True,
+				capture_output=True,
+				timeout=60,
+			)
 			data = target.read_bytes()
 			pictures.append(data)
 			metadata.append({"index": index, "time": moment, "sha256": digest(data)})
 	claims = claims_for(shot.get("motion_plan_json"), shot.get("duration_seconds"), scene_action(shot))
 	cast = _cast_size(shot)
 	if cast:
-		claims.append({"id": "cast", "dimension": "consistency", "claim": f"No sampled frame shows more than {cast} foreground actors. Packaging artwork does not count. Actors may legitimately be outside the camera view."})
+		claims.append(
+			{
+				"id": "cast",
+				"dimension": "consistency",
+				"claim": f"No sampled frame shows more than {cast} foreground actors. Packaging artwork does not count. Actors may legitimately be outside the camera view.",
+			}
+		)
 	if _illustrated_cast(shot):
-		claims.append({"id": "outsider", "dimension": "consistency", "claim": "Only the reference illustrated cast acts in this scene; no unrelated real human hand or arm enters the frame."})
+		claims.append(
+			{
+				"id": "outsider",
+				"dimension": "consistency",
+				"claim": "Only the reference illustrated cast acts in this scene; no unrelated real human hand or arm enters the frame.",
+			}
+		)
 	actual_hash = digest(path.read_bytes())
 	expected_hash = frappe.db.get_value("Asset Version", shot.selected_output_asset_version, "content_hash")
 	if expected_hash and expected_hash != actual_hash:
 		raise ValueError("The stored video bytes do not match the immutable asset hash.")
-	return SequenceCheck(pictures, metadata, claims, {"shot": shot.name, "asset_version": shot.selected_output_asset_version,
-		"source_sha256": actual_hash, "direction_sha256": _review_direction_hash(shot), "required_claim_ids": [row["id"] for row in claims],
-		"duration": duration, "fps": fps, "opening_state": _opening_state(shot.selected_output_asset_version, pictures[0])})
+	return SequenceCheck(
+		pictures,
+		metadata,
+		claims,
+		{
+			"shot": shot.name,
+			"asset_version": shot.selected_output_asset_version,
+			"source_sha256": actual_hash,
+			"direction_sha256": _review_direction_hash(shot),
+			"required_claim_ids": [row["id"] for row in claims],
+			"duration": duration,
+			"fps": fps,
+			"opening_state": _opening_state(shot.selected_output_asset_version, pictures[0]),
+		},
+	)
 
 
 def run_temporal_check(check, configured=None):
@@ -520,20 +751,54 @@ def run_temporal_check(check, configured=None):
 		content = []
 		for index in indices:
 			meta = check.metadata[index]
-			content.extend([{"type": "text", "text": f"Frame {meta['index']} at {meta['time']:.3f}s"},
-				{"type": "image_url", "image_url": {"url": _data_url(check.pictures[index])}}])
-		window = SequenceCheck([], check.metadata, claims, {**check.context, "allowed_indices": list(indices)})
+			content.extend(
+				[
+					{"type": "text", "text": f"Frame {meta['index']} at {meta['time']:.3f}s"},
+					{"type": "image_url", "image_url": {"url": _data_url(check.pictures[index])}},
+				]
+			)
+		window = SequenceCheck(
+			[], check.metadata, claims, {**check.context, "allowed_indices": list(indices)}
+		)
 		content.append({"type": "text", "text": question(window)})
-		schema = {"type": "object", "additionalProperties": False, "required": ["observations"], "properties": {"observations": {
-			"type": "array", "minItems": len(claims), "maxItems": len(claims), "items": {"type": "object", "additionalProperties": False,
-				"required": ["id", "verdict", "frames", "reason"], "properties": {
-					"id": {"type": "string", "enum": [row["id"] for row in claims]},
-					"verdict": {"type": "string", "enum": ["supported", "violated", "uncertain"]},
-					"frames": {"type": "array", "maxItems": len(indices), "items": {"type": "integer", "enum": list(indices)}},
-					"reason": {"type": "string"}}}}}}
-		response = requests.post(f"{configured.base_url}/chat/completions", json={"model": configured.model,
-			"messages": [{"role": "user", "content": content}], **structured_response(configured, schema, "temporal_observations"),
-			"temperature": 0, "max_tokens": 512}, timeout=(10, min(configured.timeout, max(1, deadline - time.monotonic()))))
+		schema = {
+			"type": "object",
+			"additionalProperties": False,
+			"required": ["observations"],
+			"properties": {
+				"observations": {
+					"type": "array",
+					"minItems": len(claims),
+					"maxItems": len(claims),
+					"items": {
+						"type": "object",
+						"additionalProperties": False,
+						"required": ["id", "verdict", "frames", "reason"],
+						"properties": {
+							"id": {"type": "string", "enum": [row["id"] for row in claims]},
+							"verdict": {"type": "string", "enum": ["supported", "violated", "uncertain"]},
+							"frames": {
+								"type": "array",
+								"maxItems": len(indices),
+								"items": {"type": "integer", "enum": list(indices)},
+							},
+							"reason": {"type": "string"},
+						},
+					},
+				}
+			},
+		}
+		response = requests.post(
+			f"{configured.base_url}/chat/completions",
+			json={
+				"model": configured.model,
+				"messages": [{"role": "user", "content": content}],
+				**structured_response(configured, schema, "temporal_observations"),
+				"temperature": 0,
+				"max_tokens": 512,
+			},
+			timeout=(10, min(configured.timeout, max(1, deadline - time.monotonic()))),
+		)
 		response.raise_for_status()
 		raw = response.json()["choices"][0]["message"]["content"]
 		try:
@@ -541,15 +806,30 @@ def run_temporal_check(check, configured=None):
 		except (ValueError, TypeError):
 			answer = {}
 		reports.append(evaluate(window, answer))
-		raw_answers.append({"indices": list(indices), "claims": [row["id"] for row in claims], "response": raw[:3000] if isinstance(raw, str) else ""})
+		raw_answers.append(
+			{
+				"indices": list(indices),
+				"claims": [row["id"] for row in claims],
+				"response": raw[:3000] if isinstance(raw, str) else "",
+			}
+		)
 	report = merge_observations(check, reports)
-	report["judge"] = {"model": configured.model, "temperature": 0, "max_images_per_request": 4, "max_claims_per_request": 1}
+	report["judge"] = {
+		"model": configured.model,
+		"temperature": 0,
+		"max_images_per_request": 4,
+		"max_claims_per_request": 1,
+	}
 	report["windows"] = reports
 	report["raw_responses"] = raw_answers
 	payload = json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2).encode()
-	file = save_file(f"temporal-review-{digest(payload)[:20]}.json", payload,
+	file = save_file(
+		f"temporal-review-{digest(payload)[:20]}.json",
+		payload,
 		check.context.get("evidence_doctype", "Asset Version"),
-		check.context.get("evidence_name") or check.context["asset_version"], is_private=1)
+		check.context.get("evidence_name") or check.context["asset_version"],
+		is_private=1,
+	)
 	report["evidence_file"] = file.file_url
 	return report
 
@@ -583,22 +863,53 @@ def get_scene_check_evidence(project_name, shot_name, expected_take):
 		frappe.throw("The selected take changed. Refresh before reading its check.")
 	direction = _review_direction_hash(shot)
 	content_hash = frappe.db.get_value("Asset Version", expected_take, "content_hash")
-	for row in frappe.get_all("File", filters={"attached_to_doctype": "Asset Version", "attached_to_name": expected_take,
-		"file_name": ["like", "temporal-review-%.json"], "is_private": 1}, pluck="name", order_by="creation desc", limit=10):
+	for row in frappe.get_all(
+		"File",
+		filters={
+			"attached_to_doctype": "Asset Version",
+			"attached_to_name": expected_take,
+			"file_name": ["like", "temporal-review-%.json"],
+			"is_private": 1,
+		},
+		pluck="name",
+		order_by="creation desc",
+		limit=10,
+	):
 		try:
 			report = json.loads(Path(frappe.get_doc("File", row).get_full_path()).read_text())
 		except (OSError, ValueError):
 			continue
-		if report.get("scope") == "scene" and report.get("asset_version") == expected_take and report.get("shot") == shot_name and report.get("source_sha256") == content_hash and report.get("direction_sha256") == direction:
-			return {key: report.get(key) for key in ["version", "asset_version", "samples", "results", "status", "limitations"]}
+		if (
+			report.get("scope") == "scene"
+			and report.get("asset_version") == expected_take
+			and report.get("shot") == shot_name
+			and report.get("source_sha256") == content_hash
+			and report.get("direction_sha256") == direction
+		):
+			return {
+				key: report.get(key)
+				for key in ["version", "asset_version", "samples", "results", "status", "limitations"]
+			}
 	return None
 
 
 def _review_direction_hash(shot):
 	from joymedia.services.scene.evidence import digest
 
-	fields = [shot.get(key) for key in ["generation_prompt", "motion_plan_json", "image_prompt", "start_state", "duration_seconds"]]
-	references = sorted((row.get("reference_role") or "", row.get("asset_version") or "") for row in shot.get("generation_inputs") or [])
+	fields = [
+		shot.get(key)
+		for key in [
+			"generation_prompt",
+			"motion_plan_json",
+			"image_prompt",
+			"start_state",
+			"duration_seconds",
+		]
+	]
+	references = sorted(
+		(row.get("reference_role") or "", row.get("asset_version") or "")
+		for row in shot.get("generation_inputs") or []
+	)
 	return digest(json.dumps([fields, references], ensure_ascii=False).encode())
 
 
@@ -618,9 +929,13 @@ def _opening_state(version_name, first_picture):
 		if not version.source_generation_attempt:
 			version_name = version.derived_from
 			continue
-		task_name = frappe.db.get_value("Generation Attempt", version.source_generation_attempt, "generation_task")
+		task_name = frappe.db.get_value(
+			"Generation Attempt", version.source_generation_attempt, "generation_task"
+		)
 		task = frappe.get_doc("Generation Task", task_name)
-		snapshot = frappe.parse_json(frappe.db.get_value("Generation Run", task.generation_run, "project_snapshot_json") or "{}")
+		snapshot = frappe.parse_json(
+			frappe.db.get_value("Generation Run", task.generation_run, "project_snapshot_json") or "{}"
+		)
 		shot = next((row for row in snapshot.get("shots", []) if row.get("shot") == task.shot), {})
 		artifact = shot.get("keyframe_artifact")
 		if not artifact:
@@ -630,4 +945,8 @@ def _opening_state(version_name, first_picture):
 			return {"verdict": "uncertain", "frames": [], "reason": "Frozen opening evidence is unavailable."}
 		data = Path(frappe.get_doc("File", {"file_url": url}).get_full_path()).read_bytes()
 		return {"artifact": artifact, **compare_opening(data, first_picture)}
-	return {"verdict": "uncertain", "frames": [], "reason": "Opening evidence lineage exceeds the bounded lookup."}
+	return {
+		"verdict": "uncertain",
+		"frames": [],
+		"reason": "Opening evidence lineage exceeds the bounded lookup.",
+	}

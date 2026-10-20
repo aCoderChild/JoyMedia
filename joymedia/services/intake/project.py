@@ -14,13 +14,66 @@ from frappe import _
 
 # Words that mark what a reference image is, in English and Vietnamese. Order matters: first match wins.
 ROLE_KEYWORDS = (
-	("Environment", ("environment", "background", "location", "room", "interior", "setting", "scene", "phòng", "bối cảnh", "nền", "không gian")),
+	(
+		"Environment",
+		(
+			"environment",
+			"background",
+			"location",
+			"room",
+			"interior",
+			"setting",
+			"scene",
+			"phòng",
+			"bối cảnh",
+			"nền",
+			"không gian",
+		),
+	),
 	("Logo", ("logo", "wordmark", "brand mark", "thương hiệu")),
-	("Product", ("product", "pack", "package", "box", "bottle", "tube", "label", "sản phẩm", "bịch", "hộp", "gói", "chai")),
-	("Person", ("person", "presenter", "host", "model", "actor", "actress", "face", "portrait", "người dẫn", "người mẫu", "diễn viên")),
+	(
+		"Product",
+		(
+			"product",
+			"pack",
+			"package",
+			"box",
+			"bottle",
+			"tube",
+			"label",
+			"sản phẩm",
+			"bịch",
+			"hộp",
+			"gói",
+			"chai",
+		),
+	),
+	(
+		"Person",
+		(
+			"person",
+			"presenter",
+			"host",
+			"model",
+			"actor",
+			"actress",
+			"face",
+			"portrait",
+			"người dẫn",
+			"người mẫu",
+			"diễn viên",
+		),
+	),
 	("Character", ("character", "mascot", "nhân vật", "performer", "avatar")),
 )
-ROLE_CATEGORY = {"Product": "Product", "Character": "Character", "Person": "Character", "Logo": "Brand", "Environment": "Background", "General": "Reference"}
+ROLE_CATEGORY = {
+	"Product": "Product",
+	"Character": "Character",
+	"Person": "Character",
+	"Logo": "Brand",
+	"Environment": "Background",
+	"General": "Reference",
+}
 ROLES = ("Product", "Character", "Person", "Logo", "Environment", "General")
 
 
@@ -92,8 +145,10 @@ def preview_workbook(workbook_file):
 	# The pictures the References sheet asks for, so the client uploads exactly those files in step 2.
 	references = [
 		{
-			"name": row["name"], "type": REFERENCE_TYPE_LABELS.get(row["role"], {}).get(lang, row["role"]),
-			"file": row["file"] + (f" ({'page' if lang == 'en' else 'trang'} {row['pdf_page']})" if row.get("pdf_page") else ""),
+			"name": row["name"],
+			"type": REFERENCE_TYPE_LABELS.get(row["role"], {}).get(lang, row["role"]),
+			"file": row["file"]
+			+ (f" ({'page' if lang == 'en' else 'trang'} {row['pdf_page']})" if row.get("pdf_page") else ""),
 			"drawn": not row["file"],
 		}
 		for row in parsed.get("references") or []
@@ -103,23 +158,29 @@ def preview_workbook(workbook_file):
 	for demo in parsed["demos"]:
 		metadata = demo.get("metadata") or {}
 		missing = missing_required(metadata)
-		demos.append({
-			"name": demo["name"],
-			"product_name": metadata.get("product_name") or "",
-			"format": format_preset(metadata.get("format")),
-			"duration_seconds": parse_duration_seconds(metadata.get("duration") or "") if metadata.get("duration") else None,
-			"scene_count": len(demo.get("scenes") or []),
-			"scenes_drafted": not demo.get("has_scene_table"),
-			"timing_gaps": len(demo.get("timing_warnings") or []),
-			"fields": understood_fields(metadata, lang),
-			"missing_required": missing,
-			"can_create": not missing,
-		})
+		demos.append(
+			{
+				"name": demo["name"],
+				"product_name": metadata.get("product_name") or "",
+				"format": format_preset(metadata.get("format")),
+				"duration_seconds": parse_duration_seconds(metadata.get("duration") or "")
+				if metadata.get("duration")
+				else None,
+				"scene_count": len(demo.get("scenes") or []),
+				"scenes_drafted": not demo.get("has_scene_table"),
+				"timing_gaps": len(demo.get("timing_warnings") or []),
+				"fields": understood_fields(metadata, lang),
+				"missing_required": missing,
+				"can_create": not missing,
+			}
+		)
 	return {"demos": demos, "references": references, "brand": brand}
 
 
 @frappe.whitelist()
-def create_project_from_brief(project_name=None, video_idea=None, workbook_file=None, demo_name=None, references=None, format=None):
+def create_project_from_brief(
+	project_name=None, video_idea=None, workbook_file=None, demo_name=None, references=None, format=None
+):
 	"""Create a project from the client's inputs and report what is still missing.
 
 	references: list of {file_name, label, role}; role may be empty (inferred from the label).
@@ -141,10 +202,14 @@ def create_project_from_brief(project_name=None, video_idea=None, workbook_file=
 			project.reload()
 			if not project_name and project.product_name:
 				# Name the project after the product and the sheet it was built from.
-				project.db_set("project_name", f"{project.product_name} — {summary['demo']}"[:140], update_modified=False)
+				project.db_set(
+					"project_name", f"{project.product_name} — {summary['demo']}"[:140], update_modified=False
+				)
 		if format:
 			preset = format if format in ("Landscape", "Portrait", "Square") else format_preset(format)
-			project.save_video_settings(total_duration_seconds=project.total_duration_seconds or 15, delivery_preset=preset)
+			project.save_video_settings(
+				total_duration_seconds=project.total_duration_seconds or 15, delivery_preset=preset
+			)
 		added = []
 		for item in references:
 			label = str(item.get("label") or "").strip() or str(item.get("file_name") or "reference")
@@ -158,9 +223,15 @@ def create_project_from_brief(project_name=None, video_idea=None, workbook_file=
 
 				project.reload()
 				pages = pdf_pages(sheet_references(project), file_doc.file_name)
-				added.extend(add_pdf_images_to_project(project.name, file_doc.name, pages=",".join(map(str, pages)) or None))
+				added.extend(
+					add_pdf_images_to_project(
+						project.name, file_doc.name, pages=",".join(map(str, pages)) or None
+					)
+				)
 				continue
-			asset = create_media_asset(label, ROLE_CATEGORY[role], file_url=file_doc.file_url, file_name=file_doc.name)
+			asset = create_media_asset(
+				label, ROLE_CATEGORY[role], file_url=file_doc.file_url, file_name=file_doc.name
+			)
 			select_project_asset(project.name, asset["media_asset"], role, label)
 			added.append({"label": label, "role": role})
 		from joymedia.services.intake.references import apply_sheet_references
@@ -205,73 +276,140 @@ def get_project_readiness(project_name, lang=None):
 	steps = []
 
 	def add(key, label, ok, detail="", blocking=True):
-		steps.append({"key": key, "label": label, "status": "done" if ok else ("todo" if blocking else "note"), "detail": detail})
+		steps.append(
+			{
+				"key": key,
+				"label": label,
+				"status": "done" if ok else ("todo" if blocking else "note"),
+				"detail": detail,
+			}
+		)
 
-	add("story", _("Story or storyboard"), bool(shots), "" if shots else _("Import a storyboard workbook or generate a storyboard from the brief."))
 	add(
-		"format", _("Video format"), bool(project.delivery_width and project.delivery_height),
+		"story",
+		_("Story or storyboard"),
+		bool(shots),
+		"" if shots else _("Import a storyboard workbook or generate a storyboard from the brief."),
+	)
+	add(
+		"format",
+		_("Video format"),
+		bool(project.delivery_width and project.delivery_height),
 		f"{project.delivery_preset} {project.delivery_width}×{project.delivery_height}, {float(project.total_duration_seconds or 0):g}s"
-		if project.delivery_width else _("Choose Landscape, Portrait or Square."),
+		if project.delivery_width
+		else _("Choose Landscape, Portrait or Square."),
 	)
 	references = [row for row in project.selected_media or [] if row.reference_key]
-	add("references", _("Reference images"), bool(references), ", ".join(f"{r.label or r.reference_key} ({r.reference_role})" for r in references) or _("Add the images the film must show (a character, a product…)."), blocking=False)
+	add(
+		"references",
+		_("Reference images"),
+		bool(references),
+		", ".join(f"{r.label or r.reference_key} ({r.reference_role})" for r in references)
+		or _("Add the images the film must show (a character, a product…)."),
+		blocking=False,
+	)
 	cast = _sheet_characters(project)
 	pictured = [r for r in references if r.reference_role in ("Character", "Person")]
 	add(
-		"characters", _("Pictures of the characters"), not cast or bool(pictured),
-		_("The sheet names {0} but no character or person picture is added; they will be drawn from the text.").format(", ".join(cast))
-		if cast and not pictured else "",
+		"characters",
+		_("Pictures of the characters"),
+		not cast or bool(pictured),
+		_(
+			"The sheet names {0} but no character or person picture is added; they will be drawn from the text."
+		).format(", ".join(cast))
+		if cast and not pictured
+		else "",
 		blocking=False,
 	)
-	from joymedia.services.intake.references import missing_detail, missing_pictures
-
-	from joymedia.services.intake.references import brand
+	from joymedia.services.intake.references import brand, missing_detail, missing_pictures
 	from joymedia.services.planning.workbook import FIELDS
 
 	try:
-		sheet_format = ((frappe.parse_json(project.storyboard_source_json or "{}") or {}).get("selected_demo") or {}).get("metadata", {}).get("format")
+		sheet_format = (
+			((frappe.parse_json(project.storyboard_source_json or "{}") or {}).get("selected_demo") or {})
+			.get("metadata", {})
+			.get("format")
+		)
 	except (TypeError, ValueError, AttributeError):
 		sheet_format = None
 	if sheet_format and not format_preset(sheet_format):
 		# The sheet names no ratio ("not decided yet"): the project's default is in use until someone chooses.
-		add("sheet_format", _("Format from the sheet"), False,
-		    _("The sheet's format ({0}) is not a ratio; the video uses {1} until you choose 9:16, 16:9 or 1:1 in the settings.").format(
-		        sheet_format, project.delivery_preset or "-"), blocking=False)
+		add(
+			"sheet_format",
+			_("Format from the sheet"),
+			False,
+			_(
+				"The sheet's format ({0}) is not a ratio; the video uses {1} until you choose 9:16, 16:9 or 1:1 in the settings."
+			).format(sheet_format, project.delivery_preset or "-"),
+			blocking=False,
+		)
 
-	mandatories = [line.strip() for line in str(brand(project).get("mandatories") or "").splitlines() if line.strip()]
+	mandatories = [
+		line.strip() for line in str(brand(project).get("mandatories") or "").splitlines() if line.strip()
+	]
 	if mandatories:
 		add("mandatories", _("Must include (Brand sheet)"), False, "; ".join(mandatories), blocking=False)
 	unmatched = missing_pictures(project)
-	add("sheet_pictures", _("Pictures named in the sheet"), not unmatched, missing_detail(unmatched) if unmatched else "", blocking=False)
+	add(
+		"sheet_pictures",
+		_("Pictures named in the sheet"),
+		not unmatched,
+		missing_detail(unmatched) if unmatched else "",
+		blocking=False,
+	)
 	problems = shot_reference_problems(project) if shots and project.workflow else []
-	add("assignments", _("Each scene's references"), not problems, "; ".join(problems[:3]) if problems else "")
+	add(
+		"assignments", _("Each scene's references"), not problems, "; ".join(problems[:3]) if problems else ""
+	)
 	warnings = frappe.parse_json(project.storyboard_timing_warnings or "[]")
-	add("timing", _("Storyboard timing"), not warnings, _("{0} timing gap(s) were found; they are closed on export.").format(len(warnings)) if warnings else "", blocking=False)
+	add(
+		"timing",
+		_("Storyboard timing"),
+		not warnings,
+		_("{0} timing gap(s) were found; they are closed on export.").format(len(warnings))
+		if warnings
+		else "",
+		blocking=False,
+	)
 	from joymedia.services.keyframes.stage import get_project_keyframes
 
 	frames = [row for row in get_project_keyframes(project.name) if row["needs_keyframe"]] if shots else []
 	approved = sum(1 for row in frames if row["status"] == "Approved" and not row["stale"])
 	add(
-		"keyframes", _("Scene frames approved"), bool(frames) and approved == len(frames),
-		_("{0} of {1} scene frames approved. Draw the frames and approve them before the videos are made.").format(approved, len(frames))
-		if frames and approved != len(frames) else "",
+		"keyframes",
+		_("Scene frames approved"),
+		bool(frames) and approved == len(frames),
+		_(
+			"{0} of {1} scene frames approved. Draw the frames and approve them before the videos are made."
+		).format(approved, len(frames))
+		if frames and approved != len(frames)
+		else "",
 		blocking=False,
 	)
-	add("approval", _("Storyboard approved"), project.storyboard_approval_status == "Approved", "" if project.storyboard_approval_status == "Approved" else _("Review the scenes, then approve."))
+	add(
+		"approval",
+		_("Storyboard approved"),
+		project.storyboard_approval_status == "Approved",
+		"" if project.storyboard_approval_status == "Approved" else _("Review the scenes, then approve."),
+	)
 	# Finished renders are noticed by a cron that runs every minute, but only as often as Frappe's scheduler
 	# ticks (4 minutes by default). A slow tick leaves the GPU idle between tasks.
 	from frappe.utils.scheduler import get_scheduler_tick
 
 	tick = get_scheduler_tick()
 	add(
-		"scheduler", _("Background processing"), tick <= 60,
-		_("Set scheduler_tick_interval to 60 in common_site_config.json: finished renders are only noticed every {0} seconds.").format(tick)
-		if tick > 60 else "",
+		"scheduler",
+		_("Background processing"),
+		tick <= 60,
+		_(
+			"Set scheduler_tick_interval to 60 in common_site_config.json: finished renders are only noticed every {0} seconds."
+		).format(tick)
+		if tick > 60
+		else "",
 		blocking=False,
 	)
 	blocking = [step for step in steps if step["status"] == "todo"]
 	return {"ready": not blocking, "steps": steps, "next": blocking[0]["key"] if blocking else None}
-
 
 
 def extract_pdf_images(pdf_path, min_side=200, max_images=150):
@@ -309,10 +447,17 @@ def extract_pdf_images(pdf_path, min_side=200, max_images=150):
 			seen.add(digest)
 			output = io.BytesIO()
 			rgba.save(output, "PNG")
-			found.append({
-				"page": number, "name": picture.name, "width": rgba.width, "height": rgba.height,
-				"has_alpha": rgba.getchannel("A").getextrema()[0] < 250, "page_text": text, "png": output.getvalue(),
-			})
+			found.append(
+				{
+					"page": number,
+					"name": picture.name,
+					"width": rgba.width,
+					"height": rgba.height,
+					"has_alpha": rgba.getchannel("A").getextrema()[0] < 250,
+					"page_text": text,
+					"png": output.getvalue(),
+				}
+			)
 			if len(found) >= max_images:
 				return found
 	return found
@@ -330,7 +475,15 @@ def add_pdf_images_to_project(project_name, file_name, pages=None):
 
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
-	wanted = {int(n) for n in (frappe.parse_json(pages) if isinstance(pages, str) and pages.startswith("[") else str(pages or "").split(",")) if str(n).strip()}
+	wanted = {
+		int(n)
+		for n in (
+			frappe.parse_json(pages)
+			if isinstance(pages, str) and pages.startswith("[")
+			else str(pages or "").split(",")
+		)
+		if str(n).strip()
+	}
 	pdf = frappe.get_doc("File", file_name)
 	added = []
 	for item in extract_pdf_images(pdf.get_full_path()):
@@ -338,11 +491,20 @@ def add_pdf_images_to_project(project_name, file_name, pages=None):
 			continue
 		label = f"{pdf.file_name.rsplit('.', 1)[0][:40]} p{item['page']} {item['name'].rsplit('.', 1)[0]}"
 		role = infer_reference_role(item["page_text"]) if item["has_alpha"] else "General"
-		image_file = frappe.get_doc({
-			"doctype": "File", "file_name": f"{label}.png".replace("/", "-"), "content": item["png"], "is_private": 1,
-		}).insert(ignore_permissions=True)
-		asset = create_media_asset(label, ROLE_CATEGORY[role], file_url=image_file.file_url, file_name=image_file.name)
-		select_project_asset(project.name, asset["media_asset"], role if role != "General" else "General", label)
+		image_file = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"{label}.png".replace("/", "-"),
+				"content": item["png"],
+				"is_private": 1,
+			}
+		).insert(ignore_permissions=True)
+		asset = create_media_asset(
+			label, ROLE_CATEGORY[role], file_url=image_file.file_url, file_name=image_file.name
+		)
+		select_project_asset(
+			project.name, asset["media_asset"], role if role != "General" else "General", label
+		)
 		added.append({"label": label, "page": item["page"], "role": role, "has_alpha": item["has_alpha"]})
 	frappe.db.commit()
 	return added

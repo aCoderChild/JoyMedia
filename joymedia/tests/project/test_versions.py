@@ -224,8 +224,11 @@ class TestProjectVersions(FrappeTestCase):
 		self.assertEqual(frappe.db.count("Generation Run"), before)
 		self.assertFalse(copy.current_output_asset_version)
 		from joymedia.services.editing.post_production import _edited_by_hand
+
 		self.assertTrue(copy.finished_timeline_signature)
-		self.assertTrue(_edited_by_hand(copy.name))  # copied mutes, trims and soundtrack must survive regeneration
+		self.assertTrue(
+			_edited_by_hand(copy.name)
+		)  # copied mutes, trims and soundtrack must survive regeneration
 		self.assertFalse(frappe.db.get_value("Media Project", root.name, "current_edit"))
 		copied = frappe.get_all(
 			"Timeline Clip",
@@ -331,34 +334,84 @@ class TestProjectVersions(FrappeTestCase):
 
 	def test_edit_owned_controls_and_source_patches_are_copied_with_lineage(self):
 		from joymedia.services.consistency.repair import _project_asset_path
-		root = project('Control copy regression')
-		result = versions.create_edit(root.name, 'Source controls', make_working=False)
-		target = frappe.get_doc('Media Project', result['edit'])
+
+		root = project("Control copy regression")
+		result = versions.create_edit(root.name, "Source controls", make_working=False)
+		target = frappe.get_doc("Media Project", result["edit"])
+
 		def image(label, evidence=None):
 			import io
+
 			from PIL import Image
+
 			data = io.BytesIO()
-			Image.new('RGB',(10,10),'white').save(data,'PNG')
-			asset = frappe.get_doc(dict(doctype='Media Asset', asset_name=label, media_project=root.name, asset_scope='Project Output', asset_category='Other', media_type='Image')).insert(ignore_permissions=True)
-			file = frappe.get_doc(dict(doctype='File', file_name=label+'.png', content=data.getvalue(), is_private=1, attached_to_doctype='Media Asset', attached_to_name=asset.name)).insert(ignore_permissions=True)
-			return frappe.get_doc(dict(doctype='Asset Version',media_asset=asset.name,file=file.file_url,source='Uploaded',preservation_evidence_json=json.dumps(evidence) if evidence else None)).insert(ignore_permissions=True)
-		source_version = image('product')
-		patch_version = image('patch')
-		frame = image('frame',dict(product_lock=dict(canvas=[100,100],items=[dict(box=[0,0,10,10],file=patch_version.file,patch_asset_version=patch_version.name,source_asset_version=source_version.name)])))
+			Image.new("RGB", (10, 10), "white").save(data, "PNG")
+			asset = frappe.get_doc(
+				dict(
+					doctype="Media Asset",
+					asset_name=label,
+					media_project=root.name,
+					asset_scope="Project Output",
+					asset_category="Other",
+					media_type="Image",
+				)
+			).insert(ignore_permissions=True)
+			file = frappe.get_doc(
+				dict(
+					doctype="File",
+					file_name=label + ".png",
+					content=data.getvalue(),
+					is_private=1,
+					attached_to_doctype="Media Asset",
+					attached_to_name=asset.name,
+				)
+			).insert(ignore_permissions=True)
+			return frappe.get_doc(
+				dict(
+					doctype="Asset Version",
+					media_asset=asset.name,
+					file=file.file_url,
+					source="Uploaded",
+					preservation_evidence_json=json.dumps(evidence) if evidence else None,
+				)
+			).insert(ignore_permissions=True)
+
+		source_version = image("product")
+		patch_version = image("patch")
+		frame = image(
+			"frame",
+			dict(
+				product_lock=dict(
+					canvas=[100, 100],
+					items=[
+						dict(
+							box=[0, 0, 10, 10],
+							file=patch_version.file,
+							patch_asset_version=patch_version.name,
+							source_asset_version=source_version.name,
+						)
+					],
+				)
+			),
+		)
 		copied = {}
-		new = versions.copy_control_reference(frame.name,root,target,copied)
-		clone = frappe.get_doc('Asset Version',new)
-		self.assertEqual(frame.name,clone.derived_from)
-		self.assertEqual(frame.file,clone.file)
-		self.assertEqual(new,versions.copy_control_reference(frame.name,root,target,copied))
-		new_patch = json.loads(clone.preservation_evidence_json)['product_lock']['items'][0]['patch_asset_version']
-		new_source = json.loads(clone.preservation_evidence_json)['product_lock']['items'][0]['source_asset_version']
-		self.assertEqual(copied[source_version.name],new_source)
-		self.assertNotEqual(source_version.name,new_source)
-		self.assertNotEqual(patch_version.name,new_patch)
-		self.assertEqual(patch_version.name,frappe.get_doc('Asset Version',new_patch).derived_from)
-		_project_asset_path(target,new)
-		_project_asset_path(target,new_patch)
-		_project_asset_path(target,new_source)
+		new = versions.copy_control_reference(frame.name, root, target, copied)
+		clone = frappe.get_doc("Asset Version", new)
+		self.assertEqual(frame.name, clone.derived_from)
+		self.assertEqual(frame.file, clone.file)
+		self.assertEqual(new, versions.copy_control_reference(frame.name, root, target, copied))
+		new_patch = json.loads(clone.preservation_evidence_json)["product_lock"]["items"][0][
+			"patch_asset_version"
+		]
+		new_source = json.loads(clone.preservation_evidence_json)["product_lock"]["items"][0][
+			"source_asset_version"
+		]
+		self.assertEqual(copied[source_version.name], new_source)
+		self.assertNotEqual(source_version.name, new_source)
+		self.assertNotEqual(patch_version.name, new_patch)
+		self.assertEqual(patch_version.name, frappe.get_doc("Asset Version", new_patch).derived_from)
+		_project_asset_path(target, new)
+		_project_asset_path(target, new_patch)
+		_project_asset_path(target, new_source)
 		with self.assertRaises(frappe.PermissionError):
-			_project_asset_path(target,frame.name)
+			_project_asset_path(target, frame.name)

@@ -10,15 +10,24 @@ import frappe
 
 
 def setup(promote=0):
-	from joymedia.patches import register_flux_pulid_h3_pipeline, register_flux2_klein_pipeline, register_mmaudio_sfx_workflow
+	from joymedia.patches import (
+		register_flux2_klein_pipeline,
+		register_flux_pulid_h3_pipeline,
+		register_mmaudio_sfx_workflow,
+	)
 
 	report = {}
 	# Klein supports each mascot/product/place as a separate reference. PuLID's
 	# human-face branch is inappropriate for a mascot-led workbook.
 	report["pipeline"] = register_flux2_klein_pipeline.execute()
-	report["video_workflow"] = register_flux_pulid_h3_pipeline._current_version(register_flux_pulid_h3_pipeline.H3_WORKFLOW_KEY)
+	report["video_workflow"] = register_flux_pulid_h3_pipeline._current_version(
+		register_flux_pulid_h3_pipeline.H3_WORKFLOW_KEY
+	)
 	report["keyframe_workflow"] = frappe.db.get_value(
-		"Generation Workflow", {"workflow_key": register_flux2_klein_pipeline.WORKFLOW_KEY}, "name", order_by="version_number desc"
+		"Generation Workflow",
+		{"workflow_key": register_flux2_klein_pipeline.WORKFLOW_KEY},
+		"name",
+		order_by="version_number desc",
 	)
 	report["sound_workflow"] = register_mmaudio_sfx_workflow.execute()
 	from joymedia.patches import register_mmaudio_bgm_workflow
@@ -26,7 +35,8 @@ def setup(promote=0):
 	report["music_workflow"] = register_mmaudio_bgm_workflow.execute()
 	report["pipeline"] = (
 		register_flux_pulid_h3_pipeline._pipeline_with(report["keyframe_workflow"], report["video_workflow"])
-		if report["keyframe_workflow"] and report["video_workflow"] else None
+		if report["keyframe_workflow"] and report["video_workflow"]
+		else None
 	)
 	active = frappe.conf.get("joymedia_active_generation_pipeline") or frappe.defaults.get_global_default(
 		"joymedia_active_generation_pipeline"
@@ -38,13 +48,21 @@ def setup(promote=0):
 		active = report["pipeline"]
 	report["active_pipeline"] = active
 	report["todo"] = [
-		message for ok, message in (
-			(report["video_workflow"], "The video workflow could not be registered (is the H3 graph valid?)."),
+		message
+		for ok, message in (
+			(
+				report["video_workflow"],
+				"The video workflow could not be registered (is the H3 graph valid?).",
+			),
 			(report["pipeline"], "No pipeline chains the keyframe and video workflows."),
 			(active, "No pipeline is promoted: run again with promote=1 after a smoke test."),
-			(active == report["pipeline"], "The promoted pipeline is not the newest registered one; promote=1 switches it."),
+			(
+				active == report["pipeline"],
+				"The promoted pipeline is not the newest registered one; promote=1 switches it.",
+			),
 			(frappe.conf.get("comfyui_base_url"), "Set comfyui_base_url in site_config.json."),
-		) if not ok
+		)
+		if not ok
 	]
 	frappe.db.commit()
 	return report

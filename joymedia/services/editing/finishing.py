@@ -38,7 +38,11 @@ def studio_profile(profile):
 def render_profile(profile):
 	"""The profile to render the timeline at before finishing: half the studio size."""
 	studio = studio_profile(profile)
-	return {"width": studio["width"] // STUDIO_SCALE, "height": studio["height"] // STUDIO_SCALE, "fps": profile["fps"]}
+	return {
+		"width": studio["width"] // STUDIO_SCALE,
+		"height": studio["height"] // STUDIO_SCALE,
+		"fps": profile["fps"],
+	}
 
 
 def finished_frame_count(frame_count, source_fps):
@@ -57,7 +61,9 @@ def finish_video(source_path, output_path, frame_count, source_fps, temp_path):
 		chunk_source = temp_path / f"chunk-{index:03d}-in.mp4"
 		_cut_chunk(source_path, chunk_source, start, end, source_fps)
 		chunk_output = temp_path / f"chunk-{index:03d}-out.mp4"
-		chunk_output.write_bytes(_finish_chunk(chunk_source, finished_chunk_frames(end - start + 1, has_overlap)))
+		chunk_output.write_bytes(
+			_finish_chunk(chunk_source, finished_chunk_frames(end - start + 1, has_overlap))
+		)
 		chunk_paths.append(chunk_output)
 	_join_chunks(chunk_paths, output_path, finished_frame_count(frame_count, source_fps), temp_path)
 
@@ -72,12 +78,28 @@ def finished_chunk_frames(source_frames, has_overlap):
 def _cut_chunk(source_path, output_path, start, end, fps):
 	subprocess.run(
 		[
-			"ffmpeg", "-v", "error", "-y", "-i", str(source_path),
-			"-vf", f"select='between(n,{start},{end})',setpts=N/{fps:g}/TB",
-			"-an", "-c:v", "libx264", "-crf", "10", "-pix_fmt", "yuv420p", "-r", f"{fps:g}",
+			"ffmpeg",
+			"-v",
+			"error",
+			"-y",
+			"-i",
+			str(source_path),
+			"-vf",
+			f"select='between(n,{start},{end})',setpts=N/{fps:g}/TB",
+			"-an",
+			"-c:v",
+			"libx264",
+			"-crf",
+			"10",
+			"-pix_fmt",
+			"yuv420p",
+			"-r",
+			f"{fps:g}",
 			str(output_path),
 		],
-		check=True, capture_output=True, timeout=300,
+		check=True,
+		capture_output=True,
+		timeout=300,
 	)
 
 
@@ -89,20 +111,39 @@ def _finish_chunk(chunk_path, keep_frames):
 			"class_type": "VHS_LoadVideo",
 			"inputs": {
 				"video": upload_local_file(chunk_path)["server_path"],
-				"force_rate": 0, "custom_width": 0, "custom_height": 0, "frame_load_cap": 0,
-				"skip_first_frames": 0, "select_every_nth": 1, "format": "None",
+				"force_rate": 0,
+				"custom_width": 0,
+				"custom_height": 0,
+				"frame_load_cap": 0,
+				"skip_first_frames": 0,
+				"select_every_nth": 1,
+				"format": "None",
 			},
 		},
 		"upscale_model": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": UPSCALE_MODEL}},
-		"upscale": {"class_type": "ImageUpscaleWithModel", "inputs": {"upscale_model": ["upscale_model", 0], "image": ["load", 0]}},
-		"interp_model": {"class_type": "FrameInterpolationModelLoader", "inputs": {"model_name": INTERPOLATION_MODEL}},
+		"upscale": {
+			"class_type": "ImageUpscaleWithModel",
+			"inputs": {"upscale_model": ["upscale_model", 0], "image": ["load", 0]},
+		},
+		"interp_model": {
+			"class_type": "FrameInterpolationModelLoader",
+			"inputs": {"model_name": INTERPOLATION_MODEL},
+		},
 		"interpolate": {
 			"class_type": "FrameInterpolate",
-			"inputs": {"interp_model": ["interp_model", 0], "images": ["upscale", 0], "multiplier": RIFE_MULTIPLIER},
+			"inputs": {
+				"interp_model": ["interp_model", 0],
+				"images": ["upscale", 0],
+				"multiplier": RIFE_MULTIPLIER,
+			},
 		},
 		"select": {
 			"class_type": "VHS_SelectEveryNthImage",
-			"inputs": {"images": ["interpolate", 0], "select_every_nth": KEEP_EVERY_NTH, "skip_first_images": 0},
+			"inputs": {
+				"images": ["interpolate", 0],
+				"select_every_nth": KEEP_EVERY_NTH,
+				"skip_first_images": 0,
+			},
 		},
 		"trim": {
 			"class_type": "ImageFromBatch",
@@ -111,12 +152,18 @@ def _finish_chunk(chunk_path, keep_frames):
 		OUTPUT_NODE: {
 			"class_type": "VHS_VideoCombine",
 			"inputs": {
-				"images": ["trim", 0], "frame_rate": float(STUDIO_FPS), "loop_count": 0,
+				"images": ["trim", 0],
+				"frame_rate": float(STUDIO_FPS),
+				"loop_count": 0,
 				"filename_prefix": f"joymedia/finish/{frappe.generate_hash(length=10)}",
-				"format": "video/h264-mp4", "pix_fmt": "yuv420p", "crf": 12,
+				"format": "video/h264-mp4",
+				"pix_fmt": "yuv420p",
+				"crf": 12,
 				# Chunks are intermediate: ComfyUI's temp folder is cleared on restart,
 				# while its output folder would keep ~220 MB per Studio export.
-				"save_metadata": False, "pingpong": False, "save_output": False,
+				"save_metadata": False,
+				"pingpong": False,
+				"save_output": False,
 			},
 		},
 	}
@@ -132,16 +179,34 @@ def _join_chunks(chunk_paths, output_path, expected_frames, temp_path):
 	list_path.write_text("".join(f"file '{path}'\n" for path in chunk_paths), encoding="utf-8")
 	joined = Path(temp_path) / "joined.mp4"
 	_ffmpeg(["-f", "concat", "-safe", "0", "-i", str(list_path), "-c", "copy", str(joined)])
-	_ffmpeg([
-		"-i", str(joined),
-		"-vf", f"fps={STUDIO_FPS},tpad=stop_mode=clone:stop_duration=1,trim=end_frame={expected_frames}",
-		"-an", "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-crf", "14",
-		"-r", f"{STUDIO_FPS}", "-movflags", "+faststart", str(output_path),
-	])
+	_ffmpeg(
+		[
+			"-i",
+			str(joined),
+			"-vf",
+			f"fps={STUDIO_FPS},tpad=stop_mode=clone:stop_duration=1,trim=end_frame={expected_frames}",
+			"-an",
+			"-c:v",
+			"libx264",
+			"-profile:v",
+			"high",
+			"-pix_fmt",
+			"yuv420p",
+			"-crf",
+			"14",
+			"-r",
+			f"{STUDIO_FPS}",
+			"-movflags",
+			"+faststart",
+			str(output_path),
+		]
+	)
 
 
 def _ffmpeg(arguments):
-	result = subprocess.run(["ffmpeg", "-v", "error", "-y", *arguments], capture_output=True, text=True, timeout=1800)
+	result = subprocess.run(
+		["ffmpeg", "-v", "error", "-y", *arguments], capture_output=True, text=True, timeout=1800
+	)
 	if result.returncode:
 		frappe.throw(
 			_("Unable to join finished chunks (ffmpeg exit {0}): {1}").format(

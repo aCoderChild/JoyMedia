@@ -19,13 +19,15 @@ class TestGenericComfyUIAdapter(FrappeTestCase):
 	def test_aspect_ratio_option_uses_delivery_dimensions(self):
 		adapter = GenericComfyUIAdapter()
 		adapter.execution_spec = {
-			"parameters": [{
-				"semantic": "aspect_ratio",
-				"transform": "aspect_ratio_option",
-				"options": {"16:9 (Widescreen)": 16 / 9, "1:1 (Square)": 1},
-				"node_key": "resolution",
-				"input_name": "aspect_ratio",
-			}],
+			"parameters": [
+				{
+					"semantic": "aspect_ratio",
+					"transform": "aspect_ratio_option",
+					"options": {"16:9 (Widescreen)": 16 / 9, "1:1 (Square)": 1},
+					"node_key": "resolution",
+					"input_name": "aspect_ratio",
+				}
+			],
 		}
 		workflow = {"resolution": {"inputs": {"aspect_ratio": ""}}}
 
@@ -85,8 +87,10 @@ class TestGenericComfyUIAdapter(FrappeTestCase):
 
 	def test_flux2_optional_reference_roles_are_independent_and_prompt_only_is_valid(self):
 		workflow = frappe.db.get_value(
-			"Generation Workflow", {"workflow_key": "flux2_klein_multireference_keyframe"},
-			["workflow_json", "execution_spec"], as_dict=True,
+			"Generation Workflow",
+			{"workflow_key": "flux2_klein_multireference_keyframe"},
+			["workflow_json", "execution_spec"],
+			as_dict=True,
 		)
 		if not workflow:
 			self.skipTest("Flux 2 multi-reference workflow is not installed in this site")
@@ -98,33 +102,59 @@ class TestGenericComfyUIAdapter(FrappeTestCase):
 		no_reference_graph = json.loads(json.dumps(graph))
 		adapter.finalize_workflow(no_reference_graph, None, {})
 		for node_key in (
-			"person_image", "person_scale", "person_encode", "person_positive", "person_negative",
-			"product_image", "product_scale", "product_encode", "product_positive", "product_negative",
-			"environment_image", "environment_scale", "environment_encode",
-			"environment_positive", "environment_negative",
+			"person_image",
+			"person_scale",
+			"person_encode",
+			"person_positive",
+			"person_negative",
+			"product_image",
+			"product_scale",
+			"product_encode",
+			"product_positive",
+			"product_negative",
+			"environment_image",
+			"environment_scale",
+			"environment_encode",
+			"environment_positive",
+			"environment_negative",
 		):
 			self.assertNotIn(node_key, no_reference_graph)
 		self.assertEqual(["positive_text", 0], no_reference_graph["guider"]["inputs"]["positive"])
 		self.assertEqual(["negative_text", 0], no_reference_graph["guider"]["inputs"]["negative"])
 
 		partial_graph = json.loads(json.dumps(graph))
-		adapter.finalize_workflow(partial_graph, None, {
-			"person": "/input/person.png",
-			"environment": "/input/environment.png",
-		})
+		adapter.finalize_workflow(
+			partial_graph,
+			None,
+			{
+				"person": "/input/person.png",
+				"environment": "/input/environment.png",
+			},
+		)
 		self.assertNotIn("product_image", partial_graph)
-		self.assertEqual(["person_positive", 0], partial_graph["environment_positive"]["inputs"]["conditioning"])
-		self.assertEqual(["person_negative", 0], partial_graph["environment_negative"]["inputs"]["conditioning"])
+		self.assertEqual(
+			["person_positive", 0], partial_graph["environment_positive"]["inputs"]["conditioning"]
+		)
+		self.assertEqual(
+			["person_negative", 0], partial_graph["environment_negative"]["inputs"]["conditioning"]
+		)
 		self.assertEqual(["environment_positive", 0], partial_graph["guider"]["inputs"]["positive"])
 
 	def test_single_file_path_binding_scalarizes_staged_list_generically(self):
 		adapter = GenericComfyUIAdapter()
 		adapter.execution_spec = {}
 		workflow = {"person_image": {"inputs": {"image": "person_reference"}}}
-		version = SimpleNamespace(bindings=[SimpleNamespace(
-			required_input_role="person", value_type="File Paths", allow_multiple=0,
-			node_key="person_image", input_name="image",
-		)])
+		version = SimpleNamespace(
+			bindings=[
+				SimpleNamespace(
+					required_input_role="person",
+					value_type="File Paths",
+					allow_multiple=0,
+					node_key="person_image",
+					input_name="image",
+				)
+			]
+		)
 
 		adapter.finalize_workflow(workflow, version, {"person": ["comfy/input/person.png"]})
 
@@ -134,10 +164,17 @@ class TestGenericComfyUIAdapter(FrappeTestCase):
 		adapter = GenericComfyUIAdapter()
 		adapter.execution_spec = {}
 		workflow = {"references": {"inputs": {"images": []}}}
-		version = SimpleNamespace(bindings=[SimpleNamespace(
-			required_input_role="references", value_type="File Paths", allow_multiple=1,
-			node_key="references", input_name="images",
-		)])
+		version = SimpleNamespace(
+			bindings=[
+				SimpleNamespace(
+					required_input_role="references",
+					value_type="File Paths",
+					allow_multiple=1,
+					node_key="references",
+					input_name="images",
+				)
+			]
+		)
 
 		adapter.finalize_workflow(workflow, version, {"references": ["a.png", "b.png"]})
 
@@ -145,6 +182,7 @@ class TestGenericComfyUIAdapter(FrappeTestCase):
 
 	def test_flux2_reference_roles_normalize_common_annotations(self):
 		from joymedia.services.keyframes.reference_board import normalize_reference_role
+
 		self.assertEqual("person", normalize_reference_role("People"))
 		self.assertEqual("environment", normalize_reference_role("background"))
 
@@ -163,11 +201,17 @@ class TestGenericComfyUIAdapter(FrappeTestCase):
 			workflow,
 			inputs={
 				"generation_prompt": "A presenter markets both products clearly.",
-				"person": ["person.png"], "product": ["product-a.png"],
+				"person": ["person.png"],
+				"product": ["product-a.png"],
 				"product_2": ["product-b.png"],
 				"reference_board": ["overflow-board.png"],
 			},
-			seed=1, width=1344, height=768, fps=24, frame_count=1, output_prefix="test",
+			seed=1,
+			width=1344,
+			height=768,
+			fps=24,
+			frame_count=1,
+			output_prefix="test",
 		)
 		self.assertEqual("product-b.png", resolved["product_2_image"]["inputs"]["image"])
 		self.assertEqual("overflow-board.png", resolved["reference_board_image"]["inputs"]["image"])
@@ -186,13 +230,20 @@ class TestOptionalInputChains(FrappeTestCase):
 
 	def _adapter(self):
 		adapter = GenericComfyUIAdapter()
-		adapter.execution_spec = {"input_preprocessing": {"optional_input_chains": [{
-			"target": {"node_key": "target", "input_name": "x"}, "base": ["base", 0],
-			"links": [
-				{"role": "a", "nodes": ["a", "a_aux"], "node": "a", "input": "in"},
-				{"role": "b", "nodes": ["b"], "node": "b", "input": "in"},
-			],
-		}]}}
+		adapter.execution_spec = {
+			"input_preprocessing": {
+				"optional_input_chains": [
+					{
+						"target": {"node_key": "target", "input_name": "x"},
+						"base": ["base", 0],
+						"links": [
+							{"role": "a", "nodes": ["a", "a_aux"], "node": "a", "input": "in"},
+							{"role": "b", "nodes": ["b"], "node": "b", "input": "in"},
+						],
+					}
+				]
+			}
+		}
 		return adapter
 
 	def test_present_links_chain_in_order_and_absent_nodes_are_removed(self):
@@ -215,7 +266,9 @@ class TestOptionalInputChains(FrappeTestCase):
 	def test_skipping_a_middle_link_keeps_the_chain_connected(self):
 		workflow = self._graph()
 		adapter = self._adapter()
-		adapter._finalize_optional_input_chains(workflow, adapter.execution_spec["input_preprocessing"], {"b": ["g"]})
+		adapter._finalize_optional_input_chains(
+			workflow, adapter.execution_spec["input_preprocessing"], {"b": ["g"]}
+		)
 		self.assertEqual(["base", 0], workflow["b"]["inputs"]["in"])
 		self.assertNotIn("a", workflow)
 
@@ -224,7 +277,9 @@ class TestOptionalInputChains(FrappeTestCase):
 		workflow = self._graph()
 		del workflow["a_aux"]
 		with self.assertRaises(ValueError):
-			adapter._validate_input_chain(workflow, adapter.execution_spec["input_preprocessing"]["optional_input_chains"][0])
+			adapter._validate_input_chain(
+				workflow, adapter.execution_spec["input_preprocessing"]["optional_input_chains"][0]
+			)
 
 
 class TestShippedKeyframeWorkflow(FrappeTestCase):
@@ -251,14 +306,20 @@ class TestShippedKeyframeWorkflow(FrappeTestCase):
 
 	def test_a_person_alone_leaves_a_complete_graph_without_redux(self):
 		adapter, graph = self._adapter_and_graph()
-		adapter._finalize_optional_input_chains(graph, adapter.execution_spec["input_preprocessing"], {"person": ["x.png"]})
-		self.assertEqual(["26", 0], graph["47"]["inputs"]["conditioning"])  # straight from the guidance, no Redux
+		adapter._finalize_optional_input_chains(
+			graph, adapter.execution_spec["input_preprocessing"], {"person": ["x.png"]}
+		)
+		self.assertEqual(
+			["26", 0], graph["47"]["inputs"]["conditioning"]
+		)  # straight from the guidance, no Redux
 		for node in ("character_image", "character_redux", "product_image", "environment_image"):
 			self.assertNotIn(node, graph)
 
 	def test_a_mascot_alone_leaves_a_complete_graph_through_its_redux_branch(self):
 		adapter, graph = self._adapter_and_graph()
-		adapter._finalize_optional_input_chains(graph, adapter.execution_spec["input_preprocessing"], {"character": ["x.png"]})
+		adapter._finalize_optional_input_chains(
+			graph, adapter.execution_spec["input_preprocessing"], {"character": ["x.png"]}
+		)
 		self.assertEqual(["character_redux", 0], graph["47"]["inputs"]["conditioning"])
 		self.assertNotIn("product_image", graph)
 
@@ -278,7 +339,15 @@ class TestRoundToMultiple(FrappeTestCase):
 	def test_a_multiple_must_be_a_positive_integer(self):
 		adapter = GenericComfyUIAdapter()
 		adapter.execution_spec = {
-			"parameters": [{"semantic": "width", "node_key": "n", "input_name": "w", "transform": "round_to_multiple", "multiple": 0}],
+			"parameters": [
+				{
+					"semantic": "width",
+					"node_key": "n",
+					"input_name": "w",
+					"transform": "round_to_multiple",
+					"multiple": 0,
+				}
+			],
 			"outputs": {"primary": {"node_key": "n", "media_type": "Video"}},
 			"metadata": {"frame_count": 24, "produces_video": True},
 		}
@@ -297,27 +366,48 @@ class TestRoundToMultiple(FrappeTestCase):
 		sizes = {p["semantic"]: p for p in _h3_spec()["parameters"] if p["semantic"] in ("width", "height")}
 		self.assertEqual({"nearest_size_dimension"}, {p["transform"] for p in sizes.values()})
 		for mapping in sizes.values():
-			self.assertEqual({(1344, 768), (768, 1344), (1024, 1024)}, {(p["width"], p["height"]) for p in mapping["options"]})
+			self.assertEqual(
+				{(1344, 768), (768, 1344), (1024, 1024)},
+				{(p["width"], p["height"]) for p in mapping["options"]},
+			)
 
 	def test_input_mirror_copies_one_bound_file_without_extra_asset_slots(self):
 		adapter = GenericComfyUIAdapter()
 		adapter.execution_spec = {
 			"outputs": {"primary": {"media_type": "Image", "node_key": "save"}},
-			"input_mirrors": [{"source": {"node_key": "guide", "input_name": "video"},
-				"target": {"node_key": "original", "input_name": "video"}}],
+			"input_mirrors": [
+				{
+					"source": {"node_key": "guide", "input_name": "video"},
+					"target": {"node_key": "original", "input_name": "video"},
+				}
+			],
 		}
-		graph = {"guide": {"class_type": "LoadVideo", "inputs": {"video": "resolved.mp4"}},
+		graph = {
+			"guide": {"class_type": "LoadVideo", "inputs": {"video": "resolved.mp4"}},
 			"original": {"class_type": "LoadVideo", "inputs": {"video": "placeholder.mp4"}},
-			"save": {"class_type": "SaveImage", "inputs": {}}}
+			"save": {"class_type": "SaveImage", "inputs": {}},
+		}
 		adapter.validate_specification(graph)
-		result = adapter.finalize_workflow(graph, SimpleNamespace(bindings=[]), {"control_video": ["resolved.mp4"]})
+		result = adapter.finalize_workflow(
+			graph, SimpleNamespace(bindings=[]), {"control_video": ["resolved.mp4"]}
+		)
 		self.assertEqual(result["original"]["inputs"]["video"], "resolved.mp4")
 
 	def test_input_mirrors_reject_missing_inputs_duplicate_targets_and_cycles(self):
 		adapter = GenericComfyUIAdapter()
 		graph = {key: {"class_type": "Node", "inputs": {"video": "x"}} for key in ["a", "b", "save"]}
-		copy = {"source": {"node_key": "a", "input_name": "video"}, "target": {"node_key": "b", "input_name": "video"}}
-		for mirrors in [[copy, copy], [copy, {"source": copy["target"], "target": copy["source"]}], [{"source": {"node_key": "missing", "input_name": "video"}, "target": copy["target"]}]]:
-			adapter.execution_spec = {"outputs": {"primary": {"media_type": "Image", "node_key": "save"}}, "input_mirrors": mirrors}
+		copy = {
+			"source": {"node_key": "a", "input_name": "video"},
+			"target": {"node_key": "b", "input_name": "video"},
+		}
+		for mirrors in [
+			[copy, copy],
+			[copy, {"source": copy["target"], "target": copy["source"]}],
+			[{"source": {"node_key": "missing", "input_name": "video"}, "target": copy["target"]}],
+		]:
+			adapter.execution_spec = {
+				"outputs": {"primary": {"media_type": "Image", "node_key": "save"}},
+				"input_mirrors": mirrors,
+			}
 			with self.assertRaises(ValueError):
 				adapter.validate_specification(graph)

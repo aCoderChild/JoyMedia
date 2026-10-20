@@ -49,7 +49,11 @@ def prepare_generation_task(job_name: str, input_snapshot=None):
 	job.validate()
 	# Inputs that are generated artifacts (such as a scene's approved keyframe) are part of the task's lineage, not of
 	# the project's reference snapshot; they survive the freeze.
-	artifact_inputs = [(row.input_role, row.generation_artifact) for row in job.get("inputs") or [] if row.generation_artifact]
+	artifact_inputs = [
+		(row.input_role, row.generation_artifact)
+		for row in job.get("inputs") or []
+		if row.generation_artifact
+	]
 	job.set("inputs", [])
 	snapshot = input_snapshot
 	if snapshot is None:
@@ -75,10 +79,7 @@ def prepare_generation_task(job_name: str, input_snapshot=None):
 	return {
 		"name": job.name,
 		"status": job.status,
-		"inputs": [
-			{"input_role": row.input_role, "asset_version": row.asset_version}
-			for row in job.inputs
-		],
+		"inputs": [{"input_role": row.input_role, "asset_version": row.asset_version} for row in job.inputs],
 	}
 
 
@@ -198,6 +199,7 @@ def submit_attempt(attempt_name: str):
 				friendly_failure,
 				technical_message,
 			)
+
 			message = str(exc)
 			failure_class = classify_failure(message, "Generation")
 			# The submission can take minutes (uploads over a slow link) while other writers touch the attempt: record
@@ -276,21 +278,27 @@ def _stage_generation_inputs(job, attempt):
 			file_url = frappe.db.get_value("Generation Artifact", row.generation_artifact, "frappe_file")
 			if not file_url:
 				frappe.throw(_("Generation Artifact {0} has no file.").format(row.generation_artifact))
-			resolved_inputs.setdefault(role, []).append({"source": "Generation Artifact", "artifact": row.generation_artifact})
+			resolved_inputs.setdefault(role, []).append(
+				{"source": "Generation Artifact", "artifact": row.generation_artifact}
+			)
 		else:
 			asset_version = frappe.get_doc("Asset Version", row.asset_version)
 			file_url = asset_version.file
-			resolved_inputs.setdefault(role, []).append({"source": "Asset Version", "asset_version": row.asset_version})
+			resolved_inputs.setdefault(role, []).append(
+				{"source": "Asset Version", "asset_version": row.asset_version}
+			)
 		if not file_url:
 			frappe.throw(_("Generation input role {0} has no file.").format(role))
 		if role in compose_roles:
 			file_doc = frappe.get_doc("File", {"file_url": file_url})
-			composed_references.setdefault(role, []).append({
-				"path": file_doc.get_full_path(),
-				"role": _reference_role_for_task_asset(job, row.asset_version),
-				"label": _reference_label_for_task_asset(job, row.asset_version),
-				"asset_version": row.asset_version,
-			})
+			composed_references.setdefault(role, []).append(
+				{
+					"path": file_doc.get_full_path(),
+					"role": _reference_role_for_task_asset(job, row.asset_version),
+					"label": _reference_label_for_task_asset(job, row.asset_version),
+					"asset_version": row.asset_version,
+				}
+			)
 			continue
 		staged.setdefault(role, []).append(upload_frappe_file(file_url, **upload_options)["server_path"])
 
@@ -298,11 +306,13 @@ def _stage_generation_inputs(job, attempt):
 		if len(references) == 1:
 			reference = references[0]
 			staged[role] = [upload_local_file(reference["path"], **upload_options)["server_path"]]
-			resolved_inputs[role] = [{
-				"source": "Asset Version",
-				"asset_version": reference["asset_version"],
-				"reference_role": reference["role"],
-			}]
+			resolved_inputs[role] = [
+				{
+					"source": "Asset Version",
+					"asset_version": reference["asset_version"],
+					"reference_role": reference["role"],
+				}
+			]
 			continue
 		run = frappe.get_doc("Generation Run", job.generation_run)
 		try:
@@ -317,12 +327,15 @@ def _stage_generation_inputs(job, attempt):
 		uploaded = upload_local_file(board["path"], **upload_options)
 		staged[role] = [uploaded["server_path"]]
 		staged[f"{role}_instruction"] = board["instruction"]
-		resolved_inputs[role] = [{
-			"source": "Reference Board",
-			"asset_version": reference["asset_version"],
-			"reference_role": reference["role"],
-			"label": reference["label"],
-		} for reference in references]
+		resolved_inputs[role] = [
+			{
+				"source": "Reference Board",
+				"asset_version": reference["asset_version"],
+				"reference_role": reference["role"],
+				"label": reference["label"],
+			}
+			for reference in references
+		]
 		resolved_inputs[f"{role}_board"] = {"sha256": board["sha256"], "count": board["count"]}
 
 	if workflow.output_media_type == "Image" and (staged.get("character") or staged.get("product")):
@@ -350,24 +363,34 @@ def _stage_generation_inputs(job, attempt):
 				frappe.throw(
 					_("The upstream Attempt has no usable {0} Artifact.").format(job.dependency_artifact_role)
 				)
-			staged["first_frame"] = [upload_frappe_file(artifact.frappe_file, **upload_options)["server_path"]]
-			resolved_inputs["first_frame"] = [{
-				"source": "Generation Artifact", "artifact": artifact.name,
-				"artifact_role": job.dependency_artifact_role,
-			}]
+			staged["first_frame"] = [
+				upload_frappe_file(artifact.frappe_file, **upload_options)["server_path"]
+			]
+			resolved_inputs["first_frame"] = [
+				{
+					"source": "Generation Artifact",
+					"artifact": artifact.name,
+					"artifact_role": job.dependency_artifact_role,
+				}
+			]
 		else:
 			last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
 			if not last_frame_artifact or not last_frame_artifact.frappe_file:
 				frappe.throw(_("The upstream Attempt has no usable Last Frame Artifact."))
-			staged["first_frame"] = [upload_frappe_file(last_frame_artifact.frappe_file, **upload_options)["server_path"]]
-			resolved_inputs["first_frame"] = [{
-				"source": "Generation Artifact",
-				"artifact": last_frame_artifact.name,
-			}]
+			staged["first_frame"] = [
+				upload_frappe_file(last_frame_artifact.frappe_file, **upload_options)["server_path"]
+			]
+			resolved_inputs["first_frame"] = [
+				{
+					"source": "Generation Artifact",
+					"artifact": last_frame_artifact.name,
+				}
+			]
 
 	if not staged:
 		required_file_inputs = [
-			binding for binding in frappe.get_doc("Generation Workflow", job.workflow).bindings
+			binding
+			for binding in frappe.get_doc("Generation Workflow", job.workflow).bindings
 			if binding.required and binding.required_input_role
 		]
 		if required_file_inputs:
@@ -388,7 +411,7 @@ def _reference_composition_roles(workflow):
 		spec = frappe.parse_json(getattr(workflow, "execution_spec", None) or "{}")
 	except (TypeError, ValueError):
 		spec = {}
-	roles = ((spec.get("input_preprocessing") or {}).get("compose_image_roles") or [])
+	roles = (spec.get("input_preprocessing") or {}).get("compose_image_roles") or []
 	if roles:
 		return {frappe.scrub(role) for role in roles}
 	return set()
@@ -399,6 +422,7 @@ def _reference_role_for_task_asset(job, asset_version):
 	if not asset_version:
 		return "general"
 	from joymedia.services.keyframes.reference_board import normalize_reference_role
+
 	shot = frappe.get_doc("Shot", job.shot)
 	for row in shot.get("generation_inputs") or []:
 		if row.asset_version == asset_version:

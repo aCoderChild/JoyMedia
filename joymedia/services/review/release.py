@@ -26,6 +26,7 @@ def release_evidence(project_name, clips, *, lock=False):
 			problems.append(f"Clip {clip.get('name')} uses footage without current scene approval.")
 			continue
 		from joymedia.services.review.lineage import take_direction_changed
+
 		if take_direction_changed(shot):
 			problems.append(f"Scene {shot.name} still uses footage generated for an earlier direction.")
 		references = frappe.db.sql(
@@ -44,10 +45,16 @@ def release_evidence(project_name, clips, *, lock=False):
 			{"shot": shot.name, "output_asset_version": clip.get("source_asset_version"), "status": "Open"},
 		):
 			problems.append(f"Scene {shot.name} still has unresolved review comments for this take.")
-		if frappe.db.exists('Video Review Feedback', {
-			'asset_version': clip.get('source_asset_version'), 'status': ['in', ['Open', 'Investigating']],
-		}):
-			problems.append(f"Scene {shot.name} still has unresolved frame or timeline feedback for this take.")
+		if frappe.db.exists(
+			"Video Review Feedback",
+			{
+				"asset_version": clip.get("source_asset_version"),
+				"status": ["in", ["Open", "Investigating"]],
+			},
+		):
+			problems.append(
+				f"Scene {shot.name} still has unresolved frame or timeline feedback for this take."
+			)
 		evidence.append(
 			{
 				"shot": shot.name,
@@ -60,6 +67,7 @@ def release_evidence(project_name, clips, *, lock=False):
 	if not evidence:
 		problems.append("Release requires reviewed scene footage on the timeline.")
 	from joymedia.services.review.release_feedback import unresolved_cut_feedback
+
 	if unresolved_cut_feedback(project_name, clips, lock=lock):
 		problems.append("Full-video feedback still needs review before release.")
 	if problems:

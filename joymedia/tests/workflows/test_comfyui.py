@@ -123,8 +123,14 @@ class TestComfyUIClient(FrappeTestCase):
 	@patch("joymedia.services.workflows.comfyui.get_history")
 	@patch("joymedia.services.workflows.comfyui.submit_workflow", return_value={"prompt_id": "p1"})
 	def test_run_workflow_survives_brief_connection_drops(self, submit, get_history, download, sleep):
-		done = {"p1": {"status": {"completed": True}, "outputs": {"save": {"videos": [{"filename": "out.mp4"}]}}}}
-		get_history.side_effect = [requests.ConnectionError("tunnel down"), requests.ReadTimeout("slow"), done]
+		done = {
+			"p1": {"status": {"completed": True}, "outputs": {"save": {"videos": [{"filename": "out.mp4"}]}}}
+		}
+		get_history.side_effect = [
+			requests.ConnectionError("tunnel down"),
+			requests.ReadTimeout("slow"),
+			done,
+		]
 
 		self.assertEqual(b"video", run_workflow_to_bytes({}, "save", base_url="http://comfyui"))
 		self.assertEqual(3, get_history.call_count)
@@ -140,9 +146,12 @@ class TestComfyUIClient(FrappeTestCase):
 
 
 class TestComfyUIControlRoutes(FrappeTestCase):
-	@patch("joymedia.services.workflows.comfyui.frappe.conf", {
-		"comfyui_control_routes": {"http://data:8188": "http://control:18189"},
-	})
+	@patch(
+		"joymedia.services.workflows.comfyui.frappe.conf",
+		{
+			"comfyui_control_routes": {"http://data:8188": "http://control:18189"},
+		},
+	)
 	@patch("joymedia.services.workflows.comfyui.requests.post")
 	@patch("joymedia.services.workflows.comfyui.requests.get")
 	def test_explicit_control_route_moves_json_calls_to_the_same_servers_control_transport(self, get, post):
@@ -153,35 +162,62 @@ class TestComfyUIControlRoutes(FrappeTestCase):
 		get_history("prompt-a", base_url="http://data:8188")
 		get_queue_state("prompt-a", base_url="http://data:8188")
 		submit_workflow({}, base_url="http://data:8188")
-		self.assertEqual(["http://control:18189/history/prompt-a", "http://control:18189/queue"], [c.args[0] for c in get.call_args_list])
+		self.assertEqual(
+			["http://control:18189/history/prompt-a", "http://control:18189/queue"],
+			[c.args[0] for c in get.call_args_list],
+		)
 		self.assertEqual("http://control:18189/prompt", post.call_args.args[0])
 
-	@patch("joymedia.services.workflows.comfyui.frappe.conf", {
-		"comfyui_base_url": "http://default:8188",
-		"comfyui_control_routes": {"http://default:8188": "http://control:18189"},
-	})
+	@patch(
+		"joymedia.services.workflows.comfyui.frappe.conf",
+		{
+			"comfyui_base_url": "http://default:8188",
+			"comfyui_control_routes": {"http://default:8188": "http://control:18189"},
+		},
+	)
 	def test_an_alternate_historical_server_is_never_redirected_to_the_default_server(self):
 		from joymedia.services.workflows.comfyui import get_control_url
 
 		self.assertEqual("http://other:8188", get_control_url("http://other:8188/"))
 		self.assertEqual("http://control:18189", get_control_url())
 
-	@patch("joymedia.services.workflows.comfyui.frappe.conf", {"comfyui_control_routes": {"http://data": "file:///tmp"}})
+	@patch(
+		"joymedia.services.workflows.comfyui.frappe.conf",
+		{"comfyui_control_routes": {"http://data": "file:///tmp"}},
+	)
 	def test_invalid_control_routes_fail_before_any_network_request(self):
 		from joymedia.services.workflows.comfyui import get_control_url
 
 		with self.assertRaises(ValueError):
 			get_control_url("http://data")
 
+
 class TestWorkflowEndpointRouting(TestCase):
 	def test_operator_route_is_per_workflow_and_does_not_redirect_other_versions(self):
 		from joymedia.services.workflows.comfyui import endpoint_for_workflow
-		with patch.dict(frappe.conf, {"joymedia_workflow_endpoints": {"WF-ISOLATED": "http://isolated:8190/"}, "comfyui_base_url": "http://primary:8188"}):
+
+		with patch.dict(
+			frappe.conf,
+			{
+				"joymedia_workflow_endpoints": {"WF-ISOLATED": "http://isolated:8190/"},
+				"comfyui_base_url": "http://primary:8188",
+			},
+		):
 			self.assertEqual(endpoint_for_workflow("WF-ISOLATED"), "http://isolated:8190")
 			self.assertEqual(endpoint_for_workflow("WF-OTHER"), "http://primary:8188")
 
 	def test_bad_endpoint_configuration_fails_before_submission(self):
 		from joymedia.services.workflows.comfyui import endpoint_for_workflow
-		for value in [False, "/local/path", "file:///tmp/model", "http://user:password@server:8188", "http://server:8188?token=secret"]:
-			with patch.dict(frappe.conf, {"joymedia_workflow_endpoints": {"WF": value}}), self.assertRaises(ValueError):
+
+		for value in [
+			False,
+			"/local/path",
+			"file:///tmp/model",
+			"http://user:password@server:8188",
+			"http://server:8188?token=secret",
+		]:
+			with (
+				patch.dict(frappe.conf, {"joymedia_workflow_endpoints": {"WF": value}}),
+				self.assertRaises(ValueError),
+			):
 				endpoint_for_workflow("WF")

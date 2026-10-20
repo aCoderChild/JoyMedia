@@ -5,6 +5,7 @@ Run in a GPU environment with a separately cloned, pinned official BiRefNet repo
 No dependency on this model is introduced into the application. Review the matte
 before selecting its PNG as source artwork; pale product edges can be missed.
 """
+
 import argparse
 import hashlib
 import json
@@ -28,10 +29,17 @@ def main():
 	from PIL import Image, ImageOps
 	from torchvision import transforms
 
-	model = BiRefNet.from_pretrained(args.model, revision=args.revision, cache_dir=str(args.cache), bb_pretrained=False)
+	model = BiRefNet.from_pretrained(
+		args.model, revision=args.revision, cache_dir=str(args.cache), bb_pretrained=False
+	)
 	model = model.eval().to("cuda").half()
-	transform = transforms.Compose([transforms.Resize((1024, 1024)), transforms.ToTensor(),
-		transforms.Normalize([.485, .456, .406], [.229, .224, .225])])
+	transform = transforms.Compose(
+		[
+			transforms.Resize((1024, 1024)),
+			transforms.ToTensor(),
+			transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+		]
+	)
 	with Image.open(args.source) as source:
 		image = ImageOps.exif_transpose(source).convert("RGB")
 	with torch.inference_mode():
@@ -43,9 +51,19 @@ def main():
 		raise ValueError("Matting changed source RGB pixels")
 	result.save(args.output, "PNG")
 	pin = subprocess.check_output(["git", "-C", str(args.repository), "rev-parse", "HEAD"], text=True).strip()
-	args.output.with_suffix(".provenance.json").write_text(json.dumps({"source_sha256": hashlib.sha256(args.source.read_bytes()).hexdigest(),
-		"rgba_sha256": hashlib.sha256(args.output.read_bytes()).hexdigest(), "repository_commit": pin,
-		"model": args.model, "revision": args.revision, "source_rgb_unchanged": True}, indent=2))
+	args.output.with_suffix(".provenance.json").write_text(
+		json.dumps(
+			{
+				"source_sha256": hashlib.sha256(args.source.read_bytes()).hexdigest(),
+				"rgba_sha256": hashlib.sha256(args.output.read_bytes()).hexdigest(),
+				"repository_commit": pin,
+				"model": args.model,
+				"revision": args.revision,
+				"source_rgb_unchanged": True,
+			},
+			indent=2,
+		)
+	)
 
 
 if __name__ == "__main__":

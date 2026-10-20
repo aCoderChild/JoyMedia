@@ -7,9 +7,16 @@ from joymedia.services.keyframes import locations
 
 
 def _shot(name, setting, environment=None, camera="Wide shot."):
-	shot = frappe._dict(name=name, setting_prompt=setting, generation_inputs=[], generation_prompt=f"The kid plays. Camera: {camera}")
+	shot = frappe._dict(
+		name=name,
+		setting_prompt=setting,
+		generation_inputs=[],
+		generation_prompt=f"The kid plays. Camera: {camera}",
+	)
 	if environment:
-		shot.generation_inputs.append(frappe._dict(name=f"{name}-env", reference_role="Environment", asset_version=environment))
+		shot.generation_inputs.append(
+			frappe._dict(name=f"{name}-env", reference_role="Environment", asset_version=environment)
+		)
 	added = []
 
 	def append(field, row):
@@ -24,10 +31,19 @@ def _shot(name, setting, environment=None, camera="Wide shot."):
 
 class TestLocationPlates(FrappeTestCase):
 	def test_environment_render_uses_the_same_pinned_pipeline_as_its_project(self):
-		with patch("joymedia.services.workflows.pipeline.get_pinned_generation_pipeline", return_value=frappe._dict(name="PINNED")) as pinned, patch(
-			"joymedia.services.workflows.pipeline.get_active_generation_pipeline"
-		) as active, patch("joymedia.services.workflows.pipeline.get_pipeline_steps", return_value=[frappe._dict(workflow="IMAGE")]) as steps, patch.object(
-			frappe, "get_doc", return_value=frappe._dict(output_media_type="Image", name="IMAGE")
+		with (
+			patch(
+				"joymedia.services.workflows.pipeline.get_pinned_generation_pipeline",
+				return_value=frappe._dict(name="PINNED"),
+			) as pinned,
+			patch("joymedia.services.workflows.pipeline.get_active_generation_pipeline") as active,
+			patch(
+				"joymedia.services.workflows.pipeline.get_pipeline_steps",
+				return_value=[frappe._dict(workflow="IMAGE")],
+			) as steps,
+			patch.object(
+				frappe, "get_doc", return_value=frappe._dict(output_media_type="Image", name="IMAGE")
+			),
 		):
 			self.assertEqual("IMAGE", locations._keyframe_workflow(frappe._dict(name="PROJECT")).name)
 		pinned.assert_called_once_with("PROJECT")
@@ -42,16 +58,25 @@ class TestLocationPlates(FrappeTestCase):
 		self.assertEqual(key(""), key(None))
 
 	def test_each_missing_place_is_drawn_once_and_a_scene_with_its_own_environment_is_left_alone(self):
-		project = frappe._dict(selected_media=[
-			frappe._dict(reference_key=locations.location_key("A bathroom.")), frappe._dict(reference_key="garden", asset_version="ASTV-CLIENT"),
-		])
+		project = frappe._dict(
+			selected_media=[
+				frappe._dict(reference_key=locations.location_key("A bathroom.")),
+				frappe._dict(reference_key="garden", asset_version="ASTV-CLIENT"),
+			]
+		)
 		shots = [
-			_shot("S1", "A dining room."), _shot("S2", "A dining room."), _shot("S3", "A bathroom."),
-			_shot("S4", "A garden.", environment="ASTV-CLIENT"), _shot("S5", "A kitchen.", camera="Close-up of the cup."),
+			_shot("S1", "A dining room."),
+			_shot("S2", "A dining room."),
+			_shot("S3", "A bathroom."),
+			_shot("S4", "A garden.", environment="ASTV-CLIENT"),
+			_shot("S5", "A kitchen.", camera="Close-up of the cup."),
 		]
 		# A place seen only in close-ups is drawn too: its close view is cut from it.
 		self.assertEqual(
-			{locations.location_key("A dining room."): "A dining room.", locations.location_key("A kitchen."): "A kitchen."},
+			{
+				locations.location_key("A dining room."): "A dining room.",
+				locations.location_key("A kitchen."): "A kitchen.",
+			},
 			locations.missing_places(project, shots),
 		)
 
@@ -60,7 +85,13 @@ class TestLocationPlates(FrappeTestCase):
 			return locations.shows_the_room(_shot("S", "A room.", camera=camera))
 
 		# An extreme close-up is drawn as a medium shot (prompts.opening_framing), so it shows the room.
-		for camera in ("Wide shot.", "Medium shot, front view.", "Wide shot to close-up.", "Eye-level.", "Extreme close-up of the pack."):
+		for camera in (
+			"Wide shot.",
+			"Medium shot, front view.",
+			"Wide shot to close-up.",
+			"Eye-level.",
+			"Extreme close-up of the pack.",
+		):
 			self.assertTrue(shows(camera), camera)
 		for camera in ("Close-up of family dining table.", "Top-down (overhead)", "Close-up, side angle"):
 			self.assertFalse(shows(camera), camera)
@@ -68,26 +99,42 @@ class TestLocationPlates(FrappeTestCase):
 
 	def test_structured_medium_and_details_receive_closer_location_context(self):
 		for framing in ("wide", "medium", "close_up", "extreme_close_up"):
-			shot = frappe._dict(motion_plan_json={"shot_structure": {
-				"stage": "present", "framing": framing, "angle": "eye_level",
-				"subject_motion": "stationary", "keep_visible": [],
-			}, "scene_contract": {"entities": []}})
+			shot = frappe._dict(
+				motion_plan_json={
+					"shot_structure": {
+						"stage": "present",
+						"framing": framing,
+						"angle": "eye_level",
+						"subject_motion": "stationary",
+						"keep_visible": [],
+					},
+					"scene_contract": {"entities": []},
+				}
+			)
 			self.assertEqual(framing == "wide", locations.shows_the_room(shot))
 
 	def test_each_scene_gets_the_picture_of_its_place(self):
 		room = locations.location_key("A dining room.")
-		project = frappe._dict(name="PRJ-X", selected_media=[
-			frappe._dict(reference_key=room, asset_version="ASTV-ROOM"),
-			frappe._dict(reference_key=room + locations.CLOSE, asset_version="ASTV-ROOM-CLOSE"),
-			frappe._dict(reference_key="pack", asset_version="ASTV-PACK"),
-			frappe._dict(reference_key="garden", asset_version="ASTV-CLIENT"),
-		])
+		project = frappe._dict(
+			name="PRJ-X",
+			selected_media=[
+				frappe._dict(reference_key=room, asset_version="ASTV-ROOM"),
+				frappe._dict(reference_key=room + locations.CLOSE, asset_version="ASTV-ROOM-CLOSE"),
+				frappe._dict(reference_key="pack", asset_version="ASTV-PACK"),
+				frappe._dict(reference_key="garden", asset_version="ASTV-CLIENT"),
+			],
+		)
 		shots = [
-			_shot("S1", "A dining room."), _shot("S2", "A dining room."), _shot("S3", "A garden.", environment="ASTV-CLIENT"),
+			_shot("S1", "A dining room."),
+			_shot("S2", "A dining room."),
+			_shot("S3", "A garden.", environment="ASTV-CLIENT"),
 			# A close-up that was given the whole room before gets the close view of it instead.
 			_shot("S4", "A dining room.", environment="ASTV-ROOM", camera="Close-up of the cup."),
 		]
-		with patch("joymedia.services.review.comments._reseal_approved_plan") as reseal, patch("frappe.db.delete") as delete:
+		with (
+			patch("joymedia.services.review.comments._reseal_approved_plan") as reseal,
+			patch("frappe.db.delete") as delete,
+		):
 			self.assertEqual(3, locations.assign_places(project, shots))
 		self.assertEqual(["ASTV-ROOM"], [row.asset_version for row in shots[0].added])
 		self.assertEqual("Environment", shots[1].added[0].reference_role)
@@ -106,13 +153,17 @@ class TestLocationPlates(FrappeTestCase):
 
 		project = frappe._dict(name="PRJ-X", storyboard_approval_status="Approved", selected_media=[])
 		shot = _shot("S1", "A dining room.")
-		with patch.object(stage, "_project_and_shots", return_value=(project, [shot])), \
-			patch("joymedia.services.generation.takes._ensure_scene_free"), \
-			patch("joymedia.services.generation.takes._start_takes_run") as start, \
-			patch("frappe.enqueue") as enqueue:
+		with (
+			patch.object(stage, "_project_and_shots", return_value=(project, [shot])),
+			patch("joymedia.services.generation.takes._ensure_scene_free"),
+			patch("joymedia.services.generation.takes._start_takes_run") as start,
+			patch("frappe.enqueue") as enqueue,
+		):
 			self.assertEqual({"status": "Drawing places"}, stage.generate_keyframes("PRJ-X"))
 		start.assert_not_called()
-		self.assertEqual("joymedia.services.keyframes.locations.draw_places_then_frames", enqueue.call_args.args[0])
+		self.assertEqual(
+			"joymedia.services.keyframes.locations.draw_places_then_frames", enqueue.call_args.args[0]
+		)
 		self.assertEqual(["S1"], enqueue.call_args.kwargs["shot_names"])
 
 	def test_the_close_view_is_the_middle_of_the_room_at_the_frames_size(self):
@@ -127,7 +178,9 @@ class TestLocationPlates(FrappeTestCase):
 		view = Image.open(io.BytesIO(locations.close_view(buffer.getvalue())))
 		self.assertEqual((720, 1280), view.size)
 		red = sum(1 for pixel in view.getdata() if pixel[0] > 150 and pixel[1] < 60)
-		self.assertGreater(red / (720 * 1280), 3 * (120 * 200) / (720 * 1280))  # the table fills more of the frame
+		self.assertGreater(
+			red / (720 * 1280), 3 * (120 * 200) / (720 * 1280)
+		)  # the table fills more of the frame
 
 
 class TestSplitScreenViews(FrappeTestCase):
@@ -137,39 +190,71 @@ class TestSplitScreenViews(FrappeTestCase):
 		self.assertTrue(locations.same_place("Family dining table", self.ROOM))
 		self.assertFalse(locations.same_place("On a picnic mat outdoors", self.ROOM))
 		project = frappe._dict(selected_media=[])
-		self.assertEqual(locations.location_key(self.ROOM) + locations.CLOSE, locations.view_key(project, "Family dining table", self.ROOM))
-		self.assertEqual(locations.location_key("Inside a handbag"), locations.view_key(project, "Inside a handbag", self.ROOM))
+		self.assertEqual(
+			locations.location_key(self.ROOM) + locations.CLOSE,
+			locations.view_key(project, "Family dining table", self.ROOM),
+		)
+		self.assertEqual(
+			locations.location_key("Inside a handbag"),
+			locations.view_key(project, "Inside a handbag", self.ROOM),
+		)
 
 	def test_only_views_without_a_picture_are_drawn(self):
 		import json
 
-		views = [{"text": "Family dining table"}, {"text": "On a picnic mat outdoors"}, {"text": "Inside a handbag"}]
+		views = [
+			{"text": "Family dining table"},
+			{"text": "On a picnic mat outdoors"},
+			{"text": "Inside a handbag"},
+		]
 		shot = frappe._dict(setting_prompt=self.ROOM, views_json=json.dumps(views), generation_inputs=[])
-		project = frappe._dict(selected_media=[frappe._dict(reference_key=locations.location_key("Inside a handbag"))])
-		self.assertEqual(
-			{locations.location_key("On a picnic mat outdoors"): "On a picnic mat outdoors"}, locations.missing_views(project, [shot])
+		project = frappe._dict(
+			selected_media=[frappe._dict(reference_key=locations.location_key("Inside a handbag"))]
 		)
-		self.assertEqual({}, locations.missing_views(project, [frappe._dict(setting_prompt=self.ROOM, views_json="")]))
+		self.assertEqual(
+			{locations.location_key("On a picnic mat outdoors"): "On a picnic mat outdoors"},
+			locations.missing_views(project, [shot]),
+		)
+		self.assertEqual(
+			{}, locations.missing_views(project, [frappe._dict(setting_prompt=self.ROOM, views_json="")])
+		)
 
 
 class TestSamePlaceDifferentWords(FrappeTestCase):
 	def test_a_reworded_setting_of_a_place_already_drawn_uses_that_place(self):
 		room = "Warm, cozy family dining room with traditional wooden table."
-		project = frappe._dict(selected_media=[
-			frappe._dict(reference_key=locations.location_key(room), label=f"Location 1: {room}"),
-		])
-		self.assertEqual(locations.location_key(room), locations.place_key(project, "Family dining room with warm, inviting ambient lighting."))
-		self.assertEqual(locations.location_key("A sunny beach."), locations.place_key(project, "A sunny beach."))
+		project = frappe._dict(
+			selected_media=[
+				frappe._dict(reference_key=locations.location_key(room), label=f"Location 1: {room}"),
+			]
+		)
+		self.assertEqual(
+			locations.location_key(room),
+			locations.place_key(project, "Family dining room with warm, inviting ambient lighting."),
+		)
+		self.assertEqual(
+			locations.location_key("A sunny beach."), locations.place_key(project, "A sunny beach.")
+		)
 		self.assertEqual(
 			locations.location_key(room) + locations.CLOSE,
-			locations.view_key(project, "Family dining table", "Family dining room with warm, inviting ambient lighting."),
+			locations.view_key(
+				project, "Family dining table", "Family dining room with warm, inviting ambient lighting."
+			),
 		)
 
 	def test_a_place_picture_removed_from_the_references_is_replaced_on_its_scenes(self):
 		room = "A dining room."
-		project = frappe._dict(name="PRJ-X", selected_media=[frappe._dict(reference_key=locations.location_key(room), asset_version="ASTV-ROOM")])
+		project = frappe._dict(
+			name="PRJ-X",
+			selected_media=[
+				frappe._dict(reference_key=locations.location_key(room), asset_version="ASTV-ROOM")
+			],
+		)
 		shot = _shot("S1", room, environment="ASTV-REMOVED")
-		with patch("joymedia.services.review.comments._reseal_approved_plan"), patch("frappe.db.delete") as delete:
+		with (
+			patch("joymedia.services.review.comments._reseal_approved_plan"),
+			patch("frappe.db.delete") as delete,
+		):
 			self.assertEqual(1, locations.assign_places(project, [shot]))
 		self.assertEqual(["ASTV-ROOM"], [row.asset_version for row in shot.generation_inputs])
 		delete.assert_called_once_with("Shot Reference", {"name": "S1-env"})

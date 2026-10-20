@@ -40,19 +40,29 @@ def main(argv):
 		return 2
 	site, selection = argv[0], (argv[1] if len(argv) > 1 else None)
 	failed, total = [], 0
-	report_dir = Path("/tmp") / ("joymedia-tests-" + datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%f"))
+	report_dir = Path("/tmp") / (
+		"joymedia-tests-" + datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%f")
+	)
 	report_dir.mkdir()
 	results = []
 	print(f"Full per-module logs: {report_dir}", flush=True)
 	for module in test_modules(selection):
 		result = subprocess.run(
-			["bench", "--site", site, "run-tests", "--module", module], capture_output=True, text=True, stdin=subprocess.DEVNULL
+			["bench", "--site", site, "run-tests", "--module", module],
+			capture_output=True,
+			text=True,
+			stdin=subprocess.DEVNULL,
 		)
 		output = result.stdout + result.stderr
 		log = report_dir / f"{module}.log"
 		log.write_text(output, encoding="utf-8")
 		ran = next((line for line in output.splitlines() if line.startswith("Ran ")), "no tests ran")
-		ok = result.returncode == 0 and "FAILED" not in output and "TestRunnerError" not in output and ran != "no tests ran"
+		ok = (
+			result.returncode == 0
+			and "FAILED" not in output
+			and "TestRunnerError" not in output
+			and ran != "no tests ran"
+		)
 		total += int(ran.split()[1]) if ran.startswith("Ran ") else 0
 		results.append({"module": module, "ok": ok, "result": ran, "log": str(log)})
 		print(("ok    " if ok else "FAIL  ") + module + "  " + ran, flush=True)
@@ -61,9 +71,11 @@ def main(argv):
 			# Print the traceback before the routine successful-case list. Keep
 			# the complete log as evidence, including failures early in long modules.
 			start = output.find("======================================================================")
-			print(output[start:start+3500] if start >= 0 else output[:3500], flush=True)
+			print(output[start : start + 3500] if start >= 0 else output[:3500], flush=True)
 	print(f"\n{total} tests, {len(failed)} failing module(s)")
-	(report_dir / "summary.json").write_text(json.dumps({"tests_run": total, "failed_modules": failed, "modules": results}, indent=2))
+	(report_dir / "summary.json").write_text(
+		json.dumps({"tests_run": total, "failed_modules": failed, "modules": results}, indent=2)
+	)
 	return 1 if failed else 0
 
 

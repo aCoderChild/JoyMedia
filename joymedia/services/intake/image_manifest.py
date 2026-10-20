@@ -1,5 +1,4 @@
-"""The pictures a project may use, as a manifest the AI planner reads.
-"""
+"""The pictures a project may use, as a manifest the AI planner reads."""
 
 import base64
 import mimetypes
@@ -17,9 +16,9 @@ def get_project_image_manifest(media_project: str, *, include_data_url: bool = F
 
 	project = frappe.get_doc("Media Project", media_project)
 	selected_assets = [
-		asset for asset in _get_project_selected_assets(project)
-		if asset.get("media_type") == "Image"
-		and asset.get("asset_category") in REFERENCE_IMAGE_CATEGORIES
+		asset
+		for asset in _get_project_selected_assets(project)
+		if asset.get("media_type") == "Image" and asset.get("asset_category") in REFERENCE_IMAGE_CATEGORIES
 	]
 	manifest = []
 	for asset in selected_assets:

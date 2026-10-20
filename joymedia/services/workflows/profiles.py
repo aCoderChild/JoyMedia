@@ -1,5 +1,4 @@
-"""Which workflow a scene uses and what input roles it accepts: the customer-facing contract of the promoted pipeline.
-"""
+"""Which workflow a scene uses and what input roles it accepts: the customer-facing contract of the promoted pipeline."""
 
 import frappe
 from frappe import _
@@ -41,6 +40,7 @@ def allowed_workflows_for_shot(snapshot, shot):
 	initial = choose_shot_workflow(snapshot, shot)
 	continuation = (
 		frappe.get_doc("Generation Workflow", initial.continuation_workflow)
-		if initial.continuation_workflow else None
+		if initial.continuation_workflow
+		else None
 	)
 	return tuple(workflow for workflow in (initial, continuation) if workflow)

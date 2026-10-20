@@ -26,23 +26,38 @@ def execute():
 		return
 	for state, style in STATES:
 		if not frappe.db.exists("Workflow State", state):
-			frappe.get_doc({"doctype": "Workflow State", "workflow_state_name": state, "style": style}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{"doctype": "Workflow State", "workflow_state_name": state, "style": style}
+			).insert(ignore_permissions=True)
 	for action in {action for _, action, _ in TRANSITIONS}:
 		if not frappe.db.exists("Workflow Action Master", action):
-			frappe.get_doc({"doctype": "Workflow Action Master", "workflow_action_name": action}).insert(ignore_permissions=True)
-	workflow = frappe.get_doc({
-		"doctype": "Workflow",
-		"workflow_name": WORKFLOW,
-		"document_type": "Media Project",
-		"workflow_state_field": "storyboard_approval_status",
-		"is_active": 1,
-		"send_email_alert": 0,
-		"states": [
-			{"state": state, "doc_status": "0", "allow_edit": role} for state, _ in STATES for role in ROLES
-		],
-		"transitions": [
-			{"state": state, "action": action, "next_state": next_state, "allowed": role, "allow_self_approval": 1}
-			for state, action, next_state in TRANSITIONS for role in ROLES
-		],
-	})
+			frappe.get_doc({"doctype": "Workflow Action Master", "workflow_action_name": action}).insert(
+				ignore_permissions=True
+			)
+	workflow = frappe.get_doc(
+		{
+			"doctype": "Workflow",
+			"workflow_name": WORKFLOW,
+			"document_type": "Media Project",
+			"workflow_state_field": "storyboard_approval_status",
+			"is_active": 1,
+			"send_email_alert": 0,
+			"states": [
+				{"state": state, "doc_status": "0", "allow_edit": role}
+				for state, _ in STATES
+				for role in ROLES
+			],
+			"transitions": [
+				{
+					"state": state,
+					"action": action,
+					"next_state": next_state,
+					"allowed": role,
+					"allow_self_approval": 1,
+				}
+				for state, action, next_state in TRANSITIONS
+				for role in ROLES
+			],
+		}
+	)
 	workflow.insert(ignore_permissions=True)

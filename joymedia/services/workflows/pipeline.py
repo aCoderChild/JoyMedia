@@ -42,7 +42,9 @@ def get_active_generation_pipeline():
 		"joymedia_active_generation_pipeline"
 	)
 	if not name:
-		frappe.throw(_("No active Generation Pipeline is configured. Set joymedia_active_generation_pipeline."))
+		frappe.throw(
+			_("No active Generation Pipeline is configured. Set joymedia_active_generation_pipeline.")
+		)
 	if not frappe.db.exists("Generation Pipeline", name):
 		frappe.throw(_("Configured active Generation Pipeline {0} does not exist.").format(name))
 	pipeline = frappe.get_doc("Generation Pipeline", name)

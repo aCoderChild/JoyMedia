@@ -56,7 +56,9 @@ def compose_reference_board(references, *, width=1344, height=768):
 			oriented = ImageOps.exif_transpose(source).convert("RGBA")
 			image = Image.new("RGB", oriented.size, "white")
 			image.paste(oriented, mask=oriented.getchannel("A"))
-		items.append({"image": image, "role": role, "label": label, "digest": hashlib.sha256(data).hexdigest()})
+		items.append(
+			{"image": image, "role": role, "label": label, "digest": hashlib.sha256(data).hexdigest()}
+		)
 
 	# Stable ordering preserves the user's selected-reference order, while the
 	# digest makes identical input bytes produce the same board and cache name.
@@ -73,12 +75,15 @@ def compose_reference_board(references, *, width=1344, height=768):
 		y = gap + row * (tile_height + gap)
 		# Contain every source edge: cropping can remove ears, paw markings or
 		# packaging print and changes the identity before the model sees it.
-		fitted = ImageOps.pad(item["image"], (tile_width, tile_height), method=Image.Resampling.LANCZOS, color="white")
+		fitted = ImageOps.pad(
+			item["image"], (tile_width, tile_height), method=Image.Resampling.LANCZOS, color="white"
+		)
 		board.paste(fitted, (x, y))
 
-	digest_input = "|".join(
-		f"{item['role']}:{item['digest']}" for item in items
-	) + f"|{width}x{height}|{cols}x{rows}|contain-white-v2"
+	digest_input = (
+		"|".join(f"{item['role']}:{item['digest']}" for item in items)
+		+ f"|{width}x{height}|{cols}x{rows}|contain-white-v2"
+	)
 	digest = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()
 	output_dir = Path("/tmp/joymedia-reference-boards")
 	output_dir.mkdir(parents=True, exist_ok=True)

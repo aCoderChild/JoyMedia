@@ -17,7 +17,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-
 DEFAULT_CONFIG = Path("/etc/joymedia/runtime.json")
 
 

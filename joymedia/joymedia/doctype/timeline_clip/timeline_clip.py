@@ -164,7 +164,11 @@ def _restore_pristine_generated_shot_order(project_name):
 			return
 		if int(clip.timeline_start_frame or 0) != cursor:
 			return
-		if clip.is_outdated or (clip.transition_to_next or "Cut") != "Cut" or int(clip.transition_frames or 0):
+		if (
+			clip.is_outdated
+			or (clip.transition_to_next or "Cut") != "Cut"
+			or int(clip.transition_frames or 0)
+		):
 			return
 		cursor += max(0, int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0))
 

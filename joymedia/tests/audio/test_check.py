@@ -9,7 +9,24 @@ from joymedia.services.project.tuning import tune
 
 
 def _tone(path, source):
-	subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", source, "-t", "2", "-c:a", "pcm_s16le", str(path)], check=True)
+	subprocess.run(
+		[
+			"ffmpeg",
+			"-y",
+			"-v",
+			"error",
+			"-f",
+			"lavfi",
+			"-i",
+			source,
+			"-t",
+			"2",
+			"-c:a",
+			"pcm_s16le",
+			str(path),
+		],
+		check=True,
+	)
 
 
 class TestEffectsScreen(FrappeTestCase):

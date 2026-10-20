@@ -4,6 +4,7 @@ The token budget, the HTTP call, normalising each shot's fields and motion plan,
 the brief.
 """
 
+import itertools
 import json
 import math
 import time
@@ -29,11 +30,19 @@ def _request_plan(base_url, payload, timeout):
 			if attempt < 2:
 				time.sleep(1)
 		except requests.Timeout:
-			frappe.throw(_("The AI planner did not return a video plan within {0} seconds.").format(int(timeout)))
+			frappe.throw(
+				_("The AI planner did not return a video plan within {0} seconds.").format(int(timeout))
+			)
 	if response is None:
-		frappe.throw(_("The AI planner is unavailable at {0}. Check its service or SSH tunnel, then try again.").format(base_url))
+		frappe.throw(
+			_(
+				"The AI planner is unavailable at {0}. Check its service or SSH tunnel, then try again."
+			).format(base_url)
+		)
 	if not response.ok:
-		frappe.throw(_("The AI planner request failed ({0}): {1}").format(response.status_code, response.text))
+		frappe.throw(
+			_("The AI planner request failed ({0}): {1}").format(response.status_code, response.text)
+		)
 	try:
 		body = response.json()
 		choice = body["choices"][0]
@@ -46,7 +55,9 @@ def _request_plan(base_url, payload, timeout):
 		# Keep operational evidence without logging the brief or reference data.
 		frappe.logger("joymedia.planner").warning(
 			"Planner returned invalid JSON (finish_reason=%s, output_chars=%s, max_tokens=%s).",
-			choice.get("finish_reason"), len(str(content or "")), payload.get("max_tokens"),
+			choice.get("finish_reason"),
+			len(str(content or "")),
+			payload.get("max_tokens"),
 		)
 		# Usually the plan ran past max_tokens; the caller retries with compact output limits.
 		return None
@@ -121,10 +132,13 @@ def _normalize_planner_plan(
 			"start_state": str(shot.get("start_state") or "").strip(),
 			"end_state": str(shot.get("end_state") or "").strip(),
 			"handoff_type": str(shot.get("handoff_type") or "").strip(),
-			"continuity_mode": "Continue" if str(shot.get("continuity_mode") or "").strip().casefold() == "continue" else "New Scene",
+			"continuity_mode": "Continue"
+			if str(shot.get("continuity_mode") or "").strip().casefold() == "continue"
+			else "New Scene",
 			"motion_plan": _normalized_motion_plan(
 				shot.get("motion_plan") or shot.get("temporal_plan"),
-				shot.get("duration_seconds"), generation_prompt,
+				shot.get("duration_seconds"),
+				generation_prompt,
 			),
 			"caption": str(shot.get("caption") or "").strip()[:120],
 			"duration_seconds": shot.get("duration_seconds"),
@@ -155,7 +169,7 @@ def _normalize_planner_plan(
 			None,
 		)
 		if single_image_role:
-			for shot, image in zip(normalized_shots, reference_images):
+			for shot, image in zip(normalized_shots, reference_images, strict=False):
 				shot["references"] = [
 					{
 						"reference_key": image["reference_key"],
@@ -169,9 +183,9 @@ def _normalize_planner_plan(
 	# deterministic assignment.
 	if reference_images and workflow_input_contract:
 		required_reference_contracts = [
-			contract for contract in workflow_input_contract
-			if contract.get("min_count", 0) > 0
-			and contract.get("accepted_media_type") in ("Image", "Any")
+			contract
+			for contract in workflow_input_contract
+			if contract.get("min_count", 0) > 0 and contract.get("accepted_media_type") in ("Image", "Any")
 		]
 		for shot in normalized_shots:
 			for contract in required_reference_contracts:
@@ -180,7 +194,8 @@ def _normalize_planner_plan(
 					continue
 				references = shot.setdefault("references", [])
 				role_references = [
-					reference for reference in references
+					reference
+					for reference in references
 					if frappe.scrub(reference.get("usage_role") or "") == role
 				]
 				needed = int(contract["min_count"]) - len(role_references)
@@ -247,10 +262,14 @@ def _normalized_motion_plan(value, duration, fallback_action):
 			normalized.append({"start": start, "end": end, "action": text})
 	from joymedia.services.scene.contract import read_contract
 
-	result = {"actions": normalized or ([{"start": 0, "end": limit, "action": fallback_action}] if limit > 0 else [])}
-	if isinstance(value, dict) and 'camera_intent' in value:
+	result = {
+		"actions": normalized
+		or ([{"start": 0, "end": limit, "action": fallback_action}] if limit > 0 else [])
+	}
+	if isinstance(value, dict) and "camera_intent" in value:
 		from joymedia.services.planning.camera import camera_intent
-		result['camera_intent'] = camera_intent(value['camera_intent'])
+
+		result["camera_intent"] = camera_intent(value["camera_intent"])
 	if isinstance(value, dict) and "camera_motion" in value:
 		if value["camera_motion"] not in ("locked", "moving"):
 			raise ValueError("Camera motion must be locked or moving.")
@@ -261,16 +280,19 @@ def _normalized_motion_plan(value, duration, fallback_action):
 	if artwork:
 		result["artwork_placements"] = artwork
 	contract = read_contract(value, limit)
-	if isinstance(value, dict) and 'shot_structure' in value:
+	if isinstance(value, dict) and "shot_structure" in value:
 		from joymedia.services.planning.shot_structure import shot_structure
-		result['shot_structure'] = shot_structure(value['shot_structure'], contract)
-	if isinstance(value, dict) and 'required_references' in value:
+
+		result["shot_structure"] = shot_structure(value["shot_structure"], contract)
+	if isinstance(value, dict) and "required_references" in value:
 		from joymedia.services.planning.shot_structure import reference_requirements
-		result['required_references'] = reference_requirements(value['required_references'])
+
+		result["required_references"] = reference_requirements(value["required_references"])
 	if contract is not None:
 		result["scene_contract"] = contract
 		# Refuse an unreviewable plan at authoring time, before any GPU admission.
 		from joymedia.services.scene.evidence import claims_for
+
 		claims_for(result, limit, fallback_action)
 	return result
 
@@ -304,7 +326,9 @@ def _validate_video_plan(
 	if len(result["shots"]) > 8:
 		frappe.throw(_("The AI planner response must not contain more than 8 creative shots."))
 	if shot_count is not None and len(result["shots"]) != shot_count:
-		frappe.throw(_("The AI planner returned {0} shots; expected {1}.").format(len(result["shots"]), shot_count))
+		frappe.throw(
+			_("The AI planner returned {0} shots; expected {1}.").format(len(result["shots"]), shot_count)
+		)
 
 	required_fields = {"shot_number", "generation_prompt"}
 
@@ -316,7 +340,11 @@ def _validate_video_plan(
 			frappe.throw(_("Shot number must be a positive integer."))
 		prompt = str(shot.get("generation_prompt") or "").strip()
 		if not prompt:
-			frappe.throw(_("The AI planner returned an empty generation_prompt for shot {0}.").format(shot.get("shot_number", "?")))
+			frappe.throw(
+				_("The AI planner returned an empty generation_prompt for shot {0}.").format(
+					shot.get("shot_number", "?")
+				)
+			)
 		try:
 			duration_seconds = float(shot["duration_seconds"])
 		except (KeyError, TypeError, ValueError):
@@ -327,11 +355,15 @@ def _validate_video_plan(
 			"shot_number": shot["shot_number"],
 			"shot_name": str(shot.get("shot_name") or f"Shot {shot['shot_number']}").strip(),
 			"generation_prompt": prompt,
-			"image_prompt": str(shot.get("image_prompt") or shot.get("image_generation_prompt") or prompt).strip(),
+			"image_prompt": str(
+				shot.get("image_prompt") or shot.get("image_generation_prompt") or prompt
+			).strip(),
 			"start_state": str(shot.get("start_state") or "").strip(),
 			"end_state": str(shot.get("end_state") or "").strip(),
 			"handoff_type": str(shot.get("handoff_type") or "").strip(),
-			"continuity_mode": "Continue" if str(shot.get("continuity_mode") or "").strip().casefold() == "continue" else "New Scene",
+			"continuity_mode": "Continue"
+			if str(shot.get("continuity_mode") or "").strip().casefold() == "continue"
+			else "New Scene",
 			"motion_plan": _normalized_motion_plan(
 				shot.get("motion_plan") or shot.get("temporal_plan"), duration_seconds, prompt
 			),
@@ -341,11 +373,21 @@ def _validate_video_plan(
 		actions = normalized["motion_plan"]["actions"]
 		previous_end = 0.0
 		for action in actions:
-			if action["start"] < previous_end or action["start"] < 0 or action["end"] <= action["start"] or action["end"] > duration_seconds + 0.001:
-				frappe.throw(_("Shot {0} has an invalid seconds-based temporal plan.").format(shot["shot_number"]))
+			if (
+				action["start"] < previous_end
+				or action["start"] < 0
+				or action["end"] <= action["start"]
+				or action["end"] > duration_seconds + 0.001
+			):
+				frappe.throw(
+					_("Shot {0} has an invalid seconds-based temporal plan.").format(shot["shot_number"])
+				)
 			previous_end = action["end"]
 		if normalized["handoff_type"] and normalized["handoff_type"] not in {
-			"motion_continuation", "pose_transition", "camera_transition", "ending"
+			"motion_continuation",
+			"pose_transition",
+			"camera_transition",
+			"ending",
 		}:
 			frappe.throw(_("Shot {0} has an unsupported handoff type.").format(shot["shot_number"]))
 		contract_by_role = {
@@ -360,7 +402,9 @@ def _validate_video_plan(
 				frappe.throw(_("Each planner shot reference must contain a usage_role."))
 			contract = contract_by_role.get(usage_role)
 			if workflow_input_contract is not None and not contract:
-				frappe.throw(_("The AI planner returned unsupported workflow input role '{0}'.").format(usage_role))
+				frappe.throw(
+					_("The AI planner returned unsupported workflow input role '{0}'.").format(usage_role)
+				)
 			role_counts[usage_role] = role_counts.get(usage_role, 0) + 1
 			if (
 				contract
@@ -368,7 +412,9 @@ def _validate_video_plan(
 				and not contract.get("allow_multiple")
 				and int(contract.get("max_count") or 1) <= 1
 			):
-				frappe.throw(_("Workflow input role '{0}' does not allow multiple references.").format(usage_role))
+				frappe.throw(
+					_("Workflow input role '{0}' does not allow multiple references.").format(usage_role)
+				)
 			if contract and contract.get("max_count") and role_counts[usage_role] > contract["max_count"]:
 				frappe.throw(
 					_("Workflow input role '{0}' accepts at most {1} references.").format(
@@ -404,9 +450,7 @@ def _validate_video_plan(
 					_(
 						"Shot {0} needs {1} reference image(s) for the selected workflow. "
 						"Add the required references or select a workflow with a compatible input contract."
-					).format(
-						normalized["shot_number"], contract["min_count"]
-					)
+					).format(normalized["shot_number"], contract["min_count"])
 				)
 		normalized_shots.append(normalized)
 	if total_video_duration is not None:
@@ -431,20 +475,22 @@ def _validate_video_plan(
 			shot["duration_seconds"] *= scale
 			_rescale_motion_plan(shot, previous_duration)
 		if normalized_shots:
-			shot_duration = target_duration - sum(
-				shot["duration_seconds"] for shot in normalized_shots[:-1]
-			)
+			shot_duration = target_duration - sum(shot["duration_seconds"] for shot in normalized_shots[:-1])
 			if shot_duration <= 0 or not math.isfinite(shot_duration):
 				frappe.throw(_("Video plan durations must sum to the requested duration."))
 			previous_duration = normalized_shots[-1]["duration_seconds"]
 			normalized_shots[-1]["duration_seconds"] = shot_duration
 			_rescale_motion_plan(normalized_shots[-1], previous_duration)
 
-	if generation_mode == "Multi-shot" and reference_image_count and all(
-		"first_frame_reference_image_index" in shot and "last_frame_reference_image_index" in shot
-		for shot in normalized_shots
+	if (
+		generation_mode == "Multi-shot"
+		and reference_image_count
+		and all(
+			"first_frame_reference_image_index" in shot and "last_frame_reference_image_index" in shot
+			for shot in normalized_shots
+		)
 	):
-		for current, following in zip(normalized_shots, normalized_shots[1:]):
+		for current, following in itertools.pairwise(normalized_shots):
 			if current["last_frame_reference_image_index"] != following["first_frame_reference_image_index"]:
 				frappe.throw(
 					_("Multi-shot boundary is invalid between shots {0} and {1}.").format(

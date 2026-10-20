@@ -1,6 +1,5 @@
 import frappe
 
-
 DEFAULT_ADAPTER_KEY = "minimax_h3"
 
 
@@ -17,10 +16,7 @@ def _migrate_workflow_adapter_key():
 		return
 
 	profile_adapter_by_name = {}
-	if (
-		frappe.db.table_exists("AI Model Profile")
-		and frappe.db.has_column("AI Model Profile", "adapter_key")
-	):
+	if frappe.db.table_exists("AI Model Profile") and frappe.db.has_column("AI Model Profile", "adapter_key"):
 		profile_adapter_by_name = {
 			row.name: row.adapter_key
 			for row in frappe.get_all("AI Model Profile", fields=["name", "adapter_key"])

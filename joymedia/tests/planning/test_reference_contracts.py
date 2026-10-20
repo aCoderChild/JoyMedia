@@ -17,19 +17,30 @@ class TestStoryboardReferenceContracts(FrappeTestCase):
 			)
 
 		route = {"generation_pipeline": "PL", "workflow": "W", "references": []}
-		with patch.object(storyboard.frappe, "get_all", return_value=list(shots)), patch.object(
-			storyboard.frappe, "get_doc", side_effect=get_doc
-		), patch(
-			"joymedia.services.workflows.routing.resolve_shot_render_route",
-			side_effect=route_error, return_value=route,
-		), patch(
-			"joymedia.services.generation.orchestrator._pipeline_reference_inputs", return_value=mapped_roles
-		), patch("joymedia.services.workflows.resolver.get_workflow_input_contract", return_value=contract):
+		with (
+			patch.object(storyboard.frappe, "get_all", return_value=list(shots)),
+			patch.object(storyboard.frappe, "get_doc", side_effect=get_doc),
+			patch(
+				"joymedia.services.workflows.routing.resolve_shot_render_route",
+				side_effect=route_error,
+				return_value=route,
+			),
+			patch(
+				"joymedia.services.generation.orchestrator._pipeline_reference_inputs",
+				return_value=mapped_roles,
+			),
+			patch("joymedia.services.workflows.resolver.get_workflow_input_contract", return_value=contract),
+		):
 			storyboard._validate_shot_reference_contracts(project)
 
 	def _shot(self, mode="New Scene", number=1):
 		return frappe._dict(
-			shot_name="Shot", name="S", handoff_type="", continuity_mode=mode, shot_number=number, generation_inputs=[]
+			shot_name="Shot",
+			name="S",
+			handoff_type="",
+			continuity_mode=mode,
+			shot_number=number,
+			generation_inputs=[],
 		)
 
 	def test_missing_required_role_blocks_approval(self):
@@ -60,29 +71,61 @@ class TestSetShotReferences(FrappeTestCase):
 		commit = patch.object(frappe.db, "commit")
 		commit.start()
 		self.addCleanup(commit.stop)
-		self.project = frappe.get_doc({
-			"doctype": "Media Project", "project_name": "Shot Refs", "workflow": _create_workflow(),
-			"total_duration_seconds": 2, "delivery_preset": "Landscape",
-		}).insert(ignore_permissions=True)
-		asset = frappe.get_doc({
-			"doctype": "Media Asset", "asset_name": "Hero", "media_type": "Image", "asset_category": "Product",
-			"asset_scope": "Library",
-		}).insert(ignore_permissions=True)
-		file_doc = frappe.get_doc({
-			"doctype": "File", "file_name": "hero.png", "content": _generate_image_bytes(), "is_private": 1,
-			"attached_to_doctype": "Media Asset", "attached_to_name": asset.name,
-		}).insert(ignore_permissions=True)
-		self.version = frappe.get_doc({
-			"doctype": "Asset Version", "media_asset": asset.name, "file": file_doc.file_url, "source": "Uploaded",
-		}).insert(ignore_permissions=True)
-		self.project.append("selected_media", {
-			"reference_key": "hero", "asset_version": self.version.name, "reference_role": "Product", "label": "Hero",
-		})
+		self.project = frappe.get_doc(
+			{
+				"doctype": "Media Project",
+				"project_name": "Shot Refs",
+				"workflow": _create_workflow(),
+				"total_duration_seconds": 2,
+				"delivery_preset": "Landscape",
+			}
+		).insert(ignore_permissions=True)
+		asset = frappe.get_doc(
+			{
+				"doctype": "Media Asset",
+				"asset_name": "Hero",
+				"media_type": "Image",
+				"asset_category": "Product",
+				"asset_scope": "Library",
+			}
+		).insert(ignore_permissions=True)
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "hero.png",
+				"content": _generate_image_bytes(),
+				"is_private": 1,
+				"attached_to_doctype": "Media Asset",
+				"attached_to_name": asset.name,
+			}
+		).insert(ignore_permissions=True)
+		self.version = frappe.get_doc(
+			{
+				"doctype": "Asset Version",
+				"media_asset": asset.name,
+				"file": file_doc.file_url,
+				"source": "Uploaded",
+			}
+		).insert(ignore_permissions=True)
+		self.project.append(
+			"selected_media",
+			{
+				"reference_key": "hero",
+				"asset_version": self.version.name,
+				"reference_role": "Product",
+				"label": "Hero",
+			},
+		)
 		self.project.save(ignore_permissions=True)
-		self.shot = frappe.get_doc({
-			"doctype": "Shot", "media_project": self.project.name, "shot_number": 1, "generation_prompt": "A scene.",
-			"duration_seconds": 2.0,
-		}).insert(ignore_permissions=True)
+		self.shot = frappe.get_doc(
+			{
+				"doctype": "Shot",
+				"media_project": self.project.name,
+				"shot_number": 1,
+				"generation_prompt": "A scene.",
+				"duration_seconds": 2.0,
+			}
+		).insert(ignore_permissions=True)
 
 	def tearDown(self):
 		frappe.db.rollback()
@@ -93,9 +136,12 @@ class TestSetShotReferences(FrappeTestCase):
 		storyboard.set_project_shot_references(self.project.name, self.shot.name, '["hero"]')
 
 		rows = frappe.get_doc("Shot", self.shot.name).generation_inputs
-		self.assertEqual([("Product", self.version.name)], [(r.reference_role, r.asset_version) for r in rows])
 		self.assertEqual(
-			"Ready for Review", frappe.db.get_value("Media Project", self.project.name, "storyboard_approval_status")
+			[("Product", self.version.name)], [(r.reference_role, r.asset_version) for r in rows]
+		)
+		self.assertEqual(
+			"Ready for Review",
+			frappe.db.get_value("Media Project", self.project.name, "storyboard_approval_status"),
 		)
 		storyboard.set_project_shot_references(self.project.name, self.shot.name, "[]")
 		self.assertEqual([], frappe.get_doc("Shot", self.shot.name).generation_inputs)

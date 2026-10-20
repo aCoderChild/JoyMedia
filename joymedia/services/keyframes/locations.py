@@ -51,9 +51,15 @@ def _location_versions(project, shots=()):
 	"""The pictures the system may replace on these scenes: the drawn places, and any Environment picture a scene still
 	has after a person removed it from the project's references."""
 	current = {row.asset_version for row in project.selected_media or []}
-	drawn = {row.asset_version for row in project.selected_media or [] if (row.reference_key or "").startswith("location_")}
+	drawn = {
+		row.asset_version
+		for row in project.selected_media or []
+		if (row.reference_key or "").startswith("location_")
+	}
 	stale = {
-		row.asset_version for shot in shots for row in shot.generation_inputs or []
+		row.asset_version
+		for shot in shots
+		for row in shot.generation_inputs or []
 		if frappe.scrub(row.reference_role or "") == "environment" and row.asset_version not in current
 	}
 	return drawn | stale
@@ -75,12 +81,27 @@ def shot_views(shot):
 		return []
 
 
-GENERIC_WORDS = {"with", "from", "into", "inside", "outside", "warm", "cozy", "cosy", "bright", "soft", "light", "natural", "there"}
+GENERIC_WORDS = {
+	"with",
+	"from",
+	"into",
+	"inside",
+	"outside",
+	"warm",
+	"cozy",
+	"cosy",
+	"bright",
+	"soft",
+	"light",
+	"natural",
+	"there",
+}
 
 
 def same_place(view, setting):
 	"""Whether a split-screen view is the film's own place ("Family dining table" in "a cozy family dining room with a
 	wooden table"): two or more of its words in common."""
+
 	def words(text):
 		return set(re.findall(r"[a-z]{4,}", str(text or "").casefold())) - GENERIC_WORDS
 
@@ -99,7 +120,12 @@ def place_key(project, setting):
 	place = usable_setting(setting)
 	for row in project.get("selected_media") or []:
 		known, label = row.reference_key or "", row.label or ""
-		if known.startswith("location_") and not known.endswith(CLOSE) and label.startswith("Location ") and same_place(place, label.split(":", 1)[-1]):
+		if (
+			known.startswith("location_")
+			and not known.endswith(CLOSE)
+			and label.startswith("Location ")
+			and same_place(place, label.split(":", 1)[-1])
+		):
 			return known
 	return key
 
@@ -140,7 +166,9 @@ def assign_places(project, shots):
 	from joymedia.services.review.comments import _reseal_approved_plan
 
 	project = _ensure_close_views(project, shots)
-	pictures = {row.reference_key: row.asset_version for row in project.selected_media or [] if row.reference_key}
+	pictures = {
+		row.reference_key: row.asset_version for row in project.selected_media or [] if row.reference_key
+	}
 	places = _location_versions(project, shots)
 	changed = 0
 	for shot in shots:
@@ -157,7 +185,9 @@ def assign_places(project, shots):
 			frappe.db.delete("Shot Reference", {"name": row.name})
 			shot.generation_inputs.remove(row)
 		if wanted:
-			shot.append("generation_inputs", {"reference_role": "Environment", "asset_version": wanted}).db_insert()
+			shot.append(
+				"generation_inputs", {"reference_role": "Environment", "asset_version": wanted}
+			).db_insert()
 		changed += 1
 	if changed:
 		# The pictures follow from the approved settings and framings, not an edit to the storyboard.
@@ -179,7 +209,9 @@ def close_view(content):
 	with Image.open(io.BytesIO(content)) as image:
 		width, height = image.size
 		left, top, right, bottom = CLOSE_VIEW
-		crop = image.convert("RGB").crop((int(left * width), int(top * height), int(right * width), int(bottom * height)))
+		crop = image.convert("RGB").crop(
+			(int(left * width), int(top * height), int(right * width), int(bottom * height))
+		)
 		# Fill the frame's shape from the cut, keeping its middle.
 		output = io.BytesIO()
 		ImageOps.fit(crop, (width, height), method=Image.Resampling.LANCZOS).save(output, "PNG")
@@ -192,7 +224,9 @@ def _ensure_close_views(project, shots):
 	added = False
 	for shot in shots:
 		key = place_key(project, shot.setting_prompt)
-		needs_close = not shows_the_room(shot) or any(view_key(project, v["text"], shot.setting_prompt) == f"{key}{CLOSE}" for v in shot_views(shot))
+		needs_close = not shows_the_room(shot) or any(
+			view_key(project, v["text"], shot.setting_prompt) == f"{key}{CLOSE}" for v in shot_views(shot)
+		)
 		if not needs_close or f"{key}{CLOSE}" in pictures or key not in pictures:
 			continue
 		file_url = frappe.db.get_value("Asset Version", pictures[key].asset_version, "file")
@@ -205,7 +239,11 @@ def _ensure_close_views(project, shots):
 
 
 def _keyframe_workflow(project=None):
-	from joymedia.services.workflows.pipeline import get_active_generation_pipeline, get_pinned_generation_pipeline, get_pipeline_steps
+	from joymedia.services.workflows.pipeline import (
+		get_active_generation_pipeline,
+		get_pinned_generation_pipeline,
+		get_pipeline_steps,
+	)
 
 	name = project.get("name") if project else None
 	pipeline = (get_pinned_generation_pipeline(name) if name else None) or get_active_generation_pipeline()
@@ -251,7 +289,9 @@ def render_place(project, setting, view=False):
 	)
 	# The output node is read from the stored graph: the unused reference branches are already pruned from `workflow`.
 	stored = json.loads(workflow_version.workflow_json)
-	output_node = get_workflow_adapter(workflow_version).extract_execution_metadata(stored)["primary_output_node_key"]
+	output_node = get_workflow_adapter(workflow_version).extract_execution_metadata(stored)[
+		"primary_output_node_key"
+	]
 	content = run_workflow_to_bytes(workflow, output_node, forget=True)
 	frappe.db.commit()  # the render took a while; start a fresh snapshot before writing
 	return content
@@ -261,8 +301,10 @@ def add_place(project, key, setting, content):
 	"""Store a place's picture as an Environment reference of the project."""
 	# The next free number: places may have been removed, so the count of those left is not it.
 	numbers = [
-		int(found.group(1)) for row in project.selected_media or []
-		if (row.reference_key or "").startswith("location_") and (found := re.match(r"Location (\d+)", row.label or ""))
+		int(found.group(1))
+		for row in project.selected_media or []
+		if (row.reference_key or "").startswith("location_")
+		and (found := re.match(r"Location (\d+)", row.label or ""))
 	]
 	number = max(numbers, default=0) + 1
 	_store_place(project, key, f"Location {number}: {setting[:80]}", content)
@@ -272,9 +314,14 @@ def _store_place(project, key, label, content):
 	from joymedia.api.assets import select_project_asset
 	from joymedia.services.intake.assets import create_media_asset
 
-	image = frappe.get_doc({
-		"doctype": "File", "file_name": f"{key}.png", "content": content, "is_private": 1,
-	}).insert(ignore_permissions=True)
+	image = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"{key}.png",
+			"content": content,
+			"is_private": 1,
+		}
+	).insert(ignore_permissions=True)
 	asset = create_media_asset(label, "Background", file_url=image.file_url, file_name=image.name)
 	select_project_asset(project.name, asset["media_asset"], "Environment", label, reference_key=key)
 
@@ -291,7 +338,12 @@ def draw_places_then_frames(project_name, shot_names, user):
 	for key, setting, view in wanted:
 		try:
 			if view:
-				_store_place(project, key, f"Split-screen view: {setting[:80]}", render_place(project, setting, view=True))
+				_store_place(
+					project,
+					key,
+					f"Split-screen view: {setting[:80]}",
+					render_place(project, setting, view=True),
+				)
 			else:
 				add_place(project, key, setting, render_place(project, setting))
 		except Exception:

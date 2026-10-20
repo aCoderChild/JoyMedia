@@ -8,7 +8,7 @@ from joymedia import hooks
 
 def _dotted_paths(value):
 	if isinstance(value, str):
-		if value.startswith("joymedia.") and "." in value[len("joymedia."):]:
+		if value.startswith("joymedia.") and "." in value[len("joymedia.") :]:
 			yield value
 	elif isinstance(value, dict):
 		for item in value.values():
@@ -21,7 +21,13 @@ def _dotted_paths(value):
 class TestHooksContract(FrappeTestCase):
 	def test_every_function_named_in_hooks_resolves(self):
 		paths = set()
-		for name in ("doc_events", "scheduler_events", "override_whitelisted_methods", "override_doctype_class", "on_session_creation"):
+		for name in (
+			"doc_events",
+			"scheduler_events",
+			"override_whitelisted_methods",
+			"override_doctype_class",
+			"on_session_creation",
+		):
 			paths.update(_dotted_paths(getattr(hooks, name, None)))
 		self.assertGreaterEqual(len(paths), 4)
 		missing = []

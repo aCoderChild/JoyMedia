@@ -43,7 +43,11 @@ def identity_plan(references, capabilities=()):
 				strategy="rigged_render" if "rigged_render" in available else "reference_conditioned",
 				requires=[]
 				if "rigged_render" in available
-				else ["approved_identity_views", "reference_image_or_video", "reference_topology_and_proportions"],
+				else [
+					"approved_identity_views",
+					"reference_image_or_video",
+					"reference_topology_and_proportions",
+				],
 				acceptance="identity_review",
 			)
 		result.append(group)

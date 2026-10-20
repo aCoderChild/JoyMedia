@@ -23,13 +23,14 @@ def assign_reference_key(reference, project):
 	base = re.sub(r"[^a-z0-9]+", "_", base.lower()).strip("_") or "reference"
 	key = base[:100]
 	used_keys = {
-		row.reference_key for row in project.selected_media or []
+		row.reference_key
+		for row in project.selected_media or []
 		if row.name != reference.name and row.reference_key
 	}
 	counter = 2
 	while key in used_keys:
 		suffix = f"_{counter}"
-		key = f"{base[:100 - len(suffix)]}{suffix}"
+		key = f"{base[: 100 - len(suffix)]}{suffix}"
 		counter += 1
 	reference.reference_key = key
 
@@ -62,7 +63,9 @@ def assign_relative_size(reference):
 	The image model cannot work out that "Gấu con" is a cub beside "Gấu mẹ": without a size both are drawn alike.
 	Only a new Character or Person row still at the default 1 is changed, so a size someone set is always kept.
 	"""
-	if reference.reference_role not in ("Character", "Person") or not (reference.get("__islocal") or reference.is_new()):
+	if reference.reference_role not in ("Character", "Person") or not (
+		reference.get("__islocal") or reference.is_new()
+	):
 		return
 	if float(reference.relative_size or 1) != 1:
 		return
@@ -86,18 +89,26 @@ class ProjectReference(Document):
 			frappe.throw(_("Identity Key must contain only lowercase letters, numbers, and underscores."))
 		if project:
 			duplicates = [
-				row.name for row in project.selected_media or []
+				row.name
+				for row in project.selected_media or []
 				if row.name != self.name and row.reference_key == self.reference_key
 			]
 			if duplicates:
-				frappe.throw(_("Reference Key '{0}' must be unique within the Media Project.").format(self.reference_key))
+				frappe.throw(
+					_("Reference Key '{0}' must be unique within the Media Project.").format(
+						self.reference_key
+					)
+				)
 			identity_roles = {
-				row.reference_role for row in project.selected_media or []
+				row.reference_role
+				for row in project.selected_media or []
 				if row.name != self.name and row.identity_key == self.identity_key and row.reference_role
 			}
 			if identity_roles and self.reference_role not in identity_roles:
 				frappe.throw(
-					_("All views of Identity Key '{0}' must use the same Reference Role.").format(self.identity_key)
+					_("All views of Identity Key '{0}' must use the same Reference Role.").format(
+						self.identity_key
+					)
 				)
 			active = frappe.db.exists(
 				"Generation Run",

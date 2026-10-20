@@ -5,7 +5,10 @@ from frappe.model.document import Document
 
 class GenerationPipeline(Document):
 	IMMUTABLE_FIELDS = (
-		"pipeline_key", "version_number", "output_media_type", "steps",
+		"pipeline_key",
+		"version_number",
+		"output_media_type",
+		"steps",
 	)
 
 	def validate(self):
@@ -26,11 +29,21 @@ class GenerationPipeline(Document):
 				frappe.throw(_("Every Pipeline Step needs a unique Step Key."))
 			seen.add(step.step_key)
 			if not frappe.db.exists("Generation Workflow", step.workflow):
-				frappe.throw(_("Pipeline Step {0} references an unavailable Generation Workflow.").format(step.step_key))
+				frappe.throw(
+					_("Pipeline Step {0} references an unavailable Generation Workflow.").format(
+						step.step_key
+					)
+				)
 			workflow = frappe.get_doc("Generation Workflow", step.workflow)
 			if step.produces_artifact_role != workflow.primary_artifact_role:
-				frappe.throw(_("Pipeline Step {0} must produce the workflow's primary artifact role ({1}).").format(step.step_key, workflow.primary_artifact_role))
-		self.output_media_type = frappe.get_doc("Generation Workflow", self.steps[-1].workflow).output_media_type
+				frappe.throw(
+					_("Pipeline Step {0} must produce the workflow's primary artifact role ({1}).").format(
+						step.step_key, workflow.primary_artifact_role
+					)
+				)
+		self.output_media_type = frappe.get_doc(
+			"Generation Workflow", self.steps[-1].workflow
+		).output_media_type
 		self._validate_immutability()
 
 	def _validate_immutability(self):
@@ -40,12 +53,11 @@ class GenerationPipeline(Document):
 		if not previous:
 			return
 		changed = [
-			fieldname for fieldname in self.IMMUTABLE_FIELDS
-			if self.get(fieldname) != previous.get(fieldname)
+			fieldname for fieldname in self.IMMUTABLE_FIELDS if self.get(fieldname) != previous.get(fieldname)
 		]
 		if changed:
 			frappe.throw(
-				_("Generation Pipeline is immutable after creation. Create a new version instead: {0}.").format(
-					", ".join(changed)
-				)
+				_(
+					"Generation Pipeline is immutable after creation. Create a new version instead: {0}."
+				).format(", ".join(changed))
 			)

@@ -22,7 +22,12 @@ SUPPORTED_PARAMETERS = {
 	"last_frame_index",
 }
 SUPPORTED_TRANSFORMS = {
-	"identity", "frames_to_seconds", "aspect_ratio_option", "nearest_size_dimension", "round_to_multiple", "ceil_to_multiple"
+	"identity",
+	"frames_to_seconds",
+	"aspect_ratio_option",
+	"nearest_size_dimension",
+	"round_to_multiple",
+	"ceil_to_multiple",
 }
 METADATA_FIELDS = {
 	"frame_count",
@@ -156,11 +161,14 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 				if not base_conditioning.get(target_key):
 					raise ValueError(f"input_preprocessing.reference_conditioning_base requires {target_key}")
 				target = base_conditioning[target_key]
-				self._validate_node_input(workflow_data, {
-					"semantic": "reference conditioning output",
-					"node_key": target.get("node_key"),
-					"input_name": target.get("input_name"),
-				})
+				self._validate_node_input(
+					workflow_data,
+					{
+						"semantic": "reference conditioning output",
+						"node_key": target.get("node_key"),
+						"input_name": target.get("input_name"),
+					},
+				)
 		for chain in preprocessing.get("optional_input_chains") or []:
 			self._validate_input_chain(workflow_data, chain)
 		mirrors = spec.get("input_mirrors", [])
@@ -175,7 +183,10 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 				if not isinstance(value, dict):
 					raise ValueError("Each input mirror requires source and target inputs")
 				self._validate_node_input(workflow_data, {"semantic": "input mirror", **value})
-			source, target = (tuple(str(mirror[side][key]) for key in ("node_key", "input_name")) for side in ("source", "target"))
+			source, target = (
+				tuple(str(mirror[side][key]) for key in ("node_key", "input_name"))
+				for side in ("source", "target")
+			)
 			if target in targets:
 				raise ValueError("Input mirror targets must be unique")
 			sources.add(source)
@@ -187,11 +198,14 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 			if not isinstance(operation, dict) or not operation.get("role"):
 				raise ValueError("Each conditional_inputs entry requires a role")
 			target = operation.get("target") or {}
-			self._validate_node_input(workflow_data, {
-				"semantic": "conditional input",
-				"node_key": target.get("node_key"),
-				"input_name": target.get("input_name"),
-			})
+			self._validate_node_input(
+				workflow_data,
+				{
+					"semantic": "conditional input",
+					"node_key": target.get("node_key"),
+					"input_name": target.get("input_name"),
+				},
+			)
 			if "when_present" not in operation or "when_absent" not in operation:
 				raise ValueError("Conditional input operations require when_present and when_absent values")
 		for operation in spec.get("prompt_transforms") or []:
@@ -201,14 +215,17 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 			if not isinstance(operation.get("remove_patterns", []), list):
 				raise ValueError("prompt_transforms.remove_patterns must be a list")
 			if "when_role_present" in operation and (
-				not isinstance(operation["when_role_present"], str) or not operation["when_role_present"].strip()
+				not isinstance(operation["when_role_present"], str)
+				or not operation["when_role_present"].strip()
 			):
 				raise ValueError("prompt_transforms.when_role_present must name a nonempty input role")
 
 	def _validate_input_chain(self, workflow_data, chain):
 		if not isinstance(chain, dict) or not isinstance(chain.get("links"), list) or not chain["links"]:
 			raise ValueError("Each optional_input_chains entry requires a non-empty links list")
-		self._validate_node_input(workflow_data, {"semantic": "input chain target", **(chain.get("target") or {})})
+		self._validate_node_input(
+			workflow_data, {"semantic": "input chain target", **(chain.get("target") or {})}
+		)
 		base = chain.get("base")
 		if not isinstance(base, list) or len(base) != 2 or str(base[0]) not in workflow_data:
 			raise ValueError("Input chain base must be [node_key, output_index] of an existing node")
@@ -220,7 +237,11 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 				raise ValueError("Input chain link nodes must list existing nodes")
 			self._validate_node_input(
 				workflow_data,
-				{"semantic": "input chain link", "node_key": link.get("node"), "input_name": link.get("input")},
+				{
+					"semantic": "input chain link",
+					"node_key": link.get("node"),
+					"input_name": link.get("input"),
+				},
 			)
 
 	@staticmethod
@@ -296,9 +317,7 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 		preprocessing = self.execution_spec.get("input_preprocessing") or {}
 		self._finalize_optional_reference_branches(workflow, preprocessing, staged_inputs)
 		self._finalize_optional_input_chains(workflow, preprocessing, staged_inputs)
-		composed_roles = {
-			str(role) for role in preprocessing.get("compose_image_roles") or []
-		}
+		composed_roles = {str(role) for role in preprocessing.get("compose_image_roles") or []}
 		# File Paths are staged as lists throughout the runner, but a ComfyUI
 		# LoadImage.image input is a scalar filename. Respect the workflow's
 		# declared cardinality instead of requiring model-specific preprocessing.
@@ -306,7 +325,11 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 			role = getattr(binding, "required_input_role", None)
 			if not role or getattr(binding, "value_type", None) != "File Paths":
 				continue
-			is_multiple = str(getattr(binding, "allow_multiple", False)).strip().lower() in {"1", "true", "yes"}
+			is_multiple = str(getattr(binding, "allow_multiple", False)).strip().lower() in {
+				"1",
+				"true",
+				"yes",
+			}
 			# A composed board starts as many references but is staged as exactly
 			# one PNG for a normal ComfyUI LoadImage node.
 			if is_multiple and str(role) not in composed_roles:
@@ -328,11 +351,15 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 			role = str(operation["role"])
 			value = operation["when_present"] if staged_inputs.get(role) else operation["when_absent"]
 			target = operation["target"]
-			self._set_node_input(workflow, {
-				"semantic": "conditional input",
-				"node_key": target["node_key"],
-				"input_name": target["input_name"],
-			}, value)
+			self._set_node_input(
+				workflow,
+				{
+					"semantic": "conditional input",
+					"node_key": target["node_key"],
+					"input_name": target["input_name"],
+				},
+				value,
+			)
 
 		for operation in self.execution_spec.get("prompt_transforms") or []:
 			if operation.get("when_role_present") and not staged_inputs.get(operation["when_role_present"]):
@@ -345,7 +372,9 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 			append = str(operation.get("append_text") or "").strip()
 			staged_key = operation.get("append_staged_text_key")
 			if staged_key:
-				append = ". ".join(part for part in (append, str(staged_inputs.get(staged_key) or "").strip()) if part)
+				append = ". ".join(
+					part for part in (append, str(staged_inputs.get(staged_key) or "").strip()) if part
+				)
 			if append and append.lower() not in text.lower():
 				text = f"{text}. {append}".strip(". ") if text else append
 			workflow[node_key]["inputs"][input_name] = text.rstrip(". ") + "."
@@ -367,8 +396,12 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 				continue
 			positive_key = str(branch["positive_node"])
 			negative_key = str(branch["negative_node"])
-			workflow[positive_key]["inputs"][str(branch.get("conditioning_input", "conditioning"))] = positive_source
-			workflow[negative_key]["inputs"][str(branch.get("conditioning_input", "conditioning"))] = negative_source
+			workflow[positive_key]["inputs"][str(branch.get("conditioning_input", "conditioning"))] = (
+				positive_source
+			)
+			workflow[negative_key]["inputs"][str(branch.get("conditioning_input", "conditioning"))] = (
+				negative_source
+			)
 			positive_source = [positive_key, int(branch.get("positive_output", 0))]
 			negative_source = [negative_key, int(branch.get("negative_output", 0))]
 		for stream, source in (("positive", positive_source), ("negative", negative_source)):
