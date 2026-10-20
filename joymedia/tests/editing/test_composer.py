@@ -147,7 +147,7 @@ class TestVideoComposer(FrappeTestCase):
 		workflow = frappe._dict(output_fps=24)
 		with patch("joymedia.services.editing.composer.frappe.get_doc", side_effect=[run, workflow]):
 			profile = _get_delivery_profile(project, "RUN-00001")
-		self.assertEqual({"width": 1920, "height": 1080, "fps": 24.0}, profile)
+		self.assertEqual({"width": 1920, "height": 1080, "fps": 24.0, "temporal_fit": "trim"}, profile)
 
 	def test_normalize_segment_clamps_audio_to_exact_target_duration(self):
 		from joymedia.services.editing.composer import _normalize_segment

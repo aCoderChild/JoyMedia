@@ -455,7 +455,8 @@
       "contrast": 1.03,
       "brightness": 0.01,
       "saturation": 1.04,
-      "short_edge": 1440
+      "short_edge": 1440,
+      "temporal_fit": "preserve_endpoints"
     }
   },
   "bindings": [

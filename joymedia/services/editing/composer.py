@@ -585,11 +585,16 @@ def _get_delivery_profile(project, generation_run_name=None):
 	)
 	if not workflow.output_fps:
 		frappe.throw(_("Workflow must have output FPS before composition."))
+	spec = frappe.parse_json(workflow.get("execution_spec") or "{}")
+	temporal_fit = (spec.get("delivery") or {}).get("temporal_fit", "trim")
+	if temporal_fit not in {"trim", "preserve_endpoints"}:
+		raise ValueError("Workflow delivery temporal_fit must be trim or preserve_endpoints.")
 
 	return {
 		"width": int(width),
 		"height": int(height),
 		"fps": float(workflow.output_fps),
+		"temporal_fit": temporal_fit,
 	}
 
 
@@ -719,9 +724,35 @@ def _normalize_segment(
 	if drop_first < 0 or drop_first >= generated_frames:
 		raise ValueError("drop_first must be smaller than generated_frames")
 	effective_frames = generated_frames - drop_first
-	video_filter = f"fps={profile['fps']:g},"
-	if drop_first:
-		video_filter += f"select='gte(n,{drop_first})',"
+	audio_filter = ""
+	if profile.get("temporal_fit") == "preserve_endpoints":
+		from joymedia.services.runtime.media import probe_video
+
+		source = probe_video(source_path)
+		drop_source = round(drop_first * source["fps"] / profile["fps"])
+		remaining = source["frames"] - drop_source
+		if remaining < 2 or effective_frames < 2:
+			raise ValueError(
+				"Endpoint-preserving temporal fit requires at least two source and output frames."
+			)
+		video_filter = f"select='gte(n,{drop_source})'," if drop_source else ""
+		video_filter += (
+			f"setpts=N*{effective_frames - 1}/({remaining - 1}*{profile['fps']:g}*TB),"
+			f"tpad=stop_mode=clone:stop_duration={1 / profile['fps']:.9f},fps={profile['fps']:g}:round=near,"
+		)
+		rate = ((remaining - 1) / source["fps"]) / ((effective_frames - 1) / profile["fps"])
+		# FFmpeg's atempo supports 0.5..100; chaining also preserves extreme ratios.
+		if drop_source:
+			audio_filter = f"atrim=start={drop_source / source['fps']:.9f},asetpts=PTS-STARTPTS,"
+		while rate < 0.5 or rate > 2:
+			factor = 0.5 if rate < 0.5 else 2
+			audio_filter += f"atempo={factor},"
+			rate /= factor
+		audio_filter += f"atempo={rate:.9f},"
+	else:
+		video_filter = f"fps={profile['fps']:g},"
+		if drop_first:
+			video_filter += f"select='gte(n,{drop_first})',"
 	video_filter += (
 		f"tpad=stop_mode=clone:stop_duration={effective_frames / profile['fps']:.6f},"
 		f"trim=end_frame={effective_frames},setpts=PTS-STARTPTS,"
@@ -745,7 +776,7 @@ def _normalize_segment(
 				"-map",
 				"0:a?",
 				"-af",
-				f"apad,atrim=duration={audio_duration:.6f},asetpts=PTS-STARTPTS",
+				audio_filter + f"apad,atrim=duration={audio_duration:.6f},asetpts=PTS-STARTPTS",
 				"-c:a",
 				"aac",
 			]

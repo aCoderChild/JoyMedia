@@ -29,8 +29,19 @@ class TestFlux2KleinKeyframe(FrappeTestCase):
 		self.assertEqual(["character2_ref", 0], graph["environment_ref"]["inputs"]["conditioning"])
 		self.assertEqual(["character1_ref", 0], graph["character2_ref"]["inputs"]["conditioning"])
 		self.assertEqual(["text", 0], graph["character1_ref"]["inputs"]["conditioning"])
-		for prefix in ("character3", "person", "product"):
+		for prefix in ("character3", "person", "product", "general"):
 			self.assertFalse([key for key in graph if key.startswith(f"{prefix}_")], prefix)
+
+	def test_composition_reference_is_conditioning_without_becoming_an_extra_actor(self):
+		graph = copy.deepcopy(json.loads(GRAPH.read_text()))
+		GenericComfyUIAdapter._finalize_optional_input_chains(
+			graph,
+			keyframe_spec()["input_preprocessing"],
+			{"product": ["product.png"], "general": ["contact-view.png"]},
+		)
+		self.assertEqual(["general_ref", 0], graph["guider"]["inputs"]["conditioning"])
+		self.assertEqual(["product_ref", 0], graph["general_ref"]["inputs"]["conditioning"])
+		self.assertFalse(any(key.startswith("character") for key in graph))
 
 	def test_without_references_the_prompt_alone_conditions_the_image(self):
 		graph = copy.deepcopy(json.loads(GRAPH.read_text()))

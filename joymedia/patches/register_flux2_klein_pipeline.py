@@ -28,8 +28,9 @@ SLOTS = (
 	("person", 0, "person"),
 	("product", 0, "product"),
 	("environment", 0, "environment"),
+	("general", 0, "general"),
 )
-ROLES = ("character", "person", "product", "environment")
+ROLES = ("character", "person", "product", "environment", "general")
 
 
 def execute():

@@ -408,5 +408,52 @@
     0
    ]
   }
+ },
+ "general_image": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "example.png"
+  },
+  "_meta": {
+   "title": "composition / action reference"
+  }
+ },
+ "general_scale": {
+  "class_type": "ImageScaleToTotalPixels",
+  "inputs": {
+   "image": [
+    "general_image",
+    0
+   ],
+   "upscale_method": "lanczos",
+   "megapixels": 1.0,
+   "resolution_steps": 1
+  }
+ },
+ "general_encode": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "general_scale",
+    0
+   ],
+   "vae": [
+    "vae",
+    0
+   ]
+  }
+ },
+ "general_ref": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "text",
+    0
+   ],
+   "latent": [
+    "general_encode",
+    0
+   ]
+  }
  }
 }
