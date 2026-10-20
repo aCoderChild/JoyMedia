@@ -865,14 +865,22 @@ def camera_moves(shot):
 
 
 def opening_framing(shot):
-	"""How the scene's first frame is framed: the start of the sheet's camera direction ("Wide shot to close-up" opens
-	wide), made safe for drawing (an extreme close-up opens as a medium shot, so the characters are seen acting)."""
+	"""Use structured framing first, then the legacy camera opening if supplied.
+
+	An unplanned scene keeps its authored image composition without an invented
+	crop prefix. Legacy extreme close-ups retain their historical drawing scrub.
+	"""
+	from joymedia.services.planning.shot_structure import framing_text, structure_for
+
+	structure = structure_for(shot)
+	if structure:
+		return framing_text(structure)
 	text = getattr(shot, "generation_prompt", None) or ""
 	direction = re.search(r"\bCamera:\s*([^\n]*)", text)
 	if not direction:
-		from joymedia.services.planning.camera import camera_plan
-
-		return camera_plan(shot, {})["framing"]
+		# The authored image prompt owns composition when a scene has not yet
+		# been structurally planned. Shot index is not evidence of its crop.
+		return ""
 	start = re.split(r"\s*(?:->|→|\bto\b)\s*", direction.group(1), maxsplit=1)[0]
 	return _scrub_for_drawing(re.split(r"(?<=[.!?])\s", start)[0]).strip(" .")
 

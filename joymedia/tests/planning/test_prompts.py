@@ -551,13 +551,29 @@ class TestOpeningFraming(FrappeTestCase):
 		self.assertEqual("Top-down", framing("Top-down -> Macro close-up"))
 		# An extreme close-up opens as a medium shot, so the characters are seen acting.
 		self.assertEqual("medium shot of the pack", framing("Extreme close-up of the pack."))
+		self.assertEqual("", opening_framing(frappe._dict(generation_prompt="The kid spills juice.")))
 		self.assertEqual(
-			"wide establishing shot", opening_framing(frappe._dict(generation_prompt="The kid spills juice."))
-		)
-		self.assertEqual(
-			"medium shot",
+			"",
 			opening_framing(frappe._dict(shot_number=2, generation_prompt="The kid spills juice.")),
 		)
+
+	def test_structured_crop_wins_over_legacy_camera_prose(self):
+		from joymedia.services.planning.prompts import opening_framing
+
+		shot = frappe._dict(
+			generation_prompt="Camera: Wide shot.",
+			motion_plan_json={
+				"shot_structure": {
+					"stage": "feel",
+					"framing": "close_up",
+					"angle": "eye_level",
+					"subject_motion": "stationary",
+					"keep_visible": [],
+				},
+				"scene_contract": {"entities": []},
+			},
+		)
+		self.assertEqual("eye-level close-up", opening_framing(shot))
 
 
 class TestProductIdentity(FrappeTestCase):
