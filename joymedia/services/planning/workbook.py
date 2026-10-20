@@ -296,6 +296,36 @@ SCENE_COLUMNS = {
 		},
 		"example": {"vi": "Ảnh tư thế kết thúc", "en": "Approved ending"},
 	},
+	"shot_framing": {
+		"required": False,
+		"label": {"vi": "Cỡ cảnh", "en": "Shot framing"},
+		"names": ("cỡ cảnh", "shot framing"),
+		"hint": {
+			"vi": "Tuỳ chọn: wide, full, medium, medium_close_up, close_up, extreme_close_up.",
+			"en": "Optional: wide, full, medium, medium_close_up, close_up, extreme_close_up.",
+		},
+		"example": {"vi": "", "en": ""},
+	},
+	"shot_angle": {
+		"required": False,
+		"label": {"vi": "Góc máy cấu trúc", "en": "Shot angle"},
+		"names": ("góc máy cấu trúc", "shot angle"),
+		"hint": {
+			"vi": "Tuỳ chọn: eye_level, low_angle, high_angle, overhead, oblique, over_shoulder.",
+			"en": "Optional: eye_level, low_angle, high_angle, overhead, oblique, over_shoulder.",
+		},
+		"example": {"vi": "", "en": ""},
+	},
+	"narrative_stage": {
+		"required": False,
+		"label": {"vi": "Vai trò cảnh", "en": "Narrative stage"},
+		"names": ("vai trò cảnh", "narrative stage"),
+		"hint": {
+			"vi": "Tuỳ chọn: establish, approach, grip, extract, present, unfold, inspect, detail, feel, hero.",
+			"en": "Optional: establish, approach, grip, extract, present, unfold, inspect, detail, feel, hero.",
+		},
+		"example": {"vi": "", "en": ""},
+	},
 }
 
 # The References sheet: one row per picture (or place the AI draws), by name. Scenes refer to these names.
@@ -709,6 +739,10 @@ def _scenes(rows, header_index, columns):
 				"duration_seconds": (end - start) if start is not None else length,
 				"timing_source": "authored" if start is not None else "missing",
 				"visual_camera": values.get("visual_camera", ""),
+				**{
+					k: _meaningful_text(values.get(k, ""))
+					for k in ("shot_framing", "shot_angle", "narrative_stage")
+				},
 				"action": values.get("action", ""),
 				"voice_over": values.get("voice_over", ""),
 				"audio_cues": values.get("audio_cues", ""),

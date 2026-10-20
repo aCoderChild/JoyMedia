@@ -33,6 +33,22 @@ PLANNING_RULES = """
 """
 
 
+def authored_coverage(beat):
+	"""Typed optional workbook fields override inference, never the supplied pixels."""
+	result = {}
+	for column, field, choices in [
+		("shot_framing", "framing", FRAMINGS),
+		("shot_angle", "angle", ANGLES),
+		("narrative_stage", "stage", STAGES),
+	]:
+		value = str(beat.get(column) or "").strip()
+		if value:
+			if value not in choices:
+				raise ValueError("Unsupported authored " + column + ": " + value)
+			result[field] = value
+	return result
+
+
 def shot_structure(value, contract=None):
 	if value is None:
 		return None

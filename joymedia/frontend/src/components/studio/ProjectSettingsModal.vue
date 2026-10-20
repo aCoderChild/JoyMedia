@@ -221,7 +221,7 @@ const showCustomMusic = computed(
 const form = reactive({
   delivery_preset: "",
   aspect_ratio: "",
-  total_duration_seconds: 15,
+  total_duration_seconds: 0,
   generation_mode: "Continuous",
   reference_mode: "Single Image",
   quality_mode: "Production",
@@ -274,7 +274,7 @@ watch(
     if (s) {
       form.delivery_preset = s.delivery_preset || "";
       form.aspect_ratio = s.delivery_width && s.delivery_height ? `${s.delivery_width}:${s.delivery_height}` : "";
-      form.total_duration_seconds = Number(s.duration || s.total_duration_seconds) || 15;
+      form.total_duration_seconds = Number(s.duration || s.total_duration_seconds) || 0;
       form.generation_mode = "Continuous";
       form.reference_mode = s.reference_mode || "Single Image";
       form.quality_mode = s.quality_mode || "Production";

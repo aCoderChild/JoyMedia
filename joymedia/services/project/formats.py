@@ -52,3 +52,11 @@ def require_dimensions(snapshot):
 	if not width or not height or int(width) <= 0 or int(height) <= 0:
 		raise ValueError("Specify the video's aspect ratio before generation.")
 	return int(width), int(height)
+
+
+def duration_from_description(text):
+	"""Read a duration only with a time unit, never the first number in an aspect."""
+	match = re.search(
+		r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(?:-\s*)?(?:seconds?\b|secs?\b|s\b|giây\b)", str(text or ""), re.I
+	)
+	return float(match.group(1).replace(",", ".")) if match else None

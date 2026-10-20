@@ -46,7 +46,7 @@
               :options="demos.map((d) => ({ label: `${d.name}${d.product_name ? ' — ' + d.product_name : ''}`, value: d.name }))"
             />
             <div v-if="selectedDemo" class="flex flex-wrap gap-1.5">
-              <Badge theme="blue" :label="formatLabel(selectedDemo.format)" />
+              <Badge theme="blue" :label="selectedDemo.format_description || formatLabel(selectedDemo.format)" />
               <Badge v-if="selectedDemo.duration_seconds" theme="blue" :label="`${selectedDemo.duration_seconds}s`" />
               <Badge theme="blue" :label="tr(`${selectedDemo.scene_count} scenes`, `${selectedDemo.scene_count} cảnh`)" />
               <Badge v-if="selectedDemo.timing_gaps" theme="amber" :label="tr(`${selectedDemo.timing_gaps} timing gaps (closed on export)`, `${selectedDemo.timing_gaps} khoảng trống thời gian (nối lại khi xuất)`)" />

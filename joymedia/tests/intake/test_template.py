@@ -214,7 +214,7 @@ class TestClientLayout(FrappeTestCase):
 			["Nhân vật trong cảnh", "Sản phẩm trong cảnh", "Bối cảnh", "Logic / Liên tục"],
 			[sheet.cell(13, c).value for c in range(9, 13)],
 		)
-		self.assertEqual("A13:N16", sheet.tables["Storyboard"].ref)
+		self.assertEqual("A13:Q16", sheet.tables["Storyboard"].ref)
 		self.assertEqual("Ảnh mở cảnh", sheet["M13"].value)
 		self.assertEqual("Ảnh kết cảnh", sheet["N13"].value)
 		lists = [v for v in sheet.data_validations.dataValidation if "Tham chiếu" in (v.formula1 or "")]

@@ -6,7 +6,7 @@ or music with a case recipe. Sampling, model selection and node parameters belon
 to immutable workflow JSON records. UI preset buttons are explicit choices.
 
 Delivery precedence is an explicit format override, the selected workbook's
-Format field, then an explicit ratio in a text brief. Missing format remains
+Format field, then an explicit ratio in a text brief. An explicit time unit in a brief supplies duration; missing duration is left unset instead of becoming a 15-second input. Missing format remains
 unset and blocks generation readiness. Platform names alone do not choose a
 shape. Existing projects retain their stored geometry. A preset is an orientation
 label, not a replacement for an authored 4:5 or 21:9 ratio.
@@ -55,3 +55,9 @@ audio timing, finishing/export and browser framing. Historical recipes and
 migration records remain historical data, rather than active input overrides.
 Schema enums, validation limits, transport retry budgets and explicitly selected
 quality tiers remain ordinary application rules; they are not creative inputs.
+
+Optional workbook columns **Shot framing**, **Shot angle** and **Narrative stage**
+accept the shared shot-grammar enums. Blank keeps normal inference. An authored
+value is validated and takes priority over inferred coverage; movement is still
+derived by shared policy. Schema-repair retries retain the original visual,
+reference, timing and continuity context, avoiding an example becoming the shot.

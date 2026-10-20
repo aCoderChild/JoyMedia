@@ -99,11 +99,64 @@ class TestInferredCameraPolicy(unittest.TestCase):
 			plan = p._timed_sheet_plan(
 				frappe._dict(name="P", product_name="cup"),
 				frappe._dict(duration_seconds=2, shot_number=1),
-				{},
+				{"shot_framing": "wide", "shot_angle": "eye_level", "narrative_stage": "establish"},
 				[],
 				{"reference_keys": [], "setting_prompt": "table", "notes": []},
 				[{"start": 0, "end": 2, "action": "The cup remains still."}],
 			)
 		planner.assert_called_once()
+		self.assertEqual("wide", plan["motion_plan"]["shot_structure"]["framing"])
+		self.assertEqual("establish", plan["motion_plan"]["shot_structure"]["stage"])
 		self.assertEqual(plan["motion_plan"]["camera_intent"]["purpose"], "hook")
 		self.assertEqual(plan["motion_plan"]["actions"][0]["action"], "The cup remains still.")
+
+
+class TestAuthoredCoverage(unittest.TestCase):
+	def test_typed_coverage_is_optional_and_invalid_values_fail(self):
+		from joymedia.services.planning.shot_structure import authored_coverage
+
+		self.assertEqual({}, authored_coverage({}))
+		self.assertEqual(
+			{"framing": "full", "stage": "feel"},
+			authored_coverage({"shot_framing": "full", "narrative_stage": "feel"}),
+		)
+		with self.assertRaises(ValueError):
+			authored_coverage({"shot_framing": "arbitrary crop"})
+
+	def test_schema_repair_keeps_the_original_source_context(self):
+		import frappe
+
+		from joymedia.services.planning import production as p
+
+		raw = {
+			"image_prompt": "One cup.",
+			"motion_plan": {
+				"shot_structure": {
+					"stage": "inspect",
+					"framing": "close_up",
+					"angle": "eye_level",
+					"subject_motion": "stationary",
+					"keep_visible": [],
+				}
+			},
+		}
+		plan = {"motion_plan": raw["motion_plan"], "setting_prompt": "table", "notes": []}
+		with (
+			patch.object(p, "_ask_planner", side_effect=[raw, raw]) as ask,
+			patch.object(p, "normalize_production_shot", side_effect=[ValueError("schema"), plan]),
+			patch.object(p, "translate", side_effect=lambda x, *a: x),
+			patch.object(p, "english_roles", side_effect=lambda x, *a: x),
+			patch.object(p, "audio_direction", return_value=""),
+		):
+			p._timed_sheet_plan(
+				frappe._dict(product_name="cup"),
+				frappe._dict(shot_number=1, duration_seconds=2),
+				{"camera": "AUTHORED WIDE ROOM"},
+				[],
+				{"reference_keys": [], "setting_prompt": "SAME ROOM", "notes": []},
+				[{"start": 0, "end": 2, "action": "Lift the cup."}],
+			)
+		for call in ask.call_args_list:
+			self.assertIn("AUTHORED WIDE ROOM", call.args[0])
+			self.assertIn("SAME ROOM", call.args[0])
+			self.assertIn("Lift the cup.", call.args[0])

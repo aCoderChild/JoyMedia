@@ -466,11 +466,17 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 		)
 		+ '\nReturn {"image_prompt":"","setting_prompt":"","video_prompt":"","reference_keys":[],"continuity_mode":"New Scene","start_state":"","end_state":"","motion_plan":{"shot_structure":{}},"needs_editing":""}. Camera intent is derived by application policy.'
 	)
+	from joymedia.services.planning.shot_structure import authored_coverage
+
+	coverage = authored_coverage(beat)
+	source_prompt = prompt
 	# A bounded schema-repair retry fixes malformed inferred structure, never the
 	# authored actions. Invalid output must not silently lose physical constraints.
 	for attempt in range(3):
 		raw = _ask_planner(prompt, max_tokens=2600)
 		raw.setdefault("motion_plan", {}).update(actions=actions, scene_contract=contract)
+		if coverage:
+			raw["motion_plan"].setdefault("shot_structure", {}).update(coverage)
 		_discard_inferred_camera(project, raw)
 		try:
 			plan = normalize_production_shot(
@@ -484,7 +490,9 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 			if attempt == 2:
 				raise
 			prompt = (
-				"Repair this production-plan JSON without changing its subjects, opening, actions or timing. "
+				source_prompt
+				+ "\n\n"
+				+ "Repair this production-plan JSON without changing its subjects, opening, actions or timing. "
 				"Return the complete corrected JSON, no commentary. Schema error: " + str(exc) + ". "
 				"Every relation subject/object and keep_visible entry must equal a declared entity id, never its label. "
 				"Relation kind must be attached_to, supported_by, contacts or flows_from; describe temporary contact "
@@ -500,6 +508,7 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 	if not plan["motion_plan"].get("shot_structure"):
 		frappe.throw(_("Timed scene planning did not provide shot structure. Please replan the scene."))
 	plan["motion_plan"]["actions"] = actions
+	plan["motion_plan"]["shot_structure"].update(coverage)
 	_apply_camera_profile(project, shot, plan)
 	plan["video_prompt"] = " ".join(row["action"] for row in actions)
 	if beat.get("rules"):
@@ -659,6 +668,7 @@ def creative_beat(project, shot):
 			break
 	text = {
 		"camera": source.get("visual_camera") or "",
+		**{k: source.get(k) or "" for k in ("shot_framing", "shot_angle", "narrative_stage")},
 		"action": source.get("action") or "",
 		"voice_over": source.get("voice_over") or shot.voice_over or "",
 		"on_screen_text": source.get("on_screen_text") or shot.caption or "",

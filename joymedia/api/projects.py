@@ -333,7 +333,12 @@ def create_project(project_name, product_name, video_idea=None, campaign_brief=N
 	from joymedia.services.workflows.pipeline import pipeline_for_final_workflow
 
 	pipeline = pipeline_for_final_workflow(workflow.name) if workflow else None
-	from joymedia.services.project.formats import delivery_dimensions, orientation, parse_ratio
+	from joymedia.services.project.formats import (
+		delivery_dimensions,
+		duration_from_description,
+		orientation,
+		parse_ratio,
+	)
 
 	ratio = parse_ratio(video_idea or campaign_brief)
 	width, height = delivery_dimensions(ratio, 720) if ratio else (None, None)
@@ -345,7 +350,7 @@ def create_project(project_name, product_name, video_idea=None, campaign_brief=N
 			"video_idea": video_idea or campaign_brief,
 			"workflow": workflow.name if workflow else None,
 			"generation_pipeline": pipeline.name if pipeline else None,
-			"total_duration_seconds": 15,
+			"total_duration_seconds": duration_from_description(video_idea or campaign_brief),
 			"delivery_preset": orientation(ratio) if ratio else None,
 			"delivery_width": width,
 			"delivery_height": height,

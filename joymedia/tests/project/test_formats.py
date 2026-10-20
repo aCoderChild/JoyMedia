@@ -2,6 +2,7 @@ from unittest import TestCase
 
 from joymedia.services.project.formats import (
 	delivery_dimensions,
+	duration_from_description,
 	orientation,
 	parse_ratio,
 	ratio_label,
@@ -33,6 +34,11 @@ class TestAuthoredGeometry(TestCase):
 		for snapshot in [{}, {"delivery_width": 720}, {"delivery_width": 0, "delivery_height": 1280}]:
 			with self.assertRaisesRegex(ValueError, "aspect ratio"):
 				require_dimensions(snapshot)
+
+	def test_duration_uses_units_instead_of_format_numbers(self):
+		self.assertEqual(30, duration_from_description("A 4:5 commercial lasting 30 seconds."))
+		self.assertEqual(10, duration_from_description("10-second film in 21:9."))
+		self.assertIsNone(duration_from_description("A 4:5 commercial."))
 
 	def test_zero_ratios_are_rejected(self):
 		for text in ["0:16", "4:0"]:

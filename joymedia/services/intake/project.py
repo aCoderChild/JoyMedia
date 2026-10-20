@@ -162,6 +162,7 @@ def preview_workbook(workbook_file):
 				"name": demo["name"],
 				"product_name": metadata.get("product_name") or "",
 				"format": format_preset(metadata.get("format")),
+				"format_description": metadata.get("format") or "",
 				"duration_seconds": parse_duration_seconds(metadata.get("duration") or "")
 				if metadata.get("duration")
 				else None,
@@ -207,11 +208,20 @@ def create_project_from_brief(
 		format_text = format or (video_idea if not workbook_file else None)
 		if format_text and format_preset(format_text):
 			preset = format_preset(format_text)
-			project.save_video_settings(
-				total_duration_seconds=project.total_duration_seconds or 15,
-				delivery_preset=preset,
-				aspect_ratio=format_text,
-			)
+			if project.total_duration_seconds:
+				project.save_video_settings(
+					total_duration_seconds=project.total_duration_seconds,
+					delivery_preset=preset,
+					aspect_ratio=format_text,
+				)
+			else:
+				from joymedia.services.project.formats import delivery_dimensions, parse_ratio
+
+				project.delivery_preset = preset
+				project.delivery_width, project.delivery_height = delivery_dimensions(
+					parse_ratio(format_text), 720
+				)
+				project.save(ignore_permissions=True)
 		added = []
 		for item in references:
 			label = str(item.get("label") or "").strip() or str(item.get("file_name") or "reference")
@@ -300,6 +310,12 @@ def get_project_readiness(project_name, lang=None):
 		f"{project.delivery_preset} {project.delivery_width}×{project.delivery_height}, {float(project.total_duration_seconds or 0):g}s"
 		if project.delivery_width
 		else _("Choose Landscape, Portrait or Square."),
+	)
+	add(
+		"duration",
+		_("Video duration"),
+		bool(project.total_duration_seconds and 1 <= float(project.total_duration_seconds) <= 60),
+		_("Specify the duration in the brief, workbook or video settings."),
 	)
 	references = [row for row in project.selected_media or [] if row.reference_key]
 	add(

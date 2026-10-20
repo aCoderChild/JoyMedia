@@ -78,7 +78,7 @@ def improve_project_video_idea(project_name, current_idea=""):
 		current_idea=idea_text,
 		product_name=_meaningful_project_value(project.product_name, "the product"),
 		references=references,
-		duration=float(project.total_duration_seconds or 15),
+		duration=float(project.total_duration_seconds or 0),
 		delivery_preset=ratio_label(project.delivery_width, project.delivery_height),
 	)
 

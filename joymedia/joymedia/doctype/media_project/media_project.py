@@ -26,6 +26,7 @@ from joymedia.services.project.context import (
 	build_project_snapshot,
 	normalize_export_quality,
 )
+from joymedia.services.project.formats import ratio_label
 
 ALLOWED_STATUSES = {"Draft", "Generating", "Completed", "Needs Attention", "Cancelled", "Archived"}
 
@@ -396,7 +397,7 @@ class MediaProject(Document):
 		return generate_video_plan(
 			product_name=_meaningful_project_value(self.product_name, "The supplied product"),
 			video_idea=video_idea,
-			total_video_duration=float(settings.total_duration_seconds or 15),
+			total_video_duration=float(settings.total_duration_seconds or 0),
 			target_fps=workflow.output_fps,
 			shot_count=shot_count,
 			story_film=story_film,
@@ -404,7 +405,7 @@ class MediaProject(Document):
 			reference_media=reference_media,
 			generation_mode=_normalize_generation_mode(settings.generation_mode),
 			global_instructions=settings.global_instructions,
-			format_preset=settings.delivery_preset,
+			format_preset=ratio_label(settings.delivery_width, settings.delivery_height),
 			workflow_input_contract=automatic_planning_input_contract(),
 		)
 
@@ -710,7 +711,7 @@ class MediaProject(Document):
 				reference_media=_get_project_reference_contexts(self),
 				generation_mode="Continuous" if continuity else self.generation_mode,
 				global_instructions=self.global_instructions,
-				format_preset=self.delivery_preset,
+				format_preset=ratio_label(self.delivery_width, self.delivery_height),
 				workflow_input_contract=automatic_planning_input_contract(),
 				continuation_context={
 					"previous_prompt": last_shot.generation_prompt,
