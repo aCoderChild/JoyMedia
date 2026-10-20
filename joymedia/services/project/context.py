@@ -448,7 +448,7 @@ def _compose_end_card(shots):
 			)
 		last["closing_hold_seconds"] = min(2.0, duration)
 		last["closing_hold_mode"] = "source_artwork" if static else "generated_pose"
-		if static:
+		if static and not last.get("character_mode"):
 			last["character_mode"] = "Paste exact art"
 
 

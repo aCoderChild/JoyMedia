@@ -383,31 +383,32 @@ def _closing_hold_source(run_name, shot_name):
 		project = frappe.get_doc("Media Project", snapshot["media_project"])
 		return seconds, _project_asset_path(project, frames[0])
 	keyframe = row.get("keyframe_artifact")
-	if not keyframe:
-		# A run that draws its own opening cannot put its future artifact ID in
-		# the snapshot. Follow the video's frozen Primary Image dependency.
-		for task in frappe.get_all(
-			"Generation Task",
-			filters={"generation_run": run_name, "shot": shot_name},
-			fields=["name", "workflow", "depends_on_task", "dependency_artifact_role"],
-			order_by="segment_index asc, creation asc",
-		):
-			if frappe.db.get_value("Generation Workflow", task.workflow, "output_media_type") != "Video":
-				continue
-			if task.depends_on_task and task.dependency_artifact_role == "Primary Image":
-				attempt = frappe.db.get_value(
-					"Generation Attempt",
-					{"generation_task": task.depends_on_task, "status": "Completed"},
+	# The actual dependency wins over a previously approved image in the snapshot.
+	for task in frappe.get_all(
+		"Generation Task",
+		filters={"generation_run": run_name, "shot": shot_name},
+		fields=["name", "workflow", "depends_on_task", "dependency_artifact_role"],
+		order_by="segment_index asc, creation asc",
+	):
+		if frappe.db.get_value("Generation Workflow", task.workflow, "output_media_type") != "Video":
+			continue
+		if task.depends_on_task and task.dependency_artifact_role in {"Primary Image", "Last Frame"}:
+			keyframe = None
+			attempt = frappe.db.get_value(
+				"Generation Attempt",
+				{"generation_task": task.depends_on_task, "status": "Completed"},
+				"name",
+				order_by="creation desc",
+			)
+			if attempt:
+				keyframe = frappe.db.get_value(
+					"Generation Artifact",
+					{"generation_attempt": attempt, "artifact_role": task.dependency_artifact_role},
 					"name",
-					order_by="creation desc",
 				)
-				if attempt:
-					keyframe = frappe.db.get_value(
-						"Generation Artifact",
-						{"generation_attempt": attempt, "artifact_role": "Primary Image"},
-						"name",
-					)
-			break
+			if not keyframe:
+				raise ValueError("The required closing image dependency has no completed artifact.")
+		break
 	file_url = frappe.db.get_value("Generation Artifact", keyframe, "frappe_file") if keyframe else None
 	if not file_url:
 		raise ValueError(

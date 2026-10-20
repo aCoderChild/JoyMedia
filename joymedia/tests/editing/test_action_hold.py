@@ -44,6 +44,25 @@ class TestActionHold(TestCase):
 		_compose_end_card([row])
 		self.assertEqual("source_artwork", row["closing_hold_mode"])
 
+	def test_static_source_presentation_preserves_the_authored_composition_mode(self):
+		for mode in ("Draw in scene", "Paste exact art"):
+			row = {
+				"character_mode": mode,
+				"duration_seconds": 5,
+				"references": [{"reference_role": "Product", "asset_version": "source"}],
+				"motion_plan_json": {
+					"camera_motion": "locked",
+					"scene_contract": {
+						"version": 1,
+						"entities": [{"id": "p", "label": "the source product"}],
+						"properties": [{"entity": "p", "name": "motion", "value": "stationary"}],
+					},
+				},
+			}
+			_compose_end_card([row])
+			self.assertEqual(row["character_mode"], mode)
+			self.assertEqual(row["closing_hold_mode"], "source_artwork")
+
 	def test_final_pose_is_frozen_without_returning_to_the_opening_or_changing_length(self):
 		with tempfile.TemporaryDirectory() as d:
 			path = Path(d) / "motion.mp4"

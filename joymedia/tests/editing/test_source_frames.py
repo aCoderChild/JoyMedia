@@ -83,6 +83,79 @@ class TestAuthoredFrameLock(unittest.TestCase):
 			self.assertEqual(_closing_hold_source("R", "S"), (5, "/frozen/frame.png"))
 			self.assertEqual(checked.call_args.args[1], "FRAME")
 
+	def test_a_new_image_dependency_wins_over_the_old_snapshot_frame(self):
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+
+		from joymedia.services.editing.composer import _closing_hold_source
+
+		for role in ("Primary Image", "Last Frame"):
+			with self.subTest(role=role), TemporaryDirectory() as folder:
+				path = Path(folder) / "actual-frame.png"
+				path.write_bytes(b"actual immutable image")
+				snapshot = json.dumps(
+					{"shots": [{"shot": "S", "closing_hold_seconds": 2, "keyframe_artifact": "OLD"}]}
+				)
+
+				def value(kind, name, *args, **kwargs):
+					if kind == "Generation Run":
+						return snapshot
+					if kind == "Generation Workflow":
+						return "Video"
+					if kind == "Generation Attempt":
+						return "A-NEW"
+					if isinstance(name, dict):
+						self.assertEqual(name["artifact_role"], role)
+						return "NEW"
+					self.assertEqual(name, "NEW")
+					return "/private/files/new.png"
+
+				with (
+					patch("joymedia.services.editing.composer.frappe.db.get_value", side_effect=value),
+					patch(
+						"joymedia.services.editing.composer.frappe.get_all",
+						return_value=[
+							frappe._dict(
+								name="VIDEO",
+								workflow="W",
+								depends_on_task="IMAGE",
+								dependency_artifact_role=role,
+							)
+						],
+					),
+					patch(
+						"joymedia.services.editing.composer.frappe.get_doc",
+						return_value=frappe._dict(get_full_path=lambda: str(path)),
+					),
+				):
+					self.assertEqual(_closing_hold_source("R", "S"), (2, str(path)))
+
+	def test_an_incomplete_new_dependency_never_falls_back_to_the_old_picture(self):
+		from joymedia.services.editing.composer import _closing_hold_source
+
+		snapshot = json.dumps(
+			{"shots": [{"shot": "S", "closing_hold_seconds": 2, "keyframe_artifact": "OLD"}]}
+		)
+		with (
+			patch(
+				"joymedia.services.editing.composer.frappe.db.get_value",
+				side_effect=[snapshot, "Video", None],
+			),
+			patch(
+				"joymedia.services.editing.composer.frappe.get_all",
+				return_value=[
+					frappe._dict(
+						name="VIDEO",
+						workflow="W",
+						depends_on_task="IMAGE",
+						dependency_artifact_role="Primary Image",
+					)
+				],
+			),
+		):
+			with self.assertRaisesRegex(ValueError, "no completed artifact"):
+				_closing_hold_source("R", "S")
+
 	def test_static_actor_presentation_requires_an_authored_frame_and_no_action(self):
 		from joymedia.services.consistency.retention import is_static_presentation
 

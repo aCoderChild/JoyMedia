@@ -50,7 +50,11 @@ Services belong outside DocType controllers unless they enforce a persisted inva
 5. Ingest artifacts and run sampled visual checks. Failed or uncertain evidence
    cannot establish product fidelity. Inspect the actual footage before selecting
    a reviewed take; preserve prior selected takes when rejecting a candidate.
-6. Assemble selected takes, narration, effects, music and editorial graphics into
+6. A declared static product/camera contract can use the existing source-frame
+   presentation route. Exact source artwork and composition mode are separate:
+   source preservation must not turn an authored staged packshot into a white
+   catalogue-photo card. Closing holds follow the actual frozen image dependency.
+7. Assemble selected takes, narration, effects, music and editorial graphics into
    the timeline. Export a review version; release checks remain a separate gate.
 
 ## Finishing responsibilities

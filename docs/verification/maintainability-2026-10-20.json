@@ -12,10 +12,12 @@
       "planning_and_camera": 114,
       "prompt_serialization": 64,
       "finishing_and_project_versions": 33,
-      "admission_ingestion_cancellation": 45
+      "admission_ingestion_cancellation": 45,
+      "closing_mode_and_frozen_frames": 61,
+      "live_runtime_imports": 52
     },
-    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy. Admission commits share the ingestion lock, release it during model I/O, recheck cancellation, and avoid repeated Running-state writes.",
-    "result": "All 113 module groups verified after correction; five additional regression tests pass."
+    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy. Admission commits share the ingestion lock, release it during model I/O, recheck cancellation, and avoid repeated Running-state writes. Static presentation preserves the authored composition mode; closing holds prefer the actual frozen image dependency and fail closed when it is missing.",
+    "result": "All 113 module groups verified after correction; eight additional regression tests pass."
   },
   "frontend": {
     "focused_passed": 19,
