@@ -56,12 +56,29 @@ class TestStoryboardApprovalWorkflow(FrappeTestCase):
 		storyboard.update_project_shot(self.project.name, self.shot.name, {"generation_prompt": "A changed scene."})
 		self.assertEqual("Ready for Review", self._status())
 
+	def test_a_direction_edit_cannot_keep_a_contradictory_older_motion_plan(self):
+		frappe.db.set_value("Shot", self.shot.name, {"motion_plan_json": '{"actions":[{"action":"Old gesture","start":0,"end":2}]}', "end_state":"Old expression", "handoff_type":"motion_continuation"})
+		storyboard.update_project_shot(self.project.name, self.shot.name, {"generation_prompt": "A different gesture with an unchanged expression."})
+		shot = frappe.get_doc("Shot", self.shot.name)
+		self.assertFalse(shot.motion_plan_json)
+		self.assertFalse(shot.end_state)
+		self.assertFalse(shot.handoff_type)
+
 	def test_the_desk_actions_move_the_state_and_leave_an_audit_trail(self):
 		project = frappe.get_doc("Media Project", self.project.name)
 		apply_workflow(project, "Submit for review")
 		self.assertEqual("Ready for Review", self._status())
 		apply_workflow(frappe.get_doc("Media Project", self.project.name), "Approve")
 		self.assertEqual("Approved", self._status())
+
+	def test_explicit_reconfirmation_preserves_plan_when_image_direction_changes(self):
+		plan = {"actions": [{"action": "Move", "start": 0, "end": 3}]}
+		storyboard.update_project_shot(self.project.name, self.shot.name, {"motion_plan_json": plan})
+		response = storyboard.update_project_shot(self.project.name, self.shot.name, {
+			"image_prompt": "A reachable starting pose.", "motion_plan_json": plan,
+		})
+		self.assertEqual(frappe.parse_json(response["motion_plan_json"]), plan)
+		self.assertEqual(frappe.parse_json(frappe.db.get_value("Shot", self.shot.name, "motion_plan_json")), plan)
 
 	def test_a_jump_the_workflow_does_not_define_is_refused(self):
 		storyboard.approve_project_storyboard(self.project.name, True)

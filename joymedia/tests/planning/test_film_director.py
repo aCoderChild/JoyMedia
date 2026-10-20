@@ -37,22 +37,6 @@ def _response(payload, ok=True):
 
 
 class TestFilmDirector(FrappeTestCase):
-	def test_project_context_infers_tagged_general_property_areas(self):
-		project = frappe._dict(
-			video_idea="@host quảng cáo bất động sản; @1 và @2 là các phần trong bất động sản đó.",
-		)
-		references = [
-			{"reference_key": "host", "media_type": "Image", "asset_category": "Character", "reference_role": "General"},
-			{"reference_key": "1", "media_type": "Image", "asset_category": "Reference", "reference_role": "General"},
-			{"reference_key": "2", "media_type": "Image", "asset_category": "Reference", "reference_role": "General"},
-		]
-		with patch.object(project_context, "_get_project_reference_contexts", return_value=references), patch.object(
-			vision_analysis, "ensure_project_image_analysis"
-		):
-			updated, story_film = project_context._story_film_planning_context(project)
-
-		self.assertTrue(story_film)
-		self.assertEqual(["Environment", "Environment"], [row["reference_role"] for row in updated[1:]])
 
 	def test_product_director_routing_uses_reference_roles_not_reference_mode(self):
 		project = frappe._dict(reference_mode="Single-reference")
@@ -182,6 +166,21 @@ class TestFilmDirector(FrappeTestCase):
 		self.assertTrue(all(
 			ref["usage_role"] == "product_reference" for shot in shots for ref in shot["references"]
 		))
+
+	def test_story_planning_preserves_all_selected_characters_when_the_planner_does_not_narrow_them(self):
+		references = [
+			{"reference_key": "lead", "media_type": "Image", "reference_role": "Character"},
+			{"reference_key": "partner", "media_type": "Image", "reference_role": "Character"},
+			{"reference_key": "room", "media_type": "Image", "reference_role": "Environment"},
+		]
+		shots = [{"generation_prompt": "The characters greet each other in the room.", "references": []}]
+
+		film_director.normalize_story_references(shots, references, "reference")
+
+		self.assertEqual(
+			["lead", "partner", "room"],
+			[reference["reference_key"] for reference in shots[0]["references"]],
+		)
 
 	def test_takes_without_a_person_put_the_described_place_second(self):
 		shots = [{
@@ -440,7 +439,9 @@ class TestFilmDirector(FrappeTestCase):
 			product_preamble = film_director.reference_preamble(["AV-MODEL"], [])
 		self.assertEqual(
 			"<Picture 1> is the product: keep its exact shape, size, colours, patterns and details. "
-			"It is an object in the scene, never the setting.",
+			"It is an object in the scene, never the setting. "
+			"References are independently framed; their pixel sizes do not establish physical scale. "
+			"Follow the scene support surfaces and authored relative dimensions.",
 			product_preamble,
 		)
 
@@ -507,7 +508,7 @@ class TestVisionAnalysis(FrappeTestCase):
 			return response
 
 		with (
-			patch.dict(frappe.conf, {"qwen_vl_base_url": "http://vl/v1", "qwen_vl_model": "qwen-vl"}),
+			patch.dict(frappe.conf, {"joymedia_vision": None, "qwen_vl_base_url": "http://vl/v1", "qwen_vl_model": "qwen-vl"}),
 			patch.object(vision_analysis.requests, "post", side_effect=fake_post),
 		):
 			analysis = vision_analysis.describe_image("data:image/jpeg;base64,AAAA")
@@ -588,72 +589,9 @@ class TestTakeLengthsFitRenderJobs(FrappeTestCase):
 
 
 class TestDirectorGuards(FrappeTestCase):
-	def test_property_prompt_roles_promote_only_tagged_general_area_images(self):
-		references = [
-			{"reference_key": "host", "media_type": "Image", "asset_category": "Character", "reference_role": "General"},
-			{"reference_key": "1", "media_type": "Image", "asset_category": "Reference", "reference_role": "General"},
-			{"reference_key": "logo", "media_type": "Image", "asset_category": "Brand", "reference_role": "General"},
-		]
-		idea = "@host quảng cáo bất động sản; @1 là một phần trong bất động sản đó."
 
-		updated = film_director.infer_property_area_references(references, idea)
 
-		self.assertEqual(["General", "Environment", "General"], [item["reference_role"] for item in updated])
 
-	def test_property_marketing_override_uses_only_referenced_visible_space(self):
-		references = [
-			{"reference_key": "person", "reference_role": "General", "asset_category": "Character",
-			 "analysis": {"kind": "person", "outfit": "white ao dai"}},
-			{"reference_key": "1", "reference_role": "Environment", "asset_category": "Reference"},
-			{"reference_key": "2", "reference_role": "Environment", "asset_category": "Reference"},
-		]
-		shots = [{"duration_seconds": 5, "generation_prompt": "The woman makes tea in a luxury penthouse.",
-			"references": [{"reference_key": "person"}, {"reference_key": "1"}]},
-			{"duration_seconds": 5, "generation_prompt": "The woman lifts weights in a gym.",
-			"references": [{"reference_key": "person"}, {"reference_key": "2"}]}]
-
-		film_director.enforce_property_marketing_brief(
-			shots, "@person quảng cáo bất động sản @1 @2 là các phần của ngôi nhà, hãy làm nơi đó đáng sống", references
-		)
-
-		self.assertIn("property area shown in <Picture 2>", shots[0]["generation_prompt"])
-		self.assertIn("invent no room type", shots[0]["generation_prompt"])
-		self.assertIn("livable", shots[0]["generation_prompt"])
-		self.assertNotIn("makes tea", shots[0]["generation_prompt"])
-		self.assertNotEqual(shots[0]["generation_prompt"], shots[0]["image_prompt"])
-		self.assertIn("photorealistic commercial frame", shots[0]["image_prompt"])
-		self.assertEqual(5, shots[0]["motion_plan"]["actions"][-1]["end"])
-
-	def test_property_transition_keyframe_uses_the_starting_environment(self):
-		references = [
-			{"reference_key": "person", "reference_role": "General", "asset_category": "Character",
-			 "analysis": {"kind": "person", "outfit": "white ao dai"}},
-			{"reference_key": "lobby", "reference_role": "Environment", "asset_category": "Reference"},
-			{"reference_key": "pool", "reference_role": "Environment", "asset_category": "Reference"},
-		]
-		shots = [{"duration_seconds": 5, "generation_prompt": "The woman crosses from lobby to pool.",
-			"references": [{"reference_key": "person"}, {"reference_key": "lobby"}, {"reference_key": "pool"}]}]
-
-		film_director.enforce_property_marketing_brief(
-			shots, "@person quảng cáo bất động sản @lobby @pool là các phần của ngôi nhà", references
-		)
-
-		self.assertIn("starting property area shown in <Picture 2>", shots[0]["image_prompt"])
-		self.assertNotIn("destination property area", shots[0]["image_prompt"])
-
-	def test_compact_property_plan_prompt_includes_all_selected_areas(self):
-		references = [
-			{"reference_key": "host", "reference_role": "General", "asset_category": "Character"},
-			{"reference_key": "1", "reference_role": "Environment", "asset_category": "Reference"},
-			{"reference_key": "2", "reference_role": "Environment", "asset_category": "Reference"},
-		]
-		instruction = film_director.build_property_director_instruction(
-			references, 10, {"character": "person", "place": "environment"}
-		)
-		self.assertIn("exactly 2 continuous takes", instruction)
-		self.assertIn("key=1", instruction)
-		self.assertIn("key=2", instruction)
-		self.assertIn("invent no rooms or amenities", instruction)
 
 	def test_undocumented_property_references_use_selected_order_without_guessing(self):
 		references = [
@@ -692,7 +630,6 @@ class TestDirectorGuards(FrappeTestCase):
 
 	def test_planning_role_map_keeps_second_product_slot_distinct(self):
 		from joymedia.services.planning.llm import _story_reference_roles
-		from joymedia.services.workflows.routing import automatic_planning_input_contract
 
 		roles = _story_reference_roles(automatic_planning_input_contract())
 
@@ -755,38 +692,6 @@ class TestPlannerCutOff(FrappeTestCase):
 		self.assertIn("image_prompt under 30 words", retry_messages[1]["content"])
 		self.assertIn("Do not omit shots", retry_messages[1]["content"])
 
-	@patch("joymedia.services.planning.llm.write_titles_and_captions", return_value={})
-	@patch("joymedia.services.planning.llm._request_plan", return_value=None)
-	@patch("joymedia.services.planning.llm._completion_budget", return_value=1000)
-	@patch("joymedia.services.planning.llm._qwen_config", return_value=("http://qwen/v1", "m", 60))
-	def test_property_campaign_has_grounded_fallback_after_repeated_cutoff(
-		self, config, budget, request_plan, write_words,
-	):
-		references = [
-			{"reference_key": "host", "asset_name": "Host", "asset_category": "Character", "reference_role": "General",
-			 "analysis": {"kind": "person", "outfit": "white ao dai"}},
-			{"reference_key": "1", "asset_name": "1", "asset_category": "Reference", "reference_role": "Environment"},
-			{"reference_key": "2", "asset_name": "2", "asset_category": "Reference", "reference_role": "Environment"},
-		]
-		idea = "@host quảng cáo bất động sản; @1 và @2 là các phần trong bất động sản đó, hãy làm nơi này đáng sống."
-
-		plan = qwen_client.generate_video_plan(
-			product_name="Property",
-			video_idea=idea,
-			total_video_duration=10,
-			target_fps=24,
-			reference_media=references,
-			generation_mode="Continuous",
-			format_preset="Landscape",
-			workflow_input_contract=automatic_planning_input_contract(),
-			story_film=True,
-		)
-
-		self.assertEqual(2, request_plan.call_count)
-		self.assertEqual(2, len(plan["shots"]))
-		self.assertEqual(["1", "2"], [shot["references"][1]["reference_key"] for shot in plan["shots"]])
-		self.assertTrue(all("livable" in shot["generation_prompt"] for shot in plan["shots"]))
-		self.assertEqual([5.0, 5.0], [shot["duration_seconds"] for shot in plan["shots"]])
 
 	@patch("joymedia.services.planning.llm._completion_budget", return_value=1000)
 	@patch("joymedia.services.planning.llm._qwen_config", return_value=("http://qwen/v1", "m", 60))

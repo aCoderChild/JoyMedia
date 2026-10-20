@@ -25,6 +25,40 @@ def get_base_url(base_url: str | None = None):
 	return base_url.rstrip("/")
 
 
+def endpoint_for_workflow(workflow_name):
+	"""Operator routing is frozen on each attempt before uploads or submission."""
+	from urllib.parse import urlsplit
+
+	routes = frappe.conf.get("joymedia_workflow_endpoints") or {}
+	if not isinstance(routes, dict):
+		raise ValueError("joymedia_workflow_endpoints must map workflow versions to HTTP(S) endpoints.")
+	value = routes.get(workflow_name)
+	if value is None:
+		return get_base_url()
+	if not isinstance(value, str):
+		raise ValueError("A workflow endpoint must be an HTTP(S) URL.")
+	url = urlsplit(value)
+	if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password or url.query or url.fragment:
+		raise ValueError("A workflow endpoint must be an HTTP(S) URL without credentials, query or fragment.")
+	return value.rstrip("/")
+
+
+def get_control_url(base_url=None):
+	"""Explicit alternate transport to the same server for small control calls.
+
+	Only operator-declared logical endpoints are routed. An arbitrary historical
+	or alternate server must never be redirected to the current default server.
+	"""
+	logical = get_base_url(base_url)
+	routes = frappe.conf.get("comfyui_control_routes") or {}
+	if not isinstance(routes, dict):
+		raise ValueError("comfyui_control_routes must map endpoint URLs to control URLs.")
+	target = routes.get(logical, logical)
+	if not isinstance(target, str) or not target.startswith(("http://", "https://")):
+		raise ValueError("A ComfyUI control route must be an HTTP(S) URL.")
+	return target.rstrip("/")
+
+
 def get_request_auth():
 	username = frappe.conf.get("comfyui_username")
 	password = frappe.conf.get("comfyui_password")
@@ -92,7 +126,7 @@ def submit_workflow(workflow: dict, *, base_url: str | None = None, client_id: s
 	client_id = client_id or str(uuid.uuid4())
 	try:
 		response = requests.post(
-			f"{get_base_url(base_url)}/prompt",
+			f"{get_control_url(base_url)}/prompt",
 			json={"prompt": workflow, "client_id": client_id},
 			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
@@ -143,7 +177,7 @@ def get_all_history(*, base_url: str | None = None) -> dict:
 def get_history(prompt_id: str, *, base_url: str | None = None) -> dict:
 	try:
 		response = requests.get(
-			f"{get_base_url(base_url)}/history/{prompt_id}",
+			f"{get_control_url(base_url)}/history/{prompt_id}",
 			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
 		)
@@ -156,7 +190,7 @@ def get_history(prompt_id: str, *, base_url: str | None = None) -> dict:
 def get_queue(*, base_url: str | None = None) -> dict:
 	try:
 		response = requests.get(
-			f"{get_base_url(base_url)}/queue",
+			f"{get_control_url(base_url)}/queue",
 			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
 		)
@@ -171,7 +205,7 @@ def delete_queue_prompts(prompt_ids: list[str], *, base_url: str | None = None) 
 		return {}
 	try:
 		response = requests.post(
-			f"{get_base_url(base_url)}/queue",
+			f"{get_control_url(base_url)}/queue",
 			json={"delete": prompt_ids},
 			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
@@ -187,7 +221,7 @@ def interrupt(*, prompt_id: str | None = None, base_url: str | None = None) -> d
 		frappe.throw(_("A ComfyUI prompt ID is required to interrupt a job."))
 	try:
 		response = requests.post(
-			f"{get_base_url(base_url)}/interrupt",
+			f"{get_control_url(base_url)}/interrupt",
 			json={"prompt_id": prompt_id},
 			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
@@ -211,7 +245,7 @@ def get_queue_state(prompt_id: str, *, base_url: str | None = None) -> str | Non
 def get_system_stats(*, base_url: str | None = None) -> dict:
 	try:
 		response = requests.get(
-			f"{get_base_url(base_url)}/system_stats",
+			f"{get_control_url(base_url)}/system_stats",
 			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
 		)
@@ -225,7 +259,7 @@ def get_object_info(*, base_url: str | None = None) -> dict:
 	"""Return the node types actually registered by the target ComfyUI server."""
 	try:
 		response = requests.get(
-			f"{get_base_url(base_url)}/object_info",
+			f"{get_control_url(base_url)}/object_info",
 			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,
 		)
@@ -303,7 +337,7 @@ def run_workflow_to_bytes(
 def delete_history(prompt_ids: list[str], *, base_url: str | None = None):
 	try:
 		response = requests.post(
-			f"{get_base_url(base_url)}/history",
+			f"{get_control_url(base_url)}/history",
 			json={"delete": prompt_ids},
 			auth=get_request_auth(),
 			timeout=DEFAULT_TIMEOUT,

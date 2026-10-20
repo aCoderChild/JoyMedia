@@ -19,6 +19,7 @@ def automatic_planning_input_contract():
 	concrete graph and enforces its real contract.
 	"""
 	return [
+		{"role": "character", "accepted_media_type": "Image", "min_count": 0, "max_count": 0, "allow_multiple": True},
 		{"role": "person", "accepted_media_type": "Image", "min_count": 0, "max_count": 0, "allow_multiple": True},
 		{"role": "product", "accepted_media_type": "Image", "min_count": 0, "max_count": 0, "allow_multiple": True},
 		{"role": "environment", "accepted_media_type": "Image", "min_count": 0, "max_count": 0, "allow_multiple": True},
@@ -30,7 +31,6 @@ def normalize_reference_role(value):
 	"""Return a stable semantic role while retaining numbered product slots."""
 	role = frappe.scrub(value or "general")
 	aliases = {
-		"character": "person",
 		"people": "person",
 		"talent": "person",
 		"person_reference": "person",
@@ -75,7 +75,11 @@ def resolve_shot_render_route(default_workflow, references, *, handoff_type="", 
 		frappe.throw(frappe._("The active Generation Pipeline must contain at least two ordered stages."))
 	workflow = frappe.get_doc("Generation Workflow", steps[-1].workflow)
 	keyframe = frappe.get_doc("Generation Workflow", steps[0].workflow)
-	contract = {item["role"]: item for item in get_workflow_input_contract(keyframe)}
+	from joymedia.services.workflows.capabilities import controls
+	reference_only = "reference_only" in controls(workflow)
+	if reference_only and any(normalize_reference_role(r.get("reference_role") or r.get("input_role")) in {"first_frame", "last_frame"} for r in references):
+		frappe.throw("This reference-only workflow does not anchor authored first/last frames. Use an anchored profile or remove those controls explicitly.")
+	contract = {item["role"]: item for item in get_workflow_input_contract(workflow if reference_only else keyframe)}
 	normalized = _map_pipeline_references(references, contract)
 	new_scene = str(handoff_type or "").casefold() in {"new_scene", "new scene", "scene_reset"}
 	return {
@@ -98,6 +102,12 @@ def _map_pipeline_references(references, contract):
 	for reference in references:
 		item = dict(reference)
 		declared = frappe.scrub(item.get("reference_role") or item.get("input_role") or "")
+		if declared in {"first_frame", "last_frame"}:
+			# This is a control input for the final video stage, not a keyframe
+			# reference.  preparation.py validates it against that stage later.
+			item["reference_role"] = declared
+			mapped.append(item)
+			continue
 		# A role the first stage declares itself (person and character are different inputs) is kept as it is.
 		role = declared if declared in contract else normalize_reference_role(declared)
 		if role == "logo":

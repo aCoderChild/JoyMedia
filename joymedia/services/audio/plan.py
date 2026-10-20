@@ -44,7 +44,9 @@ def build_audio_plan(project_name):
 	):
 		start, end = _shot_frame_range(project_name, shot.name)
 		cues = []
-		if str(shot.voice_over or "").strip():
+		from joymedia.services.audio.speech import spoken_text
+
+		if spoken_text(shot.voice_over):
 			cues.append(("Voiceover", shot.voice_over.strip()))
 		cues.extend(parse_audio_cues(shot.audio_cues))
 		for role, text in cues:
@@ -94,6 +96,7 @@ def place_cue_audio(project_name, shot_name, role, asset_version_name):
 
 GENERATED_AUDIO_ROLES = ("SFX", "BGM")
 AUDIO_WORKFLOW_KEY = "mmaudio_video_to_audio"
+BGM_WORKFLOW_KEY = "mmaudio_bgm"
 
 
 @frappe.whitelist()
@@ -113,6 +116,8 @@ def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflo
 
 	if role not in GENERATED_AUDIO_ROLES:
 		frappe.throw(_("Audio can be generated for {0}; narration needs a recording or speech synthesis.").format(", ".join(GENERATED_AUDIO_ROLES)))
+	if role == "BGM" and workflow_key == AUDIO_WORKFLOW_KEY:
+		workflow_key = BGM_WORKFLOW_KEY
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
 	shot = frappe.get_doc("Shot", shot_name)
@@ -125,9 +130,9 @@ def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflo
 	)
 	if not cue_text:
 		frappe.throw(_("This scene has no {0} cue; give a prompt describing the sound.").format(role))
-	workflow_name = frappe.db.get_value(
-		"Generation Workflow", {"workflow_key": workflow_key}, "name", order_by="version_number desc"
-	)
+	from joymedia.services.workflows.capabilities import configured_workflow
+
+	workflow_name = configured_workflow("music" if role == "BGM" else "effects", legacy_key=workflow_key)
 	if not workflow_name:
 		frappe.throw(_("No audio generation workflow '{0}' is registered.").format(workflow_key))
 	workflow_version = frappe.get_doc("Generation Workflow", workflow_name)
@@ -141,9 +146,12 @@ def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflo
 	frames = (end - start) if start is not None else math.ceil(float(shot.duration_seconds or 0) * fps)
 	frames = max(1, min(int(frames), int(workflow_version.frame_count or frames)))
 	seed = int(hashlib.sha256(f"{shot.name}|{role}|{cue_text}".encode()).hexdigest()[:12], 16) + int(seed_offset)
+	inputs = {"generation_prompt": cue_text}
+	if any(row.required_input_role == "source_video" for row in workflow_version.bindings):
+		inputs["source_video"] = upload_local_file(video_path)["server_path"]
 	workflow = build_execution_workflow(
 		workflow_version,
-		inputs={"generation_prompt": cue_text, "source_video": upload_local_file(video_path)["server_path"]},
+		inputs=inputs,
 		seed=seed, width=int(project.delivery_width or 640), height=int(project.delivery_height or 360),
 		fps=fps, frame_count=frames, output_prefix=f"joymedia/audio/{frappe.generate_hash(length=10)}",
 	)
@@ -154,24 +162,6 @@ def generate_cue_audio(project_name, shot_name, role="SFX", prompt=None, workflo
 	version = _save_output(project.name, f"{shot.name} {role} audio", "Audio", f"{shot.name}-{role.lower()}.flac", content)
 	placed = place_cue_audio(project.name, shot.name, role, version) if place else {}
 	return {"asset_version": version, "workflow": workflow_version.name, "prompt": cue_text, **placed}
-
-
-@frappe.whitelist()
-def use_sound_effects_only(project_name):
-	"""Ask the video model for sound effects only: no voice, no background music.
-
-	The model makes its soundtrack together with the picture, from the prompt's `Audio:` line. Switching the
-	mode only changes what the prompts ask for, so scenes must be rendered again to take effect. Scenes that
-	still come out with music or voice can use `use_separate_effects_layer` instead.
-	"""
-	project = frappe.get_doc("Media Project", project_name)
-	project._require_write_access()
-	project.db_set("soundtrack_mode", "Sound effects only")
-	from joymedia.services.editing.timeline import _invalidate_project_output
-
-	_invalidate_project_output(project.name)
-	frappe.db.commit()
-	return {"mode": "Sound effects only"}
 
 
 @frappe.whitelist()
@@ -261,8 +251,6 @@ def check_scene_audio(project_name, apply=True):
 	return report
 
 
-
-
 def _layer_is_stale(layer_clip, video_version):
 	"""A generated layer older than the scene's current video was made for an earlier take."""
 	layer_version = frappe.db.get_value("Timeline Clip", layer_clip, "source_asset_version")
@@ -307,7 +295,7 @@ def _place_best_effects_layer(project_name, shot_name):
 	return best[1]
 
 
-DEFAULT_FOLEY = "soft natural foley: gentle paper crinkle, light rustle and small soft impacts"
+DEFAULT_FOLEY = "Silence, no sound effects."
 
 
 def scene_sound_prompt(shot):
@@ -315,7 +303,7 @@ def scene_sound_prompt(shot):
 
 	The sound-effect model is trained on English, so the planner's English `Audio:` line in the scene's prompt is
 	preferred over the storyboard's own cue (which may be in another language). A scene with no sound cue gets a
-	generic foley description, never its visual description. Vocal sounds (laughter, voices, exclamations) are left
+	silence, never invented prop sounds or its visual description. Vocal sounds (laughter, voices, exclamations) are left
 	out, since only sound effects are wanted.
 	"""
 	from joymedia.services.planning.prompts import VOCAL_SOUND

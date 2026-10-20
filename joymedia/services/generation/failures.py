@@ -35,6 +35,8 @@ def technical_message(error):
 
 
 def friendly_failure(failure_class, error_summary=None):
+	if str(error_summary or "").startswith("Visual admission rejected"):
+		return _("Automatic visual checks held this scene. Your previous video is preserved; the administrator can inspect the recorded evidence.")
 	if failure_class == "Workflow" and any(
 		token in str(error_summary or "").lower()
 		for token in ("unauthorized", "forbidden", "please login", "authentication", "not authenticated")
@@ -45,6 +47,7 @@ def friendly_failure(failure_class, error_summary=None):
 		"Workflow": "The selected video setup is unavailable. Please try again or contact support.",
 		"Input": "One of the selected media inputs is not usable for this scene.",
 		"Generation": "The scene could not be rendered. Please try again.",
+		"Finalization": "The rendered scene needs a correction before it can be used.",
 		"Cancelled": "Rendering was stopped.",
 		"Unknown": "The scene could not be completed. Please try again.",
 	}

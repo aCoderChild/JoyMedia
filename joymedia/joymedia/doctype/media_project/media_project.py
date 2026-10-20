@@ -35,15 +35,22 @@ class MediaProject(Document):
 		self._require_owner_access()
 		self.check_permission("read")
 
-	def _require_write_access(self):
+	def _require_write_access(self, allow_archived=False):
 		self._require_owner_access()
 		self.check_permission("write")
+		parent_archived = self.get("version_of") and frappe.db.get_value("Media Project", self.version_of, "status") == "Archived"
+		if not allow_archived and (self.status == "Archived" or parent_archived):
+			frappe.throw(_("Restore the project before editing or generating new media."))
 
 	def _require_video_idea(self):
 		if not str(self.video_idea or "").strip():
 			frappe.throw(_("Enter a non-empty video idea before creating or rendering a storyboard."))
 
 	def _require_owner_access(self):
+		from joymedia.services.partners import is_reviewer, require_generation
+
+		if is_reviewer():
+			require_generation(self)
 		if frappe.session.user == "Administrator" or "System Manager" in frappe.get_roles():
 			return
 		if self.owner != frappe.session.user:
@@ -53,11 +60,22 @@ class MediaProject(Document):
 		self.status = "Draft"
 
 	def validate(self):
+		from joymedia.services.project.versions import validate_membership
+
+		from joymedia.services.partners import validate_project
+
+		validate_project(self)
+		validate_membership(self)
 		self._validate_generation_affecting_changes()
 		self._invalidate_storyboard_approval_for_creative_changes()
-		from joymedia.joymedia.doctype.project_reference.project_reference import assign_reference_key, assign_reference_role
+		from joymedia.joymedia.doctype.project_reference.project_reference import (
+			assign_reference_key,
+			assign_reference_role,
+			assign_relative_size,
+		)
 		for reference in self.selected_media or []:
 			assign_reference_role(reference)
+			assign_relative_size(reference)
 			assign_reference_key(reference, self)
 		self.project_name = (self.project_name or "").strip()
 		self.product_name = (self.product_name or "").strip()
@@ -154,7 +172,7 @@ class MediaProject(Document):
 			"soundtrack_prompt": settings.soundtrack_prompt or "",
 			"export_quality": normalize_export_quality(settings.export_quality),
 			"character_mode": self.character_mode or "Draw in scene",
-			"soundtrack_mode": self.soundtrack_mode or "Full soundtrack",
+			"soundtrack_mode": self.soundtrack_mode or "Sound effects only",
 			"planning_mode": self.planning_mode or "Creative",
 			**_customer_style_details(settings),
 		}
@@ -189,9 +207,13 @@ class MediaProject(Document):
 		# Keep legacy arguments in the RPC signature but never accept client-side
 		# technical execution choices.
 		export_quality = normalize_export_quality(export_quality or self.export_quality)
-		workflow = _get_customer_workflow_for_export_quality(export_quality)
-		from joymedia.services.workflows.pipeline import pipeline_for_final_workflow
-		pipeline = pipeline_for_final_workflow(workflow.name)
+		from joymedia.services.workflows.pipeline import pipeline_for_final_workflow, get_pinned_generation_pipeline
+		pipeline = get_pinned_generation_pipeline(self.name)
+		if pipeline:
+			workflow = frappe.get_doc("Generation Workflow", pipeline.steps[-1].workflow)
+		else:
+			workflow = _get_customer_workflow_for_export_quality(export_quality)
+			pipeline = pipeline_for_final_workflow(workflow.name)
 		pipeline_name = pipeline.name if pipeline else ""
 		self.total_duration_seconds = total_duration_seconds
 		self.delivery_preset = delivery_preset
@@ -206,7 +228,7 @@ class MediaProject(Document):
 			self.soundtrack_prompt = str(soundtrack_prompt).strip()
 		for fieldname, value, allowed in (
 			("character_mode", character_mode, ("Draw in scene", "Paste exact art")),
-			("soundtrack_mode", soundtrack_mode, ("Full soundtrack", "Sound effects only", "Separate effects layer")),
+			("soundtrack_mode", soundtrack_mode, ("Full soundtrack", "Sound effects only", "Effects + music", "Separate effects layer")),
 			("planning_mode", planning_mode, ("Creative", "Follow the sheet")),
 		):
 			if value in (None, ""):
@@ -245,7 +267,6 @@ class MediaProject(Document):
 		"""Character + location projects need Reference-to-Video to keep identity and places."""
 		from joymedia.services.planning.film_director import (
 			infer_product_reference_contexts,
-			infer_property_area_references,
 			is_story_film,
 		)
 		from joymedia.services.intake.vision import ensure_project_image_analysis
@@ -255,10 +276,8 @@ class MediaProject(Document):
 		ensure_project_image_analysis(self)
 		references = _get_project_reference_contexts(self)
 		references = infer_product_reference_contexts(references, self.video_idea)
-		references = infer_property_area_references(references, self.video_idea)
 		# Rendering routes use the durable Project Reference role, rather than the
-		# planner-only context. Persist an inferred property-area role so an image
-		# explicitly tagged as a property component cannot fall back to General.
+		# planner-only context. Persist an inferred role so a reference cannot fall back to General.
 		inferred_roles = {
 			str(item.get("reference_key") or ""): item.get("reference_role")
 			for item in references
@@ -333,6 +352,7 @@ class MediaProject(Document):
 	@frappe.whitelist()
 	def revise_storyboard(self, instruction):
 		self._require_write_access()
+		self._refuse_if_sheet()
 		instruction = (instruction or "").strip()
 		if not instruction:
 			frappe.throw(_("Describe how the storyboard should change."))
@@ -371,7 +391,7 @@ class MediaProject(Document):
 		assert_plan_matches_approval(self)
 		if not self.workflow:
 			frappe.throw(_("Configure Video Settings before generating a storyboard."))
-		_, current_snapshot_hash = build_project_snapshot(self)
+		current_snapshot_hash = build_project_snapshot(self)[1]
 		latest_run = frappe.db.get_value(
 			"Generation Run", {"media_project": self.name}, ["name", "status"],
 			as_dict=True, order_by="creation desc",
@@ -380,7 +400,9 @@ class MediaProject(Document):
 			return {"run": latest_run.name, "status": latest_run.status}
 		if latest_run and latest_run.status == "Failed":
 			latest_hash = frappe.db.get_value("Generation Run", latest_run.name, "project_snapshot_hash")
-			if latest_hash == current_snapshot_hash:
+			if latest_hash == current_snapshot_hash and frappe.db.exists(
+				"Generation Task", {"generation_run": latest_run.name}
+			):
 				return self.retry_failed_jobs()
 		if not frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}):
 			# Planning takes minutes: longer than a web request may run.
@@ -388,6 +410,40 @@ class MediaProject(Document):
 
 			return queue_storyboard(self.name)
 		return self.generate_video()
+
+	def follows_sheet(self):
+		"""Whether the storyboard is the advertiser's imported sheet, followed as written: the sheet decides the idea and
+		the scenes, so they are changed by editing the sheet and importing it again, not by asking the AI."""
+		return bool(self.storyboard_source_file) and self.planning_mode == "Follow the sheet"
+
+	def _refuse_if_sheet(self):
+		if self.follows_sheet():
+			frappe.throw(_("This storyboard follows the imported sheet. Edit the sheet and import it again to change it."))
+
+	def follow_active_pipeline(self):
+		"""Re-pin the project to the workflow and pipeline the site now uses for its quality tier.
+
+		A project stores the workflow it was last saved with, so promoting a new pipeline would otherwise leave every
+		existing project on the old one until someone re-saved its settings.
+		"""
+		if not self.workflow:
+			return
+		from joymedia.services.workflows.pipeline import pipeline_for_final_workflow
+		from joymedia.services.workflows.pipeline import get_pinned_generation_pipeline
+
+		override = get_pinned_generation_pipeline(self.name)
+		if override:
+			self.db_set({"workflow": override.steps[-1].workflow, "generation_pipeline": override.name}, update_modified=False)
+			return
+
+		try:
+			workflow = _get_customer_workflow_for_export_quality(normalize_export_quality(self.export_quality))
+			pipeline = pipeline_for_final_workflow(workflow.name)
+		except frappe.ValidationError:
+			return  # nothing active to move to; the generation preflight reports what is missing
+		pinned = {"workflow": workflow.name, "generation_pipeline": pipeline.name if pipeline else ""}
+		if any(self.get(key) != value for key, value in pinned.items()):
+			self.db_set(pinned, update_modified=False)
 
 	@frappe.whitelist()
 	def generate_video(self):
@@ -407,6 +463,7 @@ class MediaProject(Document):
 				return {"run": existing.name, "status": existing.status}
 			if not frappe.db.exists("Shot", {"media_project": self.name, "is_removed": 0}):
 				frappe.throw(_("Generate a storyboard first."))
+			self.follow_active_pipeline()
 			settings = _project_settings(self)
 			if not settings.workflow:
 				frappe.throw(_("This project has no active Generation Workflow."))
@@ -441,7 +498,7 @@ class MediaProject(Document):
 				"requested_by": frappe.session.user,
 				"status": "Draft",
 			}).insert(ignore_permissions=True)
-			result = start_run_internal(run.name)
+			result = start_run_internal(run.name, preflight_checked=True)
 			frappe.db.commit()
 			return {"run": run.name, "status": result["status"]}
 
@@ -463,8 +520,6 @@ class MediaProject(Document):
 		from joymedia.services.generation.artifacts import get_attempt_artifact
 		from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
 		from joymedia.services.workflows.routing import automatic_planning_input_contract
-		settings = _project_settings(self)
-
 		with filelock(f"joymedia-append-scenes-{self.name}"):
 			active = frappe.db.get_value(
 				"Generation Run",

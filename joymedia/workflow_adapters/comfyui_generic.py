@@ -10,7 +10,6 @@ import re
 
 from .base import GenericWorkflowAdapter
 
-
 SUPPORTED_PARAMETERS = {
 	"seed",
 	"width",
@@ -23,7 +22,7 @@ SUPPORTED_PARAMETERS = {
 	"last_frame_index",
 }
 SUPPORTED_TRANSFORMS = {
-	"identity", "frames_to_seconds", "aspect_ratio_option", "nearest_size_dimension", "round_to_multiple"
+	"identity", "frames_to_seconds", "aspect_ratio_option", "nearest_size_dimension", "round_to_multiple", "ceil_to_multiple"
 }
 METADATA_FIELDS = {
 	"frame_count",
@@ -43,6 +42,9 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 		spec = self.execution_spec
 		if not isinstance(spec, dict):
 			raise ValueError("Execution Specification must be a JSON object")
+		from joymedia.services.workflows.capabilities import validate_contract
+
+		validate_contract(spec)
 		parameters = spec.get("parameters") or []
 		if not isinstance(parameters, list):
 			raise ValueError("Execution Specification 'parameters' must be a list")
@@ -80,12 +82,17 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 					for size in options
 				):
 					raise ValueError("nearest_size_dimension options need positive width and height values")
-			if transform == "round_to_multiple":
+			if transform in {"round_to_multiple", "ceil_to_multiple"}:
 				try:
 					if int(mapping["multiple"]) < 1:
 						raise ValueError
 				except (KeyError, TypeError, ValueError) as exc:
 					raise ValueError("round_to_multiple requires a positive integer 'multiple'") from exc
+			if transform == "ceil_to_multiple":
+				offset = mapping.get("offset", 0)
+				if type(offset) is not int or not 0 <= offset < int(mapping["multiple"]):
+					raise ValueError("ceil_to_multiple offset must be an integer within the multiple")
+
 			if transform == "frames_to_seconds" and mapping.get("fps") is not None:
 				try:
 					if float(mapping["fps"]) <= 0:
@@ -156,6 +163,26 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 				})
 		for chain in preprocessing.get("optional_input_chains") or []:
 			self._validate_input_chain(workflow_data, chain)
+		mirrors = spec.get("input_mirrors", [])
+		if not isinstance(mirrors, list) or len(mirrors) > 16:
+			raise ValueError("input_mirrors must contain at most 16 independent input copies")
+		sources, targets = set(), set()
+		for mirror in mirrors:
+			if not isinstance(mirror, dict):
+				raise ValueError("Each input mirror requires source and target inputs")
+			for side in ("source", "target"):
+				value = mirror.get(side)
+				if not isinstance(value, dict):
+					raise ValueError("Each input mirror requires source and target inputs")
+				self._validate_node_input(workflow_data, {"semantic": "input mirror", **value})
+			source, target = (tuple(str(mirror[side][key]) for key in ("node_key", "input_name")) for side in ("source", "target"))
+			if target in targets:
+				raise ValueError("Input mirror targets must be unique")
+			sources.add(source)
+			targets.add(target)
+		if sources & targets:
+			raise ValueError("Input mirrors must be independent; chains and cycles are not supported")
+
 		for operation in spec.get("conditional_inputs") or []:
 			if not isinstance(operation, dict) or not operation.get("role"):
 				raise ValueError("Each conditional_inputs entry requires a role")
@@ -173,6 +200,10 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 			self._validate_node_input(workflow_data, operation)
 			if not isinstance(operation.get("remove_patterns", []), list):
 				raise ValueError("prompt_transforms.remove_patterns must be a list")
+			if "when_role_present" in operation and (
+				not isinstance(operation["when_role_present"], str) or not operation["when_role_present"].strip()
+			):
+				raise ValueError("prompt_transforms.when_role_present must name a nonempty input role")
 
 	def _validate_input_chain(self, workflow_data, chain):
 		if not isinstance(chain, dict) or not isinstance(chain.get("links"), list) or not chain["links"]:
@@ -204,7 +235,7 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 		for chain in preprocessing.get("optional_input_chains") or []:
 			source = [str(chain["base"][0]), int(chain["base"][1])]
 			for link in chain["links"]:
-				if not staged_inputs.get(link["role"]):
+				if not _link_present(staged_inputs, link):
 					for node_key in link["nodes"]:
 						workflow.pop(str(node_key), None)
 					continue
@@ -286,6 +317,13 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 			if len(values) == 1:
 				workflow[str(binding.node_key)]["inputs"][binding.input_name] = values[0]
 
+		for mirror in self.execution_spec.get("input_mirrors", []):
+			import copy
+
+			source, target = mirror["source"], mirror["target"]
+			value = workflow[str(source["node_key"])]["inputs"][source["input_name"]]
+			self._set_node_input(workflow, {"semantic": "input mirror", **target}, copy.deepcopy(value))
+
 		for operation in self.execution_spec.get("conditional_inputs") or []:
 			role = str(operation["role"])
 			value = operation["when_present"] if staged_inputs.get(role) else operation["when_absent"]
@@ -297,6 +335,8 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 			}, value)
 
 		for operation in self.execution_spec.get("prompt_transforms") or []:
+			if operation.get("when_role_present") and not staged_inputs.get(operation["when_role_present"]):
+				continue
 			node_key, input_name = str(operation["node_key"]), operation["input_name"]
 			text = str(workflow[node_key]["inputs"].get(input_name) or "")
 			for pattern in operation.get("remove_patterns") or []:
@@ -354,6 +394,12 @@ def _transform_value(mapping, value, values):
 	transform = mapping.get("transform", "identity")
 	if transform == "identity":
 		return value
+	if transform == "ceil_to_multiple":
+		import math
+
+		multiple, offset = int(mapping["multiple"]), mapping.get("offset", 0)
+		return max(offset or multiple, math.ceil((float(value) - offset) / multiple) * multiple + offset)
+
 	if transform == "round_to_multiple":
 		# A model whose latent grid needs sizes divisible by N (for example 32) rejects anything else, so a
 		# delivery size such as 720 (22.5 x 32) is rounded to the nearest valid size (half rounds up).
@@ -380,3 +426,12 @@ def _transform_value(mapping, value, values):
 		)
 		return int(option[mapping["dimension"]])
 	return value  # validate_specification rejects transforms outside the allowlist
+
+
+def _link_present(staged_inputs, link):
+	"""Whether a chain link has its input: a link with a `slot` takes the slot-th picture of its role (0-based)."""
+	value = staged_inputs.get(link["role"])
+	slot = int(link.get("slot", 0))
+	if isinstance(value, (list, tuple)):
+		return len(value) > slot
+	return bool(value) and slot == 0

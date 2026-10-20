@@ -24,7 +24,27 @@ def keyframe_signature(shot):
 	mode = getattr(shot, "character_mode", None) or (
 		frappe.db.get_value("Media Project", shot.media_project, "character_mode") if shot.get("media_project") else ""
 	)
-	text = "\x1f".join([shot.image_prompt or "", getattr(shot, "setting_prompt", None) or "", mode or "", repr(references)])
+	parts = [shot.image_prompt or "", getattr(shot, "setting_prompt", None) or "", mode or "", repr(references)]
+	if shot.get("media_project"):
+		from joymedia.services.intake.references import preservation_modes
+		parts.append(frappe.as_json(preservation_modes(frappe.get_doc("Media Project", shot.media_project))))
+	from joymedia.services.scene.contract import opening_instruction
+
+	staging = opening_instruction(shot.get("motion_plan_json"), shot.get("duration_seconds"))
+	if staging:
+		parts.append(staging)
+	from joymedia.services.scene.artwork import placements
+
+	artwork = placements(shot.get("motion_plan_json"))
+	if artwork:
+		parts.append(frappe.as_json(artwork))
+	if shot.get("views_json"):
+		parts.append(shot.views_json)  # only a split screen's: other scenes' frames keep their signature
+	from joymedia.services.consistency.retention import policy
+	retention = policy()
+	if retention:
+		parts.append(frappe.as_json({k:v for k,v in retention.items() if k not in {"source_hold_pipeline","source_hold_workflow"}}))
+	text = "\x1f".join(parts)
 	return hashlib.sha256(text.encode()).hexdigest()[:20]
 
 
@@ -64,15 +84,32 @@ def record_keyframe(run_name, shot_name):
 		artifact = get_attempt_artifact(attempt.name, "Primary Image") if attempt else None
 		if not artifact or not artifact.frappe_file:
 			continue
+		attach_keyframe_to_project(artifact.frappe_file, frappe.db.get_value("Shot", shot_name, "media_project"))
 		if frappe.db.get_value("Shot", shot_name, "keyframe_artifact") == artifact.name:
 			return artifact.name
 		shot = frappe.get_doc("Shot", shot_name)
 		frappe.db.set_value("Shot", shot_name, {
 			"keyframe_artifact": artifact.name, "keyframe_status": PENDING, "keyframe_signature": keyframe_signature(shot),
 		}, update_modified=False)
+		from joymedia.services.review.consistency import queue_check
+
+		queue_check(shot_name, "frame")
 		publish_project_event(frappe.db.get_value("Shot", shot_name, "media_project"), PROJECT_UPDATED, {"doctype": "Shot", "shot": shot_name})
 		return artifact.name
 	return None
+
+
+def attach_keyframe_to_project(file_url, project_name):
+	"""Let the project's owner open a keyframe picture.
+
+	A rendered picture is attached to its Generation Artifact, which only a System Manager may read, so the browser got
+	403 for everyone else. A private file is readable by whoever may read the document it is attached to; attached to the
+	Media Project, that is exactly the project's owner (and the staff roles).
+	"""
+	frappe.db.set_value(
+		"File", {"file_url": file_url, "attached_to_doctype": ["!=", "Media Project"]},
+		{"attached_to_doctype": "Media Project", "attached_to_name": project_name}, update_modified=False,
+	)
 
 
 def _project_and_shots(project_name, shot_names):
@@ -91,17 +128,49 @@ def _project_and_shots(project_name, shot_names):
 
 
 @frappe.whitelist()
-def generate_keyframes(project_name, shot_names=None):
-	"""Render the first frame of every scene that has one (or of the named scenes), without making video."""
-	from joymedia.services.generation.takes import _ensure_scene_free, _start_takes_run
+def generate_keyframes(project_name, shot_names=None, draw_places=True, automatic=False, seed=None):
+	"""Render the first frame of every scene that has one (or of the named scenes), without making video.
 
+	A place none of the scenes has a picture of yet is drawn first, in the background, so that all scenes set there
+	are drawn in the same room (services/keyframes/locations.py); the frames follow when it is ready."""
+	from joymedia.services.generation.takes import _ensure_scene_free, _start_takes_run
+	from joymedia.services.keyframes.locations import assign_places, missing_places, missing_views
+	from joymedia.services.review.consistency import reset_redos
+
+	if isinstance(seed, str) and seed.isdecimal():
+		seed = int(seed)
+	if seed is not None and (type(seed) is not int or not 0 <= seed < 2_147_483_648):
+		frappe.throw(_("Image seed must be an integer between 0 and 2147483647."))
 	names = frappe.parse_json(shot_names) if isinstance(shot_names, str) and shot_names else (shot_names or [])
+	# Frappe form values arrive as strings over the HTTP API.  ``bool("false")``
+	# is true, which previously made a caller explicitly requesting no location
+	# render submit an unexpected extra ComfyUI job.
+	if isinstance(draw_places, str):
+		draw_places = draw_places.strip().lower() not in {"", "0", "false", "no", "off"}
+	else:
+		draw_places = bool(draw_places)
 	project, shots = _project_and_shots(project_name, set(names))
 	if not shots:
 		frappe.throw(_("There is no scene that needs a keyframe."))
 	for shot in shots:
 		_ensure_scene_free(project, shot)
-	return _start_takes_run(project, [shot.name for shot in shots], stage="keyframe")
+		if not automatic:
+			# A person asked for this drawing: the automatic check may redo it again (services/review/consistency.py).
+			reset_redos(shot.name)
+	if draw_places and (missing_places(project, shots) or missing_views(project, shots)):
+		if seed is not None:
+			frappe.throw(_("Draw the place reference before replaying a first-frame seed."))
+		if project.storyboard_approval_status != "Approved":
+			frappe.throw(_("Approve the storyboard first: the first frames are drawn from the approved scenes."))
+		frappe.enqueue(
+			"joymedia.services.keyframes.locations.draw_places_then_frames",
+			queue="long", timeout=3600, job_id=f"joymedia-places-{project.name}", deduplicate=True,
+			project_name=project.name, shot_names=[shot.name for shot in shots], user=frappe.session.user,
+		)
+		return {"status": "Drawing places"}
+	if assign_places(project, shots):
+		project.reload()  # the approval was sealed again with the places in it
+	return _start_takes_run(project, [shot.name for shot in shots], stage="keyframe", **({"keyframe_seed": seed} if seed is not None else {}))
 
 
 @frappe.whitelist()
@@ -119,6 +188,13 @@ def set_keyframe_approval(project_name, shot_name, approved=True):
 		if shot.keyframe_signature != keyframe_signature(shot):
 			frappe.throw(_("This scene changed after its keyframe was drawn. Render the keyframe again."))
 	frappe.db.set_value("Shot", shot.name, "keyframe_status", APPROVED if approved else PENDING, update_modified=False)
+	if approved:
+		# The frame is settled; the take made from it gets its own automatic redos.
+		frappe.db.set_value("Shot", shot.name, "consistency_retries", 0, update_modified=False)
+		if shot.get("consistency_status") in {"Redrawing", "Checking"}:
+			# A queued machine concern must not redraw an explicitly accepted frame
+			# when another run ends. Keep its notes visible for the reviewer.
+			frappe.db.set_value("Shot", shot.name, "consistency_status", "Needs Review" if shot.get("consistency_notes") else "Not Checked", update_modified=False)
 	publish_project_event(project.name, PROJECT_UPDATED, {"doctype": "Shot", "shot": shot.name})
 	frappe.db.commit()
 	return {"shot_name": shot.name, "keyframe_status": APPROVED if approved else PENDING}
@@ -129,17 +205,27 @@ def get_project_keyframes(project_name):
 	"""Each scene's keyframe for the storyboard review: image, status, and whether it is out of date."""
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_read_access()
+	from joymedia.services.workflows.capabilities import controls
+	reference_only = bool(project.workflow and "reference_only" in controls(frappe.get_doc("Generation Workflow", project.workflow)))
 	rows = []
 	for name in frappe.get_all(
 		"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name", order_by="shot_number asc, name asc"
 	):
 		shot = frappe.get_doc("Shot", name)
+		if reference_only:
+			rows.append({"shot":shot.name, "shot_name":shot.shot_name, "shot_number":shot.shot_number,
+				"needs_keyframe":False, "url":None, "status":"Reference conditioned", "stale":False})
+			continue
+		explicit = [r.asset_version for r in shot.generation_inputs or [] if frappe.scrub(r.reference_role or "") == "first_frame" and r.asset_version]
+		if len(explicit) > 1:
+			frappe.throw(_("Choose exactly one authored first frame."))
 		url = (
+			frappe.db.get_value("Asset Version", explicit[0], "file") if len(explicit) == 1 else
 			frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "frappe_file") if shot.keyframe_artifact else None
 		)
 		rows.append({
 			"shot": shot.name, "shot_name": shot.shot_name, "shot_number": shot.shot_number,
-			"needs_keyframe": starts_scene(shot), "url": url, "status": shot.keyframe_status or "",
-			"stale": bool(url) and shot.keyframe_signature != keyframe_signature(shot),
+			"needs_keyframe": starts_scene(shot) and not explicit, "url": url, "status": APPROVED if explicit else shot.keyframe_status or "",
+			"stale": not explicit and bool(url) and shot.keyframe_signature != keyframe_signature(shot),
 		})
 	return rows

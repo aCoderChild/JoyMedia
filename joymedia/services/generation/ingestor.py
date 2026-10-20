@@ -4,7 +4,7 @@ moves the attempt to Completed or Failed. Also the cron that syncs every active 
 
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 import frappe
@@ -51,7 +51,7 @@ def sync_attempt_result(attempt_name):
 		return _sync_attempt_result(attempt_name)
 
 
-def _sync_attempt_result(attempt_name):
+def _sync_attempt_result(attempt_name, *, history=None):
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	workflow = _attempt_workflow(attempt)
 	primary = get_attempt_artifact(attempt.name, workflow.primary_artifact_role if workflow else "Primary Video")
@@ -66,7 +66,8 @@ def _sync_attempt_result(attempt_name):
 	if not attempt.external_job_id:
 		frappe.throw(_("Generation Attempt {0} has no ComfyUI prompt ID.").format(attempt.name))
 
-	history = get_history(attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
+	if history is None:
+		history = get_history(attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
 	history = history.get(attempt.external_job_id, history)
 	if not history:
 		return _sync_attempt_without_history(attempt)
@@ -99,8 +100,13 @@ def _sync_attempt_result(attempt_name):
 			attempt, _("ComfyUI completed but returned no usable {0}.").format(output_label), None, "Generation"
 		)
 
+	from joymedia.services.consistency.retention import RetentionRejected
 	try:
 		artifact, last_frame_artifact = _ingest_completed_output(attempt, history, output)
+	except RetentionRejected as exc:
+		return _fail_attempt(attempt, "The product reference needs attention before this scene can be used.", str(exc), "Input")
+	except ValueError as exc:
+		return _fail_attempt(attempt, "Visual admission rejected", str(exc), "Input")
 	except UnusableComfyUIOutput as exc:
 		return _fail_attempt(
 			attempt, _("ComfyUI completed but its output could not be processed."), str(exc), "Generation"
@@ -118,6 +124,12 @@ def _sync_attempt_without_history(attempt):
 	elif queue_state == "pending" or _within_missing_job_grace_period(attempt):
 		attempt.status = "Queued"
 	else:
+		# Completion can occur between the first /history read and /queue.
+		# Absence from that later queue is not evidence that the prompt was lost.
+		latest = get_history(attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
+		latest = latest.get(attempt.external_job_id, latest)
+		if latest:
+			return _sync_attempt_result(attempt.name, history=latest)
 		job = frappe.get_doc("Generation Task", attempt.generation_task) if attempt.get("generation_task") else None
 		output_filename = f"{job.name}_{attempt.name}_00001_.mp4" if job else None
 		if output_filename and probe_output(output_filename, base_url=attempt.comfyui_endpoint_url):
@@ -179,7 +191,7 @@ def _fail_attempt(attempt, error_summary, error_details, failure_class):
 	# Preserve the caller's known execution category for ordinary ComfyUI output
 	# failures; only promote configuration/input problems that require a human
 	# change before another submission can succeed.
-	if detected_failure_class in {"Workflow", "Input"}:
+	if detected_failure_class in {"Workflow", "Input"} and failure_class != "Input":
 		failure_class = detected_failure_class
 	attempt.status = "Failed"
 	attempt.error_summary = friendly_failure(failure_class, error_details or error_summary)
@@ -238,6 +250,19 @@ def _ingest_completed_output(attempt, history, output):
 
 
 def _complete_attempt(attempt, history, artifact, last_frame_artifact):
+	from joymedia.services.review.admission import REJECTED, gate_attempt
+
+	try:
+		review = gate_attempt(attempt, artifact, history, last_frame_artifact)
+	except ValueError as exc:
+		return _fail_attempt(attempt, REJECTED, REJECTED + ": " + str(exc), "Input")
+	if review and review.get("status") == "Checking":
+		return {"status": "Running", "visual_admission": "Checking"}
+	if review and review.get("status") != "Passed" and not review.get("review_only"):
+		from joymedia.services.review.admission import quality_retry
+
+		return _fail_attempt(attempt, REJECTED, REJECTED,
+			"Generation" if quality_retry(attempt) else "Input")
 	attempt.status = "Completed"
 	if not attempt.started_at:
 		attempt.started_at = _execution_timestamp(history, "execution_start") or now()
@@ -388,10 +413,16 @@ def _store_artifact_file_in_frappe(artifact, attempt, output=None):
 		output.get("type", "output"),
 		base_url=attempt.comfyui_endpoint_url,
 	)
+	lock = {}
+	precheck = None
 	if artifact.media_type == "Image":
 		from joymedia.services.keyframes.overlay import paste_subjects_into_keyframe
+		from joymedia.services.review.admission import precheck_image
 
-		video_bytes = paste_subjects_into_keyframe(attempt, video_bytes)
+		precheck = precheck_image(attempt, artifact, video_bytes)
+		if not precheck:
+			video_bytes = paste_subjects_into_keyframe(attempt, video_bytes, lock=lock)
+
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",
@@ -404,7 +435,14 @@ def _store_artifact_file_in_frappe(artifact, attempt, output=None):
 	)
 	file_doc.insert(ignore_permissions=True)
 	artifact.frappe_file = file_doc.file_url
+	if lock.get("items"):
+		from joymedia.services.keyframes.overlay import store_product_lock
+
+		artifact.product_lock_json = store_product_lock(artifact, lock)
 	artifact.save(ignore_permissions=True)
+	if precheck:
+		from joymedia.services.review.admission import store_report
+		store_report(attempt, artifact, precheck)
 	return artifact
 
 
@@ -418,7 +456,7 @@ def _execution_timestamp(history, message_name):
 	for name, details in history.get("status", {}).get("messages", []):
 		if name == message_name and details.get("timestamp"):
 			# Frappe stores naive datetimes in the system time zone, not UTC.
-			utc = datetime.fromtimestamp(details["timestamp"] / 1000, tz=timezone.utc)
+			utc = datetime.fromtimestamp(details["timestamp"] / 1000, tz=UTC)
 			return convert_utc_to_system_timezone(utc).replace(tzinfo=None)
 	return None
 

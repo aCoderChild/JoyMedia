@@ -15,6 +15,11 @@ def _reference(role, number):
 
 
 class TestWorkflowRouting(FrappeTestCase):
+	def test_illustrated_characters_are_not_silently_sent_to_human_face_controls(self):
+		from joymedia.services.workflows.routing import _map_pipeline_references
+
+		with self.assertRaises(frappe.ValidationError):
+			_map_pipeline_references([_reference("Character", 1)], {"person": {"allow_multiple":True}})
 	def test_planner_keeps_multiple_characters_as_semantic_inputs(self):
 		contract = automatic_planning_input_contract()
 		person = next(item for item in contract if item["role"] == "person")
@@ -33,7 +38,7 @@ class TestWorkflowRouting(FrappeTestCase):
 			SimpleNamespace(workflow="WF-H3"),
 		]
 		input_contract.return_value = [
-			{"role": "person", "allow_multiple": True},
+			{"role": "character", "allow_multiple": True},
 			{"role": "product", "allow_multiple": True},
 		]
 		get_doc.side_effect = lambda _doctype, name: SimpleNamespace(name=name)
@@ -46,7 +51,7 @@ class TestWorkflowRouting(FrappeTestCase):
 
 		self.assertEqual("promoted_linear_pipeline", route["strategy"])
 		self.assertEqual("PIPE-FLUX-H3", route["generation_pipeline"])
-		self.assertEqual(["person", "person", "product"], [item["reference_role"] for item in route["references"]])
+		self.assertEqual(["character", "character", "product"], [item["reference_role"] for item in route["references"]])
 		self.assertTrue(route["requires_recomposition"])
 
 	@patch("joymedia.services.workflows.routing.frappe.get_doc")
@@ -67,13 +72,13 @@ class TestWorkflowRouting(FrappeTestCase):
 	@patch("joymedia.services.workflows.pipeline.get_active_generation_pipeline")
 	def test_draft_route_does_not_promote_an_unconfigured_pipeline(self, active_pipeline, input_contract):
 		active_pipeline.side_effect = frappe.ValidationError("No active Generation Pipeline is configured.")
-		input_contract.return_value = [{"role": "person", "allow_multiple": True}]
+		input_contract.return_value = [{"role": "character", "allow_multiple": True}]
 
 		route = resolve_shot_render_route(SimpleNamespace(name="WF-DRAFT"), [_reference("Character", 1)])
 
 		self.assertEqual("unpromoted_workflow", route["strategy"])
 		self.assertFalse(route["generation_pipeline"])
-		self.assertEqual(["person"], [item["reference_role"] for item in route["references"]])
+		self.assertEqual(["character"], [item["reference_role"] for item in route["references"]])
 
 	@patch("joymedia.services.workflows.routing.frappe.get_doc")
 	@patch("joymedia.services.workflows.resolver.get_workflow_input_contract", return_value=[])

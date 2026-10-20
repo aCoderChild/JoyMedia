@@ -1,0 +1,444 @@
+[
+  {
+    "id": "mascot_marketing",
+    "label": "Mascot product scene",
+    "source_file": "shera_case/product.jpg",
+    "opening": "The referenced mascot waits on a chair behind the table with the tissue product beside it.",
+    "action": "The mascot reaches for a cookie without moving the product.",
+    "duration": 4,
+    "contract": {
+      "version": 1,
+      "entities": [
+        {
+          "id": "actor",
+          "label": "the referenced mascot"
+        },
+        {
+          "id": "table",
+          "label": "the authored table"
+        },
+        {
+          "id": "product",
+          "label": "the referenced tissue package"
+        }
+      ],
+      "counts": [
+        {
+          "entity": "actor",
+          "count": 1
+        },
+        {
+          "entity": "product",
+          "count": 1
+        }
+      ],
+      "parts": [
+        {
+          "entity": "table",
+          "label": "corner legs",
+          "count": 4
+        }
+      ],
+      "properties": [
+        {
+          "entity": "product",
+          "name": "packaging artwork",
+          "value": "keep the supplied source artwork unchanged"
+        }
+      ]
+    }
+  },
+  {
+    "id": "ceramic_artwork",
+    "label": "Decorated ceramic plate",
+    "source_file": "video san pham/2/1.png",
+    "opening": "One decorated ceramic plate stands upright on its display support. Its painted harbour remains artwork on its surface.",
+    "action": "The camera slowly moves closer to the stationary ceramic plate.",
+    "duration": 4,
+    "contract": {
+      "version": 1,
+      "entities": [
+        {
+          "id": "product",
+          "label": "the decorated ceramic plate"
+        },
+        {
+          "id": "support",
+          "label": "the display support"
+        }
+      ],
+      "relations": [
+        {
+          "kind": "supported_by",
+          "subject": "product",
+          "object": "support"
+        }
+      ],
+      "counts": [
+        {
+          "entity": "product",
+          "count": 1
+        }
+      ],
+      "properties": [
+        {
+          "entity": "product",
+          "name": "surface decoration",
+          "value": "the painted harbour stays printed on the curved plate surface; no depicted figure becomes a physical actor"
+        },
+        {
+          "entity": "product",
+          "name": "shape and border",
+          "value": "keep the reference's circular outline and decorated border"
+        }
+      ]
+    }
+  },
+  {
+    "id": "drinkware",
+    "label": "Reference drink container",
+    "source_file": "Video REF/video từ sản phẩm thật/Anh chup/18b1d17588bf09e150ae8.jpg",
+    "opening": "One referenced drink container stands on a display surface with its lid closed.",
+    "action": "The camera moves slowly while the container, lid and printed surface remain unchanged.",
+    "duration": 4,
+    "contract": {
+      "version": 1,
+      "entities": [
+        {
+          "id": "product",
+          "label": "the referenced drink container"
+        },
+        {
+          "id": "surface",
+          "label": "the display surface"
+        }
+      ],
+      "relations": [
+        {
+          "kind": "supported_by",
+          "subject": "product",
+          "object": "surface"
+        }
+      ],
+      "counts": [
+        {
+          "entity": "product",
+          "count": 1
+        }
+      ],
+      "parts": [
+        {
+          "entity": "product",
+          "label": "lid",
+          "count": 1
+        }
+      ],
+      "properties": [
+        {
+          "entity": "product",
+          "name": "closed state",
+          "value": "the lid stays closed and no liquid appears outside"
+        },
+        {
+          "entity": "product",
+          "name": "surface artwork",
+          "value": "preserve the source lettering and colours; do not turn its printed figures into actors"
+        }
+      ]
+    }
+  },
+  {
+    "id": "vase_authored",
+    "label": "Authored vase example (no supplied vase photo)",
+    "source_file": null,
+    "opening": "A single ceramic vase stands on a pedestal. Its open mouth and continuous ceramic body are visible.",
+    "action": "A slow camera move reveals the vase without changing its silhouette or ceramic surface.",
+    "duration": 4,
+    "contract": {
+      "version": 1,
+      "entities": [
+        {
+          "id": "product",
+          "label": "the ceramic vase"
+        },
+        {
+          "id": "support",
+          "label": "the pedestal"
+        }
+      ],
+      "relations": [
+        {
+          "kind": "supported_by",
+          "subject": "product",
+          "object": "support"
+        }
+      ],
+      "counts": [
+        {
+          "entity": "product",
+          "count": 1
+        }
+      ],
+      "parts": [
+        {
+          "entity": "product",
+          "label": "open mouth",
+          "count": 1,
+          "visibility": "visible"
+        }
+      ],
+      "properties": [
+        {
+          "entity": "product",
+          "name": "ceramic shell",
+          "value": "keep one continuous rigid body, with no holes except its authored open mouth"
+        },
+        {
+          "entity": "product",
+          "name": "silhouette",
+          "value": "preserve the authored neck, shoulder and base proportions"
+        }
+      ]
+    }
+  },
+  {
+    "id": "single_pedestal",
+    "label": "Single-pedestal furniture",
+    "source_file": null,
+    "opening": "A round display table is supported by its one central pedestal.",
+    "action": "A slow camera movement reveals the stationary display table.",
+    "duration": 4,
+    "contract": {
+      "version": 1,
+      "entities": [
+        {
+          "id": "product",
+          "label": "the round display table"
+        }
+      ],
+      "parts": [
+        {
+          "entity": "product",
+          "label": "central pedestal",
+          "count": 1
+        }
+      ],
+      "properties": [
+        {
+          "entity": "product",
+          "name": "support",
+          "value": "the pedestal connects the tabletop to the floor"
+        }
+      ]
+    }
+  },
+  {
+    "id": "cosmetic_cap",
+    "label": "Gold lipstick with separate cap",
+    "source_file": "video san pham/1/Son-YSL-Rouge-Pur-Couture-01-Le-Rouge-–-Mau-Do-Tuoi-dd.jpg",
+    "opening": "One open gold lipstick and its separate cap stand upright on a display surface.",
+    "action": "A slow camera move reveals the stationary lipstick and cap without changing the embossed mark or red tip.",
+    "duration": 4,
+    "contract": {
+      "version": 1,
+      "entities": [
+        {
+          "id": "product",
+          "label": "the open gold lipstick"
+        },
+        {
+          "id": "cap",
+          "label": "the separate gold cap"
+        },
+        {
+          "id": "surface",
+          "label": "the display surface"
+        }
+      ],
+      "relations": [
+        {
+          "kind": "supported_by",
+          "subject": "product",
+          "object": "surface"
+        },
+        {
+          "kind": "supported_by",
+          "subject": "cap",
+          "object": "surface"
+        }
+      ],
+      "counts": [
+        {
+          "entity": "product",
+          "count": 1
+        },
+        {
+          "entity": "cap",
+          "count": 1
+        }
+      ],
+      "properties": [
+        {
+          "entity": "product",
+          "name": "source identity",
+          "value": "preserve the red slanted tip, gold casing and embossed source mark"
+        },
+        {
+          "entity": "cap",
+          "name": "separation",
+          "value": "the cap stays beside the open lipstick; it does not fuse into the casing or appear on the exposed tip"
+        }
+      ]
+    }
+  },
+  {
+    "id": "upholstered_furniture",
+    "label": "Blue upholstered sofa",
+    "source_file": "Video REF/Thay nền sản phâm/ghe-sofa-vang-v54-dem-da-mau-xanh.png",
+    "opening": "One referenced blue upholstered sofa rests on the floor in its reference room. The wall artwork remains a flat framed picture.",
+    "action": "A slow camera move reveals the sofa while the cushions, frame and upholstery remain stationary.",
+    "duration": 4,
+    "contract": {
+      "version": 1,
+      "entities": [
+        {
+          "id": "product",
+          "label": "the blue upholstered sofa"
+        },
+        {
+          "id": "floor",
+          "label": "the room floor"
+        },
+        {
+          "id": "picture",
+          "label": "the framed wall artwork"
+        }
+      ],
+      "relations": [
+        {
+          "kind": "supported_by",
+          "subject": "product",
+          "object": "floor"
+        }
+      ],
+      "counts": [
+        {
+          "entity": "product",
+          "count": 1
+        }
+      ],
+      "properties": [
+        {
+          "entity": "product",
+          "name": "reference geometry",
+          "value": "preserve the source seat depth, backrest height, armrests, support layout and blue upholstery; do not invent hidden supports"
+        },
+        {
+          "entity": "picture",
+          "name": "surface depiction",
+          "value": "the depicted figure remains flat wall artwork; it does not become a physical actor"
+        }
+      ]
+    }
+  },
+  {
+    "id": "mobility_frame",
+    "label": "Orange and black wheelchair",
+    "source_file": "khuyet_tat/xe_lan.png",
+    "opening": "One empty orange and black wheelchair stands on a level display floor.",
+    "action": "A slow camera move reveals the stationary wheelchair without rotating wheels or adding a user.",
+    "duration": 4,
+    "contract": {
+      "version": 1,
+      "entities": [
+        {
+          "id": "product",
+          "label": "the empty orange and black wheelchair"
+        },
+        {
+          "id": "floor",
+          "label": "the display floor"
+        }
+      ],
+      "relations": [
+        {
+          "kind": "supported_by",
+          "subject": "product",
+          "object": "floor"
+        }
+      ],
+      "counts": [
+        {
+          "entity": "product",
+          "count": 1
+        }
+      ],
+      "parts": [
+        {
+          "entity": "product",
+          "label": "large rear wheels",
+          "count": 2
+        },
+        {
+          "entity": "product",
+          "label": "small front casters",
+          "count": 2
+        }
+      ],
+      "properties": [
+        {
+          "entity": "product",
+          "name": "mechanical continuity",
+          "value": "wheels stay connected through their hubs and forks to the rigid frame; preserve the seat, footrests and orange and black materials"
+        },
+        {
+          "entity": "product",
+          "name": "occupancy",
+          "value": "the seat stays empty with no invented person, detached hand or body part"
+        }
+      ]
+    }
+  },
+  {
+    "id": "passive_container_state",
+    "label": "Passive filled container beside a cosmetic product",
+    "opening": "A filled display vessel stands beside the referenced cosmetic bottle.",
+    "action": "The camera moves closer while both objects remain stationary. No material is transferred.",
+    "duration": 4,
+    "contract": {
+      "version": 1,
+      "entities": [
+        {
+          "id": "vessel",
+          "label": "the authored filled vessel"
+        },
+        {
+          "id": "product",
+          "label": "the referenced cosmetic bottle"
+        }
+      ],
+      "counts": [
+        {
+          "entity": "vessel",
+          "count": 1
+        },
+        {
+          "entity": "product",
+          "count": 1
+        }
+      ],
+      "properties": [
+        {
+          "entity": "vessel",
+          "name": "unchanged material state",
+          "value": "The fill level remains constant because no pouring, drinking, leaking or refill event occurs."
+        },
+        {
+          "entity": "product",
+          "name": "sealed construction",
+          "value": "Its cap stays attached and closed. No extra cap or nozzle appears."
+        }
+      ]
+    }
+  }
+]

@@ -60,6 +60,11 @@ class TestApprovedKeyframe(FrappeTestCase):
 class TestVideoStageUsesTheKeyframe(FrappeTestCase):
 	steps = [frappe._dict(step_key="keyframe"), frappe._dict(step_key="video")]
 
+	def test_an_authored_first_frame_skips_redrawing_but_not_later_continuation(self):
+		self.assertEqual([(self.steps[-1], None, None, True)], _pipeline_steps_for_segment(self.steps, explicit_first_frame=True, keyframe_job="OLD"))
+		self.assertEqual([(self.steps[-1], "PREVIOUS", "Last Frame", False)], _pipeline_steps_for_segment(self.steps, explicit_first_frame=True, previous_segment_job="PREVIOUS"))
+		self.assertEqual([(self.steps[-1], "TAIL", "Last Frame", False)], _pipeline_steps_for_segment(self.steps, explicit_first_frame=True, cross_shot_continuity=True, previous_shot_tail_job="TAIL"))
+
 	def test_an_approved_keyframe_replaces_the_image_stage(self):
 		stages = _pipeline_steps_for_segment(self.steps, keyframe_job="TASK-K")
 		self.assertEqual([(self.steps[1], "TASK-K", "Primary Image", False)], stages)
@@ -70,3 +75,28 @@ class TestVideoStageUsesTheKeyframe(FrappeTestCase):
 
 	def test_without_a_keyframe_the_full_pipeline_runs(self):
 		self.assertEqual(2, len(_pipeline_steps_for_segment(self.steps)))
+
+	def test_authored_frame_binds_declared_controls_without_reinterpreting_cast(self):
+		from unittest.mock import patch
+		from joymedia.services.generation.preparation import authored_video_inputs
+		contract=[dict(role='first_frame',required=True),dict(role='motion_control',required=True)]
+		shot=frappe._dict(references=[dict(reference_role=role,asset_version=role+'-ASSET') for role in ['character','product','first_frame','motion_control']])
+		with patch('joymedia.services.workflows.resolver.get_workflow_input_contract',return_value=contract),patch('joymedia.services.generation.preparation.validate_role_input_count'):
+			self.assertEqual(authored_video_inputs(shot,frappe._dict(name='W')),{'first_frame':['first_frame-ASSET'],'motion_control':['motion_control-ASSET']})
+			shot.references=shot.references[:-1]
+			with self.assertRaises(ValueError):authored_video_inputs(shot,frappe._dict(name='W'))
+
+
+class TestKeyframePictureAccess(FrappeTestCase):
+	def test_a_keyframe_picture_is_attached_to_the_project_so_its_owner_can_open_it(self):
+		from unittest.mock import patch
+
+		from joymedia.services.keyframes.stage import attach_keyframe_to_project
+
+		with patch("joymedia.services.keyframes.stage.frappe.db.set_value") as set_value:
+			attach_keyframe_to_project("/private/files/frame.png", "PRJ-1")
+
+		set_value.assert_called_once_with(
+			"File", {"file_url": "/private/files/frame.png", "attached_to_doctype": ["!=", "Media Project"]},
+			{"attached_to_doctype": "Media Project", "attached_to_name": "PRJ-1"}, update_modified=False,
+		)

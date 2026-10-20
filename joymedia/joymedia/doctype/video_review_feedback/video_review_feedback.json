@@ -1,0 +1,186 @@
+{
+ "doctype": "DocType",
+ "name": "Video Review Feedback",
+ "module": "JoyMedia",
+ "autoname": "hash",
+ "engine": "InnoDB",
+ "field_order": [
+  "media_project",
+  "source_edit",
+  "asset_version",
+  "shot",
+  "scope",
+  "start_frame",
+  "end_frame",
+  "fps",
+  "start_seconds",
+  "category",
+  "priority",
+  "feedback",
+  "annotation_json",
+  "status",
+  "admin_response",
+  "resolved_by",
+  "resolved_at",
+  "submission_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "media_project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Media Project",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_edit",
+   "fieldtype": "Link",
+   "label": "Source Edit",
+   "options": "Media Project",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "asset_version",
+   "fieldtype": "Link",
+   "label": "Video Version",
+   "options": "Asset Version",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "shot",
+   "fieldtype": "Link",
+   "label": "Scene",
+   "options": "Shot",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "scope",
+   "fieldtype": "Select",
+   "label": "Scope",
+   "options": "Frame\nRange\nVideo",
+   "default": "Frame",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "start_frame",
+   "fieldtype": "Int",
+   "label": "Start Frame",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "end_frame",
+   "fieldtype": "Int",
+   "label": "End Frame",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "fps",
+   "fieldtype": "Float",
+   "label": "Video FPS",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "start_seconds",
+   "fieldtype": "Float",
+   "label": "Timestamp (seconds)",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "label": "Problem Category",
+   "options": "Other\nBrand\nAnatomy\nPhysics\nContinuity\nAudio\nText",
+   "default": "Other",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Select",
+   "label": "Priority",
+   "options": "Normal\nHigh",
+   "default": "Normal",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "feedback",
+   "fieldtype": "Small Text",
+   "label": "Feedback",
+   "reqd": 1,
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "annotation_json",
+   "fieldtype": "Code",
+   "label": "Marked Area (normalized coordinates)",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Open\nInvestigating\nResolved\nDismissed",
+   "default": "Open",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "admin_response",
+   "fieldtype": "Small Text",
+   "label": "Administrator Response"
+  },
+  {
+   "fieldname": "resolved_by",
+   "fieldtype": "Link",
+   "label": "Resolved By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "resolved_at",
+   "fieldtype": "Datetime",
+   "label": "Resolved At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submission_key",
+   "fieldtype": "Data",
+   "label": "Submission Key",
+   "unique": 1,
+   "hidden": 1,
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  }
+ ],
+ "track_changes": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "search_fields": "feedback,asset_version,media_project",
+ "title_field": "feedback"
+}

@@ -1,0 +1,6 @@
+{
+  "model": {"class_type": "MMAudioModelLoader", "inputs": {"mmaudio_model": "mmaudio_large_44k_v2.pth", "base_precision": "fp16"}},
+  "features": {"class_type": "MMAudioFeatureUtilsLoader", "inputs": {"vae_model": "v1-44.pth", "synchformer_model": "synchformer_state_dict.pth", "clip_model": "apple_DFN5B-CLIP-ViT-H-14-384_hfcache_fp32.bin", "mode": "44k", "precision": "fp16"}},
+  "music": {"class_type": "MMAudioSampler", "inputs": {"mmaudio_model": ["model", 0], "feature_utils": ["features", 0], "duration": 8.0, "steps": 25, "cfg": 4.5, "seed": 20261015, "prompt": "Warm cheerful instrumental commercial music, playful ukulele and soft glockenspiel, gentle handclaps, steady loopable rhythm. Music only.", "negative_prompt": "speech, talking, singing, vocals, sound effects, distortion, dark, gloomy", "mask_away_clip": true, "force_offload": true}},
+  "save": {"class_type": "SaveAudio", "inputs": {"audio": ["music", 0], "filename_prefix": "joymedia/music"}}
+}

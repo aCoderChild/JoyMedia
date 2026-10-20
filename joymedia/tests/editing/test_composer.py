@@ -16,6 +16,29 @@ from joymedia.services.editing.composer import (
 
 
 class TestVideoComposer(FrappeTestCase):
+	def test_mono_voice_does_not_collapse_stereo_music_or_clip_the_mix(self):
+		import array
+
+		with tempfile.TemporaryDirectory() as directory:
+			temp = Path(directory)
+			master, mono, stereo, output = [temp / name for name in ("v.mp4", "voice.wav", "music.wav", "out.mp4")]
+			_run_ffmpeg("-f", "lavfi", "-i", "color=s=128x128:r=24:d=1", "-an", "-c:v", "libx264", str(master))
+			_run_ffmpeg("-f", "lavfi", "-i", "aevalsrc=0.8*sin(2*PI*440*t):s=48000:d=1", str(mono))
+			_run_ffmpeg("-f", "lavfi", "-i", "aevalsrc=0.8*sin(2*PI*440*t)|0:s=48000:d=1", str(stereo))
+			sources = [dict(path=path, loop=False, start_seconds=0, duration_seconds=1, gain_db=0,
+				fade_in_seconds=0, fade_out_seconds=0, duck_others=False) for path in (mono, stereo)]
+			_mix_audio(master, sources, output)
+			probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)], capture_output=True, text=True, check=True).stdout)
+			self.assertEqual(next(s for s in probe["streams"] if s["codec_type"] == "audio")["channels"], 2)
+			decoded = subprocess.run(["ffmpeg", "-v", "error", "-i", str(output), "-vn", "-f", "f32le", "-"], capture_output=True, check=True).stdout
+			samples = array.array("f", decoded)
+			peak = max(abs(x) for x in samples)
+			left = sum(x*x for x in samples[0::2])
+			right = sum(x*x for x in samples[1::2])
+			del decoded, samples
+			self.assertLess(peak, 0.95)
+			self.assertGreater(left, right * 1.5)
+
 	def test_delivery_profile_uses_generation_run_snapshot_dimensions(self):
 		project = frappe._dict(delivery_width=1080, delivery_height=1920, workflow="LIVE-WORKFLOW")
 		run = frappe._dict(

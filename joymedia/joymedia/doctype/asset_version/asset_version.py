@@ -24,6 +24,9 @@ class AssetVersion(Document):
 		"height",
 		"duration_seconds",
 		"fps",
+		"preservation_evidence_json",
+		"release_evidence_json",
+		"edit_manifest_json",
 	)
 
 	def validate(self):

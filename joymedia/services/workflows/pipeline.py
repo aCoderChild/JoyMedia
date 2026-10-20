@@ -9,6 +9,27 @@ import frappe
 from frappe import _
 
 
+def get_pinned_generation_pipeline(project_name):
+	"""An operator's explicit per-project deployment pin; never a client model choice."""
+	import json
+
+	value = frappe.conf.get("joymedia_project_generation_pipelines")
+	if value is None:
+		value = frappe.defaults.get_global_default("joymedia_project_generation_pipelines") or {}
+	if isinstance(value, str):
+		value = json.loads(value)
+	if not isinstance(value, dict):
+		raise ValueError("Project generation pipeline pins must be a mapping.")
+	name = value.get(project_name)
+	if not name:
+		return None
+	if not isinstance(name, str) or not frappe.db.exists("Generation Pipeline", name):
+		raise ValueError("The project's pinned Generation Pipeline is unavailable.")
+	pipeline = frappe.get_doc("Generation Pipeline", name)
+	get_pipeline_steps(name)
+	return pipeline
+
+
 def get_active_generation_pipeline():
 	"""Return the one pipeline deliberately promoted by the site administrator.
 

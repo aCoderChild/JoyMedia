@@ -90,6 +90,21 @@ export function useProjectReferences(projectName, onRefresh) {
     }
   }
 
+  async function updateReferenceIdentity(asset, identityKey) {
+    if (!asset?.asset_version || !identityKey?.trim()) return;
+    try {
+      await call("joymedia.api.assets.set_reference_identity", {
+        media_project: project(),
+        asset_version: asset.asset_version,
+        identity_key: identityKey.trim(),
+      });
+      if (onRefresh) await onRefresh();
+      notify({ title: "Identity updated", text: tr("Approved views now share one identity.", "Các góc nhìn đã được gộp vào một nhận diện."), type: "success" });
+    } catch (err) {
+      notify({ title: "Error", text: errorMessage(err, "Failed to update identity."), type: "error" });
+    }
+  }
+
   async function removeReference(asset) {
     const version = asset?.asset_version;
     if (!version) return;
@@ -189,6 +204,7 @@ export function useProjectReferences(projectName, onRefresh) {
     openPicker,
     addReference,
     updateReferenceRole,
+    updateReferenceIdentity,
     updateReferenceSize,
     removeReference,
     archiveMediaAsset,

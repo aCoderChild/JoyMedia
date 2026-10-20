@@ -1,3 +1,4 @@
+import unittest
 import io
 import tempfile
 from pathlib import Path
@@ -14,7 +15,7 @@ from joymedia.services.keyframes.overlay import composite_subjects, layout, past
 class TestLayout(FrappeTestCase):
 	def test_every_subject_keeps_its_aspect_ratio_and_stays_inside_the_canvas(self):
 		for canvas in ((720, 1280), (1280, 720), (1000, 1000)):
-			sizes = [("character", 464, 560), ("product", 300, 420), ("logo", 600, 150), ("product", 900, 200)]
+			sizes = [("character", 464, 560), ("product", 300, 420), ("product", 900, 200)]
 			for (role, width, height), (x, y, box_width, box_height) in zip(sizes, layout(canvas, sizes)):
 				# Pixel rounding only: each side is within one pixel of the exact proportional size.
 				self.assertLessEqual(abs(box_height - box_width * height / width), 1, f"{role} on {canvas}")
@@ -50,7 +51,7 @@ class TestLayout(FrappeTestCase):
 		self.assertEqual(normal[2:], alone[2:])
 
 	def test_every_role_accepts_a_size_entry(self):
-		boxes = layout((720, 1280), [("character", 464, 560, 1), ("product", 1076, 717, 1), ("logo", 600, 150, 1)])
+		boxes = layout((720, 1280), [("character", 464, 560, 1), ("product", 1076, 717, 1)])
 		self.assertTrue(all(box is not None for box in boxes))
 
 	def test_a_lone_product_is_the_hero_and_much_larger_than_one_beside_a_character(self):
@@ -58,12 +59,6 @@ class TestLayout(FrappeTestCase):
 		beside = layout((1280, 720), [("character", 464, 560), ("product", 420, 560)])[1]
 		self.assertGreater(alone[3], 2 * beside[3])
 		self.assertLessEqual(abs(alone[2] / alone[3] - 420 / 560), 0.02)
-
-	def test_logos_sit_in_opposite_top_corners(self):
-		first, second = layout((1000, 1000), [("logo", 200, 100), ("logo", 200, 100)])
-		self.assertLess(first[0], 500)
-		self.assertGreater(second[0], 500)
-		self.assertEqual(first[1], second[1])
 
 
 class TestComposite(FrappeTestCase):
@@ -100,7 +95,8 @@ class TestPastedReferences(FrappeTestCase):
 			{"reference_role": "Logo", "asset_version": "AV3"},
 		]
 		with patch.object(subject_overlay, "_cutout_path", side_effect=paths.get):
-			self.assertEqual(["character", "logo"], [p["role"] for p in pasted_references(references)])
+			# Logos are laid over the finished film instead (the video model warps a logo drawn into a frame).
+			self.assertEqual(["character"], [p["role"] for p in pasted_references(references)])
 
 	def test_the_keyframe_prompt_asks_for_an_empty_setting_only_when_something_is_pasted(self):
 		from joymedia.services.planning.prompts import compile_prompt_for_documents
@@ -181,14 +177,14 @@ class TestDescribeColours(FrappeTestCase):
 
 
 class TestCharacterMode(FrappeTestCase):
-	def test_characters_are_pasted_only_in_paste_mode_but_products_and_logos_always(self):
+	def test_the_real_product_pack_is_always_pasted_and_characters_only_in_paste_mode(self):
 		references = [
 			{"reference_role": "Character", "asset_version": "AV1"}, {"reference_role": "Product", "asset_version": "AV2"},
 			{"reference_role": "Logo", "asset_version": "AV3"},
 		]
 		with patch.object(subject_overlay, "_cutout_path", return_value="/a.png"):
-			self.assertEqual(["character", "product", "logo"], [p["role"] for p in pasted_references(references, "Paste exact art")])
-			self.assertEqual(["product", "logo"], [p["role"] for p in pasted_references(references, "Draw in scene")])
+			self.assertEqual(["character", "product"], [p["role"] for p in pasted_references(references, "Paste exact art")])
+			self.assertEqual(["product"], [p["role"] for p in pasted_references(references, "Draw in scene")])
 
 	def test_the_character_board_keeps_each_picture_uncropped_and_the_mother_larger(self):
 		with tempfile.TemporaryDirectory() as folder:
@@ -207,7 +203,6 @@ class TestCharacterMode(FrappeTestCase):
 			column = lambda x: [y for y in range(image.height) if image.getpixel((x, y)) != (236, 232, 226)]
 			mother_x, kid_x = 40 + 60, image.width - 40 - 30
 			self.assertGreater(len(column(mother_x)), 1.8 * len(column(kid_x)))
-
 
 
 class TestEmptierSide(FrappeTestCase):
@@ -237,20 +232,260 @@ class TestTuning(FrappeTestCase):
 		self.assertGreater(large[3], small[3])
 
 
-class TestDrawnProduct(FrappeTestCase):
-	def test_with_drawn_characters_the_product_is_small_and_in_the_clear_corner(self):
-		normal = layout((720, 1280), [("character", 464, 560), ("product", 1076, 717)])[1]
-		corner = layout((720, 1280), [("product", 1076, 717)], drawn=True)[0]
-		self.assertLess(corner[3], normal[3])
-		self.assertGreater(corner[0] + corner[2] / 2, 0.7 * 720)
-		self.assertGreater(corner[1] + corner[3], 0.9 * 1280)
-		self.assertLessEqual(abs(corner[2] / corner[3] - 1076 / 717), 0.02)
+class TestProductPlacement(FrappeTestCase):
+	def test_on_the_closing_scene_the_product_is_large_in_the_centre_and_the_cast_at_the_sides(self):
+		canvas = (720, 1280)
+		mother, kid, product = layout(canvas, [("character", 464, 560, 1), ("character", 464, 560, 0.55), ("product", 1076, 717, 1)], product_hero=True)
+		self.assertAlmostEqual(0.5 * canvas[0], product[0] + product[2] / 2, delta=2)
+		normal = layout(canvas, [("character", 464, 560), ("product", 1076, 717)])[1]
+		self.assertGreater(product[3], 1.5 * normal[3])
+		self.assertGreater(product[2], mother[2])  # wider than any character, centred and painted in front
+		self.assertLess(mother[0] + mother[2] / 2, product[0] + product[2] / 2)
+		self.assertGreater(kid[0] + kid[2] / 2, product[0] + product[2] / 2)
+		self.assertLess(kid[3], mother[3])  # the child stays smaller
 
-	def test_the_prompt_keeps_that_corner_clear_only_when_a_product_will_be_pasted(self):
-		from joymedia.services.planning.prompts import _clear_corner_note
+	def test_the_closing_scene_is_the_last_one_of_the_film(self):
+		from joymedia.services.keyframes.overlay import closes_film
 
-		shot = frappe._dict(references=[{"reference_role": "Product", "asset_version": "AV1"}])
+		project = {"shots": [{"shot_number": 1}, {"shot_number": 2}, {"shot_number": 3}]}
+		self.assertTrue(closes_film({"shot_number": 3}, project))
+		self.assertFalse(closes_film({"shot_number": 2}, project))
+		self.assertFalse(closes_film({"shot_number": 0}, project))
+
+	def test_in_front_of_drawn_characters_the_pack_stands_in_the_lower_middle_at_an_everyday_size(self):
+		canvas = (720, 1280)
+		front = layout(canvas, [("product", 1076, 717)], front=True)[0]
+		closing = layout(canvas, [("product", 1076, 717)], product_hero=True)[0]
+		self.assertAlmostEqual(360, front[0] + front[2] / 2, delta=2)
+		self.assertGreater(front[1] + front[3], 0.9 * 1280)
+		self.assertLess(front[3], closing[3])
+		self.assertEqual(front, layout(canvas, [("product", 1076, 717)], front=True)[0])  # same inputs, same place
+
+	def test_a_drawn_scene_keeps_the_floor_clear_for_the_pack_and_the_closing_scene_its_centre(self):
+		from joymedia.services.planning.prompts import _product_note
+
+		project = {"shots": [{"shot_number": 1}, {"shot_number": 2}]}
+		refs = [{"reference_role": "Product", "asset_version": "AV1"}, {"reference_role": "Character", "asset_version": "AV2"}]
 		with patch.object(subject_overlay, "_cutout_path", return_value="/p.png"):
-			self.assertIn("Keep the bottom-right corner of the floor clear", _clear_corner_note(shot))
+			story = _product_note(frappe._dict(shot_number=1, references=refs, character_mode="Draw in scene"), project)
+			closing = _product_note(frappe._dict(shot_number=2, references=refs, character_mode="Draw in scene"), project)
 		with patch.object(subject_overlay, "_cutout_path", return_value=None):
-			self.assertEqual("", _clear_corner_note(shot))
+			no_cutout = _product_note(frappe._dict(shot_number=1, references=refs, character_mode="Draw in scene"), project)
+		self.assertIn("unobstructed area", story)
+		self.assertIn("do not draw a substitute product", story)
+		self.assertIn("central area clear", closing)
+		self.assertEqual("", no_cutout)
+
+
+class TestProductLock(FrappeTestCase):
+	def _assets(self, folder):
+		from PIL import Image
+
+		background, pack = folder / "bg.png", folder / "pack.png"
+		Image.new("RGB", (360, 640), (40, 40, 40)).save(background)
+		Image.new("RGBA", (200, 100), (255, 0, 0, 255)).save(pack)
+		return background, pack
+
+	def test_authored_surface_placement_overrides_default_floor_without_changing_art(self):
+		from joymedia.services.keyframes.overlay import composite_subjects
+		with tempfile.TemporaryDirectory() as folder:
+			path = Path(folder) / "source.png"
+			picture = Image.new("RGBA", (100, 50), (10, 50, 200, 255))
+			picture.putpixel((0, 0), (0, 0, 0, 0))
+			picture.save(path)
+			background = io.BytesIO()
+			Image.new("RGB", (400, 400), "white").save(background, "PNG")
+			lock = {}
+			result = composite_subjects(background.getvalue(), [{"role":"product", "path":str(path), "asset_version":"SOURCE"}], shadows=False, lock=lock, placements=[{"asset_version":"SOURCE", "box":[.1,.2,.5,.25]}])
+			self.assertEqual([40, 80, 200, 100], list(lock["items"][0]["box"]))
+			self.assertEqual((10, 50, 200), Image.open(io.BytesIO(result)).getpixel((100, 120)))
+			with self.assertRaises(ValueError):
+				composite_subjects(background.getvalue(), [], placements=[{"asset_version":"UNSELECTED", "box":[.1,.2,.5,.25]}])
+
+	def test_the_paste_records_the_exact_pack_pixels_and_place(self):
+		import tempfile
+		from pathlib import Path
+
+		with tempfile.TemporaryDirectory() as folder:
+			background, pack = self._assets(Path(folder))
+			lock = {}
+			composite_subjects(background.read_bytes(), [{"role": "product", "path": str(pack)}], front=True, lock=lock)
+		self.assertEqual([360, 640], lock["canvas"])
+		self.assertEqual(1, len(lock["items"]))
+		x, y, width, height = lock["items"][0]["box"]
+		self.assertAlmostEqual(180, x + width / 2, delta=2)
+		self.assertTrue(lock["items"][0]["png"].startswith(b"\x89PNG"))
+
+	def _lock(self, folder, source):
+		import subprocess
+
+		from PIL import Image
+
+		from joymedia.services.keyframes.overlay import lock_products_in_video
+
+		video, locked, patch_file = folder / "in.mp4", folder / "out.mp4", folder / "patch.png"
+		# The video is twice the keyframe's size: the box scales with it.
+		subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", source, "-t", "2", "-pix_fmt", "yuv420p", str(video)], check=True)
+		Image.new("RGBA", (50, 40), (255, 0, 0, 255)).save(patch_file)
+		lock = {"canvas": [360, 640], "items": [{"box": [100, 500, 50, 40], "file": "/private/files/patch.png"}]}
+		with patch.object(subject_overlay.frappe, "get_doc", return_value=frappe._dict(get_full_path=lambda: str(patch_file))):
+			return lock_products_in_video(video, lock, locked, 24), locked
+
+	def _pixel(self, folder, video, second):
+		import subprocess
+
+		from PIL import Image
+
+		frame = folder / f"f{second}.png"
+		subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", second, "-i", str(video), "-frames:v", "1", str(frame)], check=True)
+		with Image.open(frame) as image:
+			return image.convert("RGB").getpixel((200 + 50, 1000 + 40))
+
+	def test_the_exact_pack_is_laid_over_every_frame_while_it_stays_in_place(self):
+		import tempfile
+		from pathlib import Path
+
+		with tempfile.TemporaryDirectory() as folder:
+			folder = Path(folder)
+			result, locked = self._lock(folder, "color=c=gray:s=720x1280:r=24")
+			self.assertIsNotNone(result)
+			for second in ("0.1", "1.9"):
+				red = self._pixel(folder, locked, second)
+				self.assertGreater(red[0], 200, second)
+				self.assertLess(red[1] + red[2], 80, second)
+
+	def test_a_video_whose_pack_region_changes_is_rejected_instead_of_silently_unprotected(self):
+		import tempfile
+		from pathlib import Path
+
+		with tempfile.TemporaryDirectory() as folder:
+			# The shot cuts to something else after 0.15 s, before the pack has stayed a quarter second.
+			with self.assertRaisesRegex(ValueError, "lost coverage"):
+				self._lock(Path(folder), "nullsrc=s=720x1280:r=24,geq=lum='if(lt(T,0.15),128,235)':cb=128:cr=128")
+			self.assertFalse((Path(folder) / "out.mp4").exists())
+
+	def test_only_the_frames_that_still_show_the_pack_are_kept(self):
+		from joymedia.services.keyframes.overlay import pack_still_frames
+
+		same, other = bytes([100]) * 1024, bytes([200]) * 1024
+		frames = [same] * 20 + [other] * 2 + [same] * 10 + [other] * 30 + [same] * 3
+		# A two-frame dropout is bridged; the final three-frame run is too short to keep.
+		self.assertEqual([(0, 31)], pack_still_frames(frames, tolerance=18))
+		self.assertEqual([], pack_still_frames([]))
+
+
+class TestEndCard(FrappeTestCase):
+	def test_closing_motion_is_not_replaced_by_a_whole_shot_source_card(self):
+		from joymedia.services.project.context import _compose_end_card
+
+		shots = [
+			{"shot_number": 1, "character_mode": "Draw in scene", "references": [{"reference_role": "Product"}]},
+			{"shot_number": 2, "duration_seconds": 5, "character_mode": "Draw in scene", "references": [{"reference_role": "Product"}, {"reference_role": "Character"}]},
+		]
+		_compose_end_card(shots)
+		self.assertEqual(["Draw in scene", "Draw in scene"], [row["character_mode"] for row in shots])
+		self.assertEqual(2, shots[-1]["closing_hold_seconds"])
+		self.assertEqual("generated_pose", shots[-1]["closing_hold_mode"])
+
+	def test_a_last_scene_without_a_product_keeps_its_mode(self):
+		from joymedia.services.project.context import _compose_end_card
+
+		shots = [{"shot_number": 1, "character_mode": "Draw in scene", "references": [{"reference_role": "Character"}]}]
+		_compose_end_card(shots)
+		self.assertEqual("Draw in scene", shots[0]["character_mode"])
+
+
+class TestSplitScreenKeyframe(FrappeTestCase):
+	def test_each_view_is_a_panel_with_the_pack_in_its_middle_and_every_pack_is_locked(self):
+		import io
+		import tempfile
+
+		from PIL import Image
+
+		from joymedia.services.keyframes.overlay import split_screen_keyframe
+
+		drawn = io.BytesIO()
+		Image.new("RGB", (720, 1280), (90, 120, 90)).save(drawn, "PNG")
+		with tempfile.NamedTemporaryFile(suffix=".png") as pack:
+			cutout = Image.new("RGBA", (200, 300), (0, 0, 0, 0))
+			cutout.paste((20, 200, 180, 255), (20, 20, 180, 280))
+			cutout.save(pack.name)
+			lock = {}
+			frame = split_screen_keyframe(
+				drawn.getvalue(), [{"text": "A"}, {"text": "B"}, {"text": "C"}], "A room.", None,
+				[{"role": "product", "path": pack.name, "asset_version": "AV-PACK"}], lock,
+			)
+		image = Image.open(io.BytesIO(frame)).convert("RGB")
+		self.assertEqual((720, 1280), image.size)
+		self.assertEqual([720, 1280], lock["canvas"])
+		self.assertEqual(3, len(lock["items"]))
+		tops = [item["box"][1] for item in lock["items"]]
+		band = (1280 - 8 * 2) // 3
+		for number, top in enumerate(tops):
+			self.assertTrue(number * band <= top < (number + 1) * (band + 8), tops)  # each pack inside its own panel
+		self.assertEqual((255, 255, 255), image.getpixel((360, band + 3)))  # the line between panels 1 and 2
+
+
+class TestHeldProduct(FrappeTestCase):
+	def _shot(self, action):
+		return frappe._dict(
+			generation_prompt=f"{action} Camera: Wide shot.\n\nAudio: a pop.", views_json="", character_mode="Draw in scene",
+			references=[{"reference_role": "Character", "asset_version": "AV-ME"}, {"reference_role": "Product", "asset_version": "AV-PACK"}],
+		)
+
+	def test_a_scene_whose_character_holds_the_product_is_recognised(self):
+		from joymedia.services.planning.prompts import holds_product
+
+		with patch("joymedia.services.keyframes.overlay._cutout_path", return_value="/tmp/x.png"):
+			self.assertTrue(holds_product(self._shot("The mother mascot beams and cradles in arms a giant jumbo bag of Shera soft pack.")))
+			self.assertTrue(holds_product(self._shot("The mother holds the product up to the camera.")))
+			self.assertFalse(holds_product(self._shot("The kid spills juice. Later she holds the pack.")))  # not the opening action
+			self.assertFalse(holds_product(self._shot("The mother smiles beside the table.")))
+
+	def test_the_real_pack_covers_the_pack_the_character_was_drawn_holding(self):
+		import io
+		import tempfile
+
+		from PIL import Image
+
+		from joymedia.services.keyframes.overlay import paste_held_product
+
+		drawn = io.BytesIO()
+		Image.new("RGB", (720, 1280), (200, 200, 200)).save(drawn, "PNG")
+		with tempfile.NamedTemporaryFile(suffix=".png") as pack:
+			Image.new("RGBA", (300, 200), (20, 200, 180, 255)).save(pack.name)
+			lock = {}
+			with patch("joymedia.services.review.consistency.locate", return_value=(200, 600, 500, 800)):
+				frame = paste_held_product(drawn.getvalue(), [{"role": "product", "path": pack.name}], lock)
+			with patch("joymedia.services.review.consistency.locate", return_value=None):
+				self.assertIsNone(paste_held_product(drawn.getvalue(), [{"role": "product", "path": pack.name}]))
+		image = Image.open(io.BytesIO(frame)).convert("RGB")
+		self.assertEqual((20, 200, 180), image.getpixel((350, 700)))
+		self.assertEqual([[200, 600, 300, 200]], [item["box"] for item in lock["items"]])
+
+
+class TestSharedStudioGround(unittest.TestCase):
+ def test_product_hero_uses_the_primary_cell_without_distorting_artwork(self):
+  from joymedia.services.keyframes.overlay import hero_layout
+  for canvas in [(720,1280),(1280,720),(720,720)]:
+   sizes=[('character',1000,1000),('product',1500,900)]
+   boxes=hero_layout(canvas,sizes)
+   actor,product=boxes
+   self.assertGreater(product[2]*product[3],actor[2]*actor[3])
+   self.assertTrue(actor[0]+actor[2]<=product[0] or actor[1]+actor[3]<=product[1])
+   for (_,w,h),(x,y,bw,bh) in zip(sizes,boxes):
+    self.assertLess(abs(bw/bh-w/h),.01)
+    self.assertTrue(0<=x and 0<=y and x+bw<=canvas[0] and y+bh<=canvas[1])
+
+ def test_all_subjects_keep_proportions_and_one_baseline_without_overlap(self):
+  from joymedia.services.keyframes.overlay import shared_ground_layout
+  for canvas in [(720,1280),(1280,720),(512,512)]:
+   sizes=[('character',400,600,1),('product',600,400,.65)]
+   boxes=shared_ground_layout(canvas,sizes)
+   self.assertEqual(boxes[0][1]+boxes[0][3],boxes[1][1]+boxes[1][3])
+   self.assertLessEqual(boxes[0][0]+boxes[0][2],boxes[1][0])
+   for (_,w,h,_),(x,y,bw,bh) in zip(sizes,boxes):
+    self.assertLess(abs(bw/bh-w/h),.01)
+    self.assertGreaterEqual(min(x,y),0)
+    self.assertLessEqual(x+bw,canvas[0])
+    self.assertLessEqual(y+bh,canvas[1])

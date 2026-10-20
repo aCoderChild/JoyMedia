@@ -285,7 +285,7 @@ class TestRoundToMultiple(FrappeTestCase):
 		with self.assertRaises(ValueError):
 			adapter.validate_specification({"n": {"class_type": "X", "inputs": {"w": 1}}})
 
-	def test_the_h3_specification_declares_the_multiple_of_32_and_validates(self):
+	def test_the_h3_specification_declares_native_dimensions_and_validates(self):
 		from pathlib import Path
 
 		from joymedia.patches.register_flux_pulid_h3_pipeline import GRAPHS, _h3_spec
@@ -295,4 +295,29 @@ class TestRoundToMultiple(FrappeTestCase):
 		graph = json.loads(Path(GRAPHS / "minimax_h3_i2v.json").read_text())
 		adapter.validate_specification(graph)
 		sizes = {p["semantic"]: p for p in _h3_spec()["parameters"] if p["semantic"] in ("width", "height")}
-		self.assertEqual({32}, {p["multiple"] for p in sizes.values()})
+		self.assertEqual({"nearest_size_dimension"}, {p["transform"] for p in sizes.values()})
+		for mapping in sizes.values():
+			self.assertEqual({(1344, 768), (768, 1344), (1024, 1024)}, {(p["width"], p["height"]) for p in mapping["options"]})
+
+	def test_input_mirror_copies_one_bound_file_without_extra_asset_slots(self):
+		adapter = GenericComfyUIAdapter()
+		adapter.execution_spec = {
+			"outputs": {"primary": {"media_type": "Image", "node_key": "save"}},
+			"input_mirrors": [{"source": {"node_key": "guide", "input_name": "video"},
+				"target": {"node_key": "original", "input_name": "video"}}],
+		}
+		graph = {"guide": {"class_type": "LoadVideo", "inputs": {"video": "resolved.mp4"}},
+			"original": {"class_type": "LoadVideo", "inputs": {"video": "placeholder.mp4"}},
+			"save": {"class_type": "SaveImage", "inputs": {}}}
+		adapter.validate_specification(graph)
+		result = adapter.finalize_workflow(graph, SimpleNamespace(bindings=[]), {"control_video": ["resolved.mp4"]})
+		self.assertEqual(result["original"]["inputs"]["video"], "resolved.mp4")
+
+	def test_input_mirrors_reject_missing_inputs_duplicate_targets_and_cycles(self):
+		adapter = GenericComfyUIAdapter()
+		graph = {key: {"class_type": "Node", "inputs": {"video": "x"}} for key in ["a", "b", "save"]}
+		copy = {"source": {"node_key": "a", "input_name": "video"}, "target": {"node_key": "b", "input_name": "video"}}
+		for mirrors in [[copy, copy], [copy, {"source": copy["target"], "target": copy["source"]}], [{"source": {"node_key": "missing", "input_name": "video"}, "target": copy["target"]}]]:
+			adapter.execution_spec = {"outputs": {"primary": {"media_type": "Image", "node_key": "save"}}, "input_mirrors": mirrors}
+			with self.assertRaises(ValueError):
+				adapter.validate_specification(graph)

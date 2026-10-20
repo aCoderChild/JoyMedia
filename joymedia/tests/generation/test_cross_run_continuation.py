@@ -96,9 +96,9 @@ class TestCrossRunContinuation(FrappeTestCase):
 		task.db_set("status", "Completed")
 		_asset, version = _create_output_version(self.project, "take.mp4", 2)
 		version.db_set("source_generation_attempt", attempt.name)
-		shot.db_set({"selected_output_asset_version": version.name, "review_status": "Approved"})
+		shot.db_set({"selected_output_asset_version": version.name})
 
-	def test_regeneration_task_validates_against_the_approved_predecessor(self):
+	def test_regeneration_task_validates_against_the_selected_predecessor(self):
 		source = scene_takes._continuation_source_task(self.project, [self.shot2.name])
 		self.assertEqual(self.original_task.name, source)
 
@@ -119,8 +119,8 @@ class TestCrossRunContinuation(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self._task(run, self.shot2, depends_on=self.original_task.name)
 
-	def test_unapproved_predecessor_blocks_regeneration(self):
-		self.shot1.db_set("review_status", "Pending Review")
+	def test_a_predecessor_without_an_output_blocks_regeneration(self):
+		self.shot1.db_set("selected_output_asset_version", None)
 		with self.assertRaises(frappe.ValidationError):
 			scene_takes._continuation_source_task(self.project, [self.shot2.name])
 

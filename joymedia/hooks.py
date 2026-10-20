@@ -1,5 +1,3 @@
-import frappe
-
 app_name = "joymedia"
 app_title = "JoyMedia"
 app_publisher = "JoyMedia"
@@ -159,6 +157,8 @@ after_migrate = "joymedia.migration.after_migrate"
 # Hook on document methods and events
 
 doc_events = {
+	"User": {"validate": "joymedia.services.access.validate_user_roles"},
+	"Generation Attempt": {"before_insert": "joymedia.services.partners.charge_attempt"},
 	"File": {
 		"before_insert": "joymedia.overrides.file_hooks.ensure_home_folder_exists",
 	},
@@ -276,3 +276,15 @@ scheduler_events = {
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
+
+# Reviewer role adds restrictions even when another customer role is also assigned.
+has_permission = {
+    "Media Project": "joymedia.services.partners.document_permission",
+    "Media Asset": "joymedia.services.partners.document_permission",
+    "Asset Version": "joymedia.services.partners.document_permission",
+}
+permission_query_conditions = {
+    "Media Project": "joymedia.services.partners.project_query",
+    "Media Asset": "joymedia.services.partners.asset_query",
+    "Asset Version": "joymedia.services.partners.version_query",
+}

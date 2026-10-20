@@ -1,15 +1,17 @@
-"""Deterministic local composition of role-based references for Flux keyframes."""
+"""Deterministic, lossless framing of semantic references for any image workflow."""
 
 from __future__ import annotations
 
 import hashlib
 import math
+import os
+import tempfile
 from pathlib import Path
 
 ROLE_ALIASES = {
 	"people": "person",
 	"person": "person",
-	"character": "person",
+	"character": "character",
 	"talent": "person",
 	"product": "product",
 	"product_reference": "product",
@@ -51,7 +53,9 @@ def compose_reference_board(references, *, width=1344, height=768):
 		label = str(reference.get("label") or "").strip()
 		data = path.read_bytes()
 		with Image.open(path) as source:
-			image = ImageOps.exif_transpose(source).convert("RGB")
+			oriented = ImageOps.exif_transpose(source).convert("RGBA")
+			image = Image.new("RGB", oriented.size, "white")
+			image.paste(oriented, mask=oriented.getchannel("A"))
 		items.append({"image": image, "role": role, "label": label, "digest": hashlib.sha256(data).hexdigest()})
 
 	# Stable ordering preserves the user's selected-reference order, while the
@@ -67,18 +71,26 @@ def compose_reference_board(references, *, width=1344, height=768):
 		column, row = index % cols, index // cols
 		x = gap + column * (tile_width + gap)
 		y = gap + row * (tile_height + gap)
-		fitted = ImageOps.fit(item["image"], (tile_width, tile_height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+		# Contain every source edge: cropping can remove ears, paw markings or
+		# packaging print and changes the identity before the model sees it.
+		fitted = ImageOps.pad(item["image"], (tile_width, tile_height), method=Image.Resampling.LANCZOS, color="white")
 		board.paste(fitted, (x, y))
 
 	digest_input = "|".join(
 		f"{item['role']}:{item['digest']}" for item in items
-	) + f"|{width}x{height}|{cols}x{rows}"
+	) + f"|{width}x{height}|{cols}x{rows}|contain-white-v2"
 	digest = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()
 	output_dir = Path("/tmp/joymedia-reference-boards")
 	output_dir.mkdir(parents=True, exist_ok=True)
 	output_path = output_dir / f"reference-board-{digest}.png"
 	if not output_path.exists():
-		board.save(output_path, format="PNG", optimize=False, compress_level=9)
+		with tempfile.NamedTemporaryFile(dir=output_dir, suffix=".png", delete=False) as temporary:
+			try:
+				board.save(temporary, format="PNG", optimize=False, compress_level=9)
+				temporary.close()
+				os.replace(temporary.name, output_path)
+			finally:
+				Path(temporary.name).unlink(missing_ok=True)
 
 	placements = []
 	for index, item in enumerate(items, start=1):
@@ -88,6 +100,6 @@ def compose_reference_board(references, *, width=1344, height=768):
 	instruction = (
 		"Reference board guidance: preserve the identity and material details from the "
 		+ "; ".join(placements)
-		+ ". Use the board as a combined visual reference, but compose one coherent scene."
+		+ ". Use the board as a combined visual reference, but compose one coherent scene. Each tile is independently fitted: its image size does not imply physical scale. Follow the authored scene proportions and support surfaces."
 	)
 	return {"path": str(output_path), "sha256": digest, "instruction": instruction, "count": len(items)}

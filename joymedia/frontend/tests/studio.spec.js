@@ -98,7 +98,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
   });
 
   test("2. Priority 2 & 3: Generation Composer @reference insertion and Improve Idea with Qwen AI", async ({ page }) => {
-    await page.goto(`/joymedia/projects/${projectName}`);
+    await page.goto(`/joymedia/projects/${projectName}?editor=advanced`);
     await expect(page.locator("header")).toBeVisible();
 
     const promptTextarea = page.locator("textarea");
@@ -128,7 +128,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
   });
 
   test("3. Priority 4: Streamlined MediaPicker reference selection with suggested role", async ({ page }) => {
-    await page.goto(`/joymedia/projects/${projectName}`);
+    await page.goto(`/joymedia/projects/${projectName}?editor=advanced`);
     await expect(page.locator("header")).toBeVisible();
 
     // Open media picker via Composer ingredient button
@@ -157,7 +157,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
   });
 
   test("4. Priority 1 & 5: Edit Mode lanes (Video & Music / Audio) and simplified Inspector labels", async ({ page }) => {
-    await page.goto(`/joymedia/projects/${projectName}`);
+    await page.goto(`/joymedia/projects/${projectName}?editor=advanced`);
     await expect(page.locator("header")).toBeVisible();
 
     // Switch to Edit mode
@@ -194,7 +194,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
   });
 
   test("5. Golden Path: Shot regeneration flags clip outdated, update resolves it, and export triggers", async ({ page }) => {
-    await page.goto(`/joymedia/projects/${projectName}`);
+    await page.goto(`/joymedia/projects/${projectName}?editor=advanced`);
     await expect(page.locator("header")).toBeVisible();
 
     // Go to Scene mode
@@ -215,7 +215,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
   });
 
   test("6. Studio Storyboard minimalism & Media Drawer layout flex push", async ({ page }) => {
-    await page.goto(`/joymedia/projects/${projectName}`);
+    await page.goto(`/joymedia/projects/${projectName}?editor=advanced`);
     await expect(page.locator("header")).toBeVisible();
 
     // Verify Storyboard does not leak technical jargon "Continuous (Chained)"
@@ -271,7 +271,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
   });
 
   test("8. Unified Player & Editor Model: Persistent master player, 4 semantic lanes, clean storyboard cards", async ({ page }) => {
-    await page.goto(`/joymedia/projects/${projectName}`);
+    await page.goto(`/joymedia/projects/${projectName}?editor=advanced`);
     await expect(page.locator("header")).toBeVisible();
 
     // 1. Verify bottom workspace switcher is present and functional
@@ -312,14 +312,14 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
 
   test("9. Media clock and storyboard/timeline synchronization", async ({ page }) => {
     for (const [name, expected] of [[fiveSecondProjectName, 5], [fifteenSecondProjectName, 15]]) {
-      await page.goto(`/joymedia/projects/${name}`);
+      await page.goto(`/joymedia/projects/${name}?editor=advanced`);
       const video = page.locator(".gflow-viewport video");
       await expect(video).toBeVisible();
       await expect.poll(() => video.evaluate((element) => element.duration), { timeout: 10000 }).toBeCloseTo(expected, 0);
       await expect(page.locator(".playback-transport")).toContainText(`00:${String(expected).padStart(2, "0")}`);
     }
 
-    await page.goto(`/joymedia/projects/${projectName}`);
+    await page.goto(`/joymedia/projects/${projectName}?editor=advanced`);
     await expect(page.locator(".timeline-clip").first()).toBeVisible();
 
     const storyboardButton = page.getByRole("button", { name: /Storyboard/i }).first();
@@ -341,7 +341,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
   });
 
   test("10. Audio Lanes & Role Routing: adding Voice lands in Voice, SFX in Effects, BGM in Music without polluting references", async ({ page }) => {
-    await page.goto(`/joymedia/projects/${projectName}`);
+    await page.goto(`/joymedia/projects/${projectName}?editor=advanced`);
     await expect(page.locator("header")).toBeVisible();
 
     // Switch to Timeline
@@ -375,7 +375,7 @@ test.describe("JoyMedia Studio - Golden Path Integration Tests", () => {
     const parsed = JSON.parse(output.trim());
     freshProjectName = parsed.project_name;
 
-    await page.goto(`/joymedia/projects/${freshProjectName}`);
+    await page.goto(`/joymedia/projects/${freshProjectName}?editor=advanced`);
     await expect(page.locator("header")).toBeVisible();
 
     // 2. Verify prompt is empty

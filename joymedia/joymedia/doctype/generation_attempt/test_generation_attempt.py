@@ -38,7 +38,7 @@ class TestGenerationAttempt(FrappeTestCase):
 			patch(
 				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.get_doc",
 				return_value=job,
-			) as get_doc,
+			),
 			patch(
 				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.db.get_value",
 				return_value=3,

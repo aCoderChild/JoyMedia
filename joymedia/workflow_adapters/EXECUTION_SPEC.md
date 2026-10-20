@@ -73,6 +73,12 @@ latent otherwise:
 `prompt_transforms` can apply declared regular-expression removals and append
 fixed or staged guidance to a bound text input. These are workflow-record
 configuration, not provider-specific branches in orchestration code.
+`when_role_present` optionally gates a transform on a staged input role. Use
+it when a prompt must mention an image tag only if that reference was supplied.
+Later video pipeline stages receive original Shot references only for roles
+their bindings explicitly declare, alongside the upstream opening artifact.
+First/last frame controls retain their existing dependency and authored-endpoint
+rules. Extra distinct references exceeding the declared slots are rejected.
 
 `outputs.primary` is required and identifies the output node and media type
 (`Image`, `Video`, or `Audio`). For video, JoyMedia extracts
@@ -90,3 +96,28 @@ the graph still must be valid in the target ComfyUI installation, and its
 custom nodes, weights, and any authentication must be installed/configured
 there. The record describes how JoyMedia talks to that graph; ComfyUI executes
 the actual model.
+
+`ceil_to_multiple` pads a requested count to `N*k + offset` without undershooting;
+`multiple` is positive and `offset` is an integer in `[0, multiple)`. Trim the
+resulting decoded frames explicitly when the delivery count differs from the
+model's latent grid.
+
+`input_mirrors` copies one resolved graph input into another after binding. For
+example, two video decoders can read the same uploaded file at different
+resolutions without asking the client for duplicate assets:
+
+```json
+{"input_mirrors": [{
+  "source": {"node_key": "guide", "input_name": "video"},
+  "target": {"node_key": "original_video", "input_name": "video"}
+}]}
+```
+
+Sources/targets must already exist; duplicate targets and mirror chains/cycles
+are rejected. This copies a value, not a ComfyUI tensor output link. The final
+resolved graph hash includes it.
+
+An administrator may map an exact workflow version to a separate runtime using
+`joymedia_workflow_endpoints`. Its HTTP(S) endpoint is frozen on the Attempt before
+uploads and submission; continuation inputs and reference boards use that same
+endpoint. Existing attempts keep their recorded endpoint during reconciliation.

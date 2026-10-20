@@ -18,27 +18,55 @@
   "is_removed",
   "planned_frame_count",
   "duration_seconds",
+  "storyboard_action",
   "generation_prompt",
   "image_prompt",
   "setting_prompt",
+  "views_json",
   "character_mode",
   "keyframe_artifact",
   "keyframe_status",
   "keyframe_signature",
+  "consistency_status",
+  "consistency_notes",
+  "consistency_retries",
+  "brand_approval_signature",
+  "brand_approved_by",
+  "brand_approved_at",
   "motion_plan_json",
   "start_state",
   "end_state",
   "handoff_type",
   "caption",
+  "illustration",
   "voice_over",
   "audio_cues",
   "planner_notes",
   "generation_inputs",
   "selected_output_section",
-  "selected_output_asset_version",
-  "review_status"
+  "selected_output_asset_version"
  ],
  "fields": [
+  {
+   "fieldname": "brand_approval_signature",
+   "fieldtype": "Data",
+   "label": "Brand Approval Signature",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "brand_approved_by",
+   "fieldtype": "Link",
+   "label": "Brand Approved By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "brand_approved_at",
+   "fieldtype": "Datetime",
+   "label": "Brand Approved At",
+   "read_only": 1
+  },
   {
    "fieldname": "shot_overview_section",
    "fieldtype": "Section Break",
@@ -123,7 +151,7 @@
    "read_only": 1
   },
   {
-   "description": "Canonical Qwen-generated creative prompt for this shot. Camera, subject, action, environment, lighting and sound intent belong inside this one prompt rather than separate fields.",
+   "description": "Canonical AI-planned creative prompt for this shot. Camera, subject, action, environment, lighting and sound intent belong inside this one prompt rather than separate fields.",
    "fieldname": "generation_prompt",
    "fieldtype": "Long Text",
    "ignore_xss_filter": 1,
@@ -142,6 +170,15 @@
    "fieldname": "setting_prompt",
    "fieldtype": "Small Text",
    "label": "Setting Prompt"
+  },
+  {
+   "fieldname": "views_json",
+   "fieldtype": "Code",
+   "label": "Split-Screen Views",
+   "options": "JSON",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "A split-screen scene's views, top to bottom, as the sheet lists them: [{\"text\": English, \"source\": the sheet's words}]. Empty for a full-frame scene."
   },
   {
    "description": "Empty uses the project's setting. Draw in scene: the characters are drawn acting in the scene. Paste exact art: the real mascot pictures are placed unchanged.",
@@ -177,6 +214,31 @@
    "description": "What the keyframe was drawn from; a different value means it is out of date."
   },
   {
+   "fieldname": "consistency_status",
+   "fieldtype": "Select",
+   "label": "Consistency Check",
+   "options": "\nChecking\nPassed\nRedrawing\nRedoing\nNeeds Review\nNot Checked",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "The automatic check of the scene's latest first frame or take against its references (services/review/consistency.py)."
+  },
+  {
+   "fieldname": "consistency_notes",
+   "fieldtype": "Small Text",
+   "label": "Consistency Notes",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "consistency_retries",
+   "fieldtype": "Int",
+   "label": "Automatic Redos",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1,
+   "default": "0"
+  },
+  {
    "description": "Validated, model-independent action schedule in seconds.",
    "fieldname": "motion_plan_json",
    "fieldtype": "Code",
@@ -209,6 +271,14 @@
    "fieldtype": "Data",
    "label": "On-screen Caption",
    "length": 120
+  },
+  {
+   "fieldname": "illustration",
+   "fieldtype": "Small Text",
+   "label": "Sheet Illustration",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "What the sheet's 'Minh hoạ khung hình' (illustration) column gives for this scene: links, and the picture embedded on the scene's row (saved as a file), one per line."
   },
   {
    "description": "Source-provided narration. It is preserved for review and is not treated as generated speech.",
@@ -252,20 +322,16 @@
    "options": "Asset Version"
   },
   {
-   "default": "Pending Review",
-   "description": "Human QA verdict for this shot's current selected output.",
-   "fieldname": "review_status",
-   "fieldtype": "Select",
-   "hidden": 1,
-   "label": "Review Status",
-   "options": "Pending Review\nApproved\nRejected\nNeeds Revision",
-   "read_only": 1
+   "fieldname": "storyboard_action",
+   "fieldtype": "Small Text",
+   "label": "Storyboard Action",
+   "description": "Client-approved action, independent of provider prompts. Empty uses the imported script or generation direction."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-03 13:32:36.962319",
+ "modified": "2026-10-18 10:54:00.000000",
  "modified_by": "Administrator",
  "module": "JoyMedia",
  "name": "Shot",

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "name": "BiRefNet",
+      "url": "https://github.com/ZhengPeng7/BiRefNet.git",
+      "commit": "97e4f35d74043427b0e9ba935ca10991853a36bc"
+    },
+    {
+      "name": "GroundingDINO",
+      "url": "https://github.com/IDEA-Research/GroundingDINO.git",
+      "commit": "856dde20aee659246248e20734ef9ba5214f5e44"
+    }
+  ],
+  "models": {
+    "matte": {
+      "repository": "ZhengPeng7/BiRefNet",
+      "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4"
+    },
+    "detector": {
+      "repository": "IDEA-Research/grounding-dino-tiny",
+      "revision": "a2bb814dd30d776dcf7e30523b00659f4f141c71"
+    }
+  }
+}

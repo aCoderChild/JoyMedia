@@ -1,14 +1,19 @@
 <template>
   <div class="project-studio-root relative flex flex-col w-screen h-screen overflow-hidden bg-surface-base text-ink-primary">
+    <ClientWorkspace v-if="!advancedMode" :project="projectName" :title="projectTitle" :current-lang="currentLang" :workspace="workspace" :loading="workspaceLoading" v-model:prompt="videoIdeaPrompt" :shots="storyboardShots" :frames="clientFrames.rows.value" :video="finalVideo" :review-revision="reviewRevision" :review-version="reviewVersion" :review-focused="reviewFocused || String(route.query.feedback || '')" :review-start-frame="reviewStartFrame" @feedback-saved="reviewRevision++" @review-close="closeVideoReview" :action="clientNextAction" :busy="clientActionBusy || isGenerating || isProductionActive || isFinishing || isExporting || clientFrames.drawingAll.value || Boolean(clientFrames.drawingShot.value)" :error="productionError || postProduction.error"
+      @working-edit="edit=>router.push(`/projects/${edit}`)" @back="router.push('/projects')" @history="shot => { historyShot=shot || ''; historyOpen=true; }" @advanced="setEditorMode(true)" @settings="showSettings=true" @continue="continueClientJourney" @approve="(shot, approved)=>clientFrames.approve(shot,approved)" @redraw="shot=>clientFrames.draw([shot])" @restore="restoreClientProject" @refresh="fetchWorkspace" @assemble="assembleClientPreview" @review="(version,frame,feedback)=>{reviewStartFrame=Number.isInteger(frame)?frame:null;reviewFocused=feedback || '';reviewVersion=version;}" />
+    <div v-if="advancedMode" class="flex items-center justify-between px-4 py-2 border-b border-outline-border text-xs"><span>{{ currentLang==='vi'?'Trình chỉnh sửa nâng cao':'Advanced editor' }}</span><button class="text-indigo-500 underline" data-test="back-to-simple" @click="setEditorMode(false)">{{ currentLang==='vi'?'Quay lại video':'Back to video' }}</button></div>
     <!-- 1. Single Studio Header (Full width across top: Projects | Title | Media | Export) -->
-    <StudioHeader
+    <StudioHeader v-if="advancedMode"
       :project-name="projectName"
       :project-title="projectTitle"
+      :edit-label="workspace?.family?.edit_label"
       :project-status="projectStatus"
       :timeline-ready="timelineReady"
       :has-unexported-edits="hasUnexportedEdits"
       :is-exporting="isExporting"
       :is-finishing="isFinishing"
+      :brand-ready="Boolean(workspace?.storyboard?.length) && workspace.storyboard.every(shot => !shot.brand_review?.required || shot.brand_review.status === 'Approved')"
       :post-production-step="postProduction.step"
       :export-status="exportStatus"
       :current-output-asset-version="currentOutputAssetVersion"
@@ -17,21 +22,29 @@
       :production="currentRun"
       :current-lang="currentLang"
       :user="user"
-      @go-back="router.push('/campaigns')"
+      @open-history="historyOpen = true"
+      @go-back="router.push('/projects')"
       @save-project-name="updateProjectName"
       @toggle-media-drawer="mediaDrawerOpen = !mediaDrawerOpen"
       @toggle-lang="toggleLang"
       @open-settings="showSettings = true"
       @export-timeline="exportAndRefresh"
+      @export-release="exportAndRefresh('release')"
       @finish-film="finishFilm"
+      @replace-music="replaceMusic"
       @retry-generation="handleGenerationRetry"
       @stop-generation="cancelGeneration"
       @cancel-finishing="cancelFinishing"
       @select-shot="selectShotFromActivity"
     />
 
+    <div v-if="advancedMode && workspace?.family && !workspace.family.is_working_edit" class="px-4 py-2 bg-indigo-500/10 border-b border-outline-border text-xs flex items-center justify-between gap-2">
+      <span>{{ currentLang==='vi'?'Bạn đang xem một bản dựng khác:':'Viewing an alternate edit:' }} {{ workspace.family.edit_label }}</span>
+      <button type="button" class="text-indigo-400 font-semibold" @click="router.push(`/projects/${workspace.family.current_edit}`)">{{ currentLang==='vi'?'Mở bản đang dùng':'Open working edit' }}</button>
+    </div>
+
     <!-- 2. Studio Workspace Body: Media Drawer + Canvas + Contextual Inspector -->
-    <div class="flex-1 flex min-h-0 w-full overflow-hidden relative">
+    <div v-if="advancedMode" class="flex-1 flex min-h-0 w-full overflow-hidden relative">
       <!-- Media Drawer (Begins below header, 270px width, pushes canvas) -->
       <MediaDrawer
         v-if="mediaDrawerOpen"
@@ -187,34 +200,38 @@
             :sync-error="syncError"
             :is-improving-prompt="improvingIdea"
             :is-saving-prompt="isSavingIdea"
-            :has-storyboard="Boolean(storyboardShots.length)"
-			:storyboard-approval-status="workspace?.project?.storyboard_approval_status || 'Draft'"
+            :from-sheet="Boolean(workspace?.project?.follows_sheet)"
             :duration-seconds="videoSettings.duration || 15"
             :delivery-preset="videoSettings.delivery_preset || 'Landscape'"
             :current-lang="currentLang"
-            @generate="generateVideo"
-			@approve-storyboard="approveStoryboard"
+            :next-action="clientNextAction"
+            :action-busy="clientActionBusy"
+            @continue="continueClientJourney"
 			@import-storyboard="importStoryboardWorkbook"
             @open-media-picker="openPicker"
             @open-settings="showSettings = true"
             @improve-prompt="improveVideoIdea"
-            @save-prompt="saveVideoIdea"
             @remove-reference="removeReference"
           />
 
           <!-- What is still needed before generating; refreshes from Frappe realtime events -->
-          <ReadinessChecklist :project-name="projectName" @changed="fetchWorkspace" />
+          <ReadinessChecklist :has-storyboard="Boolean(storyboardShots.length)" :project-name="projectName" @changed="fetchWorkspace" />
 
           <!-- First frame of each scene, approved before any video is made -->
-          <KeyframeReview v-if="storyboardShots.length" :project-name="projectName" @changed="fetchWorkspace" />
 
           <!-- Scene Filmstrip / Storyboard Track -->
           <SceneStrip
+            ref="sceneStripRef"
+            :frames="clientFrames"
+            :project-name="projectName"
             :shots="storyboardShots"
             :selected-shot-index="selectedShotIndex"
             :selected-target="selectedTarget"
             :total-duration-seconds="videoSettings.duration || 15"
             :has-storyboard="Boolean(storyboardShots.length)"
+            :from-sheet="Boolean(workspace?.project?.follows_sheet)"
+            :storyboard-approved="workspace?.project?.storyboard_approval_status === 'Approved'"
+            :portrait="videoSettings.delivery_preset === 'Portrait'"
             :is-generating="isGenerating || isProductionActive"
             :generation-phase="generationPhase"
             :sync-error="syncError"
@@ -229,7 +246,6 @@
             :get-shot-video-file="getShotVideoFile"
             :get-shot-first-frame="getShotFirstFrame"
             @select-shot="onSelectShot"
-            @preview-shot="previewStoryboardShot"
             @edit-shot="editStoryboardShot"
             @delete-shot="removeStoryboardShot"
             @select-keyframe="onSelectKeyframe"
@@ -243,6 +259,16 @@
 			@update-continuity="updateShotContinuity"
 			@update-references="updateShotReferences"
 			@place-cue-audio="startCueAudio"
+			@generate-voiceover="generateVoiceover"
+			@review-brand="reviewBrand"
+            @check-scene="checkScene"
+            @review-findings="sceneCheckShot = $event"
+			@repair-source-art="repairMode = 'video'; repairShot = $event"
+            @repair-opening-art="repairMode = 'image'; repairShot = $event"
+            @guide-motion="guidedShot = $event"
+            :guided-enabled="workspace?.project?.can_guide_motion || false"
+			:brand-busy-shot="brandBusyShot"
+			:narration-busy-shot="narrationBusyShot"
 			:audio-plan="audioPlan"
 			:project-references="projectReferences"
           />
@@ -265,6 +291,7 @@
             :current-lang="currentLang"
             :can-undo="canUndo"
             :can-redo="canRedo"
+            :markers="timelineMarkers"
             @select-clip="onSelectClip"
             @update:playhead-frame="onSeekPlayhead"
             @trim="handleTrimClip"
@@ -281,13 +308,25 @@
             @redo="redo"
             @set-audio-clip-enabled="onSetAudioClipEnabled"
           />
+          <TimelineComments
+            class="mt-3"
+            :project-name="projectName"
+            :video-clips="videoClips"
+            :shots="storyboardShots"
+            :fps="fps"
+            :playhead-frame="playheadFrame"
+            :busy-shots="workspace?.project?.busy_shots || []"
+            @seek="onSeekPlayhead"
+            @markers="timelineMarkers = $event"
+            @applied="onReviewChanged"
+          />
         </template>
       </div>
     </div>
 
     <!-- Contextual Inspector Drawer -->
     <StudioInspector
-      v-if="studioMode !== 'edit' && inspectorOpen && hasInspectorSelection"
+      v-if="inspectorOpen && hasInspectorSelection && (studioMode !== 'edit' || selectedClip?.track_type === 'Audio')"
       v-model:open="inspectorOpen"
       :studio-mode="studioMode"
       :selected-target="selectedTarget"
@@ -304,8 +343,8 @@
       :current-preset="videoSettings.delivery_preset || 'Landscape'"
       :is-production-active="isProductionActive"
       :ai-revision-loading="aiRevisionLoading"
-      :review-loading="reviewLoading"
-      :shot-review-history="shotReviewHistory"
+      :project-name="projectName"
+      :busy-shots="workspace?.project?.busy_shots || []"
       :current-lang="currentLang"
       :estimate-shot-duration="estimateShotDuration"
       :format-shot-keyframe-time="formatShotKeyframeTime"
@@ -325,6 +364,7 @@
       @apply-asset-to-shot="applyAssetToShot"
       @remove-asset="removeReference"
       @update-asset-role="updateReferenceRole"
+      @update-asset-identity="updateReferenceIdentity"
       @update-asset-size="updateReferenceSize"
       @select-keyframe-target="onSelectKeyframe"
       @toggle-generation-mode="toggleContinuityMode"
@@ -332,8 +372,7 @@
       @regenerate-current-shot="regenerateCurrentShot"
       @save-scene-description="saveActiveShot"
       @ask-ai="onAskAiRewriteShot"
-      @submit-review="onSubmitReview"
-      @apply-review-revision="onApplyReviewRevision"
+      @review-changed="onReviewChanged"
       @open-settings="showSettings = true"
       @open-media-picker="openPicker"
     />
@@ -372,6 +411,19 @@
       @asset-updated="onMediaAssetUpdated"
     />
 
+    <!-- Which sheet of a multi-sheet workbook to import -->
+    <Dialog v-model="sheetPicker.open" :title="currentLang === 'vi' ? 'Chọn trang để nhập' : 'Choose the sheet to import'" size="md">
+      <template #default>
+        <FormControl
+          v-model="sheetPicker.choice" type="select"
+          :options="sheetPicker.demos.map((d) => ({ label: `${d.name}${d.product_name ? ' — ' + d.product_name : ''} (${d.scene_count})`, value: d.name }))"
+        />
+      </template>
+      <template #actions>
+        <Button variant="solid" @click="importSheet(sheetPicker.file, sheetPicker.choice)">{{ currentLang === 'vi' ? 'Nhập' : 'Import' }}</Button>
+      </template>
+    </Dialog>
+
     <!-- Modal: Secondary Video Settings (Format, duration, style, instructions) -->
     <ProjectSettingsModal
       v-if="showSettings"
@@ -381,14 +433,25 @@
       @close="showSettings = false"
       @save="saveVideoSettings"
     />
+    <VideoReviewDialog v-if="reviewVersion && advancedMode" :key="reviewVersion" :project="projectName" :asset-version="reviewVersion" @saved="reviewRevision++" :initial-frame="reviewStartFrame" :focused-name="reviewFocused || String(route.query.feedback || '')" @close="closeVideoReview" />
+    <ProjectHistory @review="version=>{historyOpen=false;reviewVersion=version;reviewFocused='';reviewStartFrame=null;}" v-if="historyOpen" :project="projectName" :source-edit="projectName" :current-lang="currentLang" :simple="!advancedMode" :initial-shot="historyShot" @close="historyOpen=false" @changed="fetchWorkspace" @open="name => { historyOpen=false; router.push(`/projects/${name}`); }" />
+    <SceneCheckFindings v-if="sceneCheckShot" :project="projectName" :shot="sceneCheckShot" @close="sceneCheckShot = null" />
+    <GuidedCandidate v-if="guidedShot" :project="projectName" :shot="guidedShot" :assets="workspace?.assets || []" @close="guidedShot = null" @done="guidedShot = null; fetchWorkspace(); loadTimeline(true)" />
+    <SourceArtRepair v-if="repairShot" :project="projectName" :shot="repairShot" :mode="repairMode" :assets="workspace?.assets || []" @close="repairShot = null" @done="repairShot = null; fetchWorkspace(); loadTimeline(true)" />
   </div>
 </template>
 
 <script setup>
+import VideoReviewDialog from '../components/studio/VideoReviewDialog.vue';
+import ClientWorkspace from '../components/studio/ClientWorkspace.vue';
+import ProjectHistory from '../components/studio/ProjectHistory.vue';
+import GuidedCandidate from '../components/studio/GuidedCandidate.vue';
+import SceneCheckFindings from '../components/studio/SceneCheckFindings.vue';
+import SourceArtRepair from '../components/studio/SourceArtRepair.vue';
 import { cachedClipUrl } from "../composables/useClipCache";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { call, upload as uploadFile } from "frappe-ui";
+import { Button, Dialog, FormControl, call, upload as uploadFile } from "frappe-ui";
 import { notify } from "../utils/notify";
 import { errorMessage } from "../utils/errors";
 import { useSession } from "../stores/session";
@@ -407,20 +470,62 @@ import MediaDrawer from "../components/studio/MediaDrawer.vue";
 import GenerationComposer from "../components/studio/GenerationComposer.vue";
 import StudioPreview from "../components/studio/StudioPreview.vue";
 import SceneStrip from "../components/studio/SceneStrip.vue";
+import { useKeyframes } from "../composables/useKeyframes";
+import { clientJourney } from "../utils/clientJourney";
 import ReadinessChecklist from "../components/studio/ReadinessChecklist.vue";
-import KeyframeReview from "../components/studio/KeyframeReview.vue";
 import EditTimeline from "../components/studio/EditTimeline.vue";
 import StudioInspector from "../components/studio/StudioInspector.vue";
 import MediaPicker from "../components/studio/MediaPicker.vue";
 import ProjectSettingsModal from "../components/studio/ProjectSettingsModal.vue";
 import AddScenePopover from "../components/studio/AddScenePopover.vue";
+import TimelineComments from "../components/studio/TimelineComments.vue";
 
 const route = useRoute();
 const router = useRouter();
-const { user } = useSession();
+const { user, access } = useSession();
 const { currentLang, toggleLang } = useI18n();
 
 const projectName = computed(() => route.params.name);
+const historyOpen = ref(false);
+const historyShot = ref('');
+const reviewRevision=ref(0);
+const reviewStartFrame=ref(null),reviewFocused=ref('');
+const reviewVersion = ref(typeof route.query.review === 'string' ? route.query.review : '');
+function closeVideoReview() {
+  reviewVersion.value='';
+  if (route.query.review) {
+    const query={...route.query};delete query.review;delete query.feedback;
+    router.replace({path:route.path,query});
+  }
+}
+const advancedMode = computed(() => access.value.can_use_advanced_editor && route.query.editor === 'advanced');
+function setEditorMode(advanced) {
+  const query={...route.query};
+  if (advanced && access.value.can_use_advanced_editor) query.editor='advanced'; else delete query.editor;
+  router.replace({path:route.path,query});
+}
+async function restoreClientProject() {
+  if (clientActionBusy.value) return;
+  clientActionBusy.value = true;
+  try {
+    const root = workspace.value?.family?.root;
+    if (root && root !== projectName.value && workspace.value?.family?.archived) {
+      await call('joymedia.api.projects.restore_project', { project_name: root });
+    }
+    await call('joymedia.api.projects.restore_project', { project_name: projectName.value });
+    await fetchWorkspace();
+  } catch(error) {
+    notify({title:'Error',text:errorMessage(error,'Could not restore video'),type:'error'});
+  } finally {
+    clientActionBusy.value = false;
+  }
+}
+async function assembleClientPreview() {
+  if (clientActionBusy.value) return;
+  clientActionBusy.value=true;
+  try { await loadTimeline(true); await exportAndRefresh(); }
+  finally {clientActionBusy.value=false;}
+}
 
 // 1. Workspace composable
 const {
@@ -461,6 +566,7 @@ const {
   openPicker,
   addReference,
   updateReferenceRole,
+  updateReferenceIdentity,
   updateReferenceSize,
   removeReference,
   archiveMediaAsset,
@@ -498,14 +604,53 @@ const {
   reviseStoryboard,
   reviseShotWithAi,
   improveVideoIdea,
-  saveVideoIdea,
   stopPolling,
-  reviewLoading,
-  reviewError,
-  submitShotReview,
-  applyShotReviewRevision,
-  getShotReviews,
 } = useProjectGeneration(projectName, refreshStudioGenerationState);
+
+const clientFrames = useKeyframes(projectName.value);
+const clientActionBusy = ref(false);
+const sceneCheckShot = ref(null);
+const sceneStripRef = ref(null);
+const clientNextAction = computed(() => clientJourney({
+  hasStory: Boolean(videoIdeaPrompt.value?.trim()),
+  shots: storyboardShots.value,
+  approved: workspace.value?.project?.storyboard_approval_status === "Approved",
+  frames: clientFrames.rows.value.length ? clientFrames.rows.value : null,
+  framesError: Boolean(clientFrames.error.value),
+  busy: isGenerating.value || isProductionActive.value || clientFrames.drawingAll.value || Boolean(workspace.value?.project?.busy_shots?.length),
+  finishing: isFinishing.value,
+  hasVideo: (shot) => Boolean(getShotVideoFile(shot)) && !shot.is_outdated,
+}));
+
+async function prepareMissingPreviews() {
+  const names = clientFrames.needed.value.filter(row => !row.url || row.stale).map(row => row.shot);
+  if (names.length) await clientFrames.draw(names);
+}
+
+async function continueClientJourney() {
+  if (clientActionBusy.value) return;
+  clientActionBusy.value = true;
+  try {
+    const action = clientNextAction.value;
+    if (action === "approve") {
+      if (!(await approveStoryboard())) return;
+      await clientFrames.reload();
+      if (clientFrames.needed.value.some(row => !row.url || row.stale)) await prepareMissingPreviews();
+    } else if (action === "previews") {
+      await prepareMissingPreviews();
+    } else if (action === "retry") {
+      await clientFrames.reload();
+    } else if (action === "review") {
+      sceneStripRef.value?.$el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (action === "watch") {
+      studioMode.value = "edit";
+    } else if (["brief", "plan", "render"].includes(action)) {
+      await generateVideo();
+    }
+  } finally {
+    clientActionBusy.value = false;
+  }
+}
 
 const appendSceneError = ref("");
 
@@ -516,7 +661,7 @@ async function approveStoryboard() {
 			? `Kịch bản có ${warnings.length} khoảng trống/chồng chéo thời lượng. Xác nhận duyệt để giữ các cảnh nguồn không thay đổi?`
 			: `This storyboard has ${warnings.length} timing gap/overlap warning(s). Approve while preserving the authored scenes?`
 	);
-	if (!acknowledge) return;
+	if (!acknowledge) return false;
 	try {
 		await call("joymedia.api.storyboard.approve_project_storyboard", {
 			project_name: projectName.value,
@@ -525,28 +670,44 @@ async function approveStoryboard() {
 		await fetchWorkspace();
 		notify({
 			title: currentLang.value === "vi" ? "Đã duyệt kịch bản" : "Storyboard approved",
-			text: currentLang.value === "vi" ? "Bạn có thể bắt đầu render các cảnh đã duyệt." : "You can now render the approved scenes.",
+			text: currentLang.value === "vi" ? "Đang chuẩn bị ảnh xem trước. Kiểm tra sản phẩm, logo và nhân vật trước khi tạo video." : "Preparing previews. Review the product, logo and character before creating the video.",
 			type: "success",
 		});
+        return true;
 	} catch (err) {
 		notify({ title: "Storyboard", text: errorMessage(err, "Unable to approve storyboard."), type: "error" });
+        return false;
 	}
 }
 
+// An uploaded sheet is read first; a workbook with several sheets asks which one to import.
+const sheetPicker = ref({ open: false, file: null, demos: [], choice: "" });
+
 async function importStoryboardWorkbook(file) {
-	const demoName = window.prompt(
-		currentLang.value === "vi" ? "Nhập sheet nào? (Demo 1 hoặc Demo 2)" : "Which sheet should be imported? (Demo 1 or Demo 2)",
-		"Demo 1",
-	);
-	if (!demoName) return;
 	try {
 		const uploaded = await uploadFile(file, { private: true });
 		if (!uploaded?.name) throw new Error("Storyboard upload failed.");
+		const { demos } = await call("joymedia.services.intake.project.preview_workbook", { workbook_file: uploaded.name });
+		const usable = demos.filter((demo) => demo.can_create);
+		if (!usable.length) {
+			const missing = demos[0]?.missing_required?.join(", ");
+			throw new Error(currentLang.value === "vi" ? `Bảng còn thiếu các mục bắt buộc: ${missing}.` : `The sheet is missing must-have fields: ${missing}.`);
+		}
+		if (usable.length === 1) return await importSheet(uploaded.name, usable[0].name);
+		sheetPicker.value = { open: true, file: uploaded.name, demos: usable, choice: usable[0].name };
+	} catch (err) {
+		notify({ title: "Storyboard", text: errorMessage(err, "Unable to import storyboard."), type: "error" });
+	}
+}
+
+async function importSheet(workbookFile, demoName) {
+	try {
 		const result = await call("joymedia.api.storyboard.import_storyboard_workbook", {
 			project_name: projectName.value,
-			workbook_file: uploaded.name,
+			workbook_file: workbookFile,
 			demo_name: demoName,
 		});
+		sheetPicker.value.open = false;
 		await fetchWorkspace();
 		notify({
 			title: currentLang.value === "vi" ? "Đã nhập kịch bản" : "Storyboard imported",
@@ -635,10 +796,11 @@ const isFinishing = computed(() => ["Queued", "Running"].includes(postProduction
 let finishPollTimer = null;
 
 async function finishFilm() {
+  const withMusic = (videoSettings.value?.soundtrack_mode || "Sound effects only") === "Full soundtrack";
   const confirmed = window.confirm(
     currentLang.value === "vi"
-      ? "Dựng lại phim với chuyển cảnh và nhạc nền? Các chỉnh sửa thủ công trên timeline sẽ bị thay thế."
-      : "Rebuild the film with transitions and the soundtrack? Manual timeline edits will be replaced."
+      ? `Dựng lại phim${withMusic ? " với nhạc nền" : " từ các cảnh đã duyệt"}? Các chỉnh sửa thủ công trên timeline sẽ bị thay thế.`
+      : `Rebuild the film${withMusic ? " with the soundtrack" : " from the approved scenes"}? Manual timeline edits will be replaced.`
   );
   if (!confirmed) return;
   try {
@@ -646,6 +808,15 @@ async function finishFilm() {
     await fetchWorkspace();
   } catch (err) {
     notify({ title: currentLang.value === "vi" ? "Không thể hoàn thiện phim" : "Could not finish the film", text: errorMessage(err, ""), type: "error" });
+  }
+}
+
+async function replaceMusic() {
+  try {
+    await call("joymedia.services.editing.post_production.queue_music_bed", { project_name: projectName.value });
+    await fetchWorkspace();
+  } catch (err) {
+    notify({ title: currentLang.value === "vi" ? "Không thể tạo nhạc nền" : "Could not replace music", text: errorMessage(err, ""), type: "error" });
   }
 }
 
@@ -667,7 +838,9 @@ async function pollFinishing() {
   try {
     // Reports a finishing job that died (worker restart) as Failed instead of Running forever.
     await call("joymedia.services.editing.post_production.get_post_production_status", { project_name: projectName.value });
-  } catch (_) {}
+  } catch {
+    // the next poll retries; the workspace fetch below shows the stored state
+  }
   await fetchWorkspace();
   const { status, error } = postProduction.value;
   if (["Queued", "Running"].includes(status)) {
@@ -680,8 +853,8 @@ async function pollFinishing() {
     notify({
       title: currentLang.value === "vi" ? "Đã hoàn thiện phim" : "Film finished",
       text: currentLang.value === "vi"
-        ? "Đã thêm chuyển cảnh và nhạc nền. Bấm Xuất & tải xuống."
-        : "Transitions and soundtrack added. Click Export & download.",
+        ? "Phim đã được dựng lại. Bấm Xuất & tải xuống."
+        : "The film is rebuilt. Click Export & download.",
       type: "success",
     });
   } else if (status === "Failed") {
@@ -697,15 +870,15 @@ onUnmounted(() => {
   if (finishPollTimer) clearTimeout(finishPollTimer);
 });
 
-async function exportAndRefresh() {
+async function exportAndRefresh(purpose = 'review') {
   try {
     // Download is deliberately a separate direct click once an export exists.
     // Safari blocks downloads initiated after a long asynchronous export.
-    if (currentOutputAssetVersion.value && !hasUnexportedEdits.value && finalVideo.value?.file) {
+    if (purpose !== 'release' && currentOutputAssetVersion.value && !hasUnexportedEdits.value && finalVideo.value?.file) {
       await downloadFile(finalVideo.value.file);
       return;
     }
-    const result = await exportTimeline();
+    const result = await exportTimeline(purpose);
     if (!result) return;
     // The export replaces the project's final video, which only the workspace reports.
     await fetchWorkspace();
@@ -844,6 +1017,52 @@ const pendingAudioRole = ref(null);
 // Storyboard voice-over / sound cues and whether audio is scheduled for each.
 const audioPlan = ref([]);
 const pendingCue = ref(null);
+const narrationBusyShot = ref('');
+const brandBusyShot = ref('');
+const repairShot = ref(null);
+const repairMode = ref('video');
+const guidedShot = ref(null);
+
+async function checkScene(shot) {
+  try {
+    await call('joymedia.services.review.consistency.request_scene_check', {
+      project_name: projectName.value, shot_name: shot.name, expected_take: shot.selected_output_asset_version,
+    });
+    await fetchWorkspace();
+    notify({ title: currentLang.value === 'vi' ? 'Đang kiểm tra cảnh' : 'Scene check queued', text: currentLang.value === 'vi' ? 'Kết quả kiểm tra mẫu không thay thế việc duyệt thương hiệu.' : 'Sampled checks do not replace brand review.', type: 'success' });
+  } catch (err) {
+    notify({ title: 'Scene check', text: errorMessage(err, ''), type: 'error' });
+  }
+}
+
+async function reviewBrand(shot, approved) {
+  brandBusyShot.value = shot.name;
+  try {
+    await call('joymedia.services.review.brand.approve_scene_brand', {
+      project_name: projectName.value, shot_name: shot.name,
+      expected_take: shot.selected_output_asset_version, approved,
+    });
+    await fetchWorkspace();
+  } catch (err) {
+    notify({ title: 'Brand review could not be saved', text: errorMessage(err, ''), type: 'error' });
+  } finally {
+    brandBusyShot.value = '';
+  }
+}
+
+async function generateVoiceover(shot) {
+  narrationBusyShot.value = shot.name;
+  try {
+    await call('joymedia.services.audio.speech.generate_voiceover', { project_name: projectName.value, shot_name: shot.name });
+    await loadTimeline(true);
+    await fetchAudioPlan();
+    notify({ title: currentLang.value === 'vi' ? 'Đã thêm lời đọc vào cảnh' : 'Narration added to scene', type: 'success' });
+  } catch (err) {
+    notify({ title: currentLang.value === 'vi' ? 'Không tạo được lời đọc' : 'Could not generate narration', text: errorMessage(err, ''), type: 'error' });
+  } finally {
+    narrationBusyShot.value = '';
+  }
+}
 
 async function fetchAudioPlan() {
   try {
@@ -853,7 +1072,7 @@ async function fetchAudioPlan() {
   }
 }
 
-watch(() => workspace.value, fetchAudioPlan);
+watch(() => workspace.value, () => { if (advancedMode.value) fetchAudioPlan(); });
 
 function startCueAudio(shot, role) {
   pendingCue.value = { shot: shot.name, role };
@@ -945,7 +1164,9 @@ async function handleSelectReference({ asset, role }) {
       if (workspace.value?.project) {
         workspace.value.project.product_name = asset.asset_name;
       }
-    } catch (_) {}
+    } catch (err) {
+      notify({ title: "Product name", text: errorMessage(err, "Could not save the product name."), type: "error" });
+    }
   }
 }
 
@@ -1325,14 +1546,6 @@ async function removeStoryboardShot(shot) {
   }
 }
 
-async function previewStoryboardShot(shot, index) {
-  // onSelectShot seeks the master to the scene (or swaps in the scene's own
-  // video); playback simply continues from there, without a pause/play cycle.
-  onSelectShot(shot, index);
-  await nextTick();
-  isPlaying.value = true;
-}
-
 function editStoryboardShot(shot, index) {
   selectedShotIndex.value = index;
   selectedTarget.value = "shot";
@@ -1511,10 +1724,10 @@ async function saveActiveShot(shotName, generationPrompt, done = () => {}) {
       project_name: projectName.value,
       shot_name: shot.name,
       // This inspector exposes one scene description used by both Flux and
-      // video generation, so a manual edit must update both contracts.
-      values: { generation_prompt: prompt, image_prompt: prompt },
+      // video generation. A human edit also updates the authored storyboard action.
+      values: { storyboard_action: prompt, generation_prompt: prompt, image_prompt: prompt },
     });
-    Object.assign(shot, result);
+    Object.assign(shot, result, { authored_action: prompt });
     notify({ title: currentLang.value === 'vi' ? 'Đã lưu mô tả cảnh' : 'Scene description saved', text: currentLang.value === 'vi' ? 'Tạo lại cảnh để dùng mô tả mới.' : 'Regenerate the scene to use the new description.', type: 'success' });
   } catch (err) {
     notify({ title: "Error", text: errorMessage(err, "Failed to save scene."), type: "error" });
@@ -1596,36 +1809,13 @@ function onAskAiRewriteShot(instruction) {
   reviseShotWithAi(shot.name, instruction);
 }
 
-const shotReviewHistory = ref([]);
+const timelineMarkers = ref([]);
 
-async function loadShotReviews(shotName) {
-  if (!shotName) { shotReviewHistory.value = []; return; }
-  const res = await getShotReviews(shotName);
-  shotReviewHistory.value = res?.reviews || [];
+// A comment was added, changed or applied; applying also starts a new take, so follow its render.
+async function onReviewChanged(event = {}) {
+  await fetchWorkspace();
+  if (event.regenerating) resumeProduction(workspace.value?.production, workspace.value?.project?.planning_status);
 }
-
-async function onSubmitReview(shotName, verdict, feedbackNotes = "", rejectionCategory = "") {
-  const res = await submitShotReview(shotName, { verdict, feedbackNotes, rejectionCategory });
-  if (res) {
-    // Reflect review_status immediately on the shot object so the badge updates.
-    if (activeSelectedShot.value?.name === shotName) {
-      activeSelectedShot.value = { ...activeSelectedShot.value, review_status: verdict };
-    }
-    await loadShotReviews(shotName);
-  }
-}
-
-async function onApplyReviewRevision(shotName, reviewName, regenerate) {
-  await applyShotReviewRevision(shotName, reviewName, { regenerate });
-  await loadShotReviews(shotName);
-}
-
-// Reload review history whenever selected shot changes.
-watch(
-  () => activeSelectedShot.value?.name,
-  (name) => loadShotReviews(name),
-  { immediate: true }
-);
 
 function applyAssetToShot(asset, shot) {
   if (!asset?.asset_version || !shot?.name) return;
@@ -1716,17 +1906,18 @@ async function onReorderShots(fromIdx, toIdx) {
 }
 
 // Lifecycle Hooks
+let studioDisposed = false;
 onMounted(async () => {
   await fetchWorkspace();
+  if (studioDisposed) return;
+  videoIdeaPrompt.value = workspace.value?.project?.video_idea || '';
+  if (workspace.value?.family?.archived || workspace.value?.project?.status === 'Archived') return;
   resumeProduction(workspace.value?.production, workspace.value?.project?.planning_status);
-  await loadTimeline(true);
-  // sync video idea prompt if present in project
-  if (workspace.value?.project?.video_idea) {
-    videoIdeaPrompt.value = workspace.value.project.video_idea;
-  }
+  if (advancedMode.value) await loadTimeline(true);
 });
 
 onUnmounted(() => {
+  studioDisposed = true;
   stopPolling();
 });
 </script>

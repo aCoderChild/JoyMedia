@@ -11,6 +11,7 @@ def plan_generation_segments(
 	continuation_overlap_frames: int = CONTINUATION_OVERLAP_FRAMES,
 	continuation_new_frames: int | None = None,
 	continuation_max_segment_frames: int | None = None,
+	max_segments: int = 4096,
 ):
 	"""Split a shot into a first segment and continuations.
 
@@ -21,6 +22,10 @@ def plan_generation_segments(
 	planned_frame_count = int(round(planned_frame_count))
 	if planned_frame_count < 1:
 		raise ValueError("planned_frame_count must be positive.")
+	for name, value in (("max_segment_frames", max_segment_frames), ("continuation_overlap_frames", continuation_overlap_frames),
+		("continuation_max_segment_frames", continuation_max_segment_frames), ("continuation_new_frames", continuation_new_frames), ("max_segments", max_segments)):
+		if value is not None and (type(value) is not int or value < (0 if name == "continuation_overlap_frames" else 1)):
+			raise ValueError(f"{name} must be an integer in its supported range.")
 
 	if max_segment_frames < 2:
 		raise ValueError("max_segment_frames must be at least 2.")
@@ -60,6 +65,8 @@ def plan_generation_segments(
 		raise ValueError("Continuation workflow has no capacity for new frames.")
 	# Share the remainder evenly so no continuation is a sliver of a second.
 	continuation_count = -(-remaining_effective_frames // effective_capacity)
+	if continuation_count + 1 > max_segments:
+		raise ValueError("Shot exceeds the segment budget; shorten it or use a higher-capacity workflow.")
 	for index in range(continuation_count):
 		effective_frames = remaining_effective_frames // continuation_count + (
 			1 if index < remaining_effective_frames % continuation_count else 0

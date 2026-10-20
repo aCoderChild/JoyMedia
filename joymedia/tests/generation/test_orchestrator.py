@@ -9,6 +9,16 @@ from joymedia.services.generation import orchestrator as generation_orchestrator
 
 
 class TestGenerationOrchestrator(FrappeTestCase):
+	def test_last_frame_is_only_an_explicit_destination_constraint(self):
+		from joymedia.services.generation.preparation import explicit_last_frame_assets
+
+		shot = frappe._dict(references=[
+			{"reference_role": "Character", "asset_version": "AV-MASCOT"},
+			{"reference_role": "last_frame", "asset_version": "AV-END"},
+		])
+		self.assertEqual(["AV-END"], explicit_last_frame_assets(shot))
+		self.assertEqual([], explicit_last_frame_assets(frappe._dict(references=shot.references[:1])))
+
 	@patch("joymedia.services.generation.orchestrator._get_run_job_names")
 	@patch("joymedia.services.generation.orchestrator._has_submittable_work", return_value=True)
 	@patch("joymedia.services.generation.orchestrator.frappe.db.get_value")
@@ -90,29 +100,30 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(["video"], [stage[0].step_key for stage in later])
 		self.assertEqual("TASK-FIRST-VIDEO", later[0][1])
 
-	@patch("joymedia.services.generation.orchestrator.workflow_supports_continuation", return_value=True)
+	@patch("joymedia.services.generation.preparation.workflow_supports_continuation", return_value=True)
 	def test_long_shot_uses_workflow_declared_continuation_contract(self, supports_continuation):
 		workflow = frappe._dict(
 			frame_count=48,
 			execution_spec='{"continuation": {"overlap_frames": 2, "new_frames": 46}}',
 		)
-		continuation = frappe._dict(name="WF-CONT")
+		continuation = frappe._dict(name="WF-CONT", frame_count=48)
 
 		segments = generation_orchestrator._segment_plan(workflow, 92, continuation)
 
 		self.assertEqual([48, 46], [segment["segment_frame_count"] for segment in segments])
 		supports_continuation.assert_called_once_with(continuation)
 
-	@patch("joymedia.services.generation.orchestrator.workflow_supports_continuation", return_value=True)
-	def test_no_segment_exceeds_the_124_frame_cap_even_if_a_workflow_declares_more(self, _supports):
+	@patch("joymedia.services.generation.preparation.workflow_supports_continuation", return_value=True)
+	def test_segment_capacity_comes_from_the_selected_workflow(self, _supports):
 		workflow = frappe._dict(frame_count=241, execution_spec="{}")
 		continuation = frappe._dict(name="WF-CONT", frame_count=241)
 
 		segments = generation_orchestrator._segment_plan(workflow, 300, continuation)
 
-		self.assertLessEqual(max(segment["segment_frame_count"] for segment in segments), 124)
+		self.assertEqual([241, 60], [segment["segment_frame_count"] for segment in segments])
+		self.assertEqual(300, sum(segment["segment_effective_frames"] for segment in segments))
 
-	@patch("joymedia.services.generation.orchestrator.workflow_supports_continuation", return_value=False)
+	@patch("joymedia.services.generation.preparation.workflow_supports_continuation", return_value=False)
 	def test_long_shot_without_continuation_contract_is_rejected(self, supports_continuation):
 		workflow = frappe._dict(frame_count=48, execution_spec="{}")
 		with self.assertRaises(frappe.ValidationError):
@@ -129,6 +140,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 	)
 	def test_pipeline_reference_inputs_treat_zero_max_count_as_unbounded(self, get_contract):
 		shot = {
+			"character_mode": "Paste exact art",  # pictures without cutouts all go in as references
 			"references": [
 				{"asset_version": "ASTV-00001", "reference_role": "Product"},
 				{"asset_version": "ASTV-00002", "reference_role": "Character"},
@@ -378,7 +390,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertTrue(generation_orchestrator._has_submittable_work("RUN-00001"))
 		count.assert_called_once_with("Generation Attempt", {"generation_task": "TASK-QUEUED"})
 
-	@patch("joymedia.services.generation.orchestrator._run_outputs_are_selected", return_value=False)
+	@patch("joymedia.services.generation.run_state._run_outputs_are_selected", return_value=False)
 	@patch("joymedia.services.generation.orchestrator.frappe.db.set_value")
 	@patch("joymedia.services.generation.orchestrator.frappe.get_all")
 	def test_completed_execution_stays_running_until_shot_outputs_exist(self, get_all, set_value, outputs_are_selected):
@@ -392,7 +404,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual(run.status, "Running")
 		self.assertIsNone(run.completed_at)
 
-	@patch("joymedia.services.generation.orchestrator._run_outputs_are_selected", return_value=True)
+	@patch("joymedia.services.generation.run_state._run_outputs_are_selected", return_value=True)
 	@patch("joymedia.services.generation.orchestrator.frappe.db.set_value")
 	@patch("joymedia.services.generation.orchestrator.frappe.get_all")
 	def test_completed_execution_with_selected_outputs_completes_run(self, get_all, set_value, outputs_are_selected):
@@ -464,9 +476,9 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual("No staged input was available.", job.error_summary)
 		self.assertEqual("Failed", set_value.call_args.args[2]["status"])
 
-	@patch("joymedia.services.editing.post_production.resume_post_production_if_approved", return_value={"status": "Awaiting QA"})
+	@patch("joymedia.services.editing.post_production.resume_post_production", return_value={"status": "Queued"})
 	def test_generation_completion_treats_pending_human_qa_as_expected(self, resume):
-		self.assertEqual({"status": "Awaiting QA"}, generation_orchestrator._finish_film("PRJ-00001"))
+		self.assertEqual({"status": "Queued"}, generation_orchestrator._finish_film("PRJ-00001"))
 		resume.assert_called_once_with("PRJ-00001")
 
 	@patch("joymedia.services.generation.orchestrator._finish_film")
@@ -477,7 +489,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 	@patch("joymedia.services.generation.orchestrator._finalize_completed_shots")
 	@patch("joymedia.services.generation.orchestrator._get_run_job_names", return_value=[])
 	def test_run_completion_finishes_the_film_once(self, job_names, finalize, submittable, retry, refresh_counters, sync_status, finish_film):
-		run = frappe._dict(name="RUN-00001", media_project="PRJ-00001", status="Running")
+		run = frappe._dict(name="RUN-00001", media_project="PRJ-00001", status="Running", reload=MagicMock())
 		refresh_counters.side_effect = lambda run: run.update(status="Completed")
 
 		generation_orchestrator._advance_run(run)
@@ -520,7 +532,7 @@ class TestGenerationOrchestrator(FrappeTestCase):
 
 
 class TestDrawModeInputs(FrappeTestCase):
-	def test_in_draw_mode_one_character_goes_in_and_products_and_logos_stay_pasted(self):
+	def test_in_draw_mode_only_one_character_picture_goes_in(self):
 		from unittest.mock import patch
 
 		from joymedia.services.generation.orchestrator import _pipeline_reference_inputs
@@ -537,7 +549,8 @@ class TestDrawModeInputs(FrappeTestCase):
 		with patch("joymedia.services.workflows.resolver.get_workflow_input_contract", return_value=contract), patch.object(
 			subject_overlay, "_cutout_path", return_value="/x.png"
 		):
-			# One picture per role goes in (the board combines the rest); products and the logo are pasted, never inputs.
+			# One character picture goes in (the board combines the rest); the product is drawn from the text and the logo
+			# is laid over the film, so neither is an input of the image model.
 			self.assertEqual({"character": ["AV1"]}, _pipeline_reference_inputs(shot, frappe._dict(name="W")))
 
 	def test_a_real_person_and_a_mascot_are_different_inputs_of_the_image_stage(self):
@@ -558,9 +571,40 @@ class TestDrawModeInputs(FrappeTestCase):
 		):
 			self.assertEqual({"person": ["AVP"], "character": ["AVC"]}, _pipeline_reference_inputs(shot, frappe._dict(name="W")))
 
+	def test_an_opaque_product_is_sent_to_the_dedicated_product_input(self):
+		from unittest.mock import patch
 
-class TestKeyframeAnchor(FrappeTestCase):
-	def test_the_snapshot_and_the_tuning_name_the_anchor(self):
+		from joymedia.services.generation.orchestrator import _pipeline_reference_inputs
+		from joymedia.services.keyframes import overlay as subject_overlay
+
+		contract = [
+			{"role": "character", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False},
+			{"role": "product", "max_count": 1, "accepted_media_type": "Image", "allow_multiple": False},
+		]
+		shot = frappe._dict(character_mode="Draw in scene", references=[
+			{"reference_role": "Character", "asset_version": "AVC"},
+			{"reference_role": "Product", "asset_version": "AVP"},
+		])
+		with patch("joymedia.services.workflows.resolver.get_workflow_input_contract", return_value=contract), patch.object(
+			subject_overlay, "_cutout_path", return_value=None
+		):
+			self.assertEqual(
+				{"character": ["AVC"], "product": ["AVP"]},
+				_pipeline_reference_inputs(shot, frappe._dict(name="W")),
+			)
+
+
+class TestLastFramePolicy(FrappeTestCase):
+	def test_no_tuning_option_forces_a_later_segment_back_to_its_opening_keyframe(self):
 		from joymedia.services.project.tuning import DEFAULTS
 
-		self.assertTrue(DEFAULTS["anchor_continuation_to_keyframe"])
+		self.assertNotIn("anchor_continuation_to_keyframe", DEFAULTS)
+
+class TestFrozenVideoSeed(FrappeTestCase):
+ def test_video_replay_seed_is_frozen_in_run_scope(self):
+  with patch.object(frappe.db,'get_value',side_effect=['Video','{"video_seed":1234}']):
+   self.assertEqual(1234,generation_orchestrator._initial_seed(frappe._dict(workflow='workflow',generation_run='run')))
+ def test_invalid_replay_seeds_are_not_coerced(self):
+  for seed in [True,-1,2147483648,'123',1.5]:
+   with self.subTest(seed=seed),patch.object(frappe.db,'get_value',side_effect=['Video',__import__('json').dumps({'video_seed':seed})]):
+    with self.assertRaises(ValueError):generation_orchestrator._initial_seed(frappe._dict(workflow='workflow',generation_run='run'))

@@ -55,6 +55,16 @@
       :style="{ width: `${timelineCanvasWidth}px` }"
       @pointerdown="seekTimeline"
     >
+      <!-- Review comments: where on the film each one is, and the range being marked; click to jump there -->
+      <button
+        v-for="marker in markers" :key="marker.key" type="button" data-test="timeline-comment-marker"
+        class="absolute bottom-0 z-20 h-2 min-w-[4px] rounded-sm cursor-pointer"
+        :class="marker.kind === 'pending' ? 'bg-indigo-400/60 ring-1 ring-indigo-300' : marker.status === 'Open' ? 'bg-amber-400' : 'bg-emerald-400/60'"
+        :style="{ left: `${marker.start * pixelsPerFrame}px`, width: `${Math.max(4, (marker.end - marker.start + 1) * pixelsPerFrame)}px` }"
+        :title="marker.text"
+        @pointerdown.stop
+        @click.stop="$emit('update:playhead-frame', marker.start)"
+      />
       <div class="ruler-labels">
         <span
           v-for="tick in rulerTicks"
@@ -143,6 +153,8 @@ import { computed, onBeforeUnmount, ref } from "vue";
 import { useI18n } from "../../stores/i18n";
 
 const props = defineProps({
+  // Review comments as [{key, start, end, status, text, kind}] in timeline frames.
+  markers: { type: Array, default: () => [] },
   clips: { type: Array, default: () => [] },
   allClips: { type: Array, default: () => [] },
   fps: { type: Number, default: 24 },

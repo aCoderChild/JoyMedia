@@ -13,12 +13,11 @@ COLUMNS = [
 	{"fieldname": "attempts", "label": "Attempts", "fieldtype": "Int", "width": 90},
 	{"fieldname": "success_rate", "label": "Success Rate %", "fieldtype": "Percent", "width": 100},
 	{"fieldname": "retry_rate", "label": "Retry Rate %", "fieldtype": "Percent", "width": 100},
-	{"fieldname": "approval_rate", "label": "Approval Rate %", "fieldtype": "Percent", "width": 110},
-	{"fieldname": "first_pass_approval_rate", "label": "First-Pass Approval %", "fieldtype": "Percent", "width": 135},
+	{"fieldname": "commented_rate", "label": "Takes With Review Comments %", "fieldtype": "Percent", "width": 170},
 	{"fieldname": "avg_runtime_seconds", "label": "Avg Runtime (s)", "fieldtype": "Float", "width": 110},
 	{"fieldname": "p95_runtime_seconds", "label": "p95 Runtime (s)", "fieldtype": "Float", "width": 110},
 	{"fieldname": "avg_queue_wait_seconds", "label": "Avg Queue Wait (s)", "fieldtype": "Float", "width": 125},
-	{"fieldname": "gpu_seconds_per_approved_shot", "label": "GPU Seconds / Approved Shot", "fieldtype": "Float", "width": 180},
+	{"fieldname": "gpu_seconds_per_clean_take", "label": "GPU Seconds / Take Without Comments", "fieldtype": "Float", "width": 200},
 ]
 
 
@@ -30,11 +29,9 @@ def execute(filters=None):
 		bucket["attempts"] += 1
 		bucket["completed"] += attempt.status == "Completed"
 		bucket["retries"] += bool(attempt.retry_of)
-		bucket["reviewed"] += attempt.review_outcome["reviewed"]
-		bucket["approved"] += attempt.review_outcome["approved"]
-		if not attempt.retry_of and attempt.review_outcome["reviewed"]:
-			bucket["first_pass_reviewed"] += 1
-			bucket["first_pass_approved"] += attempt.review_outcome["approved"]
+		bucket["commented"] += bool(attempt.commented)
+		bucket["selected"] += bool(attempt.selected_output)
+		bucket["selected_clean"] += bool(attempt.selected_output and not attempt.commented)
 		if attempt.runtime_seconds is not None:
 			bucket["runtime_seconds"].append(float(attempt.runtime_seconds))
 		queue_wait = queue_wait_seconds(attempt)
@@ -56,14 +53,11 @@ def execute(filters=None):
 				"attempts": bucket["attempts"],
 				"success_rate": percent(bucket["completed"], bucket["attempts"]),
 				"retry_rate": percent(bucket["retries"], bucket["attempts"]),
-				"approval_rate": percent(bucket["approved"], bucket["reviewed"]),
-				"first_pass_approval_rate": percent(
-					bucket["first_pass_approved"], bucket["first_pass_reviewed"]
-				),
+				"commented_rate": percent(bucket["commented"], bucket["attempts"]),
 				"avg_runtime_seconds": _average(runtime_values),
 				"p95_runtime_seconds": percentile_95(runtime_values),
 				"avg_queue_wait_seconds": _average(queue_wait_values),
-				"gpu_seconds_per_approved_shot": _per_approved_shot(bucket),
+				"gpu_seconds_per_clean_take": _per_clean_take(bucket),
 			}
 		)
 	return COLUMNS, data
@@ -74,10 +68,9 @@ def _new_bucket():
 		"attempts": 0,
 		"completed": 0,
 		"retries": 0,
-		"reviewed": 0,
-		"approved": 0,
-		"first_pass_reviewed": 0,
-		"first_pass_approved": 0,
+		"commented": 0,
+		"selected": 0,
+		"selected_clean": 0,
 		"runtime_seconds": [],
 		"queue_wait_seconds": [],
 		"gpu_runtime_seconds": 0,
@@ -88,6 +81,6 @@ def _average(values):
 	return round(sum(values) / len(values), 2) if values else None
 
 
-def _per_approved_shot(bucket):
-	"""Total recorded render time divided by explicitly approved attempts."""
-	return round(bucket["gpu_runtime_seconds"] / bucket["approved"], 2) if bucket["approved"] else None
+def _per_clean_take(bucket):
+	"""Total recorded render time divided by the selected takes nobody had to comment on."""
+	return round(bucket["gpu_runtime_seconds"] / bucket["selected_clean"], 2) if bucket["selected_clean"] else None

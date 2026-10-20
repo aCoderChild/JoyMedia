@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import { createResource } from "frappe-ui";
+import { call, createResource } from "frappe-ui";
 
 function sessionUser() {
   const cookies = new URLSearchParams(document.cookie.split("; ").join("&"));
@@ -8,6 +8,7 @@ function sessionUser() {
 }
 
 const user = ref(sessionUser());
+const access = ref({role:"unassigned",reviewer:false,can_create:false,can_use_library:false,can_use_advanced_editor:false});
 
 export function useSession() {
   const logout = createResource({
@@ -21,6 +22,8 @@ export function useSession() {
 
   return {
     user,
+    access,
+    refreshAccess: async (projectName=null) => { access.value=await call("joymedia.services.partners.get_access", {project_name:projectName}); return access.value; },
     isLoggedIn: computed(() => Boolean(user.value)),
     refreshSession: () => {
       user.value = sessionUser();

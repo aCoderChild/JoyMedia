@@ -49,9 +49,11 @@ class TestNormalize(FrappeTestCase):
 class TestAudioDirection(FrappeTestCase):
 	def test_effects_and_music_become_the_h3_audio_line_and_narration_is_left_out(self):
 		beat = {"audio": "SFX: Tiếng cốc đổ\nBGM: Nhạc vui nhộn\nGhi chú"}
-		with patch.object(planner, "translate", side_effect=lambda text, project: {"Tiếng cốc đổ": "a glass tipping", "Nhạc vui nhộn": "playful music"}[text]):
-			line = planner.audio_direction(frappe._dict(), beat)
-		self.assertEqual("Audio: sound effects: a glass tipping; music: playful music.", line)
+		with patch.object(planner, "translate", side_effect=lambda text, project, about="": {"Tiếng cốc đổ": "a glass tipping", "Nhạc vui nhộn": "playful music"}[text]):
+			full = planner.audio_direction(frappe._dict(soundtrack_mode="Full soundtrack"), beat)
+			effects_only = planner.audio_direction(frappe._dict(), beat)  # the default mode
+		self.assertEqual("Audio: sound effects: a glass tipping; music: playful music.", full)
+		self.assertEqual("Audio: sound effects: a glass tipping.", effects_only)
 
 	def test_a_beat_without_sound_direction_adds_nothing(self):
 		self.assertEqual("", planner.audio_direction(frappe._dict(), {"audio": ""}))
@@ -116,6 +118,27 @@ class TestApply(FrappeTestCase):
 		self.assertTrue(prompt.startswith(RAW["video_prompt"]))
 		self.assertTrue(prompt.endswith("Audio: sound effects: a pop."))
 
+	def test_sheet_opening_uses_the_native_frame_binding(self):
+		plan = planner.normalize_production_shot(RAW, reference_keys=set(), duration=3.0, is_first=True)
+		self.project.append("selected_media", {"reference_key": "opening", "label": "Approved cup opening", "asset_version": "VERSION"})
+		with patch.object(planner, "creative_beat", return_value={"opening_reference": "opening"}), patch(
+			"joymedia.api.storyboard.set_project_shot_keyframe") as bind:
+			planner.apply_production_shot(self.project, self.shot, plan)
+		bind.assert_called_once_with(self.project.name, self.shot.name, "first_frame", "VERSION")
+
+	def test_missing_sheet_opening_stops_planning(self):
+		plan = planner.normalize_production_shot(RAW, reference_keys=set(), duration=3.0, is_first=True)
+		with patch.object(planner, "creative_beat", return_value={"opening_reference": "missing"}), self.assertRaises(frappe.ValidationError):
+			planner.apply_production_shot(self.project, self.shot, plan)
+
+	def test_sheet_can_bind_both_boundary_images(self):
+		plan = planner.normalize_production_shot(RAW, reference_keys=set(), duration=3.0, is_first=True)
+		self.project.append("selected_media", {"reference_key": "pose", "label": "Approved pose", "asset_version": "VERSION"})
+		with patch.object(planner, "creative_beat", return_value={"opening_reference": "pose", "ending_reference": "pose"}), patch(
+			"joymedia.api.storyboard.set_project_shot_keyframe") as bind:
+			planner.apply_production_shot(self.project, self.shot, plan)
+		self.assertEqual(["first_frame", "last_frame"], [call.args[2] for call in bind.call_args_list])
+
 	def test_a_video_prompt_in_the_beats_language_is_replaced_by_the_beats_movements(self):
 		beat = {"summary": "Mother bear spills the milk.", "camera": "", "action": "", "audio": "", "voice_over": "", "on_screen_text": "", "raw": "x"}
 		raw = {**RAW, "video_prompt": "Gấu mẹ đánh đổ cốc sữa.: Mother bear spills the milk."}
@@ -143,7 +166,8 @@ class TestApply(FrappeTestCase):
 		self.assertIn("Mama", ask.call_args.args[0])
 		with patch.object(planner, "_ask_planner", return_value={"motion": "The mother winks."}) as ask:
 			planner.motion_only(self.project, "x", [], inventory="the mother mascot and 3 small product packs")
-		self.assertIn("The first frame contains exactly: the mother mascot and 3 small product packs", ask.call_args.args[0])
+		self.assertIn("The characters and products in the scene are exactly: the mother mascot and 3 small product packs", ask.call_args.args[0])
+		self.assertIn("never turn an object into the advertised product", ask.call_args.args[0])
 
 	def test_the_planners_foley_is_used_when_the_beat_names_no_sound(self):
 		project = frappe._dict(selected_media=[], product_name="P", project_name="P")
@@ -165,12 +189,12 @@ class TestApply(FrappeTestCase):
 		self.assertEqual(1, len(plan["motion_plan"]["actions"]))
 		self.assertFalse(plan["held_back"])
 
-	def test_held_back_plans_are_not_applied_through_the_api(self):
+	def test_held_back_plans_are_not_applied(self):
 		from joymedia.api import storyboard
 
 		plan = {**planner.normalize_production_shot(RAW, reference_keys=set(), duration=3.0, is_first=True), "held_back": True}
 		with patch.object(planner, "plan_production_shot", return_value=plan):
-			result = storyboard.plan_project_production(self.project.name)
+			result = storyboard._plan_project(frappe.get_doc("Media Project", self.project.name), set(), True)
 
 		self.assertTrue(result[0]["held_back"])
 		self.assertEqual("Original.", frappe.get_doc("Shot", self.shot.name).generation_prompt)
@@ -211,6 +235,15 @@ class TestRealtimeAndBackgroundPlanning(FrappeTestCase):
 		self.assertEqual("long", kwargs["queue"])
 		self.assertTrue(kwargs["deduplicate"])
 		self.assertEqual(self.project.name, kwargs["project_name"])
+
+	def test_planning_job_id_is_unique_per_requested_scope(self):
+		from joymedia.api import storyboard
+
+		all_shots = storyboard._planning_job_id(self.project.name, None)
+		first = storyboard._planning_job_id(self.project.name, ["SHOT-1"])
+		first_again = storyboard._planning_job_id(self.project.name, '["SHOT-1"]')
+		self.assertNotEqual(all_shots, first)
+		self.assertEqual(first, first_again)
 
 	def test_the_job_reports_start_progress_and_completion(self):
 		from joymedia.api import storyboard
@@ -275,9 +308,10 @@ class TestGrounding(FrappeTestCase):
 
 	def test_identical_planner_requests_are_answered_from_the_cache(self):
 		answers = iter([{"n": 1}, {"n": 2}])
+		prompt = "same prompt " + frappe.generate_hash(length=12)
 		with patch.object(planner, "_request_planner", side_effect=lambda *a, **k: next(answers)) as ask:
-			first = planner._ask_planner("same prompt " + frappe.generate_hash(length=6), system="s")
-			again = planner._ask_planner("same prompt " + "x", system="s")
+			first = planner._ask_planner(prompt, system="s")
+			planner._ask_planner(prompt + " different", system="s")
 		self.assertEqual({"n": 1}, first)
 		self.assertEqual(2, ask.call_count)  # different prompts are different requests
 
@@ -307,22 +341,27 @@ class TestFollowTheSheet(FrappeTestCase):
 	]
 
 	def _plan(self, raw, summary, number=3, total=6, motion="The mother lifts a tissue."):
-		project = frappe._dict(product_name="Soft tissue", name="P", planning_mode="Follow the sheet")
+		project = frappe._dict(product_name="Soft tissue paper", name="P", planning_mode="Follow the sheet")
 		beat = {"raw": raw, "summary": summary, "camera": "", "action": "", "audio": "SFX: pop", "voice_over": "", "on_screen_text": ""}
 		shot = frappe._dict(shot_number=number, duration_seconds=5)
 		with patch.object(planner, "motion_only", side_effect=lambda *a, **k: motion), patch.object(planner, "_place", return_value="A kitchen."), patch.object(
 			frappe.db, "count", return_value=total
-		), patch.object(planner, "translate", side_effect=lambda text, project: text):
+		), patch.object(planner, "translate", side_effect=lambda text, project, about="": text):
 			return planner.follow_the_sheet(project, shot, beat, self.REFS)
 
-	def test_only_the_characters_the_beat_names_appear_and_one_pack_for_a_product_beat(self):
-		plan = self._plan("Gấu mẹ rút một tờ giấy", "The mother pulls a tissue sheet.")
-		self.assertEqual(["me", "green"], plan["reference_keys"])
+	def test_only_the_characters_the_beat_names_appear_and_one_pack_when_the_beat_names_the_pack(self):
+		self.assertEqual(["me"], self._plan("Gấu mẹ rút một tờ giấy", "The mother pulls a tissue sheet.")["reference_keys"])
+		self.assertEqual(["me", "green"], self._plan("Gấu mẹ rút giấy từ bịch", "The mother pulls tissue from the pack.")["reference_keys"])
 
 	def test_a_name_inside_another_phrase_is_not_a_character_in_the_scene(self):
 		# "sợ mẹ mắng" (afraid mother will scold) mentions mother, who is not in the scene.
+		# The ordinary paper the kid grabs is not the advertised pack either.
 		plan = self._plan("Gấu con sợ mẹ mắng, lấy giấy lau", "The kid, afraid of the scolding, grabs paper.", number=2)
-		self.assertEqual(["con", "green"], plan["reference_keys"])
+		self.assertEqual(["con"], plan["reference_keys"])
+
+	def test_the_word_family_brings_in_every_family_member(self):
+		for raw in ("Cả gia đình quây quần bên bàn", "The whole family laughs together"):
+			self.assertEqual(["me", "con"], self._plan(raw, "The family sits together.")["reference_keys"], raw)
 
 	def test_all_products_when_the_beat_says_products_and_the_logo_bookends_the_film(self):
 		plan = self._plan("Gấu mẹ ... các sản phẩm giấy", "The mother stands with all the products.", number=6, total=6)
@@ -374,15 +413,33 @@ class TestFollowTheSheet(FrappeTestCase):
 			plan = planner.follow_the_sheet(project, frappe._dict(shot_number=3, duration_seconds=8), beat, TestFollowTheSheet.REFS)
 		self.assertEqual("The mother lifts the wet sheet.", plan["video_prompt"])
 
-	def test_a_split_screen_beat_becomes_one_view_and_does_not_set_the_films_place(self):
+	def _split(self, action):
 		project = frappe._dict(product_name="Tissue", name="P", planning_mode="Follow the sheet")
-		beat = {"raw": "Split-screen", "summary": "Three views.", "camera": "Split-screen of 3 views", "action": "", "audio": "", "voice_over": "", "on_screen_text": ""}
-		with patch.object(planner, "motion_only", return_value="One view.") as motion, patch.object(planner, "_place", return_value="Dining table, picnic, handbag."), patch.object(
+		beat = {"raw": "Split-screen", "summary": "Tissues in three places.", "camera": "Split-screen (chia 3 màn hình)", "action": action,
+			"audio": "", "voice_over": "", "on_screen_text": ""}
+		english = {"Bàn ăn gia đình": "Family dining table", "Trên thảm picnic ngoài trời": "On a picnic mat outdoors", "Trong túi xách/ balo": "Inside a handbag/backpack"}
+		with patch.object(planner, "motion_only", return_value="Tissues in three places.") as motion, patch.object(planner, "_place", return_value="Dining table, picnic, handbag."), patch.object(
 			frappe.db, "count", return_value=6
-		), patch.object(planner, "translate", side_effect=lambda t, p: t):
+		), patch.object(planner, "translate", side_effect=lambda t, p, about="": english.get(t, "Tissues placed in settings across 3 angles: 1. Family dining table 2. On a picnic mat outdoors 3. Inside a handbag/backpack")):
 			plan = planner.follow_the_sheet(project, frappe._dict(shot_number=5, duration_seconds=4), beat, TestFollowTheSheet.REFS, "A kitchen.")
-		self.assertTrue(motion.call_args.kwargs["single_view"])
+		return plan, motion
+
+	def test_a_split_screen_keeps_every_view_of_the_sheet_and_the_films_place(self):
+		plan, motion = self._split("Giấy ăn đặt trong các bối cảnh qua 3 góc:\n1. Bàn ăn gia đình\n2. Trên thảm picnic ngoài trời\n3. Trong túi xách/ balo")
+		self.assertEqual(["Family dining table", "On a picnic mat outdoors", "Inside a handbag/backpack"], [v["text"] for v in plan["views"]])
+		self.assertEqual("Trong túi xách/ balo", plan["views"][2]["source"])
+		self.assertTrue(plan["video_prompt"].startswith(
+			"Split screen of 3 stacked panels, top to bottom: 1. Family dining table; 2. On a picnic mat outdoors; 3. Inside a "
+			"handbag/backpack. Tissues in three places."
+		), plan["video_prompt"])
+		self.assertEqual(1, plan["video_prompt"].count("Family dining table"))  # the list is not repeated
+		motion.assert_not_called()  # no rewrite that could drop a view
 		self.assertEqual("A kitchen.", plan["setting_prompt"])
+		self.assertFalse(any("Needs editing" in n for n in plan["notes"]))
+
+	def test_a_split_screen_without_numbered_views_is_flagged(self):
+		plan, _motion = self._split("Ba khung hình khác nhau")
+		self.assertEqual([], plan["views"])
 		self.assertTrue(any("Needs editing" in n for n in plan["notes"]))
 
 	def test_a_text_the_model_will_not_translate_whole_is_translated_by_sentence(self):
@@ -396,3 +453,210 @@ class TestFollowTheSheet(FrappeTestCase):
 			(v for key, v in answers.items() if f"TEXT: {key}" in prompt), {"english": ""}
 		)):
 			self.assertEqual("The kid knocks over the glass. The kid panics.", planner.translate("Gấu con làm đổ cốc nước. Gấu con hoảng hốt.", project))
+
+
+class TestFaithfulTranslation(FrappeTestCase):
+	def test_the_echoed_source_is_removed_from_an_answer(self):
+		from joymedia.services.planning.production import english_part
+
+		self.assertEqual(
+			"Baby bear knocks over a glass of juice. The baby bear panics.",
+			english_part("Gấu con làm đổ cả cốc nước ép.: Baby bear knocks over a glass of juice. Gấu con hoảng hốt: The baby bear panics."),
+		)
+		self.assertEqual("The paper shreds.", english_part("Giấy bị mủn rách translates to: The paper shreds."))
+		self.assertEqual("Kid knocks the glass over.", english_part("Gấu con làm đổ cốc. (Kid knocks the glass over.)"))
+		# English that names a character in the source language is kept whole.
+		self.assertEqual("Gấu con knocks over a glass of juice.", english_part("Gấu con knocks over a glass of juice."))
+
+	def test_a_translation_that_adds_names_or_brands_is_caught(self):
+		from joymedia.services.planning.production import invented_names
+
+		source = "Góc quay: Toàn cảnh -> Cận cảnh. Hiệu ứng ánh sáng quanh hộp giấy"
+		self.assertEqual(set(), invented_names("Wide to close shot: Light glows around the paper box.", source))
+		self.assertTrue(invented_names("Wide shot. Gấu mẹ floats in a studio. Shera logo glows.", source))
+
+	def test_a_sound_cue_is_translated_with_its_scene_as_context(self):
+		from joymedia.services.planning import production
+
+		project = frappe._dict(product_name="Tissue", project_name="P", selected_media=[])
+		with patch.object(production, "_ask_planner", return_value={"english": "Sound of a glass falling over"}) as ask:
+			production.translate("Tiếng cốc đổ", project, about="The kid spills juice.")
+		self.assertIn("The text belongs to this scene: The kid spills juice.", ask.call_args.args[0])
+
+
+class TestSceneFidelity(FrappeTestCase):
+	def test_the_product_is_in_a_scene_only_when_its_brand_or_pack_is_named(self):
+		from joymedia.services.planning.production import brand_words, shows_product
+
+		project = frappe._dict(product_name="Khăn giấy rút cao cấp Shera (300 tờ - 4 lớp)")
+		self.assertEqual({"shera"}, brand_words(project.product_name))
+		self.assertFalse(shows_product(project, "Gấu con lấy giấy ăn thường lau nhưng giấy bị mủn rách"))
+		self.assertTrue(shows_product(project, "Gấu mẹ ôm bịch giấy Shera siêu to"))
+		self.assertTrue(shows_product(project, "Các sản phẩm ở giữa khung hình"))
+		self.assertTrue(shows_product(project, "The mother holds the pack"))
+
+	def test_the_sheets_camera_direction_is_kept_without_its_labels(self):
+		from joymedia.services.planning.production import camera_direction
+
+		self.assertEqual("Close-up of family dining table. Slow-motion.", camera_direction("Camera angle: Close-up of family dining table.\nCamera movement. Slow-motion."))
+		self.assertEqual("", camera_direction("Góc quay: Cận cảnh"))  # an untranslated line is left out, never sent as is
+
+	def test_character_names_become_english_roles(self):
+		from joymedia.services.planning.production import english_roles
+
+		references = [{"role": "Character", "label": "Gấu con (kid mascot)"}, {"role": "Product", "label": "Pack"}]
+		self.assertEqual("The kid character spills juice.", english_roles("Gấu con spills juice.", references))
+
+	def test_the_sheets_music_is_left_out_when_the_film_has_sound_effects_only(self):
+		from joymedia.services.planning import production
+
+		beat = {"audio": "SFX: Tiếng cốc đổ\nBGM: Dồn dập", "action": "The kid spills juice."}
+		with patch.object(production, "translate", side_effect=lambda text, project, about="": f"<{text}>"):
+			effects = production.audio_direction(frappe._dict(soundtrack_mode="Sound effects only"), beat)
+			full = production.audio_direction(frappe._dict(soundtrack_mode="Full soundtrack"), beat)
+		self.assertNotIn("music", effects)
+		self.assertIn("music", full)
+
+
+class TestCameraAndRewrites(FrappeTestCase):
+	def test_vietnamese_camera_terms_are_read_without_the_language_model(self):
+		from joymedia.services.planning.production import camera_glossary
+
+		self.assertEqual("wide shot to close-up", camera_glossary("Góc quay: Toàn cảnh -> Cận cảnh (Wide to Medium Shot)"))
+		self.assertEqual("top-down to extreme close-up", camera_glossary("Top-down (từ trên xuống) -> Macro siêu cận cảnh"))
+		self.assertEqual("close-up, side angle, soft light", camera_glossary("Cận cảnh góc nghiêng (Close-up, ánh sáng dịu nhẹ)"))
+		self.assertEqual("", camera_glossary("Ánh sáng ấm"))
+
+	def test_a_rewrite_that_adds_content_is_measured(self):
+		from joymedia.services.planning.production import added_share
+
+		source = "Shera napkins on the family dining table."
+		self.assertLess(added_share(source, "Shera napkins rest on the family dining table."), 0.35)
+		self.assertGreater(added_share(source, "Family members pour refreshing drinks while the camera zooms on smiling faces."), 0.35)
+
+
+class TestFaithfulRewrite(FrappeTestCase):
+	def test_an_inventing_rewrite_is_replaced_by_the_beats_own_english(self):
+		project = frappe._dict(product_name="P", project_name="P", selected_media=[])
+		source = "Shera napkins on the family dining table."
+		with patch.object(planner, "motion_only", return_value="Family members pour drinks and parents exchange loving glances."):
+			self.assertEqual(source, planner.faithful_rewrite(project, source, []))
+		with patch.object(planner, "motion_only", return_value="Shera napkins rest on the family dining table."):
+			self.assertEqual("Shera napkins rest on the family dining table.", planner.faithful_rewrite(project, source, []))
+
+
+class TestRewriteKeepsEverySentence(FrappeTestCase):
+	def test_a_rewrite_that_drops_a_sentence_is_refused_even_when_most_words_are_kept(self):
+		source = (
+			"Mother mascot pulls out 1 sheet of paper and places it gently on the water puddle. Water stain on table is "
+			"immediately absorbed clean. Mother mascot lifts up the soaked wet sheet and shakes it taut. Paper remains intact "
+			"and unbroken, not torn."
+		)
+		dropped = source.rsplit(" Paper remains", 1)[0]
+		self.assertGreaterEqual(planner.beat_coverage(source, dropped)[0], planner.MIN_REWRITE_COVERAGE)
+		self.assertFalse(planner.keeps_every_sentence(source, dropped))
+		self.assertTrue(planner.keeps_every_sentence(source, source.replace("Mother mascot", "The mother mascot")))
+		project = frappe._dict(product_name="Tissue")
+		with patch.object(planner, "motion_only", return_value=dropped):
+			self.assertEqual(source, planner.faithful_rewrite(project, source, [], "the mother mascot"))
+
+
+class TestCameraGlossaryKeepsDetails(FrappeTestCase):
+	def test_the_glossary_fixes_the_framing_and_keeps_the_columns_other_details(self):
+		self.assertEqual(
+			"Wide shot to close-up. Sparkling light radiates around the tissue pack.",
+			planner.with_glossary("Panorama to near view (Wide to Medium Shot). Sparkling light radiates around the tissue pack.", "wide shot to close-up"),
+		)
+		# Where things stand in the frame is a detail, not framing.
+		self.assertEqual(
+			"Medium shot, front view. Eye-level. Mother bear (right corner of the frame) + all products (centre).",
+			planner.with_glossary("Medium shot, eye-level. Mother bear (right corner of the frame) + all products (centre).", "medium shot, front view"),
+		)
+		# A camera move the glossary does not cover is kept; the same framing in other words is not repeated.
+		self.assertEqual(
+			"Front view. Hero packshot. Very slight push-in.",
+			planner.with_glossary("Hero packshot, front angle, very slight push-in.", "front view"),
+		)
+
+
+class TestNamedSceneContents(FrappeTestCase):
+	REFS = [
+		{"key": "me", "label": "Gấu mẹ (mother mascot)", "role": "Character"},
+		{"key": "con", "label": "Gấu con (kid mascot)", "role": "Character"},
+		{"key": "green", "label": "Shera 400 tờ", "role": "Product"},
+		{"key": "pink", "label": "Shera cuộn", "role": "Product"},
+	]
+
+	def _plan(self, **named):
+		project = frappe._dict(product_name="Khăn giấy Shera", name="P", planning_mode="Follow the sheet")
+		beat = {"raw": "Gấu mẹ và gấu con lau bàn bằng giấy Shera", "summary": "The mother and the kid wipe the table.", "camera": "",
+			"action": "", "audio": "", "voice_over": "", "on_screen_text": "", "cast": [], "products": [], "place": "", "rules": "", **named}
+		with patch.object(planner, "motion_only", return_value="The mother and the kid wipe the table."), \
+			patch.object(planner, "_place", return_value="A kitchen."), patch.object(frappe.db, "count", return_value=6), \
+			patch.object(planner, "translate", side_effect=lambda text, project, about="": {"Phòng nhỏ ấm áp": "A small warm room"}.get(text, text)), \
+			patch("joymedia.services.intake.references.place_row", return_value={"description": "Phòng nhỏ ấm áp"}):
+			return planner.follow_the_sheet(project, frappe._dict(shot_number=3, duration_seconds=5), beat, self.REFS)
+
+	def test_the_named_cast_and_products_are_exactly_the_scenes_references(self):
+		plan = self._plan(cast=["Gấu con"], products=["Shera 400 tờ"])
+		self.assertEqual(["con", "green"], plan["reference_keys"])  # not the mother the action also names
+
+	def test_explicit_empty_entity_columns_do_not_infer_cast_or_products(self):
+		self.assertEqual([], self._plan(cast_declared=True, products_declared=True)["reference_keys"])
+
+	def test_a_name_without_a_picture_is_reported_not_guessed(self):
+		plan = self._plan(cast=["Gấu bố"], products=["Shera 400 tờ"])
+		self.assertEqual(["green"], plan["reference_keys"])
+		self.assertTrue(any("Gấu bố" in note for note in plan["notes"]))
+
+	def test_a_named_place_gives_every_scene_set_there_the_same_setting_and_the_rules_follow_the_action(self):
+		plan = self._plan(place="Phòng khách", rules="The cup does not break.")
+		self.assertEqual("A small warm room", plan["setting_prompt"])
+		self.assertTrue(plan["video_prompt"].endswith("\n\nRules: The cup does not break."))
+
+	def test_without_names_the_scene_is_read_from_the_action_as_before(self):
+		self.assertEqual(["me", "con", "green"], self._plan()["reference_keys"])
+
+
+class TestSheetRulesReachThePrompts(FrappeTestCase):
+	def test_the_places_rule_and_the_props_the_scene_names_join_its_rules(self):
+		refs = [{"key": "con", "label": "Gấu con", "role": "Character"}]
+		project = frappe._dict(product_name="Khăn giấy Shera", name="P", planning_mode="Follow the sheet")
+		beat = {"raw": "Gấu con làm đổ cốc nước ép", "summary": "The kid spills the cup of juice.", "camera": "", "action": "",
+			"audio": "", "voice_over": "", "on_screen_text": "", "cast": ["Gấu con"], "products": [], "place": "Phòng khách", "rules": "The cup does not break"}
+		english = {"Phòng nhỏ": "A small room", "Một bàn, một cốc cho mọi cảnh": "One table and one cup in every scene",
+			"Cốc nước: cốc thuỷ tinh trong": "Cup of water: a clear glass"}
+		with patch.object(planner, "motion_only", return_value="The kid spills the cup of juice."), \
+			patch.object(planner, "_place", return_value=""), patch.object(frappe.db, "count", return_value=6), \
+			patch.object(planner, "translate", side_effect=lambda text, project, about="": english.get(text, text)), \
+			patch("joymedia.services.intake.references.place_row", return_value={"description": "Phòng nhỏ", "keep_rule": "Một bàn, một cốc cho mọi cảnh"}), \
+			patch("joymedia.services.intake.references.sheet_references", return_value=[
+				{"name": "Cốc nước", "role": "Prop", "description": "cốc thuỷ tinh trong"}, {"name": "Đĩa bánh", "role": "Prop", "description": "đĩa sứ"},
+			]):
+			plan = planner.follow_the_sheet(project, frappe._dict(shot_number=2, duration_seconds=4), beat, refs)
+		self.assertTrue(plan["video_prompt"].endswith(
+			"\n\nRules: The cup does not break; One table and one cup in every scene; Cup of water: a clear glass."
+		), plan["video_prompt"])
+		self.assertNotIn("đĩa", plan["video_prompt"].casefold())  # a prop the scene does not name stays out
+
+	def test_the_brand_sheet_reaches_the_planner(self):
+		project = frappe._dict(storyboard_source_json=frappe.as_json({"brand": {"key_message": "Mềm và dai", "claims": "4 lớp\nThấm hút tốt", "avoid": "Không nói 'siêu'"}}))
+		self.assertEqual(
+			["KEY MESSAGE: Mềm và dai", "APPROVED CLAIMS (the only product benefits that may be shown or said): 4 lớp | Thấm hút tốt", "MUST NOT SAY OR SHOW: Không nói 'siêu'"],
+			planner.brand_lines(project),
+		)
+
+
+class TestNoPrintableNamesInPrompts(FrappeTestCase):
+	def test_the_products_own_name_becomes_the_product_pack(self):
+		refs = [{"role": "Product", "label": "Giấy lụa rút Shera 400 tờ (Giấy lụa rút Shera 400 tờ / 4 lớp.)"}]
+		text = "On the table: the GIẤY LỤA RÚT SHERA 400 TỜ / 4 LỚP package and a Giấy lụa rút Shera 400 tờ."
+		self.assertEqual(
+			"On the table: the advertised product and the advertised product.",
+			planner.english_roles(text, refs, "GIẤY LỤA RÚT SHERA 400 TỜ / 4 LỚP"),
+		)
+
+	def test_colour_words_are_given_to_the_translator(self):
+		self.assertEqual(["hồng = pink", "trắng = white"], planner.colour_terms("Ôm trái tim hồng trên nền trắng"))
+		self.assertEqual([], planner.colour_terms("Cảm giác êm ái"))
+		self.assertEqual(["xanh lá = green"], planner.colour_terms("lá cây xanh lá"))

@@ -1,0 +1,28 @@
+{
+ "doctype": "DocType",
+ "name": "Partner Video",
+ "module": "JoyMedia",
+ "engine": "InnoDB",
+ "field_order": [
+  "asset_version",
+  "label"
+ ],
+ "fields": [
+  {
+   "fieldname": "asset_version",
+   "fieldtype": "Link",
+   "label": "Published Video Version",
+   "options": "Asset Version",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "Partner-facing title",
+   "reqd": 1,
+   "in_list_view": 1
+  }
+ ],
+ "istable": 1
+}

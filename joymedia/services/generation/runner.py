@@ -1,5 +1,5 @@
 """Runs one Generation Task: freeze its inputs, stage them on ComfyUI (including a chained task's first frame and
-a keyframe anchor), submit an attempt and reconcile a submission whose outcome is unknown.
+an explicitly selected endpoint frame), submit an attempt and reconcile a submission whose outcome is unknown.
 """
 
 import hashlib
@@ -16,6 +16,7 @@ from joymedia.services.generation.artifacts import get_attempt_artifact
 from joymedia.services.keyframes.reference_board import compose_reference_board
 from joymedia.services.planning.prompts import compile_prompt
 from joymedia.services.workflows.comfyui import (
+	endpoint_for_workflow,
 	find_prompt_by_client_id,
 	get_base_url,
 	submit_workflow,
@@ -149,7 +150,7 @@ def submit_attempt(attempt_name: str):
 	with filelock(f"joymedia-submit-attempt-{attempt_name}"):
 		attempt = frappe.get_doc("Generation Attempt", attempt_name)
 		if attempt.status == "Submitting":
-			return reconcile_attempt_submission(attempt.name)
+			return _reconcile_attempt_submission_locked(attempt.name)
 		if attempt.status != "Pending":
 			frappe.throw(
 				_("Attempt {0} cannot be submitted from status {1}.").format(attempt.name, attempt.status)
@@ -166,7 +167,7 @@ def submit_attempt(attempt_name: str):
 		# Persist the identity before the network call. A process crash after
 		# ComfyUI accepts the prompt can then be reconciled without resubmitting.
 		attempt.submission_token = attempt.submission_token or f"joymedia:{attempt.name}"
-		attempt.comfyui_endpoint_url = get_base_url()
+		attempt.comfyui_endpoint_url = endpoint_for_workflow(job.workflow)
 		attempt.submission_state = "Submitting"
 		attempt.status = "Submitting"
 		attempt.save(ignore_permissions=True)
@@ -199,6 +200,10 @@ def submit_attempt(attempt_name: str):
 			)
 			message = str(exc)
 			failure_class = classify_failure(message, "Generation")
+			# The submission can take minutes (uploads over a slow link) while other writers touch the attempt: record
+			# the real error on a fresh copy, never a save conflict from a stale one that hides it.
+			frappe.logger("joymedia.generation").exception("Submitting %s failed", attempt.name)
+			attempt.reload()
 			attempt.status = "Failed"
 			attempt.submission_state = "Rejected"
 			attempt.failure_class = failure_class
@@ -219,36 +224,47 @@ def submit_attempt(attempt_name: str):
 def reconcile_attempt_submission(attempt_name: str):
 	"""Associate an interrupted submission with ComfyUI without duplicate work."""
 	with filelock(f"joymedia-submit-attempt-{attempt_name}"):
-		attempt = frappe.get_doc("Generation Attempt", attempt_name)
-		if attempt.status != "Submitting":
-			return {"status": attempt.status, "prompt_id": attempt.external_job_id}
-		if not attempt.submission_token or not attempt.comfyui_endpoint_url:
-			frappe.throw(_("Submitting Attempt {0} has no durable submission identity.").format(attempt.name))
-		prompt_id = find_prompt_by_client_id(
-			attempt.submission_token, base_url=attempt.comfyui_endpoint_url
-		)
+		return _reconcile_attempt_submission_locked(attempt_name)
+
+
+def _reconcile_attempt_submission_locked(attempt_name):
+	# A caller may have waited for the live submitter to release the lock. Its
+	# earlier transaction snapshot must not resurrect an already finished job.
+	frappe.db.commit()
+	attempt = frappe.get_doc("Generation Attempt", attempt_name)
+	if attempt.status != "Submitting":
+		return {"status": attempt.status, "prompt_id": attempt.external_job_id}
+	if not attempt.submission_token or not attempt.comfyui_endpoint_url:
+		frappe.throw(_("Submitting Attempt {0} has no durable submission identity.").format(attempt.name))
+	prompt_id = find_prompt_by_client_id(attempt.submission_token, base_url=attempt.comfyui_endpoint_url)
+
+	from joymedia.services.runtime.transactions import persist_result
+
+	def promote():
+		current = frappe.get_doc("Generation Attempt", attempt_name, for_update=True)
+		if current.status != "Submitting" or current.submission_token != attempt.submission_token:
+			return {"status": current.status, "prompt_id": current.external_job_id}
 		if not prompt_id:
-			age_seconds = time_diff_in_seconds(
-				now(), get_datetime(attempt.modified or attempt.creation)
-			)
+			age_seconds = time_diff_in_seconds(now(), get_datetime(current.modified or current.creation))
 			if age_seconds >= SUBMISSION_RECONCILE_TIMEOUT_SECONDS:
-				# Back to Pending so the dispatcher submits it again. The durable submission token is kept, so
-				# a prompt ComfyUI did accept in the meantime is still found and never duplicated.
-				attempt.status = "Pending"
-				attempt.submission_state = "Not Submitted"
-				attempt.save(ignore_permissions=True)
-				return {"retryable": True, "submission_token": attempt.submission_token}
-			return {"reconciling": True, "submission_token": attempt.submission_token}
-		attempt.external_job_id = prompt_id
-		attempt.submission_state = "Submitted"
-		attempt.status = "Queued"
-		attempt.queued_at = attempt.queued_at or now()
-		attempt.save(ignore_permissions=True)
+				current.status = "Pending"
+				current.submission_state = "Not Submitted"
+				current.save(ignore_permissions=True)
+				return {"retryable": True, "submission_token": current.submission_token}
+			return {"reconciling": True, "submission_token": current.submission_token}
+		current.external_job_id = prompt_id
+		current.submission_state = "Submitted"
+		current.status = "Queued"
+		current.queued_at = current.queued_at or now()
+		current.save(ignore_permissions=True)
 		return {"prompt_id": prompt_id, "reconciled": True}
+
+	return persist_result(promote)
 
 
 def _stage_generation_inputs(job, attempt):
 	"""Upload frozen Job inputs and resolve dynamic continuation for this Attempt."""
+	upload_options = {"base_url": attempt.comfyui_endpoint_url} if attempt.get("comfyui_endpoint_url") else {}
 	staged = {}
 	resolved_inputs = {}
 	workflow = frappe.get_doc("Generation Workflow", job.workflow)
@@ -276,12 +292,12 @@ def _stage_generation_inputs(job, attempt):
 				"asset_version": row.asset_version,
 			})
 			continue
-		staged.setdefault(role, []).append(upload_frappe_file(file_url)["server_path"])
+		staged.setdefault(role, []).append(upload_frappe_file(file_url, **upload_options)["server_path"])
 
 	for role, references in composed_references.items():
 		if len(references) == 1:
 			reference = references[0]
-			staged[role] = [upload_local_file(reference["path"])["server_path"]]
+			staged[role] = [upload_local_file(reference["path"], **upload_options)["server_path"]]
 			resolved_inputs[role] = [{
 				"source": "Asset Version",
 				"asset_version": reference["asset_version"],
@@ -298,7 +314,7 @@ def _stage_generation_inputs(job, attempt):
 			width=int(snapshot.get("delivery_width") or 1344),
 			height=int(snapshot.get("delivery_height") or 768),
 		)
-		uploaded = upload_local_file(board["path"])
+		uploaded = upload_local_file(board["path"], **upload_options)
 		staged[role] = [uploaded["server_path"]]
 		staged[f"{role}_instruction"] = board["instruction"]
 		resolved_inputs[role] = [{
@@ -310,12 +326,17 @@ def _stage_generation_inputs(job, attempt):
 		resolved_inputs[f"{role}_board"] = {"sha256": board["sha256"], "count": board["count"]}
 
 	if workflow.output_media_type == "Image" and (staged.get("character") or staged.get("product")):
-		from joymedia.services.keyframes.overlay import boards_for_task
+		from joymedia.services.keyframes.overlay import boards_for_task, scene_role_count
 
+		slots = {}
+		for binding in workflow.bindings:
+			role_name = frappe.scrub(binding.required_input_role or "")
+			slots[role_name] = slots.get(role_name, 0) + 1
 		for role, board in boards_for_task(job).items():
-			if staged.get(role):
+			# A workflow with a slot for each picture gets them one by one; a board is for more pictures than slots.
+			if staged.get(role) and scene_role_count(job, role) > slots.get(role, 1):
 				# "Draw in scene": the image model sees every character, and every product, of the scene on one board.
-				staged[role] = [upload_local_file(board)["server_path"]]
+				staged[role] = [upload_local_file(board, **upload_options)["server_path"]]
 				resolved_inputs[f"{role}_board"] = {"path": board}
 
 	if job.depends_on_task:
@@ -329,7 +350,7 @@ def _stage_generation_inputs(job, attempt):
 				frappe.throw(
 					_("The upstream Attempt has no usable {0} Artifact.").format(job.dependency_artifact_role)
 				)
-			staged["first_frame"] = [upload_frappe_file(artifact.frappe_file)["server_path"]]
+			staged["first_frame"] = [upload_frappe_file(artifact.frappe_file, **upload_options)["server_path"]]
 			resolved_inputs["first_frame"] = [{
 				"source": "Generation Artifact", "artifact": artifact.name,
 				"artifact_role": job.dependency_artifact_role,
@@ -338,7 +359,7 @@ def _stage_generation_inputs(job, attempt):
 			last_frame_artifact = get_attempt_artifact(previous_attempt.name, "Last Frame")
 			if not last_frame_artifact or not last_frame_artifact.frappe_file:
 				frappe.throw(_("The upstream Attempt has no usable Last Frame Artifact."))
-			staged["first_frame"] = [upload_frappe_file(last_frame_artifact.frappe_file)["server_path"]]
+			staged["first_frame"] = [upload_frappe_file(last_frame_artifact.frappe_file, **upload_options)["server_path"]]
 			resolved_inputs["first_frame"] = [{
 				"source": "Generation Artifact",
 				"artifact": last_frame_artifact.name,
@@ -352,6 +373,10 @@ def _stage_generation_inputs(job, attempt):
 		if required_file_inputs:
 			frappe.throw(_("Generation Task {0} has no resolved inputs.").format(job.name))
 
+	# The uploads can take minutes over a slow link. MariaDB keeps the transaction's old snapshot and rejects a write to a
+	# row changed since (error 1020), so start a fresh snapshot and write onto the attempt as it is now.
+	frappe.db.commit()
+	attempt.reload()
 	attempt.resolved_inputs_json = json.dumps(resolved_inputs, sort_keys=True)
 	attempt.save(ignore_permissions=True)
 	return staged

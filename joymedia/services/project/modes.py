@@ -3,7 +3,7 @@
 
 """Single source of truth for generation-mode and reference-mode resolution.
 
-These were previously copy-pasted across the controller, the Qwen client and the
+These were previously copy-pasted across the controller, the planner client and the
 video-plan service, which let them drift. Keep all normalization here.
 """
 

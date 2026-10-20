@@ -13,10 +13,31 @@
         <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-indigo-400 border border-outline-border font-bold">
           {{ totalDurationSeconds }}s
         </span>
+        <!-- First frames: every scene's opening picture is drawn and approved before its video is made -->
+        <template v-if="frames.needed.value.length">
+          <Badge
+            data-test="frames-approved"
+            :theme="frames.allApproved.value ? 'green' : 'orange'"
+            :label="frames.allApproved.value ? tr('All first frames approved', 'Đã duyệt hết khung hình đầu')
+              : tr(`${frames.approvedCount.value}/${frames.needed.value.length} first frames approved`, `Đã duyệt ${frames.approvedCount.value}/${frames.needed.value.length} khung hình đầu`)"
+          />
+          <Button
+            size="sm" variant="subtle" :loading="frames.drawingAll.value" :disabled="!storyboardApproved" data-test="draw-all-frames"
+            @click="frames.draw()"
+          >
+            {{ tr('Draw all first frames', 'Vẽ tất cả khung hình đầu') }}
+          </Button>
+          <span v-if="!storyboardApproved" class="text-[10px] text-amber-500" data-test="approve-first">
+            {{ tr('Approve the storyboard first (the button above the scenes).', 'Hãy duyệt kịch bản trước (nút phía trên các cảnh).') }}
+          </span>
+        </template>
       </div>
 
-      <!-- Right Actions: Lightweight AI Director revision prompt -->
-      <div v-if="hasStoryboard" class="flex flex-col items-end gap-1">
+      <!-- A sheet's storyboard is changed by editing the sheet; a creative one by asking the AI -->
+      <p v-if="hasStoryboard && fromSheet" class="max-w-[360px] text-right text-[10px] text-ink-muted" data-test="follows-sheet">
+        {{ tr('The scenes follow your sheet. To change them, edit the sheet and import it again.', 'Các cảnh theo đúng file kịch bản. Muốn sửa, hãy sửa file rồi nhập lại.') }}
+      </p>
+      <div v-else-if="hasStoryboard" class="flex flex-col items-end gap-1">
         <form class="flex items-center gap-1.5" @submit.prevent="submitAiRevision">
           <div class="relative flex items-center">
             <span class="absolute left-2.5 text-xs text-indigo-400">✨</span>
@@ -81,114 +102,160 @@
       </div>
     </div>
 
-    <!-- Simplified Flow / OpenSlop Storyboard Shots Track -->
-    <div v-if="shots.length" class="capcut-track flex items-stretch gap-2.5 overflow-x-auto pb-2">
+    <!-- Storyboard panels, as on a drawn storyboard: each scene's first frame, then what happens in plain words -->
+    <div v-if="shots.length" class="grid gap-3 pb-2" :style="{ gridTemplateColumns: `repeat(auto-fill, minmax(${portrait ? 170 : 240}px, 1fr))` }" data-test="storyboard-grid">
       <template v-for="(shot, index) in shots" :key="shot.name || shot.shot_number || index">
-        <!-- Simplified Shot Card Item -->
         <div
-          class="capcut-clip relative flex-1 shrink-0 rounded-2xl border p-2.5 transition-all cursor-pointer bg-surface-muted select-none flex flex-col justify-between"
+          class="relative rounded-2xl border p-2 transition-all cursor-pointer bg-surface-muted select-none flex flex-col"
           :class="[
             selectedShotIndex === index && selectedTarget !== 'asset'
               ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/30'
               : 'border-outline-border hover:border-indigo-400'
           ]"
-          :style="{ minWidth: '175px', maxWidth: '240px' }"
           draggable="true"
+          data-test="storyboard-panel"
           @dragstart="onDragStart(shot, index, $event)"
           @dragover.prevent
           @drop.prevent="onDrop(shot, index)"
           @click="$emit('selectShot', shot, index)"
         >
-          <!-- Top: Thumbnail / Video Preview -->
-          <div class="relative w-full aspect-video rounded-xl overflow-hidden bg-black flex items-center justify-center mb-2">
-            <MediaThumbnail
-              :src="getShotVideoFile(shot) || getShotFirstFrame(shot)?.file || shot.reference_image"
-              :media-type="getShotVideoFile(shot) ? 'Video' : 'Image'"
-              :poster="getShotFirstFrame(shot)?.file || shot.last_frame_image"
-              :alt="`Shot ${shot.shot_number}`"
-              :show-play-overlay="false"
-              aspect="aspect-video"
+          <!-- The first frame; clicking it plays the scene's video in place -->
+          <div class="relative w-full rounded-xl overflow-hidden bg-black flex items-center justify-center mb-2" :class="portrait ? 'aspect-[9/16]' : 'aspect-video'">
+            <video
+              v-if="playing === shot.name && getShotVideoFile(shot)"
+              :src="getShotVideoFile(shot)" :poster="panelImage(shot)" class="size-full object-contain" controls autoplay playsinline
+              data-test="panel-video" @click.stop @ended="playing = ''"
             />
-
-            <button
-              v-if="getShotVideoFile(shot)"
-              type="button"
-              class="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
-              :aria-label="currentLang === 'vi' ? `Phát cảnh ${shot.shot_number}` : `Preview Scene ${shot.shot_number}`"
-              @click.stop="$emit('previewShot', shot, index)"
-            >
-              <span class="size-9 rounded-full bg-white/90 flex items-center justify-center text-indigo-600 shadow-md hover:scale-110 transition-transform">
-                <svg class="size-4 fill-current ml-0.5" viewBox="0 0 24 24" aria-hidden="true">
-                  <polygon points="5 3 19 12 5 21 5 3" />
-                </svg>
-              </span>
-            </button>
+            <template v-else>
+              <img v-if="panelImage(shot)" :src="panelImage(shot)" :alt="tr(`Scene ${shot.shot_number}`, `Cảnh ${shot.shot_number}`)" class="size-full object-cover" loading="lazy" />
+              <span v-else class="text-[11px] text-zinc-400 px-2 text-center">{{ tr('No first frame yet', 'Chưa có khung hình đầu') }}</span>
+              <button
+                v-if="getShotVideoFile(shot)"
+                type="button" data-test="panel-play"
+                class="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
+                :aria-label="tr(`Play scene ${shot.shot_number}`, `Phát cảnh ${shot.shot_number}`)"
+                @click.stop="playing = shot.name"
+              >
+                <span class="size-10 rounded-full bg-white/90 flex items-center justify-center text-indigo-600 shadow-md hover:scale-110 transition-transform">
+                  <svg class="size-4 fill-current ml-0.5" viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                </span>
+              </button>
+            </template>
+            <span class="absolute left-1.5 top-1.5 z-10 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              {{ shot.shot_number }}
+            </span>
 
             <!-- A new take is rendering; the current one stays visible underneath -->
-            <div
-              v-if="isRegenerating(shot)"
-              class="absolute inset-0 z-30 bg-black/55 flex items-center justify-center text-center p-1"
-            >
-              <span class="text-xs text-white font-bold animate-pulse">
-                ↻ {{ currentLang === 'vi' ? 'Đang tạo lại…' : 'Regenerating…' }}
-              </span>
+            <div v-if="isRegenerating(shot)" class="absolute inset-0 z-30 bg-black/55 flex items-center justify-center text-center p-1">
+              <span class="text-xs text-white font-bold animate-pulse">↻ {{ tr('Regenerating…', 'Đang tạo lại…') }}</span>
             </div>
-
-            <!-- In-progress state overlay -->
-            <div
-              v-else-if="isGenerating && getShotState(shot) !== 'Ready'"
-              class="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-center p-1"
-            >
-              <span v-if="getShotState(shot) === 'Generating'" class="text-xs text-indigo-400 font-bold animate-pulse">
-                ● {{ currentLang === 'vi' ? 'Đang tạo' : 'Generating' }}
-              </span>
-              <span v-else-if="getShotState(shot) === 'Queued'" class="text-[10px] text-indigo-300 font-mono">
-                ○ {{ currentLang === 'vi' ? 'Trong hàng đợi' : 'Queued' }}
-              </span>
-              <span v-else-if="getShotState(shot) === 'Failed'" class="text-[10px] text-rose-300 font-semibold" :title="getShotMessage(shot)">
-                ! {{ currentLang === 'vi' ? 'Cần xử lý' : 'Needs attention' }}
-              </span>
-              <span v-else-if="getShotState(shot) === 'Cancelled'" class="text-[10px] text-zinc-400 font-mono">
-                × {{ currentLang === 'vi' ? 'Đã dừng' : 'Stopped' }}
-              </span>
-              <span v-else class="text-[10px] text-zinc-400 font-mono">
-                ○ {{ currentLang === 'vi' ? 'Chờ khung hình đầu' : 'Waiting for keyframe' }}
-              </span>
+            <div v-else-if="isGenerating && getShotState(shot) !== 'Ready'" class="absolute inset-x-0 bottom-0 z-10 bg-black/65 py-1 text-center">
+              <span v-if="getShotState(shot) === 'Generating'" class="text-[10px] text-indigo-300 font-bold animate-pulse">● {{ tr('Generating', 'Đang tạo') }}</span>
+              <span v-else-if="getShotState(shot) === 'Queued'" class="text-[10px] text-indigo-300 font-mono">○ {{ tr('Queued', 'Trong hàng đợi') }}</span>
+              <span v-else-if="getShotState(shot) === 'Failed'" class="text-[10px] text-rose-300 font-semibold" :title="getShotMessage(shot)">! {{ tr('Needs attention', 'Cần xử lý') }}</span>
+              <span v-else-if="getShotState(shot) === 'Cancelled'" class="text-[10px] text-zinc-300 font-mono">× {{ tr('Stopped', 'Đã dừng') }}</span>
+              <span v-else class="text-[10px] text-zinc-300 font-mono">○ {{ tr('Waiting for first frame', 'Chờ khung hình đầu') }}</span>
             </div>
           </div>
 
-          <!-- Middle: Scene Title & Clean Duration -->
-          <div class="flex items-center justify-between text-xs font-bold text-ink-primary mb-1">
-            <span class="truncate">
-              {{ currentLang === 'vi' ? `Cảnh ${shot.shot_number}` : `Scene ${shot.shot_number}` }}<template v-if="sceneBeat(shot)"> · {{ sceneBeat(shot) }}</template>
+          <!-- The first frame's review: approve it before its video is made -->
+          <div v-if="frame(shot)?.needs_keyframe" class="mb-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5" data-test="scene-first-frame" @click.stop>
+            <Badge
+              :theme="!frame(shot).url ? 'gray' : frame(shot).stale ? 'red' : frame(shot).status === 'Approved' ? 'green' : 'orange'"
+              :label="!frame(shot).url ? tr('No first frame', 'Chưa có khung hình đầu') : frame(shot).stale ? tr('Frame out of date', 'Khung hình đã cũ')
+                : frame(shot).status === 'Approved' ? tr('Frame approved', 'Khung hình đã duyệt') : tr('Frame to review', 'Khung hình chờ duyệt')"
+            />
+            <button
+              v-if="frame(shot).url && !frame(shot).stale" type="button" class="whitespace-nowrap text-[10px] font-semibold text-indigo-400 hover:underline"
+              @click="frames.approve(shot.name, frame(shot).status !== 'Approved')"
+            >
+              {{ frame(shot).status === 'Approved' ? tr('Undo', 'Hoàn tác') : tr('Approve', 'Duyệt') }}
+            </button>
+            <button type="button" class="whitespace-nowrap text-[10px] text-ink-muted hover:text-ink-primary" :disabled="frames.drawingShot.value === shot.name" @click="frames.draw([shot.name])">
+              {{ frame(shot).url ? tr('Redraw', 'Vẽ lại') : tr('Draw', 'Vẽ') }}
+            </button>
+          </div>
+
+          <button v-if="frame(shot)?.url && !frame(shot)?.stale" type="button" class="mb-2 text-[10px] underline text-ink-muted"
+            data-test="repair-opening-art" :disabled="busyShots.includes(shot.name)" @click.stop="emit('repairOpeningArt', shot)">
+            {{ tr('Restore print in opening image', 'Khôi phục chữ trên ảnh mở cảnh') }}
+          </button>
+
+          <!-- The automatic consistency check of the latest frame or take (services/review/consistency.py) -->
+          <div v-if="shot.consistency_status" class="mb-1 text-[10px]" data-test="consistency-check" :title="shot.consistency_notes || ''">
+            <Badge
+              :theme="{ Passed: 'green', 'Needs Review': 'red', Redoing: 'orange', Redrawing: 'orange', Checking: 'blue' }[shot.consistency_status] || 'gray'"
+              :label="{
+                Checking: tr('Checking consistency…', 'Đang kiểm tra tính nhất quán…'),
+                Passed: tr('Scene action checks passed', 'Đạt kiểm tra hành động cảnh'),
+                Redrawing: tr('Inconsistent: redrawing the frame automatically', 'Chưa nhất quán: đang tự vẽ lại khung hình'),
+                Redoing: tr('Inconsistent: redoing the video automatically', 'Chưa nhất quán: đang tự làm lại video'),
+                'Needs Review': tr('Needs your review', 'Cần bạn xem lại'),
+                'Not Checked': tr('Not checked automatically', 'Chưa kiểm tra tự động'),
+              }[shot.consistency_status]"
+            />
+            <p v-if="shot.consistency_notes && shot.consistency_status !== 'Passed'" class="mt-0.5 text-ink-muted line-clamp-3">{{ shot.consistency_notes }}</p>
+          </div>
+
+          <button v-if="shot.selected_output_asset_version" type="button" class="mb-2 text-[10px] underline text-ink-muted" data-test="check-scene"
+            :disabled="shot.consistency_status === 'Checking' || busyShots.includes(shot.name)" @click.stop="emit('checkScene', shot)">
+            {{ tr('Check action & physical logic', 'Kiểm tra hành động và logic vật lý') }}
+          </button>
+
+          <button v-if="shot.selected_output_asset_version" type="button" class="mb-2 ml-2 text-[10px] underline text-ink-muted" data-test="scene-findings" @click.stop="emit('reviewFindings', shot)">{{ tr('Review findings', 'Xem kết quả') }}</button>
+
+          <button v-if="guidedEnabled && shot.selected_output_asset_version" type="button" class="mb-2 text-[10px] underline text-ink-muted" data-test="guide-motion" :disabled="busyShots.includes(shot.name)" @click.stop="emit('guideMotion', shot)">{{ tr('Guide the motion', 'Hướng dẫn chuyển động') }}</button>
+
+          <!-- Scene title and length -->
+          <div v-if="shot.brand_review?.required" data-test="brand-review" class="mb-2 text-[10px]" @click.stop>
+            <button v-if="shot.selected_output_asset_version" :disabled="busyShots.includes(shot.name)" class="mb-1 block underline" data-test="restore-artwork" @click="emit('repairSourceArt', shot)">{{ tr('Restore original label / artwork', 'Khôi phục nhãn / hình gốc') }}</button>
+            <Badge :theme="shot.brand_review.status === 'Approved' ? 'green' : 'orange'"
+              :label="shot.brand_review.status === 'Approved' ? tr('Brand reviewed for this take', 'Đã duyệt thương hiệu cho bản này') : tr('Product, logo & mascot review required', 'Cần kiểm tra sản phẩm, logo và linh vật')" />
+            <p class="mt-1 text-ink-muted">{{ tr('Compare the video with the source references: pack print, logo, colors and mascot proportions. Automatic scene checks do not certify branding.', 'So sánh video với ảnh gốc: bao bì, logo, màu sắc và tỷ lệ linh vật. Kiểm tra cảnh tự động không chứng nhận thương hiệu.') }}</p>
+            <button v-if="shot.selected_output_asset_version" class="mt-1 underline disabled:opacity-40"
+              :disabled="busyShots.includes(shot.name) || brandBusyShot === shot.name"
+              @click="emit('reviewBrand', shot, shot.brand_review.status !== 'Approved')">
+              {{ shot.brand_review.status === 'Approved' ? tr('Reopen brand review', 'Mở lại duyệt thương hiệu') : tr('Confirm product, logo & mascot match', 'Xác nhận sản phẩm, logo và linh vật đúng') }}
+            </button>
+          </div>
+          <div class="flex items-center justify-between gap-1 text-xs font-bold text-ink-primary mb-1">
+            <span class="truncate" :title="shot.storyboard_beat || ''">
+              {{ shot.storyboard_beat || sceneBeat(shot) || tr(`Scene ${shot.shot_number}`, `Cảnh ${shot.shot_number}`) }}
             </span>
-            <div class="flex items-center gap-1">
-              <!-- Review status badge -->
+            <div class="flex items-center gap-1 shrink-0">
               <span
-                v-if="shot.review_status && shot.review_status !== 'Pending Review'"
-                class="text-[9px] px-1.5 py-0.5 rounded-full font-semibold leading-none"
-                :class="{
-                  'bg-emerald-500/20 text-emerald-400': shot.review_status === 'Approved',
-                  'bg-rose-500/20 text-rose-400': shot.review_status === 'Rejected',
-                  'bg-amber-500/20 text-amber-400': shot.review_status === 'Needs Revision',
-                }"
-                :title="shot.review_status"
+                v-if="shot.open_comments"
+                class="text-[9px] px-1.5 py-0.5 rounded-full font-semibold leading-none bg-amber-500/20 text-amber-400"
+                :title="tr(`${shot.open_comments} open comment(s)`, `${shot.open_comments} nhận xét chưa xử lý`)"
               >
-                {{ shot.review_status === 'Approved' ? '✓' : shot.review_status === 'Rejected' ? '✕' : '~' }}
+                💬 {{ shot.open_comments }}
               </span>
               <span class="text-ink-secondary font-mono text-[11px] font-semibold bg-surface-card px-1.5 py-0.5 rounded border border-outline-border/60">
-                {{ Number(estimateShotDuration(shot)).toFixed(1) }}s
+                {{ shot.source_timing || `${Number(estimateShotDuration(shot)).toFixed(1)}s` }}
               </span>
             </div>
           </div>
 
-          <!-- Creative summary snippet -->
-          <p
-            class="text-[11px] text-ink-secondary line-clamp-2 leading-relaxed mb-1.5 min-h-[30px]"
-            :title="shot.generation_prompt || ''"
-          >
-            {{ sceneSummary(shot) }}
-          </p>
+          <!-- The direction in plain words: what happens, and how it is filmed -->
+          <dl class="mb-1.5 space-y-1 text-[11px] leading-relaxed" data-test="panel-direction" :title="shot.generation_prompt || ''">
+            <div>
+              <dt class="inline font-semibold text-ink-secondary">{{ tr('What happens: ', 'Diễn biến: ') }}</dt>
+              <dd class="inline text-ink-primary">{{ direction(shot).action }}</dd>
+            </div>
+            <div v-if="direction(shot).camera">
+              <dt class="inline font-semibold text-ink-secondary">{{ tr('Camera: ', 'Máy quay: ') }}</dt>
+              <dd class="inline text-ink-muted whitespace-pre-line">{{ direction(shot).camera }}</dd>
+            </div>
+          </dl>
+
+          <!-- What the sheet's illustration column gives for this scene: its picture, or a link -->
+          <div v-if="shot.illustration" class="mb-1.5 flex flex-wrap items-center gap-1.5 text-[10px]" data-test="sheet-illustration" @click.stop>
+            <span class="font-semibold text-ink-secondary">{{ tr('Sheet illustration:', 'Minh hoạ trong kịch bản:') }}</span>
+            <template v-for="item in shot.illustration.split('\n').filter(Boolean)" :key="item">
+              <a v-if="item.startsWith('http')" :href="item" target="_blank" rel="noopener" class="text-indigo-400 hover:underline truncate max-w-[140px]">{{ item }}</a>
+              <a v-else :href="item" target="_blank" rel="noopener"><img :src="item" alt="" class="h-10 rounded border border-outline-border object-cover" loading="lazy" /></a>
+            </template>
+          </div>
 
           <!-- On-screen caption: editable in place, saved when the field is left -->
           <input
@@ -259,6 +326,15 @@
                 ↻ {{ currentLang === 'vi' ? 'Tạo lại' : 'Redo' }}
               </button>
               <button
+                v-if="shot.output_video"
+                type="button" data-test="review-scene"
+                class="px-2 py-0.5 rounded-lg text-[11px] font-semibold text-amber-400 hover:text-amber-300 hover:bg-surface-hover cursor-pointer transition-colors"
+                :title="currentLang === 'vi' ? 'Xem và nhận xét cảnh này' : 'Watch and comment on this scene'"
+                @click.stop="emit('editShot', shot, index)"
+              >
+                💬 {{ currentLang === 'vi' ? 'Nhận xét' : 'Review' }}{{ shot.open_comments ? ` (${shot.open_comments})` : '' }}
+              </button>
+              <button
                 type="button"
                 class="px-2 py-0.5 rounded-lg text-sm font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-surface-hover cursor-pointer transition-colors"
                 :title="currentLang === 'vi' ? 'Tùy chọn cảnh' : 'Scene options'"
@@ -304,6 +380,16 @@
                     <span class="min-w-0"><b>{{ cue.role }}</b> <span class="truncate block text-ink-muted">{{ cue.text }}</span></span>
                   </button>
                 </div>
+                <button
+                  v-if="cuesFor(shot).some(cue => cue.role === 'Voiceover' && !cue.scheduled) && getShotVideoFile(shot)"
+                  type="button"
+                  class="w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-indigo-400 hover:bg-surface-hover disabled:opacity-50"
+                  :disabled="Boolean(narrationBusyShot)"
+                  data-test="generate-voiceover"
+                  @click="emit('generateVoiceover', shot); menuOpenIndex = null"
+                >
+                  {{ currentLang === 'vi' ? 'Tạo giọng đọc tiếng Việt' : 'Generate Vietnamese narration' }}
+                </button>
                 <div v-if="projectReferences.length" class="border-t border-outline-border mt-1 pt-1" data-test="shot-references">
                   <p class="px-2.5 py-1 text-[10px] uppercase tracking-wide text-ink-muted">
                     {{ currentLang === 'vi' ? 'Tham chiếu cho cảnh' : 'Scene references' }}
@@ -336,10 +422,6 @@
           </div>
         </div>
 
-        <!-- Clean Cut indicator between shots -->
-        <div v-if="index < shots.length - 1" class="self-center shrink-0 text-ink-muted text-xs opacity-60">
-          |
-        </div>
       </template>
     </div>
 
@@ -361,10 +443,14 @@
 </template>
 
 <script setup>
+import { Badge, Button } from "frappe-ui";
+import { tr } from "../../stores/i18n";
 import { computed, ref, watch } from "vue";
-import MediaThumbnail from "../MediaThumbnail.vue";
 
 const props = defineProps({
+  projectName: { type: String, required: true },
+  guidedEnabled: { type: Boolean, default: false },
+  frames: { type: Object, required: true },
   shots: { type: Array, default: () => [] },
   selectedShotIndex: { type: Number, default: 0 },
   selectedTarget: { type: String, default: "scene" },
@@ -387,11 +473,20 @@ const props = defineProps({
   // Visual project references a scene can be generated from.
   projectReferences: { type: Array, default: () => [] },
   audioPlan: { type: Array, default: () => [] },
+  narrationBusyShot: { type: String, default: '' },
+  brandBusyShot: { type: String, default: '' },
+  // The storyboard is the advertiser's sheet, followed as written: it is changed by editing the sheet, not by the AI.
+  fromSheet: { type: Boolean, default: false },
+  // First frames are drawn from the approved scenes only.
+  storyboardApproved: { type: Boolean, default: true },
+  portrait: { type: Boolean, default: false },
 });
+
+const frames = props.frames;
+const frame = (shot) => frames.byShot.value[shot.name];
 
 const emit = defineEmits([
   "selectShot",
-  "previewShot",
   "editShot",
   "deleteShot",
   "addScene",
@@ -405,9 +500,29 @@ const emit = defineEmits([
 	"updateContinuity",
   "updateReferences",
   "placeCueAudio",
+  "generateVoiceover",
+  "reviewBrand",
+  "checkScene",
+  "reviewFindings",
+  "repairSourceArt",
+  "repairOpeningArt",
+  "guideMotion",
 ]);
 
 const aiRevisionInput = ref("");
+// The scene whose video plays in its panel.
+const playing = ref("");
+
+const panelImage = (shot) => frame(shot)?.url || props.getShotFirstFrame(shot)?.file || shot.reference_image || shot.last_frame_image || "";
+
+// The direction under a panel: the sheet's own words in a Vietnamese studio, the English direction otherwise.
+function direction(shot) {
+  if (shot.authored_action) return {action:shot.authored_action,camera:shot.sheet_direction?.camera||shot.direction?.camera||''};
+  const sheet = shot.sheet_direction;
+  const english = shot.direction || {};
+  if (sheet?.action && (props.currentLang === "vi" || !english.action)) return sheet;
+  return english.action ? english : { action: sceneSummary(shot), camera: "" };
+}
 const menuOpenIndex = ref(null);
 
 function cuesFor(shot) {

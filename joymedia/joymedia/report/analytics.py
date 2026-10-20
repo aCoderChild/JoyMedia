@@ -43,29 +43,13 @@ def get_attempt_analytics(filters=None):
 	shots = frappe.get_all(
 		"Shot",
 		filters={"name": ["in", list(shot_names)]} if shot_names else {"name": ["in", [""]]},
-		fields=["name", "selected_output_asset_version", "review_status"],
+		fields=["name", "selected_output_asset_version"],
 	)
 	selected_outputs_by_shot = {
 		shot.name: shot.selected_output_asset_version for shot in shots if shot.selected_output_asset_version
 	}
-	review_status_by_shot = {shot.name: shot.review_status for shot in shots}
 
-	# Approval analytics use human verdicts only. Automated visual QA remains
-	# traceable on the review record but is never a delivery-quality outcome.
 	attempt_names = [attempt.name for attempt in attempts]
-	shot_reviews = frappe.get_all(
-		"Shot Review",
-		fields=["generation_attempt", "verdict"],
-		filters={
-			"generation_attempt": ["in", attempt_names], "review_kind": "Human",
-		} if attempt_names else {"name": ["in", [""]]},
-		order_by="reviewed_at desc",
-	)
-	# Most recent review per attempt wins.
-	review_verdict_by_attempt = {}
-	for rev in reversed(shot_reviews):
-		review_verdict_by_attempt[rev.generation_attempt] = rev.verdict
-
 	# A reviewer selects an Asset Version, not the transient Generation Artifact.
 	# Asset Version.source_generation_attempt is the durable lineage link for every
 	# output type (image, video, or audio), including composed shot outputs.
@@ -79,6 +63,10 @@ def get_attempt_analytics(filters=None):
 		for version in output_versions
 		if version.source_generation_attempt
 	}
+	commented_outputs = set(frappe.get_all(
+		"Review Comment", filters={"output_asset_version": ["in", list(source_attempt_by_output)]} if source_attempt_by_output else {"name": ["in", [""]]},
+		pluck="output_asset_version",
+	))
 	enriched_attempts = []
 	for attempt in attempts:
 		job = jobs_by_name.get(attempt.generation_task)
@@ -89,11 +77,8 @@ def get_attempt_analytics(filters=None):
 			selected_outputs_by_shot,
 			source_attempt_by_output,
 		)
-		# Selection is an editorial choice, not a quality verdict. Only a recorded
-		# QA review is evidence for approval metrics.
-		qa_verdict = review_verdict_by_attempt.get(attempt.name)
-		approved, reviewed = _review_outcome(qa_verdict)
-		attempt.review_outcome = {"approved": approved, "reviewed": reviewed}
+		# A take a reviewer wrote comments on needed changes; selection alone says nothing about quality.
+		attempt.commented = any(output in commented_outputs for output, source in source_attempt_by_output.items() if source == attempt.name)
 		if filters.workflow and attempt.workflow != filters.workflow:
 			continue
 		enriched_attempts.append(attempt)
@@ -105,13 +90,6 @@ def _is_selected_output(attempt_name, shot_name, selected_outputs_by_shot, sourc
 	"""Whether this attempt produced the Asset Version currently selected for its shot."""
 	selected_output = selected_outputs_by_shot.get(shot_name)
 	return bool(selected_output and source_attempt_by_output.get(selected_output) == attempt_name)
-
-
-def _review_outcome(qa_verdict, selected_output=None):
-	"""Return only explicit QA outcomes (selection is not approval)."""
-	if qa_verdict:
-		return qa_verdict == "Approved", True
-	return False, False
 
 
 def percentile_95(values):

@@ -1,0 +1,21 @@
+{
+  "profiles": {
+    "planner": {
+      "health_url": "http://127.0.0.1:8001/v1/models",
+      "working_directory": "/home/ubuntu",
+      "environment": {"VLLM_USE_FLASHINFER_SAMPLER": "0"},
+      "argv": ["/home/ubuntu/venvs/joymedia-qwen/bin/vllm", "serve", "unsloth/Qwen2.5-32B-Instruct-bnb-4bit", "--served-model-name", "qwen-base", "--host", "127.0.0.1", "--port", "8001", "--quantization", "bitsandbytes", "--load-format", "bitsandbytes", "--enable-lora", "--max-lora-rank", "64", "--lora-modules", "{\"name\":\"joymedia-qwen\",\"path\":\"/home/ubuntu/output_qwen2.5_32b_tvc_lora_final\",\"base_model_name\":\"unsloth/Qwen2.5-32B-Instruct-bnb-4bit\"}", "--max-model-len", "4096", "--gpu-memory-utilization", "0.29"]
+    },
+    "vision": {
+      "health_url": "http://127.0.0.1:8002/v1/models",
+      "working_directory": "/home/ubuntu",
+      "environment": {"VLLM_USE_FLASHINFER_SAMPLER": "0"},
+      "argv": ["/home/ubuntu/venvs/joymedia-qwen/bin/vllm", "serve", "/home/ubuntu/models_qwen/Qwen2.5-VL-7B-Instruct-AWQ", "--served-model-name", "joymedia-vl", "--host", "127.0.0.1", "--port", "8002", "--quantization", "awq", "--dtype", "half", "--max-model-len", "2048", "--gpu-memory-utilization", "0.24"]
+    },
+    "comfyui": {
+      "health_url": "http://127.0.0.1:8188/system_stats",
+      "working_directory": "/home/ubuntu/ComfyUI",
+      "argv": ["/home/ubuntu/comfy_env/bin/python", "/home/ubuntu/ComfyUI/main.py", "--listen", "127.0.0.1", "--port", "8188", "--fast", "--vram-headroom", "12"]
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "repository": "https://github.com/arita-yuto/video-review",
+  "commit": "bca4c97afb978f766a716d7fe29ecc6a5b0e3ae9",
+  "license": "MIT, Copyright (c) 2025 Yuto Arita",
+  "inspected": [
+    "prisma/schema.prisma: VideoRevision, VideoComment",
+    "src/server/routes/comments/index.ts",
+    "src/components/video-side-panel/panels/video-comment-panel/content.tsx",
+    "src/stores/comment-store.ts"
+  ],
+  "applied_patterns": [
+    "Exact revision ownership of review comments",
+    "Timestamp seeking and paused-frame annotation",
+    "Issue categorization and historical comments",
+    "Server persistence and review filtering"
+  ],
+  "implementation": "Original Frappe/Python and Vue implementation. No upstream runtime or source code is embedded. Existing scene revision commands remain separate from administrator feedback.",
+  "administrator": "Frappe Desk > JoyMedia > Video feedback. Resolve or investigate reports, write a response, and open immutable video evidence.",
+  "record_type": "Video Review Feedback",
+  "api": {
+    "read": "joymedia.services.review.feedback.get_feedback",
+    "create": "joymedia.services.review.feedback.add_feedback",
+    "admin_triage": "joymedia.services.review.feedback.triage_feedback"
+  },
+  "guarantees": [
+    "Authenticated project access checked for every version",
+    "Original feedback, author, exact asset version, frames and area cannot be rewritten",
+    "Repeated submission IDs are idempotent, including concurrent retries",
+    "Only administrators triage records; responses are visible to project reviewers",
+    "Reports and status changes persist in Frappe with track_changes audit history",
+    "Feedback does not submit generation jobs"
+  ]
+}

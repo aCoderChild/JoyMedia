@@ -13,6 +13,16 @@ import unicodedata
 
 import frappe
 
+from joymedia.services.planning.director_rules import (  # noqa: E402,F401  (moved; kept importable from here)
+	CLOSING_DIRECTION,
+	DIRECTOR_RULES,
+	FEW_SHOT_EXAMPLE,
+	PRODUCT_DIRECTOR_RULES,
+	PRODUCT_FEW_SHOT_EXAMPLE,
+	STORY_BEATS,
+)
+from joymedia.services.scene.contract import PLANNING_RULES
+
 CHARACTER = "character"
 PLACE = "place"
 PRODUCT = "product"
@@ -29,12 +39,9 @@ PRODUCT_BRIEF_PATTERN = re.compile(
 	r"qu[aả]ng\s*c[aá]o|gi[oớ]i\s*thi[eệ]u|c[aá]i\s*đĩa",
 	re.I,
 )
-PROPERTY_BRIEF_PATTERN = re.compile(r"\b(real estate|property|apartment|housing|realty|bat dong san|can ho|nha dat)\b", re.I)
-PROPERTY_AREA_PATTERN = re.compile(r"\b(part|area|section|room|space|zone|khu vuc|phan|cac phan)\b", re.I)
-PROPERTY_MARKETING_PATTERN = re.compile(r"\b(advertis|promot|market|showcase|present|sell)\b|quang\s+cao|gioi\s+thieu", re.I)
 
 PERSON_PATTERN = re.compile(
-	r"\b(she|her|hers|he|his|him|woman|man|girl|boy|person|character|couple|family)\b|\b(?:a|the|female|male|fashion)\s+model\b",
+	r"\b(she|her|hers|he|his|him|woman|man|girl|boy|person|characters?|couple|family)\b|\b(?:a|the|female|male|fashion)\s+model\b",
 	re.I,
 )
 WORD_PATTERN = re.compile(r"[a-z]+")
@@ -51,172 +58,6 @@ MIN_RENDER_SECONDS = 5
 # Each storyboard scene is planned as one render unless its workflow declares continuation.
 MAX_TAKE_SECONDS = MIN_RENDER_SECONDS
 MAX_TAKES = 12
-
-DIRECTOR_RULES = """
-You are the film director for JoyMedia commercials. Plan a short cinematic film
-that follows the character through the supplied places, not a slideshow.
-
-STRUCTURE
-- Plan exactly {take_count} long continuous takes of {min_take}-{max_take} seconds each.
-- Use a different place in each take, choosing the places that best tell the story;
-  only the main place may appear twice (to open and to close the film).
-- Each take is ONE unbroken camera shot. A take may make one motivated visual
-  transition between two supplied places (for example through a doorway or a
-  foreground wipe) only when it lists both place references. Never use a
-  montage or invent an unrelated in-between room.
-- TIMING: use the opening moments (about 0-5%) to establish composition, carry out
-  the main action in the first 85-90% of the take, then leave a natural handoff.
-  Do not save the action for the end.
-- The character appears in EVERY take except an optional final establishing take.
-- Follow the STORY ARC below: each take plays its beat, in order. Order the places so
-  the journey makes sense (for example outside to inside, public to private) and put
-  the most spectacular place on the CLIMAX take.
-- The film is one continuous journey: each take starts where the previous one ended
-  (the character arrives from the previous place, continuing the same direction and
-  mood), and time of day may progress naturally (for example afternoon to dusk).
-- Every take except the last ends with a camera move that hides the cut to the next
-  take, inside the same place: a push toward a window or doorway, light sweeping
-  across the frame, or a whip pan.
-- The character keeps the outfit shown in <Picture 1> in every take unless the
-  VIDEO IDEA asks for a change. Vary performance and camera move between takes;
-  never repeat an action.
-- Match the look (light, colour grade, mood) to the VIDEO IDEA and GLOBAL INSTRUCTIONS.
-  If none is given, use soft natural cinematic light and a gentle filmic grade. Keep
-  one consistent colour grade across all takes.
-- shot_name is "<BEAT>: <short title>", e.g. "OPENING: Arrival at dusk". Keep the BEAT word
-  in English; write the short title in the language of the VIDEO IDEA (Vietnamese for a
-  Vietnamese idea, e.g. "OPENING: Dạo bước buổi sớm").
-
-OUTPUT SIZE: Keep the complete storyboard compact enough to fit one JSON response.
-- generation_prompt: English, 35-55 words per take.
-- image_prompt: 20-35 words describing only the starting frame.
-- motion_plan: exactly two chronological actions, each no more than 10 words.
-- start_state, end_state, shot_name and caption: short phrases, no more than 8 words each.
-- Do not repeat the same sentence across fields. Return no extra fields.
-
-EVERY generation_prompt states, in this order:
-1. The person from <Picture 1>: their outfit and their performance in this take.
-   Keep their face, hair and body identical to <Picture 1>.
-2. The place from <Picture 2>: keep its exact layout, architecture, furniture and
-   materials. Describe only what its roster line says; if the roster has no
-   description, write just "the place from <Picture 2>" and do not invent its contents.
-3. One clear camera move: slow push-in, rack focus, gentle orbit, dolly, tracking
-   shot, crane or drone move.
-4. Light, grade and depth of field.
-5. The transition, if any, then the constraints: one continuous shot with no cuts,
-   photorealistic, smooth stabilized motion, no added text or invented logos, no extra
-   people or face/structure deformation.
-
-REFERENCES
-- Every take lists the character first, then one or more place keys in the order
-  they are used. A second place means a single motivated transition from
-  <Picture 2> to <Picture 3>. Use only supplied keys; keys are names, not picture
-  numbers.
-""".strip()
-
-PRODUCT_DIRECTOR_RULES = """
-You are the film director for JoyMedia commercials. Plan a short cinematic
-commercial in which the character presents the product.
-
-SOURCE OF TRUTH
-- The VIDEO IDEA is the creative brief and has priority over default story beats,
-  reference-photo backgrounds, asset filenames, and project metadata.
-- Identify the requested subject, action, product, and setting from the VIDEO IDEA.
-  Every take must visibly advance that requested action; do not substitute a related
-  activity or invent a different product (for example, weaving/loom scenes for a
-  product-advertising brief).
-- When the brief says advertise, promote, or market the product, show the character
-  actively presenting or demonstrating it to camera; merely entering, approaching,
-  or standing beside it does not satisfy the brief.
-- Reference images establish identity and product appearance, not an unrelated plot.
-  If a product's visual description is unavailable, call it only "the product from
-  <Picture 2>" and do not guess its material, purpose, or depicted scene.
-
-THE PRODUCT
-- The product in <Picture 2> is an OBJECT: the character holds, shows, uses, wears or
-  admires it. It is never the setting and never a place to walk into, even when the
-  product's picture shows a scene (a painting, a print, a decorated plate or a package
-  can depict a landscape: it is still an object).
-- Keep the product's exact shape, size, colours, patterns and details in every take,
-  and keep it clearly visible: the film makes the product stand out.
-
-STRUCTURE
-- Plan exactly {take_count} long continuous takes of {min_take}-{max_take} seconds each.
-- Each take is ONE unbroken camera shot in ONE setting: no cuts, no montage.
-- TIMING: use the opening moments (about 0-5%) to establish composition, carry out
-  the main action in the first 85-90% of the take, then leave a natural handoff.
-  Do not save the action for the end.
-- The character appears in every take except product hero takes. Include at least one
-  hero take of the product alone (close-up, slow orbit or push-in on its details).
-- Follow the STORY ARC below: each take plays its beat, in order. The CLIMAX shows the
-  product at its best (the character revealing or using it, the boldest camera move).
-- Adapt each beat to the VIDEO IDEA. The arc is only pacing guidance and must never
-  change the requested action, product, or setting into a different concept.
-- SETTINGS: {settings}
-- The character keeps the outfit shown in <Picture 1> unless the VIDEO IDEA asks
-  for a change. Vary performance and camera move between takes; never repeat an action.
-- Match the look (light, colour grade, mood) to the VIDEO IDEA and GLOBAL INSTRUCTIONS
-  and keep one consistent colour grade across all takes.
-- shot_name is "<BEAT>: <short title>". Keep the BEAT word in English; write the short
-  title in the language of the VIDEO IDEA.
-
-EVERY generation_prompt (English, 60-110 words) states, in this order:
-1. The person from <Picture 1>: their outfit and what they do with the product.
-   If the VIDEO IDEA asks for promotion, explicitly show them holding or presenting
-   the product to camera. Keep their face, hair and body identical to <Picture 1>.
-2. The product from <Picture 2>: where it is (in their hands, on a table...) and its
-   exact look. Keep its shape, colours and details identical to <Picture 2>.
-3. The setting, in words.
-4. One clear camera move, then light, grade and depth of field.
-5. The constraints: one continuous shot with no cuts, photorealistic, smooth stabilized
-   motion, no added text or invented logos, no extra people, no deformation.
-
-REFERENCES
-- Every take lists exactly two references: first the character key, then the product
-  key. A product hero take lists the product key twice.
-- Use only the supplied keys. In the prompt the character is always <Picture 1> and
-  the product is always <Picture 2> (in a hero take, <Picture 1> and <Picture 2>
-  are both the product).
-""".strip()
-
-PRODUCT_FEW_SHOT_EXAMPLE = (
-	"generation_prompt TEMPLATE (fill every [ ] for its own beat; never reuse wording between "
-	"takes): The person from <Picture 1>, in [outfit from <Picture 1>], [what they do with the "
-	"product in this beat]. The product from <Picture 2>, [where it is and its exact look], keeps "
-	"its exact shape, colours and details. [The setting, in words]. Keep their face and hair "
-	"identical to <Picture 1>. [One camera move]. [Light, grade and depth of field]. One continuous "
-	"shot with no cuts, photorealistic, smooth stabilized motion, no added text or invented logos, no deformation."
-)
-
-FEW_SHOT_EXAMPLE = (
-	"generation_prompt TEMPLATE (fill every [ ] for its own beat and place; never reuse wording "
-	"between takes): The person from <Picture 1>, in [outfit from <Picture 1>], [action that plays "
-	"this take's beat] in the place from <Picture 2>, [what of that place is seen]. Keep their face "
-	"and hair identical to <Picture 1> and the exact layout and materials of <Picture 2>. [One "
-	"camera move]. [Light, grade and depth of field]. [How the take ends]. One continuous shot with "
-	"no cuts, photorealistic, smooth stabilized motion, no added text or invented logos, no deformation."
-)
-
-
-STORY_BEATS = {
-	"OPENING": "hook the viewer with a striking first image; introduce the character arriving and set "
-	"the mood and time of day.",
-	"BUILD": "the character explores and discovers; their delight and the camera energy grow.",
-	"CLIMAX": "the emotional peak in the most spectacular place: the character's strongest moment "
-	"(a big smile, arms open to the view, a signature gesture) with the boldest camera move; "
-	"make it the longest take.",
-	"RESOLUTION": "a quiet, intimate moment of belonging and contentment; slower camera, softer light.",
-	"CLOSING": "the final image: the character's last look, or a wide establishing view of the main "
-	"place, settling to stillness so the film ends cleanly.",
-}
-
-
-# Appended to the last shot of every plan: the planner often writes it like any other
-# take, and the film then stops mid-motion instead of ending.
-CLOSING_DIRECTION = (
-	"This is the last shot of the film: the camera slowly pulls back and rises into a wide, calm "
-	"final view, all motion settles to stillness and the light softens, so the film ends gracefully."
-)
 
 
 def name_story_beats(shots):
@@ -399,198 +240,6 @@ def infer_product_reference_contexts(reference_contexts, video_idea):
 	]
 
 
-def infer_property_area_references(reference_contexts, video_idea):
-	"""Use explicit @tags to classify property component photos as places."""
-	idea = _ascii_text(video_idea)
-	if not PROPERTY_BRIEF_PATTERN.search(idea) or not PROPERTY_AREA_PATTERN.search(idea):
-		return reference_contexts
-	updated = []
-	for context in reference_contexts or []:
-		item = dict(context)
-		key = str(item.get("reference_key") or "").strip()
-		role = str(item.get("reference_role") or "").strip().lower()
-		category = str(item.get("asset_category") or "").strip().lower()
-		mentioned = bool(key and re.search(rf"(?<![\w])@{re.escape(key)}(?![\w])", str(video_idea or ""), re.I))
-		if (
-			mentioned
-			and (item.get("media_type") or "Image") == "Image"
-			and role in {"", "general"}
-			and category in {"", "reference", "other"}
-		):
-			item["reference_role"] = "Environment"
-		updated.append(item)
-	return updated
-
-
-def is_property_marketing_brief(video_idea):
-	idea = _ascii_text(video_idea)
-	return bool(PROPERTY_BRIEF_PATTERN.search(idea) and PROPERTY_MARKETING_PATTERN.search(idea))
-
-
-def build_property_director_instruction(reference_contexts, total_seconds, reference_roles=None):
-	"""Keep the planner request small for a location-led property campaign."""
-	roster = build_roster(reference_contexts)
-	roles = reference_roles or {}
-	count = story_take_count(total_seconds, reference_contexts)
-	areas = "\n".join(_roster_line(place) for place in roster[PLACE])
-	return (
-		"Plan a truthful real-estate commercial from the user's VIDEO IDEA. The person actively presents the property and makes it feel livable. "
-		f"Return exactly {count} continuous takes totaling {float(total_seconds):g} seconds. Follow OPENING, BUILD, CLIMAX, RESOLUTION, CLOSING. "
-		"Use the same person and outfit in every take. Each take may use one property area or make one motivated continuous transition between adjacent selected areas when that helps cover the tour; show only visible features and invent no rooms or amenities. "
-		"Keep each generation_prompt under 35 words, image_prompt under 20 words, use two short motion actions, and keep all other fields brief. "
-		"Every take lists the person first, then its property area or areas in travel order. Two area references mean a single continuous transition from the first area to the second. Use only the supplied reference keys. "
-		f'Use role "{roles.get(CHARACTER, "person")}" for the person and "{roles.get(PLACE, "environment")}" for areas.\n'
-		f'PERSON\n{_roster_line(roster[CHARACTER][0], person=True)}\nPROPERTY AREAS IN SELECTED ORDER\n{areas}'
-	)
-
-
-def build_property_marketing_fallback(video_idea, reference_contexts, total_seconds, reference_roles=None):
-	"""Create a safe property storyboard if Qwen twice returns incomplete JSON."""
-	roster = build_roster(reference_contexts)
-	if not roster[CHARACTER] or not roster[PLACE]:
-		return None
-	roles = reference_roles or {}
-	count = story_take_count(total_seconds, reference_contexts)
-	duration = float(total_seconds) / count
-	beats = story_beats(count)
-	person_key = roster[CHARACTER][0]["reference_key"]
-	character_role = roles.get(CHARACTER, "person")
-	place_role = roles.get(PLACE, "environment")
-	vietnamese = _has_vietnamese(video_idea)
-	shots = []
-	for index in range(count):
-		place = roster[PLACE][index % len(roster[PLACE])]
-		place_key = place["reference_key"]
-		start = duration * 0.85
-		shots.append({
-			"shot_number": index + 1,
-			"shot_name": f"{beats[index]}: {'Khám phá không gian' if vietnamese else 'Explore the space'}",
-			"duration_seconds": duration,
-			"generation_prompt": f"The woman from <Picture 1> presents the exact property area shown in <Picture 2>, showing only its visible features and welcoming viewers to imagine everyday life there. No invented rooms or amenities.",
-			"image_prompt": f"The woman from <Picture 1> presenting the exact property area shown in <Picture 2>.",
-			"start_state": "The host begins presenting the space",
-			"end_state": "A welcoming view of the space",
-			"handoff_type": "ending" if index == count - 1 else "camera_transition",
-			"motion_plan": {"actions": [
-				{"start": 0.0, "end": start, "action": "Presents the visible property area"},
-				{"start": start, "end": duration, "action": "Settles into a welcoming pose"},
-			]},
-			"caption": "Một nơi đáng sống" if vietnamese else "A place to belong",
-			"references": [
-				{"reference_key": person_key, "usage_role": character_role},
-				{"reference_key": place_key, "usage_role": place_role},
-			],
-		})
-	return {
-		"film_title": "Không Gian Đáng Sống" if vietnamese else "A Place to Call Home",
-		"shots": shots,
-	}
-
-
-def enforce_property_marketing_brief(shots, video_idea, reference_contexts):
-	"""Ground property ads in the selected area photos and advertised benefit."""
-	idea = _ascii_text(video_idea)
-	if not PROPERTY_BRIEF_PATTERN.search(idea) or not PROPERTY_MARKETING_PATTERN.search(idea):
-		return shots
-	roster = build_roster(reference_contexts)
-	if not roster[CHARACTER] or not roster[PLACE]:
-		return shots
-	person = roster[CHARACTER][0]
-	outfit = str((person.get("analysis") or {}).get("outfit") or "the same outfit shown in <Picture 1>").strip()
-	verbs = (
-		"welcomes viewers and opens the tour",
-		"walks through the space, presenting only its visible features",
-		"gestures to the visible layout and its everyday comfort",
-		"shows how the visible space supports daily living",
-		"invites viewers to imagine making this place their home",
-		"closes the tour with a confident, welcoming gesture",
-	)
-	cameras = (
-		"a gentle forward tracking move", "a smooth side tracking move", "a slow steady push-in",
-		"a restrained camera orbit", "a smooth pull-back revealing the space", "a calm wide pull-back",
-	)
-	beats = story_beats(len(shots or []))
-	titles = {
-		"OPENING": "Chào đón tổ ấm" if _has_vietnamese(video_idea) else "Welcome home",
-		"BUILD": "Khám phá không gian" if _has_vietnamese(video_idea) else "Explore the space",
-		"CLIMAX": "Tiện nghi nổi bật" if _has_vietnamese(video_idea) else "Comfort at its best",
-		"RESOLUTION": "Sống thư thái" if _has_vietnamese(video_idea) else "Room to unwind",
-		"CLOSING": "Một nơi đáng sống" if _has_vietnamese(video_idea) else "A place to belong",
-	}
-	for index, shot in enumerate(shots or []):
-		if not isinstance(shot, dict):
-			continue
-		refs = shot.get("references") or []
-		place_keys = [
-			str(reference.get("reference_key") or "").strip()
-			for reference in refs[1:]
-			if str(reference.get("reference_key") or "").strip()
-		]
-		place_key = place_keys[0] if place_keys else ""
-		place = next(
-			(item for item in roster[PLACE] if item.get("reference_key") == place_key),
-			roster[PLACE][index % len(roster[PLACE])],
-		)
-		place_detail = str((place.get("analysis") or {}).get("description") or "").strip()
-		visual_guard = (
-			f"Show only these visible property details: {place_detail[:180]}"
-			if place_detail else
-			"Use the exact layout and features visible in <Picture 2>; invent no room type, amenity, furnishing, or architecture"
-		)
-		if len(place_keys) > 1:
-			destination = next(
-				(item for item in roster[PLACE] if item.get("reference_key") == place_keys[1]), None
-			)
-			destination_detail = str((destination or {}).get("analysis", {}).get("description") or "").strip()
-			destination_guard = (
-				f"Preserve these destination details from <Picture 3>: {destination_detail[:180]}"
-				if destination_detail else
-				"Preserve the exact visible layout and features from <Picture 3> at the end of the move"
-			)
-			prompt = (
-				f"The woman from <Picture 1>, wearing {outfit}, begins by {verbs[index % len(verbs)]} in the property area shown in <Picture 2>. "
-				f"{visual_guard}. She then makes one motivated continuous move through a doorway, foreground wipe, or matching architectural line into the property area shown in <Picture 3>. "
-				f"{destination_guard}. Her warm, confident presentation makes the property feel welcoming and livable. "
-				f"Use {cameras[index % len(cameras)]}, flattering natural light, and a polished real-estate commercial look. "
-				"Preserve her identity and both properties' visible appearance. One continuous shot, photorealistic, no hard cut, no added text or invented logos."
-			)
-		else:
-			prompt = (
-				f"The woman from <Picture 1>, wearing {outfit}, {verbs[index % len(verbs)]} in the property area shown in <Picture 2>. "
-				f"{visual_guard}. Her warm, confident presentation makes the property feel welcoming and livable. "
-				f"Use {cameras[index % len(cameras)]}, flattering natural light, and a polished real-estate commercial look. "
-				"Preserve her identity and the property's visible appearance. One continuous shot, photorealistic, no cuts, no added text or invented logos."
-			)
-		shot["generation_prompt"] = prompt
-		# A keyframe is frame zero of the take. For a location transition it must
-		# depict the origin (<Picture 2>), never the destination (<Picture 3>).
-		image_subject = "the starting property area shown in <Picture 2>"
-		shot["image_prompt"] = (
-			f"The woman from <Picture 1>, wearing {outfit}, presents {image_subject}; "
-			"show only the supplied visible layout, photorealistic commercial frame."
-		)
-		shot["shot_name"] = f"{beats[index]}: {titles[beats[index]]}"
-		shot["start_state"] = "Người dẫn giới thiệu không gian" if _has_vietnamese(video_idea) else "Host presents the space"
-		shot["end_state"] = (
-			"Không gian đích hiện rõ trong khung hình" if len(place_keys) > 1 and _has_vietnamese(video_idea) else
-			"Destination space stays clear in frame" if len(place_keys) > 1 else
-			"Không gian hiện rõ trong khung hình" if _has_vietnamese(video_idea) else "Space stays clear in frame"
-		)
-		shot["handoff_type"] = "ending" if index == len(shots) - 1 else "camera_transition"
-		duration = float(shot.get("duration_seconds") or 5)
-		cut = duration * 0.85
-		shot["motion_plan"] = {"actions": [
-			{"start": 0.0, "end": cut, "action": verbs[index % len(verbs)]},
-			{"start": cut, "end": duration, "action": "arrives in the next visible area" if len(place_keys) > 1 else "settles into a welcoming pose"},
-		]}
-		shot["caption"] = (
-			("Chào đón tổ ấm mới", "Không gian cho gia đình", "Tiện nghi mỗi ngày", "Sống thoải mái hơn", "Nơi thuộc về bạn", "Một nơi đáng sống")[index % 6]
-			if _has_vietnamese(video_idea) else
-			("Welcome home", "Room for your life", "Comfort every day", "A place to unwind", "Make it yours", "A place to belong")[index % 6]
-		)
-	return shots
-
-
 def _ascii_text(value):
 	text = unicodedata.normalize("NFKD", str(value or ""))
 	text = "".join(char for char in text if not unicodedata.combining(char))
@@ -616,6 +265,7 @@ def build_director_instruction(reference_contexts, reference_role, total_seconds
 			min_take=MIN_TAKE_SECONDS,
 			max_take=MAX_TAKE_SECONDS,
 		),
+		PLANNING_RULES,
 		"",
 		f'Use usage_role "{character_role}" for character references and "{place_role}" for place references.',
 		"",
@@ -652,6 +302,7 @@ def _product_director_instruction(roster, reference_role, take_count, reference_
 		PRODUCT_DIRECTOR_RULES.format(
 			take_count=take_count, min_take=MIN_TAKE_SECONDS, max_take=MAX_TAKE_SECONDS, settings=settings,
 		),
+		PLANNING_RULES,
 		"",
 		f'Use usage_role "{character_role}" for character references and "{product_role}" for product references.',
 		"",
@@ -676,11 +327,11 @@ def _product_director_instruction(roster, reference_role, take_count, reference_
 def normalize_story_references(shots, reference_contexts, reference_role, reference_roles=None):
 	"""Assign ordered, purposeful references without discarding multi-place shots.
 
-	For a tagged property tour, selected areas are traversed in order. Extra scenes
-	become bridge scenes with two adjacent areas, so every selected area is used and
-	the Flux multi-reference route is chosen automatically. Other story films retain
-	the established person-plus-place behavior unless the planner explicitly listed
-	more than one place.
+	For a tagged tour of places, selected areas are traversed in order. Extra scenes
+	become bridge scenes with two adjacent areas, so every selected area is used.
+	Every selected character remains in the reference assignment unless the planner
+	explicitly narrows the cast; choosing the first roster entry silently discarded
+	important cast members and made the result depend on upload order.
 	"""
 	roster = build_roster(reference_contexts)
 	reference_roles = reference_roles or {}
@@ -688,7 +339,7 @@ def normalize_story_references(shots, reference_contexts, reference_role, refere
 		return _normalize_product_references(shots, roster, reference_role, reference_roles)
 	if not roster[CHARACTER] or not roster[PLACE]:
 		return shots
-	character_key = roster[CHARACTER][0]["reference_key"]
+	character_keys = [item["reference_key"] for item in roster[CHARACTER]]
 	character_role = reference_roles.get(CHARACTER, reference_role)
 	place_role = reference_roles.get(PLACE, reference_role)
 	places = roster[PLACE]
@@ -696,7 +347,7 @@ def normalize_story_references(shots, reference_contexts, reference_role, refere
 		str((place.get("analysis") or {}).get("description") or place.get("label") or "").strip()
 		for place in places
 	)
-	property_tour = any(str(place.get("reference_role") or "").lower() == "environment" for place in places)
+	place_tour = any(str(place.get("reference_role") or "").lower() == "environment" for place in places)
 	for index, shot in enumerate(shots):
 		if not isinstance(shot, dict):
 			continue
@@ -705,13 +356,15 @@ def normalize_story_references(shots, reference_contexts, reference_role, refere
 			str((reference or {}).get("reference_key") or "").strip()
 			for reference in shot.get("references") or []
 		]
+		listed_characters = [key for key in listed if key in character_keys]
+		characters = list(dict.fromkeys(listed_characters or character_keys))
 		candidates = [context for context in places if context["reference_key"] in listed] or places
 		listed_places = [key for key in listed if any(place["reference_key"] == key for place in places)]
-		if property_tour:
-			listed_places = _property_tour_places(index, len(shots), places, listed_places)
+		if place_tour:
+			listed_places = _tour_places(index, len(shots), places, listed_places)
 		else:
 			# Preserve the mature single-location story-film behavior outside a
-			# tagged property tour. Multi-reference composition is intentionally
+			# tagged tour of places. Multi-reference composition is intentionally
 			# introduced only where the selected area sequence makes it meaningful.
 			listed_places = []
 		best_place = (
@@ -720,13 +373,13 @@ def normalize_story_references(shots, reference_contexts, reference_role, refere
 			else places[index % len(places)]["reference_key"]
 		)
 		if PERSON_PATTERN.search(prompt):
-			ordered = [character_key, *(listed_places or [best_place])]
+			ordered = [*characters, *(listed_places or [best_place])]
 		else:
 			# The model follows <Picture 1> most strongly; a second, different place
 			# there replaced the described one, so both slots carry it.
 			ordered = [best_place, best_place]
 		shot["references"] = [
-			{"reference_key": key, "usage_role": character_role if key == character_key else place_role}
+			{"reference_key": key, "usage_role": character_role if key in character_keys else place_role}
 			for key in ordered
 		]
 		prompt = _clamp_picture_tags(prompt, len(ordered)).strip()
@@ -737,8 +390,8 @@ def normalize_story_references(shots, reference_contexts, reference_role, refere
 	return shots
 
 
-def _property_tour_places(index, shot_count, places, explicit_keys):
-	"""Return one route segment for a property tour, retaining explicit selections.
+def _tour_places(index, shot_count, places, explicit_keys):
+	"""Return one route segment for a tour of places, retaining explicit selections.
 
 	When the film has more scenes than areas, fractional route positions naturally
 	create adjacent-area bridge scenes. When it has fewer scenes, each scene carries
@@ -747,7 +400,7 @@ def _property_tour_places(index, shot_count, places, explicit_keys):
 	"""
 	# A planner can explicitly request a multi-area transition. A lone area from
 	# the old two-reference prompt is not a reason to discard the rest of a tagged
-	# property tour, so it follows the deterministic route below.
+	# tour of places, so it follows the deterministic route below.
 	if len(explicit_keys) > 1:
 		return list(dict.fromkeys(explicit_keys))
 	keys = [place["reference_key"] for place in places]
@@ -998,6 +651,8 @@ def reference_preamble(shot_reference_versions, project_references):
 			f"Make one motivated continuous transition from <Picture {locations[0]}> to <Picture {locations[1]}>; "
 			"preserve both locations and do not invent an unrelated room."
 		)
+	if parts:
+		parts.append("References are independently framed; their pixel sizes do not establish physical scale. Follow the scene support surfaces and authored relative dimensions.")
 	return " ".join(parts)
 
 

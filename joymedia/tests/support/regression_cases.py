@@ -128,7 +128,7 @@ def render_keyframe(project_name, timeout=900):
 	"""Render the case's keyframe on the real server and return its image bytes."""
 	from joymedia.services.keyframes.stage import generate_keyframes, get_project_keyframes
 
-	run = generate_keyframes(project_name)["run"]
+	run = generate_keyframes(project_name, draw_places=False)["run"]
 	deadline = time.time() + timeout
 	while time.time() < deadline:
 		frappe.db.rollback()
@@ -198,9 +198,37 @@ def run_case(name):
 	return {"case": name, "project": project_name, "checks": evaluate(name, image, project_name)}
 
 
+def discard_project(project_name):
+	"""Delete a regression project with everything it produced, so a passing case leaves nothing behind.
+
+	Children go first: a Generation Run left behind would make a later project that reuses this number look as if it
+	already had generation history.
+	"""
+	runs = frappe.get_all("Generation Run", filters={"media_project": project_name}, pluck="name")
+	tasks = frappe.get_all("Generation Task", filters={"generation_run": ["in", runs]}, pluck="name") if runs else []
+	attempts = frappe.get_all("Generation Attempt", filters={"generation_task": ["in", tasks]}, pluck="name") if tasks else []
+	shots = frappe.get_all("Shot", filters={"media_project": project_name}, pluck="name")
+	doomed = [("Generation Artifact", frappe.get_all("Generation Artifact", filters={"generation_attempt": ["in", attempts]}, pluck="name") if attempts else [])]
+	doomed += [("Review Comment", frappe.get_all("Review Comment", filters={"media_project": project_name}, pluck="name"))]
+	doomed += [("Timeline Clip", frappe.get_all("Timeline Clip", filters={"media_project": project_name}, pluck="name"))]
+	doomed += [("Generation Attempt", attempts), ("Generation Task", tasks), ("Generation Run", runs), ("Shot", shots)]
+	for doctype, names in doomed:
+		for name in names:
+			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+	if frappe.db.exists("Media Project", project_name):
+		frappe.delete_doc("Media Project", project_name, force=True, ignore_permissions=True)
+	frappe.db.commit()
+
+
 def run_all():
-	"""Run every case; raises nothing, returns each case's checks so a failure is visible."""
+	"""Run every case; raises nothing, returns each case's checks so a failure is visible.
+
+	A passing case's project is deleted; a failing one is kept for inspection.
+	"""
 	report = [run_case(name) for name in CASES]
+	for case in report:
+		if all(passed for _, passed, _ in case["checks"]):
+			discard_project(case["project"])
 	for case in report:
 		for check, passed, detail in case["checks"]:
 			print(("PASS" if passed else "FAIL"), case["case"], "-", check, "-", detail)

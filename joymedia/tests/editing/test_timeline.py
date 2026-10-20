@@ -85,10 +85,6 @@ class TestTimelineEditor(FrappeTestCase):
 			"duration_seconds": 4.0,
 		}).insert(ignore_permissions=True)
 		self.shot.db_set("selected_output_asset_version", self.version_1.name, update_modified=False)
-		frappe.get_doc({
-			"doctype": "Shot Review", "shot": self.shot.name, "reviewer": "Administrator",
-			"review_kind": "Human", "verdict": "Approved", "output_asset_version": self.version_1.name,
-		}).insert(ignore_permissions=True)
 		self.clip_1 = frappe.get_doc({
 			"doctype": "Timeline Clip",
 			"media_project": self.project.name,
@@ -130,8 +126,8 @@ class TestTimelineEditor(FrappeTestCase):
 		super().tearDown()
 
 	@patch("joymedia.services.editing.timeline.frappe.db.commit")
-	@patch("joymedia.services.editing.timeline.enqueue_render")
-	@patch("joymedia.services.editing.timeline.is_render_alive", return_value=False)
+	@patch("joymedia.services.editing.export_jobs.enqueue_render")
+	@patch("joymedia.services.editing.export_jobs.is_render_alive", return_value=False)
 	def test_export_whose_job_died_is_failed_and_can_be_exported_again(self, alive, enqueue, commit):
 		self.project.db_set("export_status", "Running")
 
@@ -140,8 +136,8 @@ class TestTimelineEditor(FrappeTestCase):
 		enqueue.assert_called_once()
 
 	@patch("joymedia.services.editing.timeline.frappe.db.commit")
-	@patch("joymedia.services.editing.timeline.enqueue_render")
-	@patch("joymedia.services.editing.timeline.is_render_alive", return_value=True)
+	@patch("joymedia.services.editing.export_jobs.enqueue_render")
+	@patch("joymedia.services.editing.export_jobs.is_render_alive", return_value=True)
 	def test_export_waits_for_running_export_and_finishing(self, alive, enqueue, commit):
 		self.project.db_set("export_status", "Running")
 		self.assertEqual("Running", queue_project_timeline_export(self.project.name)["export_status"])
@@ -151,32 +147,15 @@ class TestTimelineEditor(FrappeTestCase):
 			queue_project_timeline_export(self.project.name)
 		enqueue.assert_not_called()
 
-	def test_final_export_requires_human_approval_for_the_clip_source(self):
-		frappe.db.set_value("Shot Review", {"shot": self.shot.name, "output_asset_version": self.version_1.name}, "review_kind", "Automated")
-		# A stale badge must not be accepted as an approval decision.
-		self.shot.db_set("review_status", "Approved", update_modified=False)
-		with self.assertRaises(frappe.ValidationError):
-			queue_project_timeline_export(self.project.name)
 
-	def test_unincluded_unapproved_shot_does_not_block_final_export(self):
+	def test_a_scene_without_output_does_not_block_final_export(self):
 		frappe.get_doc({
 			"doctype": "Shot", "media_project": self.project.name, "shot_number": 2,
 			"generation_prompt": "Excluded scene.", "duration_seconds": 1,
 		}).insert(ignore_permissions=True)
-		with patch("joymedia.services.editing.timeline.enqueue_render"):
+		with patch("joymedia.services.editing.export_jobs.enqueue_render"):
 			self.assertEqual("Queued", queue_project_timeline_export(self.project.name)["export_status"])
 
-	def test_export_rejects_an_unapproved_older_clip_even_when_the_current_take_is_approved(self):
-		_version_asset, version_2 = _create_output_version(self.project, "test-v2.mp4", 4, self.asset)
-		self.shot.db_set("selected_output_asset_version", version_2.name, update_modified=False)
-		frappe.get_doc({
-			"doctype": "Shot Review", "shot": self.shot.name, "reviewer": "Administrator",
-			"review_kind": "Human", "verdict": "Approved", "output_asset_version": version_2.name,
-		}).insert(ignore_permissions=True)
-		frappe.db.set_value("Shot Review", {"shot": self.shot.name, "output_asset_version": self.version_1.name}, "review_kind", "Automated")
-
-		with self.assertRaises(frappe.ValidationError):
-			queue_project_timeline_export(self.project.name)
 
 	def test_completed_finishing_is_stale_when_a_selected_take_changes(self):
 		from joymedia.services.editing.post_production import _finishing_is_current, timeline_signature
@@ -390,7 +369,7 @@ class TestTimelineEditor(FrappeTestCase):
 		)
 
 	def test_disabled_source_audio_stays_disabled_when_video_is_split(self):
-		source_audio = frappe.get_doc({
+		frappe.get_doc({
 			"doctype": "Timeline Clip",
 			"media_project": self.project.name,
 			"shot": self.shot.name,

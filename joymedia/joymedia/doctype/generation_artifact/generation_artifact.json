@@ -11,7 +11,8 @@
   "generation_attempt",
   "media_type",
   "provider_locator",
-  "frappe_file"
+  "frappe_file",
+  "product_lock_json"
  ],
  "fields": [
   {
@@ -64,6 +65,15 @@
    "fieldname": "frappe_file",
    "fieldtype": "Attach",
    "label": "File",
+   "read_only": 1
+  },
+  {
+   "description": "Where the real product pack was pasted into this keyframe and the exact pixels, so the scene's video shows the same pack.",
+   "fieldname": "product_lock_json",
+   "fieldtype": "Code",
+   "hidden": 1,
+   "label": "Product Lock",
+   "options": "JSON",
    "read_only": 1
   }
  ],

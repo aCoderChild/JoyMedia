@@ -73,7 +73,7 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 		_asset, version = _create_asset_version(project, "Image", "png")
 		project.append("selected_media", {"asset_version": version.name, "reference_role": "Product"})
 		project.save(ignore_permissions=True)
-		shot = frappe.get_doc({
+		frappe.get_doc({
 			"doctype": "Shot",
 			"media_project": project.name,
 			"shot_number": 1,
@@ -269,30 +269,6 @@ class IntegrationTestMediaProject(IntegrationTestCase):
 			frappe.db.get_value("Shot", {"media_project": project.name}, "generation_prompt"),
 		)
 
-	def test_property_component_role_is_persisted_for_render_routing(self):
-		project, _ = _create_project("Property Roles", self.workflow)
-		project.video_idea = "@host quảng cáo bất động sản; @1 là một phần trong bất động sản đó."
-		for asset_name in ("Host", "Property Area"):
-			_attach_image_reference(project, asset_name)
-		property_asset = frappe.get_doc(
-			"Media Asset",
-			frappe.db.get_value("Asset Version", project.selected_media[1].asset_version, "media_asset"),
-		)
-		property_asset.asset_category = "Reference"
-		property_asset.save(ignore_permissions=True)
-		project.selected_media[0].reference_key = "host"
-		project.selected_media[0].reference_role = "General"
-		project.selected_media[1].reference_key = "1"
-		project.selected_media[1].reference_role = "General"
-		project.save(ignore_permissions=True)
-
-		with patch("joymedia.services.intake.vision.ensure_project_image_analysis"):
-			project._use_reference_video_for_story_film()
-
-		self.assertEqual(
-			"Environment",
-			frappe.db.get_value("Project Reference", project.selected_media[1].name, "reference_role"),
-		)
 
 	def test_generation_workflow_owns_adapter_without_model_profile_doctype(self):
 		workflow = frappe.get_doc("Generation Workflow", self.workflow)
@@ -440,3 +416,30 @@ def _ensure_workflow():
 		}],
 	}).insert(ignore_permissions=True)
 	return workflow.name
+
+
+class IntegrationTestFollowActivePipeline(IntegrationTestCase):
+	def test_a_project_is_moved_to_the_pipeline_the_site_now_uses(self):
+		from joymedia.joymedia.doctype.media_project.media_project import MediaProject
+
+		project = MediaProject({"doctype": "Media Project", "workflow": "OLD", "generation_pipeline": "OLD-PIPE", "export_quality": "Draft 720p"})
+		newest = frappe._dict(name="NEW")
+		with (
+			patch("joymedia.joymedia.doctype.media_project.media_project._get_customer_workflow_for_export_quality", return_value=newest),
+			patch("joymedia.services.workflows.pipeline.pipeline_for_final_workflow", return_value=frappe._dict(name="NEW-PIPE")),
+			patch.object(MediaProject, "db_set") as db_set,
+		):
+			project.follow_active_pipeline()
+		db_set.assert_called_once_with({"workflow": "NEW", "generation_pipeline": "NEW-PIPE"}, update_modified=False)
+
+	def test_a_project_already_on_the_active_pipeline_is_left_alone(self):
+		from joymedia.joymedia.doctype.media_project.media_project import MediaProject
+
+		project = MediaProject({"doctype": "Media Project", "workflow": "NEW", "generation_pipeline": "NEW-PIPE", "export_quality": "Draft 720p"})
+		with (
+			patch("joymedia.joymedia.doctype.media_project.media_project._get_customer_workflow_for_export_quality", return_value=frappe._dict(name="NEW")),
+			patch("joymedia.services.workflows.pipeline.pipeline_for_final_workflow", return_value=frappe._dict(name="NEW-PIPE")),
+			patch.object(MediaProject, "db_set") as db_set,
+		):
+			project.follow_active_pipeline()
+		db_set.assert_not_called()

@@ -13,6 +13,8 @@ apps/*/.git/
 **/.cache/
 joymedia/frontend/test-results/
 joymedia/frontend/playwright-report/
+test-results/
+playwright-report/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

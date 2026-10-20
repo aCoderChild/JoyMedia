@@ -102,9 +102,11 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 	fps = run_snapshot.get("output_fps") or workflow_version.output_fps or 24
 	if not width or not height:
 		frappe.throw(_("Generation Run {0} has no valid delivery dimensions in its snapshot.").format(run.name))
+	from joymedia.services.review.admission import retry_prompt
+
 	workflow = build_execution_workflow(
 		workflow_version,
-		inputs={PROMPT_BINDING_KEY: job.prompt_text, **staged_inputs},
+		inputs={PROMPT_BINDING_KEY: retry_prompt(attempt, job.prompt_text), **staged_inputs},
 		seed=int(attempt.seed),
 		width=int(width),
 		height=int(height),
@@ -288,6 +290,16 @@ def validate_workflow_node_types_available(workflow_version, object_info):
 			)
 			+ _("Export a server-compatible API workflow or install the required nodes before generating.")
 		)
+	from joymedia.services.workflows.schema import graph_schema_errors
+
+	errors = graph_schema_errors(
+		workflow, object_info,
+		bound_inputs=[(row.node_key, row.input_name) for row in (workflow_version.get("bindings") or [])],
+	)
+	if errors:
+		frappe.throw(_("Workflow {0} is incompatible with the configured ComfyUI server: {1}").format(
+			workflow_version.name, "; ".join(errors)
+		))
 
 
 def _validate_node_references(workflow):

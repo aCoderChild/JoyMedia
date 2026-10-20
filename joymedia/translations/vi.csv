@@ -154,3 +154,33 @@ Untitled Project,Dự án chưa đặt tên
 References must be a list.,Danh sách tham chiếu không hợp lệ.
 Background processing,Xử lý nền
 Set scheduler_tick_interval to 60 in common_site_config.json: finished renders are only noticed every {0} seconds.,Hãy đặt scheduler_tick_interval là 60 trong common_site_config.json: video dựng xong chỉ được nhận biết sau mỗi {0} giây.
+These comments are already being applied. Wait a moment.,Các nhận xét này đang được áp dụng. Vui lòng chờ một lát.
+The scene does not belong to this project.,Cảnh này không thuộc dự án.
+{0} must be a frame number.,{0} phải là số khung hình.
+{0} must be a whole frame number of 0 or more.,"{0} phải là số khung hình nguyên, từ 0 trở lên."
+Generate the scene before commenting on it.,Hãy tạo cảnh trước khi nhận xét.
+Start frame,Khung bắt đầu
+End frame,Khung kết thúc
+This take has {0} frames; frame {1} is past its end.,Bản này có {0} khung hình; khung {1} nằm sau điểm kết thúc.
+This scene already has {0} open comments. Apply or resolve them first.,Cảnh này đã có {0} nhận xét chưa xử lý. Hãy áp dụng hoặc đánh dấu đã xong trước.
+Status must be Open or Resolved.,Trạng thái phải là Chưa xử lý hoặc Đã xong.
+The comment does not belong to this project.,Nhận xét này không thuộc dự án.
+These comments are too long to apply together. Shorten them or apply fewer at a time.,Các nhận xét quá dài để áp dụng cùng lúc. Hãy rút gọn hoặc áp dụng ít hơn mỗi lần.
+There are no open comments to apply.,Không có nhận xét chưa xử lý để áp dụng.
+Write what should change.,Hãy viết điều cần sửa.
+A comment can have at most {0} characters.,Một nhận xét tối đa {0} ký tự.
+The frame range must start at 0 or later and end at or after its start.,Đoạn khung hình phải bắt đầu từ 0 trở lên và kết thúc sau hoặc tại điểm bắt đầu.
+Pictures of the characters,Hình ảnh nhân vật
+The sheet names {0} but no character or person picture is added; they will be drawn from the text.,Bảng nhắc đến {0} nhưng chưa có hình nhân vật hay người thật; nhân vật sẽ được vẽ theo mô tả.
+Scene frames approved,Khung hình cảnh đã duyệt
+{0} of {1} scene frames approved. Draw the frames and approve them before the videos are made.,Đã duyệt {0}/{1} khung hình cảnh. Hãy vẽ và duyệt khung hình trước khi tạo video.
+The sheet is missing these must-have fields: {0}.,Bảng còn thiếu các mục bắt buộc: {0}.
+Storyboard demo '{0}' was not found. Available sheets: {1}.,Không tìm thấy trang '{0}'. Các trang có sẵn: {1}.
+The preceding scene needs a generated output before this continuation can regenerate.,Cảnh trước cần có video đã tạo trước khi cảnh nối tiếp này có thể tạo lại.
+A continuation dependency needs a selected output.,Cảnh nối tiếp cần cảnh trước đã có video được chọn.
+Must include (Brand sheet),Bắt buộc có (trang Thương hiệu)
+Pictures named in the sheet,Ảnh được ghi trong bảng
+"The References sheet names these pictures, but they are not uploaded: {0}.",Trang Tham chiếu có ghi các ảnh này nhưng chưa được tải lên: {0}.
+Format from the sheet,Định dạng trong bảng
+"The sheet's format ({0}) is not a ratio; the video uses {1} until you choose 9:16, 16:9 or 1:1 in the settings.","Định dạng trong bảng ({0}) chưa phải tỉ lệ khung hình; video đang dùng {1} cho đến khi bạn chọn 9:16, 16:9 hoặc 1:1 trong cài đặt."
+Approve the storyboard first: the first frames are drawn from the approved scenes.,Hãy duyệt kịch bản trước: khung hình đầu được vẽ từ các cảnh đã duyệt.

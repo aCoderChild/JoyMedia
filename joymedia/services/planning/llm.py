@@ -3,9 +3,7 @@ captions, translation to English. Answers are validated; a model that is down is
 """
 
 import json
-import math
 import re
-import time
 
 import frappe
 import requests
@@ -22,36 +20,44 @@ from joymedia.services.planning.film_director import (
 	plan_problems,
 	story_take_count,
 )
+from joymedia.services.planning.plan_parsing import (  # noqa: E402,F401  (moved; kept importable from here)
+	DEFAULT_MAX_MODEL_LEN,
+	MIN_PLAN_COMPLETION_TOKENS,
+	_completion_budget,
+	_first_non_empty,
+	_normalize_planner_plan,
+	_normalized_motion_plan,
+	_plan_shots,
+	_request_plan,
+	_rescale_motion_plan,
+	_validate_video_plan,
+)
+from joymedia.services.scene.contract import PLANNING_RULES
+from joymedia.services.runtime.endpoints import endpoint
 
-DEFAULT_TIMEOUT = 600
 PLAN_CUT_OFF = (
 	"The previous JSON did not fit. Return a compact complete JSON plan: generation_prompt "
 	"under 50 words, image_prompt under 30 words, exactly two motion actions of at most "
 	"8 words each, and short state/title/caption fields. Do not omit shots or required fields."
 )
-DEFAULT_MAX_MODEL_LEN = 4096
-MIN_PLAN_COMPLETION_TOKENS = 700
 
 
-def _qwen_config():
-	base_url = frappe.conf.get("qwen_base_url")
-	model = frappe.conf.get("qwen_model")
-	if not base_url:
-		frappe.throw(_("qwen_base_url is not configured."))
-	if not model:
-		frappe.throw(_("qwen_model is not configured."))
-	try:
-		timeout = float(frappe.conf.get("qwen_timeout", DEFAULT_TIMEOUT))
-	except (TypeError, ValueError):
-		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
-	if timeout <= 0:
-		frappe.throw(_("qwen_timeout must be a positive number of seconds."))
-	return base_url.rstrip("/"), model, timeout
+def _planner_config():
+	"""Return the configured planning capability, independent of its provider."""
+	configured = endpoint("planner")
+	return configured.base_url, configured.model, configured.timeout
+
+
+# Kept for third-party integrations during the configuration-key migration.
+# JoyMedia itself calls _planner_config exclusively.
+_qwen_config = _planner_config
+# Compatibility name for integrations that imported the old private helper.
+_normalize_qwen_plan = _normalize_planner_plan
 
 
 def generate_shot_revision(*, instruction, shot, product_name="", video_idea=""):
-	"""Ask Qwen to replace one canonical shot prompt."""
-	base_url, model, timeout = _qwen_config()
+	"""Ask the configured planner to replace one canonical shot prompt."""
+	base_url, model, timeout = _planner_config()
 	current_prompt = str(shot.get("generation_prompt") or "").strip()
 	current_image_prompt = str(shot.get("image_prompt") or "").strip()
 	user_prompt = (
@@ -84,20 +90,20 @@ def generate_shot_revision(*, instruction, shot, product_name="", video_idea="")
 	try:
 		response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
 	except requests.Timeout:
-		frappe.throw(_("Qwen did not return a shot revision within {0} seconds.").format(int(timeout)))
+		frappe.throw(_("The AI planner did not return a shot revision within {0} seconds.").format(int(timeout)))
 	except requests.RequestException as exc:
-		frappe.throw(_("Qwen is unavailable at {0}: {1}").format(base_url, str(exc)))
+		frappe.throw(_("The AI planner is unavailable at {0}: {1}").format(base_url, str(exc)))
 	if not response.ok:
-		frappe.throw(_("Qwen request failed ({0}): {1}").format(response.status_code, response.text))
+		frappe.throw(_("The AI planner request failed ({0}): {1}").format(response.status_code, response.text))
 	try:
 		result = json.loads(response.json()["choices"][0]["message"]["content"])
 	except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-		frappe.throw(_("Qwen returned invalid shot revision JSON: {0}").format(str(exc)))
+		frappe.throw(_("The AI planner returned invalid shot revision JSON: {0}").format(str(exc)))
 	if not isinstance(result, dict):
-		frappe.throw(_("Qwen returned an invalid shot revision."))
+		frappe.throw(_("The AI planner returned an invalid shot revision."))
 	generation_prompt = str(result.get("generation_prompt") or "").strip()
 	if not generation_prompt:
-		frappe.throw(_("Qwen returned an empty generation_prompt for the shot revision."))
+		frappe.throw(_("The AI planner returned an empty generation_prompt for the shot revision."))
 	result["generation_prompt"] = generation_prompt
 	image_prompt = str(result.get("image_prompt") or result.get("image_generation_prompt") or "").strip()
 	result["image_prompt"] = image_prompt or generation_prompt
@@ -114,11 +120,11 @@ def improve_video_idea(
 	duration: float | None = None,
 	delivery_preset: str | None = None,
 ) -> dict:
-	"""Call Qwen to elevate a raw commercial video idea into a cinematic, structured concept."""
+	"""Use the configured planner to elevate a raw idea into a structured concept."""
 	try:
-		base_url, model, timeout = _qwen_config()
+		base_url, model, timeout = _planner_config()
 	except Exception:
-		# Fallback if Qwen is not configured
+		# Keep the user workflow usable when planning is not configured.
 		fallback = _build_fallback_improved_idea(current_idea, product_name, references)
 		return {"improved_idea": fallback}
 
@@ -170,7 +176,7 @@ def improve_video_idea(
 			if improved:
 				return {"improved_idea": improved}
 	except Exception as exc:
-		frappe.logger().warning(f"Qwen idea improvement failed, falling back: {exc}")
+		frappe.logger("joymedia.planner").warning("Idea improvement failed, falling back: %s", exc)
 
 	return {"improved_idea": _build_fallback_improved_idea(current_idea, product_name, references)}
 
@@ -210,7 +216,7 @@ def write_titles_and_captions(shots, video_idea):
 		"names. Write everything in the language of the VIDEO IDEA (Vietnamese if it is Vietnamese)."
 	)
 	try:
-		base_url, model, timeout = _qwen_config()
+		base_url, model, timeout = _planner_config()
 		response = requests.post(
 			f"{base_url}/chat/completions",
 			json={
@@ -228,7 +234,7 @@ def write_titles_and_captions(shots, video_idea):
 		response.raise_for_status()
 		words = json.loads(response.json()["choices"][0]["message"]["content"])
 	except Exception:
-		frappe.logger("joymedia.qwen").exception("Unable to write scene titles and captions")
+		frappe.logger("joymedia.planner").exception("Unable to write scene titles and captions")
 		return {}
 	entries = words.get("scenes") if isinstance(words, dict) else None
 	if not isinstance(entries, list) or len(entries) != len(shots):
@@ -291,7 +297,7 @@ def to_english(text):
 	if not text or text.isascii():
 		return text
 	try:
-		base_url, model, timeout = _qwen_config()
+		base_url, model, timeout = _planner_config()
 		response = requests.post(
 			f"{base_url}/chat/completions",
 			json={
@@ -310,7 +316,7 @@ def to_english(text):
 		english = json.loads(response.json()["choices"][0]["message"]["content"]).get("english")
 		return str(english).strip() or text
 	except Exception:
-		frappe.logger("joymedia.qwen").exception("Unable to translate %r", text)
+		frappe.logger("joymedia.planner").exception("Unable to translate %r", text)
 		return text
 
 
@@ -433,19 +439,11 @@ def generate_video_plan(
 	generation_mode = normalize_generation_mode(generation_mode)
 	if generation_mode not in ("Multi-shot", "Continuous"):
 		frappe.throw(_("Select Continuous or Multi-shot generation mode."))
-	base_url, model, timeout = _qwen_config()
+	base_url, model, timeout = _planner_config()
 	story_reference_role = _example_reference_role(workflow_input_contract)
 	story_reference_roles = _story_reference_roles(workflow_input_contract)
 	story_reference_contexts = reference_media
 	workflow_input_contract_for_prompt = workflow_input_contract
-	from joymedia.services.planning.film_director import (
-		build_property_director_instruction,
-		build_property_marketing_fallback,
-		infer_property_area_references,
-		is_property_marketing_brief,
-	)
-	if story_film:
-		story_reference_contexts = infer_property_area_references(story_reference_contexts, video_idea)
 
 	instruction = """
 You are the creative planner for JoyMedia product videos.
@@ -460,14 +458,9 @@ Project reference media are named ingredients/context. Use their reference_key w
 a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 """.strip()
 	if story_film:
-		if is_property_marketing_brief(video_idea):
-			instruction = build_property_director_instruction(
-				story_reference_contexts, total_video_duration, story_reference_roles
-			)
-		else:
-			instruction = build_director_instruction(
-				story_reference_contexts, story_reference_role, total_video_duration, story_reference_roles
-			)
+		instruction = build_director_instruction(
+			story_reference_contexts, story_reference_role, total_video_duration, story_reference_roles
+		)
 		# The director roster replaces the generic reference, image and contract lists.
 		reference_images = None
 		reference_media = None
@@ -548,6 +541,8 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 			else "Choose a coherent storyboard structure, normally between 1 and 8 shots. "
 		)
 		+ "Organize the shots into a coherent narrative progression.\n\n"
+		+ PLANNING_RULES + "\n"
+		+
 		"IMPORTANT OUTPUT RULES:\n"
 		"- Every shot MUST contain a positive integer shot_number.\n"
 		"- Every shot MUST contain one non-empty generation_prompt.\n"
@@ -652,15 +647,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 			if not retry_problems or len(retry_problems) < len(problems):
 				result = retry_result
 	if result is None:
-		result = (
-			build_property_marketing_fallback(
-				video_idea, story_reference_contexts, total_video_duration, story_reference_roles
-			)
-			if story_film and is_property_marketing_brief(video_idea)
-			else None
-		)
-		if result is None:
-			frappe.throw(_("The AI director's answer was cut off. Please try again."))
+		frappe.throw(_("The AI director's answer was cut off. Please try again."))
 	if story_film and is_product_film(story_reference_contexts):
 		result = _review_product_plan(
 			base_url=base_url,
@@ -681,7 +668,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 		enforce_explicit_product_brief(result["shots"], video_idea)
 
 	film_title = clean_title(result.get("film_title")) if isinstance(result, dict) else ""
-	result = _normalize_qwen_plan(
+	result = _normalize_planner_plan(
 		result,
 		reference_image_count=len(reference_images or []),
 		generation_mode=generation_mode,
@@ -707,12 +694,6 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	if words.get("film_title"):
 		film_title = words["film_title"]
 	default_captions(result["shots"])
-	if story_film:
-		from joymedia.services.planning.film_director import enforce_property_marketing_brief
-		result["shots"] = enforce_property_marketing_brief(
-			result["shots"], video_idea, story_reference_contexts
-		)
-		close_the_film(result["shots"])
 	# A title that was only the planner's numbering (or one word left of it) falls back
 	# to the climax's title.
 	if len(film_title.split()) < 2:
@@ -720,411 +701,3 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 	if film_title:
 		result["film_title"] = film_title
 	return result
-
-
-def _request_plan(base_url, payload, timeout):
-	"""Send one planner request; return the parsed plan, or None when the answer was cut off."""
-	response = None
-	for attempt in range(3):
-		try:
-			response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
-			break
-		except requests.ConnectionError:
-			if attempt < 2:
-				time.sleep(1)
-		except requests.Timeout:
-			frappe.throw(_("Qwen did not return a video plan within {0} seconds.").format(int(timeout)))
-	if response is None:
-		frappe.throw(_("Qwen is unavailable at {0}. Check the Qwen service or SSH tunnel, then try again.").format(base_url))
-	if not response.ok:
-		frappe.throw(_("Qwen request failed ({0}): {1}").format(response.status_code, response.text))
-	try:
-		body = response.json()
-		choice = body["choices"][0]
-		content = choice["message"]["content"]
-	except (KeyError, IndexError, TypeError, ValueError) as exc:
-		frappe.throw(_("Qwen returned an invalid response: {0}").format(str(exc)))
-	try:
-		return json.loads(content)
-	except (TypeError, ValueError):
-		# Keep operational evidence without logging the brief or reference data.
-		frappe.logger("joymedia.qwen").warning(
-			"Planner returned invalid JSON (finish_reason=%s, output_chars=%s, max_tokens=%s).",
-			choice.get("finish_reason"), len(str(content or "")), payload.get("max_tokens"),
-		)
-		# Usually the plan ran past max_tokens; the caller retries with compact output limits.
-		return None
-
-
-def _plan_shots(result):
-	return result.get("shots") if isinstance(result, dict) and isinstance(result.get("shots"), list) else []
-
-
-def _completion_budget(base_url, payload):
-	"""Fit max_tokens into the planner's context window instead of failing with HTTP 400."""
-	requested = int(payload.get("max_tokens") or 0)
-	max_model_len = int(frappe.conf.get("qwen_max_model_len") or DEFAULT_MAX_MODEL_LEN)
-	prompt_tokens = None
-	try:
-		response = requests.post(
-			f"{base_url.rsplit('/v1', 1)[0]}/tokenize",
-			json={"model": payload["model"], "messages": payload["messages"]},
-			timeout=(5, 20),
-		)
-		if response.ok:
-			data = response.json()
-			prompt_tokens = int(data["count"])
-			max_model_len = int(data.get("max_model_len") or max_model_len)
-	except (requests.RequestException, KeyError, TypeError, ValueError):
-		prompt_tokens = None
-	if prompt_tokens is None:
-		# Conservative estimate when the server has no /tokenize endpoint.
-		prompt_tokens = sum(len(str(message.get("content") or "")) for message in payload["messages"]) // 3
-	available = max_model_len - prompt_tokens - 64
-	if available < MIN_PLAN_COMPLETION_TOKENS:
-		frappe.throw(
-			_(
-				"The video brief and references are too long for the AI planner. "
-				"Shorten the video idea or global instructions, or remove some references."
-			)
-		)
-	return min(requested, available)
-
-
-def _normalize_qwen_plan(
-	result,
-	reference_image_count=0,
-	generation_mode="Multi-shot",
-	reference_images=None,
-	workflow_input_contract=None,
-	total_video_duration=None,
-):
-	"""Normalize model output without inventing semantic reference assignments."""
-	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
-		return result
-
-	normalized_shots = []
-	for index, shot in enumerate(result["shots"], start=1):
-		if not isinstance(shot, dict):
-			normalized_shots.append(shot)
-			continue
-		generation_prompt = _first_non_empty(
-			shot.get("generation_prompt"),
-			shot.get("video_generation_prompt"),
-			shot.get("prompt"),
-			shot.get("video_prompt"),
-			shot.get("description"),
-		)
-		normalized = {
-			"shot_number": shot.get("shot_number") or index,
-			"shot_name": _first_non_empty(shot.get("shot_name"), f"Shot {index}"),
-			"generation_prompt": generation_prompt,
-			"image_prompt": _first_non_empty(
-				shot.get("image_prompt"), shot.get("image_generation_prompt"), generation_prompt
-			),
-			"start_state": str(shot.get("start_state") or "").strip(),
-			"end_state": str(shot.get("end_state") or "").strip(),
-			"handoff_type": str(shot.get("handoff_type") or "").strip(),
-			"continuity_mode": "Continue" if str(shot.get("continuity_mode") or "").strip().casefold() == "continue" else "New Scene",
-			"motion_plan": _normalized_motion_plan(
-				shot.get("motion_plan") or shot.get("temporal_plan"),
-				shot.get("duration_seconds"), generation_prompt,
-			),
-			"caption": str(shot.get("caption") or "").strip()[:120],
-			"duration_seconds": shot.get("duration_seconds"),
-			"references": shot.get("references") if isinstance(shot.get("references"), list) else [],
-		}
-		for fieldname in (
-			"reference_image_index",
-			"first_frame_reference_image_index",
-			"last_frame_reference_image_index",
-		):
-			if fieldname in shot:
-				normalized[fieldname] = shot[fieldname]
-		normalized_shots.append(normalized)
-	if (
-		generation_mode == "Multi-shot"
-		and reference_images
-		and len(normalized_shots) == len(reference_images)
-		and all(item.get("reference_key") for item in reference_images)
-	):
-		single_image_role = next(
-			(
-				item["role"]
-				for item in workflow_input_contract or []
-				if item.get("min_count") == 1
-				and item.get("max_count") == 1
-				and item.get("accepted_media_type") in ("Image", "Any")
-			),
-			None,
-		)
-		if single_image_role:
-			for shot, image in zip(normalized_shots, reference_images):
-				shot["references"] = [
-					{
-						"reference_key": image["reference_key"],
-						"usage_role": single_image_role,
-					}
-				]
-	# A workflow can expose several required image slots under one semantic role,
-	# either as a File Paths list or as separate scalar bindings. The planner may
-	# return fewer references than the selected project pool provides. Fill the
-	# missing slots here so validation and later Shot creation use the same
-	# deterministic assignment.
-	if reference_images and workflow_input_contract:
-		required_reference_contracts = [
-			contract for contract in workflow_input_contract
-			if contract.get("min_count", 0) > 0
-			and contract.get("accepted_media_type") in ("Image", "Any")
-		]
-		for shot in normalized_shots:
-			for contract in required_reference_contracts:
-				role = contract["role"]
-				if generation_mode == "Continuous" and shot["shot_number"] > 1 and role == "first_frame":
-					continue
-				references = shot.setdefault("references", [])
-				role_references = [
-					reference for reference in references
-					if frappe.scrub(reference.get("usage_role") or "") == role
-				]
-				needed = int(contract["min_count"]) - len(role_references)
-				if needed <= 0:
-					continue
-				existing_keys = {reference.get("reference_key") for reference in role_references}
-				# Keep the assignment stable per shot while allowing a planner-supplied
-				# first reference to remain the first slot.
-				start = max(0, int(shot.get("shot_number") or 1) - 1)
-				pool = []
-				for offset in range(len(reference_images)):
-					candidate = reference_images[(start + offset) % len(reference_images)]
-					key = candidate.get("reference_key")
-					if key and key not in existing_keys:
-						pool.append(candidate)
-						existing_keys.add(key)
-						if len(pool) == needed:
-							break
-				for image in pool[:needed]:
-					references.append({"reference_key": image["reference_key"], "usage_role": role})
-	if (
-		total_video_duration is not None
-		and generation_mode == "Multi-shot"
-		and reference_images
-		and len(normalized_shots) == len(reference_images)
-	):
-		equal_duration = float(total_video_duration) / len(normalized_shots)
-		for shot in normalized_shots:
-			shot["duration_seconds"] = equal_duration
-	return {"shots": normalized_shots}
-
-
-def _first_non_empty(*values):
-	for value in values:
-		text = str(value or "").strip()
-		if text:
-			return text
-	return ""
-
-
-def _normalized_motion_plan(value, duration, fallback_action):
-	"""Keep valid director timing or create one honest legacy interval.
-
-	The fallback represents the existing prompt as a single action rather than
-	inventing a schedule. New Qwen plans are expected to provide richer actions.
-	"""
-	actions = value.get("actions") if isinstance(value, dict) else value
-	if not isinstance(actions, list):
-		actions = []
-	try:
-		limit = float(duration)
-	except (TypeError, ValueError):
-		limit = 0
-	normalized = []
-	for action in actions:
-		if not isinstance(action, dict):
-			continue
-		try:
-			start, end = float(action["start"]), float(action["end"])
-		except (KeyError, TypeError, ValueError):
-			continue
-		text = str(action.get("action") or "").strip()
-		if text:
-			normalized.append({"start": start, "end": end, "action": text})
-	if normalized:
-		return {"actions": normalized}
-	return {"actions": [{"start": 0, "end": limit, "action": fallback_action}]} if limit > 0 else {"actions": []}
-
-
-def _rescale_motion_plan(shot, previous_duration):
-	"""Keep persisted seconds intervals aligned when plan durations are normalized."""
-	new_duration = float(shot["duration_seconds"])
-	if not previous_duration or previous_duration <= 0 or new_duration == previous_duration:
-		return
-	factor = new_duration / previous_duration
-	for action in (shot.get("motion_plan") or {}).get("actions") or []:
-		action["start"] *= factor
-		action["end"] *= factor
-
-
-def _validate_video_plan(
-	result,
-	reference_image_count=0,
-	shot_count=None,
-	generation_mode="Multi-shot",
-	workflow_input_contract=None,
-	total_video_duration=None,
-):
-	if not isinstance(result, dict) or not isinstance(result.get("shots"), list):
-		frappe.throw(_("Qwen video plan must contain a shots list."))
-	if not result["shots"]:
-		frappe.throw(_("Qwen video plan must contain at least one shot."))
-	if len(result["shots"]) > 8:
-		frappe.throw(_("Qwen video plan must not contain more than 8 creative shots."))
-	if shot_count is not None and len(result["shots"]) != shot_count:
-		frappe.throw(_("Qwen returned {0} shots; expected {1}.").format(len(result["shots"]), shot_count))
-
-	required_fields = {"shot_number", "generation_prompt"}
-
-	normalized_shots = []
-	for shot in result["shots"]:
-		if not isinstance(shot, dict) or not required_fields.issubset(shot):
-			frappe.throw(_("Each Qwen shot must contain the required video plan fields."))
-		if type(shot["shot_number"]) is not int or shot["shot_number"] < 1:
-			frappe.throw(_("Shot number must be a positive integer."))
-		prompt = str(shot.get("generation_prompt") or "").strip()
-		if not prompt:
-			frappe.throw(_("Qwen returned an empty generation_prompt for shot {0}.").format(shot.get("shot_number", "?")))
-		try:
-			duration_seconds = float(shot["duration_seconds"])
-		except (KeyError, TypeError, ValueError):
-			frappe.throw(_("Every Qwen shot must contain a numeric duration_seconds."))
-		if not math.isfinite(duration_seconds) or duration_seconds <= 0:
-			frappe.throw(_("Shot duration must be greater than zero."))
-		normalized = {
-			"shot_number": shot["shot_number"],
-			"shot_name": str(shot.get("shot_name") or f"Shot {shot['shot_number']}").strip(),
-			"generation_prompt": prompt,
-			"image_prompt": str(shot.get("image_prompt") or shot.get("image_generation_prompt") or prompt).strip(),
-			"start_state": str(shot.get("start_state") or "").strip(),
-			"end_state": str(shot.get("end_state") or "").strip(),
-			"handoff_type": str(shot.get("handoff_type") or "").strip(),
-			"continuity_mode": "Continue" if str(shot.get("continuity_mode") or "").strip().casefold() == "continue" else "New Scene",
-			"motion_plan": _normalized_motion_plan(
-				shot.get("motion_plan") or shot.get("temporal_plan"), duration_seconds, prompt
-			),
-			"duration_seconds": duration_seconds,
-			"references": shot.get("references") if isinstance(shot.get("references"), list) else [],
-		}
-		actions = normalized["motion_plan"]["actions"]
-		previous_end = 0.0
-		for action in actions:
-			if action["start"] < previous_end or action["start"] < 0 or action["end"] <= action["start"] or action["end"] > duration_seconds + 0.001:
-				frappe.throw(_("Shot {0} has an invalid seconds-based temporal plan.").format(shot["shot_number"]))
-			previous_end = action["end"]
-		if normalized["handoff_type"] and normalized["handoff_type"] not in {
-			"motion_continuation", "pose_transition", "camera_transition", "ending"
-		}:
-			frappe.throw(_("Shot {0} has an unsupported handoff type.").format(shot["shot_number"]))
-		contract_by_role = {
-			item["role"]: item for item in (workflow_input_contract or []) if item.get("role")
-		}
-		role_counts = {}
-		for reference in normalized["references"]:
-			if not isinstance(reference, dict) or not str(reference.get("reference_key") or "").strip():
-				frappe.throw(_("Each Qwen shot reference must contain a reference_key."))
-			usage_role = frappe.scrub(reference.get("usage_role") or "")
-			if not usage_role:
-				frappe.throw(_("Each Qwen shot reference must contain a usage_role."))
-			contract = contract_by_role.get(usage_role)
-			if workflow_input_contract is not None and not contract:
-				frappe.throw(_("Qwen returned unsupported workflow input role '{0}'.").format(usage_role))
-			role_counts[usage_role] = role_counts.get(usage_role, 0) + 1
-			if (
-				contract
-				and role_counts[usage_role] > 1
-				and not contract.get("allow_multiple")
-				and int(contract.get("max_count") or 1) <= 1
-			):
-				frappe.throw(_("Workflow input role '{0}' does not allow multiple references.").format(usage_role))
-			if contract and contract.get("max_count") and role_counts[usage_role] > contract["max_count"]:
-				frappe.throw(
-					_("Workflow input role '{0}' accepts at most {1} references.").format(
-						usage_role, contract["max_count"]
-					)
-				)
-			reference["reference_key"] = str(reference["reference_key"]).strip()
-			reference["usage_role"] = usage_role
-		if reference_image_count:
-			for fieldname in (
-				"reference_image_index",
-				"first_frame_reference_image_index",
-				"last_frame_reference_image_index",
-			):
-				if fieldname not in shot:
-					continue
-				image_index = shot[fieldname]
-				if type(image_index) is not int or image_index < 1 or image_index > reference_image_count:
-					frappe.throw(_("Invalid reference image index."))
-				normalized[fieldname] = image_index
-		for contract in workflow_input_contract or []:
-			# Continuous shots after the first start from the previous generated
-			# Last Frame artifact; they must not repeat a static first-frame image.
-			if (
-				generation_mode == "Continuous"
-				and normalized["shot_number"] > 1
-				and contract["role"] == "first_frame"
-			):
-				continue
-			count = role_counts.get(contract["role"], 0)
-			if count < contract.get("min_count", 0):
-				frappe.throw(
-					_(
-						"Shot {0} needs {1} reference image(s) for the selected workflow. "
-						"Add the required references or select a workflow with a compatible input contract."
-					).format(
-						normalized["shot_number"], contract["min_count"]
-					)
-				)
-		normalized_shots.append(normalized)
-	if total_video_duration is not None:
-		target_duration = float(total_video_duration)
-		if (
-			generation_mode == "Multi-shot"
-			and reference_image_count
-			and len(normalized_shots) == reference_image_count
-		):
-			equal_duration = target_duration / len(normalized_shots)
-			for shot in normalized_shots:
-				previous_duration = shot["duration_seconds"]
-				shot["duration_seconds"] = equal_duration
-				_rescale_motion_plan(shot, previous_duration)
-			return {"shots": normalized_shots}
-		plan_duration = sum(shot["duration_seconds"] for shot in normalized_shots)
-		if not math.isfinite(target_duration) or target_duration <= 0 or plan_duration <= 0:
-			frappe.throw(_("Video plan duration must be a positive finite number."))
-		scale = target_duration / plan_duration
-		for shot in normalized_shots[:-1]:
-			previous_duration = shot["duration_seconds"]
-			shot["duration_seconds"] *= scale
-			_rescale_motion_plan(shot, previous_duration)
-		if normalized_shots:
-			shot_duration = target_duration - sum(
-				shot["duration_seconds"] for shot in normalized_shots[:-1]
-			)
-			if shot_duration <= 0 or not math.isfinite(shot_duration):
-				frappe.throw(_("Video plan durations must sum to the requested duration."))
-			previous_duration = normalized_shots[-1]["duration_seconds"]
-			normalized_shots[-1]["duration_seconds"] = shot_duration
-			_rescale_motion_plan(normalized_shots[-1], previous_duration)
-
-	if generation_mode == "Multi-shot" and reference_image_count and all(
-		"first_frame_reference_image_index" in shot and "last_frame_reference_image_index" in shot
-		for shot in normalized_shots
-	):
-		for current, following in zip(normalized_shots, normalized_shots[1:]):
-			if current["last_frame_reference_image_index"] != following["first_frame_reference_image_index"]:
-				frappe.throw(
-					_("Multi-shot boundary is invalid between shots {0} and {1}.").format(
-						current["shot_number"], following["shot_number"]
-					)
-				)
-	result["shots"] = normalized_shots

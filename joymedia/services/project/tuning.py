@@ -12,12 +12,17 @@ DEFAULTS = {
 	"product_height": 0.15, "product_width": 0.40, "product_baseline": 0.90,
 	# A product with no character in the frame is the hero: it is drawn larger.
 	"hero_product_height": 0.42, "hero_product_width": 0.55,
-	# With drawn characters the product is pasted small into a corner the prompt keeps clear ("right" or "left").
-	"drawn_product_height": 0.11, "drawn_product_corner": "right",
-	# A later segment of a long scene ends on the scene's approved keyframe (H3's own last_frame input), so the characters do not drift.
-	"anchor_continuation_to_keyframe": True,
+	# On the closing scene the product is the biggest thing in the picture, in front of the cast at the sides.
+	"closing_product_height": 0.42, "closing_product_width": 0.62,
+	"closing_side_product_scale": 0.5, "closing_side_product_offset": 0.25, "closing_side_product_lift": 0.05,
+	# The cast stands at the outer edges a little further back than the products, at its normal size.
+	"closing_character_scale": 1.0, "closing_character_edge": 0.17, "closing_character_baseline": 0.80,
+	# In front of drawn characters the product stands on the floor in the lower middle, at an everyday size.
+	"front_product_height": 0.17, "front_product_width": 0.34, "front_product_baseline": 0.95,
+	# The real pack is laid over a video frame only while the frame's pack region stays this close (mean grey 0-255)
+	# to the first frame's; beyond it the camera moved and the frame is left as rendered.
+	"pack_lock_tolerance": 18,
 	"product_near": 0.03, "product_offset": 0.22, "edge_margin": 0.02,
-	"logo_max_width": 0.22, "logo_max_height": 0.08, "logo_margin": 0.04,
 	"colour_match": 0.16,
 	# A cutout counts as transparent when its least opaque pixel is below this alpha (0-255).
 	"opaque_below": 250,

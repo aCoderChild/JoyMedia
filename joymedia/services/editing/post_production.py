@@ -30,7 +30,7 @@ BRIDGE_FRAMES = BRIDGE_OVERLAP_FRAMES * 2
 # A take keeps at least this much of itself after both of its bridges.
 MIN_TAKE_REMAINDER_FRAMES = 24
 # Part of the soundtrack cache key: bump it when the soundtrack prompts change.
-SOUNDTRACK_VERSION = 3
+SOUNDTRACK_VERSION = 5
 # Extra soundtrack rendered past the film's end to choose where the music ends.
 MUSIC_ENDING_SEARCH_SECONDS = 3
 # Conservative default for workflows that produce sound through video segments.
@@ -43,6 +43,15 @@ SOUNDTRACK_FADE_OUT_FRAMES = 72
 COMFYUI_JOB_TIMEOUT_SECONDS = 3600
 # Finishing repeats when scenes change while it runs, at most this many times per job.
 MAX_FINISHING_ROUNDS = 3
+EFFECTS_AND_MUSIC = "Effects + music"
+# The video model makes music only together with picture, and coherently for a few seconds: one short instrumental
+# is rendered (small, the picture is thrown away) and looped with crossfades under the whole film.
+MUSIC_CLIP_SECONDS = 10
+MUSIC_CLIP_SIZE = (384, 672)
+MUSIC_CROSSFADE_SECONDS = 1.5
+# Under the scenes' effects: the effects also push the music down while they sound (the composer's ducking).
+MUSIC_GAIN_DB = -12
+MUSIC_FADE_OUT_FRAMES = 48
 DEFAULT_SOUNDTRACK_MUSIC = (
 	"an elegant cinematic instrumental score, soft piano melody over warm sustained strings, "
 	"slowly building with emotion to a gentle swell, then resolving softly at the end"
@@ -54,6 +63,45 @@ def queue_post_production(project_name: str):
 	# Asked for by hand: rebuild everything, including a timeline edited by hand.
 	frappe.db.set_value("Media Project", project.name, "finished_timeline_signature", "", update_modified=False)
 	return queue_post_production_internal(project.name)
+
+
+@frappe.whitelist(methods=["POST"])
+def queue_music_bed(project_name: str):
+	"""Replace only background music, preserving the approved picture, VO and effects."""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	with frappe.cache.lock(f"joymedia-music:{project.name}", timeout=30, blocking_timeout=5):
+		if is_render_alive(_job_id(project.name)):
+			frappe.throw(_("Wait for the current finishing job to finish."))
+		if project.export_status in ("Queued", "Running"):
+			frappe.throw(_("Wait for the current export to finish."))
+		if not _shot_video_clips(project.name):
+			frappe.throw(_("Generate the scenes before adding music."))
+		# This request must not be resumed as a full timeline rebuild by the scheduler.
+		frappe.db.set_value("Media Project", project.name, "post_production_requested_at", None, update_modified=False)
+		_set_status(project.name, "Queued", step="Music", error="")
+		enqueue_render(
+			"joymedia.services.editing.post_production.run_music_bed", _job_id(project.name),
+			timeout=COMFYUI_JOB_TIMEOUT_SECONDS, project_name=project.name,
+		)
+		frappe.db.commit()
+	return {"status": "Queued"}
+
+
+def run_music_bed(project_name: str):
+	from joymedia.services.editing.timeline import _invalidate_project_output
+
+	try:
+		_set_status(project_name, "Running", step="Music", error="")
+		_add_music_bed(project_name)
+		_invalidate_project_output(project_name)
+		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", "", update_modified=False)
+		_set_status(project_name, "Completed", step="")
+	except Exception:
+		frappe.db.rollback()
+		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", "", update_modified=False)
+		_set_status(project_name, "Failed", step="Music", error=_("Music generation failed. Your previous mix has been kept; try again."))
+		raise
 
 
 @frappe.whitelist()
@@ -90,7 +138,6 @@ def queue_post_production_internal(project_name):
 	"""Queue Finish film for a project whose caller is already authorized."""
 	if not _shot_video_clips(project_name, create=True):
 		frappe.throw(_("Generate the scenes before finishing the film."))
-	_require_approved_shots(project_name)
 	# A finish already running repeats when it sees a request newer than its start.
 	# Do this after validation but before checking for a live job: a newly approved
 	# take must request another pass even while a previous finish is rendering.
@@ -126,8 +173,7 @@ def resume_queued_post_productions():
 	for project in projects:
 		if not project.post_production_requested_at or is_render_alive(_job_id(project.name)):
 			continue
-		# A newly selected, unapproved take must never be rendered by an old request.
-		if _unapproved_shots(project.name) or _finishing_is_current(project.name):
+		if _finishing_is_current(project.name):
 			continue
 		try:
 			queue_post_production_internal(project.name)
@@ -137,16 +183,19 @@ def resume_queued_post_productions():
 			)
 
 
-def resume_post_production_if_approved(project_name):
-	"""Resume finishing only when every active selected take has human approval.
+def resume_post_production(project_name):
+	"""Rebuild the finished film from the scenes' current takes when they are not already in it.
 
-	Selecting a take and recording QA are valid independent operations. This helper
-	keeps those actions non-throwing while still enforcing approval at delivery.
+	Selecting a take is a valid independent operation, so this helper never throws.
 	"""
+	# A partial selection is not a shorter authored film. Automatic finishing
+	# closes timeline gaps and updates duration, so wait for every active scene.
+	shots = frappe.get_all("Shot", filters={"media_project": project_name, "is_removed": 0},
+	                       fields=["selected_output_asset_version"])
+	if any(not shot.get("selected_output_asset_version") for shot in shots):
+		return {"status": "Awaiting Scenes"}
 	if not _shot_video_clips(project_name, create=True):
 		return {"status": "Awaiting Scenes"}
-	if _unapproved_shots(project_name):
-		return {"status": "Awaiting QA"}
 	if _finishing_is_current(project_name):
 		return {"status": "Completed"}
 	return queue_post_production_internal(project_name)
@@ -172,23 +221,16 @@ def _job_id(project_name):
 
 def run_post_production(project_name: str):
 	try:
-		# Recheck inside the worker to prevent a stale queued job from finishing
-		# after an editor selects an unreviewed replacement take.
-		if _unapproved_shots(project_name):
-			_set_status(project_name, "Idle", step="", error="")
-			return {"status": "Awaiting QA"}
 		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", "", update_modified=False)
 		# Scenes regenerated or takes switched while this ran need another pass.
 		last_round_started = None
 		for _round in range(MAX_FINISHING_ROUNDS):
 			started = now_datetime()
 			last_round_started = started
-			if _unapproved_shots(project_name):
-				_set_status(project_name, "Idle", step="", error="")
-				return {"status": "Awaiting QA"}
 			if _edited_by_hand(project_name):
 				# Keep the user's edits: swap new takes in and redo only their transitions.
 				_patch_changed_scenes(project_name)
+				_keep_to_sound_effects(project_name)
 			else:
 				_finish_once(project_name)
 				frappe.db.set_value(
@@ -202,9 +244,6 @@ def run_post_production(project_name: str):
 		# Do not publish a Completed state if the last permitted pass missed a
 		# newer request, or if its selected takes no longer match the timeline.
 		# The scheduler resumes this persisted Queued request once this RQ job ends.
-		if _unapproved_shots(project_name):
-			_set_status(project_name, "Idle", step="", error="")
-			return {"status": "Awaiting QA"}
 		requested = frappe.db.get_value("Media Project", project_name, "post_production_requested_at")
 		if (
 			last_round_started
@@ -228,29 +267,30 @@ def run_post_production(project_name: str):
 		raise
 
 
-def _require_approved_shots(project_name):
-	"""Delivery may use only selected takes that have passed QA."""
-	from joymedia.services.review.authority import require_approved_selected_shots
-
-	require_approved_selected_shots(project_name)
-
-
-def _unapproved_shots(project_name):
-	"""Return active storyboard shots that are not eligible for final delivery."""
-	from joymedia.services.review.authority import unapproved_selected_shots
-
-	return unapproved_selected_shots(project_name)
-
-
 def _finishing_is_current(project_name):
 	"""Whether a completed timeline still contains its selected take versions."""
 	project = frappe.db.get_value(
 		"Media Project", project_name,
-		["post_production_status"], as_dict=True,
+		["post_production_status", "post_production_requested_at"], as_dict=True,
 	)
 	if not project or project.post_production_status != "Completed":
 		return False
+	# A new take is put on the timeline as soon as it is made, so being on the timeline does not mean it was finished
+	# (gaps closed, sound screened): a take made after the last finishing request has not been.
+	newest_take = _newest_take_time(project_name)
+	if newest_take and project.post_production_requested_at and newest_take > project.post_production_requested_at:
+		return False
 	return _selected_outputs_are_incorporated(project_name)
+
+
+def _newest_take_time(project_name):
+	"""When the newest of the scenes' current takes was made."""
+	return frappe.db.sql(
+		"""select max(version.creation) from `tabShot` shot
+		join `tabAsset Version` version on version.name = shot.selected_output_asset_version
+		where shot.media_project = %s and shot.is_removed = 0""",
+		project_name,
+	)[0][0]
 
 
 def _selected_outputs_are_incorporated(project_name):
@@ -318,7 +358,11 @@ def _patch_changed_scenes(project_name):
 		if clip.shot and selected.get(clip.shot) and clip.source_asset_version != selected[clip.shot]
 	}
 	for shot in changed:
-		update_timeline_source_for_shot(project_name, shot)
+		from joymedia.services.runtime.transactions import persist_result
+
+		# Another take selection can commit while this worker reads the project.
+		# Retry only the short editorial swap, never a transition render.
+		persist_result(lambda: update_timeline_source_for_shot(project_name, shot))
 
 	generation_mode = frappe.db.get_value("Media Project", project_name, "generation_mode") or "Multi-shot"
 	if generation_mode in ("Continuous", "Consistency"):
@@ -350,10 +394,12 @@ def _patch_changed_scenes(project_name):
 
 
 def _finish_once(project_name):
-	from joymedia.services.editing.timeline import reset_project_timeline
+	from joymedia.services.editing.timeline import close_timeline_gaps, reset_project_timeline
 
 	_set_status(project_name, "Running", step="Timeline", error="")
-	reset_project_timeline(project_name)
+	reset_project_timeline(project_name, preserve_narration=True)
+	# The sheet's slack between scenes is not an intended pause: scenes cut directly into each other, never a held frame.
+	close_timeline_gaps(project_name)
 	clips = _shot_video_clips(project_name)
 	generation_mode = frappe.db.get_value("Media Project", project_name, "generation_mode") or "Multi-shot"
 	if generation_mode not in ("Continuous", "Consistency"):
@@ -361,8 +407,40 @@ def _finish_once(project_name):
 			_set_status(project_name, "Running", step=f"Transition {index}/{len(clips) - 1}")
 			_insert_bridge(project_name, outgoing, incoming)
 			clips = _shot_video_clips(project_name)
-	_set_status(project_name, "Running", step="Soundtrack")
-	_add_soundtrack(project_name)
+	# "Full soundtrack" lets the video model's music replace the scenes' sound; "Effects + music" keeps the scenes'
+	# effects and lays one music bed under the whole film; the other modes are effects only.
+	mode = _sound_mode(project_name)
+	if mode == "Full soundtrack":
+		_set_status(project_name, "Running", step="Soundtrack")
+		_add_soundtrack(project_name)
+	else:
+		_keep_to_sound_effects(project_name)
+		if mode == EFFECTS_AND_MUSIC:
+			_set_status(project_name, "Running", step="Music")
+			_add_music_bed(project_name)
+
+
+def _sound_mode(project_name):
+	return frappe.db.get_value("Media Project", project_name, "soundtrack_mode") or "Sound effects only"
+
+
+def _keep_to_sound_effects(project_name):
+	"""Make the film's sound effects only, whatever the video model put in the scenes' own audio.
+
+	The video model is only asked for effects and cannot be forced to leave out music or voice, so the audio is
+	screened: a scene that sounds like music or speech is silenced and given a generated effect layer
+	("Sound effects only"), or every scene gets one ("Separate effects layer"). "Full soundtrack" is left alone.
+	"""
+	mode = _sound_mode(project_name)
+	if mode == "Full soundtrack":
+		return
+	from joymedia.services.audio.plan import check_scene_audio, use_separate_effects_layer
+
+	_set_status(project_name, "Running", step="Sound effects")
+	if mode == "Separate effects layer":
+		use_separate_effects_layer(project_name)
+	else:
+		check_scene_audio(project_name)
 
 
 def _set_status(project_name, status, step=None, error=None):
@@ -372,6 +450,10 @@ def _set_status(project_name, status, step=None, error=None):
 	if error is not None:
 		values["post_production_error"] = error
 	frappe.db.set_value("Media Project", project_name, values, update_modified=False)
+	# db.set_value fires no document event, so tell open studios directly.
+	from joymedia.services.project.realtime import PROJECT_UPDATED, publish_project_event
+
+	publish_project_event(project_name, PROJECT_UPDATED, {"doctype": "Media Project"})
 	frappe.db.commit()
 
 
@@ -609,6 +691,131 @@ def _add_soundtrack(project_name):
 	frappe.db.commit()
 
 
+def music_brief(project_name):
+	"""What the film's music should be: the project's own music text, else the sheet's Tone & Mood and its BGM notes."""
+	from joymedia.services.planning.prompts import sheet_brief
+
+	project = frappe.get_doc("Media Project", project_name)
+	if (project.soundtrack_prompt or "").strip():
+		return project.soundtrack_prompt.strip()
+	cues = [
+		re.sub(r"^\s*(?:BGM|music|nhạc)\s*:\s*", "", line, flags=re.I).strip()
+		for cues in frappe.get_all("Shot", filters={"media_project": project_name, "is_removed": 0}, pluck="audio_cues", order_by="shot_number")
+		for line in str(cues or "").splitlines() if re.match(r"\s*(?:BGM|music|nhạc)\s*:", line, re.I)
+	]
+	tone = sheet_brief(project)["tone"]
+	parts = [f"light instrumental background music for a {tone} advertisement" if tone else DEFAULT_SOUNDTRACK_MUSIC]
+	if cues:
+		parts.append("in the spirit of: " + "; ".join(cues))
+	return ", ".join(parts)
+
+
+def _add_music_bed(project_name):
+	"""Lay one music bed under the whole film, beneath the scenes' sound effects (which duck it while they sound)."""
+	from joymedia.services.planning.llm import to_english
+
+	clips = _shot_video_clips(project_name)
+	total_frames = max(int(clip.timeline_start_frame) + int(clip.source_out_frame) - int(clip.source_in_frame) for clip in clips)
+	music = music_brief(project_name)
+	key = hashlib.sha256(f"{SOUNDTRACK_VERSION}:{music}".encode()).hexdigest()[:8]
+	asset_name = f"{project_name} Music bed {total_frames}f {key}"
+	audio_version = _latest_version_of(project_name, asset_name) or _render_music_bed(
+		project_name, asset_name, clips[0], to_english(music), total_frames
+	)
+	for clip in frappe.get_all("Timeline Clip", filters={"media_project": project_name, "track_type": "Audio"}, fields=["name", "audio_role", "enabled"]):
+		if clip.audio_role == "BGM":
+			frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
+		elif clip.enabled:
+			frappe.db.set_value("Timeline Clip", clip.name, "duck_others", 1, update_modified=False)
+	frappe.get_doc({
+		"doctype": "Timeline Clip", "media_project": project_name, "clip_order": len(clips) * 2 + 1,
+		"track_type": "Audio", "track_index": 1, "timeline_start_frame": 0, "initial_timeline_start_frame": 0, "enabled": 1,
+		"source_asset_version": audio_version, "source_in_frame": 0, "source_out_frame": total_frames,
+		"initial_source_in_frame": 0, "initial_source_out_frame": total_frames, "audio_role": "BGM",
+		"gain_db": MUSIC_GAIN_DB, "fade_in_frames": SOUNDTRACK_FADE_IN_FRAMES, "fade_out_frames": MUSIC_FADE_OUT_FRAMES,
+		"duck_others": 0, "transition_to_next": "Cut", "transition_frames": 0,
+	}).insert(ignore_permissions=True)
+	frappe.db.commit()
+
+
+def _render_music_bed(project_name, asset_name, first_clip, music, total_frames):
+	from joymedia.services.editing.export import _asset_version_path
+	from joymedia.services.audio.plan import BGM_WORKFLOW_KEY
+
+	from joymedia.services.workflows.capabilities import configured_workflow
+
+	music_workflow = configured_workflow("music", legacy_key=BGM_WORKFLOW_KEY)
+	if music_workflow:
+		return _render_workflow_music_bed(project_name, asset_name, music_workflow, music, total_frames)
+
+	prompt = (
+		"A still, calm shot; nothing moves. "
+		f"Audio: {music}. Instrumental music only, steady and loopable; no speech, no singing, no sound effects."
+	)
+	with tempfile.TemporaryDirectory(prefix="joymedia-music-") as temp_dir:
+		temp_path = Path(temp_dir)
+		first = temp_path / "first.png"
+		_extract_frame(_asset_version_path(first_clip.source_asset_version), 0, first)
+		workflow, output_node = _video_workflow(project_name, first, prompt, MUSIC_CLIP_SECONDS, size=MUSIC_CLIP_SIZE)
+		video_path = temp_path / "music.mp4"
+		video_path.write_bytes(_render_video(project_name, workflow, output_node))
+		bed = temp_path / "music-bed.m4a"
+		music_bed(video_path, total_frames / 24 + 1, bed)
+		return _save_output(project_name, asset_name, "Audio", f"{project_name}-music.m4a", bed.read_bytes())
+
+
+def _render_workflow_music_bed(project_name, asset_name, workflow_name, music, total_frames):
+	"""Request a continuous score within the selected workflow's declared capacity."""
+	from joymedia.services.workflows.capabilities import capacity
+	from joymedia.services.workflows.comfyui import run_workflow_to_bytes
+	from joymedia.services.workflows.resolver import build_execution_workflow
+	from joymedia.workflow_adapters import get_workflow_adapter
+
+	version = frappe.get_doc("Generation Workflow", workflow_name)
+	frames = min(total_frames + 24, capacity(version))
+	continuous = frames >= total_frames
+	direction = (f"A continuous {frames / 24:g}-second instrumental cue, developing naturally and resolving at the end. "
+		if continuous else "A steady, loopable instrumental phrase. ")
+	seed = int(hashlib.sha256(f"{project_name}|{music}".encode()).hexdigest()[:12], 16)
+	workflow = build_execution_workflow(
+		version, inputs={"generation_prompt": direction + music + ". Instrumental only; no speech or singing."},
+		seed=seed, width=768, height=1344, fps=24, frame_count=frames,
+		output_prefix=f"joymedia/music/{frappe.generate_hash(length=10)}",
+	)
+	output_node = get_workflow_adapter(version).extract_execution_metadata(workflow)["primary_output_node_key"]
+	def remember_prompt(prompt_id):
+		frappe.db.set_value("Media Project", project_name, "post_production_comfy_prompt_id", prompt_id, update_modified=False)
+		frappe.db.commit()
+	content = run_workflow_to_bytes(workflow, output_node, timeout=900, forget=True, on_submitted=remember_prompt)
+	with tempfile.TemporaryDirectory(prefix="joymedia-music-") as temp_dir:
+		phrase, bed = Path(temp_dir) / "phrase.flac", Path(temp_dir) / "bed.m4a"
+		phrase.write_bytes(content)
+		music_bed(phrase, total_frames / 24 + 1, bed)
+		return _save_output(project_name, asset_name, "Audio", f"{project_name}-music.m4a", bed.read_bytes())
+
+
+def music_bed(clip_path, seconds, output_path, crossfade=MUSIC_CROSSFADE_SECONDS):
+	"""The audio of `clip_path` looped to `seconds`, each join an equal-power crossfade (no hard cut or dip where the loop
+	restarts)."""
+	length = float(subprocess.run(
+		["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(clip_path)],
+		check=True, capture_output=True, text=True, timeout=60,
+	).stdout.strip())
+	crossfade = min(crossfade, length / 3)
+	copies = max(1, math.ceil((seconds - crossfade) / (length - crossfade)))
+	command = ["ffmpeg", "-v", "error", "-y"]
+	for _copy in range(copies):
+		command += ["-i", str(clip_path)]
+	chain, label = [], "[0:a]"
+	for index in range(1, copies):
+		chain.append(f"{label}[{index}:a]acrossfade=d={crossfade:.3f}:c1=qsin:c2=qsin[x{index}]")
+		label = f"[x{index}]"
+	chain.append(f"{label}atrim=0:{seconds:.3f},asetpts=PTS-STARTPTS[bed]")
+	command += ["-filter_complex", ";".join(chain), "-map", "[bed]", "-c:a", "aac", "-b:a", "192k", str(output_path)]
+	subprocess.run(command, check=True, capture_output=True, timeout=300)
+	return output_path
+
+
 def _render_soundtrack(project_name, asset_name, first_clip, music, total_frames):
 	from joymedia.services.editing.export import _asset_version_path
 
@@ -678,7 +885,7 @@ def _soundtrack_workflow(project_name, first_frame, music, seconds):
 # ComfyUI and file helpers
 
 
-def _video_workflow(project_name, first_frame, prompt, seconds, last_frame=None):
+def _video_workflow(project_name, first_frame, prompt, seconds, last_frame=None, size=None):
 	"""Build a post-production prompt solely from the selected workflow contract.
 
 	An optional ``last_frame`` is sent only to workflows that explicitly declare
@@ -712,8 +919,8 @@ def _video_workflow(project_name, first_frame, prompt, seconds, last_frame=None)
 		workflow_version,
 		inputs=inputs,
 		seed=int(hashlib.sha256(seed_material.encode()).hexdigest()[:12], 16),
-		width=int(project.delivery_width or 1920),
-		height=int(project.delivery_height or 1080),
+		width=int(size[0] if size else project.delivery_width or 1920),
+		height=int(size[1] if size else project.delivery_height or 1080),
 		fps=fps,
 		frame_count=frame_count,
 		output_prefix=f"joymedia/post/{frappe.generate_hash(length=10)}",

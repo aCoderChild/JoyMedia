@@ -16,7 +16,7 @@ class TestStoryboardReferenceContracts(FrappeTestCase):
 				doctype, frappe._dict(name=name)
 			)
 
-		route = {"generation_pipeline": "PL", "references": []}
+		route = {"generation_pipeline": "PL", "workflow": "W", "references": []}
 		with patch.object(storyboard.frappe, "get_all", return_value=list(shots)), patch.object(
 			storyboard.frappe, "get_doc", side_effect=get_doc
 		), patch(

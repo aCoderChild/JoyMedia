@@ -12,7 +12,6 @@ from joymedia.services.project.context import (
 )
 
 
-@frappe.whitelist()
 def get_project_asset_candidates(media_project, media_type=None):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_read_access()
@@ -56,7 +55,7 @@ def get_project_asset_candidates(media_project, media_type=None):
 
 
 @frappe.whitelist()
-def select_project_asset(media_project, asset_name, reference_role="Product", label=None, reference_key=None):
+def select_project_asset(media_project, asset_name, reference_role="Product", label=None, reference_key=None, identity_key=None):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_write_access()
 	asset = frappe.get_doc("Media Asset", asset_name)
@@ -79,6 +78,8 @@ def select_project_asset(media_project, asset_name, reference_role="Product", la
 		selected.label = label or ""
 		if reference_key:
 			selected.reference_key = reference_key
+		if identity_key:
+			selected.identity_key = identity_key
 		project.save(ignore_permissions=True)
 		return {"asset_version": version.name, "selected": True}
 	project.append(
@@ -86,15 +87,19 @@ def select_project_asset(media_project, asset_name, reference_role="Product", la
 		{
 			"asset_version": version.name,
 			"reference_key": reference_key or "",
+			"identity_key": identity_key or "",
 			"reference_role": reference_role or "General",
 			"label": label or "",
 		},
 	)
 	project.save(ignore_permissions=True)
+	# A picture added after the sheet was imported takes its name and rules from the References sheet.
+	from joymedia.services.intake.references import apply_sheet_references
+
+	apply_sheet_references(project.name)
 	return {"asset_version": version.name, "selected": True}
 
 
-@frappe.whitelist()
 def remove_project_asset(media_project, asset_version):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_write_access()
@@ -113,8 +118,22 @@ def get_project_reference_candidates(media_project):
 
 
 @frappe.whitelist()
-def select_project_reference(media_project, asset_name, reference_role="Product", label=None, reference_key=None):
-	return select_project_asset(media_project, asset_name, reference_role, label, reference_key)
+def select_project_reference(media_project, asset_name, reference_role="Product", label=None, reference_key=None, identity_key=None):
+	return select_project_asset(media_project, asset_name, reference_role, label, reference_key, identity_key)
+
+
+@frappe.whitelist()
+def set_reference_identity(media_project, asset_version, identity_key):
+	"""Group several selected images as approved views of one canonical identity."""
+	project = frappe.get_doc("Media Project", media_project)
+	project._require_write_access()
+	row = next((item for item in project.selected_media or [] if item.asset_version == asset_version), None)
+	if not row:
+		frappe.throw(_("This image is not a reference of the project."))
+	row.identity_key = str(identity_key or "").strip()
+	project.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {"asset_version": asset_version, "identity_key": row.identity_key}
 
 
 @frappe.whitelist()

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "storage_root": "/var/lib/kubelet/joymedia-model-store/runtime/repositories",
+  "references": [
+    {"repository": "https://github.com/Vchitect/VBench.git", "commit": "fd18b3d055cb0fc6f066ca90fe2c3c8cbb698490", "license": "Apache-2.0", "usage": "Reviewed dimension separation, subject consistency and static-video flicker implementations; benchmark checkpoints are not production acceptance authorities."},
+    {"repository": "https://github.com/Hritikbansal/videophy.git", "commit": "01d366c979e4a82875852adbf427ccc036e7373a", "license": "MIT", "usage": "Reviewed VIDEOPHY2/template.py: semantic adherence, physical commonsense and individual rule judgments including indeterminate. Existing JoyMedia evidence evaluator is reused; no upstream AutoEval weights installed."}
+  ],
+  "runtime": "Existing capability-routed vision service, source-art retention and workflow adapters; no product/model/workflow IDs in the admission policy."
+}

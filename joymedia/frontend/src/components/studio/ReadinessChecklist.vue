@@ -1,5 +1,7 @@
 <template>
   <section class="rounded-2xl border border-outline-border bg-surface-card p-3.5" data-test="readiness">
+    <details :open="!hasStoryboard">
+    <summary class="cursor-pointer text-xs font-semibold text-ink-muted mb-2">{{ tr('Project checklist & planning', 'Kiểm tra dự án và lập kế hoạch') }}</summary>
     <header class="mb-2 flex items-center justify-between gap-3">
       <h3 class="text-sm font-bold text-ink-primary">
         {{ tr('Before you generate', 'Trước khi tạo video') }}
@@ -27,6 +29,7 @@
         :label="planning.total ? `${planning.done}/${planning.total} · ${planning.shot}` : tr('Starting…', 'Đang bắt đầu…')" />
       <Alert v-else :theme="planning.failed ? 'red' : 'green'" :title="planning.message" />
     </div>
+    </details>
   </section>
 </template>
 
@@ -36,7 +39,7 @@ import { Alert, Badge, Button, Progress, call, createResource } from "frappe-ui"
 import { tr, useI18n } from "../../stores/i18n";
 import { useProjectRealtime } from "../../composables/useProjectRealtime";
 
-const props = defineProps({ projectName: { type: String, required: true } });
+const props = defineProps({ projectName: { type: String, required: true }, hasStoryboard: { type: Boolean, default: false } });
 const { currentLang } = useI18n();
 const emit = defineEmits(["changed"]);
 

@@ -45,6 +45,7 @@
             :total-frames="canvasTotalFrames || totalFrames"
             :total-seconds="totalSeconds"
             :current-lang="currentLang"
+            :markers="markers"
             @select-clip="forwardSelectClip"
             @update:playhead-frame="$emit('update:playheadFrame', $event)"
             @trim="$emit('trim', $event)"
@@ -125,6 +126,8 @@ const props = defineProps({
   canRedo: { type: Boolean, default: false },
   audioTrackAsset: { type: Object, default: null },
   currentLang: { type: String, default: "en" },
+  // [{key, start, end, status, text, kind}] in timeline frames.
+  markers: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([

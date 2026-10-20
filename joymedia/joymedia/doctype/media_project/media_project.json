@@ -10,14 +10,18 @@
  "field_order": [
   "project_overview_section",
   "project_name",
+  "version_of",
+  "version_label",
+  "version_kind",
+  "current_edit",
   "product_name",
   "video_idea",
-	"storyboard_source_section",
-	"storyboard_source_file",
-	"storyboard_source_json",
-	"storyboard_timing_warnings",
-	"storyboard_approval_status",
-	"approved_plan_signature",
+  "storyboard_source_section",
+  "storyboard_source_file",
+  "storyboard_source_json",
+  "storyboard_timing_warnings",
+  "storyboard_approval_status",
+  "approved_plan_signature",
   "generation_settings_section",
   "total_duration_seconds",
   "delivery_preset",
@@ -29,9 +33,9 @@
   "global_instructions",
   "show_captions",
   "soundtrack_prompt",
-	"soundtrack_mode",
-	"character_mode",
-	"planning_mode",
+  "soundtrack_mode",
+  "character_mode",
+  "planning_mode",
   "export_quality",
   "workflow",
   "generation_pipeline",
@@ -52,48 +56,342 @@
   "status"
  ],
  "fields": [
-  {"fieldname":"project_overview_section","fieldtype":"Section Break","label":"Project"},
-  {"fieldname":"project_name","fieldtype":"Data","in_global_search":1,"in_list_view":1,"in_standard_filter":1,"label":"Project Name","reqd":1},
-  {"fieldname":"product_name","fieldtype":"Data","in_global_search":1,"label":"Product Name"},
-  {"description":"The canonical whole-video creative request. Qwen expands this into the storyboard and per-shot prompts.","fieldname":"video_idea","fieldtype":"Small Text","label":"Video Idea"},
-	{"fieldname":"storyboard_source_section","fieldtype":"Section Break","label":"Imported Storyboard","collapsible":1},
-	{"description":"Original workbook uploaded for this editable storyboard draft.","fieldname":"storyboard_source_file","fieldtype":"Link","label":"Storyboard Workbook","options":"File","read_only":1},
-	{"description":"Preserved source metadata, scenes and timings from the imported workbook.","fieldname":"storyboard_source_json","fieldtype":"Code","label":"Imported Storyboard Data","options":"JSON","read_only":1},
-	{"description":"Unresolved gaps, overlaps or other source-timing warnings. Resolve or explicitly approve them before rendering.","fieldname":"storyboard_timing_warnings","fieldtype":"Code","label":"Storyboard Timing Warnings","options":"JSON","read_only":1},
-	{"default":"Draft","fieldname":"storyboard_approval_status","fieldtype":"Select","label":"Storyboard Approval","options":"Draft\nReady for Review\nApproved","read_only":1},
-	{"fieldname":"approved_plan_signature","fieldtype":"Data","hidden":1,"label":"Approved Plan Signature","no_copy":1,"read_only":1},
-  {"fieldname":"generation_settings_section","fieldtype":"Section Break","label":"Generation Settings"},
-  {"description":"Target duration for the generated video.","fieldname":"total_duration_seconds","fieldtype":"Float","label":"Duration (Seconds)"},
-  {"fieldname":"delivery_preset","fieldtype":"Select","label":"Format","options":"Landscape\nPortrait\nSquare"},
-  {"fieldname":"delivery_width","fieldtype":"Int","hidden":1,"label":"Delivery Width","read_only":1},
-  {"fieldname":"delivery_height","fieldtype":"Int","hidden":1,"label":"Delivery Height","read_only":1},
-  {"default":"Single Image","description":"Whether each Shot uses one starting image or two ordered reference images.","fieldname":"reference_mode","fieldtype":"Select","label":"References per Shot","options":"Single Image\nMulti-reference"},
-  {"default":"Production","description":"Quality profile used for backend workflow selection.","fieldname":"quality_mode","fieldtype":"Select","label":"Quality","options":"Draft\nProduction"},
-  {"default":"Multi-shot","description":"Continuous chains later shots from generated last frames. Multi-shot uses independently assigned keyframes.","fieldname":"generation_mode","fieldtype":"Select","label":"Generation Mode","options":"Continuous\nMulti-shot"},
-  {"description":"Optional video-wide constraints that apply to every shot.","fieldname":"global_instructions","fieldtype":"Long Text","label":"Global Instructions"},
-  {"default":"1","description":"Show each scene's caption on screen.","fieldname":"show_captions","fieldtype":"Check","label":"Show Captions"},
-  {"description":"Optional description of the AI soundtrack's music.","fieldname":"soundtrack_prompt","fieldtype":"Small Text","label":"Soundtrack Music"},
-	{"default":"Creative","description":"Follow the sheet keeps the storyboard's own scenes, actions, characters and sounds and only translates them; Creative lets the AI planner write scenes from a brief. A workbook import sets Follow the sheet.","fieldname":"planning_mode","fieldtype":"Select","label":"Planning","options":"Creative\nFollow the sheet"},
-	{"default":"Draw in scene","description":"Draw in scene lets the image model draw the characters acting like people, from the mascot pictures as references. Paste exact art places the real mascot pictures unchanged, in their own poses. Each scene can override this.","fieldname":"character_mode","fieldtype":"Select","label":"Characters","options":"Draw in scene\nPaste exact art"},
-	{"default":"Full soundtrack","description":"Full soundtrack lets the video model make voice, effects and music. Sound effects only asks it, in every scene's prompt, for effects alone. Separate effects layer replaces the video model's audio with an effect layer generated per scene, which cannot contain voice or music.","fieldname":"soundtrack_mode","fieldtype":"Select","label":"Soundtrack","options":"Full soundtrack\nSound effects only\nSeparate effects layer"},
-  {"default":"Draft 720p","description":"The delivery tier selects a compatible workflow automatically. Studio upscales the export and interpolates it to 60 fps (slower).","fieldname":"export_quality","fieldtype":"Select","label":"Export Quality","options":"Draft 720p\nStudio 1440p60"},
-  {"description":"Generation Workflow used for new runs.","fieldname":"workflow","fieldtype":"Link","label":"Generation Workflow","options":"Generation Workflow"},
-  {"description":"Optional versioned pipeline. Its final workflow must match Generation Workflow.","fieldname":"generation_pipeline","fieldtype":"Link","label":"Generation Pipeline","options":"Generation Pipeline"},
-  {"description":"Project ingredients/references. Each row points to an immutable Asset Version and may represent image, video or audio media.","fieldname":"selected_media","fieldtype":"Table","label":"Selected Media","options":"Project Reference"},
-  {"description":"Current composed/exported project video.","fieldname":"current_output_asset_version","fieldtype":"Link","label":"Current Output","options":"Asset Version","read_only":1},
-  {"default":"Idle","fieldname":"export_status","fieldtype":"Select","hidden":1,"label":"Export Status","options":"Idle\nQueued\nRunning\nCompleted\nFailed","read_only":1},
-  {"fieldname":"export_error","fieldtype":"Small Text","hidden":1,"label":"Export Error","read_only":1},
-  {"fieldname":"export_started_at","fieldtype":"Datetime","hidden":1,"label":"Export Started At","read_only":1},
-  {"fieldname":"export_completed_at","fieldtype":"Datetime","hidden":1,"label":"Export Completed At","read_only":1},
-  {"default":"Idle","fieldname":"post_production_status","fieldtype":"Select","label":"Post-production Status","options":"Idle\nQueued\nRunning\nCompleted\nFailed\nCancelled","read_only":1},
-  {"fieldname":"post_production_step","fieldtype":"Data","label":"Post-production Step","read_only":1},
-  {"fieldname":"post_production_error","fieldtype":"Small Text","label":"Post-production Error","read_only":1},
-  {"fieldname":"post_production_comfy_prompt_id","fieldtype":"Data","hidden":1,"label":"Post-production ComfyUI Prompt","read_only":1},
-  {"description":"Last time the film needed finishing again; a running finish repeats if this is newer than its start.","fieldname":"post_production_requested_at","fieldtype":"Datetime","hidden":1,"label":"Post-production Requested At","read_only":1},
-  {"description":"Timeline state right after the last full Finish film; a different state means it was edited by hand.","fieldname":"finished_timeline_signature","fieldtype":"Data","hidden":1,"label":"Finished Timeline Signature","read_only":1},
-  {"default":"Idle","fieldname":"planning_status","fieldtype":"Select","label":"Storyboard Planning Status","options":"Idle\nRunning\nFailed","read_only":1},
-  {"fieldname":"planning_error","fieldtype":"Small Text","label":"Storyboard Planning Error","read_only":1},
-  {"default":"Draft","fieldname":"status","fieldtype":"Select","in_list_view":1,"in_standard_filter":1,"label":"Status","options":"Draft\nGenerating\nCompleted\nNeeds Attention\nCancelled\nArchived","read_only":1,"reqd":1}
+  {
+   "fieldname": "project_overview_section",
+   "fieldtype": "Section Break",
+   "label": "Project"
+  },
+  {
+   "fieldname": "project_name",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "product_name",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "label": "Product Name"
+  },
+  {
+   "description": "The canonical whole-video creative request. The configured AI planner expands this into the storyboard and per-shot prompts.",
+   "fieldname": "video_idea",
+   "fieldtype": "Small Text",
+   "label": "Video Idea"
+  },
+  {
+   "fieldname": "storyboard_source_section",
+   "fieldtype": "Section Break",
+   "label": "Imported Storyboard",
+   "collapsible": 1
+  },
+  {
+   "description": "Original workbook uploaded for this editable storyboard draft.",
+   "fieldname": "storyboard_source_file",
+   "fieldtype": "Link",
+   "label": "Storyboard Workbook",
+   "options": "File",
+   "read_only": 1
+  },
+  {
+   "description": "Preserved source metadata, scenes and timings from the imported workbook.",
+   "fieldname": "storyboard_source_json",
+   "fieldtype": "Code",
+   "label": "Imported Storyboard Data",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "description": "Unresolved gaps, overlaps or other source-timing warnings. Resolve or explicitly approve them before rendering.",
+   "fieldname": "storyboard_timing_warnings",
+   "fieldtype": "Code",
+   "label": "Storyboard Timing Warnings",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "storyboard_approval_status",
+   "fieldtype": "Select",
+   "label": "Storyboard Approval",
+   "options": "Draft\nReady for Review\nApproved",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_plan_signature",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Approved Plan Signature",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "generation_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Generation Settings"
+  },
+  {
+   "description": "Target duration for the generated video.",
+   "fieldname": "total_duration_seconds",
+   "fieldtype": "Float",
+   "label": "Duration (Seconds)"
+  },
+  {
+   "fieldname": "delivery_preset",
+   "fieldtype": "Select",
+   "label": "Format",
+   "options": "Landscape\nPortrait\nSquare"
+  },
+  {
+   "fieldname": "delivery_width",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Delivery Width",
+   "read_only": 1
+  },
+  {
+   "fieldname": "delivery_height",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Delivery Height",
+   "read_only": 1
+  },
+  {
+   "default": "Single Image",
+   "description": "Whether each Shot uses one starting image or two ordered reference images.",
+   "fieldname": "reference_mode",
+   "fieldtype": "Select",
+   "label": "References per Shot",
+   "options": "Single Image\nMulti-reference"
+  },
+  {
+   "default": "Production",
+   "description": "Quality profile used for backend workflow selection.",
+   "fieldname": "quality_mode",
+   "fieldtype": "Select",
+   "label": "Quality",
+   "options": "Draft\nProduction"
+  },
+  {
+   "default": "Multi-shot",
+   "description": "Continuous chains later shots from generated last frames. Multi-shot uses independently assigned keyframes.",
+   "fieldname": "generation_mode",
+   "fieldtype": "Select",
+   "label": "Generation Mode",
+   "options": "Continuous\nMulti-shot"
+  },
+  {
+   "description": "Optional video-wide constraints that apply to every shot.",
+   "fieldname": "global_instructions",
+   "fieldtype": "Long Text",
+   "label": "Global Instructions"
+  },
+  {
+   "default": "1",
+   "description": "Show each scene's caption on screen.",
+   "fieldname": "show_captions",
+   "fieldtype": "Check",
+   "label": "Show Captions"
+  },
+  {
+   "description": "Optional description of the AI soundtrack's music.",
+   "fieldname": "soundtrack_prompt",
+   "fieldtype": "Small Text",
+   "label": "Soundtrack Music"
+  },
+  {
+   "default": "Creative",
+   "description": "Follow the sheet keeps the storyboard's own scenes, actions, characters and sounds and only translates them; Creative lets the AI planner write scenes from a brief. A workbook import sets Follow the sheet.",
+   "fieldname": "planning_mode",
+   "fieldtype": "Select",
+   "label": "Planning",
+   "options": "Creative\nFollow the sheet"
+  },
+  {
+   "default": "Draw in scene",
+   "description": "Draw in scene lets the image model draw the characters acting like people, from the mascot pictures as references. Paste exact art places the real mascot pictures unchanged, in their own poses. Each scene can override this.",
+   "fieldname": "character_mode",
+   "fieldtype": "Select",
+   "label": "Characters",
+   "options": "Draw in scene\nPaste exact art"
+  },
+  {
+   "default": "Sound effects only",
+   "description": "Full soundtrack lets the video model make voice, effects and music. Sound effects only asks it, in every scene's prompt, for effects alone. Separate effects layer replaces the video model's audio with an effect layer generated per scene, which cannot contain voice or music. Effects + music keeps the scenes' effects and lays one generated music bed under the whole film.",
+   "fieldname": "soundtrack_mode",
+   "fieldtype": "Select",
+   "label": "Soundtrack",
+   "options": "Full soundtrack\nSound effects only\nEffects + music\nSeparate effects layer"
+  },
+  {
+   "default": "Draft 720p",
+   "description": "The delivery tier selects a compatible workflow automatically. Studio upscales the export and interpolates it to 60 fps (slower).",
+   "fieldname": "export_quality",
+   "fieldtype": "Select",
+   "label": "Export Quality",
+   "options": "Draft 720p\nStudio 1440p60"
+  },
+  {
+   "description": "Generation Workflow used for new runs.",
+   "fieldname": "workflow",
+   "fieldtype": "Link",
+   "label": "Generation Workflow",
+   "options": "Generation Workflow"
+  },
+  {
+   "description": "Optional versioned pipeline. Its final workflow must match Generation Workflow.",
+   "fieldname": "generation_pipeline",
+   "fieldtype": "Link",
+   "label": "Generation Pipeline",
+   "options": "Generation Pipeline"
+  },
+  {
+   "description": "Project ingredients/references. Each row points to an immutable Asset Version and may represent image, video or audio media.",
+   "fieldname": "selected_media",
+   "fieldtype": "Table",
+   "label": "Selected Media",
+   "options": "Project Reference"
+  },
+  {
+   "description": "Current composed/exported project video.",
+   "fieldname": "current_output_asset_version",
+   "fieldtype": "Link",
+   "label": "Current Output",
+   "options": "Asset Version",
+   "read_only": 1
+  },
+  {
+   "default": "Idle",
+   "fieldname": "export_status",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Export Status",
+   "options": "Idle\nQueued\nRunning\nCompleted\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "export_error",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Export Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "export_started_at",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Export Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "export_completed_at",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Export Completed At",
+   "read_only": 1
+  },
+  {
+   "default": "Idle",
+   "fieldname": "post_production_status",
+   "fieldtype": "Select",
+   "label": "Post-production Status",
+   "options": "Idle\nQueued\nRunning\nCompleted\nFailed\nCancelled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "post_production_step",
+   "fieldtype": "Data",
+   "label": "Post-production Step",
+   "read_only": 1
+  },
+  {
+   "fieldname": "post_production_error",
+   "fieldtype": "Small Text",
+   "label": "Post-production Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "post_production_comfy_prompt_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Post-production ComfyUI Prompt",
+   "read_only": 1
+  },
+  {
+   "description": "Last time the film needed finishing again; a running finish repeats if this is newer than its start.",
+   "fieldname": "post_production_requested_at",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Post-production Requested At",
+   "read_only": 1
+  },
+  {
+   "description": "Timeline state right after the last full Finish film; a different state means it was edited by hand.",
+   "fieldname": "finished_timeline_signature",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Finished Timeline Signature",
+   "read_only": 1
+  },
+  {
+   "default": "Idle",
+   "fieldname": "planning_status",
+   "fieldtype": "Select",
+   "label": "Storyboard Planning Status",
+   "options": "Idle\nRunning\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "planning_error",
+   "fieldtype": "Small Text",
+   "label": "Storyboard Planning Error",
+   "read_only": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nGenerating\nCompleted\nNeeds Attention\nCancelled\nArchived",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "version_of",
+   "fieldtype": "Link",
+   "options": "Media Project",
+   "label": "Parent Project",
+   "read_only": 1,
+   "no_copy": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "version_label",
+   "fieldtype": "Data",
+   "label": "Edit Name",
+   "no_copy": 1
+  },
+  {
+   "fieldname": "version_kind",
+   "fieldtype": "Select",
+   "options": "Creative\nExperiment",
+   "default": "Creative",
+   "label": "Edit Type",
+   "no_copy": 1
+  },
+  {
+   "fieldname": "current_edit",
+   "fieldtype": "Link",
+   "options": "Media Project",
+   "label": "Working Edit",
+   "read_only": 1,
+   "no_copy": 1
+  }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
@@ -105,9 +403,41 @@
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
-  {"create":1,"delete":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"System Manager","share":1,"write":1},
-  {"create":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"JoyMedia Specialist","share":1,"write":1},
-  {"if_owner":1,"read":1,"role":"JoyMedia User","write":1}
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "JoyMedia Specialist",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "if_owner": 1,
+   "read": 1,
+   "role": "JoyMedia User",
+   "write": 1
+  },
+  {
+   "role": "JoyMedia Reviewer",
+   "read": 1,
+   "if_owner": 1,
+   "write": 1
+  }
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,

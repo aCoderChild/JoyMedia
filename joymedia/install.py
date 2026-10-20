@@ -10,15 +10,20 @@ import frappe
 
 
 def setup(promote=0):
-	from joymedia.patches import register_flux_pulid_h3_pipeline, register_mmaudio_sfx_workflow
+	from joymedia.patches import register_flux_pulid_h3_pipeline, register_flux2_klein_pipeline, register_mmaudio_sfx_workflow
 
 	report = {}
-	register_flux_pulid_h3_pipeline.execute()
+	# Klein supports each mascot/product/place as a separate reference. PuLID's
+	# human-face branch is inappropriate for a mascot-led workbook.
+	report["pipeline"] = register_flux2_klein_pipeline.execute()
 	report["video_workflow"] = register_flux_pulid_h3_pipeline._current_version(register_flux_pulid_h3_pipeline.H3_WORKFLOW_KEY)
 	report["keyframe_workflow"] = frappe.db.get_value(
-		"Generation Workflow", {"workflow_key": register_flux_pulid_h3_pipeline.WORKFLOW_KEY}, "name", order_by="version_number desc"
+		"Generation Workflow", {"workflow_key": register_flux2_klein_pipeline.WORKFLOW_KEY}, "name", order_by="version_number desc"
 	)
 	report["sound_workflow"] = register_mmaudio_sfx_workflow.execute()
+	from joymedia.patches import register_mmaudio_bgm_workflow
+
+	report["music_workflow"] = register_mmaudio_bgm_workflow.execute()
 	report["pipeline"] = (
 		register_flux_pulid_h3_pipeline._pipeline_with(report["keyframe_workflow"], report["video_workflow"])
 		if report["keyframe_workflow"] and report["video_workflow"] else None

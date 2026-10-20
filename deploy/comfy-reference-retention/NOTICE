@@ -1,0 +1,9 @@
+The atomic category phrase selection in worker.py is adapted from
+GroundingDINO groundingdino/util/inference.py (predict, remove_combined=True),
+IDEA-Research, commit 856dde20aee659246248e20734ef9ba5214f5e44.
+Source: https://github.com/IDEA-Research/GroundingDINO
+Licensed under Apache License 2.0; see GroundingDINO-LICENSE.
+
+The adaptation uses the installed Hugging Face tokenizer, retains the existing
+box thresholds and NMS, and confines atomic phrase selection to source category
+classification. Scene object and limb detection keep their native labels.

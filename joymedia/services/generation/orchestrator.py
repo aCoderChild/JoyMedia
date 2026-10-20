@@ -4,7 +4,6 @@ finalised into scene takes. Long scenes are chained segments; a scene with an ap
 """
 
 import hashlib
-import json
 import secrets
 
 import frappe
@@ -18,31 +17,37 @@ from joymedia.joymedia.doctype.generation_attempt.generation_attempt import (
 )
 from joymedia.services.editing.composer import compose_shot_segments
 from joymedia.services.generation.ingestor import sync_attempt_result
+from joymedia.services.generation.preparation import (
+	_continuation_settings,
+	_continuation_workflow,
+	_pipeline_reference_inputs,
+	_pipeline_steps_for_segment,
+	_segment_plan,
+	prepare_run,
+	validate_generation_preflight,
+)
+from joymedia.services.generation.run_state import (
+	ACTIVE_RUN_STATUSES,
+	_enqueue,
+	_enqueue_submit_run,
+	_exception_message,
+	_get_run_job_names,
+	_is_keyframe_run,
+	_raise_run_error,
+	_refresh_run_counters,
+	_run_outputs_are_selected,
+	_run_summary,
+	sync_media_project_status_for_run,
+)
 from joymedia.services.generation.runner import (
 	attach_chained_first_frame,
 	ensure_generation_inputs,
-	prepare_generation_task,
 	submit_attempt,
 )
-from joymedia.services.generation.segments import MAX_SEGMENT_FRAMES, plan_generation_segments
-from joymedia.services.planning.prompts import (
-	compile_segment_prompt_from_snapshot,
-	prompt_source_for_workflow,
-)
-from joymedia.services.workflows.pipeline import get_pipeline_steps
-from joymedia.services.workflows.profiles import (
-	choose_shot_workflow,
-	input_role_for_workflow,
-	references_for_workflow,
-)
 from joymedia.services.workflows.resolver import (
-	validate_role_input_count,
-	validate_workflow_bindings,
 	validate_workflow_for_execution,
-	workflow_supports_continuation,
 )
 
-ACTIVE_RUN_STATUSES = ("Queued", "Running")
 ACTIVE_ATTEMPT_STATUSES = ("Pending", "Submitting", "Queued", "Running")
 TERMINAL_ATTEMPT_STATUSES = ("Completed", "Failed", "Cancelled")
 TERMINAL_JOB_STATUSES = ("Completed", "Failed", "Cancelled")
@@ -55,124 +60,6 @@ MAX_AUTOMATIC_RETRIES = 1
 DEFAULT_MAX_INDEPENDENT_JOBS_IN_FLIGHT = 1
 
 
-def _continuation_settings(workflow):
-	"""Read segment behavior from the immutable workflow contract, not model code."""
-	try:
-		spec = frappe.parse_json(workflow.execution_spec or "{}")
-	except (TypeError, ValueError):
-		spec = {}
-	settings = spec.get("continuation") or {}
-	return {
-		"overlap_frames": max(0, int(settings.get("overlap_frames", 1))),
-		"new_frames": settings.get("new_frames"),
-	}
-
-
-def _continuation_workflow(workflow):
-	return frappe.get_doc("Generation Workflow", workflow.continuation_workflow) if workflow.continuation_workflow else None
-
-
-def _segment_plan(workflow, frame_count, continuation_workflow=None):
-	settings = _continuation_settings(workflow)
-	segments = plan_generation_segments(
-		frame_count,
-		# One generation never exceeds MAX_SEGMENT_FRAMES (124 frames, about 5s at 24fps).
-		max_segment_frames=min(int(workflow.frame_count), MAX_SEGMENT_FRAMES),
-		continuation_overlap_frames=settings["overlap_frames"],
-		continuation_new_frames=settings["new_frames"],
-		continuation_max_segment_frames=int(
-			min(int(getattr(continuation_workflow, "frame_count", None) or workflow.frame_count), MAX_SEGMENT_FRAMES)
-		),
-	)
-	if len(segments) > 1 and not (continuation_workflow and workflow_supports_continuation(continuation_workflow)):
-		frappe.throw(_("This shot exceeds the workflow capacity, and its workflow has no continuation contract."))
-	return segments
-
-
-def _pipeline_reference_inputs(shot, workflow):
-	"""Map a Shot's ordered references into the pipeline's first image stage."""
-	from joymedia.services.keyframes.overlay import DRAW, pasted_references, scene_mode
-	from joymedia.services.workflows.resolver import get_workflow_input_contract
-	from joymedia.services.workflows.routing import normalize_reference_role
-
-	character_mode = (shot.get("character_mode") if hasattr(shot, "get") else None) or DRAW
-	contract = get_workflow_input_contract(workflow)
-	roles = {item["role"] for item in contract if item.get("role")}
-	role_limits = {
-		item["role"]: item.get("max_count")
-		for item in contract
-		if item.get("role") and item.get("max_count") is not None
-	}
-	image_role = next(
-		(
-			item["role"]
-			for item in contract
-			if item.get("accepted_media_type") in ("Image", "Any")
-			and item.get("allow_multiple")
-		),
-		"first_frame",
-	)
-	inputs = {}
-	for reference in shot.get("references") or []:
-		asset_version = reference.get("asset_version")
-		if not asset_version:
-			continue
-		raw_role = frappe.scrub(reference.get("input_role") or reference.get("reference_role") or "")
-		if raw_role == "logo" or pasted_references([reference], character_mode, context=shot.get("references")):
-			continue  # cutouts are pasted over the keyframe, never an input of the image model
-		if scene_mode(shot.get("references"), character_mode) == DRAW and raw_role in ("character", "product") and inputs.get(raw_role):
-			# One picture goes in per role; every character, and every product, of the scene is combined into a board.
-			continue
-		# Keep an already-concrete workflow role intact.  In particular, direct
-		# R2V uses ``product_reference`` for two scalar image slots; converting it
-		# to a semantic routing alias here leaves the required slots unbound.
-		role = raw_role if raw_role in roles else normalize_reference_role(raw_role)
-		if role not in roles:
-			role = image_role
-		values = inputs.setdefault(role, [])
-		max_count = role_limits.get(role)
-		# The workflow contract uses zero for an unbounded File Paths role.
-		if max_count and len(values) >= max_count:
-			frappe.throw(
-				_("Workflow {0} accepts at most {1} reference input(s) for role '{2}', but Shot supplies more. "
-				  "Assign a supported reference board or remove the extra reference explicitly.").format(
-					workflow.name, max_count, role
-				)
-			)
-		values.append(asset_version)
-	return inputs
-
-
-def _pipeline_steps_for_segment(
-	pipeline_steps,
-	*,
-	previous_segment_job=None,
-	previous_shot_tail_job=None,
-	cross_shot_continuity=False,
-	force_full_pipeline=False,
-	keyframe_job=None,
-):
-	"""Return executable stages, chaining later continuous segments from Last Frame.
-
-	The first segment/shot runs the full configured pipeline (for example, a
-	keyframe workflow followed by I2V). A later segment or continuous shot already
-	has its visual start state, so it runs only the final pipeline stage with the
-	upstream video's Last Frame bound dynamically as that workflow's first frame.
-	"""
-	if not pipeline_steps:
-		return []
-	if keyframe_job and not previous_segment_job:
-		# The scene's approved keyframe replaces the pipeline's image stage.
-		return [(pipeline_steps[-1], keyframe_job, "Primary Image", False)]
-	continuation_source = None if force_full_pipeline else (previous_segment_job or (
-		previous_shot_tail_job if cross_shot_continuity else None
-	))
-	if continuation_source:
-		return [(pipeline_steps[-1], continuation_source, "Last Frame", False)]
-
-	return [(step, None, None, index == 0) for index, step in enumerate(pipeline_steps)]
-
-
 @frappe.whitelist()
 def start_run(run_name: str):
 	"""Start a Draft Generation Run and hand the remaining workflow to background jobs."""
@@ -180,7 +67,7 @@ def start_run(run_name: str):
 	return start_run_internal(run_name)
 
 
-def start_run_internal(run_name: str):
+def start_run_internal(run_name: str, *, preflight_checked=False):
 	"""Start a run after the caller has authorized its owning Campaign."""
 	run = frappe.get_doc("Generation Run", run_name)
 	if run.status != "Draft":
@@ -188,6 +75,22 @@ def start_run_internal(run_name: str):
 
 	project = frappe.get_doc("Media Project", run.media_project)
 	_require_project_generation_authorization(project)
+	if not preflight_checked:
+		validate_run_preflight(run, project)
+
+	run.status = "Queued"
+	run.error_summary = None
+	run.db_set(
+		{"status": run.status, "error_summary": run.error_summary},
+		update_modified=False,
+	)
+	frappe.db.set_value("Media Project", project.name, "status", "Generating", update_modified=False)
+	_enqueue("prepare_run", run.name)
+	return {"name": run.name, "status": run.status}
+
+
+def validate_run_preflight(run, project):
+	"""Validate before allocating a Run name; remote I/O must not hold global series locks."""
 	if not project.workflow:
 		frappe.throw(_("Media Project {0} has no Generation Workflow.").format(project.name))
 
@@ -213,420 +116,6 @@ def start_run_internal(run_name: str):
 		preflight_kwargs["execution_scope"] = execution_scope
 	validate_generation_preflight(project, workflow, shots, **preflight_kwargs)
 
-	run.status = "Queued"
-	run.error_summary = None
-	run.db_set(
-		{"status": run.status, "error_summary": run.error_summary},
-		update_modified=False,
-	)
-	frappe.db.set_value("Media Project", project.name, "status", "Generating", update_modified=False)
-	_enqueue("prepare_run", run.name)
-	return {"name": run.name, "status": run.status}
-
-
-def prepare_run(run_name: str):
-	"""Create one Generation Task and frozen Generation Input snapshot for each Shot in a run."""
-	run = frappe.get_doc("Generation Run", run_name)
-	if run.status == "Cancelled":
-		return _run_summary(run)
-	if run.status not in ACTIVE_RUN_STATUSES:
-		frappe.throw(_("Generation Run {0} cannot be prepared from status {1}.").format(run.name, run.status))
-
-	project = frappe.get_doc("Media Project", run.media_project)
-	try:
-		snapshot = frappe.parse_json(run.project_snapshot_json or "{}")
-	except (TypeError, ValueError):
-		_raise_run_error(run, _("Generation Run {0} has invalid project snapshot JSON.").format(run.name))
-		return _run_summary(run)
-	if snapshot.get("media_project") != run.media_project:
-		_raise_run_error(run, _("Generation Run {0} snapshot belongs to another Media Project.").format(run.name))
-		return _run_summary(run)
-	workflow = frappe.get_doc(
-		"Generation Workflow",
-		run.workflow,
-	)
-	continuation_workflow = _continuation_workflow(workflow)
-	shots = snapshot.get("shots") or []
-	try:
-		execution_scope = frappe.parse_json(run.execution_scope_json or "{}")
-		execution_scope = execution_scope if isinstance(execution_scope, dict) else {}
-	except (TypeError, ValueError):
-		_raise_run_error(run, _("Generation Run {0} has invalid execution scope JSON.").format(run.name))
-		return _run_summary(run)
-	shot_names = set(execution_scope.get("shot_names") or [])
-	if shot_names:
-		shots = [shot for shot in shots if shot.get("shot") in shot_names]
-	if not shots:
-		_raise_run_error(run, _("Media Project {0} has no Shots.").format(project.name))
-		return _run_summary(run)
-
-	try:
-		validate_workflow_for_execution(workflow)
-		validate_workflow_bindings(workflow)
-		if continuation_workflow:
-			validate_workflow_for_execution(continuation_workflow)
-			validate_workflow_bindings(continuation_workflow)
-		# Continuity is an editorial decision on the destination Shot.  A project
-		# mode may influence planning, but must never override an explicit scene
-		# reset or continuation instruction.
-		cross_shot_continuity = False
-		jobs_to_prepare = []
-		previous_shot_tail_job = execution_scope.get("continuation_from_task")
-		keyframe_stage = execution_scope.get("stage") == "keyframe"
-		for shot in shots:
-			cross_shot_continuity = str(shot.get("continuity_mode") or "").casefold() == "continue"
-			shot_name = shot.get("shot")
-			shot_workflow = choose_shot_workflow(snapshot, shot)
-			shot_pipeline_name = shot.get("generation_pipeline") or run.generation_pipeline
-			shot_pipeline_steps = get_pipeline_steps(shot_pipeline_name) if shot_pipeline_name else []
-			if shot_pipeline_steps and shot_pipeline_steps[-1].workflow != shot_workflow.name:
-				raise frappe.ValidationError(
-					_("Shot {0} pipeline does not end with its routed workflow.").format(shot_name)
-				)
-			for pipeline_step in shot_pipeline_steps:
-				pipeline_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
-				validate_workflow_for_execution(pipeline_workflow)
-				validate_workflow_bindings(pipeline_workflow)
-			shot_continuation_workflow = _continuation_workflow(shot_workflow)
-			validate_workflow_for_execution(shot_workflow)
-			validate_workflow_bindings(shot_workflow)
-			if shot_continuation_workflow:
-				validate_workflow_for_execution(shot_continuation_workflow)
-				validate_workflow_bindings(shot_continuation_workflow)
-			segments = _segment_plan(
-				shot_workflow, shot.get("planned_frame_count"), shot_continuation_workflow
-			)
-			previous_segment_job = None
-			for segment in segments[:1] if keyframe_stage else segments:
-				if shot_pipeline_steps:
-					previous_pipeline_job = None
-					pipeline_stages = _pipeline_steps_for_segment(
-						shot_pipeline_steps,
-						previous_segment_job=previous_segment_job,
-						previous_shot_tail_job=previous_shot_tail_job,
-						cross_shot_continuity=cross_shot_continuity,
-						# A scene reset needs a fresh keyframe only for its first
-						# technical segment. Later H3 segments must use Last Frame.
-						force_full_pipeline=bool(shot.get("requires_recomposition")) and segment["segment_index"] == 1,
-						keyframe_job=None if keyframe_stage else shot.get("keyframe_task"),
-					)
-					if keyframe_stage:
-						pipeline_stages = pipeline_stages[:1]
-					for pipeline_step, dependency_override, artifact_role_override, is_first_pipeline_step in pipeline_stages:
-						step_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
-						existing_job = frappe.db.get_value(
-							"Generation Task",
-							{
-								"generation_run": run.name,
-								"shot": shot_name,
-								"segment_index": segment["segment_index"],
-								"pipeline_step_key": pipeline_step.step_key,
-							},
-							"name",
-						)
-						if existing_job:
-							previous_pipeline_job = existing_job
-							continue
-						prompt_text = compile_segment_prompt_from_snapshot(
-							frappe._dict(
-								name=shot_name, shot_number=shot.get("shot_number"),
-								generation_prompt=shot.get("generation_prompt"),
-								image_prompt=shot.get("image_prompt"),
-								setting_prompt=shot.get("setting_prompt"),
-								character_mode=shot.get("character_mode"),
-								motion_plan_json=shot.get("motion_plan_json"),
-								start_state=shot.get("start_state"), end_state=shot.get("end_state"),
-								handoff_type=shot.get("handoff_type"),
-								references=shot.get("references") or [],
-							),
-							frappe._dict(snapshot), segment["segment_index"], len(segments),
-							prompt_source=prompt_source_for_workflow(step_workflow, pipeline_step.prompt_source),
-							is_final=(
-								shot.get("shot_number") == len(snapshot.get("shots") or [])
-								and segment["segment_index"] == len(segments)
-							),
-							segment_start_frame=segment["segment_start_frame"],
-							segment_effective_frames=segment["segment_effective_frames"],
-							fps=snapshot.get("output_fps") or 24,
-						)
-						from joymedia.services.planning.quality_feedback import append_quality_guidance
-						prompt_text = append_quality_guidance(prompt_text, step_workflow.name)
-						job = frappe.get_doc({
-							"doctype": "Generation Task",
-							"generation_run": run.name,
-							"shot": shot_name,
-							"workflow": pipeline_step.workflow,
-							"pipeline_step_key": pipeline_step.step_key,
-							"prompt_text": prompt_text,
-							"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
-							"status": "Draft",
-							"segment_index": segment["segment_index"],
-							"segment_frame_count": (
-								segment["segment_frame_count"]
-								if step_workflow.output_media_type == "Video" else max(1, int(step_workflow.frame_count or 1))
-							),
-							"segment_start_frame": segment["segment_start_frame"],
-							"segment_effective_frames": (
-								segment["segment_effective_frames"]
-								if step_workflow.output_media_type == "Video" else max(1, int(step_workflow.frame_count or 1))
-							),
-							"overlap_frames": segment["overlap_frames"] if step_workflow.output_media_type == "Video" else 0,
-							"depends_on_task": dependency_override or previous_pipeline_job,
-							"dependency_artifact_role": (
-								artifact_role_override
-								or (pipeline_step.consumes_artifact_role if previous_pipeline_job else None)
-							),
-						}).insert(ignore_permissions=True)
-						from joymedia.services.project.tuning import tune
-
-						if (
-							segment["segment_index"] > 1 and shot.get("keyframe_artifact") and tune("anchor_continuation_to_keyframe")
-							and step_workflow.output_media_type == "Video"
-						):
-							# A later segment ends on the scene's approved keyframe (H3's own last_frame input).
-							job.append("inputs", {"input_role": "last_frame", "generation_artifact": shot["keyframe_artifact"]})
-						# The first pipeline stage consumes the Shot's ordered references;
-						# later stages consume only the upstream generated artifact.
-						if is_first_pipeline_step:
-							for input_role, asset_versions in _pipeline_reference_inputs(shot, step_workflow).items():
-								for asset_version in asset_versions:
-									job.append("inputs", {"input_role": input_role, "asset_version": asset_version})
-						job.save(ignore_permissions=True)
-						jobs_to_prepare.append(job)
-						previous_pipeline_job = job.name
-					previous_segment_job = previous_pipeline_job
-					previous_shot_tail_job = previous_pipeline_job
-					continue
-				existing_job = frappe.db.get_value(
-					"Generation Task",
-					{
-						"generation_run": run.name,
-						"shot": shot_name,
-						"segment_index": segment["segment_index"],
-					},
-					"name",
-				)
-				if existing_job:
-					previous_segment_job = existing_job
-					continue
-
-				dependency = previous_segment_job
-				if (
-					not dependency
-					and cross_shot_continuity
-					and previous_shot_tail_job
-					and not shot.get("requires_recomposition")
-				):
-					dependency = previous_shot_tail_job
-				segment_workflow = (
-					shot_continuation_workflow
-					if shot_continuation_workflow
-					and (
-						segment["segment_index"] > 1
-						or (dependency and dependency == previous_shot_tail_job)
-					)
-					else shot_workflow
-				)
-				prompt_text = compile_segment_prompt_from_snapshot(
-					frappe._dict(
-						name=shot_name,
-						shot_number=shot.get("shot_number"),
-						generation_prompt=shot.get("generation_prompt"),
-						image_prompt=shot.get("image_prompt"),
-						character_mode=shot.get("character_mode"),
-						motion_plan_json=shot.get("motion_plan_json"),
-						start_state=shot.get("start_state"), end_state=shot.get("end_state"),
-						handoff_type=shot.get("handoff_type"),
-						references=shot.get("references") or [],
-					),
-					frappe._dict(snapshot),
-					segment["segment_index"],
-					len(segments),
-					prompt_source=prompt_source_for_workflow(segment_workflow),
-					is_final=(
-						shot.get("shot_number") == len(snapshot.get("shots") or [])
-						and segment["segment_index"] == len(segments)
-					),
-					segment_start_frame=segment["segment_start_frame"],
-					segment_effective_frames=segment["segment_effective_frames"],
-					fps=snapshot.get("output_fps") or 24,
-				)
-				from joymedia.services.planning.quality_feedback import append_quality_guidance
-				prompt_text = append_quality_guidance(prompt_text, segment_workflow.name)
-				job = frappe.get_doc(
-					{
-						"doctype": "Generation Task",
-						"generation_run": run.name,
-					"shot": shot_name,
-						"workflow": segment_workflow.name,
-						"prompt_text": prompt_text,
-						"prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
-						"status": "Draft",
-						"segment_index": segment["segment_index"],
-						"segment_frame_count": segment["segment_frame_count"],
-						"segment_start_frame": segment["segment_start_frame"],
-						"segment_effective_frames": segment["segment_effective_frames"],
-						"overlap_frames": segment["overlap_frames"],
-						"depends_on_task": dependency,
-					}
-				).insert(ignore_permissions=True)
-				job.set(
-					"inputs",
-					[
-						{"input_role": input_role_for_workflow(shot_workflow), "asset_version": reference.get("asset_version")}
-						for reference in references_for_workflow(shot_workflow, shot.get("references"))
-						if reference.get("reference_role") and reference.get("asset_version")
-					],
-				)
-				job.save(ignore_permissions=True)
-				jobs_to_prepare.append(job)
-				previous_segment_job = job.name
-			previous_shot_tail_job = previous_segment_job
-
-		for job in jobs_to_prepare:
-			if job.pipeline_step_key:
-				pipeline_snapshot = [
-					{"reference_role": row.input_role, "asset_version": row.asset_version}
-					for row in job.get("inputs") or []
-					if row.asset_version
-				]
-				prepare_generation_task(job.name, pipeline_snapshot)
-				continue
-			shot_snapshot = next(
-				(item for item in shots if item.get("shot") == job.shot),
-				{"references": []},
-			)
-			# The role comes from the take's starting workflow: a reference take's
-			# continuations keep its reference images, while an image-to-video
-			# chain's first frame is replaced by the previous segment's last frame.
-			shot_role = input_role_for_workflow(choose_shot_workflow(snapshot, shot_snapshot))
-			prepare_snapshot = [
-				{
-					**reference,
-					"reference_role": shot_role,
-				}
-				for reference in references_for_workflow(
-					choose_shot_workflow(snapshot, shot_snapshot), shot_snapshot.get("references")
-				)
-			]
-			prepare_generation_task(job.name, prepare_snapshot)
-	except Exception as exc:
-		_raise_run_error(run, _exception_message(exc))
-		return _run_summary(run)
-
-	_refresh_run_counters(run)
-	_enqueue_submit_run(run.name)
-	return _run_summary(run)
-
-
-def validate_generation_preflight(project, workflow, shots, *, check_comfyui=False, execution_scope=None):
-	if not frappe.conf.get("comfyui_base_url"):
-		frappe.throw(_("comfyui_base_url is not configured."))
-	object_info = None
-	if check_comfyui:
-		from joymedia.services.workflows.comfyui import get_object_info, get_system_stats
-
-		get_system_stats()
-		object_info = get_object_info()
-
-	from joymedia.services.project.context import build_project_snapshot
-	from joymedia.services.workflows.profiles import choose_shot_workflow
-	try:
-		snapshot = json.loads(build_project_snapshot(project, require_production_pipeline=True)[0])
-	except (TypeError, ValueError):
-		frappe.throw(_("The project snapshot could not be prepared for preflight."))
-	snapshot_shots = {row.get("shot"): row for row in snapshot.get("shots") or []}
-	if not snapshot.get("generation_pipeline"):
-		frappe.throw(_("Generation requires an explicitly promoted Generation Pipeline."))
-
-	for shot_row in shots:
-		shot = frappe.get_doc("Shot", shot_row.name)
-		shot_snapshot = snapshot_shots.get(shot.name, {
-			"shot": shot.name,
-			"shot_number": shot.shot_number,
-			"planned_frame_count": shot.planned_frame_count,
-			"generation_prompt": shot.generation_prompt,
-			"references": [
-				{"reference_role": row.reference_role, "asset_version": row.asset_version}
-				for row in shot.generation_inputs or []
-			],
-		})
-		shot_workflow = choose_shot_workflow(snapshot, shot_snapshot)
-		shot_pipeline_name = shot_snapshot.get("generation_pipeline")
-		shot_pipeline = frappe.get_doc("Generation Pipeline", shot_pipeline_name) if shot_pipeline_name else None
-		pipeline_steps = get_pipeline_steps(shot_pipeline.name) if shot_pipeline else []
-		validate_workflow_for_execution(shot_workflow)
-		validate_workflow_bindings(shot_workflow)
-		if object_info is not None:
-			from joymedia.services.workflows.resolver import validate_workflow_node_types_available
-
-			validate_workflow_node_types_available(shot_workflow, object_info)
-		for pipeline_step in pipeline_steps:
-			pipeline_workflow = frappe.get_doc("Generation Workflow", pipeline_step.workflow)
-			validate_workflow_for_execution(pipeline_workflow)
-			validate_workflow_bindings(pipeline_workflow)
-			if object_info is not None:
-				validate_workflow_node_types_available(pipeline_workflow, object_info)
-		continuation_workflow = _continuation_workflow(shot_workflow)
-		if continuation_workflow:
-			validate_workflow_for_execution(continuation_workflow)
-			validate_workflow_bindings(continuation_workflow)
-		input_workflow = (
-			frappe.get_doc("Generation Workflow", pipeline_steps[0].workflow)
-			if pipeline_steps else shot_workflow
-		)
-		required_roles = {
-			frappe.scrub(binding.required_input_role)
-			for binding in input_workflow.bindings
-			if binding.required and binding.required_input_role
-		}
-		if not (shot.generation_prompt or "").strip():
-			frappe.throw(
-				_("Shot {0} has no generation prompt. Regenerate or edit the storyboard first.").format(
-					shot.name
-				)
-			)
-
-		# Match the exact binding behaviour used when the Generation Task is
-		# prepared.  This also lets an older multi-reference storyboard fall back
-		# to its first image when the optional Ref2V backend is not installed.
-		mappings = _pipeline_reference_inputs(frappe._dict(references=shot_snapshot.get("references") or []), input_workflow)
-		for role in required_roles:
-			if pipeline_steps and role == "first_frame":
-				# The pipeline's upstream image workflow creates this input.
-				continue
-			if (
-				role == "first_frame"
-				and shot_row.shot_number > 1
-				and (
-					project.generation_mode in ("Continuous", "Consistency")
-					or (execution_scope or {}).get("continuity")
-					or (execution_scope or {}).get("continuation_from_task")
-				)
-			):
-				continue
-			asset_versions = mappings.get(role, [])
-			if not asset_versions or any(
-				not frappe.db.get_value("Asset Version", asset_version, "file")
-				for asset_version in asset_versions
-			):
-				frappe.throw(
-					_("Shot {0} requires usable input(s) with role '{1}'.").format(
-						shot.name, role
-					)
-				)
-			validate_role_input_count(input_workflow, role, len(asset_versions))
-
-		segments = _segment_plan(shot_workflow, shot_row.planned_frame_count, continuation_workflow)
-		if not segments:
-			frappe.throw(_("Shot {0} has no generation segments.").format(shot.name))
-		continuation_capacity = (continuation_workflow or shot_workflow).frame_count
-		if segments[0]["segment_frame_count"] > shot_workflow.frame_count or any(
-			segment["segment_frame_count"] > continuation_capacity for segment in segments[1:]
-		):
-			frappe.throw(
-				_("Shot {0} contains a segment larger than Workflow frame capacity.").format(shot.name)
-			)
 
 
 def submit_run(run_name: str):
@@ -760,10 +249,31 @@ def refresh_generation_state_for_attempt(attempt_name: str):
 
 def _advance_run(run, enqueue_finalization=True):
 	"""Advance jobs, retries, chained submissions, and run completion together."""
+	# Attempt synchronization may have waited on network I/O while Stop committed.
+	# Result work is complete here; begin aggregation from the current run state.
+	frappe.db.commit()
+	run.reload()
+	if run.status == "Cancelled" or (run.status == "Failed" and run.failure_class == "Finalization"):
+		return _run_summary(run)
 	jobs = [frappe.get_doc("Generation Task", job_name) for job_name in _get_run_job_names(run.name)]
 	for job in jobs:
 		_update_job_summary(job)
-	_finalize_completed_shots(run)
+	try:
+		_finalize_completed_shots(run)
+	except (frappe.ValidationError, frappe.PermissionError, ValueError) as exc:
+		frappe.clear_last_message()
+		_refresh_run_counters(run)
+		# Successful provider inference can still fail delivery or preservation.
+		# Keep its real attempts/artifacts, but stop repeatedly composing the same
+		# rejected output on every UI poll and scheduler tick.
+		frappe.db.set_value("Generation Run", {"name": run.name, "status": ["!=", "Cancelled"]}, {
+			"status": "Failed", "failure_class": "Finalization", "completed_at": now(),
+			"error_summary": str(exc)[:2000],
+		}, update_modified=False)
+		frappe.db.commit()
+		run.reload()
+		sync_media_project_status_for_run(run.name)
+		return _run_summary(run)
 
 	if _create_retry_attempt(run, jobs):
 		_enqueue_submit_run(run.name)
@@ -772,22 +282,26 @@ def _advance_run(run, enqueue_finalization=True):
 
 	previous_status = run.status
 	_refresh_run_counters(run)
+	frappe.db.commit()
+	run.reload()
 	sync_media_project_status_for_run(run.name)
-	if run.status == "Completed" and previous_status != "Completed" and not _is_keyframe_run(run):
+	from joymedia.services.consistency.retention import allows_automatic_finishing
+	if run.status == "Completed" and previous_status != "Completed" and not _is_keyframe_run(run) and not (frappe.parse_json(run.execution_scope_json or "{}") or {}).get("candidate_only") and allows_automatic_finishing(run):
 		_finish_film(run.media_project)
+	if run.status in ("Completed", "Failed", "Cancelled") and previous_status != run.status:
+		# Scenes the consistency check sent back wait for the project's runs to end, then go in one run.
+		frappe.enqueue(
+			"joymedia.services.review.consistency.redo_waiting", queue="long", enqueue_after_commit=True,
+			job_id=f"joymedia-redo-{run.media_project}", deduplicate=True, project_name=run.media_project,
+		)
 	return _run_summary(run)
 
 
 def _finish_film(project_name):
-	"""Request finishing only after the selected takes have passed human QA."""
-	from joymedia.services.editing.post_production import resume_post_production_if_approved
+	"""Request finishing once every scene has its take."""
+	from joymedia.services.editing.post_production import resume_post_production
 
-	return resume_post_production_if_approved(project_name)
-
-
-@frappe.whitelist()
-def finalize_run_from_ui(run_name: str):
-	frappe.throw(_("Generation runs are exported from the editor."))
+	return resume_post_production(project_name)
 
 
 @frappe.whitelist()
@@ -871,55 +385,45 @@ def _require_project_generation_authorization(project):
 
 
 def cancel_run(run_name: str):
-	"""Stop orchestration and cancel every task and attempt in a run idempotently."""
+	"""Persist stop intent before network calls, then cancel nonterminal work.
+
+	Completed artifacts are retained. A repeated cancellation also cleans up a
+	previously interrupted stop rather than leaving its queued attempts alive.
+	"""
 	from joymedia.services.workflows.comfyui import delete_queue_prompts, interrupt
+
 	run = frappe.get_doc("Generation Run", run_name)
-	if run.status in ("Completed", "Failed", "Cancelled"):
+	if run.status in ("Completed", "Failed"):
 		return _run_summary(run)
-
-	for attempt_name in frappe.get_all(
-		"Generation Attempt", filters={"generation_task": ["in", _get_run_job_names(run.name)]}, pluck="name"
-	):
-		attempt = frappe.get_doc("Generation Attempt", attempt_name)
-		try:
-			if attempt.external_job_id and attempt.status == "Queued":
-				delete_queue_prompts([attempt.external_job_id], base_url=attempt.comfyui_endpoint_url)
-			elif attempt.external_job_id and attempt.status == "Running":
-				interrupt(prompt_id=attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
-		except Exception:
-			frappe.logger("joymedia.generation_run").exception(
-				"Unable to stop ComfyUI prompt %s while cancelling run %s",
-				attempt.external_job_id,
-				run.name,
-			)
-	for attempt_name in frappe.get_all(
-		"Generation Attempt",
-		filters={
-			"generation_task": ["in", _get_run_job_names(run.name)],
-			"status": ["not in", ["Completed", "Failed", "Cancelled"]],
-		},
-		pluck="name",
-	):
-		attempt = frappe.get_doc("Generation Attempt", attempt_name)
-		attempt.status = "Cancelled"
-		attempt.completed_at = now()
-		attempt.failure_class = "Cancelled"
-		attempt.error_summary = "Generation was stopped by the user."
-		attempt.save(ignore_permissions=True)
-	for job_name in _get_run_job_names(run.name):
-		job = frappe.get_doc("Generation Task", job_name)
-		if job.status not in ("Completed", "Failed", "Cancelled"):
-			job.status = "Cancelled"
-			job.failure_class = "Cancelled"
-			job.error_summary = "Generation was stopped by the user."
-			job.save(ignore_permissions=True)
-
 	run.status = "Cancelled"
-	run.completed_at = now()
-	run.db_set(
-		{"status": run.status, "completed_at": run.completed_at},
-		update_modified=False,
-	)
+	run.completed_at = run.completed_at or now()
+	# No network call may hold the transaction's earlier read snapshot while
+	# ingestion changes attempts on another worker (MariaDB error 1020).
+	frappe.db.commit()
+	frappe.db.set_value("Generation Run", run.name, {"status": "Cancelled", "completed_at": run.completed_at}, update_modified=False)
+	frappe.db.commit()
+	jobs = _get_run_job_names(run.name)
+	if jobs:
+		attempts = frappe.get_all(
+			"Generation Attempt", filters={"generation_task": ["in", jobs], "status": ["in", ["Submitting", "Queued", "Running"]]},
+			fields=["external_job_id", "status", "comfyui_endpoint_url"],
+		)
+		frappe.db.commit()
+		for attempt in attempts:
+			try:
+				if attempt.external_job_id and attempt.status == "Queued":
+					delete_queue_prompts([attempt.external_job_id], base_url=attempt.comfyui_endpoint_url)
+				elif attempt.external_job_id and attempt.status == "Running":
+					interrupt(prompt_id=attempt.external_job_id, base_url=attempt.comfyui_endpoint_url)
+			except Exception:
+				frappe.logger("joymedia.generation_run").exception("Unable to stop ComfyUI prompt %s for %s", attempt.external_job_id, run.name)
+		frappe.db.commit()
+		values = {"status": "Cancelled", "completed_at": now(), "failure_class": "Cancelled", "error_summary": "Generation was stopped by the user."}
+		# Conditional writes cannot overwrite a completion that won the race.
+		frappe.db.set_value("Generation Attempt", {"generation_task": ["in", jobs], "status": ["not in", TERMINAL_ATTEMPT_STATUSES]}, values, update_modified=False)
+		frappe.db.set_value("Generation Task", {"name": ["in", jobs], "status": ["not in", TERMINAL_JOB_STATUSES]}, values, update_modified=False)
+	# Report the post-cancellation state, not the counters read before Stop.
+	_refresh_run_counters(run)
 	return _run_summary(run)
 
 
@@ -952,37 +456,6 @@ def refresh_active_runs():
 			)
 
 
-def sync_media_project_status_for_run(run_name: str):
-	"""Derive the customer-facing Campaign status from its generation state."""
-	run = frappe.get_doc("Generation Run", run_name)
-	media_project = run.media_project
-	if not media_project:
-		return
-	if frappe.db.get_value("Media Project", media_project, "status") == "Archived":
-		return
-	latest = frappe.get_all(
-		"Generation Run", filters={"media_project": media_project}, fields=["name", "status"],
-		order_by="creation desc", limit_page_length=1,
-	)
-	if not latest:
-		status = "Draft"
-	elif latest[0].status in ACTIVE_RUN_STATUSES or frappe.db.exists(
-		# Several scenes may be regenerating in separate runs.
-		"Generation Run", {"media_project": media_project, "status": ["in", ACTIVE_RUN_STATUSES]}
-	):
-		status = "Generating"
-	elif latest[0].status == "Completed":
-		status = "Completed"
-	elif latest[0].status == "Failed":
-		status = "Needs Attention"
-	elif latest[0].status == "Cancelled":
-		status = "Cancelled"
-	else:
-		status = "Draft"
-
-	frappe.db.set_value("Media Project", media_project, "status", status, update_modified=False)
-
-
 def _create_initial_attempts(job):
 	attempts = _get_job_attempts(job.name)
 	if attempts:
@@ -991,7 +464,7 @@ def _create_initial_attempts(job):
 		{
 			"doctype": "Generation Attempt",
 			"generation_task": job.name,
-			"seed": _new_seed(),
+			"seed": _initial_seed(job),
 			"status": "Pending",
 		}
 	).insert(ignore_permissions=True)
@@ -1037,7 +510,10 @@ def _create_retry_attempt(run, jobs):
 		job.status = "Queued"
 		job.queued_at = now()
 		job.save(ignore_permissions=True)
-		create_retry_attempt_internal(effective_attempt.name, "Execution Failure")
+		from joymedia.services.review.admission import quality_retry
+
+		create_retry_attempt_internal(effective_attempt.name,
+			"QA Rejection" if quality_retry(effective_attempt) else "Execution Failure")
 		return True
 	return False
 
@@ -1188,7 +664,7 @@ def _update_job_summary(job):
 	# stale document/version state to reconcile.
 	frappe.db.set_value(
 		"Generation Task",
-		job.name,
+		{"name": job.name, "status": ["!=", "Cancelled"]},
 		{
 			"progress": getattr(job, "progress", 0),
 			"status": job.status,
@@ -1199,93 +675,6 @@ def _update_job_summary(job):
 		},
 		update_modified=False,
 	)
-
-
-def _refresh_run_counters(run):
-	jobs = frappe.get_all(
-		"Generation Task",
-		filters={"generation_run": run.name},
-		fields=["status", "failure_class", "error_summary"],
-	)
-	run.total_tasks = len(jobs)
-	run.completed_tasks = sum(job.status == "Completed" for job in jobs)
-	run.failed_tasks = sum(job.status == "Failed" for job in jobs)
-	run.running_tasks = sum(job.status == "Running" for job in jobs)
-	run.progress = round(run.completed_tasks / run.total_tasks * 100, 2) if run.total_tasks else 0
-
-	if run.total_tasks and run.completed_tasks == run.total_tasks:
-		if _run_outputs_are_selected(run.name):
-			run.status = "Completed"
-			run.completed_at = run.completed_at or now()
-		else:
-			run.status = "Running"
-			run.completed_at = None
-	elif run.total_tasks and run.failed_tasks > 0:
-		active_tasks = any(job.status in ("Pending", "Ready", "Queued", "Running") for job in jobs)
-		run.status = "Running" if active_tasks else "Failed"
-		run.completed_at = None if active_tasks else (run.completed_at or now())
-		latest_failed_job = next(
-			(
-				job
-				for job in reversed(jobs)
-				if job.status == "Failed" and job.error_summary
-			),
-			None,
-		)
-		run.failure_class = latest_failed_job.failure_class if latest_failed_job else None
-		run.error_summary = (
-			"Some scenes need attention while other scenes are still rendering."
-			if active_tasks
-			else latest_failed_job.error_summary if latest_failed_job else None
-		)
-	elif run.total_tasks and any(job.status == "Running" for job in jobs):
-		run.status = "Running"
-		run.failure_class = None
-		run.error_summary = None
-	elif run.total_tasks and any(job.status in ("Ready", "Queued") for job in jobs):
-		run.status = "Queued"
-		run.failure_class = None
-		run.error_summary = None
-	# Run counters are derived system state.  ``Document.db_set`` first reloads
-	# the document with SELECT ... FOR UPDATE; that conflicts with the snapshot
-	# held by this background job after it inserts Generation Tasks.  Write the
-	# derived fields directly so preparing a run cannot die before submission.
-	frappe.db.set_value(
-		"Generation Run",
-		run.name,
-		{
-			"total_tasks": run.total_tasks,
-			"completed_tasks": run.completed_tasks,
-			"failed_tasks": run.failed_tasks,
-			"running_tasks": run.running_tasks,
-			"progress": run.progress,
-			"status": run.status,
-			"completed_at": run.completed_at,
-			"failure_class": run.failure_class,
-			"error_summary": run.error_summary,
-		},
-		update_modified=False,
-	)
-
-
-def _is_keyframe_run(run):
-	try:
-		return (frappe.parse_json(run.execution_scope_json or "{}") or {}).get("stage") == "keyframe"
-	except (TypeError, ValueError, AttributeError):
-		return False
-
-
-def _run_outputs_are_selected(run_name):
-	if _is_keyframe_run(frappe.get_doc("Generation Run", run_name)):
-		return True  # a keyframe run selects no video
-	for job in frappe.get_all(
-		"Generation Task",
-		filters={"generation_run": run_name},
-		fields=["shot"],
-	):
-		if not frappe.db.get_value("Shot", job.shot, "selected_output_asset_version"):
-			return False
-	return True
 
 
 def _finalize_completed_shots(run):
@@ -1300,8 +689,14 @@ def _finalize_completed_shots(run):
 		for shot_name in dict.fromkeys(shot_names):
 			record_keyframe(run.name, shot_name)
 		return
+	candidate_only = bool((frappe.parse_json(run.execution_scope_json or "{}") or {}).get("candidate_only"))
+
+	from joymedia.services.consistency.retention import needs_candidate_review
+	snapshot = frappe.parse_json(run.project_snapshot_json or "{}") or {}
+	scenes = {row.get("shot"):row for row in snapshot.get("shots",[])}
 	for shot_name in dict.fromkeys(shot_names):
-		if _keeps_selected_output(run, shot_name):
+		review_candidate = candidate_only or needs_candidate_review(scenes.get(shot_name,{ }))
+		if not review_candidate and _keeps_selected_output(run, shot_name):
 			continue
 		jobs = frappe.get_all(
 			"Generation Task",
@@ -1309,8 +704,10 @@ def _finalize_completed_shots(run):
 			fields=["status"],
 		)
 		if jobs and all(job.status == "Completed" for job in jobs):
-			assembled_version = compose_shot_segments(run.name, shot_name)
-			if assembled_version:
+			assembled_version = (compose_shot_segments(run.name, shot_name, select_output=False) if review_candidate
+				else compose_shot_segments(run.name, shot_name))
+			if (assembled_version and not review_candidate
+				and frappe.db.get_value("Shot", shot_name, "selected_output_asset_version") == assembled_version):
 				from joymedia.services.editing.timeline import update_timeline_source_for_shot
 				# Whole-video regeneration replaces the storyboard take. Keep the
 				# existing editorial ranges and positions, but bind each video clip
@@ -1361,15 +758,6 @@ def _submission_order(run_name):
 		order_by="creation asc",
 	)
 	return [row.name for row in sorted(rows, key=lambda row: row.workflow != rows[0].workflow)] if rows else []
-
-
-def _get_run_job_names(run_name):
-	return frappe.get_all(
-		"Generation Task",
-		filters={"generation_run": run_name},
-		pluck="name",
-		order_by="creation asc",
-	)
 
 
 def _get_job_attempts(job_name):
@@ -1509,74 +897,53 @@ def _next_fair_run_name():
 	return min(candidates)[3] if candidates else None
 
 
-def _enqueue(method_name, run_name):
-	frappe.enqueue(
-		f"joymedia.services.generation.orchestrator.{method_name}",
-		queue="long",
-		run_name=run_name,
-		enqueue_after_commit=True,
-		job_id=f"joymedia:{method_name}:{run_name}",
-		deduplicate=True,
-	)
-
-
-def _enqueue_submit_run(run_name):
-	"""Queue the next submission stage with a job-specific deduplication key."""
-	next_job = frappe.db.get_value(
-		"Generation Task",
-		{"generation_run": run_name, "status": "Ready"},
-		"name",
-		order_by="creation asc",
-	)
-	if not next_job:
-		next_job = frappe.db.get_value(
-			"Generation Task",
-			{"generation_run": run_name, "status": "Queued"},
-			"name",
-			order_by="creation asc",
-		)
-	if not next_job:
-		return
-	frappe.enqueue(
-		"joymedia.services.generation.orchestrator.submit_run",
-		queue="long",
-		run_name=run_name,
-		enqueue_after_commit=True,
-		job_id=f"joymedia:submit_run:{run_name}:{next_job}",
-		deduplicate=True,
-	)
-
-
-def _raise_run_error(run, message):
-	run.status = "Failed"
-	run.error_summary = message or _("Generation run failed.")
-	run.completed_at = now()
-	run.db_set(
-		{
-			"status": run.status,
-			"error_summary": run.error_summary,
-			"completed_at": run.completed_at,
-		},
-		update_modified=False,
-	)
-	sync_media_project_status_for_run(run.name)
-
-
-def _exception_message(exc):
-	return str(exc).strip() or exc.__class__.__name__
-
-
-def _run_summary(run):
-	return {
-		"name": run.name,
-		"status": run.status,
-		"total_tasks": run.total_tasks,
-		"completed_tasks": run.completed_tasks,
-		"failed_tasks": run.failed_tasks,
-		"running_tasks": run.running_tasks,
-		"progress": run.progress,
-	}
+def _initial_seed(job):
+	"""The first frames a run draws share one seed, so the scenes start from the same noise and come out in one style; a
+	video, and a frame redrawn on its own (its own run), get a fresh one."""
+	if frappe.db.get_value("Generation Workflow", job.workflow, "output_media_type") == "Image":
+		scope = frappe.parse_json(frappe.db.get_value("Generation Run", job.generation_run, "execution_scope_json") or "{}")
+		seed = scope.get("keyframe_seed") if isinstance(scope, dict) else None
+		if seed is not None:
+			if type(seed) is not int or not 0 <= seed < 2_147_483_648:
+				raise ValueError("Invalid frozen image seed.")
+			return seed
+		return int(hashlib.sha256(str(job.generation_run).encode()).hexdigest()[:8], 16) % 2_147_483_648
+	scope = frappe.parse_json(frappe.db.get_value("Generation Run", job.generation_run, "execution_scope_json") or "{}")
+	seed = scope.get("video_seed") if isinstance(scope, dict) else None
+	if seed is not None:
+		if type(seed) is not int or not 0 <= seed < 2_147_483_648:
+			raise ValueError("Invalid frozen video seed.")
+		return seed
+	return _new_seed()
 
 
 def _new_seed():
 	return secrets.randbelow(2_147_483_648)
+
+
+@frappe.whitelist()
+def retry_finalization(run_name):
+	"""Retry processing saved results, without submitting another model job."""
+	run=frappe.get_doc("Generation Run",run_name)
+	_require_project_generation_authorization(frappe.get_doc("Media Project",run.media_project))
+	_require_run_plan_unchanged(run)
+	with filelock(f"joymedia-refresh-run-{run.name}"):
+		frappe.db.commit()
+		run.reload()
+		if run.status!="Failed" or run.failure_class!="Finalization":
+			frappe.throw(_("Only failed output processing can be resumed."))
+		jobs=frappe.get_all("Generation Task",filters={"generation_run":run.name},fields=["name","shot","status"])
+		if not jobs or any(row.status!="Completed" for row in jobs):
+			frappe.throw(_("Finish the scene generation before retrying its output processing."))
+		# A take may already have committed before a later editorial swap failed.
+		# Patch only this run's selected output; never override another selection.
+		from joymedia.services.editing.timeline import update_timeline_source_for_shot
+		for shot in {row.shot for row in jobs}:
+			selected=frappe.db.get_value("Shot",shot,"selected_output_asset_version")
+			attempt=frappe.db.get_value("Asset Version",selected,"source_generation_attempt") if selected else None
+			task=frappe.db.get_value("Generation Attempt",attempt,"generation_task") if attempt else None
+			if task and frappe.db.get_value("Generation Task",task,"generation_run")==run.name:
+				update_timeline_source_for_shot(run.media_project,shot)
+		run.db_set({"status":"Running","failure_class":None,"error_summary":None,"completed_at":None},update_modified=False)
+		frappe.db.commit()
+		return _advance_run(run)

@@ -1,0 +1,74 @@
+import {test,expect} from '@playwright/test';
+import fs from 'node:fs/promises';
+const session=process.env.JOYMEDIA_TEST_SESSION,project=process.env.JOYMEDIA_CLIENT_EDIT||'PRJ-02503';
+const output='/workspace/development/verification/shera-timeline',api='/api/method/';
+test.describe('storyboard and frame-linked timeline',()=>{
+ test.skip(!session,'Authorized live account required');
+ test.beforeEach(async({page,context})=>{
+  const cookies=JSON.parse(await fs.readFile(session,'utf8'));await context.addCookies(Object.entries(cookies).map(([name,value])=>({name,value,url:'http://127.0.0.1:8000'})));
+  await page.addInitScript(()=>localStorage.setItem('joymedia_lang','en'));await fs.mkdir(output,{recursive:true});await page.goto(`/joymedia/projects/${project}`);
+ });
+ test('timeline seeking, persistent comment pins and the storyboard share exact video evidence',async({page})=>{
+  const errors=[],jobs=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.method()==='POST'&&/generate_keyframes|regenerate_scene|generate_project_video/.test(r.url()))jobs.push(r.url());});
+  await expect(page.locator('[data-test="client-storyboard"] article')).toHaveCount(7);
+  await expect(page.locator('[data-test="client-storyboard"] article img')).toHaveCount(7);
+  const timeline=page.locator('[data-test="client-video"] [data-test="review-timeline"]');await expect(timeline).toBeVisible();
+  await expect.poll(()=>timeline.locator('.jm-timeline-film img').count()).toBeGreaterThan(0);
+  const slider=timeline.getByRole('slider');await expect(slider).toBeEnabled();
+  await slider.fill('72');await expect.poll(()=>page.locator('[data-test="client-video"] video').evaluate(v=>v.currentTime)).toBeCloseTo(3,2);
+  await timeline.locator('[data-test="timeline-comment"]').click();
+  const dialog=page.locator('[data-test="video-review-dialog"]');await expect(dialog.locator('[data-test="feedback-form"]')).toBeVisible();
+  await expect.poll(()=>dialog.locator('video').evaluate(v=>v.currentTime)).toBeCloseTo(3,2);
+  await dialog.getByRole('textbox',{name:'Describe the problem',exact:true}).fill('Timeline UI verification: exact frame pin survives reopen.');
+  const saved=page.waitForResponse(r=>r.url().endsWith(api+'joymedia.services.review.feedback.add_feedback')&&r.request().method()==='POST');
+  await dialog.locator('[data-test="save-video-feedback"]').click();const response=await saved;expect(response.ok()).toBeTruthy();const row=(await response.json()).message;expect(row.start_frame).toBe(72);expect(row.end_frame).toBe(72);
+  await fs.appendFile(`${output}/test-feedback.jsonl`,JSON.stringify({name:row.name})+'\n');
+  await expect(dialog).toHaveAttribute('role','region');await expect(page.getByRole('dialog',{name:'Review video',exact:true})).toHaveCount(0);
+  await expect(timeline.locator(`[data-marker="${row.name}"]`)).toBeVisible();await timeline.locator(`[data-marker="${row.name}"]`).click();
+  await expect(dialog.locator(`[data-feedback="${row.name}"]`)).toBeVisible();await expect.poll(()=>dialog.locator('video').evaluate(v=>v.currentTime)).toBeCloseTo(3,2);
+  await page.screenshot({path:`${output}/timeline-persistent-comment.png`,fullPage:true});expect(jobs).toEqual([]);expect(errors).toEqual([]);
+ });
+ test('fast scene changes never attach an older timeline or comments to a different take',async({page,context})=>{
+  const r=await context.request.get(api+'joymedia.api.projects.get_project_workspace',{params:{name:project}});const w=(await r.json()).message;
+  for(const index of [0,2,4,1])await page.locator(`[data-test="select-scene-${index}"]`).click();
+  const target=w.storyboard[1];const timeline=page.locator('[data-test="client-video"] [data-test="review-timeline"]');await expect(timeline).toBeVisible();
+  await expect(page.locator('[data-test="client-video"] video')).toHaveAttribute('src',target.selected_output_file||target.output_video);
+  await expect(timeline.getByRole('slider')).toHaveAttribute('max','71');
+  await expect(timeline.locator('[data-segment]')).toHaveCount(1);
+  await timeline.getByRole('slider').fill('71');await expect.poll(()=>page.locator('[data-test="client-video"] video').evaluate(v=>v.currentTime)).toBeCloseTo(71/24,2);
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await page.screenshot({path:`${output}/timeline-mobile.png`,fullPage:true});
+ });
+ test('range comments and zoom preserve exact frame boundaries',async({page})=>{
+  const timeline=page.locator('[data-test="client-video"] [data-test="review-timeline"]');await expect(timeline.getByRole('slider')).toBeEnabled();
+  await timeline.getByRole('slider').fill('36');await timeline.locator('[data-test="timeline-comment"]').click();
+  const dialog=page.locator('[data-test="video-review-dialog"]');await expect(dialog.locator('[data-test="feedback-form"]')).toBeVisible();
+  const track=dialog.locator('[data-test="review-timeline"]');await track.getByRole('slider').fill('60');
+  await dialog.getByRole('button',{name:'Set range end at playhead',exact:true}).click();
+  await dialog.getByRole('textbox',{name:'Describe the problem',exact:true}).fill('Timeline UI verification: range and zoom remain frame accurate.');
+  const saved=page.waitForResponse(r=>r.url().endsWith(api+'joymedia.services.review.feedback.add_feedback')&&r.request().method()==='POST');
+  await dialog.locator('[data-test="save-video-feedback"]').click();const r=await saved;expect(r.ok()).toBeTruthy();const row=(await r.json()).message;
+  expect([row.start_frame,row.end_frame,row.scope]).toEqual([36,60,'Range']);
+  await fs.appendFile(`${output}/test-feedback.jsonl`,JSON.stringify({name:row.name})+'\n');
+  await expect(dialog).toHaveAttribute('role','region');await expect(page.getByRole('dialog',{name:'Review video',exact:true})).toHaveCount(0);
+  const range=timeline.locator(`[data-range="${row.name}"]`);await expect(range).toHaveCount(1);const before=(await range.boundingBox()).width;
+  await timeline.getByRole('button',{name:'Zoom in timeline',exact:true}).click();expect(Math.abs((await range.boundingBox()).width-before*2)).toBeLessThan(1);
+  const slider=timeline.getByRole('slider');await slider.fill('0');await slider.focus();await page.keyboard.press('End');
+  await expect(slider).toHaveValue('719');await expect.poll(()=>page.locator('[data-test="client-video"] video').evaluate(v=>v.currentTime)).toBeCloseTo(719/24,2);
+  expect(await timeline.locator('.jm-timeline-scroll').evaluate(el=>el.scrollLeft)).toBeGreaterThan(0);
+  await timeline.screenshot({path:`${output}/timeline-frame-ranges.png`});
+ });
+ test('refresh the outdated saved film through the client export action',async({page,context})=>{
+  test.skip(process.env.JOYMEDIA_REEXPORT!=='1','Explicit opt-in for a real export');test.setTimeout(240000);
+  const get=async()=>{const r=await context.request.get(api+'joymedia.api.projects.get_project_workspace',{params:{name:project}});expect(r.ok()).toBeTruthy();return(await r.json()).message;};
+  const before=await get();const queued=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('queue_project_timeline_export'));
+  await page.locator('[data-test="refresh-client-preview"]').click();const response=await queued;expect(response.ok(),await response.text()).toBeTruthy();
+  let current;await expect.poll(async()=>{current=await get();return current.final_video?.asset_version!==before.final_video?.asset_version;},{timeout:220000,intervals:[1500]}).toBeTruthy();
+  await page.reload();await expect(page.locator('[data-test="client-video"] [data-segment]')).toHaveCount(7);
+  const metadata=await context.request.get(api+'joymedia.services.review.timeline.get_review_timeline',{params:{project_name:project,asset_version:current.final_video.asset_version}});
+  const timing=(await metadata.json()).message;expect(timing.total_frames).toBe(720);expect(timing.timing_source).toBe('export');
+  await fs.writeFile(`${output}/export-timing.json`,JSON.stringify(timing,null,2));
+  const bytes=await context.request.get(current.final_video.file);expect(bytes.ok()).toBeTruthy();await fs.writeFile(`${output}/shera-30s-review.mp4`,await bytes.body());
+  await page.screenshot({path:`${output}/storyboard-and-export-timeline.png`,fullPage:true});
+ });
+});

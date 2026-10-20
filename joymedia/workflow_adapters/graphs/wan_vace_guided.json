@@ -1,0 +1,811 @@
+{
+  "graph": {
+    "model": {
+      "class_type": "UNETLoader",
+      "inputs": {
+        "unet_name": "wan2.1_vace_1.3B_fp16.safetensors",
+        "weight_dtype": "default"
+      }
+    },
+    "clip": {
+      "class_type": "CLIPLoader",
+      "inputs": {
+        "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+        "type": "wan",
+        "device": "default"
+      }
+    },
+    "vae": {
+      "class_type": "VAELoader",
+      "inputs": {
+        "vae_name": "wan_2.1_vae.safetensors"
+      }
+    },
+    "positive": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "clip",
+          0
+        ],
+        "text": "The reference subject performs the authored action."
+      }
+    },
+    "negative": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "clip",
+          0
+        ],
+        "text": "extra limbs, disembodied arm, duplicate objects, floating objects, deformed furniture, inconsistent perspective, teleporting objects, unnatural motion"
+      }
+    },
+    "guide": {
+      "class_type": "VHS_LoadVideo",
+      "inputs": {
+        "video": "guide.mp4",
+        "force_rate": 24,
+        "custom_width": 432,
+        "custom_height": 768,
+        "frame_load_cap": 73,
+        "skip_first_frames": 0,
+        "select_every_nth": 1
+      }
+    },
+    "mask": {
+      "class_type": "VHS_LoadVideo",
+      "inputs": {
+        "video": "mask.mp4",
+        "force_rate": 24,
+        "custom_width": 432,
+        "custom_height": 768,
+        "frame_load_cap": 73,
+        "skip_first_frames": 0,
+        "select_every_nth": 1
+      }
+    },
+    "mask_channel": {
+      "class_type": "ImageToMask",
+      "inputs": {
+        "image": [
+          "mask",
+          0
+        ],
+        "channel": "red"
+      }
+    },
+    "full_mask": {
+      "class_type": "SolidMask",
+      "inputs": {
+        "value": 1.0,
+        "width": 432,
+        "height": 768
+      }
+    },
+    "identity": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "identity.png"
+      }
+    },
+    "conditioning": {
+      "class_type": "WanVaceToVideo",
+      "inputs": {
+        "positive": [
+          "positive",
+          0
+        ],
+        "negative": [
+          "negative",
+          0
+        ],
+        "vae": [
+          "vae",
+          0
+        ],
+        "width": 432,
+        "height": 768,
+        "length": 73,
+        "batch_size": 1,
+        "strength": 1.0,
+        "control_video": [
+          "guide",
+          0
+        ],
+        "control_masks": [
+          "mask_channel",
+          0
+        ],
+        "reference_image": [
+          "identity_fit",
+          0
+        ]
+      }
+    },
+    "sampling": {
+      "class_type": "ModelSamplingSD3",
+      "inputs": {
+        "model": [
+          "model",
+          0
+        ],
+        "shift": 5.0
+      }
+    },
+    "sample": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "sampling",
+          0
+        ],
+        "positive": [
+          "conditioning",
+          0
+        ],
+        "negative": [
+          "conditioning",
+          1
+        ],
+        "latent_image": [
+          "conditioning",
+          2
+        ],
+        "seed": 42,
+        "steps": 30,
+        "cfg": 5.0,
+        "sampler_name": "uni_pc",
+        "scheduler": "simple",
+        "denoise": 1.0
+      }
+    },
+    "trim": {
+      "class_type": "TrimVideoLatent",
+      "inputs": {
+        "samples": [
+          "sample",
+          0
+        ],
+        "trim_amount": [
+          "conditioning",
+          3
+        ]
+      }
+    },
+    "decode": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "trim",
+          0
+        ],
+        "vae": [
+          "vae",
+          0
+        ]
+      }
+    },
+    "frames": {
+      "class_type": "ImageFromBatch",
+      "inputs": {
+        "image": [
+          "decode",
+          0
+        ],
+        "batch_index": 0,
+        "length": 72
+      }
+    },
+    "save": {
+      "class_type": "VHS_VideoCombine",
+      "inputs": {
+        "images": [
+          "frames",
+          0
+        ],
+        "frame_rate": 24.0,
+        "loop_count": 0,
+        "filename_prefix": "JoyMedia/guided",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 18,
+        "save_metadata": true,
+        "trim_to_audio": false,
+        "pingpong": false,
+        "save_output": true
+      }
+    },
+    "masked_result": {
+      "class_type": "ImageCompositeMasked",
+      "inputs": {
+        "destination": [
+          "original_video",
+          0
+        ],
+        "source": [
+          "frames",
+          0
+        ],
+        "x": 0,
+        "y": 0,
+        "resize_source": true,
+        "mask": [
+          "original_mask_channel",
+          0
+        ]
+      }
+    },
+    "neutral_hole": {
+      "class_type": "EmptyImage",
+      "inputs": {
+        "width": 432,
+        "height": 768,
+        "batch_size": 1,
+        "color": 8421504
+      }
+    },
+    "inpaint_guide": {
+      "class_type": "ImageCompositeMasked",
+      "inputs": {
+        "destination": [
+          "guide",
+          0
+        ],
+        "source": [
+          "neutral_hole",
+          0
+        ],
+        "x": 0,
+        "y": 0,
+        "resize_source": false,
+        "mask": [
+          "mask_channel",
+          0
+        ]
+      }
+    },
+    "original_video": {
+      "class_type": "VHS_LoadVideo",
+      "inputs": {
+        "video": "guide.mp4",
+        "force_rate": 24,
+        "custom_width": 0,
+        "custom_height": 0,
+        "frame_load_cap": 73,
+        "skip_first_frames": 0,
+        "select_every_nth": 1,
+        "format": "None"
+      }
+    },
+    "original_mask_video": {
+      "class_type": "VHS_LoadVideo",
+      "inputs": {
+        "video": "mask.mp4",
+        "force_rate": 24,
+        "custom_width": 0,
+        "custom_height": 0,
+        "frame_load_cap": 73,
+        "skip_first_frames": 0,
+        "select_every_nth": 1,
+        "format": "None"
+      }
+    },
+    "original_mask_channel": {
+      "class_type": "ImageToMask",
+      "inputs": {
+        "image": [
+          "original_mask_video",
+          0
+        ],
+        "channel": "red"
+      }
+    },
+    "identity_size": {
+      "class_type": "GetImageSize",
+      "inputs": {
+        "image": [
+          "identity",
+          0
+        ]
+      }
+    },
+    "identity_white": {
+      "class_type": "EmptyImage",
+      "inputs": {
+        "width": [
+          "identity_size",
+          0
+        ],
+        "height": [
+          "identity_size",
+          1
+        ],
+        "batch_size": 1,
+        "color": 16777215
+      }
+    },
+    "identity_opacity": {
+      "class_type": "InvertMask",
+      "inputs": {
+        "mask": [
+          "identity",
+          1
+        ]
+      }
+    },
+    "identity_rgb": {
+      "class_type": "ImageCompositeMasked",
+      "inputs": {
+        "destination": [
+          "identity_white",
+          0
+        ],
+        "source": [
+          "identity",
+          0
+        ],
+        "x": 0,
+        "y": 0,
+        "resize_source": false,
+        "mask": [
+          "identity_opacity",
+          0
+        ]
+      }
+    },
+    "identity_fit": {
+      "class_type": "ResizeAndPadImage",
+      "inputs": {
+        "image": [
+          "identity_rgb",
+          0
+        ],
+        "target_width": 432,
+        "target_height": 768,
+        "padding_color": "white",
+        "interpolation": "lanczos"
+      }
+    }
+  },
+  "execution_spec": {
+    "capabilities": [
+      "control_video",
+      "masked_video_edit",
+      "reference_image"
+    ],
+    "limits": {
+      "max_frames": 120
+    },
+    "parameters": [
+      {
+        "semantic": "frame_count",
+        "node_key": "conditioning",
+        "input_name": "length",
+        "transform": "ceil_to_multiple",
+        "multiple": 4,
+        "offset": 1
+      },
+      {
+        "semantic": "frame_count",
+        "node_key": "guide",
+        "input_name": "frame_load_cap",
+        "transform": "ceil_to_multiple",
+        "multiple": 4,
+        "offset": 1
+      },
+      {
+        "semantic": "frame_count",
+        "node_key": "mask",
+        "input_name": "frame_load_cap",
+        "transform": "ceil_to_multiple",
+        "multiple": 4,
+        "offset": 1
+      },
+      {
+        "semantic": "frame_count",
+        "node_key": "frames",
+        "input_name": "length"
+      },
+      {
+        "semantic": "seed",
+        "node_key": "sample",
+        "input_name": "seed"
+      },
+      {
+        "semantic": "output_prefix",
+        "node_key": "save",
+        "input_name": "filename_prefix"
+      },
+      {
+        "semantic": "fps",
+        "node_key": "save",
+        "input_name": "frame_rate"
+      },
+      {
+        "semantic": "width",
+        "node_key": "conditioning",
+        "input_name": "width",
+        "transform": "nearest_size_dimension",
+        "dimension": "width",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "height",
+        "node_key": "conditioning",
+        "input_name": "height",
+        "transform": "nearest_size_dimension",
+        "dimension": "height",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "width",
+        "node_key": "guide",
+        "input_name": "custom_width",
+        "transform": "nearest_size_dimension",
+        "dimension": "width",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "height",
+        "node_key": "guide",
+        "input_name": "custom_height",
+        "transform": "nearest_size_dimension",
+        "dimension": "height",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "width",
+        "node_key": "mask",
+        "input_name": "custom_width",
+        "transform": "nearest_size_dimension",
+        "dimension": "width",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "height",
+        "node_key": "mask",
+        "input_name": "custom_height",
+        "transform": "nearest_size_dimension",
+        "dimension": "height",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "width",
+        "node_key": "full_mask",
+        "input_name": "width",
+        "transform": "nearest_size_dimension",
+        "dimension": "width",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "height",
+        "node_key": "full_mask",
+        "input_name": "height",
+        "transform": "nearest_size_dimension",
+        "dimension": "height",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "width",
+        "node_key": "neutral_hole",
+        "input_name": "width",
+        "transform": "nearest_size_dimension",
+        "dimension": "width",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "height",
+        "node_key": "neutral_hole",
+        "input_name": "height",
+        "transform": "nearest_size_dimension",
+        "dimension": "height",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "frame_count",
+        "node_key": "original_video",
+        "input_name": "frame_load_cap",
+        "transform": "ceil_to_multiple",
+        "multiple": 4,
+        "offset": 1
+      },
+      {
+        "semantic": "frame_count",
+        "node_key": "original_mask_video",
+        "input_name": "frame_load_cap",
+        "transform": "ceil_to_multiple",
+        "multiple": 4,
+        "offset": 1
+      },
+      {
+        "semantic": "width",
+        "node_key": "identity_fit",
+        "input_name": "target_width",
+        "transform": "nearest_size_dimension",
+        "dimension": "width",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      },
+      {
+        "semantic": "height",
+        "node_key": "identity_fit",
+        "input_name": "target_height",
+        "transform": "nearest_size_dimension",
+        "dimension": "height",
+        "options": [
+          {
+            "width": 432,
+            "height": 768
+          },
+          {
+            "width": 768,
+            "height": 432
+          },
+          {
+            "width": 640,
+            "height": 640
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "primary": {
+        "node_key": "save",
+        "media_type": "Video"
+      }
+    },
+    "metadata": {
+      "output_fps": 24,
+      "produces_video": 1,
+      "produces_audio": 0
+    },
+    "conditional_inputs": [
+      {
+        "role": "control_mask",
+        "target": {
+          "node_key": "conditioning",
+          "input_name": "control_masks"
+        },
+        "when_present": [
+          "mask_channel",
+          0
+        ],
+        "when_absent": [
+          "full_mask",
+          0
+        ]
+      },
+      {
+        "role": "control_mask",
+        "target": {
+          "node_key": "save",
+          "input_name": "images"
+        },
+        "when_present": [
+          "masked_result",
+          0
+        ],
+        "when_absent": [
+          "frames",
+          0
+        ]
+      },
+      {
+        "role": "control_mask",
+        "target": {
+          "node_key": "conditioning",
+          "input_name": "control_video"
+        },
+        "when_present": [
+          "inpaint_guide",
+          0
+        ],
+        "when_absent": [
+          "guide",
+          0
+        ]
+      }
+    ],
+    "input_mirrors": [
+      {
+        "source": {
+          "node_key": "guide",
+          "input_name": "video"
+        },
+        "target": {
+          "node_key": "original_video",
+          "input_name": "video"
+        }
+      },
+      {
+        "source": {
+          "node_key": "mask",
+          "input_name": "video"
+        },
+        "target": {
+          "node_key": "original_mask_video",
+          "input_name": "video"
+        }
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "binding_key": "generation_prompt",
+      "node_key": "positive",
+      "input_name": "text",
+      "value_type": "Text",
+      "required": 1
+    },
+    {
+      "binding_key": "guide",
+      "node_key": "guide",
+      "input_name": "video",
+      "required_input_role": "control_video",
+      "value_type": "File Path",
+      "accepted_media_type": "Video",
+      "required": 1
+    },
+    {
+      "binding_key": "mask",
+      "node_key": "mask",
+      "input_name": "video",
+      "required_input_role": "control_mask",
+      "value_type": "File Path",
+      "accepted_media_type": "Video",
+      "required": 0
+    },
+    {
+      "binding_key": "identity",
+      "node_key": "identity",
+      "input_name": "image",
+      "required_input_role": "identity_reference",
+      "value_type": "File Path",
+      "accepted_media_type": "Image",
+      "required": 1
+    }
+  ]
+}

@@ -70,6 +70,9 @@ class GenerationTask(Document):
 		if not shot.media_project:
 			frappe.throw(_("Shot requires a Media Project."))
 		project = frappe.get_doc("Media Project", shot.media_project)
+		from joymedia.services.partners import require_worker_generation
+
+		require_worker_generation(project)
 		workflow = self._validate_generation_run(project)
 		if self.depends_on_task:
 			# A dependency means runtime continuation from the upstream task's
@@ -141,14 +144,14 @@ class GenerationTask(Document):
 			frappe.throw(_("The keyframe dependency has no stored image."))
 
 	def _validate_cross_run_dependency(self, dependency, project):
-		"""A predecessor from another run must be this project's approved, selected take."""
+		"""A predecessor from another run must be this project's selected take."""
 		dependency_shot = frappe.db.get_value(
-			"Shot", dependency.shot, ["media_project", "selected_output_asset_version", "review_status"], as_dict=True
+			"Shot", dependency.shot, ["media_project", "selected_output_asset_version"], as_dict=True
 		)
 		if not dependency_shot or dependency_shot.media_project != project.name:
 			frappe.throw(_("A continuation dependency must belong to the same Media Project."))
-		if dependency_shot.review_status != "Approved" or not dependency_shot.selected_output_asset_version:
-			frappe.throw(_("A continuation dependency needs an approved selected output."))
+		if not dependency_shot.selected_output_asset_version:
+			frappe.throw(_("A continuation dependency needs a selected output."))
 		attempt = frappe.db.get_value(
 			"Asset Version", dependency_shot.selected_output_asset_version, "source_generation_attempt"
 		)

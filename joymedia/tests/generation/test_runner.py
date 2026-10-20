@@ -9,7 +9,7 @@ from joymedia.services.generation.runner import _stage_generation_inputs, submit
 class TestGenerationRunner(FrappeTestCase):
 	@patch("joymedia.services.generation.runner.find_prompt_by_client_id", return_value=None)
 	@patch("joymedia.services.generation.runner.submit_workflow", side_effect=frappe.ValidationError("invalid graph"))
-	@patch("joymedia.services.generation.runner.get_base_url", return_value="http://worker:8188")
+	@patch("joymedia.services.generation.runner.endpoint_for_workflow", return_value="http://worker:8188")
 	@patch("joymedia.services.generation.runner.resolve_attempt", return_value={})
 	@patch("joymedia.services.generation.runner._stage_generation_inputs", return_value={})
 	@patch("joymedia.services.generation.runner.frappe.get_doc")
@@ -52,7 +52,7 @@ class TestGenerationRunner(FrappeTestCase):
 			dependency_artifact_role="Last Frame",
 			inputs=[],
 		)
-		attempt = frappe._dict(name="ATT-NEXT", save=MagicMock())
+		attempt = frappe._dict(name="ATT-NEXT", save=MagicMock(), reload=MagicMock())
 
 		staged = _stage_generation_inputs(job, attempt)
 
@@ -83,7 +83,7 @@ class TestGenerationRunner(FrappeTestCase):
 		asset_version = frappe._dict(name="ASTV-00001", file="/private/files/first.png")
 		get_doc.side_effect = [workflow, asset_version]
 
-		attempt = frappe._dict(name="ATT-00001", save=MagicMock())
+		attempt = frappe._dict(name="ATT-00001", save=MagicMock(), reload=MagicMock())
 		staged = _stage_generation_inputs(job, attempt)
 
 		self.assertEqual({"first_frame": ["first.png"]}, staged)
@@ -96,7 +96,7 @@ class TestGenerationRunner(FrappeTestCase):
 		)
 
 	@patch("joymedia.services.generation.runner.submit_workflow", return_value={"prompt_id": "comfy-1"})
-	@patch("joymedia.services.generation.runner.get_base_url", return_value="http://legacy:8188")
+	@patch("joymedia.services.generation.runner.endpoint_for_workflow", return_value="http://legacy:8188")
 	@patch("joymedia.services.generation.runner.resolve_attempt", return_value={})
 	@patch("joymedia.services.generation.runner._stage_generation_inputs", return_value={})
 	@patch("joymedia.services.generation.runner.frappe.get_doc")
@@ -118,7 +118,7 @@ class TestGenerationRunner(FrappeTestCase):
 
 		self.assertEqual(result, {"prompt_id": "comfy-1"})
 		stage_generation_inputs.assert_called_once_with(job, attempt)
-		get_base_url.assert_called_once_with()
+		get_base_url.assert_called_once_with(job.workflow)
 		submit_workflow.assert_called_once_with(
 			{}, base_url="http://legacy:8188", client_id="joymedia:ATT-00001"
 		)

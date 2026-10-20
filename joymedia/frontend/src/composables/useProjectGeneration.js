@@ -290,7 +290,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     improvingIdea.value = true;
     try {
       notify({
-        title: "Qwen AI Creative Planner",
+        title: "AI Creative Planner",
         text: "Analyzing product & ingredients to craft cinematic video concept...",
         type: "info",
       });
@@ -306,7 +306,7 @@ export function useProjectGeneration(projectName, onRefresh) {
         await saveVideoIdea(res.improved_idea);
         notify({
           title: "Idea elevated ✨",
-          text: "Qwen enhanced your concept with cinematic directions and ingredient references.",
+          text: "AI enhanced your concept with cinematic directions and ingredient references.",
           type: "success",
         });
         return res.improved_idea;
@@ -314,80 +314,11 @@ export function useProjectGeneration(projectName, onRefresh) {
     } catch (err) {
       notify({
         title: "AI idea improvement",
-        text: errorMessage(err, "Could not reach Qwen planner."),
+        text: errorMessage(err, "Could not reach AI planner."),
         type: "error",
       });
     } finally {
       improvingIdea.value = false;
-    }
-  }
-
-  const reviewLoading = ref(false);
-  const reviewError = ref("");
-
-  async function submitShotReview(shotName, { verdict, feedbackNotes = "", rejectionCategory = "", generationAttempt = null } = {}) {
-    if (reviewLoading.value) return;
-    reviewLoading.value = true;
-    reviewError.value = "";
-    try {
-      const res = await call(
-        "joymedia.api.reviews.submit_shot_review",
-        {
-          project_name: project(),
-          shot_name: shotName,
-          verdict,
-          feedback_notes: feedbackNotes,
-          rejection_category: rejectionCategory,
-          generation_attempt: generationAttempt || undefined,
-        }
-      );
-      if (onRefresh) await onRefresh();
-      const label = verdict === "Approved" ? "Approved" : verdict === "Rejected" ? "Rejected" : "Needs Revision";
-      notify({ title: `Shot ${label}`, text: verdict === "Approved" ? "Scene marked as approved." : "Feedback recorded. AI revision generated.", type: verdict === "Approved" ? "success" : "warning" });
-      return res;
-    } catch (err) {
-      reviewError.value = errorMessage(err, "Could not submit review.");
-      notify({ title: "Review error", text: reviewError.value, type: "error" });
-    } finally {
-      reviewLoading.value = false;
-    }
-  }
-
-  async function applyShotReviewRevision(shotName, reviewName, { regenerate = true } = {}) {
-    if (reviewLoading.value) return;
-    reviewLoading.value = true;
-    try {
-      const res = await call(
-        "joymedia.api.reviews.apply_shot_review_revision",
-        {
-          project_name: project(),
-          shot_name: shotName,
-          review_name: reviewName,
-          regenerate,
-        }
-      );
-      if (res?.regeneration) {
-        currentRun.value = { name: res.regeneration.run, status: res.regeneration.status || "Queued" };
-        startPolling();
-      }
-      if (onRefresh) await onRefresh();
-      notify({ title: "Revision applied", text: regenerate ? "AI revision applied and scene is re-rendering." : "AI revision applied to shot prompt.", type: "success" });
-      return res;
-    } catch (err) {
-      notify({ title: "Revision error", text: errorMessage(err, "Could not apply revision."), type: "error" });
-    } finally {
-      reviewLoading.value = false;
-    }
-  }
-
-  async function getShotReviews(shotName) {
-    try {
-      return await call(
-        "joymedia.api.reviews.get_shot_reviews",
-        { project_name: project(), shot_name: shotName }
-      );
-    } catch {
-      return null;
     }
   }
 
@@ -432,10 +363,5 @@ export function useProjectGeneration(projectName, onRefresh) {
     improveVideoIdea,
     saveVideoIdea,
     stopPolling,
-    reviewLoading,
-    reviewError,
-    submitShotReview,
-    applyShotReviewRevision,
-    getShotReviews,
   };
 }

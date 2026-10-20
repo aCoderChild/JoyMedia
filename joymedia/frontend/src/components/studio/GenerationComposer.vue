@@ -55,23 +55,26 @@
         <label for="video-idea" class="text-xs font-semibold text-ink-primary">
           {{ currentLang === 'vi' ? 'Ý tưởng video' : 'Video idea' }}
         </label>
-        <span class="text-[10px] text-ink-muted text-right">
-          {{ currentLang === 'vi' ? 'Mô tả này là brief cho AI lập cảnh và tạo video.' : 'This brief guides AI storyboard planning and video generation.' }}
+        <span class="text-[10px] text-ink-muted text-right" data-test="video-idea-note">
+          {{ fromSheet
+            ? (currentLang === 'vi' ? 'Lấy từ file kịch bản. Muốn sửa, hãy sửa file rồi nhập lại.' : 'From your sheet. To change it, edit the sheet and import it again.')
+            : (currentLang === 'vi' ? 'Mô tả này là brief cho AI lập cảnh và tạo video.' : 'This brief guides AI storyboard planning and video generation.') }}
         </span>
       </div>
       <textarea
         id="video-idea"
         ref="textareaRef"
         v-model="modelPrompt"
-        rows="2"
+        :rows="fromSheet ? 5 : 2"
         :placeholder="currentLang === 'vi'
           ? 'Mô tả video bạn muốn tạo... (Gõ @ để chèn tư liệu tham chiếu)'
           : 'Describe the video you want... (Type @ to mention reference ingredients)'"
         class="w-full bg-surface-muted/60 hover:bg-surface-muted focus:bg-surface-base border border-outline-border rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 transition-all resize-none font-sans leading-relaxed"
         :disabled="isGenerating"
+        :readonly="fromSheet"
         @input="handleInput"
         @keydown="handleKeydown"
-        @blur="savePrompt"
+
       />
 
       <!-- Autocomplete Dropdown for @mention -->
@@ -102,9 +105,9 @@
     </div>
 
     <!-- Bottom Actions Row -->
-    <div class="flex items-center justify-between gap-3 mt-2.5 pt-2 border-t border-outline-border/60">
+    <div class="flex flex-wrap items-center justify-between gap-3 mt-2.5 pt-2 border-t border-outline-border/60">
       <!-- Left: AI Contextual Assistant & Settings Shortcut -->
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
 		<label
 		  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-ink-primary hover:text-indigo-400 bg-surface-muted hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer"
 		  :title="currentLang === 'vi' ? 'Nhập file kịch bản Excel' : 'Import storyboard workbook'"
@@ -113,12 +116,13 @@
 		  <span>{{ currentLang === 'vi' ? 'Nhập kịch bản' : 'Import storyboard' }}</span>
 		  <input class="hidden" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="importStoryboard" />
 		</label>
-        <!-- Contextual AI Action: Improve Idea with Qwen -->
+        <!-- Contextual AI Action: Improve Idea (a sheet's brief is the sheet's) -->
         <button
+          v-if="!fromSheet"
           type="button"
           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 transition-all cursor-pointer shadow-xs"
           :disabled="isImprovingPrompt || isGenerating || !modelPrompt?.trim()"
-          :title="currentLang === 'vi' ? 'Qwen AI nâng tầm ý tưởng thành kịch bản điện ảnh' : 'Refine and enrich your idea with Qwen AI'"
+          :title="currentLang === 'vi' ? 'AI nâng tầm ý tưởng thành kịch bản điện ảnh' : 'Refine and enrich your idea with AI'"
           @click="improvePromptWithAi"
         >
           <span v-if="isImprovingPrompt" class="lucide-refresh-cw size-3 animate-spin" />
@@ -138,7 +142,7 @@
         </button>
       </div>
 
-      <!-- Right: Main Generate Button -->
+      <!-- One next step, based on current project readiness. -->
       <div class="flex items-center gap-2">
         <span v-if="isSavingPrompt" class="text-[10px] text-ink-muted">
           {{ currentLang === 'vi' ? 'Đang lưu…' : 'Saving…' }}
@@ -150,15 +154,17 @@
           type="button"
           class="jm-btn-primary !py-2 !px-4 text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/25 transition-all cursor-pointer"
           :class="{ 'animate-pulse': isGenerating }"
-          :disabled="isGenerating || !modelPrompt?.trim()"
-          @click="primaryAction"
+          :disabled="actionBusy || ['brief', 'loading', 'working'].includes(nextAction)"
+          data-test="client-next-action"
+          @click="$emit('continue')"
         >
           <span v-if="isGenerating" class="lucide-refresh-cw size-3.5 animate-spin" />
           <span v-else class="text-sm">✦</span>
-          <span>{{ generateButtonLabel }}</span>
+          <span>{{ nextActionLabel }}</span>
         </button>
       </div>
     </div>
+    <p class="mt-2 text-xs text-ink-muted" aria-live="polite" data-test="client-next-hint">{{ nextActionHint }}</p>
   </div>
 </template>
 
@@ -167,18 +173,19 @@ import { computed, ref } from "vue";
 
 const props = defineProps({
   prompt: { type: String, default: "" },
+  nextAction: { type: String, default: "brief" },
+  actionBusy: { type: Boolean, default: false },
   projectAssets: { type: Array, default: () => [] },
   isGenerating: { type: Boolean, default: false },
   isImprovingPrompt: { type: Boolean, default: false },
   isSavingPrompt: { type: Boolean, default: false },
-  hasStoryboard: { type: Boolean, default: false },
-	storyboardApprovalStatus: { type: String, default: "Draft" },
   durationSeconds: { type: [Number, String], default: 15 },
   deliveryPreset: { type: String, default: "Landscape" },
   currentLang: { type: String, default: "en" },
+  fromSheet: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["update:prompt", "generate", "approveStoryboard", "importStoryboard", "openMediaPicker", "openSettings", "improvePrompt", "savePrompt", "removeReference"]);
+const emit = defineEmits(["continue", "update:prompt", "importStoryboard", "openMediaPicker", "openSettings", "improvePrompt", "removeReference"]);
 
 const textareaRef = ref(null);
 const showMentionMenu = ref(false);
@@ -190,26 +197,20 @@ const modelPrompt = computed({
   set: (val) => emit("update:prompt", val),
 });
 
-const generateButtonLabel = computed(() => {
-  if (props.isGenerating) {
-    return props.currentLang === "vi" ? "Đang tạo video..." : "Generating...";
-  }
-  if (props.hasStoryboard) {
-	if (props.storyboardApprovalStatus !== "Approved") {
-	  return props.currentLang === "vi" ? "Duyệt kịch bản ✦" : "Approve Storyboard ✦";
-	}
-	return props.currentLang === "vi" ? "Tạo video đã duyệt ✦" : "Generate Approved Video ✦";
-  }
-  return props.currentLang === "vi" ? "Tạo Video ✦" : "Generate Video ✦";
-});
-
-function primaryAction() {
-	if (props.hasStoryboard && props.storyboardApprovalStatus !== "Approved") {
-		emit("approveStoryboard");
-		return;
-	}
-	emit("generate");
-}
+const journeyCopy = {
+  brief: ["Add your story", "Thêm kịch bản", "Write a brief or upload a storyboard. Add product and character references above.", "Viết mô tả hoặc tải bảng kịch bản. Thêm ảnh sản phẩm và nhân vật phía trên."],
+  plan: ["Plan my video", "Lập kế hoạch video", "We will draft scenes for you to review before any video is created.", "Hệ thống sẽ lập cảnh để bạn duyệt trước khi tạo video."],
+  approve: ["Approve Storyboard & prepare previews", "Duyệt kịch bản và tạo ảnh xem trước", "Review the scenes below, then continue. Preparing previews starts automatically after approval.", "Xem lại các cảnh bên dưới rồi tiếp tục. Ảnh xem trước sẽ được tạo sau khi duyệt."],
+  retry: ["Retry preview check", "Kiểm tra lại ảnh", "We could not check your previews. Try again; existing work is kept.", "Chưa kiểm tra được ảnh. Hãy thử lại; kết quả hiện có vẫn được giữ."],
+  loading: ["Checking previews…", "Đang kiểm tra ảnh…", "Checking the current preview approvals.", "Đang kiểm tra trạng thái duyệt ảnh hiện tại."],
+  previews: ["Prepare previews", "Tạo ảnh xem trước", "Create the missing or updated previews before rendering.", "Tạo các ảnh còn thiếu hoặc đã thay đổi trước khi dựng video."],
+  review: ["Review previews below", "Duyệt ảnh bên dưới", "Check each preview for product, logo and character accuracy, then approve it on its scene.", "Kiểm tra sản phẩm, logo và nhân vật trên từng ảnh rồi duyệt tại cảnh đó."],
+  render: ["Create video", "Tạo video", "Your previews are approved. We will render the scenes and assemble the film.", "Các ảnh đã được duyệt. Hệ thống sẽ dựng cảnh và ghép phim."],
+  working: ["Creating…", "Đang tạo…", "Work is in progress. Follow Progress above; you can leave and return to this project.", "Đang xử lý. Theo dõi Tiến trình phía trên; bạn có thể rời trang và quay lại dự án."],
+  watch: ["Watch & edit video", "Xem và chỉnh sửa video", "Play the film, make any edits, then download it above. Review selected takes before release.", "Xem phim, chỉnh sửa nếu cần rồi tải xuống phía trên. Duyệt các phiên bản cảnh trước khi xuất bản."],
+};
+const nextActionLabel = computed(() => (journeyCopy[props.nextAction] || journeyCopy.loading)[props.currentLang === "vi" ? 1 : 0]);
+const nextActionHint = computed(() => (journeyCopy[props.nextAction] || journeyCopy.loading)[props.currentLang === "vi" ? 3 : 2]);
 
 function importStoryboard(event) {
 	const file = event.target?.files?.[0];
@@ -318,6 +319,7 @@ function selectMention(asset) {
 }
 
 function insertReferenceTag(asset) {
+  if (props.fromSheet) return;
   const tag = `@${getCleanKey(asset)} `;
   const current = (modelPrompt.value || "").trim();
   modelPrompt.value = current ? `${current} ${tag}` : tag;
@@ -329,12 +331,6 @@ function insertReferenceTag(asset) {
 function onCtrlEnter() {
   if (!props.isGenerating) {
     primaryAction();
-  }
-}
-
-function savePrompt() {
-  if (!props.isGenerating) {
-    emit("savePrompt", modelPrompt.value);
   }
 }
 

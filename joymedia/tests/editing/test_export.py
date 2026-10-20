@@ -36,7 +36,7 @@ class TestTimelineComposer(FrappeTestCase):
 			_validate_normalized_video(output, profile, expected_frames=24)
 			self.assertAlmostEqual(_get_video_duration(output), 1.0, delta=0.05)
 
-	def test_ending_preserves_picture_before_fade(self):
+	def test_default_ending_preserves_the_final_hold(self):
 		with tempfile.TemporaryDirectory(prefix="joymedia-ending-") as temp_dir:
 			temp_path = Path(temp_dir)
 			source = temp_path / "source.mp4"
@@ -47,17 +47,17 @@ class TestTimelineComposer(FrappeTestCase):
 			_apply_ending(source, output, profile, temp_path)
 
 			_validate_normalized_video(output, profile, expected_frames=144)
-			before, after = _mean_luma(output, 2.0), _mean_luma(output, 4.8)
+			before, after = _mean_luma(output, 2.0), _mean_luma(output, 5.92)
 			self.assertGreater(before, 200)
 			self.assertGreater(after, 200)
 
-	def test_every_film_fades_to_black_at_the_end(self):
+	def test_explicit_ending_fade_is_honored(self):
 		with tempfile.TemporaryDirectory(prefix="joymedia-ending-") as temp_dir:
 			temp_path = Path(temp_dir)
 			source = temp_path / "source.mp4"
 			output = temp_path / "ended.mp4"
 			_make_video(source, 4, color="white")
-			profile = {"width": 320, "height": 240, "fps": 24.0}
+			profile = {"width": 320, "height": 240, "fps": 24.0, "ending_fade_seconds": 0.4}
 
 			_apply_ending(source, output, profile, temp_path)
 
@@ -173,7 +173,7 @@ class TestSceneCaptions(FrappeTestCase):
 			cues,
 		)
 
-	def test_caption_shows_in_the_lower_third_during_its_scene(self):
+	def test_caption_shows_in_the_top_band_during_its_scene(self):
 		with tempfile.TemporaryDirectory(prefix="joymedia-caption-") as temp_dir:
 			temp_path = Path(temp_dir)
 			source = temp_path / "source.mp4"
@@ -186,7 +186,7 @@ class TestSceneCaptions(FrappeTestCase):
 			def lower_third(seconds):
 				pixels = subprocess.run(
 					["ffmpeg", "-v", "error", "-ss", str(seconds), "-i", str(output), "-frames:v", "1",
-					 "-vf", "format=gray,crop=iw:ih/6:0:ih*0.74", "-f", "rawvideo", "-"],
+					 "-vf", "format=gray,crop=iw:ih/6:0:ih*0.04", "-f", "rawvideo", "-"],
 					capture_output=True, check=True,
 				).stdout
 				return max(pixels)
@@ -214,3 +214,14 @@ class TestPositionedGaps(FrappeTestCase):
 			_validate_normalized_video(output, profile, expected_frames=18 * 24)
 			for second in (3.5, 9.5, 17):
 				self.assertGreater(_mean_luma(output, second), 200, f"black footage at {second}s")
+
+
+class TestCaptionText(FrappeTestCase):
+	def test_a_production_label_in_front_of_the_words_is_not_shown(self):
+		from joymedia.services.editing.export import caption_text
+
+		self.assertEqual("Mua ngay", caption_text("CTA:Mua ngay"))
+		self.assertEqual("Mua ngay", caption_text(" cta : Mua ngay "))
+		self.assertEqual("ĐA NĂNG & TIỆN LỢI", caption_text("ĐA NĂNG & TIỆN LỢI"))
+		self.assertEqual("Ctrl the mess", caption_text("Ctrl the mess"))
+		self.assertEqual("", caption_text(None))

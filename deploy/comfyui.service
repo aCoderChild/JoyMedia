@@ -1,15 +1,13 @@
 [Unit]
-Description=JoyMedia ComfyUI server
-After=network-online.target joymedia-qwen.service joymedia-vision.service
-Wants=network-online.target joymedia-qwen.service joymedia-vision.service
+Description=JoyMedia ComfyUI runtime profile
+After=network-online.target joymedia-planner.service joymedia-vision.service
+Wants=network-online.target joymedia-planner.service joymedia-vision.service
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/ComfyUI
-# Wait for both Qwen services to reserve their VRAM allocations before ComfyUI loads workflows.
-ExecStartPre=/bin/sh -c 'for i in $$(seq 1 180); do curl -fsS http://127.0.0.1:8001/v1/models >/dev/null && curl -fsS http://127.0.0.1:8002/v1/models >/dev/null && exit 0; sleep 1; done; exit 1'
-ExecStart=/home/ubuntu/comfy_env/bin/python /home/ubuntu/ComfyUI/main.py --listen 127.0.0.1 --port 8188 --fast --vram-headroom 12
+ExecStartPre=/usr/local/lib/joymedia/run-profile.py --wait planner --wait vision
+ExecStart=/usr/local/lib/joymedia/run-profile.py comfyui
 Restart=always
 RestartSec=5
 StandardOutput=append:/home/ubuntu/comfyui-systemd.log

@@ -78,8 +78,8 @@
           </div>
         </div>
 
-        <!-- Music -->
-        <div class="space-y-1.5">
+        <!-- Music: only a full soundtrack has any; the sound-effect modes keep the scenes' own sound effects -->
+        <div v-if="form.soundtrack_mode === 'Full soundtrack' || form.soundtrack_mode === 'Effects + music'" class="space-y-1.5">
           <label class="block font-bold text-ink-primary">
             {{ currentLang === 'vi' ? 'Nhạc nền:' : 'Music:' }}
           </label>
@@ -227,7 +227,7 @@ const form = reactive({
   export_quality: "Draft 720p",
   show_captions: true,
   character_mode: "Draw in scene",
-  soundtrack_mode: "Full soundtrack",
+  soundtrack_mode: "Sound effects only",
   planning_mode: "Creative",
 });
 
@@ -254,6 +254,7 @@ const modeChoices = computed(() => [
     options: [
       { value: "Full soundtrack", label: currentLang.value === "vi" ? "Đầy đủ" : "Full", hint: currentLang.value === "vi" ? "Giọng, hiệu ứng và nhạc do mô hình tạo." : "Voice, effects and music from the video model." },
       { value: "Sound effects only", label: currentLang.value === "vi" ? "Chỉ hiệu ứng" : "Effects only", hint: currentLang.value === "vi" ? "Yêu cầu chỉ có hiệu ứng, không giọng, không nhạc nền." : "Asks for effects only: no voice, no background music." },
+      { value: "Effects + music", label: currentLang.value === "vi" ? "Hiệu ứng + nhạc nền" : "Effects + music", hint: currentLang.value === "vi" ? "Giữ hiệu ứng từng cảnh, thêm một bản nhạc nền cho cả video (nhỏ hơn, tự hạ khi có hiệu ứng)." : "Keeps each scene's effects and adds one music bed under the whole film (quieter, dips under the effects)." },
       { value: "Separate effects layer", label: currentLang.value === "vi" ? "Lớp hiệu ứng riêng" : "Separate effects layer", hint: currentLang.value === "vi" ? "Thay âm thanh của mô hình bằng lớp hiệu ứng tạo riêng." : "Replaces the model's audio with a generated effects layer." },
     ],
   },
@@ -278,7 +279,7 @@ watch(
       form.export_quality = s.export_quality === "Standard 1080p" ? "Draft 720p" : (s.export_quality || "Draft 720p");
       form.show_captions = Boolean(Number(s.show_captions ?? 1));
       form.character_mode = s.character_mode || "Draw in scene";
-      form.soundtrack_mode = s.soundtrack_mode || "Full soundtrack";
+      form.soundtrack_mode = s.soundtrack_mode || "Sound effects only";
       form.planning_mode = s.planning_mode || "Creative";
     }
   },

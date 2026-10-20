@@ -1,0 +1,123 @@
+{
+ "doctype": "DocType",
+ "name": "Partner Access",
+ "module": "JoyMedia",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "enabled",
+  "allow_feedback",
+  "allow_download",
+  "videos",
+  "allow_generation",
+  "max_projects",
+  "max_model_jobs",
+  "model_jobs_used",
+  "max_duration_seconds",
+  "max_pixels"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "Partner Account",
+   "options": "User",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1,
+   "description": "Select a Website User account. Saving assigns the JoyMedia Reviewer role."
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Access Enabled",
+   "default": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "allow_feedback",
+   "fieldtype": "Check",
+   "label": "Allow Video Feedback",
+   "default": 1
+  },
+  {
+   "fieldname": "allow_download",
+   "fieldtype": "Check",
+   "label": "Allow Download Button",
+   "default": 0,
+   "description": "Controls the download action. Playback still delivers video bytes to the reviewer."
+  },
+  {
+   "fieldname": "videos",
+   "fieldtype": "Table",
+   "label": "Videos visible to this partner",
+   "options": "Partner Video",
+   "description": "Only these exact versions are visible. New versions are private until explicitly added here."
+  },
+  {
+   "fieldname": "allow_generation",
+   "fieldtype": "Check",
+   "label": "Allow End-to-End Testing",
+   "default": 0,
+   "description": "Only projects owned by this partner; never editing administrator projects."
+  },
+  {
+   "fieldname": "max_projects",
+   "fieldtype": "Int",
+   "label": "Maximum Test Projects",
+   "default": 2,
+   "non_negative": 1,
+   "description": "Counts every test project created by the partner, including archived projects. Increase this limit to allow more tests.",
+   "depends_on": "eval:doc.allow_generation"
+  },
+  {
+   "fieldname": "max_model_jobs",
+   "fieldtype": "Int",
+   "label": "Maximum Render Attempts",
+   "default": 30,
+   "non_negative": 1,
+   "description": "Shared by image, video and audio Generation Attempts, including retries. Used allowance is not reset by toggling access.",
+   "depends_on": "eval:doc.allow_generation"
+  },
+  {
+   "fieldname": "model_jobs_used",
+   "fieldtype": "Int",
+   "label": "Model Jobs Used",
+   "default": 0,
+   "read_only": 1,
+   "depends_on": "eval:doc.allow_generation"
+  },
+  {
+   "fieldname": "max_duration_seconds",
+   "fieldtype": "Int",
+   "label": "Maximum Video Duration (seconds)",
+   "default": 30,
+   "non_negative": 1,
+   "depends_on": "eval:doc.allow_generation"
+  },
+  {
+   "fieldname": "max_pixels",
+   "fieldtype": "Int",
+   "label": "Maximum Pixels per Frame",
+   "default": 1048576,
+   "non_negative": 1,
+   "depends_on": "eval:doc.allow_generation"
+  }
+ ],
+ "autoname": "field:user",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "track_changes": 1,
+ "title_field": "user",
+ "search_fields": "user",
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

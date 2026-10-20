@@ -2,39 +2,9 @@
 promoted pipeline and writes the shots. The brief-only path; a workbook goes through planning.workbook.
 """
 
-import json
 
 import frappe
 from frappe import _
-
-
-@frappe.whitelist()
-def apply_video_plan_from_ui(media_project_name: str = None, plan_json: str = None):
-	frappe.has_permission(
-		"Media Project",
-		"write",
-		media_project_name,
-		throw=True,
-	)
-
-	plan = parse_video_plan(plan_json)
-
-	created_shots = apply_video_plan(
-		media_project_name=media_project_name,
-		plan=plan,
-	)
-
-	return {
-		"media_project": media_project_name,
-		"shots": created_shots,
-	}
-
-
-def parse_video_plan(plan_json: str):
-	try:
-		return json.loads(plan_json)
-	except (TypeError, ValueError, json.JSONDecodeError):
-		frappe.throw(_("Invalid video plan JSON."))
 
 
 def _assign_reference_pool_auto(plan, project_references):

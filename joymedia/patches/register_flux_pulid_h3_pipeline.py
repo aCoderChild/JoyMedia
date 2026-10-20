@@ -72,13 +72,16 @@ def _register_h3():
 
 
 def _h3_spec():
+	sizes = [{"width": 1344, "height": 768}, {"width": 768, "height": 1344}, {"width": 1024, "height": 1024}]
 	return {
+		"capabilities": ["first_frame", "last_frame", "native_audio"],
+		"limits": {"max_frames": 124},
 		"parameters": [
 			{"semantic": "seed", "node_key": "15", "input_name": "noise_seed"},
 			# H3's latent grid needs sizes divisible by 32 (the shipped workflow's Resolution Selector rounds to
 			# a multiple of 32 for the same reason); 720 is not, and fails inside the sampler.
-			{"semantic": "width", "node_key": "104", "input_name": "width", "transform": "round_to_multiple", "multiple": 32},
-			{"semantic": "height", "node_key": "104", "input_name": "height", "transform": "round_to_multiple", "multiple": 32},
+			{"semantic": "width", "node_key": "104", "input_name": "width", "transform": "nearest_size_dimension", "dimension": "width", "options": sizes},
+			{"semantic": "height", "node_key": "104", "input_name": "height", "transform": "nearest_size_dimension", "dimension": "height", "options": sizes},
 			{"semantic": "frame_count", "node_key": "111", "input_name": "value", "transform": "frames_to_seconds", "fps": 24},
 			{"semantic": "output_prefix", "node_key": "92", "input_name": "filename_prefix"},
 		],

@@ -1,0 +1,17 @@
+{
+  "role": "JoyMedia Reviewer",
+  "administration": "Frappe Desk > JoyMedia > Partner access, or Manage reviewers on the administrator project page",
+  "setup": [
+    "Create a Website User account for the partner.",
+    "Create Partner Access for that User; saving assigns JoyMedia Reviewer automatically.",
+    "Add exact full-video or scene Asset Versions and partner-facing titles. New versions remain private.",
+    "Optionally allow feedback, the download action, and generation testing within explicit limits."
+  ],
+  "default": "Review-only, no generation, no administrator workspaces or shared library.",
+  "scope": "Each partner sees only their own feedback and administrator responses, on published versions.",
+  "sandbox": "When enabled, partner-owned projects only. Lifetime project cap, video duration and resolution caps, transactionally counted Generation Attempts including retries. Worker validation enforces revocation before submission.",
+  "revocation": "Remove a published version or disable account access. Every new playback, feedback and download request checks the current grant. Already delivered bytes cannot be revoked.",
+  "download": "Controls the download action; playback necessarily delivers video bytes.",
+  "api": "joymedia.services.partners",
+  "media": "Authenticated streaming supports byte ranges and uses private no-store caching."
+}

@@ -64,9 +64,14 @@ def _create_output_asset(project, name, file_name, duration_seconds: int = 4, co
 
 
 def _configure_project(project, total_duration_seconds=8):
-	workflow = frappe.db.get_value("Generation Workflow", {}, "name", order_by="creation desc")
-	if not workflow:
-		frappe.throw("An executable Generation Workflow is required for the E2E setup.")
+	from joymedia.services.workflows.pipeline import get_active_generation_pipeline, get_pipeline_steps
+
+	pipeline = get_active_generation_pipeline()
+	steps = get_pipeline_steps(pipeline.name)
+	if not steps:
+		frappe.throw("An executable Generation Pipeline is required for the E2E setup.")
+	workflow = steps[-1].workflow
+	project.generation_pipeline = pipeline.name
 	project.total_duration_seconds = total_duration_seconds
 	project.delivery_preset = "Landscape"
 	project.delivery_width = 1920

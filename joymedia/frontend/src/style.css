@@ -2927,3 +2927,10 @@ h2 {
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+@media (max-width:480px) {
+  .topbar {height:auto;min-height:54px;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:10px 12px;}
+  .topbar>.flex-1 {display:none;}
+  .topbar-right {min-width:0;max-width:100%;flex-wrap:wrap;gap:8px;}
+  [data-sonner-toaster] {max-width:calc(100vw - 32px);}
+}

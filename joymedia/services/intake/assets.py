@@ -1,5 +1,4 @@
-"""Media Assets: create (with duplicate detection per owner), rename, archive and restore a picture, video or audio file.
-"""
+"""Media Assets: create (with duplicate detection per owner), rename, archive and restore a picture, video or audio file."""
 
 # Copyright (c) 2026, JoyMedia and contributors
 # For license information, please see license.txt
@@ -11,7 +10,16 @@ from frappe import _
 from frappe.utils import cint
 
 MIN_REFERENCE_IMAGE_EDGE = 640
-INPUT_ASSET_CATEGORIES = {"Product", "Character", "Background", "Brand", "Style", "Reference", "Audio", "Other"}
+INPUT_ASSET_CATEGORIES = {
+	"Product",
+	"Character",
+	"Background",
+	"Brand",
+	"Style",
+	"Reference",
+	"Audio",
+	"Other",
+}
 
 
 def _require_asset_action_access(asset):
@@ -74,6 +82,8 @@ def _get_duplicate_version(
 			AND ma.media_type = %s
 			AND ma.asset_category = %s
 			AND ma.status = 'Active'
+			AND ma.asset_scope = 'Library'
+			AND IFNULL(ma.media_project, '') = ''
 			AND ma.owner = %s
 		LIMIT 1
 		""",
@@ -87,22 +97,31 @@ def _get_duplicate_version(
 
 @frappe.whitelist()
 def create_media_asset(asset_name, asset_category, file_url=None, file_name=None):
+	from joymedia.services.partners import is_reviewer, require_generation
+
+	if is_reviewer():
+		require_generation()
 	if frappe.session.user == "Guest":
 		frappe.throw(_("You must be signed in to upload media."))
 	if not set(frappe.get_roles(frappe.session.user)).intersection(
-		{"JoyMedia User", "JoyMedia Specialist", "System Manager"}
+		{"JoyMedia User", "JoyMedia Specialist", "System Manager", "JoyMedia Reviewer"}
 	):
 		frappe.throw(_("You do not have permission to add media assets."))
 	if asset_category not in INPUT_ASSET_CATEGORIES:
 		frappe.throw(_("Uploaded assets must be reference inputs."))
 
-	file_doc = frappe.get_doc("File", file_name) if file_name else frappe.get_doc("File", {"file_url": file_url})
+	file_doc = (
+		frappe.get_doc("File", file_name) if file_name else frappe.get_doc("File", {"file_url": file_url})
+	)
 	if file_doc.owner != frappe.session.user and frappe.session.user != "Administrator":
 		frappe.throw(_("You can only attach files uploaded by your account."))
+	# The resolved File is authoritative for both supported upload argument forms.
+	file_url = file_doc.file_url
 	media_type = detect_media_type(file_doc)
 	if media_type == "Other":
 		frappe.throw(_("Only image, video, audio, text, or PDF files can be added to the media library."))
 	from frappe.utils.file_manager import get_max_file_size
+
 	if file_doc.file_size and file_doc.file_size > get_max_file_size():
 		frappe.throw(_("This file is larger than the configured upload limit."))
 
@@ -133,7 +152,9 @@ def create_media_asset(asset_name, asset_category, file_url=None, file_name=None
 	).insert(ignore_permissions=True)
 	# Small images still work as references, but identity and detail suffer, so the
 	# upload is kept and flagged for the UI to warn about instead of being rejected.
-	low_resolution = media_type == "Image" and min(cint(version.width), cint(version.height)) < MIN_REFERENCE_IMAGE_EDGE
+	low_resolution = (
+		media_type == "Image" and min(cint(version.width), cint(version.height)) < MIN_REFERENCE_IMAGE_EDGE
+	)
 
 	duplicate = _get_duplicate_version(
 		version.content_hash,
@@ -192,7 +213,11 @@ def archive_media_asset(media_asset, detach_projects=False):
 			project.save(ignore_permissions=True)
 
 	asset.db_set("status", "Archived", update_modified=True)
-	return {"archived": True, "in_use": bool(projects), "projects": sorted({row.project_name for row in projects})}
+	return {
+		"archived": True,
+		"in_use": bool(projects),
+		"projects": sorted({row.project_name for row in projects}),
+	}
 
 
 @frappe.whitelist()
@@ -213,13 +238,3 @@ def update_media_asset(media_asset, asset_name=None, asset_category=None):
 		asset.asset_category = asset_category
 	asset.save(ignore_permissions=True)
 	return {"media_asset": asset.name, "asset_name": asset.asset_name, "asset_category": asset.asset_category}
-
-
-@frappe.whitelist()
-def restore_media_asset(media_asset):
-	asset = frappe.get_doc("Media Asset", media_asset)
-	_require_asset_action_access(asset)
-	if asset.asset_scope != "Library":
-		frappe.throw(_("Only library assets can be restored."))
-	asset.db_set("status", "Active", update_modified=True)
-	return {"restored": True, "media_asset": asset.name}

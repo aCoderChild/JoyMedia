@@ -160,7 +160,7 @@ def _create_successor_attempt(previous_attempt, reason):
 			"generation_task": job.name,
 			"seed": (
 				secrets.randbelow(2_147_483_648)
-				if reason in MANUAL_REGENERATION_REASONS
+				if reason in MANUAL_REGENERATION_REASONS or reason == "QA Rejection"
 				else previous_attempt.seed
 			),
 			"retry_of": previous_attempt.name,

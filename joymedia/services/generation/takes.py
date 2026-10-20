@@ -34,11 +34,20 @@ def take_position(project_name, shot):
 
 
 @frappe.whitelist()
-def regenerate_scene(project_name, shot_name):
-	"""Render a new take of one scene from its current prompt."""
+def regenerate_scene(project_name, shot_name, automatic=False, seed=None):
+	"""Render a new take of one scene from its current prompt (`automatic`: asked by the consistency check)."""
 	project, shot = _project_shot(project_name, shot_name)
 	_ensure_scene_free(project, shot)
-	return {**_start_takes_run(project, [shot.name]), "shot_name": shot.name}
+	return {**_start_takes_run(project, [shot.name], reset_review_retries=not automatic, video_seed=_video_seed(seed)), "shot_name": shot.name}
+
+
+def _video_seed(value):
+	"""Freeze an optional reproducible video seed without changing client defaults."""
+	if value is None:
+		return None
+	if type(value) is not int or not 0 <= value < 2_147_483_648:
+		frappe.throw(_("Video seed must be an integer from 0 to 2147483647."))
+	return value
 
 
 def regenerate_scene_with_reason(project_name, shot_name, retry_reason="Manual Retry"):
@@ -52,16 +61,50 @@ def regenerate_scene_with_reason(project_name, shot_name, retry_reason="Manual R
 	return {**result, "shot_name": shot.name}
 
 
-def _start_takes_run(project, shot_names, retry_reason=None, stage=None):
+def _start_takes_run(project, shot_names, retry_reason=None, stage=None, reset_review_retries=False, keyframe_seed=None, video_seed=None):
+	"""Serialize short admission decisions while GPU jobs remain independent.
+
+	Two tabs must not both pass the scene-free check or hold Shot/Series rows
+	while waiting for the other request. Redis coordinates admission across app
+	workers; this lock is released when the run is durably queued, before inference.
+	"""
+	frappe.db.commit()
+	lock = frappe.cache.lock(
+		f"joymedia-take-admission:{frappe.local.site}:{project.name}", timeout=600, blocking_timeout=120,
+	)
+	if not lock.acquire():
+		frappe.throw(_("Another generation request is being prepared. Please try again shortly."))
+	try:
+		frappe.db.commit()  # discard the read snapshot from before waiting
+		project.reload()
+		for shot_name in shot_names:
+			_ensure_scene_free(project, frappe.get_doc("Shot", shot_name))
+		if reset_review_retries:
+			from joymedia.services.review.consistency import reset_redos
+
+			for shot_name in shot_names:
+				reset_redos(shot_name)
+		return _start_takes_run_locked(project, shot_names, retry_reason=retry_reason, stage=stage, video_seed=video_seed, **({"keyframe_seed": keyframe_seed} if keyframe_seed is not None else {}))
+	finally:
+		lock.release()
+
+
+def _start_takes_run_locked(project, shot_names, retry_reason=None, stage=None, keyframe_seed=None, video_seed=None):
 	"""A run that renders new takes of these scenes, replacing each one's take when ready.
 
 	With stage="keyframe" it draws only the scenes' first frames, for review before any video."""
 	if project.storyboard_approval_status != "Approved":
 		frappe.throw(_("Review and approve the storyboard before generating another take."))
-	from joymedia.services.generation.orchestrator import start_run_internal
+	from joymedia.services.generation.orchestrator import start_run_internal, validate_run_preflight
 	from joymedia.services.planning.signature import assert_plan_matches_approval, compute_plan_signature
 	from joymedia.services.project.context import build_project_snapshot
 
+	# Like a whole film, a take or first frame follows the pipeline the site now uses (re-sealed: not an edit of the plan).
+	matched = bool(project.get("approved_plan_signature")) and compute_plan_signature(project.name) == project.approved_plan_signature
+	project.follow_active_pipeline()
+	if matched:
+		project.reload()
+		project.db_set("approved_plan_signature", compute_plan_signature(project.name), update_modified=False)
 	assert_plan_matches_approval(project)
 
 	snapshot_json, snapshot_hash = build_project_snapshot(project, require_production_pipeline=True)
@@ -85,14 +128,18 @@ def _start_takes_run(project, shot_names, retry_reason=None, stage=None):
 				"retry_reason": retry_reason or None,
 				"continuation_from_task": continuation_from_task,
 				"plan_signature": compute_plan_signature(project.name),
+				**({"video_seed": _video_seed(video_seed)} if video_seed is not None else {}),
+				**({"keyframe_seed": keyframe_seed} if stage == "keyframe" and keyframe_seed is not None else {}),
 			}),
 			"workflow": project.workflow,
 			"generation_pipeline": pipeline_name,
 			"requested_by": frappe.session.user,
 			"status": "Draft",
 		}
-	).insert(ignore_permissions=True)
-	result = start_run_internal(run.name)
+	)
+	validate_run_preflight(run, project)
+	run.insert(ignore_permissions=True)
+	result = start_run_internal(run.name, preflight_checked=True)
 	frappe.db.commit()
 	return {"run": run.name, "status": result["status"]}
 
@@ -116,15 +163,15 @@ def _continuation_source_task(project, shot_names):
 			"is_removed": 0,
 			"shot_number": ["<", shot.shot_number],
 		},
-		fields=["name", "selected_output_asset_version", "review_status"],
+		fields=["name", "selected_output_asset_version"],
 		order_by="shot_number desc, name desc",
 		limit=1,
 	)
 	if not previous:
 		frappe.throw(_("A continuing scene needs a preceding scene."))
 	previous = previous[0]
-	if not previous.selected_output_asset_version or previous.review_status != "Approved":
-		frappe.throw(_("The preceding scene needs an approved selected output before this continuation can regenerate."))
+	if not previous.selected_output_asset_version:
+		frappe.throw(_("The preceding scene needs a generated output before this continuation can regenerate."))
 	attempt_name = frappe.db.get_value(
 		"Asset Version", previous.selected_output_asset_version, "source_generation_attempt"
 	)
@@ -150,16 +197,12 @@ def select_scene_take(project_name, shot_name, take_index):
 	selected_output = takes[take_index - 1].name
 	selection_changed = shot.selected_output_asset_version != selected_output
 	shot.db_set("selected_output_asset_version", selected_output, update_modified=False)
-	from joymedia.api.reviews import sync_shot_review_status
-	sync_shot_review_status(shot.name)
-	stale_shots = mark_stale_downstream_shots(shot) if selection_changed else []
-	from joymedia.services.editing.post_production import resume_post_production_if_approved
+	stale_shots = stale_downstream_shots(shot) if selection_changed else []
+	from joymedia.services.editing.post_production import resume_post_production
 
 	frappe.db.commit()
-	# An unapproved take is still a legitimate editorial selection. Keep it
-	# selected for review, and only resume finishing once QA permits delivery.
 	try:
-		finishing = resume_post_production_if_approved(project.name) if selection_changed else {"status": "Unchanged"}
+		finishing = resume_post_production(project.name) if selection_changed else {"status": "Unchanged"}
 	except Exception:
 		# The take selection is durable. Finishing can be retried independently.
 		frappe.logger("joymedia.scene_takes").exception("Unable to resume finishing for %s", project.name)
@@ -174,8 +217,8 @@ def select_scene_take(project_name, shot_name, take_index):
 	}
 
 
-def mark_stale_downstream_shots(shot):
-	"""Flag shots whose selected output was generated from a different take of `shot`.
+def stale_downstream_shots(shot):
+	"""Shots whose selected output was generated from a different take of `shot`.
 
 	Dependencies come from stored Generation Task lineage, never from shot order:
 	a downstream selected output is stale when its task depends on a task of
@@ -207,7 +250,6 @@ def mark_stale_downstream_shots(shot):
 			"Asset Version", downstream.selected_output_asset_version, "source_generation_attempt"
 		) if downstream.selected_output_asset_version else None
 		if attempt and frappe.db.get_value("Generation Attempt", attempt, "generation_task") == task.name:
-			frappe.db.set_value("Shot", task.shot, "review_status", "Needs Revision", update_modified=False)
 			stale.append(task.shot)
 	return stale
 
@@ -235,3 +277,16 @@ def _ensure_scene_free(project, shot):
 		frappe.throw(_("The storyboard is still being written. Please wait until it is ready."))
 	if shot.name in _busy_shots(project.name):
 		frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))
+
+
+@frappe.whitelist()
+def use_reviewed_take(project_name, shot_name, asset_version, expected_current):
+	"""Select a reviewed immutable candidate, guarded against stale history tabs."""
+	project, shot = _project_shot(project_name, shot_name)
+	selected = frappe.db.sql("select selected_output_asset_version from `tabShot` where name=%s for update", shot.name)[0][0]
+	if (selected or "") != (expected_current or ""):
+		frappe.throw(_("The selected take changed. Reload the scene history."))
+	names = [row.name for row in scene_takes(project.name, shot.name)]
+	if asset_version not in names:
+		frappe.throw(_("Choose a take from this scene."), frappe.PermissionError)
+	return select_scene_take(project.name, shot.name, names.index(asset_version) + 1)

@@ -1,6 +1,6 @@
 from frappe.tests.utils import FrappeTestCase
 
-from joymedia.joymedia.report.analytics import _is_selected_output, _review_outcome
+from joymedia.joymedia.report.analytics import _is_selected_output
 
 
 class TestAttemptAnalytics(FrappeTestCase):
@@ -28,9 +28,3 @@ class TestAttemptAnalytics(FrappeTestCase):
 				{"ASTV-00042": "ATT-00008"},
 			)
 		)
-
-	def test_review_outcome_prefers_human_verdict_over_selection_proxy(self):
-		self.assertEqual((False, True), _review_outcome("Rejected", True))
-		self.assertEqual((True, True), _review_outcome("Approved", False))
-		self.assertEqual((False, False), _review_outcome(None, True))
-		self.assertEqual((False, False), _review_outcome(None, False))

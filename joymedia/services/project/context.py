@@ -70,7 +70,7 @@ def normalize_export_quality(value):
 
 
 def _get_customer_workflow_for_export_quality(export_quality=None):
-	"""Delivery quality changes export settings, never the FLUX/H3 pipeline."""
+	"""Delivery quality changes export settings, never the configured generation pipeline."""
 	return _get_customer_workflow()
 
 
@@ -105,17 +105,31 @@ def _get_latest_project_generation_run(media_project):
 
 
 def _busy_shots(media_project):
-	"""Scenes with a render still in progress in any of the project's runs."""
-	active_runs = frappe.get_all(
-		"Generation Run", filters={"media_project": media_project, "status": ["in", ["Queued", "Running"]]}, pluck="name"
+	"""Reserve scenes as soon as a run is queued, including task preparation.
+
+	Workers may not have created any tasks yet. Looking only at task rows leaves
+	an admission gap in which two tabs can queue the same scene twice.
+	"""
+	runs = frappe.get_all(
+		"Generation Run", filters={"media_project": media_project, "status": ["in", ["Queued", "Running"]]},
+		fields=["name", "execution_scope_json"],
 	)
-	if not active_runs:
+	if not runs:
 		return []
-	return sorted(set(frappe.get_all(
+	valid = set(frappe.get_all("Shot", filters={"media_project": media_project, "is_removed": 0}, pluck="name"))
+	busy = set(frappe.get_all(
 		"Generation Task",
-		filters={"generation_run": ["in", active_runs], "status": ["not in", ["Completed", "Failed", "Cancelled"]]},
+		filters={"generation_run": ["in", [run.name for run in runs]], "status": ["not in", ["Completed", "Failed", "Cancelled"]]},
 		pluck="shot",
-	)))
+	))
+	for run in runs:
+		try:
+			scope = frappe.parse_json(run.execution_scope_json or "{}")
+		except (TypeError, ValueError):
+			scope = {}
+		names = scope.get("shot_names") if isinstance(scope, dict) else None
+		busy.update(names if isinstance(names, list) and names and all(isinstance(name, str) for name in names) else valid)
+	return sorted(busy & valid)
 
 
 def _project_runs(filters):
@@ -224,7 +238,7 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 		"reference_mode": getattr(settings, "reference_mode", None) or "Single Image",
 		"quality_mode": getattr(settings, "quality_mode", None) or "Production",
 		"generation_mode": settings.generation_mode or "Continuous",
-		"soundtrack_mode": getattr(settings, "soundtrack_mode", None) or "Full soundtrack",
+		"soundtrack_mode": getattr(settings, "soundtrack_mode", None) or "Sound effects only",
 		"global_instructions": settings.global_instructions or "",
 		"workflow": settings.workflow or "",
 		"generation_pipeline": configured_pipeline,
@@ -232,14 +246,18 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 			{
 				"asset_version": row.asset_version,
 				"reference_key": getattr(row, "reference_key", None) or "",
+				"identity_key": getattr(row, "identity_key", None) or getattr(row, "reference_key", None) or "",
 				"reference_role": row.reference_role or "General",
 				"label": row.label or "",
 				"scale": float(getattr(row, "relative_size", None) or 1),
+				"keep_rule": getattr(row, "keep_rule", None) or "",
 			}
 			for row in project.selected_media or []
 			if row.asset_version in visual_asset_versions
 		],
 	}
+	from joymedia.services.scene.direction import authored_action
+	sheet_scenes = _sheet_scenes(project)
 	snapshot["shots"] = []
 	for shot in _active_project_shots(
 		project.name,
@@ -254,17 +272,21 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 
 		shot_snapshot = {
 				"shot": shot.name,
+				"beat_name": shot_doc.get("storyboard_beat") or shot_doc.get("shot_name"),
 				"shot_number": shot.shot_number,
 				"duration_seconds": float(shot.duration_seconds or 0),
 				"planned_frame_count": int(shot.planned_frame_count or 0),
 				"image_prompt": shot.image_prompt or "",
 				"setting_prompt": getattr(shot, "setting_prompt", None) or "",
+				# A split screen's views (keyframes.overlay.split_screen_keyframe); empty for a full-frame scene.
+				"views_json": shot_doc.get("views_json") or "",
 				"character_mode": _valid_character_mode(getattr(shot_doc, "character_mode", None))
 				or _valid_character_mode(getattr(settings, "character_mode", None)) or "Draw in scene",
 				# An approved, current keyframe is the scene's first frame; its image stage is not repeated.
 				"keyframe_task": approved_keyframe_task(shot_doc),
 				"keyframe_artifact": shot_doc.keyframe_artifact if approved_keyframe_task(shot_doc) else None,
 				"generation_prompt": shot.generation_prompt or "",
+				"authored_action": authored_action(shot_doc, sheet_scenes.get((shot_doc.storyboard_beat or "", shot_doc.source_timing or ""))),
 				"motion_plan_json": shot.motion_plan_json or "",
 				"start_state": shot.start_state or "",
 				"end_state": shot.end_state or "",
@@ -299,9 +321,70 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 				"requires_recomposition": route["requires_recomposition"],
 				"references": route["references"],
 			})
-		snapshot["shots"].append(shot_snapshot)
+			snapshot["shots"].append(shot_snapshot)
+	from joymedia.services.consistency.retention import policy
+	from joymedia.services.intake.references import preservation_modes
+	preservation = preservation_modes(project)
+	for reference in snapshot["references"]:
+		if reference.get("asset_version") in preservation:
+			reference["preservation_mode"] = preservation[reference["asset_version"]]
+	retention_policy = policy()
+	for scene in snapshot["shots"]:
+		for reference in scene.get("references", []):
+			if reference.get("asset_version") in preservation:
+				reference["preservation_mode"] = preservation[reference["asset_version"]]
+		if retention_policy:
+			scene["reference_retention"] = retention_policy
+			from joymedia.services.consistency.retention import route_presentation
+			route_presentation(scene, retention_policy)
+	_compose_end_card(snapshot["shots"])
+	from joymedia.services.editing.graphics import requested_graphics
+
+	for scene in snapshot["shots"]:
+		duration = float(scene.get("planned_frame_count") or 0) / float(snapshot.get("output_fps") or 24)
+		scene["graphic_overlays"] = requested_graphics(project.get("storyboard_source_json"), scene.get("beat_name"), scene.get("generation_prompt"), duration)
+		from joymedia.services.scene.identity import identity_plan
+		from joymedia.services.workflows.capabilities import controls
+
+		# Source identities and workflow controls are immutable run inputs, not
+		# claims that the output has passed identity or packaging acceptance.
+		selected = {r["asset_version"]: r for r in snapshot["references"]}
+		references = [{**selected.get(r.get("asset_version"), {}), **r} for r in scene.get("references") or []]
+		scene["consistency_plan"] = identity_plan(references, controls(frappe.get_doc("Generation Workflow", scene.get("workflow") or snapshot["workflow"])))
+	from joymedia.services.review.admission import freeze_policy
+	admission = freeze_policy()
+	if admission:
+		snapshot["visual_admission"] = admission
+		for scene in snapshot["shots"]:
+			scene["visual_admission_required"] = True
 	serialized = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
 	return serialized, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _compose_end_card(shots):
+	"""The film's last scene, when it shows the product, is laid out by rules instead of drawn by the image model.
+
+	A generated scene leaves composition to a model and can obscure the product. An advertisement ends on the product,
+	so its source-art protection remains independent of the actor performance. Hold only the final two seconds;
+	never replace a requested wave or pose transition with a whole-shot source card.
+	"""
+	if not shots:
+		return
+	last = max(shots, key=lambda row: int(row.get("shot_number") or 0))
+	from joymedia.services.planning.shot_structure import structure_for
+	structure = structure_for(last)
+	if structure and structure["subject_motion"] == "locomotion":
+		return  # Preserve the authored performance through the ending; no forced pose hold.
+	if any(frappe.scrub(row.get("reference_role") or "") == "product" for row in last.get("references") or []):
+		from joymedia.services.consistency.retention import is_static_presentation
+		static = is_static_presentation(last)
+		duration = float(last.get("duration_seconds") or 0)
+		if not static and duration <= 2:
+			raise ValueError("A closing product action needs more than two seconds to leave a readable final hold.")
+		last["closing_hold_seconds"] = min(2.0, duration)
+		last["closing_hold_mode"] = "source_artwork" if static else "generated_pose"
+		if static:
+			last["character_mode"] = "Paste exact art"
 
 
 def _valid_character_mode(value):
@@ -340,6 +423,7 @@ def _get_project_selected_assets(project):
 				media_asset=asset.name,
 				asset_version=version.name,
 				reference_key=getattr(selection, "reference_key", None) or "",
+				identity_key=getattr(selection, "identity_key", None) or getattr(selection, "reference_key", None) or "",
 				reference_role=selection.reference_role or "General",
 				label=selection.label or "",
 				relative_size=float(getattr(selection, "relative_size", None) or 1),
@@ -369,21 +453,21 @@ def _story_film_planning_context(project):
 	from joymedia.services.intake.vision import ensure_project_image_analysis
 	from joymedia.services.planning.film_director import (
 		infer_product_reference_contexts,
-		infer_property_area_references,
 		is_story_film,
 	)
 
 	ensure_project_image_analysis(project)
 	reference_contexts = _get_project_reference_contexts(project)
 	reference_contexts = infer_product_reference_contexts(reference_contexts, project.video_idea)
-	reference_contexts = infer_property_area_references(reference_contexts, project.video_idea)
 	story_film = is_story_film(reference_contexts)
 	return reference_contexts, story_film
 
 
 def _get_project_reference_contexts(project):
+	from joymedia.services.scene.references import canonical_reference_rows
+
 	contexts = []
-	for asset in _get_project_selected_assets(project):
+	for asset in canonical_reference_rows(_get_project_selected_assets(project)):
 		context = {
 			"asset_name": asset.asset_name,
 			"media_type": asset.media_type,
@@ -391,6 +475,7 @@ def _get_project_reference_contexts(project):
 			"reference_role": asset.reference_role,
 			"label": asset.label,
 			"reference_key": getattr(asset, "reference_key", None) or "",
+			"identity_key": getattr(asset, "identity_key", None) or getattr(asset, "reference_key", None) or "",
 		}
 		if asset.analysis_status == "Ready" and asset.analysis_json:
 			try:
@@ -399,6 +484,25 @@ def _get_project_reference_contexts(project):
 				context["analysis"] = asset.analysis_json
 		contexts.append(context)
 	return contexts
+
+
+def scene_direction(prompt):
+	"""The plain direction of a scene from its video prompt: what happens and the camera, without the audio line, the
+	reviewer's corrections block or anything else written for the model."""
+	from joymedia.services.review.comments import strip_corrections
+
+	first = next((part for part in strip_corrections(prompt).split("\n\n") if part.strip() and not part.lstrip().startswith("Audio:")), "")
+	action, _sep, camera = first.partition(" Camera: ")
+	return {"action": action.strip(), "camera": camera.strip()}
+
+
+def _sheet_scenes(project):
+	"""The imported sheet's scenes by (beat name, timing), when the project was imported from one."""
+	try:
+		demo = (frappe.parse_json(project.get("storyboard_source_json") or "{}") or {}).get("selected_demo") or {}
+	except (TypeError, ValueError):
+		return {}
+	return {(scene.get("beat_name") or "", scene.get("source_timing") or ""): scene for scene in demo.get("scenes") or []}
 
 
 def _storyboard_payload(specification):
@@ -411,7 +515,10 @@ def _storyboard_payload(specification):
 			"shot_number",
 			"shot_name",
 			"generation_prompt",
+			"image_prompt",
+			"motion_plan_json",
 			"storyboard_beat",
+			"storyboard_action",
 			"source_timing",
 			"source_start_seconds",
 			"source_end_seconds",
@@ -422,21 +529,55 @@ def _storyboard_payload(specification):
 			"duration_seconds",
 			"planned_frame_count",
 			"selected_output_asset_version",
-			"review_status",
+			"keyframe_artifact",
+			"consistency_status",
+			"consistency_notes",
+			"brand_approval_signature",
+			"brand_approved_by",
+			"brand_approved_at",
+			"illustration",
 		],
 	)
 	from joymedia.services.generation.takes import take_position
+	from joymedia.services.review.comments import open_comment_counts
+
+	open_comments = open_comment_counts(specification.name)
+	sheet = _sheet_scenes(specification)
 
 	for shot in shots:
+		# What the scene shows, in plain words under its frame: the sheet's own words, and the English direction.
+		shot["direction"] = scene_direction(shot.generation_prompt)
+		from joymedia.services.scene.direction import authored_action
+		scene = sheet.get((shot.storyboard_beat or "", shot.source_timing or ""))
+		shot["authored_action"] = authored_action(shot, scene)
+		from joymedia.services.review.lineage import take_direction_changed
+		shot['is_outdated'] = take_direction_changed(shot)
+		from joymedia.services.scene.contract import read_contract
+		try:
+			contract = read_contract(shot.get('motion_plan_json'), shot.duration_seconds)
+			from joymedia.services.scene.structure import structure_claims
+			shot['continuity_checks'] = list(dict.fromkeys([*structure_claims(contract), *(row['claim'] for row in (contract or {}).get('checks', []))]))
+		except (TypeError, ValueError):
+			shot['continuity_checks'] = []
+		shot.pop('motion_plan_json', None)
+		shot.pop('image_prompt', None)
+		shot.pop('keyframe_artifact', None)
+		scene = sheet.get((shot.storyboard_beat or "", shot.source_timing or ""))
+		shot["sheet_direction"] = {"action": scene.get("action") or "", "camera": scene.get("visual_camera") or ""} if scene else None
 		if shot.selected_output_asset_version:
 			shot["output_video"] = _get_asset_version_file_url(shot.selected_output_asset_version)
 		shot["take_count"], shot["take_index"] = take_position(specification.name, shot)
+		shot["open_comments"] = open_comments.get(shot.name, 0)
 		input_rows = frappe.get_all(
 			"Shot Reference",
 			filters={"parent": shot.name, "parenttype": "Shot"},
 			fields=["reference_role", "asset_version"],
 			order_by="idx asc",
 		)
+		from joymedia.services.review.brand import review_state
+
+		shot["brand_review"] = review_state(shot, input_rows)
+		shot.pop("brand_approval_signature", None)
 		for role, output_key in (("first_frame", "reference_image"), ("last_frame", "last_frame_image")):
 			row = next((r for r in input_rows if frappe.scrub(r.reference_role or "") == role), None)
 			if row:
@@ -520,7 +661,7 @@ def _aggregate_shot_progress(run_name):
 		)
 		statuses = [row.status for row in shot_jobs]
 		# Keep the technical state truthful at the shot boundary.  The client must
-		# not turn every unfinished pipeline stage into "Generating": an H3 task
+		# not turn every unfinished pipeline stage into "Generating": a downstream task
 		# waiting for Flux, a task queued at ComfyUI, and a failed keyframe need
 		# distinctly different actions in the storyboard.
 		if any(status == "Failed" for status in statuses):

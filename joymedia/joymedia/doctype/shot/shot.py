@@ -8,6 +8,21 @@ from frappe.model.document import Document
 class Shot(Document):
 	def validate(self):
 		self._validate_active_run_changes()
+		if not self.is_new():
+			# A derived plan cannot survive a source edit unchanged. Preserve an
+			# explicitly replaced plan, as when the director saves a fresh draft.
+			if self.has_value_changed("generation_prompt") or self.has_value_changed("image_prompt"):
+				for field in ("motion_plan_json", "end_state", "handoff_type"):
+					if not self.has_value_changed(field) and not (field == "motion_plan_json" and self.flags.get("explicit_motion_plan")):
+						self.set(field, None)
+			if self.has_value_changed("image_prompt") and not self.has_value_changed("start_state"):
+				self.start_state = None
+		from joymedia.services.scene.contract import read_contract
+
+		try:
+			read_contract(self.motion_plan_json, self.duration_seconds)
+		except ValueError as exc:
+			frappe.throw(str(exc))
 		self.validate_required_workflow_input_mappings()
 		self.validate_selected_output_asset_version()
 
@@ -25,7 +40,7 @@ class Shot(Document):
 		):
 			return
 		fields = (
-			"shot_number", "duration_seconds", "planned_frame_count", "generation_prompt",
+			"shot_number", "duration_seconds", "planned_frame_count", "storyboard_action", "generation_prompt",
 			"image_prompt", "motion_plan_json",
 			"start_state", "end_state", "handoff_type", "continuity_mode", "generation_inputs",
 		)

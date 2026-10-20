@@ -46,11 +46,12 @@ export function useProjectWorkspace(projectName) {
     if (!newName?.trim()) return;
     try {
       const res = await call("joymedia.api.projects.update_project_name", {
-        media_project: project(),
+        media_project: workspace.value?.family?.root || project(),
         project_name: newName.trim(),
       });
       if (workspace.value?.project) {
-        workspace.value.project.project_name = res.project_name;
+        if(workspace.value.family) workspace.value.family.project_name = res.project_name;
+        if(!workspace.value.family || workspace.value.family.root === project()) workspace.value.project.project_name = res.project_name;
       }
       notify({ title: "Updated", text: "Project name updated.", type: "success" });
     } catch (err) {
@@ -67,15 +68,11 @@ export function useProjectWorkspace(projectName) {
         project_name: project(),
         total_duration_seconds: totalDurationSeconds,
         delivery_preset: settingsPayload.delivery_preset,
-        reference_mode: settingsPayload.reference_mode || "Single Image",
-        quality_mode: settingsPayload.quality_mode || "Production",
         generation_mode: "Continuous",
         global_instructions: settingsPayload.global_instructions || "",
         soundtrack_prompt: settingsPayload.soundtrack_prompt || "",
         export_quality: settingsPayload.export_quality || "Standard 1080p",
         show_captions: settingsPayload.show_captions === false ? 0 : 1,
-        workflow: settingsPayload.workflow || undefined,
-        generation_pipeline: settingsPayload.generation_pipeline || "",
         character_mode: settingsPayload.character_mode || undefined,
         soundtrack_mode: settingsPayload.soundtrack_mode || undefined,
         planning_mode: settingsPayload.planning_mode || undefined,
@@ -90,7 +87,7 @@ export function useProjectWorkspace(projectName) {
     }
   }
 
-  const projectTitle = computed(() => workspace.value?.project?.project_name || project());
+  const projectTitle = computed(() => workspace.value?.family?.project_name || workspace.value?.project?.project_name || project());
   const projectStatus = computed(() => workspace.value?.project?.status || "Draft");
   const projectAssets = computed(() => workspace.value?.assets || []);
   const storyboard = computed(() => workspace.value?.storyboard || null);

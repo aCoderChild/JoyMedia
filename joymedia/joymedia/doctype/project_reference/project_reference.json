@@ -5,10 +5,12 @@
  "engine": "InnoDB",
  "field_order": [
   "reference_key",
+  "identity_key",
   "asset_version",
   "reference_role",
   "label",
-  "relative_size"
+  "relative_size",
+  "keep_rule"
  ],
  "fields": [
   {
@@ -17,6 +19,14 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Reference Key",
+   "reqd": 0
+  },
+  {
+   "description": "Canonical subject identity shared by multiple approved views (for example front and side views of one character). Variants share this key but keep distinct Reference Keys.",
+   "fieldname": "identity_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Identity Key",
    "reqd": 0
   },
   {
@@ -47,6 +57,13 @@
    "fieldname": "relative_size",
    "fieldtype": "Float",
    "label": "Relative Size"
+  },
+  {
+   "fieldname": "keep_rule",
+   "fieldtype": "Small Text",
+   "label": "Must Stay As Is",
+   "in_list_view": 0,
+   "description": "What must not change about this picture in the film (from the workbook's References sheet)."
   }
  ],
  "istable": 1,

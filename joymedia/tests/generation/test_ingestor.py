@@ -136,6 +136,19 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 		attempt.save.assert_called_once_with(ignore_permissions=True)
 		refresh_parent.assert_called_once_with("ATT-SYNC")
 
+	def test_completion_between_history_and_queue_reads_is_ingested_instead_of_retried(self):
+		attempt = self._attempt()
+		history = {"status": {"completed": True}, "outputs": {"save": {"images": [{"filename": "result.png"}]}}}
+		with patch.object(result_ingestor, "get_queue_state", return_value=None), patch.object(
+			result_ingestor, "get_history", return_value={"comfy-1": history}
+		), patch.object(result_ingestor, "_sync_attempt_result", return_value={"status": "Completed"}) as ingest, patch.object(
+			result_ingestor, "_fail_attempt"
+		) as fail:
+			result = result_ingestor._sync_attempt_without_history(attempt)
+		self.assertEqual({"status": "Completed"}, result)
+		ingest.assert_called_once_with(attempt.name, history=history)
+		fail.assert_not_called()
+
 	def test_job_missing_just_after_submission_stays_queued(self):
 		attempt = self._attempt()
 		attempt.queued_at = frappe.utils.now()

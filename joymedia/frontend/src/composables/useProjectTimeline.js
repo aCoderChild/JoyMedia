@@ -312,13 +312,14 @@ export function useProjectTimeline(projectName) {
     check();
   }
 
-  async function exportTimeline() {
+  async function exportTimeline(purpose = 'review') {
     if (isExporting.value) return null;
     try {
       const queueRes = await call(
         "joymedia.services.editing.timeline.queue_project_timeline_export",
         {
           project_name: project(),
+          purpose,
         }
       );
       if (timeline.value) {

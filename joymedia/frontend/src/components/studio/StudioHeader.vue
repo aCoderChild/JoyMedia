@@ -37,6 +37,7 @@
           {{ projectTitle || "Untitled Project" }}
         </button>
 
+        <span v-if="editLabel" class="hidden md:inline text-[10px] text-ink-muted truncate max-w-36">{{ editLabel }}</span>
         <!-- Project Status Badge -->
         <span
           v-if="projectStatus"
@@ -59,6 +60,7 @@
 
     <!-- Right: Media Drawer Toggle + Export Button + Language + User Avatar -->
     <div class="flex items-center gap-2">
+      <button type="button" data-test="open-project-history" class="text-xs px-2.5 py-1 rounded-xl border border-outline-border hover:bg-surface-hover cursor-pointer" @click="emit('openHistory')">{{ currentLang === 'vi' ? 'Phiên bản & lịch sử' : 'Versions & history' }}</button>
       <!-- Media Drawer Quick Toggle -->
       <button
         type="button"
@@ -165,6 +167,17 @@
           </button>
 
           <button
+            v-if="timelineReady"
+            type="button"
+            data-test="replace-background-music"
+            class="mt-2 w-full rounded-lg border border-outline-border text-ink-secondary text-[11px] font-semibold py-1.5 cursor-pointer disabled:opacity-50"
+            :disabled="isFinishing || isExporting"
+            @click="$emit('replaceMusic'); activityOpen = false"
+          >
+            {{ currentLang === 'vi' ? 'Tạo lại riêng nhạc nền' : 'Replace background music' }}
+          </button>
+
+          <button
             v-if="production.status === 'Failed'"
             type="button"
             class="mt-3 w-full rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold py-1.5 cursor-pointer"
@@ -207,6 +220,10 @@
       </button>
 
       <!-- Language Switcher -->
+      <button type="button" class="jm-btn-primary !py-1 !px-3 text-xs disabled:opacity-40" data-test="release-export"
+        :disabled="!brandReady || isExporting || isFinishing" :title="brandReady ? 'Export reviewed footage for release' : 'Review product, logo and identity for every selected take first'" @click="$emit('exportRelease')">
+        {{ currentLang === 'vi' ? 'Xuất bản đã duyệt' : 'Release export' }}
+      </button>
       <button
         type="button"
         class="p-1 px-1.5 rounded-lg text-[11px] font-mono font-bold text-ink-muted hover:text-ink-primary hover:bg-surface-hover border border-outline-border/60 transition-colors cursor-pointer select-none"
@@ -233,11 +250,13 @@ import { computed, nextTick, ref } from "vue";
 const props = defineProps({
   projectName: { type: String, default: "" },
   projectTitle: { type: String, default: "" },
+  editLabel: { type: String, default: "" },
   projectStatus: { type: String, default: "Draft" },
   timelineReady: { type: Boolean, default: false },
   hasUnexportedEdits: { type: Boolean, default: false },
   isExporting: { type: Boolean, default: false },
   isFinishing: { type: Boolean, default: false },
+  brandReady: { type: Boolean, default: false },
   postProductionStep: { type: String, default: "" },
   exportStatus: { type: String, default: "Idle" },
   currentOutputAssetVersion: { type: String, default: "" },
@@ -249,6 +268,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits([
+  "exportRelease",
+  "openHistory",
   "goBack",
   "saveProjectName",
   "toggleMediaDrawer",
@@ -256,6 +277,7 @@ const emit = defineEmits([
   "openSettings",
   "exportTimeline",
   "finishFilm",
+  "replaceMusic",
   "retryGeneration",
   "stopGeneration",
   "cancelFinishing",
@@ -296,11 +318,11 @@ const formattedStatus = computed(() => {
   if (props.currentLang === "vi") {
     if (s === "Draft") return "Bản nháp";
     if (s === "Generating") return "Đang tạo";
-    if (s === "Completed") return "Đã hoàn thành";
+    if (s === "Completed") return "Đã dựng cảnh";
     if (s === "Needs Attention") return "Cần chú ý";
     return s;
   }
-  return s;
+  return s === "Completed" ? "Scenes ready" : s;
 });
 
 const statusBadgeClass = computed(() => {

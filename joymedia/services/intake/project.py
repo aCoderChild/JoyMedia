@@ -18,7 +18,7 @@ ROLE_KEYWORDS = (
 	("Logo", ("logo", "wordmark", "brand mark", "thương hiệu")),
 	("Product", ("product", "pack", "package", "box", "bottle", "tube", "label", "sản phẩm", "bịch", "hộp", "gói", "chai")),
 	("Person", ("person", "presenter", "host", "model", "actor", "actress", "face", "portrait", "người dẫn", "người mẫu", "diễn viên")),
-	("Character", ("character", "mascot", "bear", "nhân vật", "gấu", "người", "mẹ", "con")),
+	("Character", ("character", "mascot", "nhân vật", "performer", "avatar")),
 )
 ROLE_CATEGORY = {"Product": "Product", "Character": "Character", "Person": "Character", "Logo": "Brand", "Environment": "Background", "General": "Reference"}
 ROLES = ("Product", "Character", "Person", "Logo", "Environment", "General")
@@ -31,6 +31,13 @@ def infer_reference_role(name):
 		if any(word in text for word in words):
 			return role
 	return "General"
+
+
+def infer_relative_size(label):
+	"""A character's height relative to the tallest one, from the family role its name gives (services/planning/roles.py)."""
+	from joymedia.services.planning.roles import role_size
+
+	return role_size(label)
 
 
 def format_preset(text):
@@ -64,28 +71,51 @@ def preview_workbook(workbook_file):
 
 	A workbook can hold several demos; the client picks one and sees its format, length and scene count.
 	"""
-	from joymedia.services.planning.workbook import parse_duration_seconds, parse_storyboard_workbook
+	from joymedia.services.planning.workbook import (
+		missing_required,
+		parse_duration_seconds,
+		read_workbook,
+		understood_fields,
+	)
 
 	file_doc = frappe.get_doc("File", workbook_file)
 	file_doc.check_permission("read")
 	if not str(file_doc.file_name or "").lower().endswith(".xlsx"):
 		frappe.throw(_("Storyboard import requires an .xlsx workbook."))
 	try:
-		parsed = parse_storyboard_workbook(file_doc.get_full_path())
+		parsed = read_workbook(file_doc.get_full_path())
 	except (OSError, ValueError) as exc:
 		frappe.throw(_("Could not read the storyboard workbook: {0}").format(str(exc)))
+	lang = "en" if frappe.local.lang == "en" else "vi"
+	from joymedia.services.planning.workbook import BRAND_FIELDS, REFERENCE_TYPE_LABELS
+
+	# The pictures the References sheet asks for, so the client uploads exactly those files in step 2.
+	references = [
+		{
+			"name": row["name"], "type": REFERENCE_TYPE_LABELS.get(row["role"], {}).get(lang, row["role"]),
+			"file": row["file"] + (f" ({'page' if lang == 'en' else 'trang'} {row['pdf_page']})" if row.get("pdf_page") else ""),
+			"drawn": not row["file"],
+		}
+		for row in parsed.get("references") or []
+	]
+	brand = [BRAND_FIELDS[key]["label"][lang] for key in BRAND_FIELDS if (parsed.get("brand") or {}).get(key)]
 	demos = []
 	for demo in parsed["demos"]:
 		metadata = demo.get("metadata") or {}
+		missing = missing_required(metadata)
 		demos.append({
 			"name": demo["name"],
 			"product_name": metadata.get("product_name") or "",
 			"format": format_preset(metadata.get("format")),
 			"duration_seconds": parse_duration_seconds(metadata.get("duration") or "") if metadata.get("duration") else None,
 			"scene_count": len(demo.get("scenes") or []),
+			"scenes_drafted": not demo.get("has_scene_table"),
 			"timing_gaps": len(demo.get("timing_warnings") or []),
+			"fields": understood_fields(metadata, lang),
+			"missing_required": missing,
+			"can_create": not missing,
 		})
-	return {"demos": demos}
+	return {"demos": demos, "references": references, "brand": brand}
 
 
 @frappe.whitelist()
@@ -112,9 +142,6 @@ def create_project_from_brief(project_name=None, video_idea=None, workbook_file=
 			if not project_name and project.product_name:
 				# Name the project after the product and the sheet it was built from.
 				project.db_set("project_name", f"{project.product_name} — {summary['demo']}"[:140], update_modified=False)
-		if workbook_file:
-			# The advertiser wrote the scenes: keep them, only translate (see production_planner.follow_the_sheet).
-			project.db_set("planning_mode", "Follow the sheet", update_modified=False)
 		if format:
 			preset = format if format in ("Landscape", "Portrait", "Square") else format_preset(format)
 			project.save_video_settings(total_duration_seconds=project.total_duration_seconds or 15, delivery_preset=preset)
@@ -124,9 +151,21 @@ def create_project_from_brief(project_name=None, video_idea=None, workbook_file=
 			# Without a role the Project Reference controller classifies the image from its label.
 			role = item.get("role") if item.get("role") in ROLES else infer_reference_role(label)
 			file_doc = frappe.get_doc("File", item["file_name"])
+			if str(file_doc.file_name or "").lower().endswith(".pdf"):
+				# A PDF (a product sheet, a brand book): its usable pictures become references, roles guessed per page.
+				# When the References sheet names pages of it, only those pages are taken.
+				from joymedia.services.intake.references import pdf_pages, sheet_references
+
+				project.reload()
+				pages = pdf_pages(sheet_references(project), file_doc.file_name)
+				added.extend(add_pdf_images_to_project(project.name, file_doc.name, pages=",".join(map(str, pages)) or None))
+				continue
 			asset = create_media_asset(label, ROLE_CATEGORY[role], file_url=file_doc.file_url, file_name=file_doc.name)
-			select_project_asset(project.name, asset["media_asset"], role if item.get("role") in ROLES else "General", label)
+			select_project_asset(project.name, asset["media_asset"], role, label)
 			added.append({"label": label, "role": role})
+		from joymedia.services.intake.references import apply_sheet_references
+
+		apply_sheet_references(project.name)
 	except Exception:
 		# The workbook import commits, so a failure later would leave a half-built project behind.
 		frappe.db.rollback()
@@ -137,6 +176,16 @@ def create_project_from_brief(project_name=None, video_idea=None, workbook_file=
 		raise
 	frappe.db.commit()
 	return {"project": project.name, "references": added, "readiness": get_project_readiness(project.name)}
+
+
+def _sheet_characters(project):
+	from joymedia.services.planning.workbook import character_names
+
+	try:
+		selected = frappe.parse_json(project.storyboard_source_json or "{}").get("selected_demo") or {}
+	except ValueError:
+		return []
+	return [person["name"] for person in character_names(selected.get("metadata") or {})]
 
 
 @frappe.whitelist()
@@ -166,6 +215,34 @@ def get_project_readiness(project_name, lang=None):
 	)
 	references = [row for row in project.selected_media or [] if row.reference_key]
 	add("references", _("Reference images"), bool(references), ", ".join(f"{r.label or r.reference_key} ({r.reference_role})" for r in references) or _("Add the images the film must show (a character, a product…)."), blocking=False)
+	cast = _sheet_characters(project)
+	pictured = [r for r in references if r.reference_role in ("Character", "Person")]
+	add(
+		"characters", _("Pictures of the characters"), not cast or bool(pictured),
+		_("The sheet names {0} but no character or person picture is added; they will be drawn from the text.").format(", ".join(cast))
+		if cast and not pictured else "",
+		blocking=False,
+	)
+	from joymedia.services.intake.references import missing_detail, missing_pictures
+
+	from joymedia.services.intake.references import brand
+	from joymedia.services.planning.workbook import FIELDS
+
+	try:
+		sheet_format = ((frappe.parse_json(project.storyboard_source_json or "{}") or {}).get("selected_demo") or {}).get("metadata", {}).get("format")
+	except (TypeError, ValueError, AttributeError):
+		sheet_format = None
+	if sheet_format and not format_preset(sheet_format):
+		# The sheet names no ratio ("not decided yet"): the project's default is in use until someone chooses.
+		add("sheet_format", _("Format from the sheet"), False,
+		    _("The sheet's format ({0}) is not a ratio; the video uses {1} until you choose 9:16, 16:9 or 1:1 in the settings.").format(
+		        sheet_format, project.delivery_preset or "-"), blocking=False)
+
+	mandatories = [line.strip() for line in str(brand(project).get("mandatories") or "").splitlines() if line.strip()]
+	if mandatories:
+		add("mandatories", _("Must include (Brand sheet)"), False, "; ".join(mandatories), blocking=False)
+	unmatched = missing_pictures(project)
+	add("sheet_pictures", _("Pictures named in the sheet"), not unmatched, missing_detail(unmatched) if unmatched else "", blocking=False)
 	problems = shot_reference_problems(project) if shots and project.workflow else []
 	add("assignments", _("Each scene's references"), not problems, "; ".join(problems[:3]) if problems else "")
 	warnings = frappe.parse_json(project.storyboard_timing_warnings or "[]")

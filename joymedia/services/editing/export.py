@@ -1,5 +1,7 @@
 """Render the persistent JoyMedia Timeline Clip edit decision list."""
 
+import json
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -21,11 +23,12 @@ STUDIO_EXPORT_QUALITY = "Studio 1440p60"
 # Generated clips rarely match the requested length exactly; only a shortfall this large is held.
 TAIL_HOLD_MIN_SECONDS = 1
 FONT_DIR = Path(frappe.get_app_path("joymedia", "fonts"))
-# Every film fades to black, and its sound to silence, over its last second.
-ENDING_FADE_SECONDS = 1.0
+# Every film fades to black, and its sound to silence, over its last half second: the closing packshot stays readable.
+ENDING_FADE_SECONDS = 0.5
 # Scenes shorter than this get no caption: it would flash by unread.
 MIN_CAPTION_SECONDS = 2.0
-TITLE_FONT = "PlayfairDisplay.ttf"
+# A bold sans-serif with Vietnamese letters, on a dark plate: a thin serif disappears on a bright picture.
+TITLE_FONT = "DejaVuSans-Bold.ttf"
 
 TRANSITION_FILTERS = {
 	"Dissolve": "fade",
@@ -33,7 +36,7 @@ TRANSITION_FILTERS = {
 }
 
 
-def compose_project_timeline_internal(project_name: str):
+def compose_project_timeline_internal(project_name: str, *, require_brand_approval=False):
 	project = frappe.get_doc("Media Project", project_name)
 	from joymedia.services.editing.post_production import timeline_signature
 	from joymedia.services.editing.timeline import _ensure_source_audio_clips, _timeline_clip_rows
@@ -65,6 +68,8 @@ def compose_project_timeline_internal(project_name: str):
 		],
 		order_by="clip_order asc, creation asc",
 	)
+	from joymedia.services.project.versions import export_manifest
+	edit_manifest = json.loads(export_manifest(project, clips, started_timeline_signature))
 	video_clips = [clip for clip in clips if (clip.track_type or "Video") == "Video"]
 	audio_clips = [clip for clip in clips if clip.track_type == "Audio"]
 	if not video_clips:
@@ -101,6 +106,11 @@ def compose_project_timeline_internal(project_name: str):
 		expected_frames = max(last_end, target_frames)
 	else:
 		expected_frames = sum(clip_frames) - sum(transition_frames)
+
+	# Freeze the renderer's actual timing, including dissolves and positioned gaps.
+	# Historical reviews must never be mapped using a project's later storyboard.
+	from joymedia.services.review.timeline import rendered_segments
+	edit_manifest['render_timeline'] = {'segments': rendered_segments(video_clips, clip_frames, transition_frames, positioned, render['fps'], edit_manifest['selected_takes'])}
 
 	try:
 		with tempfile.TemporaryDirectory(prefix="joymedia-timeline-") as temp_dir:
@@ -157,6 +167,14 @@ def compose_project_timeline_internal(project_name: str):
 				)
 				_validate_normalized_video(delivery_path, output_profile, expected_frames=output_frames)
 
+			from joymedia.services.editing.delivery import delivery_contract, transform_delivery
+			delivery = delivery_contract(frappe.get_doc("Generation Workflow", project.workflow))
+			if delivery:
+				transformed = temp_path / f"{project.name}-delivery-master.mp4"
+				output_profile = transform_delivery(delivery_path, transformed, output_profile, delivery)
+				_validate_normalized_video(transformed, output_profile, expected_frames=output_frames)
+				delivery_path = transformed
+				edit_manifest["delivery_transform"] = delivery
 			video_duration = _get_video_duration(delivery_path)
 			_assert_timeline_unchanged(project.name, started_timeline_signature)
 			# Studio exports exceed the upload size limit, which is meant for user
@@ -175,6 +193,19 @@ def compose_project_timeline_internal(project_name: str):
 	# The render took minutes; MariaDB's snapshot isolation rejects writes to rows
 	# (such as naming series) that other workers changed since this transaction began.
 	frappe.db.commit()
+	release = None
+	if require_brand_approval:
+		from joymedia.services.review.release import release_evidence
+
+		# Render inputs must still match the edit after ending the old read snapshot.
+		frappe.db.sql("select name from `tabMedia Project` where name=%s for update", project.name)
+		frappe.db.sql("select name from `tabTimeline Clip` where media_project=%s order by name for update", project.name)
+		_assert_timeline_unchanged(project.name, started_timeline_signature)
+		try:
+			release = release_evidence(project.name, clips, lock=True)
+		except ValueError:
+			stored_path.unlink(missing_ok=True)
+			raise
 	output_asset = _get_or_create_final_asset(project)
 	file_doc = frappe.get_doc(
 		{
@@ -196,6 +227,8 @@ def compose_project_timeline_internal(project_name: str):
 			"media_asset": output_asset.name,
 			"file": file_doc.file_url,
 			"source": "Edited",
+			"release_evidence_json": json.dumps(release) if release else None,
+			"edit_manifest_json": json.dumps(edit_manifest, ensure_ascii=False),
 			"duration_seconds": video_duration,
 			"fps": output_profile["fps"],
 		}
@@ -226,6 +259,14 @@ def _assert_timeline_unchanged(project_name, expected_signature):
 		frappe.throw(_("The timeline changed during export. Export the latest edit instead."))
 
 
+PRODUCTION_LABEL = re.compile(r"^\s*(?:cta|vo|v/o|sfx|super|text|txt|chữ|title)\s*[:：-]\s*", re.I)
+
+
+def caption_text(caption):
+	"""The words to show: a sheet's production label in front of them ("CTA: Mua ngay") is a note, not part of the text."""
+	return PRODUCTION_LABEL.sub("", str(caption or "")).strip()
+
+
 def _caption_cues(project, video_clips, clip_frames, transition_frames, positioned, fps):
 	"""Return timed (start, end, text) cues for every captioned source shot."""
 	if not int(project.get("show_captions") or 0):
@@ -234,7 +275,7 @@ def _caption_cues(project, video_clips, clip_frames, transition_frames, position
 		return []
 	shot_names = [clip.get("shot") for clip in video_clips if clip.get("shot")]
 	captions = {
-		row.name: str(row.caption or "").strip()
+		row.name: caption_text(row.caption)
 		for row in frappe.get_all("Shot", filters={"name": ["in", shot_names]}, fields=["name", "caption"])
 	}
 	cues = []
@@ -250,25 +291,39 @@ def _caption_cues(project, video_clips, clip_frames, transition_frames, position
 
 
 def _apply_ending(source_path, output_path, profile, temp_path, captions=()):
-	"""Draw scene captions, then fade the picture to black."""
+	"""Draw scene captions and apply an explicitly requested ending fade."""
 	duration = _get_video_duration(source_path)
 	height = profile["height"]
 	filters = []
 	for index, (begin, end, text) in enumerate(captions):
-		text_file = temp_path / f"caption-{index}.txt"
-		text_file.write_text(text, encoding="utf-8")
-		size = round(min(height * 0.055, profile["width"] * 0.9 / (0.55 * max(len(text), 1))))
+		lines = [line.strip() for line in text.splitlines() if line.strip()] or [text]
+		size = round(min(height * 0.045, profile["width"] * 0.8 / (0.68 * max(max(len(line) for line in lines), 1))))
 		show, hide = begin + 0.3, end - 0.3
 		if hide - show < 1.0:
 			continue
-		filters.append(
-			f"drawtext=fontfile='{FONT_DIR / TITLE_FONT}':textfile='{text_file}':fontsize={size}:fontcolor=white:"
-			f"shadowcolor=black@0.55:shadowx=0:shadowy={max(2, height // 360)}:"
-			f"x=(w-text_w)/2:y=h*0.82-text_h/2:"
+		alpha = (
 			f"alpha='if(lt(t,{show:.3f}),0,if(lt(t,{show + 0.5:.3f}),(t-{show:.3f})/0.5,"
 			f"if(lt(t,{hide - 0.5:.3f}),1,if(lt(t,{hide:.3f}),({hide:.3f}-t)/0.5,0))))'"
 		)
-	filters.append(f"fade=t=out:st={max(0.0, duration - ENDING_FADE_SECONDS):.3f}:d={ENDING_FADE_SECONDS}")
+		# One drawtext per line, each centred (this ffmpeg cannot centre the lines of one block), stacked in the top band:
+		# the real product pack stands in the lower part of every composition.
+		pitch = round(size * 1.6)
+		for number, line in enumerate(lines):
+			text_file = temp_path / f"caption-{index}-{number}.txt"
+			text_file.write_text(line, encoding="utf-8")
+			offset = round((number - (len(lines) - 1) / 2) * pitch)
+			filters.append(
+				f"drawtext=fontfile='{FONT_DIR / TITLE_FONT}':textfile='{text_file}':fontsize={size}:fontcolor=white:"
+				f"box=1:boxcolor=black@0.5:boxborderw={round(size * 0.3)}:"
+				f"x=(w-text_w)/2:y=h*0.12-text_h/2{offset:+d}:{alpha}"
+			)
+	# Ending effects must be explicit. An unconditional fade changes a required
+	# stable final hold and hides the call to action before the video ends.
+	fade_seconds = float(profile.get("ending_fade_seconds") or 0)
+	if fade_seconds < 0 or fade_seconds > duration:
+		raise ValueError("Ending fade must fit within the exported video.")
+	if fade_seconds:
+		filters.append(f"fade=t=out:st={duration-fade_seconds:.3f}:d={fade_seconds}")
 	_run_ffmpeg(
 		[
 			"ffmpeg",
@@ -276,7 +331,7 @@ def _apply_ending(source_path, output_path, profile, temp_path, captions=()):
 			"-i",
 			str(source_path),
 			"-vf",
-			",".join(filters),
+			",".join(filters) or "null",
 			"-an",
 			"-c:v",
 			"libx264",

@@ -15,34 +15,34 @@ import frappe
 from frappe import _
 from frappe.utils.synchronization import filelock
 
+from joymedia.services.editing.access import (  # noqa: E402,F401  (moved; kept importable from here)
+	_require_project_read,
+	_require_project_write,
+)
 from joymedia.services.editing.composer import _get_asset_version_path, _has_audio_stream
-from joymedia.services.project.render_queue import enqueue_render, is_render_alive
+from joymedia.services.editing.export_jobs import (  # noqa: E402,F401  (moved; kept importable from here)
+	_export_job_id,
+	_fail_dead_export,
+	get_project_timeline_export_status,
+	queue_project_timeline_export,
+	run_project_timeline_export,
+)
+from joymedia.services.editing.view import (  # noqa: E402,F401  (moved; kept importable from here)
+	MIN_CLIP_SECONDS,
+	_clip_length,
+	_enabled_clips,
+	_final_video,
+	_latest_fully_generated_run,
+	_minimum_clip_frames,
+	_project_fps,
+	_serialize_timeline,
+	_source_max_frames,
+	_timeline_clip_rows,
+	_unique_file_url,
+	_visual_timeline_end_frame,
+)
 
 TRANSITIONS = {"Cut", "Dissolve", "Fade"}
-MIN_CLIP_SECONDS = 0.25
-
-
-def _unique_file_url(file_url):
-	if not file_url:
-		return None
-	file_name = frappe.db.get_value("File", {"file_url": file_url}, "name")
-	if not file_name:
-		return file_url
-	return frappe.get_doc("File", file_name).unique_url
-
-
-def _require_project_read(project):
-	if hasattr(project, "_require_read_access"):
-		project._require_read_access()
-	else:
-		project.check_permission("read")
-
-
-def _require_project_write(project):
-	if hasattr(project, "_require_write_access"):
-		project._require_write_access()
-	else:
-		project.check_permission("write")
 
 
 @frappe.whitelist()
@@ -73,12 +73,15 @@ def get_project_timeline(project_name: str, create_if_possible=True):
 
 
 @frappe.whitelist()
-def reset_project_timeline(project_name: str):
+def reset_project_timeline(project_name: str, preserve_narration=False):
 	"""Rebuild the edit timeline from the newest fully generated shot set."""
 	project = frappe.get_doc("Media Project", project_name)
 	_require_project_write(project)
-	for clip_name in frappe.get_all("Timeline Clip", filters={"media_project": project.name}, pluck="name"):
-		frappe.delete_doc("Timeline Clip", clip_name, ignore_permissions=True, force=True)
+	preserve = str(preserve_narration).lower() in {"1", "true", "yes", "on"}
+	for clip in frappe.get_all("Timeline Clip", filters={"media_project": project.name}, fields=["name", "track_type", "audio_role"]):
+		if preserve and clip.track_type == "Audio" and clip.audio_role == "Voiceover":
+			continue
+		frappe.delete_doc("Timeline Clip", clip.name, ignore_permissions=True, force=True)
 	_initialize_timeline(project)
 	_invalidate_project_output(project.name)
 	frappe.db.commit()
@@ -639,130 +642,6 @@ def set_timeline_transition(project_name: str, clip_name: str, transition: str, 
 	return _serialize_timeline(project, _timeline_clip_rows(project.name))
 
 
-@frappe.whitelist()
-def queue_project_timeline_export(project_name: str):
-	project = frappe.get_doc("Media Project", project_name)
-	_require_project_write(project)
-	from joymedia.services.review.authority import require_approved_timeline_clips
-
-	require_approved_timeline_clips(project.name)
-	if getattr(project, "export_status", None) in ("Queued", "Running") and is_render_alive(
-		_export_job_id(project.name)
-	):
-		return {
-			"status": project.export_status,
-			"export_status": project.export_status,
-		}
-	from joymedia.services.editing.post_production import _job_id as post_production_job_id
-
-	if getattr(project, "post_production_status", None) in ("Queued", "Running") and is_render_alive(
-		post_production_job_id(project.name)
-	):
-		frappe.throw(_("The film is still being finished. Export once the transitions and soundtrack are added."))
-	project.db_set("export_status", "Queued")
-	project.db_set("export_error", None)
-	enqueue_render(
-		"joymedia.services.editing.timeline.run_project_timeline_export",
-		_export_job_id(project.name),
-		# Studio finishing renders every second of film on the GPU.
-		timeout=7200,
-		project_name=project.name,
-	)
-	frappe.db.commit()
-	return {
-		"status": "Queued",
-		"export_status": "Queued",
-	}
-
-
-def _export_job_id(project_name):
-	return f"joymedia:export:{project_name}"
-
-
-def _fail_dead_export(project):
-	"""Report an export whose background job died as Failed, so it can be retried."""
-	if project.export_status not in ("Queued", "Running") or is_render_alive(_export_job_id(project.name)):
-		return
-	project.db_set({
-		"export_status": "Failed",
-		"export_error": _("The export stopped unexpectedly. Please export again."),
-		"export_completed_at": frappe.utils.now(),
-	})
-	frappe.db.commit()
-
-
-def run_project_timeline_export(project_name: str):
-	project = frappe.get_doc("Media Project", project_name)
-	from joymedia.services.editing.export import compose_project_timeline_internal
-	from joymedia.services.review.authority import require_approved_timeline_clips
-
-	try:
-		require_approved_timeline_clips(project.name)
-		project.db_set("export_status", "Running")
-		project.db_set("export_started_at", frappe.utils.now())
-		frappe.db.commit()
-		result = compose_project_timeline_internal(project.name)
-		project.db_set("export_status", "Completed")
-		project.db_set("export_completed_at", frappe.utils.now())
-		frappe.db.commit()
-		return result
-	except Exception as exc:
-		# A failed write aborts the transaction; record the failure in a fresh one.
-		frappe.db.rollback()
-		project.db_set("export_status", "Failed")
-		from joymedia.services.generation.failures import classify_failure, friendly_failure
-
-		# Marketers see a plain message; the technical detail is in the Error Log.
-		project.db_set(
-			"export_error",
-			friendly_failure("Infrastructure")
-			if classify_failure(exc) == "Infrastructure"
-			else _("The export did not finish. Please export again."),
-		)
-		project.db_set("export_completed_at", frappe.utils.now())
-		frappe.db.commit()
-		frappe.log_error(title=f"Timeline export failed for {project_name}")
-		raise
-
-
-@frappe.whitelist()
-def get_project_timeline_export_status(project_name: str):
-	project = frappe.get_doc("Media Project", project_name)
-	_require_project_read(project)
-	_fail_dead_export(project)
-	return {
-		"export_status": getattr(project, "export_status", "Idle") or "Idle",
-		"export_error": getattr(project, "export_error", None),
-		"export_started_at": getattr(project, "export_started_at", None),
-		"export_completed_at": getattr(project, "export_completed_at", None),
-		"current_output_asset_version": getattr(project, "current_output_asset_version", None),
-	}
-
-
-@frappe.whitelist()
-def compose_project_timeline(project_name: str):
-	project = frappe.get_doc("Media Project", project_name)
-	_require_project_write(project)
-	from joymedia.services.editing.export import compose_project_timeline_internal
-	from joymedia.services.review.authority import require_approved_timeline_clips
-
-	require_approved_timeline_clips(project.name)
-	project.db_set("export_status", "Running")
-	project.db_set("export_started_at", frappe.utils.now())
-	try:
-		result = compose_project_timeline_internal(project.name)
-		project.db_set("export_status", "Completed")
-		project.db_set("export_completed_at", frappe.utils.now())
-		frappe.db.commit()
-		return result
-	except Exception as exc:
-		project.db_set("export_status", "Failed")
-		project.db_set("export_error", str(exc))
-		project.db_set("export_completed_at", frappe.utils.now())
-		frappe.db.commit()
-		raise
-
-
 def _initialize_timeline(project):
 	_sync_missing_generated_shots_to_timeline(project)
 
@@ -887,23 +766,19 @@ def _get_or_create_source_audio_version(video_asset_version_name):
 	video_asset = frappe.get_doc("Media Asset", video_version.media_asset)
 	if video_asset.media_type != "Video":
 		frappe.throw(_("Source audio extraction requires a Video Asset Version."))
-	existing = frappe.db.get_value(
-		"Asset Version",
-		{"derived_from": video_version.name},
-		["name", "media_asset"],
-		as_dict=True,
-	)
-	if existing and frappe.db.get_value("Media Asset", existing.media_asset, "media_type") == "Audio":
-		return existing.name
-	existing = None
+	def existing_audio():
+		# Derived videos and audio can share a parent; the first derived version
+		# is not necessarily an audio extraction (especially after art repair).
+		rows = frappe.db.sql("select v.name from `tabAsset Version` v join `tabMedia Asset` a on a.name=v.media_asset where v.derived_from=%s and a.media_type='Audio' order by v.creation desc limit 1", video_version.name)
+		return rows[0][0] if rows else None
+
+	existing = existing_audio()
+	if existing:
+		return existing
 
 	with filelock(f"joymedia-source-audio-{video_version.name}"):
-		existing = frappe.db.get_value(
-			"Asset Version",
-			{"derived_from": video_version.name},
-			"name",
-		)
-		if existing and frappe.db.get_value("Media Asset", existing.media_asset, "media_type") == "Audio":
+		existing = existing_audio()
+		if existing:
 			return existing
 		source_path = _get_asset_version_path(video_version.name)
 		if not _has_audio_stream(source_path):
@@ -998,213 +873,6 @@ def _ensure_source_audio_clips(project, clips):
 		frappe.db.commit()
 
 
-def _latest_fully_generated_run(project_name):
-	"""Pick the newest run only when every project shot has a selected video.
-
-	Generation results arrive shot-by-shot. Creating the edit timeline after the
-	first completed shot would permanently omit later shots, so initialization is
-	deferred until the entire shot set is ready.
-	"""
-	runs = frappe.get_all(
-		"Generation Run",
-		filters={"media_project": project_name},
-		fields=["name", "creation"],
-		order_by="creation desc",
-	)
-	shots = frappe.get_all(
-		"Shot",
-		filters={"media_project": project_name, "is_removed": 0},
-		fields=["name", "selected_output_asset_version"],
-	)
-	if shots and all(row.selected_output_asset_version for row in shots):
-		return runs[0] if runs else None
-	return None
-
-
-def _timeline_clip_rows(project_name):
-	return frappe.get_all(
-		"Timeline Clip",
-		filters={"media_project": project_name},
-		fields=[
-			"name",
-			"media_project",
-			"shot",
-			"clip_order",
-			"track_type",
-			"track_index",
-			"linked_video_clip",
-			"timeline_start_frame",
-			"enabled",
-			"source_asset_version",
-			"source_in_frame",
-			"source_out_frame",
-			"initial_source_in_frame",
-			"initial_source_out_frame",
-			"transition_to_next",
-			"transition_frames",
-			"audio_role",
-			"gain_db",
-			"fade_in_frames",
-			"fade_out_frames",
-			"duck_others",
-			"is_outdated",
-		],
-		order_by="clip_order asc, creation asc",
-	)
-
-
-def _enabled_clips(clips):
-	return [clip for clip in clips if clip.enabled]
-
-
-def _serialize_timeline(project, clips):
-	latest_run = _latest_fully_generated_run(project.name)
-	enabled_clips = _enabled_clips(clips)
-	visible_clips = enabled_clips + [
-		clip for clip in clips
-		if not clip.enabled and clip.track_type == "Audio"
-	]
-	if not enabled_clips:
-		return {
-			"ready": False,
-			"project": project.name,
-			"media_project": project.name,
-			"latest_generation_run": latest_run.name if latest_run else None,
-			"is_outdated": False,
-			"clips": [],
-			"fps": 0,
-			"total_frames": 0,
-			"total_seconds": 0,
-			"export_status": getattr(project, "export_status", "Idle") or "Idle",
-			"export_error": getattr(project, "export_error", None),
-			"message": _("Generate every shot before opening the edit timeline."),
-		}
-
-	fps = _project_fps(project.name)
-	serialized = []
-	for index, clip in enumerate(visible_clips):
-		length = _clip_length(clip)
-		asset = frappe.db.get_value(
-			"Asset Version",
-			clip.source_asset_version,
-			["name", "media_asset", "file", "duration_seconds", "fps"],
-			as_dict=True,
-		)
-		source_total_frames = _source_max_frames(clip.source_asset_version, fps)
-		min_duration_frames = _minimum_clip_frames(fps)
-		media_asset = (
-			frappe.db.get_value("Media Asset", asset.media_asset, ["asset_name", "asset_category"], as_dict=True)
-			if asset
-			else None
-		)
-		shot_number = (
-			frappe.db.get_value("Shot", clip.shot, "shot_number")
-			if clip.shot
-			else None
-		)
-		start = int(clip.timeline_start_frame or 0)
-		end = start + length
-		source_has_audio = False
-		if (clip.track_type or "Video") == "Video" or clip.audio_role == "Source":
-			try:
-				source_has_audio = _has_audio_stream(_get_asset_version_path(clip.source_asset_version))
-			except Exception:
-				source_has_audio = False
-		transition = clip.transition_to_next or "Cut"
-		transition_frames = int(clip.transition_frames or 0) if transition != "Cut" else 0
-		if index == len(visible_clips) - 1:
-			transition = "Cut"
-			transition_frames = 0
-		serialized.append(
-			{
-				"name": clip.name,
-				"clip_order": clip.clip_order,
-				"track_type": clip.track_type or "Video",
-				"track_index": int(clip.track_index or 0),
-				"enabled": bool(clip.enabled),
-				"linked_video_clip": clip.linked_video_clip,
-				"shot": clip.shot,
-				"shot_number": shot_number,
-				"source_asset_version": clip.source_asset_version,
-				"source_file": _unique_file_url(asset.file) if asset else None,
-				"source_has_audio": source_has_audio,
-				"source_asset_name": media_asset.asset_name if media_asset else None,
-				"source_asset_category": media_asset.asset_category if media_asset else None,
-				"source_in_frame": int(clip.source_in_frame),
-				"source_out_frame": int(clip.source_out_frame),
-				"initial_source_in_frame": int(clip.initial_source_in_frame or clip.source_in_frame),
-				"initial_source_out_frame": int(clip.initial_source_out_frame or clip.source_out_frame),
-				"source_total_frames": source_total_frames,
-				"source_duration_seconds": float(asset.duration_seconds or 0) if asset else 0,
-				"source_fps": float(asset.fps or 0) if asset else 0,
-				"available_head_frames": max(0, int(clip.source_in_frame)),
-				"available_tail_frames": max(0, int(source_total_frames or clip.source_out_frame) - int(clip.source_out_frame)),
-				"min_duration_frames": min_duration_frames,
-				"duration_frames": length,
-				"duration_seconds": length / fps,
-				"timeline_start_frame": start,
-				"initial_timeline_start_frame": int(clip.initial_timeline_start_frame or clip.timeline_start_frame or 0),
-				"timeline_end_frame": end,
-				"transition_to_next": transition,
-				"transition_frames": transition_frames,
-				"is_outdated": bool(clip.is_outdated),
-				"audio_role": clip.audio_role,
-				"gain_db": float(clip.gain_db or 0),
-				"fade_in_frames": int(clip.fade_in_frames or 0),
-				"fade_out_frames": int(clip.fade_out_frames or 0),
-				"duck_others": bool(clip.duck_others),
-			}
-		)
-
-	final_video = _final_video(project.name)
-	render_total_frames = _visual_timeline_end_frame(project.name)
-	audio_end_frames = [
-		int(clip.timeline_start_frame or 0) + _clip_length(clip)
-		for clip in clips
-		if clip.track_type == "Audio"
-	]
-	canvas_total_frames = max([render_total_frames, *audio_end_frames])
-	return {
-		"ready": bool(serialized),
-		"project": project.name,
-		"media_project": project.name,
-		"latest_generation_run": latest_run.name if latest_run else None,
-		"is_outdated": any(item["is_outdated"] for item in serialized),
-		"fps": fps,
-		"total_frames": render_total_frames,
-		"total_seconds": render_total_frames / fps,
-		"render_total_frames": render_total_frames,
-		"render_total_seconds": render_total_frames / fps,
-		"canvas_total_frames": canvas_total_frames,
-		"canvas_total_seconds": canvas_total_frames / fps,
-		"clips": serialized,
-		"final_video": final_video,
-		"export_status": getattr(project, "export_status", "Idle") or "Idle",
-		"export_error": getattr(project, "export_error", None),
-	}
-
-
-def _final_video(project_name):
-	asset_version_name = frappe.db.get_value(
-		"Media Project",
-		project_name,
-		"current_output_asset_version",
-	)
-	if not asset_version_name:
-		return None
-	return frappe.db.get_value(
-		"Asset Version",
-		asset_version_name,
-		[
-			"name",
-			"file",
-			"duration_seconds",
-			"fps",
-		],
-		as_dict=True,
-	)
-
-
 def _invalidate_project_output(project_name):
 	frappe.db.set_value(
 		"Media Project",
@@ -1268,7 +936,7 @@ def update_timeline_source_for_shot(project_name: str, shot_name: str):
 		frappe.db.commit()
 		return _serialize_timeline(project, _timeline_clip_rows(project.name))
 	for clip_name in frappe.get_all(
-		"Timeline Clip", filters={"media_project": project.name, "shot": shot.name}, pluck="name"
+		"Timeline Clip", filters={"media_project": project.name, "shot": shot.name, "track_type": "Video"}, pluck="name"
 	):
 		clip = frappe.get_doc("Timeline Clip", clip_name)
 		if clip.track_type == "Video":
@@ -1404,7 +1072,6 @@ def add_timeline_audio_clip(
 	return result
 
 
-
 def _project_clip(project_name, clip_name):
 	project = frappe.get_doc("Media Project", project_name)
 	_require_project_write(project)
@@ -1445,57 +1112,6 @@ def _sync_linked_audio_clip(video_clip):
 	linked_audio.initial_source_out_frame = video_clip.initial_source_out_frame
 	linked_audio.source_asset_version = audio_version
 	linked_audio.save(ignore_permissions=True)
-
-
-def _project_fps(project_name):
-	workflow_name = frappe.db.get_value("Media Project", project_name, "workflow")
-	if not workflow_name:
-		frappe.throw(_("Media Project has no Workflow."))
-	fps = float(frappe.db.get_value("Generation Workflow", workflow_name, "output_fps") or 0)
-	if fps <= 0:
-		frappe.throw(_("Workflow output FPS must be greater than zero."))
-	return fps
-
-
-def _source_max_frames(asset_version_name, project_fps):
-	asset = frappe.db.get_value(
-		"Asset Version",
-		asset_version_name,
-		["duration_seconds", "fps"],
-		as_dict=True,
-	)
-	if not asset or not asset.duration_seconds:
-		return None
-	return max(1, round(float(asset.duration_seconds) * project_fps))
-
-
-def _visual_timeline_end_frame(project_name):
-	clips = frappe.get_all(
-		"Timeline Clip",
-		filters={
-			"media_project": project_name,
-			"track_type": "Video",
-			"enabled": 1,
-		},
-		fields=["timeline_start_frame", "source_in_frame", "source_out_frame"],
-	)
-	return max(
-		(
-			int(row.timeline_start_frame or 0)
-			+ int(row.source_out_frame or 0)
-			- int(row.source_in_frame or 0)
-			for row in clips
-		),
-		default=0,
-	)
-
-
-def _minimum_clip_frames(project_fps):
-	return max(1, round(MIN_CLIP_SECONDS * project_fps))
-
-
-def _clip_length(clip):
-	return max(0, int(clip.source_out_frame or 0) - int(clip.source_in_frame or 0))
 
 
 def _set_clip_order(clips):

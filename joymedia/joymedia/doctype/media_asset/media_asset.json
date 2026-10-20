@@ -60,13 +60,13 @@
    "reqd": 1
   },
   {
-    "description": "Project that owns a generated output. Uploaded library assets leave this empty.",
-    "fieldname": "media_project",
-    "fieldtype": "Link",
-    "label": "Media Project",
-    "options": "Media Project",
-    "read_only": 1,
-    "hidden": 1
+   "description": "Project that owns a generated output. Uploaded library assets leave this empty.",
+   "fieldname": "media_project",
+   "fieldtype": "Link",
+   "label": "Media Project",
+   "options": "Media Project",
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "default": "Active",
@@ -116,6 +116,12 @@
    "create": 1,
    "read": 1,
    "role": "JoyMedia User",
+   "write": 1
+  },
+  {
+   "role": "JoyMedia Reviewer",
+   "read": 1,
+   "create": 1,
    "write": 1
   }
  ],

@@ -45,17 +45,17 @@ class TestSceneTakes(FrappeTestCase):
 	def test_storyboard_card_knows_its_takes(self):
 		self.assertEqual((2, 2), scene_takes.take_position(self.project.name, self.shot))
 
-	@patch("joymedia.services.editing.post_production.resume_post_production_if_approved", return_value={"status": "Awaiting QA"})
-	def test_selecting_an_unapproved_take_keeps_selection_and_waits_for_qa(self, resume):
+	@patch("joymedia.services.editing.post_production.resume_post_production", return_value={"status": "Queued"})
+	def test_selecting_a_take_selects_it_and_asks_for_the_film_to_be_rebuilt(self, resume):
 		result = scene_takes.select_scene_take(self.project.name, self.shot.name, 1)
 
 		self.assertEqual(self.takes[0].name, frappe.db.get_value("Shot", self.shot.name, "selected_output_asset_version"))
-		self.assertEqual({"shot_name": self.shot.name, "take_count": 2, "take_index": 1, "finishing": "Awaiting QA", "stale_shots": []}, result)
+		self.assertEqual({"shot_name": self.shot.name, "take_count": 2, "take_index": 1, "finishing": "Queued", "stale_shots": []}, result)
 		resume.assert_called_once_with(self.project.name)
 		with self.assertRaises(frappe.ValidationError):
 			scene_takes.select_scene_take(self.project.name, self.shot.name, 3)
 
-	@patch("joymedia.services.editing.post_production.resume_post_production_if_approved")
+	@patch("joymedia.services.editing.post_production.resume_post_production")
 	def test_selecting_the_already_selected_take_does_not_request_finishing(self, resume):
 		result = scene_takes.select_scene_take(self.project.name, self.shot.name, 2)
 
@@ -88,7 +88,7 @@ class TestSceneTakes(FrappeTestCase):
 		continuing = frappe._dict(name="SHOT-00003", shot_number=3, continuity_mode="Continue")
 		get_doc.return_value = continuing
 		get_all.return_value = [frappe._dict(
-			name="SHOT-00002", selected_output_asset_version="ASTV-00002", review_status="Approved"
+			name="SHOT-00002", selected_output_asset_version="ASTV-00002"
 		)]
 		get_value.side_effect = ["ATT-00002", "TASK-00002"]
 
@@ -100,11 +100,11 @@ class TestSceneTakes(FrappeTestCase):
 			{"generation_attempt": "ATT-00002", "artifact_role": "Last Frame", "frappe_file": ["is", "set"]},
 		)
 
-	def test_continuation_regeneration_requires_approved_predecessor_output(self):
+	def test_continuation_regeneration_requires_a_predecessor_output(self):
 		with patch("joymedia.services.generation.takes.frappe.get_doc", return_value=frappe._dict(
 			name="SHOT-00003", shot_number=3, continuity_mode="Continue"
 		)), patch("joymedia.services.generation.takes.frappe.get_all", return_value=[frappe._dict(
-			name="SHOT-00002", selected_output_asset_version=None, review_status="Pending Review"
+			name="SHOT-00002", selected_output_asset_version=None
 		)]):
 			with self.assertRaises(frappe.ValidationError):
 				scene_takes._continuation_source_task(frappe._dict(name="PROJ-00001"), ["SHOT-00003"])
@@ -116,7 +116,7 @@ class TestSceneTakes(FrappeTestCase):
 			scene_takes.select_scene_take(self.project.name, self.shot.name, 1)
 
 		busy.return_value = ["SHOT-OTHER"]
-		with patch("joymedia.services.editing.post_production.resume_post_production_if_approved", return_value={"status": "Awaiting QA"}):
+		with patch("joymedia.services.editing.post_production.resume_post_production", return_value={"status": "Queued"}):
 			self.assertEqual(1, scene_takes.select_scene_take(self.project.name, self.shot.name, 1)["take_index"])
 
 
@@ -147,9 +147,8 @@ class TestDownstreamStaleness(FrappeTestCase):
 
 		with patch.object(scene_takes.frappe, "get_all", side_effect=get_all), patch.object(
 			scene_takes.frappe.db, "get_value", side_effect=get_value
-		), patch.object(scene_takes.frappe.db, "set_value") as set_value:
-			stale = scene_takes.mark_stale_downstream_shots(shot)
+		):
+			stale = scene_takes.stale_downstream_shots(shot)
 
 		# S3 was built on the selected take; S4's output came from a different task lineage.
 		self.assertEqual(["S2"], stale)
-		set_value.assert_called_once_with("Shot", "S2", "review_status", "Needs Revision", update_modified=False)

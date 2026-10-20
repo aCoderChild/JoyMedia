@@ -1,0 +1,43 @@
+{
+  "repository": "https://github.com/ChrisJohnson89/minimax-h3-comfyui",
+  "commit": "0409aa4b18767cd7d18de66442671e6dfe7f2ea4",
+  "inspected": [
+    "README.md",
+    "workflows/MiniMax_H3_Fast_I2V.json"
+  ],
+  "integration": "Native optional last-frame and symmetric resizing topology, implemented using already deployed ComfyUI core ImageScale; no upstream custom nodes or executable code copied. Existing model weights reused.",
+  "image_reference_workflow": {
+    "repository": "https://github.com/black-forest-labs/flux2",
+    "commit": "50fe5162777813d869182b139e83b10743caef15",
+    "integration": "Existing deployed FLUX.2 Klein multi-reference adapter WF-02656 replaces unsuitable Redux keyframe stage by composing a versioned pipeline; pretrained model already installed. No upstream executable code copied."
+  },
+  "music_workflow": {
+    "repository": "https://github.com/kijai/ComfyUI-MMAudio",
+    "commit": "8eaeb72edc3aaf2059b57f2d96a1f6f689f19ae2",
+    "inspected": [
+      "nodes.py:MMAudioSampler.sample",
+      "nodes.py:MMAudioSampler.INPUT_TYPES"
+    ],
+    "integration": "Reuse installed nodes and weights; declare 744-frame music capacity via existing frames_to_seconds adapter mapping. Request continuous score up to capacity; retain crossfade-loop fallback for short providers. No upstream executable code copied."
+  },
+  "direct_reference_video_workflow": {
+    "repository": "https://github.com/Comfy-Org/workflow_templates",
+    "commit": "46e060ea88eb07adecf07197ec384c54a70e030c",
+    "inspected": [
+      "templates/video_minimax_h3_r2v.json",
+      "deployed comfy_extras/nodes_minimax_h3.py:MiniMaxH3ReferenceToVideo"
+    ],
+    "integration": "Reuse native MiniMaxH3ReferenceToVideo with original role-separated image inputs and no generated first-frame guide. Native autogrow skips absent None values; prompt picture ordinals follow the declared image binding order. No new inference implementation. reference_only is a provider-independent execution capability; video visual admission remains required.",
+    "workflow": "WF-02675",
+    "pipeline": "PIPE-00045",
+    "checkpoint": {
+      "repository": "Comfy-Org/MiniMax-H3",
+      "revision": "e5eb578a89295337b8ff433a035929ce0279e0b6",
+      "file": "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "bytes": 20970379616,
+      "sha256": "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779",
+      "installed_path": "/var/lib/kubelet/joymedia-model-store/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+    },
+    "qualification": "Three real ComfyUI outputs from RUN-00721/RUN-00722, including bounded QA retry ATT-00956. Original product upload SHA matches user source. Visual comparison shows improved packaging details, but opening crops its wordmark and both extraction attempts were held by native actor topology/human-part screening. Opening remains an unselected manual-review candidate. No production approval or new 30-second export. Evidence: verification/shera-music-20261020/ref2va-original-reference-proof.json."
+  }
+}

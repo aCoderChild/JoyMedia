@@ -1,8 +1,8 @@
 """Describe reference images with a vision-language model before planning.
 
 The planner model is text-only, so each selected image is described once by the
-model configured in `qwen_vl_base_url` / `qwen_vl_model` and the result is cached
-on its Asset Version (`analysis_status`, `analysis_json`, `analysis_error`).
+configured vision capability and the result is cached on its Asset Version
+(`analysis_status`, `analysis_json`, `analysis_error`).
 """
 
 import base64
@@ -14,8 +14,9 @@ import frappe
 import requests
 from frappe import _
 
+from joymedia.services.runtime.endpoints import endpoint, is_configured as endpoint_is_configured
+
 MAX_IMAGE_EDGE = 1024
-DEFAULT_TIMEOUT = 120
 VALID_KINDS = {"person", "place", "product", "other"}
 
 ANALYSIS_PROMPT = """
@@ -48,7 +49,7 @@ ANALYSIS_VERSION = 2
 
 
 def is_configured():
-	return bool(frappe.conf.get("qwen_vl_base_url") and frappe.conf.get("qwen_vl_model"))
+	return endpoint_is_configured("vision")
 
 
 def ensure_project_image_analysis(project):
@@ -116,9 +117,10 @@ def analyse_asset_version(asset_version_name, as_product=False):
 
 
 def describe_image(data_url, prompt=ANALYSIS_PROMPT):
-	base_url = frappe.conf.get("qwen_vl_base_url").rstrip("/")
+	configured = endpoint("vision")
+	base_url = configured.base_url
 	payload = {
-		"model": frappe.conf.get("qwen_vl_model"),
+		"model": configured.model,
 		"messages": [
 			{
 				"role": "user",
@@ -132,7 +134,7 @@ def describe_image(data_url, prompt=ANALYSIS_PROMPT):
 		"temperature": 0.1,
 		"max_tokens": 400,
 	}
-	timeout = float(frappe.conf.get("qwen_vl_timeout") or DEFAULT_TIMEOUT)
+	timeout = configured.timeout
 	response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
 	response.raise_for_status()
 	content = response.json()["choices"][0]["message"]["content"]

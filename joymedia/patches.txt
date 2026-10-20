@@ -55,3 +55,14 @@ joymedia.patches.remove_end_card_fields
 joymedia.patches.remove_end_card_columns
 joymedia.patches.upgrade_flux2_multireference_workflow
 joymedia.patches.install_storyboard_approval_workflow
+
+joymedia.patches.drop_legacy_media_specification_and_audio_cue_tables
+joymedia.patches.attach_keyframe_images_to_project
+joymedia.patches.replace_shot_review_with_review_comments
+joymedia.patches.backfill_project_reference_identity_keys
+
+joymedia.patches.setup_partner_reviewers
+
+joymedia.patches.register_reference_retention
+joymedia.patches.register_source_frame_hold
+joymedia.patches.index_generation_task_identity

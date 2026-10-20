@@ -1,0 +1,1 @@
+{"scene":{"class_type":"LoadImage","inputs":{"image":"scene.png"}},"retain":{"class_type":"JoyMediaRetainReference","inputs":{"image":["scene",0],"source_image":"reference.png","recipe_sha256":"required-pinned-recipe"}}}

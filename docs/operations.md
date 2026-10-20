@@ -1,8 +1,9 @@
 # Operating JoyMedia
 
-JoyMedia plans with Qwen, analyses images with Qwen VL, and renders with ComfyUI
-on a separate GPU server. Install the Frappe app first, then configure the
-required workers and external services.
+JoyMedia plans with a configured text-capable endpoint, analyses images with a
+configured vision endpoint, and renders with ComfyUI on a separate GPU server.
+Install the Frappe app first, then configure the required workers and external
+services.
 
 ## Workers
 
@@ -26,9 +27,8 @@ forwarded ports:
 ```bash
 bench --site <site> set-config comfyui_base_url http://127.0.0.1:8188
 bench --site <site> set-config comfyui_api_key '<COMFY_ORG_API_KEY>'
-bench --site <site> set-config qwen_base_url http://127.0.0.1:8001/v1
-bench --site <site> set-config qwen_vl_base_url http://127.0.0.1:8002/v1
-bench --site <site> set-config qwen_vl_model joymedia-vl
+bench --site <site> set-config joymedia_planner '{"base_url":"http://127.0.0.1:8001/v1","model":"planner"}' --parse
+bench --site <site> set-config joymedia_vision '{"base_url":"http://127.0.0.1:8002/v1","model":"vision"}' --parse
 ```
 
 Keep credentials in site configuration, never in source files or ComfyUI
@@ -40,18 +40,21 @@ To install the GPU-host services after copying `deploy/` to that host:
 sudo JOYMEDIA_TUNNEL_USER=<ssh-user> ./deploy/install-gpu-services.sh
 ```
 
-The installation registers the Qwen 2.5 32B planner, local AWQ Qwen 2.5 VL
-vision model, and ComfyUI as system services. Once installed, `bench start`
-starts them idempotently through the tunnel before opening forwarded ports. Set
-`JOYMEDIA_GPU_AUTOSTART=0` to disable that behavior.
+The installation registers generic planner, vision, and ComfyUI system profiles.
+Their complete, shell-safe command argv values live in
+`/etc/joymedia/runtime.json`; model selection and provider flags are deployment
+data, not source code. `runtime.example.json` is a starting profile for the
+current host and may be replaced without changing JoyMedia. Once installed,
+`bench start` starts the profiles idempotently through the tunnel before opening
+forwarded ports. Set `JOYMEDIA_GPU_AUTOSTART=0` to disable that behavior.
 
-The vision service expects its model at
-`/home/ubuntu/models_qwen/Qwen2.5-VL-7B-Instruct-AWQ`. Its bounded 2,048-token
-context is sufficient for JoyMedia's single-image analysis and review requests.
+Choose a vision profile with enough context for one reference image and its
+structured analysis. The review service deliberately sends one image and one
+question per request for repeatable judgments.
 
 ## Capacity
 
 Exports decode and encode several 1080p/1440p streams with ffmpeg. Allocate at
-least 8 GB of RAM (16 GB when exports overlap) and 20 GB of free disk. Start
-the Qwen planner with `--max-model-len 12288`; shorter context windows can
-force planning retries.
+least 8 GB of RAM (16 GB when exports overlap) and 20 GB of free disk. Set the
+planner profile's context window to accommodate the longest approved brief and
+its reference metadata; shorter windows can force planning retries.

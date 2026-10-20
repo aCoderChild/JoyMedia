@@ -14,10 +14,11 @@ from frappe import _
 
 PROJECT_FIELDS = (
 	"workflow", "generation_pipeline", "delivery_width", "delivery_height", "quality_mode", "generation_mode",
+	"storyboard_source_json",
 )
 # planned_frame_count is derived from duration at generation time, so it is not part of the plan.
 SHOT_FIELDS = (
-	"shot_number", "image_prompt", "generation_prompt", "motion_plan_json", "start_state", "end_state",
+	"shot_number", "storyboard_action", "image_prompt", "generation_prompt", "motion_plan_json", "start_state", "end_state",
 	"handoff_type", "continuity_mode", "duration_seconds",
 )
 

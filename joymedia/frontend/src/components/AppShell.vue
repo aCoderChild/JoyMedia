@@ -44,14 +44,14 @@
       <!-- Navigation Links -->
       <nav class="sidebar-nav" aria-label="Main navigation">
         <!-- Projects -->
-        <Tooltip :text="currentLang === 'vi' ? 'Dự án Video' : 'Projects'" side="right" :disabled="!isCollapsed">
+        <Tooltip :text="currentLang === 'vi' ? 'Video của bạn' : 'Your videos'" side="right" :disabled="!isCollapsed">
           <RouterLink
             to="/projects"
             class="nav-link"
             :class="{ 'justify-center p-2.5': isCollapsed }"
           >
             <span class="nav-link-icon text-base">▦</span>
-            <span v-if="!isCollapsed" class="truncate flex-1">{{ currentLang === 'vi' ? 'Dự án' : 'Projects' }}</span>
+            <span v-if="!isCollapsed" class="truncate flex-1">{{ currentLang === 'vi' ? 'Video' : 'Videos' }}</span>
             <span
               v-if="!isCollapsed && campaignsCount"
               class="sidebar-counter-chip"
@@ -64,7 +64,7 @@
         <!-- Media Library -->
         <Tooltip :text="t('sidebar_images')" side="right" :disabled="!isCollapsed">
           <RouterLink
-            to="/library"
+            v-if="access.can_use_library" to="/library"
             class="nav-link"
             :class="{ 'justify-center p-2.5': isCollapsed }"
           >
@@ -109,7 +109,7 @@
           <button
             type="button"
             class="p-1 rounded text-ink-muted hover:text-ink-primary transition-colors"
-            :title="currentLang === 'vi' ? 'Dự án' : 'Projects'"
+            :title="currentLang === 'vi' ? 'Video' : 'Videos'"
             @click="router.push('/campaigns')"
           >
             <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -120,7 +120,6 @@
 
           <div class="flex items-center gap-2">
             <span class="text-xs font-semibold text-ink-primary tracking-tight">{{ currentPageTitle }}</span>
-            <span class="text-ink-muted hover:text-ink-primary cursor-pointer p-0.5" title="Tùy chọn">⋮</span>
           </div>
         </div>
 
@@ -155,6 +154,7 @@
             </svg>
           </button>
 
+          <RoleBadge />
           <!-- User Badge -->
           <div class="user-badge" :title="user">
             <span class="user-avatar">{{ userInitial }}</span>
@@ -189,13 +189,14 @@
 </template>
 
 <script setup>
+import RoleBadge from "./RoleBadge.vue";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Button, Dropdown, Tooltip, createResource } from "frappe-ui";
 import { useSession } from "../stores/session";
 import { useI18n } from "../stores/i18n";
 
-const { user, logout } = useSession();
+const { user, logout, access } = useSession();
 const { t, currentLang, toggleLang, setLang } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -248,6 +249,7 @@ const assetsCount = computed(() => sidebarCountsResource.data?.assets || 0);
 
 const currentPageTitle = computed(() => {
   const path = route.path;
+  if(access.value.reviewer) return currentLang.value==='vi'?'Duyệt video đối tác':'Partner review';
   const isEn = currentLang.value === "en";
   if (path === "/campaigns" || path === "/" || path === "/projects") return isEn ? "Projects" : "Dự án";
   if (path.startsWith("/campaigns/")) return isEn ? "Project Workspace" : "Chi tiết dự án";
@@ -263,7 +265,7 @@ const userInitial = computed(() => {
 
 const headerDropdownOptions = computed(() => [
   { label: "JoyMedia Studio", onClick: () => router.push("/campaigns") },
-  { label: currentLang.value === "en" ? "Media Library" : "Thư viện Media", onClick: () => router.push("/assets") },
+  ...(access.value.can_use_library ? [{ label: currentLang.value === "en" ? "Media Library" : "Thư viện Media", onClick: () => router.push("/assets") }] : []),
   {
     label: currentLang.value === "en" ? "🇻🇳 Tiếng Việt" : "🇬🇧 English",
     onClick: () => toggleLang(),
