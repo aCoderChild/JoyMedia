@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-20",
+  "environment": "Frappe 16 / Python 3.14 / isolated worktree",
+  "server": {
+    "modules": 113,
+    "tests_in_first_sweep": 1049,
+    "initial_failures": {
+      "joymedia.tests.generation.test_cross_run_continuation": "Concurrent naming-series write during live generation; rerun passed.",
+      "joymedia.tests.project.test_versions": "Missing finishing facade import introduced during extraction; corrected and rerun passed."
+    },
+    "focused_after_corrections": {
+      "planning_and_camera": 114,
+      "prompt_serialization": 64,
+      "finishing_and_project_versions": 33
+    },
+    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy.",
+    "result": "All 113 module groups verified after correction; three additional regression tests pass."
+  },
+  "frontend": {
+    "focused_passed": 19,
+    "live_tests_skipped_without_session": 13,
+    "build": "passed",
+    "owner_browser": "simple editor, advanced editor and project navigation passed with the refactored bundle; no JavaScript errors"
+  },
+  "static": {
+    "ruff": "passed",
+    "format": "394 Python files passed",
+    "layout": "passed",
+    "git_whitespace": "passed"
+  },
+  "secrets": {
+    "refactor_staged": "no leaks found",
+    "branch_history": "Reviewed false positives: workflow identifiers and a bound SQL submission-key parameter. No credentials added."
+  },
+  "compatibility": "Existing whitelisted methods, queued-job import paths and Frappe DocTypes preserved.",
+  "video_qualification": "Separate from code checks. Real Shera jobs ran through the owner browser and ComfyUI; camera/reference failures remain held. No approved new 30-second release is claimed."
+}
