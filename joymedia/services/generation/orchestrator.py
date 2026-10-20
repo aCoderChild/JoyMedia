@@ -261,6 +261,8 @@ def _advance_run(run, enqueue_finalization=True):
 	jobs = [frappe.get_doc("Generation Task", job_name) for job_name in _get_run_job_names(run.name)]
 	for job in jobs:
 		_update_job_summary(job)
+	# Release status-row locks before normalization and remote composition review.
+	frappe.db.commit()
 	try:
 		_finalize_completed_shots(run)
 	except (frappe.ValidationError, frappe.PermissionError, ValueError) as exc:

@@ -29,6 +29,8 @@ def implementation_hash():
 			for name in (
 				"review/admission.py",
 				"review/consistency.py",
+				"runtime/sampling.py",
+				"../workflow_adapters/graphs/prompt_sampling.json",
 				"scene/evidence.py",
 				"scene/contract.py",
 				"consistency/retention.py",

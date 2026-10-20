@@ -31,6 +31,16 @@ The running Shera qualification is recorded separately from code verification.
 Implementation boundaries and deployment checks are in [architecture.md](architecture.md).
 The sections below retain earlier policy and qualification context.
 
+Authored format and coverage authority are documented in [input-authority.md](input-authority.md).
+The active compiler no longer invents a framing cycle by shot number. Optional
+workbook coverage fields constrain inferred structure; camera behavior remains
+derived by shared policy. A broad push with both reviewed boundary images
+follows those compositions. Without those anchors, unknown/tight framing stays
+locked. Precision handling still remains locked even when endpoints are supplied.
+The scope of this exception is an authored spatial move, not permission to crop
+arbitrarily or to bypass review of the rendered result.
+
+
 
 H3 video tasks use the existing JoyMedia scene compiler, with a provider-specific
 serializer in `services/planning/h3.py` and shared camera decisions in

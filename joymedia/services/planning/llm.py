@@ -33,6 +33,7 @@ from joymedia.services.planning.plan_parsing import (
 	_validate_video_plan,
 )
 from joymedia.services.runtime.endpoints import endpoint
+from joymedia.services.runtime.sampling import sampling
 from joymedia.services.scene.contract import PLANNING_RULES
 
 PLAN_CUT_OFF = (
@@ -84,8 +85,7 @@ def generate_shot_revision(*, instruction, shot, product_name="", video_idea="")
 			{"role": "user", "content": user_prompt},
 		],
 		"response_format": {"type": "json_object"},
-		"temperature": 0.2,
-		"max_tokens": 1200,
+		**sampling("shot_revision"),
 	}
 	try:
 		response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
@@ -171,8 +171,7 @@ def improve_video_idea(
 			{"role": "user", "content": user_prompt},
 		],
 		"response_format": {"type": "json_object"},
-		"temperature": 0.7,
-		"max_tokens": 600,
+		**sampling("improve_idea"),
 	}
 
 	try:
@@ -237,8 +236,7 @@ def write_titles_and_captions(shots, video_idea):
 					{"role": "user", "content": request},
 				],
 				"response_format": {"type": "json_object"},
-				"temperature": 0.3,
-				"max_tokens": 600,
+				**sampling("titles_captions"),
 			},
 			timeout=(10, min(timeout, 180)),
 		)
@@ -324,8 +322,7 @@ def to_english(text):
 					},
 				],
 				"response_format": {"type": "json_object"},
-				"temperature": 0,
-				"max_tokens": 300,
+				**sampling("translation"),
 			},
 			timeout=(10, min(timeout, 120)),
 		)
@@ -418,8 +415,7 @@ def _review_product_plan(*, base_url, model, timeout, product_name, video_idea, 
 		"model": model,
 		"messages": messages,
 		"response_format": {"type": "json_object"},
-		"temperature": 0,
-		"max_tokens": 3000,
+		**sampling("product_plan_review"),
 	}
 	payload["max_tokens"] = _completion_budget(base_url, payload)
 	reviewed = _request_plan(base_url, payload, timeout)
@@ -630,8 +626,7 @@ a shot intentionally uses one. Never emit Asset Version IDs or image indexes.
 			{"role": "user", "content": user_prompt},
 		],
 		"response_format": {"type": "json_object"},
-		"temperature": 0.4 if story_film else 0.2,
-		"max_tokens": 3000,
+		**sampling("creative_story" if story_film else "creative_product"),
 	}
 	request_payload["max_tokens"] = _completion_budget(base_url, request_payload)
 

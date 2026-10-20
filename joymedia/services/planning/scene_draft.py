@@ -12,8 +12,8 @@ import re
 import unicodedata
 
 from joymedia.services.planning.workbook import character_names, parse_duration_seconds, usp_points
+from joymedia.services.runtime.sampling import sampling
 
-DEFAULT_TOTAL_SECONDS = 30.0
 MAX_SCENES = 12
 
 
@@ -39,7 +39,9 @@ def draft_scenes(
 	metadata: dict, lang_is_english: bool = False, use_model: bool = True, brand: dict | None = None
 ) -> list[dict]:
 	"""Scenes shaped like the ones a sheet's table gives, ready to become Shots."""
-	total = parse_duration_seconds(metadata.get("duration", "")) or DEFAULT_TOTAL_SECONDS
+	total = parse_duration_seconds(metadata.get("duration", ""))
+	if not total or total <= 0:
+		raise ValueError("Storyboard duration is required before drafting scenes.")
 	beats = scene_plan(metadata)
 	written = _written_by_model(metadata, beats, brand or {}) if use_model else None
 	texts = written or [_plain_text(metadata, beat, lang_is_english) for beat in beats]
@@ -141,7 +143,9 @@ def _written_by_model(metadata, beats, brand=None):
 	)
 	try:
 		raw = _ask_planner(
-			prompt, system="You write advertising storyboards. Return JSON only.", max_tokens=1800
+			prompt,
+			system="You write advertising storyboards. Return JSON only.",
+			sampling_profile="scene_draft",
 		)
 	except Exception:  # a planner that is down is reported by the caller's own flow; drafting falls back
 		return None

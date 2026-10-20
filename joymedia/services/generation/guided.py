@@ -14,6 +14,7 @@ import frappe
 
 from joymedia.services.consistency.repair import _project_asset_path
 from joymedia.services.consistency.tracking import file_hash
+from joymedia.services.runtime.media import probe_video as _probe
 from joymedia.services.workflows.capabilities import configured_workflow, require_controls
 from joymedia.services.workflows.resolver import get_workflow_input_contract, validate_workflow_for_execution
 
@@ -59,28 +60,6 @@ def _control_path(project, version):
 			raise ValueError("Control bytes no longer match their immutable version.")
 		return path
 	return _project_asset_path(project, version)
-
-
-def _probe(path):
-	result = subprocess.run(
-		["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_streams", "-of", "json", str(path)],
-		check=True,
-		capture_output=True,
-		timeout=30,
-	)
-	streams = json.loads(result.stdout).get("streams", [])
-	if len(streams) != 1:
-		raise ValueError("Motion controls need a readable video stream.")
-	stream = streams[0]
-	from fractions import Fraction
-
-	fps = float(Fraction(stream["avg_frame_rate"]))
-	return {
-		"width": int(stream["width"]),
-		"height": int(stream["height"]),
-		"fps": fps,
-		"frames": int(stream.get("nb_frames") or round(float(stream["duration"]) * fps)),
-	}
 
 
 def validate_controls(project, workflow, inputs, frames):

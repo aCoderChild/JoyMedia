@@ -1,0 +1,142 @@
+{
+  "date": "2026-10-20",
+  "project": "PRJ-02566",
+  "label": "V13",
+  "working_edit": true,
+  "source_project": "PRJ-02565",
+  "source_workbook": "SAN PHAM AI/kich_ban/Shera_TVC_30s_JoyMedia.xlsx",
+  "source_shots": 8,
+  "source_duration_seconds": 30,
+  "authored_format": "TVC (9:16)",
+  "video": {
+    "asset_version": "ASTV-04894",
+    "file": "/private/files/PRJ-02566-edited-3b5358a0.mp4",
+    "video_frames": 720,
+    "fps": "24/1",
+    "video_duration": 30.0,
+    "dimensions": [
+      1440,
+      2560
+    ],
+    "audio_channels": 2,
+    "audio_sample_rate": "44100",
+    "peak_dbfs": -2.8474295139312744,
+    "rms_dbfs": -23.88728141784668,
+    "full_scale_samples": 0,
+    "sha256": "a39e74de2f0676587d89d99a2ae00eb74147552afba9b67f7b756ee7788a5012",
+    "full_decode": "passed"
+  },
+  "qualification": "Reviewed export; machine geometry uncertainty retained in candidate provenance. No production-release approval was written.",
+  "changes": [
+    "New endpoint-controlled opening motion and full emotional shot through native Frappe-to-ComfyUI jobs.",
+    "Original packaging artwork retained in the closing composition; earlier checked product-use takes retained.",
+    "Source ratio and explicit duration parsed without a platform or 15-second fallback.",
+    "Custom ratios survive settings, quality changes, generation bindings, final delivery and browser framing.",
+    "Optional authored coverage is validated; inference and schema repair cannot replace those fields or discard original visual context.",
+    "No forced scene-number crop cycle, location change, extra cast or hidden-cut transition.",
+    "Prompt-service sampling and Studio model/encoding settings are JSON profiles.",
+    "Generic and H3 prompt paths preserve existing label detail; neutral references are not labelled as logos; unrelated palette prohibitions removed.",
+    "Temporal and single-image review share bounded transport retry; status/asset writes commit before expensive finalization."
+  ],
+  "native_jobs": [
+    {
+      "task": "TASK-01129",
+      "attempt": "ATT-01011",
+      "comfy_prompt_id": "89f64114-1d19-411e-b349-84c1672f85e2",
+      "selected_asset_version": "ASTV-04868",
+      "provider": "success",
+      "review": "Raw screening supported actions and identity; original finalization failure retained, then existing composer rerun after endpoint recovery and manual take selection."
+    },
+    {
+      "task": "TASK-01131",
+      "attempt": "ATT-01013",
+      "comfy_prompt_id": "79dcd807-be5f-4977-83f8-0ca85e7624cb",
+      "selected_asset_version": "ASTV-04886",
+      "provider": "success",
+      "review": "Raw and composed candidate reviewed; selected using the existing reviewed-take API."
+    }
+  ],
+  "workflow": {
+    "video": "WF-02678",
+    "pipeline": "PIPE-00049",
+    "native_dimensions": [
+      736,
+      1280
+    ],
+    "alignment": "Declared 32-pixel model grid; final delivery follows project geometry.",
+    "sampling": "base 20 steps, turbo disabled; model/sample values remain in workflow JSON.",
+    "finishing_registration": "WF-02679",
+    "inference_implementation": "Existing native ComfyUI nodes and installed weights reused."
+  },
+  "camera_evidence": {
+    "method": "ORB/RANSAC background affine estimate, excluding central actor; advisory, not proof of a 3D camera",
+    "samples": [
+      {
+        "frame": 24,
+        "matched_features": 189,
+        "inliers": 177,
+        "background_scale": 1.006452293941398,
+        "rotation_degrees": 0.014881510956107085
+      },
+      {
+        "frame": 48,
+        "matched_features": 164,
+        "inliers": 151,
+        "background_scale": 1.0271436801572156,
+        "rotation_degrees": 0.0046178282995841535
+      },
+      {
+        "frame": 72,
+        "matched_features": 137,
+        "inliers": 120,
+        "background_scale": 1.052702608366405,
+        "rotation_degrees": 0.002818709601134675
+      },
+      {
+        "frame": 95,
+        "matched_features": 139,
+        "inliers": 116,
+        "background_scale": 1.0731011974146065,
+        "rotation_degrees": 0.03630855955665092
+      }
+    ]
+  },
+  "format_verification": {
+    "actual_owner_dialog": "Auto format plus free-text 30-second 4:5 brief produced 720x900, duration 30; no JavaScript errors. The QA project was archived.",
+    "tested_ratios": [
+      "21:9",
+      "16:9",
+      "4:5",
+      "1:1",
+      "9:16"
+    ],
+    "legacy_portrait_delivery": "Tested that a fixed portrait declaration becomes a quality target and preserves the project ratio."
+  },
+  "feedback": {
+    "additional_older_user_comments_resolved": 22,
+    "latest_five_comments": "Rechecked at frames 69,128,240,470,622 against this export.",
+    "historical_internal_release_notes": "Retained as historical evidence; resolving visual feedback does not grant production release.",
+    "remaining_open_owner_comments": 0
+  },
+  "validation": {
+    "server_modules": 115,
+    "server_tests": 1086,
+    "failed_modules": 0,
+    "ruff": "passed",
+    "format": "400 Python files passed",
+    "layout": "passed",
+    "frontend_build": "passed",
+    "browser": "Authenticated download, readyState 4, no JavaScript errors.",
+    "secrets": "Staged scan passed; no leaks found.",
+    "final_affected_modules": {
+      "modules": 7,
+      "tests": 121,
+      "failed_modules": 0
+    }
+  },
+  "references": [
+    "Quy tac sap xep hinh trong dung phim.docx",
+    "videos/TVC_HOODIE_GYM_NYC_25S_2K_QHD_MASTER.mp4",
+    "https://www.brandsvietnam.com/congdong/topic/338390-16-goc-quay-pho-bien-de-xay-dung-mot-storyboard-hap-dan"
+  ]
+}

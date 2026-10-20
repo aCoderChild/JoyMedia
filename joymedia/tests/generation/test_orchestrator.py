@@ -682,3 +682,37 @@ class TestFrozenVideoSeed(FrappeTestCase):
 					generation_orchestrator._initial_seed(
 						frappe._dict(workflow="workflow", generation_run="run")
 					)
+
+
+class TestResultTransactionBoundary(FrappeTestCase):
+	def test_status_changes_commit_before_expensive_finalization(self):
+		run = MagicMock(name="run")
+		run.name = "RUN"
+		run.status = "Running"
+		order = []
+
+		def fail_after_boundary(run):
+			order.append("render")
+			raise ValueError("stop after boundary")
+
+		with (
+			patch.object(frappe.db, "commit", side_effect=lambda: order.append("commit")),
+			patch.object(frappe.db, "set_value"),
+			patch.object(frappe, "clear_last_message"),
+			patch.object(frappe, "get_doc", return_value=MagicMock()),
+			patch.object(generation_orchestrator, "_get_run_job_names", return_value=["TASK"]),
+			patch.object(
+				generation_orchestrator, "_update_job_summary", side_effect=lambda job: order.append("status")
+			),
+			patch.object(
+				generation_orchestrator,
+				"_finalize_completed_shots",
+				side_effect=fail_after_boundary,
+			),
+			patch.object(generation_orchestrator, "_refresh_run_counters"),
+			patch.object(generation_orchestrator, "sync_media_project_status_for_run"),
+			patch.object(generation_orchestrator, "_run_summary", return_value={}),
+		):
+			generation_orchestrator._advance_run(run)
+		self.assertLess(order.index("status"), order.index("render"))
+		self.assertIn("commit", order[order.index("status") + 1 : order.index("render")])

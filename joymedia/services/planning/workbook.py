@@ -19,6 +19,8 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from joymedia.services.runtime.sampling import sampling
+
 NONE_MARKERS = {"", "x", "n/a", "na", "none", "-"}
 # Sheets of the downloadable template that explain it; they are not storyboards.
 GUIDE_SHEETS = {"huong dan", "guide", "instructions"}
@@ -653,7 +655,9 @@ def _ai_label_map(labels: list[str]) -> dict:
 	try:
 		answer = (
 			_ask_planner(
-				prompt, system="You map spreadsheet labels to fields. Return JSON only.", max_tokens=400
+				prompt,
+				system="You map spreadsheet labels to fields. Return JSON only.",
+				sampling_profile="workbook_mapping",
 			)
 			or {}
 		).get("map")

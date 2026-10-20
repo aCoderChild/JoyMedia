@@ -1,0 +1,19 @@
+{
+  "shot_revision": {"temperature": 0.2, "max_tokens": 1200},
+  "improve_idea": {"temperature": 0.7, "max_tokens": 600},
+  "titles_captions": {"temperature": 0.3, "max_tokens": 600},
+  "translation": {"temperature": 0, "max_tokens": 300},
+  "product_plan_review": {"temperature": 0, "max_tokens": 3000},
+  "creative_story": {"temperature": 0.4, "max_tokens": 3000},
+  "creative_product": {"temperature": 0.2, "max_tokens": 3000},
+  "production_plan": {"temperature": 0, "max_tokens": 900},
+  "timed_production_plan": {"temperature": 0, "max_tokens": 2600},
+  "faithful_rewrite": {"temperature": 0, "max_tokens": 300},
+  "role_translation": {"temperature": 0, "max_tokens": 80},
+  "scene_translation": {"temperature": 0, "max_tokens": 600},
+  "scene_draft": {"temperature": 0, "max_tokens": 1800},
+  "workbook_mapping": {"temperature": 0, "max_tokens": 400},
+  "vision_geometry": {"temperature": 0, "max_tokens": 80},
+  "vision_observation": {"temperature": 0, "max_tokens": 512},
+  "intake_vision": {"temperature": 0.1, "max_tokens": 400}
+}

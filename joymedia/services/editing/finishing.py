@@ -120,12 +120,15 @@ def _finish_chunk(chunk_path, keep_frames):
 		raise ValueError(
 			"The selected finishing workflow must match the declared Studio timing and scaling contract."
 		)
+	from joymedia.services.runtime.media import probe_video
+
+	source = probe_video(chunk_path)
 	workflow = build_execution_workflow(
 		version,
 		inputs={"source_video": upload_local_file(chunk_path)["server_path"]},
 		seed=0,
-		width=0,
-		height=0,
+		width=source["width"] * STUDIO_SCALE,
+		height=source["height"] * STUDIO_SCALE,
 		fps=float(version.output_fps),
 		frame_count=keep_frames,
 		output_prefix=f"joymedia/finish/{frappe.generate_hash(length=10)}",

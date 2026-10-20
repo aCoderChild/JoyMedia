@@ -65,6 +65,8 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 			segments.append((job, artifact))
 
 		shot_asset = _get_or_create_shot_output_asset(shot, project.name)
+		# Asset allocation must not hold naming/parent locks through media processing.
+		frappe.db.commit()
 		if not select_output:
 			existing = frappe.db.get_value(
 				"Asset Version",

@@ -16,6 +16,7 @@ from frappe import _
 
 from joymedia.services.runtime.endpoints import endpoint
 from joymedia.services.runtime.endpoints import is_configured as endpoint_is_configured
+from joymedia.services.runtime.sampling import sampling
 
 MAX_IMAGE_EDGE = 1024
 VALID_KINDS = {"person", "place", "product", "other"}
@@ -136,8 +137,7 @@ def describe_image(data_url, prompt=ANALYSIS_PROMPT):
 			}
 		],
 		"response_format": {"type": "json_object"},
-		"temperature": 0.1,
-		"max_tokens": 400,
+		**sampling("intake_vision"),
 	}
 	timeout = configured.timeout
 	response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))

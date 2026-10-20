@@ -1,3 +1,4 @@
+from unittest import TestCase
 from unittest.mock import patch
 
 import frappe
@@ -212,7 +213,8 @@ class TestAudioLineLast(FrappeTestCase):
 		)
 		prompt = compile_prompt_for_documents(shot, {}, prompt_source="image")
 		self.assertIn("artwork and marks", prompt)
-		self.assertIn("unreadable texture", prompt)
+		self.assertIn("existing print detail and legibility", prompt)
+		self.assertNotIn("unreadable texture", prompt)
 		self.assertNotIn("every visible logo or label", prompt)
 
 	def test_the_cast_is_named_so_reference_subjects_resolve_consistently(self):
@@ -264,7 +266,7 @@ class TestAudioLineLast(FrappeTestCase):
 					shot, project, index, 2, fps=24, segment_start_frame=0, segment_effective_frames=48
 				)
 			self.assertIn("The only character in this scene is Shera mascot", prompt)
-			self.assertIn("Add no text, letters", prompt)
+			self.assertIn("Add no new lettering", prompt)
 			self.assertIn("first frame is the truth for the place, the lighting", prompt)
 			self.assertTrue(prompt.split("\n\n")[-1].startswith("Audio:"), prompt[-300:])
 
@@ -428,11 +430,11 @@ class TestAudioLineLast(FrappeTestCase):
 		self.assertNotIn("lifts a glass of milk", prompt)
 		self.assertNotIn("Then she pours", prompt)
 		self.assertIn(
-			"mother mascot, flower on head is the character of picture 1 (mostly cream; pale, light colouring, never brown or tan), with the build of a mother: a full-grown adult",
+			"mother mascot, flower on head is the character of picture 1 (mostly cream; preserve the reference palette), with the build of a mother: a full-grown adult",
 			prompt,
 		)
 		self.assertIn(
-			"kid mascot is the character of picture 2 (mostly cream; pale, light colouring, never brown or tan), with the build of a kid: about half an adult's height",
+			"kid mascot is the character of picture 2 (mostly cream; preserve the reference palette), with the build of a kid: about half an adult's height",
 			prompt,
 		)
 		self.assertIn("not the pose or objects in their reference image", prompt)
@@ -896,3 +898,19 @@ class TestOverlayTextStaysOutOfPictures(FrappeTestCase):
 				"Keep the pack's shape. Use the standard packaging image, do not let AI rewrite the logo or specifications; the text overlay in post-production."
 			),
 		)
+
+
+class TestDeclaredReferenceRole(TestCase):
+	def test_general_composition_reference_is_not_described_as_a_logo(self):
+		from joymedia.services.planning.prompts import keep_rules
+
+		shot = frappe._dict(references=[{"reference_role": "General", "asset_version": "OPEN"}])
+		project = frappe._dict(
+			references=[
+				{"asset_version": "OPEN", "label": "Opening", "keep_rule": "Preserve this composition."}
+			]
+		)
+		with patch("joymedia.services.planning.prompts._english", side_effect=lambda text, *a: text):
+			rule = keep_rules(shot, project)
+		self.assertIn("the supplied reference", rule)
+		self.assertNotIn("logo", rule)

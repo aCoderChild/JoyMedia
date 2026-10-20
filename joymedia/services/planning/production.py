@@ -41,6 +41,7 @@ from joymedia.services.planning.language_rules import (
 	with_glossary,
 )
 from joymedia.services.planning.llm import _normalized_motion_plan
+from joymedia.services.runtime.sampling import sampling
 
 MAX_PROMPT_CHARS = 700
 MAX_IMAGE_WORDS = 70
@@ -152,7 +153,7 @@ def motion_only(project, text, references, inventory="", attempt=0):
 	raw = _ask_planner(
 		prompt,
 		system="You rewrite storyboard beats faithfully. Return JSON only.",
-		max_tokens=300,
+		sampling_profile="faithful_rewrite",
 		capability="translator",
 	)
 	return " ".join(str((raw or {}).get("motion") or "").split())
@@ -473,7 +474,7 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 	# A bounded schema-repair retry fixes malformed inferred structure, never the
 	# authored actions. Invalid output must not silently lose physical constraints.
 	for attempt in range(3):
-		raw = _ask_planner(prompt, max_tokens=2600)
+		raw = _ask_planner(prompt, sampling_profile="timed_production_plan")
 		raw.setdefault("motion_plan", {}).update(actions=actions, scene_contract=contract)
 		if coverage:
 			raw["motion_plan"].setdefault("shot_structure", {}).update(coverage)
@@ -588,7 +589,7 @@ def _place(project, beat, attempt=0):
 	raw = _ask_planner(
 		prompt,
 		system="You extract the setting from storyboard text. Return JSON only.",
-		max_tokens=80,
+		sampling_profile="role_translation",
 		capability="translator",
 	)
 	place = " ".join(str((raw or {}).get("place") or "").split())
@@ -753,7 +754,7 @@ def translate(text, project, about="", earlier=""):
 				else ""
 			),
 			system="You translate storyboard text faithfully. Return JSON only.",
-			max_tokens=600,
+			sampling_profile="scene_translation",
 			capability="translator",
 		)
 		english = english_part((raw or {}).get("english"))
@@ -892,15 +893,15 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		f"- The advertised product is: {project.product_name or project.project_name}. Generic words in the beat "
 		"for it (paper, bottle, bag...) mean this product; never substitute a different product.",
 		"- image_prompt: English, at most 60 words. Describe only the first frame: subjects, setting, framing, "
-		"lighting. Include only what must appear. No text, captions or logos. Characters behave like people in a "
+		"lighting. Include only what must appear. Preserve existing product artwork; add no captions or invented logos. Characters behave like people in a "
 		"natural place (stand, hold something, look at each other, use the room), never posed side by side in the "
 		"middle of an empty space.",
 		"- setting_prompt: English, at most 30 words. Only the place, light and camera framing of the first frame: "
 		"no character, animal, hand, product, object in action or text.",
 		"- sound_effects: English, at most 15 words: the physical, non-vocal sounds this action makes (rustling, "
 		"tearing, a thud, pouring). Never speech, laughter, singing or music.",
-		"- Never write quantities, prices, product names or any words that would appear as printed text on an "
-		"object (for example a number of packs): the image and video models would draw them as letters.",
+		"- Existing printed quantities, product names and artwork are controlled by the product image. "
+		"Preserve those markings without translating or respelling them; invent no quantities, prices or claims.",
 		"- video_prompt: English, at most 80 words. What moves and how the camera moves, in time order, as one "
 		"continuous shot. Keep every action the beat requires; invent no claims or extra characters.",
 		"- image_prompt is ONE still frame, never a sequence of events. When a reference shows a pose, keep the "
@@ -1100,24 +1101,36 @@ def request_seed(*parts):
 CACHE_SECONDS = 7 * 24 * 3600
 
 
-def _ask_planner(prompt, *, system=SYSTEM_PROMPT, max_tokens=900, refresh=False, capability="planner"):
+def _ask_planner(
+	prompt,
+	*,
+	system=SYSTEM_PROMPT,
+	max_tokens=None,
+	refresh=False,
+	capability="planner",
+	sampling_profile="production_plan",
+):
 	"""Ask the planner; an identical request returns the stored answer.
 
 	The model is not deterministic even at temperature 0, so re-planning an unchanged beat would give a
 	different plan each time. Answers are cached in Frappe's cache keyed by the exact request; pass
 	refresh=True (or change the beat, references or brief) for a fresh one.
 	"""
-	cache_key = f"joymedia_{capability}:{request_seed(system, prompt, str(max_tokens))}"
+	settings = sampling(sampling_profile)
+	max_tokens = settings["max_tokens"] if max_tokens is None else max_tokens
+	cache_key = f"joymedia_{capability}:{request_seed(system, prompt, str(max_tokens), json.dumps(settings, sort_keys=True))}"
 	if not refresh:
 		cached = frappe.cache.get_value(cache_key)
 		if cached is not None:
 			return cached
-	answer = _request_planner(prompt, system=system, max_tokens=max_tokens, capability=capability)
+	answer = _request_planner(
+		prompt, system=system, max_tokens=max_tokens, capability=capability, sampling_profile=sampling_profile
+	)
 	frappe.cache.set_value(cache_key, answer, expires_in_sec=CACHE_SECONDS)
 	return answer
 
 
-def _request_planner(prompt, *, system, max_tokens, capability="planner"):
+def _request_planner(prompt, *, system, max_tokens, capability="planner", sampling_profile="production_plan"):
 	from joymedia.services.runtime.endpoints import endpoint
 
 	configured = endpoint(capability)
@@ -1126,7 +1139,7 @@ def _request_planner(prompt, *, system, max_tokens, capability="planner"):
 		"model": model,
 		"messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
 		"response_format": {"type": "json_object"},
-		"temperature": 0,
+		**sampling(sampling_profile),
 		# The same request gives the same plan: the seed follows the prompt, not the clock.
 		"seed": request_seed(system, prompt),
 		"max_tokens": max_tokens,

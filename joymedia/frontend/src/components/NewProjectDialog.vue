@@ -165,7 +165,7 @@ const roleOptions = computed(() => [
   { label: tr("Other", "Khác"), value: "General" },
 ]);
 const formatOptions = computed(() => [
-  { label: tr("Auto (from the storyboard)", "Tự động (theo kịch bản)"), value: "" },
+  { label: tr("Auto (from your input)", "Tự động (theo nội dung)"), value: "" },
   { label: tr("Portrait 9:16 — TikTok, Reels", "Dọc 9:16 — TikTok, Reels"), value: "Portrait" },
   { label: tr("Landscape 16:9 — YouTube, web", "Ngang 16:9 — YouTube, web"), value: "Landscape" },
   { label: tr("Square 1:1", "Vuông 1:1"), value: "Square" },

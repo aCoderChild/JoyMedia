@@ -61,3 +61,16 @@ accept the shared shot-grammar enums. Blank keeps normal inference. An authored
 value is validated and takes priority over inferred coverage; movement is still
 derived by shared policy. Schema-repair retries retain the original visual,
 reference, timing and continuity context, avoiding an example becoming the shot.
+
+Prompt-service temperatures and token budgets also live in JSON:
+`workflow_adapters/graphs/prompt_sampling.json`. Named operations select their
+parameters through `services/runtime/sampling.py`; no product or case is selected
+there. Planner caches include the sampling settings, and the visual admission
+implementation fingerprint includes both the profile and its loader. Source
+artwork is explicitly preserved; a neutral composition reference is not named as
+a logo, and reference palettes do not acquire an unrelated global colour ban.
+
+Single-image, geometry and temporal observations share the existing bounded
+read-only transport retry. A dropped connection retries the identical observation,
+not the video generation or a judgment. HTTP answers and genuine visual failures
+are not rerolled. Missing evidence remains unavailable after the retry budget.

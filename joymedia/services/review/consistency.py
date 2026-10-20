@@ -23,6 +23,7 @@ import requests
 
 from joymedia.services.project.realtime import PROJECT_UPDATED, publish_project_event
 from joymedia.services.runtime.endpoints import endpoint, is_configured, structured_response
+from joymedia.services.runtime.sampling import sampling
 from joymedia.services.scene.evidence import SequenceCheck
 
 MAX_FRAME_REDOS = 2
@@ -529,7 +530,7 @@ def locate(image_bytes, thing):
 		width, height = picture.size
 	scale = max(width, height) / IMAGE_EDGE if max(width, height) > IMAGE_EDGE else 1
 	try:
-		response = requests.post(
+		response = _post_visual_request(
 			f"{configured.base_url}/chat/completions",
 			json={
 				"model": configured.model,
@@ -545,8 +546,7 @@ def locate(image_bytes, thing):
 						],
 					}
 				],
-				"temperature": 0,
-				"max_tokens": 80,
+				**sampling("vision_geometry"),
 			},
 			timeout=(10, configured.timeout),
 		)
@@ -580,7 +580,7 @@ def _post_visual_request(*args, **kwargs):
 		except (requests.ConnectionError, requests.Timeout):
 			if attempt == 2:
 				raise
-			time.sleep(attempt + 1)
+			time.sleep(5 * (attempt + 1))
 
 
 def ask(picture, question, configured=None):
@@ -606,8 +606,7 @@ def ask(picture, question, configured=None):
 				}
 			],
 			"response_format": {"type": "json_object"},
-			"temperature": 0,
-			"max_tokens": 512,
+			**sampling("vision_observation"),
 		},
 		timeout=(10, configured.timeout),
 	)
@@ -788,14 +787,13 @@ def run_temporal_check(check, configured=None):
 				}
 			},
 		}
-		response = requests.post(
+		response = _post_visual_request(
 			f"{configured.base_url}/chat/completions",
 			json={
 				"model": configured.model,
 				"messages": [{"role": "user", "content": content}],
 				**structured_response(configured, schema, "temporal_observations"),
-				"temperature": 0,
-				"max_tokens": 512,
+				**sampling("vision_observation"),
 			},
 			timeout=(10, min(configured.timeout, max(1, deadline - time.monotonic()))),
 		)
@@ -816,7 +814,7 @@ def run_temporal_check(check, configured=None):
 	report = merge_observations(check, reports)
 	report["judge"] = {
 		"model": configured.model,
-		"temperature": 0,
+		"temperature": sampling("vision_observation")["temperature"],
 		"max_images_per_request": 4,
 		"max_claims_per_request": 1,
 	}

@@ -291,7 +291,7 @@ def compile_prompt_for_documents(
 			f"{prompt}\n\n"
 			"Reference fidelity: show only the intended reference subjects and assets. Keep their exact shape, material, "
 			"colours, proportions, artwork and marks; do not swap, merge, deform or invent subjects, products or "
-			"logos. Do not write or redraw words: small print and label text stay a soft, unreadable texture."
+			"logos. Preserve the reference's existing print detail and legibility. Do not translate, retype, blur or replace its artwork; add no new markings."
 		)
 
 	generation_mode = project.get("generation_mode")
@@ -407,7 +407,7 @@ def _identity_guard(shot, project, include_camera=True, include_style=True, conc
 			project, shows=any(_role_of(r) == "product" for r in getattr(shot, "references", None) or [])
 		)
 		+ f"Identity consistency: {who}Every product is the approved product asset shown in the first frame; never add "
-		"a duplicate or substitute. Add no text, letters, numbers, captions or logos anywhere; existing asset markings "
+		"a duplicate or substitute. Add no new lettering, captions or invented logos; existing asset markings "
 		"stay as they are. Keep every referenced subject and asset exactly as shown—same geometry, colours, material, "
 		"face, proportions and visible details—in every camera angle, including close-ups; never redesign or recolour it."
 	)
@@ -985,6 +985,8 @@ def keep_rules(shot, project):
 				else "the place"
 				if role == "environment"
 				else "the logo"
+				if role == "logo"
+				else "the supplied reference"
 			)
 			rules.append(f"{name}: {rule}")
 	return "; ".join(dict.fromkeys(rules))
@@ -1183,7 +1185,7 @@ def _draw_prompt(shot, project):
 			briefs.append(
 				f"{name} is the character of picture {len(briefs) + 1}"
 				+ (
-					f" ({colours}; pale, light colouring, never brown or tan)"
+					f" ({colours}; preserve the reference palette)"
 					if colours and "brown" not in colours.split(",")[0]
 					else (f" ({colours})" if colours else "")
 				)
@@ -1294,12 +1296,7 @@ def _character_names(shot, project):
 
 
 def _colour_rule(colours):
-	light = "brown" not in colours.split(",")[0]
-	return (
-		"pale and light, never brown or tan; keep exactly these colours"
-		if light
-		else "keep exactly these colours"
-	)
+	return "keep exactly these colours"
 
 
 def _timed_events(cues, duration):
