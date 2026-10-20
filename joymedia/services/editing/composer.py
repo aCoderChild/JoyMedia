@@ -114,35 +114,17 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 					video_duration = _get_video_duration(normalized_path)
 			except (OSError, subprocess.CalledProcessError, ValueError) as exc:
 				frappe.throw(_("Unable to normalize Shot output: {0}").format(_command_error(exc)))
-			file_doc = frappe.get_doc(
-				{
-					"doctype": "File",
-					"file_name": f"{shot.name}.mp4",
-					"content": video_bytes,
-					"is_private": 1,
-					"attached_to_doctype": "Media Asset",
-					"attached_to_name": shot_asset.name,
-				}
-			).insert(ignore_permissions=True)
-			asset_version = frappe.get_doc(
-				{
-					"doctype": "Asset Version",
-					"media_asset": shot_asset.name,
-					"file": file_doc.file_url,
-					"source": "Composed",
-					"duration_seconds": video_duration,
-					"fps": profile["fps"],
-					"source_generation_attempt": segments[-1][1].generation_attempt,
-					"preservation_evidence_json": None
-					if can_select
-					else json.dumps(
-						{"visual_admission": "Review Required", "generation_artifact": segments[-1][1].name}
-					),
-				}
-			).insert(ignore_permissions=True)
-			if select_output and can_select:
-				_select_output(shot, asset_version.name)
-			return asset_version.name
+			return _persist_composed_output(
+				generation_run_name,
+				shot.name,
+				shot_asset.name,
+				segments[-1][1],
+				video_bytes,
+				video_duration,
+				profile["fps"],
+				select_output=select_output,
+				can_select=can_select,
+			)
 
 		profile = _get_delivery_profile(project, generation_run_name)
 		try:
@@ -196,35 +178,74 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 		except (OSError, subprocess.CalledProcessError, ValueError) as exc:
 			frappe.throw(_("Unable to assemble Shot segments: {0}").format(_command_error(exc)))
 
-		file_doc = frappe.get_doc(
+		return _persist_composed_output(
+			generation_run_name,
+			shot.name,
+			shot_asset.name,
+			segments[-1][1],
+			video_bytes,
+			video_duration,
+			profile["fps"],
+			select_output=select_output,
+			can_select=can_select,
+		)
+
+
+def _persist_composed_output(
+	run_name, shot_name, asset_name, artifact, content, duration, fps, *, select_output, can_select
+):
+	"""Promote computed bytes in a short retryable transaction, without replaying QA."""
+	from joymedia.services.runtime.transactions import persist_result
+
+	def write():
+		if frappe.db.get_value("Generation Run", run_name, "status") == "Cancelled":
+			return None
+		version = frappe.db.get_value(
+			"Asset Version",
 			{
-				"doctype": "File",
-				"file_name": f"{shot.name}.mp4",
-				"content": video_bytes,
-				"is_private": 1,
-				"attached_to_doctype": "Media Asset",
-				"attached_to_name": shot_asset.name,
-			}
-		).insert(ignore_permissions=True)
-		asset_version = frappe.get_doc(
-			{
-				"doctype": "Asset Version",
-				"media_asset": shot_asset.name,
-				"file": file_doc.file_url,
+				"media_asset": asset_name,
+				"source_generation_attempt": artifact.generation_attempt,
 				"source": "Composed",
-				"duration_seconds": video_duration,
-				"fps": profile["fps"],
-				"source_generation_attempt": segments[-1][1].generation_attempt,
-				"preservation_evidence_json": None
-				if can_select
-				else json.dumps(
-					{"visual_admission": "Review Required", "generation_artifact": segments[-1][1].name}
-				),
-			}
-		).insert(ignore_permissions=True)
+			},
+			"name",
+			order_by="creation asc",
+		)
+		if not version:
+			file = frappe.get_doc(
+				{
+					"doctype": "File",
+					"file_name": f"{shot_name}.mp4",
+					"content": content,
+					"is_private": 1,
+					"attached_to_doctype": "Media Asset",
+					"attached_to_name": asset_name,
+				}
+			).insert(ignore_permissions=True)
+			version = (
+				frappe.get_doc(
+					{
+						"doctype": "Asset Version",
+						"media_asset": asset_name,
+						"file": file.file_url,
+						"source": "Composed",
+						"duration_seconds": duration,
+						"fps": fps,
+						"source_generation_attempt": artifact.generation_attempt,
+						"preservation_evidence_json": None
+						if can_select
+						else json.dumps(
+							{"visual_admission": "Review Required", "generation_artifact": artifact.name}
+						),
+					}
+				)
+				.insert(ignore_permissions=True)
+				.name
+			)
 		if select_output and can_select:
-			_select_output(shot, asset_version.name)
-		return asset_version.name
+			_select_output(frappe.get_doc("Shot", shot_name), version)
+		return version
+
+	return persist_result(write)
 
 
 def product_lock_for(generation_run_name, shot_name, jobs):

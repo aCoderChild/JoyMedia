@@ -424,3 +424,15 @@ class TestMusicBed(FrappeTestCase):
 		project.soundtrack_prompt = "soft ukulele"
 		with patch.object(frappe, "get_doc", return_value=project):
 			self.assertEqual("soft ukulele", post_production.music_brief("PRJ-X"))
+
+
+class TestFinishingCancellation(FrappeTestCase):
+	def test_late_worker_cannot_revive_cancelled_finishing(self):
+		with (
+			patch.object(frappe.db, "get_value", return_value="Cancelled"),
+			patch.object(frappe.db, "set_value") as write,
+		):
+			for status in ["Running", "Completed"]:
+				with self.assertRaisesRegex(ValueError, "cancelled"):
+					post_production._set_status("PROJECT", status)
+		write.assert_not_called()

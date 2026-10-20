@@ -457,6 +457,19 @@ class TestGenerationOrchestrator(FrappeTestCase):
 		self.assertEqual("Generation Task", set_value.call_args.args[0])
 		self.assertEqual("Completed", set_value.call_args.args[2]["status"])
 
+	def test_polling_completed_task_does_not_rewrite_unchanged_summary(self):
+		job = frappe._dict(name="JOB", status="Completed", progress=100, completed_at="2026-10-20 00:00:00")
+		with (
+			patch.object(
+				generation_orchestrator,
+				"_get_job_attempts",
+				return_value=[frappe._dict(name="ATT", status="Completed")],
+			),
+			patch.object(frappe.db, "set_value") as write,
+		):
+			generation_orchestrator._update_job_summary(job)
+		write.assert_not_called()
+
 	@patch("joymedia.services.generation.orchestrator.frappe.db.set_value")
 	@patch("joymedia.services.generation.orchestrator.frappe.get_all")
 	def test_manual_regeneration_replaces_the_rejected_completed_attempt(self, get_all, set_value):

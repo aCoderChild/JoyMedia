@@ -17,9 +17,10 @@
       "live_runtime_imports": 52,
       "declared_composition_and_retention": 108,
       "keyframe_framing_prefix": 88,
-      "audio_layer_ownership": 41
+      "audio_layer_ownership": 41,
+      "result_persistence_and_cancellation": 116
     },
-    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy. Admission commits share the ingestion lock, release it during model I/O, recheck cancellation, and avoid repeated Running-state writes. Static presentation preserves the authored composition mode; closing holds prefer the actual frozen image dependency and fail closed when it is missing. Opening-frame prefixes use structural framing before legacy camera prose; an unplanned scene no longer invents a shot-index crop. Placed cue audio retains its shot, enabling the existing one-layer replacement query to remove earlier effects instead of stacking them.",
+    "additional_regressions": "Timed actions are not repeated; event-specific checks remain; existing artwork is preserved; inferred camera fields cannot override structural policy. Admission commits share the ingestion lock, release it during model I/O, recheck cancellation, and avoid repeated Running-state writes. Static presentation preserves the authored composition mode; closing holds prefer the actual frozen image dependency and fail closed when it is missing. Opening-frame prefixes use structural framing before legacy camera prose; an unplanned scene no longer invents a shot-index crop. Placed cue audio retains its shot, enabling the existing one-layer replacement query to remove earlier effects instead of stacking them. Composed outputs use the existing bounded persistence retry after expensive processing, recheck cancellation, and reuse immutable outputs; unchanged task summaries do not write again. Late finishing workers cannot revive Cancelled state.",
     "result": "Final full sweep: all 1059 tests in 113 module groups passed.",
     "final_full_sweep": {
       "modules": 113,
@@ -44,7 +45,7 @@
     "branch_history": "Reviewed false positives: workflow identifiers and a bound SQL submission-key parameter. No credentials added."
   },
   "compatibility": "Existing whitelisted methods, queued-job import paths and Frappe DocTypes preserved.",
-  "video_qualification": "Separate from code checks. Real Shera jobs ran through the owner browser and ComfyUI; camera/reference failures remain held. No approved new 30-second release is claimed.",
+  "video_qualification": "Seven selected/reviewed candidate takes have passed real generation and final output processing. Final 30-second picture/audio export remains pending verification.",
   "reference_preparation": {
     "workflow": "ComfyUI native ImageCropV2 through existing generic adapter",
     "real_job_verified": true,

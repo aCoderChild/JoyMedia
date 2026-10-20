@@ -76,6 +76,11 @@ The editor follows the same boundary: `ProjectStudio.vue` composes the workspace
 finishing commands and polling, and `utils/download.js` handles session-authenticated
 downloads. Timer cleanup belongs to the composable that creates the timer.
 
+Computed composition bytes are promoted through `runtime/transactions.persist_result`.
+Only the short database/file promotion is retried; inference, normalization and
+visual QA run once. Promotion rechecks cancellation and reuses the immutable
+attempt output. A late finishing worker cannot revive a cancelled job.
+
 ## Change and deployment rules
 
 - Keep case-specific artwork, wording and action in workbooks and reference data.

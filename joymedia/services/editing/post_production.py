@@ -539,6 +539,12 @@ def _keep_to_sound_effects(project_name):
 
 
 def _set_status(project_name, status, step=None, error=None):
+	if (
+		status in {"Running", "Completed"}
+		and frappe.db.get_value("Media Project", project_name, "post_production_status", for_update=True)
+		== "Cancelled"
+	):
+		raise ValueError("Post-production was cancelled.")
 	values = {"post_production_status": status}
 	if step is not None:
 		values["post_production_step"] = step
@@ -550,12 +556,3 @@ def _set_status(project_name, status, step=None, error=None):
 
 	publish_project_event(project_name, PROJECT_UPDATED, {"doctype": "Media Project"})
 	frappe.db.commit()
-
-
-# Transitions
-
-
-# Soundtrack
-
-
-# ComfyUI and file helpers

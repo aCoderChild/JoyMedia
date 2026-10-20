@@ -660,6 +660,8 @@ def _submit_attempt_or_record_failure(attempt_name):
 
 
 def _update_job_summary(job):
+	fields = ("progress", "status", "started_at", "completed_at", "failure_class", "error_summary")
+	before = {key: job.get(key) for key in fields}
 	attempts = _get_job_attempts(job.name)
 	effective_attempt = get_effective_attempt_from_history(attempts)
 	if not effective_attempt:
@@ -717,6 +719,8 @@ def _update_job_summary(job):
 			and (effective_attempt.get("error_details") or failure_summary)
 			else _("All execution attempts failed.")
 		)
+	if before == {key: job.get(key) for key in fields}:
+		return
 	# Job counters are derived from immutable Attempt history. Avoid Document.db_set
 	# here: it reloads the row with ``FOR UPDATE`` and can collide with the result
 	# ingestor while the browser polls progress. A direct idempotent update has no

@@ -2,7 +2,7 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -13,6 +13,78 @@ from joymedia.services.editing.composer import (
 	_mix_audio,
 	_validate_normalized_video,
 )
+
+
+class TestComposedOutputPersistence(FrappeTestCase):
+	def test_series_conflict_retries_only_the_saved_result(self):
+		from joymedia.services.editing.composer import _persist_composed_output
+
+		file = Mock()
+		file.insert.return_value.file_url = "/private/files/result.mp4"
+		failed = Mock()
+		failed.insert.side_effect = frappe.QueryDeadlockError("series changed")
+		version = Mock()
+		version.insert.return_value.name = "AV-RESULT"
+		artifact = frappe._dict(name="ART", generation_attempt="ATT")
+		with (
+			patch.object(frappe.db, "commit"),
+			patch.object(frappe.db, "rollback") as rollback,
+			patch.object(frappe.db, "get_value", side_effect=["Running", None, "Running", None]),
+			patch(
+				"joymedia.services.editing.composer.frappe.get_doc", side_effect=[file, failed, file, version]
+			) as docs,
+		):
+			result = _persist_composed_output(
+				"RUN",
+				"SHOT",
+				"ASSET",
+				artifact,
+				b"computed bytes",
+				4,
+				24,
+				select_output=False,
+				can_select=True,
+			)
+		self.assertEqual("AV-RESULT", result)
+		rollback.assert_called_once()
+		self.assertEqual(b"computed bytes", docs.call_args_list[0].args[0]["content"])
+		self.assertEqual(b"computed bytes", docs.call_args_list[2].args[0]["content"])
+
+	def test_cancelled_run_cannot_publish_computed_bytes(self):
+		from joymedia.services.editing.composer import _persist_composed_output
+
+		with (
+			patch.object(frappe.db, "commit"),
+			patch.object(frappe.db, "get_value", return_value="Cancelled"),
+			patch("joymedia.services.editing.composer.frappe.get_doc") as docs,
+		):
+			result = _persist_composed_output(
+				"RUN", "SHOT", "ASSET", frappe._dict(), b"bytes", 4, 24, select_output=True, can_select=True
+			)
+		self.assertIsNone(result)
+		docs.assert_not_called()
+
+	def test_retry_reuses_the_same_immutable_output(self):
+		from joymedia.services.editing.composer import _persist_composed_output
+
+		with (
+			patch.object(frappe.db, "commit"),
+			patch.object(frappe.db, "get_value", side_effect=["Running", "AV-EXISTING"]),
+			patch("joymedia.services.editing.composer.frappe.get_doc") as docs,
+		):
+			result = _persist_composed_output(
+				"RUN",
+				"SHOT",
+				"ASSET",
+				frappe._dict(generation_attempt="ATT"),
+				b"bytes",
+				4,
+				24,
+				select_output=False,
+				can_select=True,
+			)
+		self.assertEqual("AV-EXISTING", result)
+		docs.assert_not_called()
 
 
 class TestVideoComposer(FrappeTestCase):
