@@ -1,0 +1,100 @@
+{
+  "source_attachment": {
+    "path": "verification/shera-refactor-20261020/anchored-extraction-contact.jpg",
+    "sha256": "d5a4268a83a8f1de9256f1fcec86866d969d7197f1b56af109867feb6306e579"
+  },
+  "repositories": [
+    {
+      "repository": "https://github.com/Hritikbansal/videophy",
+      "revision": "01d366c979e4a82875852adbf427ccc036e7373a",
+      "checkout": "/workspace/development/research/physical-video/videophy",
+      "license": "MIT",
+      "integration": "MIT rule-question template reused in the existing temporal reviewer; no upstream model loaded."
+    },
+    {
+      "repository": "https://github.com/OpenGVLab/PhyGenBench",
+      "revision": "f8642cb796f3bcb01f0b7c1b2ec53b75d357c739",
+      "checkout": "/workspace/development/research/physical-video/PhyGenBench",
+      "license": "No root license found; no code vendored.",
+      "integration": "Multi-frame state-change evaluation inspected; methodology reference, no copied code."
+    },
+    {
+      "repository": "https://github.com/5aurabhpathak/PhysVid",
+      "revision": "077db91c9737fd57293217f130642e3dcfcca35a",
+      "checkout": "/workspace/development/research/physical-video/PhysVid",
+      "license": "CC-BY-NC-SA-4.0",
+      "integration": "Research only; Wan training/inference and non-commercial licensing prevent drop-in H3 commercial deployment."
+    }
+  ],
+  "tests": {
+    "modules": 10,
+    "tests": 213,
+    "failed_modules": []
+  },
+  "live_diagnostic": {
+    "project": "PRJ-02566",
+    "shot": "SHOT-02325",
+    "take": "ASTV-04858",
+    "final_export": "ASTV-04894",
+    "range_seconds": [
+      9,
+      11
+    ],
+    "machine": [
+      {
+        "id": "transition.wipe",
+        "dimension": "physics",
+        "mode": "occurrence",
+        "evidence_kind": "transition",
+        "window": [
+          0,
+          2.0
+        ],
+        "claim": "Before: The tabletop has a visible water spill beneath the tissue.. During: The tissue maintains surface contact while moving across the spill; water diminishes only along the contacted path.. After: The swept path is visibly drier after contact and remaining water is physically continuous outside it.. Contradiction: Water remains an unchanged rigid outlined shape under and behind the wiping tissue, or vanishes outside the contact path.",
+        "verdict": "supported",
+        "frames": [
+          0,
+          4,
+          8
+        ],
+        "reason": "water spill diminishes along tissue path; remaining water is continuous outside.",
+        "phase_frames": {
+          "before": 0,
+          "during": 4,
+          "after": 8
+        },
+        "timing_alignment": "within authored window"
+      }
+    ],
+    "scope": "partial",
+    "interpretation": "Sampled model support disagrees with owner rejection; it is not physical correctness certification or resolution of this defect."
+  },
+  "owner_review_hold": {
+    "feedback": "4rpj7juev3",
+    "status": "Open",
+    "source_take": "ASTV-04858",
+    "unresolved_cut_feedback": [
+      "4rpj7juev3"
+    ],
+    "existing_footage_release": "Blocked pending replacement or explicit review"
+  },
+  "new_video_generated": false,
+  "existing_take_replaced": false,
+  "sampling_or_model_weights_changed": false,
+  "native_planning": {
+    "execution": "Actual configured planner, existing Shera workbook inputs, normal production-plan service, no mocked model response",
+    "validated": true,
+    "stored_shot_changed": false,
+    "transitions": [
+      {
+        "event": "action1",
+        "before": "Small water spill on oak tabletop.",
+        "during": "Rounded paw making short controlled blot with white tissue on small water spill.",
+        "after": "Moisture reduced only where tissue made contact.",
+        "forbidden": "Water spill expanding or remaining unchanged."
+      }
+    ],
+    "shared_h3_compilation": "Verified that inferred during/after constraints reach the model prompt",
+    "schema_repair": "Preserves authored context while excluding repeated schema and expanded serialized events from the invalid proposal."
+  }
+}

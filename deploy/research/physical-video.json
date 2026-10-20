@@ -1,0 +1,28 @@
+{
+  "inspected_on": "2026-10-20",
+  "repositories": [
+    {
+      "repository": "https://github.com/Hritikbansal/videophy",
+      "revision": "01d366c979e4a82875852adbf427ccc036e7373a",
+      "checkout": "/workspace/development/research/physical-video/videophy",
+      "license": "MIT",
+      "integration": "MIT rule-question template reused in the existing temporal reviewer; no upstream model loaded."
+    },
+    {
+      "repository": "https://github.com/OpenGVLab/PhyGenBench",
+      "revision": "f8642cb796f3bcb01f0b7c1b2ec53b75d357c739",
+      "checkout": "/workspace/development/research/physical-video/PhyGenBench",
+      "license": "No root license found; no code vendored.",
+      "integration": "Multi-frame state-change evaluation inspected; methodology reference, no copied code."
+    },
+    {
+      "repository": "https://github.com/5aurabhpathak/PhysVid",
+      "revision": "077db91c9737fd57293217f130642e3dcfcca35a",
+      "checkout": "/workspace/development/research/physical-video/PhysVid",
+      "license": "CC-BY-NC-SA-4.0",
+      "integration": "Research only; Wan training/inference and non-commercial licensing prevent drop-in H3 commercial deployment."
+    }
+  ],
+  "sampling_changes": false,
+  "model_weight_changes": false
+}

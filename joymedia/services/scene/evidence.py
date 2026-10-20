@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from joymedia.services.scene.contract import RELATIONS, proportion_claims, read_contract
 from joymedia.services.scene.structure import structure_claims
+from joymedia.services.scene.vendor.videophy2 import PROMPT_RULE
 
 MAX_SAMPLES = 16
 MAX_CLAIMS = 24
@@ -37,6 +38,21 @@ def sample_times(duration, fps, plan=None, frame_count=None):
 	last = frame_count - 1 if frame_count is not None else max(0, math.ceil(duration * fps - 1e-3) - 1)
 	contract = read_contract(plan, duration)
 	anchors = {round(last * i / 4) for i in range(5)}
+	required = {0, last}
+	for transition in (contract or {}).get("transitions", []):
+		event = next(row for row in contract["events"] if row["id"] == transition["event"])
+		indices = [
+			min(last, max(0, round(moment * fps)))
+			for moment in (event["start"], (event["start"] + event["end"]) / 2, event["end"])
+		]
+		if len(set(indices)) < 3:
+			raise ValueError("A physical transition requires at least three distinct visible frames.")
+		required.update(indices)
+	if len(required) > MAX_SAMPLES:
+		raise ValueError("Physical transitions exceed the sample budget; split this interaction.")
+	anchors.update(required)
+	if len(anchors) > MAX_SAMPLES:
+		anchors = required
 	candidates = set()
 	for event in (contract or {}).get("events", []):
 		for moment in (event["start"], (event["start"] + event["end"]) / 2, event["end"]):
@@ -45,7 +61,11 @@ def sample_times(duration, fps, plan=None, frame_count=None):
 	# Evenly distribute the remaining budget across event candidates; retain anchors.
 	candidates = sorted(candidates - anchors)
 	budget = MAX_SAMPLES - len(anchors)
-	if len(candidates) > budget:
+	if budget == 0:
+		candidates = []
+	elif budget == 1:
+		candidates = candidates[len(candidates) // 2 : len(candidates) // 2 + 1]
+	elif len(candidates) > budget:
 		candidates = [candidates[round(i * (len(candidates) - 1) / (budget - 1))] for i in range(budget)]
 	return [index / fps for index in sorted(anchors | set(candidates))]
 
@@ -123,6 +143,18 @@ def claims_for(plan, duration, action):
 					"claim": earlier["description"] + " happens BEFORE " + row["description"],
 				}
 			)
+	for row in contract.get("transitions", []):
+		event = next(event for event in contract["events"] if event["id"] == row["event"])
+		claims.append(
+			{
+				"id": f"transition.{row['event']}",
+				"dimension": "physics",
+				"mode": "occurrence",
+				"evidence_kind": "transition",
+				"window": [event["start"], event["end"]],
+				"claim": f"Before: {row['before']}. During: {row['during']}. After: {row['after']}. Contradiction: {row['forbidden']}",
+			}
+		)
 	if len(claims) > MAX_CLAIMS:
 		# Never silently drop the end of an authored contract to fit a model budget.
 		raise ValueError(
@@ -132,6 +164,18 @@ def claims_for(plan, duration, action):
 
 
 def question(check):
+	# Reuse VideoPhy-2's MIT-licensed physical-rule question, without its video
+	# token/chat wrapper or checkpoint-specific numeric response protocol.
+	rule_question = PROMPT_RULE.split("Human: ", 2)[2].split("\nChoose", 1)[0]
+	rules = " ".join(
+		rule_question.format(rule=row["claim"]) for row in check.claims if row["dimension"] == "physics"
+	)
+	phase_example = (
+		',"phase_frames":{"before":0,"during":1,"after":2}'
+		if any(row.get("evidence_kind") == "transition" for row in check.claims)
+		else ""
+	)
+	frames_example = "[0,1,2]" if phase_example else "[0,1]"
 	return (
 		"Review this chronological sequence of sampled video frames. Each image is preceded by its zero-based frame ID and timestamp. "
 		"Evaluate each claim independently. First observe the visible objects, then the interaction and event order. "
@@ -140,10 +184,21 @@ def question(check):
 		"An object leaving the camera view is not disappearance. Printed characters are not extra actors. "
 		"A still or attractive picture does not establish motion. For order claims, supported needs at least two distinct chronological frames showing cause then effect. "
 		"An interacting object is not automatically the material source. Distinguish stylized appearance from broken contact or causality. "
+		"For evidence_kind=transition, inspect initial state, actual contact/motion and resulting material state independently. "
+		"A touch or tool lift alone cannot prove the requested change. Compare the same region accounting for camera motion and occlusion. "
+		"For a transition, supported requires three distinct chronological samples and phase_frames:{before:frame ID,during:frame ID,after:frame ID}. "
+		"Every cited phase frame must also appear in frames. Explain the actual visible change, not the requested one. "
+		"A hidden result, unchanged affected region or unexplained disappearance must not pass. Do not infer material transfer from an instruction or the tool's appearance. "
 		"Do not certify product text, logos or fine character identity. Frame IDs must refer to these actual samples. "
-		'Use compact JSON without indentation or repeated whitespace; reasons must be under 25 words. Return only JSON: {"observations":[{"id":"claim ID","verdict":"supported|violated|uncertain","frames":[0,1],"reason":"specific visible evidence"}]}. '
+		'Use compact JSON without indentation or repeated whitespace; reasons must be under 25 words. Return only JSON: {"observations":[{"id":"claim ID","verdict":"supported|violated|uncertain","frames":'
+		+ frames_example
+		+ ',"reason":"specific visible evidence"'
+		+ phase_example
+		+ "}]}. "
 		"Return exactly one observation for every claim. Claims: "
 		+ json.dumps(check.claims, ensure_ascii=False)
+		+ " Physical-rule questions: "
+		+ rules
 	)
 
 
@@ -179,6 +234,21 @@ def evaluate(check, answer):
 			valid = bool(frames)
 		if valid and verdict == "supported" and claim["dimension"] == "order":
 			valid = len(frames) >= 2 and frames == sorted(frames)
+		phases = row.get("phase_frames")
+		if valid and verdict == "supported" and claim.get("evidence_kind") == "transition":
+			valid = isinstance(phases, dict) and set(phases) == {"before", "during", "after"}
+			if valid:
+				ordered = [phases[key] for key in ("before", "during", "after")]
+				valid = (
+					all(type(index) is int and index in frames for index in ordered)
+					and ordered[0] < ordered[1] < ordered[2]
+				)
+				start, end = claim["window"]
+				expected = [
+					min(range(len(check.metadata)), key=lambda i: abs(check.metadata[i]["time"] - time))
+					for time in (start, (start + end) / 2, end)
+				]
+				valid = valid and ordered == expected
 		if valid and claim.get("strict_window"):
 			start, end = claim["window"]
 			valid = all(start <= check.metadata[index]["time"] <= end for index in frames)
@@ -186,6 +256,8 @@ def evaluate(check, answer):
 			verdict, reason = "uncertain", "Missing, malformed or ungrounded temporal evidence."
 			frames = []
 		result = {**claim, "verdict": verdict, "frames": frames, "reason": str(reason)[:500]}
+		if valid and verdict == "supported" and claim.get("evidence_kind") == "transition":
+			result["phase_frames"] = phases
 		if verdict == "supported" and "window" in claim:
 			start, end = claim["window"]
 			result["timing_alignment"] = (
@@ -235,7 +307,22 @@ def batches(check):
 	"""
 	groups = {}
 	for claim in check.claims:
-		if claim.get("window") == [0, 0]:
+		if claim.get("evidence_kind") == "transition":
+			start, end = claim["window"]
+			indices = tuple(
+				sorted(
+					{
+						min(range(len(check.metadata)), key=lambda i: abs(check.metadata[i]["time"] - time))
+						for time in (start, (start + end) / 2, end)
+					}
+				)
+			)
+			if len(indices) < 3:
+				raise ValueError(
+					"Physical transition evidence requires distinct before/contact/after samples."
+				)
+			windows = [indices]
+		elif claim.get("window") == [0, 0]:
 			windows = [(0,)]
 		elif claim["id"] == "action":
 			windows = [tuple(sorted({round(i * (len(check.metadata) - 1) / 3) for i in range(4)}))]
@@ -326,6 +413,11 @@ def merge_observations(check, reports):
 				"frames": sorted({index for row in selected for index in row["frames"]}),
 				"reason": "; ".join(dict.fromkeys(row["reason"] for row in selected))[:500]
 				or "No temporal evidence returned.",
+				**(
+					{"phase_frames": witnesses[0]["phase_frames"]}
+					if witnesses and "phase_frames" in witnesses[0] and not bad
+					else {}
+				),
 			}
 		)
 	return evaluate(check, {"observations": observations})

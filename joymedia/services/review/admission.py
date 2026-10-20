@@ -33,6 +33,7 @@ def implementation_hash():
 				"../workflow_adapters/graphs/prompt_sampling.json",
 				"scene/evidence.py",
 				"scene/contract.py",
+				"scene/vendor/videophy2.py",
 				"consistency/retention.py",
 				"generation/preparation.py",
 				"generation/ingestor.py",

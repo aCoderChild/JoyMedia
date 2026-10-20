@@ -85,6 +85,22 @@ class TestH3(FrappeTestCase):
 		prompt = compile_h3(shot, self.project())
 		self.assertEqual(prompt.count("The subject lifts the cup."), 1)
 		self.assertIn("0-2s only: The grip remains attached.", prompt)
+		shot.motion_plan_json["scene_contract"]["transitions"] = [
+			{
+				"event": "lift",
+				"before": "The cup rests on its support",
+				"during": "The grip supports the cup as it rises",
+				"after": "The supported cup is visibly raised",
+				"forbidden": "The cup floats independently of the grip",
+			}
+		]
+		for prompt in [
+			compile_h3(shot, self.project()),
+			compile_segment_prompt_from_snapshot(shot, self.project(), 1, 1),
+		]:
+			self.assertIn("The grip supports the cup as it rises", prompt)
+			self.assertIn("The supported cup is visibly raised", prompt)
+			self.assertIn("The cup floats independently of the grip", prompt)
 
 	@patch("joymedia.services.planning.prompts._mood", return_value="Warm side light.")
 	@patch("joymedia.services.planning.prompts.first_frame_inventory", return_value="the subject")

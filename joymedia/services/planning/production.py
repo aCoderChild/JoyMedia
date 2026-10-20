@@ -395,7 +395,7 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 	from joymedia.services.planning.director_rules import CINEMATOGRAPHY_RULES
 	from joymedia.services.planning.shot_structure import PLANNING_RULES as STRUCTURE_RULES
 	from joymedia.services.project.formats import ratio_label
-	from joymedia.services.scene.contract import STAGING_RULES
+	from joymedia.services.scene.contract import STAGING_RULES, TRANSITION_RULES
 
 	camera_rules = camera_planning_rules(project)
 	# Serialize authored event timing instead of asking the model to predict it again.
@@ -435,8 +435,11 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 		"setting_prompt: place and lighting only, at most 30 words. video_prompt: authored motion only. "
 		"start_state and end_state: short descriptions. Use New Scene for a direct cut. "
 		"needs_editing: report impossible action timing without omitting actions. "
-		"Infer motion_plan.shot_structure only; do NOT generate camera_intent, scene_contract, actions or checks: "
-		"the application serializes authored events and timing. keep_visible must use the given ENTITY IDs. "
+		"Infer motion_plan.shot_structure and optional motion_plan.scene_contract.transitions only; "
+		"do NOT generate camera_intent, entities, events, actions or checks: the application serializes authored events and timing. "
+		"For state-changing authored interactions, supply visible before/during/after/forbidden transition observations, "
+		"using the given EVENT IDs. Preserve actions and infer only their observable physical consequences. "
+		"keep_visible must use the given ENTITY IDs. "
 		"Use one main camera behavior from shared shot grammar. Camera movement never substitutes for subject action. "
 		+ STRUCTURE_RULES
 		+ CINEMATOGRAPHY_RULES
@@ -445,11 +448,14 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 		+ "\n"
 		+ previous_coverage(project, shot)
 		+ STAGING_RULES
+		+ TRANSITION_RULES
 		+ camera_rules
 		+ "\nENTITY IDs: "
 		+ json.dumps(entities)
 		+ "\nAUTHORITATIVE ACTIONS: "
 		+ json.dumps(actions, ensure_ascii=False)
+		+ "\nEVENT IDs: "
+		+ json.dumps([event["id"] for event in contract["events"]])
 		+ "\nVISUAL: "
 		+ str(beat.get("camera") or "")
 		+ "\nCONTINUITY: "
@@ -465,7 +471,7 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 			],
 			ensure_ascii=False,
 		)
-		+ '\nReturn {"image_prompt":"","setting_prompt":"","video_prompt":"","reference_keys":[],"continuity_mode":"New Scene","start_state":"","end_state":"","motion_plan":{"shot_structure":{}},"needs_editing":""}. Camera intent is derived by application policy.'
+		+ '\nReturn {"image_prompt":"","setting_prompt":"","video_prompt":"","reference_keys":[],"continuity_mode":"New Scene","start_state":"","end_state":"","motion_plan":{"shot_structure":{"stage":"","framing":"","angle":"","subject_motion":"","keep_visible":[]},"scene_contract":{"transitions":[]}},"needs_editing":""}. Include every shot_structure key. Camera intent is derived by application policy.'
 	)
 	from joymedia.services.planning.shot_structure import authored_coverage
 
@@ -475,7 +481,13 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 	# authored actions. Invalid output must not silently lose physical constraints.
 	for attempt in range(3):
 		raw = _ask_planner(prompt, sampling_profile="timed_production_plan")
-		raw.setdefault("motion_plan", {}).update(actions=actions, scene_contract=contract)
+		inferred = raw.setdefault("motion_plan", {}).get("scene_contract") or {}
+		# Only inferred observable transitions may augment the sheet's frozen actions.
+		authored_contract = {
+			**contract,
+			"transitions": inferred.get("transitions", []) if isinstance(inferred, dict) else inferred,
+		}
+		raw["motion_plan"].update(actions=actions, scene_contract=authored_contract)
 		if coverage:
 			raw["motion_plan"].setdefault("shot_structure", {}).update(coverage)
 		_discard_inferred_camera(project, raw)
@@ -490,21 +502,27 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 		except ValueError as exc:
 			if attempt == 2:
 				raise
+			# The source prompt already contains all immutable inputs and schemas.
+			# Repeating them with the application's expanded contract can exhaust
+			# a small planner context before it can repair its own inferred fields.
+			proposal = {
+				**raw,
+				"motion_plan": {
+					"shot_structure": raw["motion_plan"].get("shot_structure"),
+					"scene_contract": {"transitions": authored_contract["transitions"]},
+				},
+			}
 			prompt = (
 				source_prompt
 				+ "\n\n"
 				+ "Repair this production-plan JSON without changing its subjects, opening, actions or timing. "
 				"Return the complete corrected JSON, no commentary. Schema error: " + str(exc) + ". "
-				"Every relation subject/object and keep_visible entry must equal a declared entity id, never its label. "
-				"Relation kind must be attached_to, supported_by, contacts or flows_from; describe temporary contact "
-				"in events rather than inventing a relation kind. Omit no authored actions. "
-				"Events require id, description, start, end, after:[]; dependencies must end before the event starts. "
-				"Checks require id, scope:opening|sequence|event, claim; event scope also requires a declared event ID. "
+				"Include stage, framing, angle, subject_motion and keep_visible in shot_structure; [] is allowed for keep_visible. "
+				"Every keep_visible entry must equal a declared entity id, never its label. "
+				"Transition event must use an authored EVENT ID. Do not regenerate events or actions. "
 				"image_prompt is one opening still of at most 60 words. "
-				+ STRUCTURE_RULES
-				+ camera_rules
 				+ "\nINVALID PLAN: "
-				+ json.dumps(raw, ensure_ascii=False)
+				+ json.dumps(proposal, ensure_ascii=False)
 			)
 	if not plan["motion_plan"].get("shot_structure"):
 		frappe.throw(_("Timed scene planning did not provide shot structure. Please replan the scene."))

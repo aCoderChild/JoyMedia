@@ -31,6 +31,10 @@ STAGING_RULES = """Physical staging:
   image framing is not physical scale. A close-up product photo must not become an oversized prop.
 - Describe cause, contact, then effect in that order. A material comes from its named source;
   contact with an actor does not turn that actor into its source.
+- For a state-changing interaction, describe the visible initial state, sustained contact or
+  transfer during the action, and the resulting state. Merely approaching, touching, then
+  lifting a tool does not establish the requested work. The affected material must change
+  at the contact path or transfer boundary; unrelated material remains unchanged.
 - Specify the actual body-part morphology from the reference, not a human default.
 - Preserve the authored cause and intention of an interaction; do not substitute a different action.
 - Humans intentionally participating in the scene must use an explicit Person reference.
@@ -48,8 +52,24 @@ STAGING_RULES = """Physical staging:
   fit its duration, report needs_editing; never silently omit a required action.
 """
 
+TRANSITION_RULES = """
+  For an authored state-changing interaction, add transitions:[{"event":"cause",
+  "before":"visible initial material/object state","during":"visible contact, motion or transfer",
+  "after":"visible resulting state","forbidden":"specific contradictory physical outcome"}].
+  At most four transitions; one per declared event. Describe observable consequences, not a
+  repeated action verb or a physics slogan. Derive them only from the authored interaction,
+  never promise an unsupported product capability or require microscopic measurements.
+  Keep the contact region and the changed region visible before, during and after the action.
+  before and after must describe the SAME affected material or object property, not the
+  actor's pose or tool position. during names the actual contact/motion causing that change.
+  forbidden names a contradictory change in THAT material or property, not an unrelated
+  generic rendering artifact copied from these rules. If the authored pose or view hides
+  the result, report needs_editing rather than declaring an invisible effect established.
+"""
+
 PLANNING_RULES = (
 	STAGING_RULES
+	+ TRANSITION_RULES
 	+ """
 - motion_plan.scene_contract is optional when no physical interaction needs constraints.
   Start with {"version":1,"entities":[{"id":"subject","label":"the authored subject"}],"relations":[],"events":[]}.
@@ -114,6 +134,7 @@ def read_contract(plan, duration=None):
 		"counts",
 		"parts",
 		"properties",
+		"transitions",
 	}
 	if unknown:
 		raise ValueError("Unsupported scene contract fields: " + ", ".join(sorted(unknown)))
@@ -223,6 +244,20 @@ def read_contract(plan, duration=None):
 			if key not in events or events[key]["end"] > row["start"]:
 				raise ValueError("An event must follow the completion of its declared causes.")
 	checks, ids = [], set()
+	transitions, transition_events = [], set()
+	for row in rows("transitions", 4):
+		event = identifier(row.get("event"))
+		if event not in events or event in transition_events:
+			raise ValueError("Physical transitions require a unique declared event.")
+		if set(row) != {"event", "before", "during", "after", "forbidden"}:
+			raise ValueError("Physical transitions require event, before, during, after and forbidden.")
+		transitions.append(
+			{
+				"event": event,
+				**{key: text(row.get(key), key) for key in ("before", "during", "after", "forbidden")},
+			}
+		)
+		transition_events.add(event)
 	for row in rows("checks", 8):
 		key = identifier(row.get("id"))
 		if key in ids or row.get("scope") not in {"opening", "sequence", "event"}:
@@ -243,6 +278,7 @@ def read_contract(plan, duration=None):
 		"entities": list(entities.values()),
 		"relations": relations,
 		"events": sorted(events.values(), key=lambda r: (r["start"], r["id"])),
+		**({"transitions": transitions} if transitions else {}),
 		**({"checks": checks} if checks else {}),
 		**({"proportions": proportions} if proportions else {}),
 	}
@@ -269,6 +305,17 @@ def instruction(plan, duration=None, start=None, end=None, *, include_events=Tru
 		for check in contract.get("checks", []):
 			if check.get("event") == event["id"]:
 				actions.append(f"{first:g}-{last:g}s only: {check['claim']}")
+		for transition in contract.get("transitions", []):
+			if transition["event"] != event["id"]:
+				continue
+			# A continuation must preserve progress, never reset to the original material state.
+			if origin <= event["start"]:
+				actions.append(f"At {first:g}s before contact: {transition['before']}")
+			actions.append(
+				f"{first:g}-{last:g}s interaction: {transition['during']}. Do not show: {transition['forbidden']}"
+			)
+			if end is None or end >= event["end"]:
+				actions.append(f"By {last:g}s visible result: {transition['after']}")
 	parts.extend(proportion_claims(contract))
 	parts.extend(structure_claims(contract))
 	parts.extend(row["claim"] for row in contract.get("checks", []) if row["scope"] == "sequence")
@@ -340,6 +387,8 @@ def opening_claims(plan, duration=None):
 	claims.extend(proportion_claims(contract))
 	claims.extend(structure_claims(contract))
 	claims.extend(row["claim"] for row in contract.get("checks", []) if row["scope"] == "opening")
+	opening_events = {event["id"] for event in contract["events"] if event["start"] == 0}
+	claims.extend(row["before"] for row in contract.get("transitions", []) if row["event"] in opening_events)
 	return claims
 
 

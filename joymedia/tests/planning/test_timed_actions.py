@@ -30,7 +30,19 @@ class TestTimedActions(unittest.TestCase):
 
 		from joymedia.services.planning import production as p
 
-		raw = {"motion_plan": {"actions": []}}
+		transition = {
+			"event": "action2",
+			"before": "The cup rests on the table",
+			"during": "The grip supports the rising cup",
+			"after": "The supported cup is above the table",
+			"forbidden": "The cup rises without support",
+		}
+		raw = {
+			"motion_plan": {
+				"actions": [],
+				"scene_contract": {"transitions": [transition], "events": [{"id": "invented"}]},
+			}
+		}
 		normalized = {
 			"motion_plan": {
 				"actions": [{"start": 0, "end": 2, "action": "Move slowly."}],
@@ -64,6 +76,7 @@ class TestTimedActions(unittest.TestCase):
 		self.assertEqual([(0, 0.4), (0.4, 2)], [(e["start"], e["end"]) for e in events])
 		self.assertEqual(["action1"], events[1]["after"])
 		self.assertEqual(authored[1]["action"], events[1]["description"])
+		self.assertEqual([transition], raw["motion_plan"]["scene_contract"]["transitions"])
 
 
 class TestInferredCameraPolicy(unittest.TestCase):
@@ -160,3 +173,5 @@ class TestAuthoredCoverage(unittest.TestCase):
 			self.assertIn("AUTHORED WIDE ROOM", call.args[0])
 			self.assertIn("SAME ROOM", call.args[0])
 			self.assertIn("Lift the cup.", call.args[0])
+			self.assertEqual(1, call.args[0].count("Optional motion_plan.shot_structure describes"))
+		self.assertNotIn('"events":', ask.call_args_list[1].args[0].split("INVALID PLAN:")[1])

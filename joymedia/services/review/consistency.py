@@ -772,7 +772,12 @@ def run_temporal_check(check, configured=None):
 					"items": {
 						"type": "object",
 						"additionalProperties": False,
-						"required": ["id", "verdict", "frames", "reason"],
+						"required": ["id", "verdict", "frames", "reason"]
+						+ (
+							["phase_frames"]
+							if any(row.get("evidence_kind") == "transition" for row in claims)
+							else []
+						),
 						"properties": {
 							"id": {"type": "string", "enum": [row["id"] for row in claims]},
 							"verdict": {"type": "string", "enum": ["supported", "violated", "uncertain"]},
@@ -782,6 +787,15 @@ def run_temporal_check(check, configured=None):
 								"items": {"type": "integer", "enum": list(indices)},
 							},
 							"reason": {"type": "string"},
+							"phase_frames": {
+								"type": "object",
+								"additionalProperties": False,
+								"required": ["before", "during", "after"],
+								"properties": {
+									phase: {"type": "integer", "enum": list(indices)}
+									for phase in ("before", "during", "after")
+								},
+							},
 						},
 					},
 				}
