@@ -1,0 +1,202 @@
+{
+  "project": "PRJ-02569",
+  "previous_working_project": "PRJ-02566",
+  "source_workbook": "SAN PHAM AI/kich_ban/Shera_TVC_30s_JoyMedia.xlsx",
+  "workbook_sha256": "525b14af4f63f0c24b0f845ab7dfcdc5ca3d5938b795c8e90e40fbe221732de7",
+  "duration_seconds": 30,
+  "aspect_ratio_source": "Authored workbook 9:16; no automatic reel default",
+  "workflow": "WF-02685",
+  "pipeline": "PIPE-00052",
+  "run": "RUN-00777",
+  "task": "TASK-01139",
+  "attempt": "ATT-01022",
+  "comfy_prompt_id": "026a0e22-0d6e-48b1-bb59-f92a43cdf1be",
+  "opening_attempt": "ATT-01020",
+  "opening_selected": "ASTV-04909",
+  "contact_boundary_versions": [
+    "ASTV-04910",
+    "ASTV-04911"
+  ],
+  "rejected_attempts": [
+    "ATT-01014",
+    "ATT-01015",
+    "ATT-01016",
+    "ATT-01018",
+    "ATT-01019"
+  ],
+  "manual_contact_review": {
+    "frames": 56,
+    "evidence": "verification/shera-v14-physics/wipe-contact-v4-all-frames.jpg",
+    "compact_visible_paw": true,
+    "wrist_outside_frame": true,
+    "no_heart_or_extra_limbs": true,
+    "continuous_tissue_contact": true,
+    "spill_reduces_along_stroke": true,
+    "revealed_drier_trail": true,
+    "scope": "Contact close-up only; it does not establish full-body ratios outside the frame."
+  },
+  "tests": {
+    "visual_admission_and_transaction_persistence": 31,
+    "result": "Passed",
+    "other_changed_module_results": [
+      {
+        "module": "joymedia.tests.editing.test_temporal_fit",
+        "ok": true
+      },
+      {
+        "module": "joymedia.tests.editing.test_composer",
+        "ok": true
+      },
+      {
+        "module": "joymedia.tests.workflows.test_pipeline",
+        "ok": true
+      },
+      {
+        "module": "joymedia.tests.workflows.test_resolution_execution",
+        "ok": true
+      },
+      {
+        "module": "joymedia.tests.workflow_adapters.test_flux2_klein",
+        "ok": true
+      },
+      {
+        "module": "joymedia.tests.generation.test_segments",
+        "ok": true
+      }
+    ],
+    "held_candidate_admission_and_transactions": {
+      "tests": 39,
+      "passed": true
+    },
+    "scene_contract_evidence": {
+      "tests": 37,
+      "passed": true
+    },
+    "delivery_adapter_and_actual_ffmpeg": {
+      "tests": 11,
+      "passed": true
+    },
+    "composer_and_takes": [
+      {
+        "module": "joymedia.tests.editing.test_composer",
+        "ok": true
+      },
+      {
+        "module": "joymedia.tests.generation.test_takes",
+        "ok": true
+      }
+    ]
+  },
+  "changes": {
+    "composition_reference": "Native Klein General slot using existing reference-latent nodes",
+    "delivery": "Workflow-declared preserve_endpoints fits the entire native interval to authored frame count",
+    "review_persistence": "Existing persist_result retries only saving computed evidence; cancellation is rechecked after rollback"
+  },
+  "repository": "https://github.com/aCoderChild/JoyMedia/tree/refactor/production-maintainability",
+  "commit": "3cd56b79",
+  "status": "Export completed, downloaded and verified; V14 is the working edit",
+  "selected_wipe": "ASTV-04927",
+  "final_asset": "ASTV-04936",
+  "final_file": "/private/files/PRJ-02569-edited-d635a009.mp4",
+  "final_sha256": "d3a448c9444f81b7d6122aef02d0a380815e7eb5e0d74eeefaf863bf9af05165",
+  "video_frames": 720,
+  "video_fps": 24,
+  "video_duration_seconds": 30,
+  "container_duration_seconds": 30.016,
+  "width": 1440,
+  "height": 2560,
+  "audio_sample_rate": 44100,
+  "audio_peak_db": -2.9,
+  "browser": {
+    "videos": [
+      {
+        "src": "http://127.0.0.1:8000/private/files/PRJ-02569-edited-d635a009.mp4?fid=12d839530e",
+        "readyState": 4,
+        "duration": 30.016009
+      }
+    ],
+    "errors": [],
+    "bytes": 30732800
+  },
+  "working_edit": "PRJ-02569",
+  "release_evidence": {
+    "status": "Blocked",
+    "reason": "Release blocked: Scene SHOT-02335 still uses footage generated for an earlier direction."
+  },
+  "release_eligible": false,
+  "manual_review": {
+    "machine_status": "Needs Review",
+    "original_run_task_attempt_status": "Failed (preserved)",
+    "automatic_pass_claimed": false,
+    "candidate_retention": "Explicit Frappe owner request; source SHA256, direction and complete findings bound; unselected Review Required candidate",
+    "candidate_selection": "Existing use_reviewed_take API with expected-current guard",
+    "contact_native_frames_inspected": 56,
+    "contact_delivered_frames_inspected": 48,
+    "all_delivered_contact_frames": "verification/shera-v14-physics/final-wipe-all-frames.jpg",
+    "coverage": "verification/shera-v14-physics/final-coverage-review.jpg",
+    "old_feedback": "4rpj7juev3",
+    "old_feedback_status_preserved": "Open"
+  },
+  "motion_metrics": {
+    "opening-v14-native": {
+      "decoded_frames": 107,
+      "background_feature_matches": 44,
+      "inliers": 36,
+      "background_affine": [
+        [
+          1.1430997497293836,
+          0.000897656447273236,
+          -53.28395477891915
+        ],
+        [
+          -0.000897656447273236,
+          1.1430997497293836,
+          -89.69963158033578
+        ]
+      ],
+      "scale": 1.1431001021863645,
+      "scope": "First/last persistent background features; a 2D estimate does not prove a physical camera trajectory."
+    },
+    "wipe-contact-v3-native": {
+      "decoded_frames": 56,
+      "background_feature_matches": 233,
+      "inliers": 229,
+      "background_affine": [
+        [
+          0.9997041032778596,
+          1.2571417975592167e-05,
+          -0.01765755485170413
+        ],
+        [
+          -1.2571417975592167e-05,
+          0.9997041032778596,
+          -0.007827084680732604
+        ]
+      ],
+      "scale": 0.9997041033569033,
+      "scope": "First/last persistent background features; a 2D estimate does not prove a physical camera trajectory."
+    }
+  },
+  "reference_preparation": {
+    "tool": "built-in image_gen / imagegen skill",
+    "files": [
+      "verification/shera-v14-physics/contact-start-v3.png",
+      "verification/shera-v14-physics/contact-end-v3.png"
+    ],
+    "prompts": "verification/shera-v14-physics/contact-reference-prompts.txt"
+  },
+  "source_attachment_rejected": {
+    "path": "verification/shera-v14-physics/wipe-start-retry.png",
+    "sha256": "15a61c6af09198f5851e261c8617a7c477cd3b1376826004dab97e91b8a4654d",
+    "selected": false,
+    "reason": "Distorted mascot body and elongated arms; incidental heart pose."
+  },
+  "held_attempts_preserved": [
+    "ATT-01021",
+    "ATT-01022"
+  ],
+  "known_limitations": [
+    "The contact close-up does not establish proportions of the full figure outside the frame.",
+    "Production release remains blocked for an inherited cheek-wipe authored-action lineage mismatch: the older frozen Vietnamese intention differs from the current timed English revision. Review export is completed and verified."
+  ]
+}
