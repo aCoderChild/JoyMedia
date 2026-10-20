@@ -45,7 +45,31 @@
     "branch_history": "Reviewed false positives: workflow identifiers and a bound SQL submission-key parameter. No credentials added."
   },
   "compatibility": "Existing whitelisted methods, queued-job import paths and Frappe DocTypes preserved.",
-  "video_qualification": "Seven selected/reviewed candidate takes have passed real generation and final output processing. Final 30-second picture/audio export remains pending verification.",
+  "video_qualification": {
+    "project": "PRJ-02565",
+    "review_export": "ASTV-04820",
+    "file": "/private/files/PRJ-02565-edited-565a8f71.mp4",
+    "video_frames": 720,
+    "fps": 24,
+    "video_duration_seconds": 30,
+    "export_dimensions": [
+      1440,
+      2560
+    ],
+    "generation_note": "Export is upscaled from the source takes; this is not native 2K inference.",
+    "full_decode": "passed",
+    "audio_peak_dbfs": -2.6379,
+    "audio_full_scale_samples": 0,
+    "music_asset": "ASTV-04819",
+    "music_duration_seconds": 31,
+    "manual_review": "Held: water exits the glass sidewall in the spill take; the extraction take crops the package logo. Earlier duplicate/photo-card examples are absent in sampled comparison frames. No production release or blanket resolution is claimed.",
+    "replacement_runs": [
+      "RUN-00759",
+      "RUN-00760"
+    ],
+    "replacement_profile": "Native base 20-step, turbo disabled; actual submitted graph verified.",
+    "global_pipeline_promoted": false
+  },
   "reference_preparation": {
     "workflow": "ComfyUI native ImageCropV2 through existing generic adapter",
     "real_job_verified": true,

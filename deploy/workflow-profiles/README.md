@@ -18,3 +18,17 @@ body framing despite a close-up instruction. A separately prepared portrait view
 provides the appropriate visible anatomy while retaining the source identity.
 Keep the full view for wide shots. This prepares references; it does not replace
 the workbook's scene planning, video workflow or review gates.
+
+`minimax_h3_i2v_base_20.json` retains the native first/last-frame graph and
+installed checkpoint, switches turbo off, and selects the existing 20-step base
+schedule. No additional model or inference node is required. This is an optional
+comparison profile, not a global promotion or a guarantee of physical correctness.
+The [official guide](https://github.com/Comfy-Org/docs/blob/main/tutorials/video/minimax/minimax-h3.mdx)
+documents the base/turbo schedules. Preserve both the seed and input references
+when comparing them.
+
+The operator's per-project pipeline pin takes precedence over editor settings.
+After changing that pin, allow the framework's site-config cache to expire or
+refresh the relevant service. Inspect the frozen Run's workflow and the submitted
+ComfyUI graph: the turbo switch must be false and base steps must be 20. An editor
+selection alone is not execution evidence.
