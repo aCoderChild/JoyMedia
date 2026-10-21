@@ -703,6 +703,32 @@ def set_project_shot_keyframe(project_name, shot_name, frame_role, asset_version
 
 
 @frappe.whitelist()
+def clear_project_shot_keyframe(project_name, shot_name, frame_role):
+	"""Remove an explicit frame guide when a revised scene no longer has that endpoint."""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	if frame_role not in ("first_frame", "last_frame"):
+		frappe.throw(_("Keyframe role must be first_frame or last_frame."))
+	shot = frappe.get_doc("Shot", shot_name)
+	if shot.media_project != project.name:
+		frappe.throw(_("Shot does not belong to this project."))
+	from joymedia.services.planning.durations import ensure_shot_planning_editable
+
+	ensure_shot_planning_editable(project.name)
+	remaining = [
+		{"reference_role": row.reference_role, "asset_version": row.asset_version}
+		for row in shot.generation_inputs or []
+		if frappe.scrub(row.reference_role or "") != frame_role
+	]
+	if len(remaining) == len(shot.generation_inputs or []):
+		return {"shot_name": shot.name, "frame_role": frame_role, "is_outdated": False}
+	shot.set("generation_inputs", remaining)
+	shot.save(ignore_permissions=True)
+	_mark_storyboard_needs_review(project)
+	return {"shot_name": shot.name, "frame_role": frame_role, "is_outdated": bool(shot.selected_output_asset_version)}
+
+
+@frappe.whitelist()
 def update_project_shot_timing(project_name, shot_name, duration_seconds):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_write_access()
