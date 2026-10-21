@@ -24,9 +24,7 @@ def _source(project_name, shot_name, attempt_name, expected_source_sha256):
 	):
 		raise ValueError("Choose terminal held footage from this scene for evidence-only review.")
 	original = report_for(attempt.name)
-	if (not original and attempt.status != "Cancelled") or any(
-		row.get("verdict") == "violated" for row in (original or {}).get("results", [])
-	):
+	if any(row.get("verdict") == "violated" for row in (original or {}).get("results", [])):
 		raise ValueError("Witnessed violations require correction, not an evidence-only retry.")
 	artifact = frappe.get_doc(
 		"Generation Artifact", {"generation_attempt": attempt.name, "artifact_role": "Primary Video"}
