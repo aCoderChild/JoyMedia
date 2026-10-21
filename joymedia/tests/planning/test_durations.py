@@ -7,6 +7,15 @@ from joymedia.services.planning.durations import ensure_shot_planning_editable, 
 
 
 class TestShotDurationPlanner(FrappeTestCase):
+	def test_capacity_aware_allocation_redistributes_long_ending_without_losing_frames(self):
+		from joymedia.services.planning.durations import allocate_frames
+
+		frames = allocate_frames([1, 1, 1, 1, 1, 10], 720, maximum=124)
+		self.assertEqual(720, sum(frames))
+		self.assertTrue(all(1 <= value <= 124 for value in frames))
+		with self.assertRaisesRegex(ValueError, "enough scenes"):
+			allocate_frames([1, 1, 1, 1, 10], 720, maximum=124)
+
 	@patch("joymedia.services.planning.durations.frappe.db.exists", return_value="RUN-00001")
 	def test_active_generation_blocks_shot_planning_edits(self, exists):
 		with self.assertRaises(frappe.ValidationError):

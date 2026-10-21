@@ -124,6 +124,20 @@ def script_schema(inventory, constraints):
 		"feel=brief reaction; hero=final branded presentation."
 	)
 	root = {key: text for key in ("title", "logline", "format_reason", "visual_style", "music")}
+	minimum_scenes = (
+		max(
+			2,
+			math.ceil(
+				constraints.get("duration_seconds", 0)
+				* constraints.get("fps", 24)
+				/ constraints["max_scene_frames"]
+			),
+		)
+		if constraints.get("duration_seconds") and constraints.get("max_scene_frames")
+		else 2
+	)
+	if minimum_scenes > 12:
+		raise ValueError("The requested duration exceeds this workflow's automatic storyboard scene budget.")
 	root.update(
 		format={"const": constraints["aspect_ratio"]}
 		if constraints.get("aspect_ratio")
@@ -132,12 +146,12 @@ def script_schema(inventory, constraints):
 		if constraints.get("duration_seconds")
 		else {"type": "number", "minimum": 1, "maximum": 60},
 		features={"type": "array", "items": text, "minItems": 1, "maxItems": 12},
-		scenes={"type": "array", "items": object_schema(scene), "minItems": 2, "maxItems": 12},
+		scenes={"type": "array", "items": object_schema(scene), "minItems": minimum_scenes, "maxItems": 12},
 	)
 	return object_schema(root)
 
 
-def fit_generated_timing(script, total_seconds, fps):
+def fit_generated_timing(script, total_seconds, fps, *, max_scene_frames=None):
 	"""Compile AI timing proposals through the existing frame/interval engines.
 
 	Only automatic drafts call this; an imported authored workbook is never retimed.
@@ -164,7 +178,7 @@ def fit_generated_timing(script, total_seconds, fps):
 	total = total_seconds or script.get("duration_seconds")
 	if type(total) not in (int, float) or not math.isfinite(total) or not 1 <= total <= 60:
 		raise ValueError("Requested duration must be within sixty seconds.")
-	frames = allocate_frames(weights, round(total * fps))
+	frames = allocate_frames(weights, round(total * fps), maximum=max_scene_frames)
 	for scene, phases, count in zip(script["scenes"], actions, frames, strict=True):
 		plan = {"duration_seconds": count / fps, "motion_plan": {"actions": phases}}
 		_rescale_motion_plan(plan, phases[-1]["end"])
@@ -195,6 +209,9 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 	from joymedia.services.project.formats import ratio_label
 
 	inventory = reference_inventory(project)
+	from joymedia.services.workflows.capabilities import capacity
+
+	workflow = frappe.get_doc("Generation Workflow", project.workflow) if project.get("workflow") else None
 	fps = _timeline_fps(
 		frappe._dict(
 			output_fps=frappe.db.get_value("Generation Workflow", project.workflow, "output_fps")
@@ -206,6 +223,9 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 	constraints = {
 		"duration_seconds": project.total_duration_seconds or None,
 		"fps": fps,
+		"max_scene_frames": capacity(workflow)
+		if workflow and not workflow.get("continuation_workflow")
+		else None,
 		"aspect_ratio": ratio_label(project.delivery_width, project.delivery_height) or None,
 		"approved_claims": brand(project).get("claims") or "Only directly visible product features.",
 		"avoid": brand(project).get("avoid") or "",
@@ -252,6 +272,7 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "
 		"Perform gestures promptly in real time. Each non-final shot needs at least two sequential visible actions within one coherent interaction; never a whole shot of noticing/looking. Only the advertised product or its material performs its function, never the actor body or an unrelated prop. "
 		"Propose positive relative scene durations and explicit chronological timed Action phases starting at zero, with no gaps. The application allocates exact frames to the requested total and rescales your phase timings. "
+		"Provide enough distinct scenes to fit the workflow's declared max_scene_frames at the given fps. Longer total videos need more motivated shots, not an over-capacity ending. "
 		"Example syntax for a five-second scene: [0-2s] one visible action\n[2-5s] its consequence. "
 		"Only supplied actors may appear in prose AND cast: no humans when only a mascot is supplied. Choose the best supplied view key for each scene in cast/products, one view per identity. Gallery views are alternatives of one identity, never additional cast. "
 		"Reference observations supply action rhythms, never additional actors, products, claims or sounds. "
@@ -310,7 +331,9 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 			response_schema=script_schema(inventory, constraints),
 		)
 		try:
-			script = fit_generated_timing(result, constraints["duration_seconds"], fps)
+			script = fit_generated_timing(
+				result, constraints["duration_seconds"], fps, max_scene_frames=constraints["max_scene_frames"]
+			)
 			script = validate_script(script, inventory, constraints)
 			latest_script = script
 			findings = review_script_actions(
@@ -470,6 +493,10 @@ def script_workbook(script, project):
 		end = cursor + float(scene["duration_seconds"])
 		values = {
 			**scene,
+			# Automatic screenplay labels are proposals, not authored overrides.
+			# The normal production planner owns semantic stage classification and
+			# the shared camera compiler consumes its validated shot structure.
+			"narrative_stage": "",
 			"timing": f"{clock(cursor)} - {clock(end)}",
 			"continuity": scene["continuity_rules"] + "\nRequired visible change: " + scene["visible_change"],
 			"cast": ", ".join(scene["cast"]) or "none",

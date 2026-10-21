@@ -394,3 +394,15 @@ exposed as a client model selector. Native runs still freeze immutable workflow 
 Generated narrative-stage labels are semantic jobs (acquisition, demonstration,
 inspection, final presentation), and are reviewed against the complete action
 sequence before camera grammar is compiled.
+
+Automatic timing reads the immutable workflow frame capacity. The generated script
+must supply enough scenes, and the shared allocator caps each scene while retaining
+the exact requested total. It never silently extends a workflow without a declared
+continuation contract. Automatic screenplay stage labels remain advisory; the
+normal production planner classifies the stage from the imported action rather
+than treating an AI proposal as a customer's authored override.
+
+When screening holds a frame, automatic generation stops. After explicit native
+approval of the actual current artifact, a batch can resume without erasing the
+screening findings. Stale approvals do not resume generation. Neither this
+permission to animate nor a review export is a physical or release qualification.
