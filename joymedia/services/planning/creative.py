@@ -42,6 +42,7 @@ def reference_inventory(project):
 				"key": row.reference_key,
 				"role": row.reference_role,
 				"identity": identity_key(row),
+				"keep_rule": row.keep_rule or "",
 				"label": row.label or row.reference_key,
 				"views": views,
 			}
@@ -113,7 +114,7 @@ def script_schema(inventory, constraints):
 	return object_schema(root)
 
 
-def draft_script(project, *, nonce, previous=()):
+def draft_script(project, *, nonce, previous=(), review_notes=()):
 	from joymedia.services.intake.action_reference import action_observations
 	from joymedia.services.intake.references import brand
 	from joymedia.services.planning.production import _ask_planner
@@ -125,6 +126,10 @@ def draft_script(project, *, nonce, previous=()):
 		"aspect_ratio": ratio_label(project.delivery_width, project.delivery_height) or None,
 		"approved_claims": brand(project).get("claims") or "Only directly visible product features.",
 		"creative_direction": project.video_idea or "",
+		"unresolved_feedback": [
+			{**r, "text": r["text"] if len(r["text"]) <= 400 else r["text"][:250] + " … " + r["text"][-150:]}
+			for r in review_notes
+		],
 	}
 	roster = [
 		{
@@ -155,7 +160,7 @@ def draft_script(project, *, nonce, previous=()):
 		"Example syntax for a five-second scene: [0-2s] one visible action\n[2-5s] its consequence. "
 		"Only supplied actors may appear in prose AND cast: no humans when only a mascot is supplied. Use exact roster keys in cast/products. Gallery views are one identity, not additional cast. "
 		"Reference observations supply action rhythms, never additional actors, products, claims or sounds. "
-		"Only state supplied approved claims. Ordinary props and a coherent location may be invented, but name them before use. "
+		"Avoid applicable problems in unresolved feedback; historical scene numbers are not instructions to reuse an old story, and script writing never resolves feedback. Only state supplied approved claims. Ordinary props and a coherent location may be invented, but name them before use. "
 		"Vary adjacent shot sizes with purpose; preserve the action axis; show the product close at use and clearly at the end. "
 		"Camera behavior is derived later from semantic stage/framing: do not put camera moves in Action. "
 		"Use layered depth, shaped directional lighting, material texture and a deliberate palette. "
@@ -186,7 +191,7 @@ def draft_script(project, *, nonce, previous=()):
 		)
 		try:
 			script = validate_script(result, inventory, constraints)
-			findings = review_script_actions(script, roster)
+			findings = review_script_actions(script, roster, constraints["unresolved_feedback"])
 			issues = [r for r in findings if not all(r[k] for k in ("progresses", "causal", "paced"))]
 			if issues:
 				raise ValueError(
@@ -207,7 +212,7 @@ def draft_script(project, *, nonce, previous=()):
 	raise ValueError("Automatic script remained invalid after bounded repair: " + error)
 
 
-def review_script_actions(script, roster=()):
+def review_script_actions(script, roster=(), review_notes=()):
 	"""Second-pass script compliance through the existing configured writer runtime.
 
 	This reviews the script, not rendered physical correctness or release eligibility.
@@ -246,7 +251,11 @@ def review_script_actions(script, roster=()):
 		"causal: every object/tool is visibly acquired before use, required contact precedes a resulting change, no skipped prerequisite or reset between shots, no contradictory opening/action. Reaching/holding a container does NOT acquire its contents: later use of an item without its removal is causal=false. "
 		"paced: allocated time supports active real-time action. A shot spent entirely just reaching, leaning or looking is NOT brisk pacing. The final hold must not consume a disproportionate share of this action-led film. "
 		"Reason must cite the specific action text or missing prerequisite; never accept generic claims of realism. "
-		"This is script review only, not evidence of rendered physics.\n"
+		"This is script review only, not evidence of rendered physics.\nROSTER: "
+		+ json.dumps(roster, ensure_ascii=False)
+		+ "\nUNRESOLVED FEEDBACK (apply relevant pitfalls, not historical scene numbers): "
+		+ json.dumps(review_notes, ensure_ascii=False)
+		+ "\nDRAFT: "
 		+ json.dumps(draft, ensure_ascii=False),
 		system="You are the strict second-pass commercial storyboard compliance editor. Return only JSON.",
 		capability="writer",

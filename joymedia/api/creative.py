@@ -6,6 +6,34 @@ import uuid
 import frappe
 
 
+def _review_context(project):
+	"""Snapshot unresolved first-party feedback; never resolve it by copying it."""
+	from joymedia.services.project.versions import family
+
+	root = family(project)
+	notes = [
+		{"source": r.name, "category": r.category, "text": r.feedback}
+		for r in frappe.get_all(
+			"Video Review Feedback",
+			filters={"media_project": root.name, "status": ["in", ["Open", "Investigating"]]},
+			fields=["name", "category", "feedback"],
+			order_by="creation desc",
+			limit=12,
+		)
+	]
+	notes.extend(
+		{"source": r.name, "category": "Scene", "text": r.comment}
+		for r in frappe.get_all(
+			"Review Comment",
+			filters={"media_project": project.name, "status": "Open"},
+			fields=["name", "comment"],
+			order_by="creation desc",
+			limit=12,
+		)
+	)
+	return notes
+
+
 @frappe.whitelist(methods=["POST"])
 def create_product_batch(
 	source_project,
@@ -77,6 +105,7 @@ def create_product_batch(
 		raise ValueError("Creative direction must be a short optional description.")
 	request = {
 		"version": 1,
+		"review_notes": _review_context(project),
 		"references": references,
 		"count": count,
 		"auto_render": str(auto_render).lower() in {"1", "true", "yes", "on"},

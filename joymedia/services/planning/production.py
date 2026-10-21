@@ -1168,7 +1168,17 @@ def _ask_planner(
 	"""
 	settings = sampling(sampling_profile)
 	max_tokens = settings["max_tokens"] if max_tokens is None else max_tokens
-	cache_settings = {**settings, "response_schema": response_schema} if response_schema else settings
+	from joymedia.services.runtime.endpoints import endpoint
+
+	configured = endpoint(capability)
+	cache_settings = {
+		**settings,
+		"service": {
+			key: configured.get(key) for key in ("base_url", "model", "revision", "structured_output")
+		},
+	}
+	if response_schema:
+		cache_settings["response_schema"] = response_schema
 	cache_key = f"joymedia_{capability}:{request_seed(system, prompt, str(max_tokens), json.dumps(cache_settings, sort_keys=True))}"
 	if not refresh:
 		cached = frappe.cache.get_value(cache_key)
