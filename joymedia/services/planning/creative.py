@@ -31,7 +31,25 @@ UNANCHORED_PHYSICAL_EFFECT = re.compile(
 	re.I,
 )
 PASSIVE_OPENING = re.compile(r"\b(?:seen|look|looks|looking|spot|spots|smile|smiles|nod|nods|sit|sits|sitting|stand|stands|standing|hold|holds|holding)\b", re.I)
-TANGIBLE_ACTION = re.compile(r"\b(?:pick|place|set|lift|grip|grab|pull|extract|unfold|fold|wipe|carry|turn|open|slide|tap|press|unwrap|wear|put|move|push|drop|rotate)\w*\b", re.I)
+TANGIBLE_ACTION = re.compile(r"\b(?:pick|place|set|lift|grip|grab|pull|extract|unfold|fold|wipe|rub|carry|turn|open|slide|tap|press|unwrap|wear|put|move|push|drop|rotate)\w*\b", re.I)
+
+
+def _validate_action_progress(scenes):
+	"""Require a completed object interaction in each non-closing action shot.
+
+	The near-ending close view may instead reveal product print. This check uses
+	visible actions, independent of proposed narrative labels and model choice.
+	"""
+	for index, scene in enumerate(scenes[:-1]):
+		if index == len(scenes) - 2 and scene.get("products") and scene.get("shot_framing") in {
+			"close_up", "extreme_close_up"
+		}:
+			continue
+		phases = read_timed_actions(scene["action"], scene["duration_seconds"])
+		if not any(TANGIBLE_ACTION.search(phase["action"]) for phase in phases):
+			raise ValueError(
+				f"Scene {index + 1} has no completed object or material action. Combine preparation or reaction with its resulting interaction in one shot."
+			)
 
 
 def reference_inventory(project):
@@ -532,6 +550,7 @@ def validate_script(script, inventory, constraints):
 		for field in ("voice_over", "audio_cues", "on_screen_text"):
 			if not isinstance(scene.get(field, ""), str):
 				raise ValueError("Scene audio and text must be strings.")
+	_validate_action_progress(script["scenes"])
 	if not 1 <= total <= 60 or abs(total - declared_duration) > 0.001:
 		raise ValueError(
 			f"Scene durations sum to {total:g}s, but declared total is {declared_duration:g}s. Redistribute {declared_duration - total:g}s across purposeful action scenes so the sum is exact, not a prolonged closing hold."
