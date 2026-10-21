@@ -104,7 +104,15 @@
             </template>
             <Button variant="ghost" @click="references.splice(index, 1)">✕</Button>
           </div>
-          <FileUploader :file-types="['image/*', '.pdf']" @success="addReference" @failure="(e) => (error = String(e?.message || e))">
+          <div v-if="form.autoScript && !workbook" class="flex flex-wrap gap-2">
+            <FileUploader :file-types="['image/*']" @success="(file) => addReference(file, 'Product')" @failure="(e) => (error = String(e?.message || e))">
+              <template #default="{ uploading, progress, openFileSelector }"><Button :loading="uploading" @click="openFileSelector">{{ uploading ? `${progress}%` : tr('+ Product images', '+ Ảnh sản phẩm') }}</Button></template>
+            </FileUploader>
+            <FileUploader :file-types="['image/*']" @success="(file) => addReference(file, 'Character')" @failure="(e) => (error = String(e?.message || e))">
+              <template #default="{ uploading, progress, openFileSelector }"><Button :loading="uploading" @click="openFileSelector">{{ uploading ? `${progress}%` : tr('+ Mascot images', '+ Ảnh mascot') }}</Button></template>
+            </FileUploader>
+          </div>
+          <FileUploader v-else :file-types="['image/*', '.pdf']" @success="addReference" @failure="(e) => (error = String(e?.message || e))">
             <template #default="{ uploading, progress, openFileSelector }">
               <Button :loading="uploading" @click="openFileSelector">
                 {{ uploading ? `${progress}%` : '+ ' + tr('Add images or a PDF', 'Thêm hình ảnh hoặc PDF') }}
@@ -213,9 +221,9 @@ function requireWorkbook(file) {
   return file.name.toLowerCase().endsWith(".xlsx") ? null : tr("Please choose an .xlsx workbook.", "Vui lòng chọn tệp .xlsx.");
 }
 
-function addReference(file) {
+function addReference(file, role = "") {
   const stem = String(file.file_name || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
-  references.value.push({ file_name: file.name, file_url: file.file_url, label: stem, role: "", pdf: /\.pdf$/i.test(file.file_name || "") });
+  references.value.push({ file_name: file.name, file_url: file.file_url, label: stem, role, pdf: /\.pdf$/i.test(file.file_name || "") });
 }
 
 async function create() {
