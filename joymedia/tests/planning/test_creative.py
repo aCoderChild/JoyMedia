@@ -138,10 +138,14 @@ class TestGeneratedScriptValidation(TestCase):
 				review_script_actions(
 					sample_script(),
 					[{"key": "mascot-reference", "role": "Character"}],
-					[{"text": "Maintain real contact", "source": "owner-note"}],
+					[
+						{"text": "Maintain real contact", "source": "owner-note", "scope": "Current"},
+						{"text": "Earlier rendered failure", "source": "old-note", "scope": "Historical"},
+					],
 				)
 		self.assertIn("mascot-reference", planner.call_args.args[0])
 		self.assertIn("Maintain real contact", planner.call_args.args[0])
+		self.assertNotIn("Earlier rendered failure", planner.call_args.args[0])
 
 	def test_script_review_accepts_grounded_coverage_and_rejects_invented_issue_evidence(self):
 		from joymedia.services.planning.creative import review_script_actions
