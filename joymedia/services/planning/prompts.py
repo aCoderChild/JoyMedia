@@ -638,12 +638,20 @@ def cast_name(label, project, person=False):
 	def field(row, key):
 		return row.get(key) if hasattr(row, "get") else getattr(row, key, None)
 
-	labels = [
-		field(row, "label")
+	rows = [
+		row
 		for row in (project.get("references") or project.get("selected_media") or [])
 		if frappe.scrub(field(row, "reference_role") or "") in ("character", "person", "people", "talent")
 	]
-	number, total = cast_number(label, labels)
+	from joymedia.services.scene.references import identity_key
+
+	# Explicit identities join views with unrelated names or languages. Legacy
+	# references without an identity retain the existing label-based grouping.
+	matched = next((row for row in rows if field(row, "label") == label), None)
+	if matched is not None and field(matched, "identity_key"):
+		identities = list(dict.fromkeys(identity_key(row) or field(row, "label") for row in rows))
+		return _display_name(label, identities.index(identity_key(matched)) + 1, len(identities), person)
+	number, total = cast_number(label, [field(row, "label") for row in rows])
 	return _display_name(label, number, total, person)
 
 
