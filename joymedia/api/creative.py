@@ -65,7 +65,7 @@ def create_product_batch(
 	duration_seconds=None,
 	aspect_ratio=None,
 ):
-	from joymedia.services.intake.references import brand
+	from joymedia.services.intake.references import brand, preservation_modes
 	from joymedia.services.project.formats import delivery_dimensions, orientation, parse_ratio, ratio_label
 
 	project = frappe.get_doc("Media Project", source_project)
@@ -80,7 +80,7 @@ def create_product_batch(
 	keys = frappe.parse_json(reference_keys) if isinstance(reference_keys, str) else reference_keys
 	if keys is not None and (not isinstance(keys, list) or any(not isinstance(k, str) for k in keys)):
 		raise ValueError("Reference keys must be a list.")
-	allowed = {"Product", "Character", "Person", "Logo", "Motion", "Style"}
+	allowed = {"Product", "Character", "Person", "Logo", "Environment", "Motion", "Style"}
 	references = [
 		{
 			key: row.get(key)
@@ -102,6 +102,23 @@ def create_product_batch(
 		raise ValueError("Choose only selected product, mascot, person, logo or creative-reference keys.")
 	if not any(row["reference_role"] == "Product" for row in references):
 		raise ValueError("Select product images before automatic generation.")
+	modes = preservation_modes(project)
+	from joymedia.services.workflows.capabilities import execution_spec
+
+	defaults = (
+		execution_spec(frappe.get_doc("Generation Workflow", project.workflow)).get("reference_defaults", {})
+		if project.workflow
+		else {}
+	)
+	if not isinstance(defaults, dict) or any(
+		mode not in {"source_pixels", "reference_guided"} for mode in defaults.values()
+	):
+		raise ValueError("Workflow reference defaults require declared preservation modes.")
+	frozen_modes = {
+		r["asset_version"]: modes.get(r["asset_version"]) or defaults.get(r["reference_role"])
+		for r in references
+		if modes.get(r["asset_version"]) or defaults.get(r["reference_role"])
+	}
 	duration = (
 		duration_seconds if duration_seconds not in (None, "") else (project.total_duration_seconds or None)
 	)
@@ -129,6 +146,7 @@ def create_product_batch(
 		"version": 1,
 		"review_notes": _review_context(project),
 		"references": references,
+		"reference_preservation_modes": frozen_modes,
 		"count": count,
 		"auto_render": str(auto_render).lower() in {"1", "true", "yes", "on"},
 		"direction": direction or "",
@@ -250,8 +268,12 @@ def retry_product_variant(batch_name, index):
 			raise ValueError("Only a stopped variant can be retried.")
 		variant = variants[position]
 		stage = variant.get("resume_stage", "Planning")
-		if stage not in {"Planning", "Keyframes", "Rendering", "Finishing", "Exporting"}:
+		if stage not in {"Planning", "Locations", "Keyframes", "Rendering", "Finishing", "Exporting"}:
 			raise ValueError("The stopped stage is not resumable.")
+		if stage == "Locations":
+			# Planning is already persisted; the normal preparer reuses the script
+			# and workbook, then queues only the missing shared-setting work.
+			stage = "Planning"
 		variant.update(status=stage, error="")
 		frappe.db.set_value(
 			"Creative Batch",
@@ -262,7 +284,7 @@ def retry_product_variant(batch_name, index):
 				"status": "Planning"
 				if stage == "Planning"
 				else "Rendering"
-				if stage in {"Keyframes", "Rendering"}
+				if stage in {"Locations", "Keyframes", "Rendering"}
 				else "Finishing",
 			},
 		)

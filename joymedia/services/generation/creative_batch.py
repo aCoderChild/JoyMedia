@@ -34,7 +34,7 @@ def _write(batch, variants, status=None, error="", changed_index=None):
 				else "Planning"
 				if states & {"Queued", "Planning"}
 				else "Rendering"
-				if states & {"Keyframes", "Rendering"}
+				if states & {"Locations", "Keyframes", "Rendering"}
 				else "Finishing"
 				if states & {"Finishing", "Exporting"}
 				else "Needs Attention"
@@ -89,10 +89,25 @@ def _create_variant(batch, request, index):
 	project.storyboard_source_json = frappe.as_json({"brand": request["brand"]})
 	project.soundtrack_mode = "Effects + music"
 	reference_map = {}
+	sheet_references = []
 	for row in request["references"]:
 		ref = copy.deepcopy(row)
 		ref["asset_version"] = copy_control_reference(ref["asset_version"], source, project, reference_map)
 		project.append("selected_media", ref)
+		mode = request.get("reference_preservation_modes", {}).get(row["asset_version"])
+		if mode:
+			asset = frappe.get_doc("Asset Version", ref["asset_version"])
+			sheet_references.append(
+				{
+					"name": ref["reference_key"],
+					"file": frappe.get_doc("File", {"file_url": asset.file}).file_name,
+					"role": ref["reference_role"],
+					"preservation_mode": mode,
+				}
+			)
+	project.storyboard_source_json = frappe.as_json(
+		{"brand": request["brand"], "references": sheet_references}
+	)
 	project.save(ignore_permissions=True)
 	organize_edits(
 		root.name,
@@ -220,18 +235,47 @@ def _select_variant(batch, request, project_name):
 
 def _start_keyframes(project, variant):
 	from joymedia.api.storyboard import approve_project_storyboard
+	from joymedia.services.keyframes.locations import missing_places, missing_views
+
+	# The batch owns the handoff after background preparation. A cancelled batch
+	# cannot later submit frames/video from an orphaned location callback.
+	approve_project_storyboard(project.name)
+	project.reload()
+	shots = [
+		frappe.get_doc("Shot", name)
+		for name in frappe.get_all(
+			"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"
+		)
+	]
+	if missing_places(project, shots) or missing_views(project, shots):
+		job_id = f"joymedia-creative-locations:{project.name}"
+		frappe.enqueue(
+			"joymedia.services.keyframes.locations.draw_project_places",
+			queue="long",
+			timeout=3600,
+			project_name=project.name,
+			shot_names=[s.name for s in shots],
+			user=frappe.session.user,
+			job_id=job_id,
+			deduplicate=True,
+			enqueue_after_commit=True,
+		)
+		variant.update(status="Locations", location_job=job_id)
+		return
+	_submit_visual_stage(project, variant)
+
+
+def _submit_visual_stage(project, variant):
 	from joymedia.services.keyframes.stage import generate_keyframes
 	from joymedia.services.workflows.capabilities import controls
 
-	# Explicit auto-render authorization is frozen in the Batch request. This is
-	# storyboard permission, not a claim of human image or video review.
-	approve_project_storyboard(project.name)
-	project.reload()
 	with pinned_execution(project.name, project.generation_pipeline):
 		if "reference_only" in controls(frappe.get_doc("Generation Workflow", project.workflow)):
 			variant.update(status="Rendering", generation_request=project.generate_video())
 		else:
-			variant.update(status="Keyframes", keyframe_request=generate_keyframes(project.name))
+			variant.update(
+				status="Keyframes", keyframe_request=generate_keyframes(project.name, draw_places=False)
+			)
 
 
 def advance_batches():
@@ -244,7 +288,9 @@ def advance_batches():
 		batch = frappe.get_doc("Creative Batch", batch_name)
 		variants = frappe.parse_json(batch.variants_json)
 		_queue_prepare(batch.name, variants)
-		if not any(v["status"] in {"Keyframes", "Rendering", "Finishing", "Exporting"} for v in variants):
+		if not any(
+			v["status"] in {"Locations", "Keyframes", "Rendering", "Finishing", "Exporting"} for v in variants
+		):
 			continue
 		if not is_render_alive(f"joymedia-creative-advance:{batch.name}"):
 			frappe.enqueue(
@@ -285,11 +331,34 @@ def advance_batch(batch_name, user=None):
 	frappe.set_user(batch.owner)
 	variants = frappe.parse_json(batch.variants_json)
 	for index, variant in enumerate(variants):
-		if variant["status"] not in {"Keyframes", "Rendering", "Finishing", "Exporting"}:
+		if variant["status"] not in {"Locations", "Keyframes", "Rendering", "Finishing", "Exporting"}:
 			continue
 		project = frappe.get_doc("Media Project", variant["project"])
 		try:
-			if variant["status"] == "Keyframes":
+			if variant["status"] == "Locations":
+				from joymedia.services.keyframes.locations import assign_places, missing_places, missing_views
+
+				if is_render_alive(variant["location_job"]):
+					continue
+				shots = [
+					frappe.get_doc("Shot", name)
+					for name in frappe.get_all(
+						"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"
+					)
+				]
+				if missing_places(project, shots) or missing_views(project, shots):
+					raise ValueError(
+						"Shared-setting preparation did not complete. Inspect the native location job before retrying."
+					)
+				with frappe.cache.lock(f"joymedia-creative:{batch.name}", timeout=180, blocking_timeout=10):
+					frappe.db.commit()
+					if frappe.db.get_value("Creative Batch", batch.name, "status") == "Cancelled":
+						return
+					assign_places(project, shots)
+					project.reload()
+					_submit_visual_stage(project, variant)
+					frappe.db.commit()
+			elif variant["status"] == "Keyframes":
 				active = frappe.db.exists(
 					"Generation Run",
 					{"media_project": project.name, "status": ["in", ["Draft", "Queued", "Running"]]},

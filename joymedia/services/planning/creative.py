@@ -22,7 +22,7 @@ def reference_inventory(project):
 	ensure_project_image_analysis(project)
 	items = []
 	for row in canonical_reference_rows(project.selected_media or []):
-		if row.reference_role not in {"Product", "Character", "Person", "Logo"}:
+		if row.reference_role not in {"Product", "Character", "Person", "Logo", "Environment"}:
 			continue
 		variants = [r for r in project.selected_media if identity_key(r) == identity_key(row)]
 		views = []
@@ -124,6 +124,14 @@ def script_schema(inventory, constraints):
 		"feel=brief reaction; hero=final branded presentation."
 	)
 	root = {key: text for key in ("title", "logline", "format_reason", "visual_style", "music")}
+	root["visual_style"] = {
+		**text,
+		"description": "Art direction only: rendering style, lighting, material finish, palette and mood. Camera movement belongs to shot structure, never this field.",
+	}
+	root["music"] = {
+		**text,
+		"description": "Instrumentation, mood, tempo and cue changes aligned with the story, with a resolved ending.",
+	}
 	minimum_scenes = (
 		max(
 			2,
@@ -269,6 +277,8 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Open with a visible causal event already happening. Invent a coherent situation, prompt reaction, product acquisition/use and visible result. A reaction must not occupy an entire scene on its own. "
 		"Supply every prerequisite action before its consequence: acquire, grip, move into contact, perform the use, reveal the changed state. Reaching for a container is not obtaining its contents: show removal before using the item. "
 		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. Repeat the same full place description for one location, not vague same-room placeholders. "
+		"Each shot has ONE coherent interaction and its immediate consequence. Travel, acquisition, extraction and use are different interactions: give them separate shots rather than compressing all into an opening. "
+		"For supplied Environment references use the exact reference key as place; the reference description controls that location. "
 		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "
 		"Perform gestures promptly in real time. Each non-final shot needs at least two sequential visible actions within one coherent interaction; never a whole shot of noticing/looking. Only the advertised product or its material performs its function, never the actor body or an unrelated prop. "
 		"Propose positive relative scene durations and explicit chronological timed Action phases starting at zero, with no gaps. The application allocates exact frames to the requested total and rescales your phase timings. "
@@ -342,7 +352,13 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 				constraints["unresolved_feedback"],
 				{
 					k: constraints[k]
-					for k in ("approved_claims", "avoid", "mandatories", "camera_reference_notes")
+					for k in (
+						"approved_claims",
+						"avoid",
+						"mandatories",
+						"camera_reference_notes",
+						"creative_direction",
+					)
 				},
 			)
 			blocking = [row for row in findings["issues"] if row["category"] != "production_detail"]
@@ -455,7 +471,7 @@ def script_workbook(script, project):
 	"""Fill the existing downloadable template; its importer remains authoritative."""
 	from openpyxl import load_workbook
 
-	from joymedia.services.intake.references import brand
+	from joymedia.services.intake.references import brand, preservation_modes
 	from joymedia.services.intake.template import BRIEF_ROWS, HEADER_ROW, SHEET_TITLES, build_template
 	from joymedia.services.planning.workbook import BRAND_FIELDS, REFERENCE_COLUMNS, SCENE_COLUMNS
 	from joymedia.services.scene.references import canonical_reference_rows
@@ -480,7 +496,8 @@ def script_workbook(script, project):
 			r.reference_key
 			for r in canonical_reference_rows(project.selected_media)
 			if r.reference_role in {"Character", "Person"}
-		),
+		)
+		or "none",
 	}
 	for key, row in BRIEF_ROWS:
 		sheet.cell(row, 2, metadata[key])
@@ -508,6 +525,7 @@ def script_workbook(script, project):
 	last = sheet.cell(HEADER_ROW, len(SCENE_COLUMNS)).column_letter
 	sheet.tables["Storyboard"].ref = f"A{HEADER_ROW}:{last}{HEADER_ROW + len(script['scenes'])}"
 	refs = book[SHEET_TITLES["references"]["en"]]
+	modes = preservation_modes(project)
 	for row in refs.iter_rows(min_row=2):
 		for cell in row:
 			cell.value = None
@@ -515,11 +533,14 @@ def script_workbook(script, project):
 		if row.reference_role not in {"Product", "Character", "Person", "Logo", "Environment"}:
 			continue
 		asset = frappe.get_doc("Asset Version", row.asset_version)
+		analysis = frappe.parse_json(asset.analysis_json or "{}") or {}
 		values = {
 			"name": row.reference_key,
 			"type": "Real person" if row.reference_role == "Person" else row.reference_role,
 			"file": frappe.get_doc("File", {"file_url": asset.file}).file_name,
 			"keep_rule": row.keep_rule or "",
+			"preservation_mode": modes.get(row.asset_version, ""),
+			"description": analysis.get("description", "") if row.reference_role == "Environment" else "",
 		}
 		for col, key in enumerate(REFERENCE_COLUMNS, 1):
 			refs.cell(i, col, values.get(key, ""))
