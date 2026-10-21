@@ -66,6 +66,15 @@ class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
 
+	def test_generated_idle_beats_cannot_use_camera_motion_as_subject_progress(self):
+		script = sample_script()
+		script["scenes"][0]["subject_motion"] = "stationary"
+		with self.assertRaisesRegex(ValueError, "Scene 1 declares no subject motion"):
+			validate_script(script, self.inventory, self.constraints)
+		script["scenes"][0]["subject_motion"] = "manipulation"
+		script["scenes"][-1]["subject_motion"] = "stationary"
+		self.assertEqual(script, validate_script(script, self.inventory, self.constraints))
+
 	def test_schema_descriptions_reach_model_context_as_well_as_the_decoder(self):
 		from joymedia.services.planning.production import _request_planner
 
