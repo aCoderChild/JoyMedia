@@ -31,7 +31,7 @@ UNANCHORED_PHYSICAL_EFFECT = re.compile(
 	re.I,
 )
 PASSIVE_OPENING = re.compile(r"\b(?:seen|look|looks|looking|spot|spots|smile|smiles|nod|nods|sit|sits|sitting|stand|stands|standing|hold|holds|holding)\b", re.I)
-TANGIBLE_ACTION = re.compile(r"\b(?:pick|place|set|lift|grip|grab|pull|extract|unfold|fold|wipe|rub|carry|turn|open|slide|tap|press|unwrap|wear|put|move|push|drop|rotate)\w*\b", re.I)
+TANGIBLE_ACTION = re.compile(r"\b(?:pick|place|set|lift|grip|grab|pull|extract|unfold|fold|wipe|rub|absorb|carry|turn|open|slide|tap|press|unwrap|wear|put|move|push|drop|rotate)\w*\b", re.I)
 
 
 def _validate_action_progress(scenes):
