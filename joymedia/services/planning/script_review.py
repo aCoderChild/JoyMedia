@@ -70,7 +70,10 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 		for scene in script["scenes"]
 	]
 	prompt = (
-		"Identify concrete text defects in this brisk commercial script. Review ALL scenes in order. "
+		"Check the causal sequence of the complete screenplay, across ALL scenes in order. "
+		"Different shots perform different jobs: acquisition need not also demonstrate use; a later use shot can show contact and its result. "
+		"Do not request the same demonstration in every scene. A stated press/wipe against a spill is contact; a stated wet material or reduced liquid is a result. "
+		"Report a defect only when the screenplay actually contradicts prerequisites or omits a necessary action throughout the whole sequence. "
 		"For coverage copy one exact action substring from each scene, without paraphrasing. "
 		"Use production_detail for additional mechanical/staging specificity that expands an otherwise valid action. These notes go to the normal production planner. Reserve missing_contact_or_result for an actually absent demonstration/result or an effect contradicting stated contact; do not confuse high-level script wording with a rendered failure. "
 		"Report only actionable TEXT defects, each with an EXACT substring demonstrating that defect and a precise rewrite instruction. A merely related action is not evidence of a defect. Request concrete revised action/staging text, not generic review, ensure or clarify instructions. An empty issues list is valid. "
@@ -83,8 +86,8 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 		+ json.dumps(roster, ensure_ascii=False)
 		+ "\nREQUIREMENTS: "
 		+ json.dumps(requirements or {}, ensure_ascii=False)
-		+ "\nUNRESOLVED FEEDBACK (apply relevant pitfalls, not historical scene numbers): "
-		+ json.dumps(review_notes, ensure_ascii=False)
+		+ "\nCURRENT INPUT FEEDBACK (earlier-render findings are retained separately, not proof of a new text defect): "
+		+ json.dumps([r for r in review_notes if r.get("scope") == "Current"], ensure_ascii=False)
 		+ "\nDRAFT: "
 		+ json.dumps(draft, ensure_ascii=False)
 	)
