@@ -390,10 +390,13 @@ class MediaProject(Document):
 		reference_media=None,
 	):
 		"""Single entry point to the AI Director; shared by first-plan and revision."""
+		from joymedia.services.intake.cinematography import ensure_project_camera_analysis
+		from joymedia.services.planning.camera import camera_planning_rules
 		from joymedia.services.planning.llm import generate_video_plan
 		from joymedia.services.workflows.routing import automatic_planning_input_contract
 
 		settings = _project_settings(self)
+		ensure_project_camera_analysis(self)
 		return generate_video_plan(
 			product_name=_meaningful_project_value(self.product_name, "The supplied product"),
 			video_idea=video_idea,
@@ -404,7 +407,9 @@ class MediaProject(Document):
 			reference_images=reference_images,
 			reference_media=reference_media,
 			generation_mode=_normalize_generation_mode(settings.generation_mode),
-			global_instructions=settings.global_instructions,
+			global_instructions="\n".join(
+				filter(None, (settings.global_instructions, camera_planning_rules(self)))
+			),
 			format_preset=ratio_label(settings.delivery_width, settings.delivery_height),
 			workflow_input_contract=automatic_planning_input_contract(),
 		)
@@ -412,10 +417,8 @@ class MediaProject(Document):
 	def generate_video_plan(self):
 		self._require_read_access()
 		self._require_video_idea()
-		from joymedia.services.intake.cinematography import ensure_project_camera_analysis
 		from joymedia.services.intake.vision import ensure_project_image_analysis
 
-		ensure_project_camera_analysis(self)
 		# Pictures added or analysed with an older prompt are (re)described first.
 		ensure_project_image_analysis(self)
 		frappe.db.commit()
@@ -638,6 +641,8 @@ class MediaProject(Document):
 
 		from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
 		from joymedia.services.generation.artifacts import get_attempt_artifact
+		from joymedia.services.intake.cinematography import ensure_project_camera_analysis
+		from joymedia.services.planning.camera import camera_planning_rules
 		from joymedia.services.planning.llm import generate_video_plan
 		from joymedia.services.planning.video_plan import append_video_plan
 		from joymedia.services.workflows.routing import automatic_planning_input_contract
@@ -701,6 +706,7 @@ class MediaProject(Document):
 					self.save(ignore_permissions=True)
 			target_frames = _plan_append_scene_frames(duration_seconds, workflow.output_fps)
 			image_inputs = self._get_project_image_inputs()
+			ensure_project_camera_analysis(self)
 			plan = generate_video_plan(
 				product_name=_meaningful_project_value(self.product_name, "The supplied product"),
 				video_idea=_meaningful_project_value(
@@ -712,7 +718,9 @@ class MediaProject(Document):
 				reference_images=image_inputs,
 				reference_media=_get_project_reference_contexts(self),
 				generation_mode="Continuous" if continuity else self.generation_mode,
-				global_instructions=self.global_instructions,
+				global_instructions="\n".join(
+					filter(None, (self.global_instructions, camera_planning_rules(self)))
+				),
 				format_preset=ratio_label(self.delivery_width, self.delivery_height),
 				workflow_input_contract=automatic_planning_input_contract(),
 				continuation_context={

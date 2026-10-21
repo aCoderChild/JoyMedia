@@ -17,6 +17,37 @@ from joymedia.services.planning.camera import (
 
 
 class TestUpstreamCinematography(TestCase):
+	def test_initial_director_and_revision_entry_receive_reference_policy(self):
+		project = frappe.get_doc({"doctype": "Media Project", "product_name": "Supplied product"})
+		settings = frappe._dict(
+			total_duration_seconds=30,
+			generation_mode="Multi-shot",
+			global_instructions="Authored brief",
+			delivery_width=1920,
+			delivery_height=1080,
+		)
+		with (
+			patch(
+				"joymedia.joymedia.doctype.media_project.media_project._project_settings",
+				return_value=settings,
+			),
+			patch("joymedia.services.intake.cinematography.ensure_project_camera_analysis") as analyze,
+			patch(
+				"joymedia.services.planning.camera.camera_planning_rules",
+				return_value="Reference camera direction",
+			),
+			patch("joymedia.services.workflows.routing.automatic_planning_input_contract", return_value=[]),
+			patch("joymedia.services.planning.llm.generate_video_plan", return_value={}) as director,
+		):
+			project._plan_video(
+				workflow=frappe._dict(output_fps=24), video_idea="Authored action", story_film=False
+			)
+			analyze.assert_called_once_with(project)
+			self.assertEqual(
+				"Authored brief\nReference camera direction", director.call_args.kwargs["global_instructions"]
+			)
+			self.assertEqual("16:9", director.call_args.kwargs["format_preset"])
+
 	def test_real_cut_detection_preserves_source_geometry_and_evidence(self):
 		import cv2
 		import numpy as np
