@@ -563,3 +563,10 @@ A supplementary report may be passed as `review_artifact` to the existing
 in its manifest. This creates an unselected review take; neither original run status
 nor release qualification is changed. It cannot accept a previously witnessed
 violation or changed direction by merely retrying the reviewer.
+
+Visual admission, scene consistency checks and evidence-only retries use the
+existing single-worker `joymedia_render` queue. The vision endpoint cannot service
+multiple long frame-sequence reviews reliably at once; serial queueing prevents
+competing requests from exhausting each review's evidence window. GPU inference
+submission remains on the regular generation path. An evaluator timeout leaves
+the take unselected and retains the raw media for a later explicit recheck.

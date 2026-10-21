@@ -495,7 +495,7 @@ def gate_attempt(attempt, artifact, history, last_frame):
 		attempt.save(ignore_permissions=True)
 	frappe.enqueue(
 		"joymedia.services.review.admission.run_gate",
-		queue="long",
+		queue="joymedia_render",
 		timeout=1800,
 		job_id=f"visual-admission-{attempt.name}",
 		deduplicate=True,

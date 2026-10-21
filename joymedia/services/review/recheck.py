@@ -55,7 +55,7 @@ def queue_held_evidence_recheck(project_name, shot_name, attempt_name, expected_
 	key = frappe.generate_hash(length=16)
 	frappe.enqueue(
 		"joymedia.services.review.recheck.recheck_held_evidence",
-		queue="long",
+		queue="joymedia_render",
 		timeout=1800,
 		job_id=f"visual-recheck-{attempt_name}-{key}",
 		enqueue_after_commit=True,

@@ -48,7 +48,7 @@ def queue_check(shot_name, kind):
 	# One job per frame or take: a redrawn frame gets its own check even while an earlier one is still queued.
 	frappe.enqueue(
 		"joymedia.services.review.consistency.check_scene",
-		queue="long",
+		queue="joymedia_render",
 		timeout=1800,
 		job_id=f"joymedia-consistency-{shot_name}-{kind}-{subject}",
 		deduplicate=True,
