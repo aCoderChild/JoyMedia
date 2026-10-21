@@ -10,6 +10,15 @@ from joymedia.services.project.context import _compose_end_card
 
 
 class TestActionHold(TestCase):
+	def test_image_preparation_has_no_video_tail_or_minimum_action_duration(self):
+		row = {"duration_seconds": 1, "references": [{"reference_role": "Product"}]}
+		_compose_end_card([row], keyframe_stage=True)
+		self.assertNotIn("closing_hold_seconds", row)
+		self.assertNotIn("closing_hold_mode", row)
+		# The same scene still requires enough runtime when actually animated.
+		with self.assertRaises(ValueError):
+			_compose_end_card([row])
+
 	def test_motion_survives_before_the_readable_tail_for_unrelated_products(self):
 		for subject in ["vase", "furniture", "mascot"]:
 			row = {
