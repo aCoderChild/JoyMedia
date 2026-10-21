@@ -114,17 +114,75 @@ def script_schema(inventory, constraints):
 	return object_schema(root)
 
 
+def fit_generated_timing(script, total_seconds, fps):
+	"""Compile AI timing proposals through the existing frame/interval engines.
+
+	Only automatic drafts call this; an imported authored workbook is never retimed.
+	"""
+	from joymedia.services.planning.durations import allocate_frames
+	from joymedia.services.planning.plan_parsing import _rescale_motion_plan
+
+	if (
+		not isinstance(script, dict)
+		or not isinstance(script.get("scenes"), list)
+		or not 2 <= len(script["scenes"]) <= 12
+	):
+		raise ValueError("A script requires 2–12 scenes.")
+	proposals, weights, actions = [], [], []
+	for scene in script["scenes"]:
+		if not isinstance(scene, dict) or type(scene.get("duration_seconds")) not in (int, float):
+			raise ValueError("Each proposed scene requires a numeric timing weight.")
+		weights.append(scene["duration_seconds"])
+		parsed = read_timed_actions(scene.get("action"))
+		if not parsed:
+			raise ValueError("Each proposed scene needs explicit chronological timed actions.")
+		proposals.append({"duration_seconds": scene["duration_seconds"], "action": scene["action"]})
+		actions.append(parsed)
+	total = total_seconds or script.get("duration_seconds")
+	if type(total) not in (int, float) or not math.isfinite(total) or not 1 <= total <= 60:
+		raise ValueError("Requested duration must be within sixty seconds.")
+	frames = allocate_frames(weights, round(total * fps))
+	for scene, phases, count in zip(script["scenes"], actions, frames, strict=True):
+		plan = {"duration_seconds": count / fps, "motion_plan": {"actions": phases}}
+		_rescale_motion_plan(plan, phases[-1]["end"])
+		scene["duration_seconds"] = count / fps
+
+		def timestamp(value):
+			return f"{value:.9f}".rstrip("0").rstrip(".")
+
+		scene["action"] = "\n".join(
+			f"[{timestamp(row['start'])}-{timestamp(row['end'])}s] {row['action']}" for row in phases
+		)
+	script["duration_seconds"] = sum(frames) / fps
+	script["timing_compilation"] = {
+		"requested_seconds": total,
+		"fps": fps,
+		"scene_frames": frames,
+		"proposals": proposals,
+	}
+	return script
+
+
 def draft_script(project, *, nonce, previous=(), review_notes=()):
 	from joymedia.services.intake.action_reference import action_observations
 	from joymedia.services.intake.references import brand
 	from joymedia.services.planning.camera import reference_camera_grammar
+	from joymedia.services.planning.durations import _timeline_fps
 	from joymedia.services.planning.production import _ask_planner
 	from joymedia.services.project.formats import ratio_label
 
 	inventory = reference_inventory(project)
+	fps = _timeline_fps(
+		frappe._dict(
+			output_fps=frappe.db.get_value("Generation Workflow", project.workflow, "output_fps")
+			if project.get("workflow")
+			else 0
+		)
+	)
 	camera_grammar = reference_camera_grammar(project) or {}
 	constraints = {
 		"duration_seconds": project.total_duration_seconds or None,
+		"fps": fps,
 		"aspect_ratio": ratio_label(project.delivery_width, project.delivery_height) or None,
 		"approved_claims": brand(project).get("claims") or "Only directly visible product features.",
 		"creative_direction": project.video_idea or "",
@@ -159,7 +217,7 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. Repeat the same full place description for one location, not vague same-room placeholders. "
 		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "
 		"Perform gestures promptly in real time; use several purposeful actions across the film. "
-		"Write timed Action phases that start at 0 and end exactly at that scene duration, with no gaps. "
+		"Propose positive relative scene durations and explicit chronological timed Action phases starting at zero, with no gaps. The application allocates exact frames to the requested total and rescales your phase timings. "
 		"Example syntax for a five-second scene: [0-2s] one visible action\n[2-5s] its consequence. "
 		"Only supplied actors may appear in prose AND cast: no humans when only a mascot is supplied. Use exact roster keys in cast/products. Gallery views are one identity, not additional cast. "
 		"Reference observations supply action rhythms, never additional actors, products, claims or sounds. "
@@ -193,7 +251,8 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 			response_schema=script_schema(inventory, constraints),
 		)
 		try:
-			script = validate_script(result, inventory, constraints)
+			script = fit_generated_timing(result, constraints["duration_seconds"], fps)
+			script = validate_script(script, inventory, constraints)
 			findings = review_script_actions(script, roster, constraints["unresolved_feedback"])
 			issues = [r for r in findings if not all(r[k] for k in ("progresses", "causal", "paced"))]
 			if issues:
@@ -340,7 +399,9 @@ def validate_script(script, inventory, constraints):
 		raise ValueError(
 			f"Scene durations sum to {total:g}s, but declared total is {declared_duration:g}s. Redistribute {declared_duration - total:g}s across purposeful action scenes so the sum is exact, not a prolonged closing hold."
 		)
-	if constraints.get("duration_seconds") and abs(total - float(constraints["duration_seconds"])) > 0.001:
+	if constraints.get("duration_seconds") and abs(total - float(constraints["duration_seconds"])) > max(
+		0.001, 0.5 / constraints.get("fps", 1000)
+	):
 		raise ValueError("Keep the requested total duration.")
 	if (
 		not isinstance(script.get("features"), list)
@@ -386,7 +447,7 @@ def script_workbook(script, project):
 	cursor = 0.0
 
 	def clock(seconds):
-		return f"{int(seconds // 60)}:{seconds % 60:06.3f}"
+		return f"{int(seconds // 60)}:{seconds % 60:012.9f}"
 
 	for i, scene in enumerate(script["scenes"], HEADER_ROW + 1):
 		end = cursor + float(scene["duration_seconds"])

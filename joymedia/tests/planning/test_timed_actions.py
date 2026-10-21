@@ -18,6 +18,13 @@ class TestTimedActions(unittest.TestCase):
 			with self.assertRaises(ValueError):
 				read_timed_actions(bad, 2)
 
+	def test_proposal_span_is_read_only_from_explicit_ranges(self):
+		self.assertEqual(2, read_timed_actions("[0-1s] Grip. [1-2s] Lift.")[-1]["end"])
+		with self.assertRaises(ValueError):
+			read_timed_actions("[0-1s] Grip. [1.2-2s] Lift.")
+		with self.assertRaises(ValueError):
+			read_timed_actions("[0-1s] Grip.", float("nan"))
+
 	def test_legacy_prose_is_unchanged(self):
 		self.assertIsNone(read_timed_actions("Lift the cup and set it down.", 3))
 

@@ -175,3 +175,11 @@ context, not a fixed script; copying a finding never marks it resolved.
 The current working edit changes automatically only when the requested review
 export is ready (or the script is ready in scripts-only mode). Failed or cancelled
 planning/rendering does not replace the viewer's currently selected video.
+
+Automatic scripts treat model-proposed durations as relative timing weights.
+The shared existing largest-remainder frame allocator fits them to the requested
+total; the existing motion-plan rescaler preserves every action and its order.
+The workbook records the compiled frame-aligned timing, while batch metadata keeps
+the original proposals. The action editor evaluates the resulting actual pacing.
+This compiler is used only for automatic proposals, before workbook import;
+imported client-authored timing continues through the strict source-timing path.
