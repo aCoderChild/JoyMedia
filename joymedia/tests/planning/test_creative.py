@@ -66,6 +66,35 @@ class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
 
+	def test_omission_retraction_requires_existing_action_text_and_never_qualifies_pixels(self):
+		from joymedia.services.planning.script_review import _cross_check_missing_actions
+
+		issue = {
+			"scene": 1,
+			"category": "missing_contact_or_result",
+			"quote": "Grip the product.",
+			"instruction": "Show movement.",
+		}
+		for quote in ("", "Move it along the table.", "Invented result not in the script"):
+			with (
+				self.subTest(quote=quote),
+				patch(
+					"joymedia.services.planning.production._ask_planner",
+					return_value={"already_written": quote},
+				),
+			):
+				review = {"issues": [copy.deepcopy(issue)]}
+				if quote == "Invented result not in the script":
+					with self.assertRaisesRegex(ValueError, "absent"):
+						_cross_check_missing_actions(review, sample_script())
+				else:
+					finding = _cross_check_missing_actions(review, sample_script())["issues"][0]
+					self.assertEqual(
+						"production_detail" if quote else "missing_contact_or_result", finding["category"]
+					)
+					if quote:
+						self.assertFalse(finding["text_cross_check"]["physical_qualification"])
+
 	def test_gallery_views_remain_one_identity_and_can_be_selected_by_scene(self):
 		inventory = [
 			{

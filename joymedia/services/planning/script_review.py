@@ -142,7 +142,51 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 					)
 				):
 					raise ValueError("Every issue must quote the exact affected scene text.")
-			return result
+			return _cross_check_missing_actions(result, script)
 		except (ValueError, KeyError, TypeError) as exc:
 			repair = f"\nReview protocol repair {attempt + 1}: {exc} Return the full review, copying exact source text."
 	raise ValueError("Script review could not provide grounded scene evidence: " + repair)
+
+
+def _cross_check_missing_actions(review, script):
+	"""Check omission findings against surrounding authored action text.
+
+	An exact quotation is needed to retract a claimed omission. This checks text
+	coverage, never whether future generated pixels satisfy that text.
+	"""
+	from joymedia.services.planning.production import _ask_planner
+
+	actions = [scene["action"] for scene in script["scenes"]]
+	for finding in review["issues"]:
+		if finding["category"] not in {"missing_contact_or_result", "missing_prerequisite"}:
+			continue
+		answer = _ask_planner(
+			"Check one alleged omission against the COMPLETE ordered action sequence. "
+			"Is the requested action/result already explicitly written, either in a later phase of the "
+			"same shot or the appropriate earlier/later shot? Return an exact action substring that "
+			"already satisfies it, or an empty string when absent or causally out of order. "
+			"Do not add actions, infer unseen results, or judge future video quality.\nFINDING: "
+			+ json.dumps(finding, ensure_ascii=False)
+			+ "\nORDERED ACTIONS: "
+			+ json.dumps(actions, ensure_ascii=False),
+			system="You check quoted screenplay text for a claimed omission. Return JSON only.",
+			capability="writer",
+			sampling_profile="creative_script_review",
+			response_schema={
+				"type": "object",
+				"properties": {"already_written": {"type": "string", "maxLength": 400}},
+				"required": ["already_written"],
+				"additionalProperties": False,
+			},
+		)
+		quote = answer.get("already_written") if isinstance(answer, dict) else None
+		if not isinstance(quote, str):
+			raise ValueError("Omission cross-check requires quoted screenplay text.")
+		if not quote.strip():
+			continue
+		normalized = " ".join(quote.split()).casefold()
+		if not any(normalized in " ".join(action.split()).casefold() for action in actions):
+			raise ValueError("Omission cross-check quoted text absent from the action sequence.")
+		finding["text_cross_check"] = {"already_written": quote, "physical_qualification": False}
+		finding["category"] = "production_detail"
+	return review
