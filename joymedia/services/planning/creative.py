@@ -335,6 +335,10 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 				)
 				continue
 			for row in findings["issues"]:
+				if row.get("text_cross_check"):
+					# A retracted omission is already covered by the action sequence;
+					# repeating its requested action would introduce duplicate use.
+					continue
 				scene = script["scenes"][row["scene"] - 1]
 				scene["continuity_rules"] += "\nProduction direction: " + row["instruction"]
 			script = validate_script(script, inventory, constraints)
