@@ -114,6 +114,12 @@ class TestGeneratedScriptValidation(TestCase):
 		script["scenes"][-1]["subject_motion"] = "stationary"
 		self.assertEqual(script, validate_script(script, self.inventory, self.constraints))
 
+	def test_camera_only_phase_cannot_replace_product_action(self):
+		script = sample_script()
+		script["scenes"][0]["action"] = "[0-6s] The camera pans over the product."
+		with self.assertRaisesRegex(ValueError, "Move camera movement out of Action"):
+			validate_script(script, self.inventory, self.constraints)
+
 	def test_schema_descriptions_reach_model_context_as_well_as_the_decoder(self):
 		from joymedia.services.planning.production import _request_planner
 

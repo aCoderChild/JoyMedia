@@ -308,6 +308,12 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		}
 		for r in action_observations(project)[:8]
 	]
+	unsupported_effect_rule = (
+		"No action-motion reference was supplied. Do not invent a fluid, spill, stain-removal, breaking, stretching or other multi-object performance demonstration; use directly visible handling and product-detail actions. "
+		if not observations
+		else "Use any supplied action observations only for the motion they actually depict. "
+	)
+	constraints["action_reference_observations"] = observations
 	prompt = (
 		"Create an original, brisk product commercial from these references, not a slideshow. "
 		"Open with a visible causal event already happening. Invent a coherent situation, prompt reaction, product acquisition/use and visible result. A reaction must not occupy an entire scene on its own. "
@@ -315,7 +321,8 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. Repeat the same full place description for one location, not vague same-room placeholders. "
 		"Respect the observed product construction: do not invent rigid lids or closure actions for flexible wrapping. Used consumable material stays separate from unused stock; do not restore used material to its clean container as an unexplained reset. "
 		"Do not pour, stain, stress or otherwise test an unapproved product performance claim. When claims are limited, demonstrate directly visible handling, form and placement instead. "
-		"Even when a performance claim is approved, choose an interaction whose contact, support and visible result the supplied reference views can plausibly anchor; without a suitable action view, favor simple handling over complex liquids or deforming materials. "
+		+ unsupported_effect_rule
+		+ "Even when a performance claim is approved, choose an interaction whose contact, support and visible result the supplied reference views can plausibly anchor; without a suitable action view, favor simple handling over complex liquids or deforming materials. "
 		"Each shot has ONE coherent interaction and its immediate consequence. Travel, acquisition, extraction and use are different interactions: give them separate shots rather than compressing all into an opening. "
 		"For supplied Environment references use the exact reference key as place; the reference description controls that location. "
 		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "
@@ -404,6 +411,7 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 						"mandatories",
 						"camera_reference_notes",
 						"creative_direction",
+						"action_reference_observations",
 					)
 				},
 			)
@@ -473,8 +481,13 @@ def validate_script(script, inventory, constraints):
 			if not isinstance(scene.get(field), str) or not scene[field].strip() or len(scene[field]) > 2400:
 				raise ValueError("Every scene requires " + field + ".")
 		scene["action"] = normalize_action_separators(scene["action"])
-		if read_timed_actions(scene["action"], duration) is None:
+		phases = read_timed_actions(scene["action"], duration)
+		if phases is None:
 			raise ValueError("Use explicit chronological timed action phases, not camera-only prose.")
+		from joymedia.services.planning.camera import without_camera
+
+		if any(without_camera(phase["action"]).strip() != phase["action"].strip() for phase in phases):
+			raise ValueError("Move camera movement out of Action; describe only the subject's visible state or action in each timed phase.")
 		for key, choices in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
 			if scene.get(key) not in choices:
 				raise ValueError("Unsupported " + key + ".")
