@@ -48,7 +48,7 @@ class TestReferenceCameraGrammar(TestCase):
 		intent = infer_cinematic_intent(
 			{"stage": "establish", "framing": "wide", "subject_motion": "locomotion"}, grammar=grammar
 		)
-		self.assertEqual("tracking_backward", intent["behavior"])
+		self.assertEqual("tracking", intent["behavior"])
 		self.assertEqual("brisk", intent["energy"])
 
 	def test_free_composition_can_plan_reference_reveal_without_claiming_supplied_endpoints(self):

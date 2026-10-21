@@ -457,18 +457,18 @@ class TestGeneratedScriptValidation(TestCase):
 		}
 		preferred = {"behavior": "arc", "allow_reframe": True, "purpose": "hook", "energy": "brisk"}
 		resolved = executable_inferred_intent(preferred, structure, set())
-		self.assertEqual("tracking_backward", resolved["behavior"])
+		self.assertEqual("tracking", resolved["behavior"])
 		self.assertEqual("arc", preferred["behavior"])
 		# A coarse extraction label must not lock a genuinely travelling subject
 		# out of frame; explicit camera_motion=locked remains authoritative below.
 		self.assertEqual(
-			"tracking_backward", infer_cinematic_intent(dict(structure, stage="extract"))["behavior"]
+			"tracking", infer_cinematic_intent(dict(structure, stage="extract"))["behavior"]
 		)
 		shot = {
 			"shot_number": 1,
 			"motion_plan_json": {"shot_structure": structure, "camera_intent": resolved},
 		}
-		self.assertEqual("tracking_backward", camera_plan(shot, {})["behavior"])
+		self.assertEqual("tracking", camera_plan(shot, {})["behavior"])
 		shot["motion_plan_json"]["camera_motion"] = "locked"
 		self.assertEqual("locked", camera_plan(shot, {})["behavior"])
 
@@ -699,7 +699,7 @@ class TestCreativeWorkflow(FrappeTestCase):
 		intent = infer_cinematic_intent(
 			{"stage": "approach", "framing": "full", "subject_motion": coverage["subject_motion"]}
 		)
-		self.assertEqual("tracking_backward", intent["behavior"])
+		self.assertEqual("tracking", intent["behavior"])
 
 	def test_generated_fractional_frame_timing_round_trips_without_gaps_or_lost_phases(self):
 		from joymedia.services.planning.creative import fit_generated_timing

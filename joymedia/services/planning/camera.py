@@ -21,7 +21,7 @@ BOUNDARY_MOVES = {
 	"zoom_in",
 	"zoom_out",
 }
-BEHAVIORS = BOUNDARY_MOVES | {"locked", "tracking_backward", "push_in"}
+BEHAVIORS = BOUNDARY_MOVES | {"locked", "tracking", "tracking_backward", "push_in"}
 
 CINEMATIC_PLANNING_RULES = """
 Infer only motion_plan.shot_structure from the authored narrative beat.
@@ -146,7 +146,7 @@ def infer_cinematic_intent(structure, *, opening=False, closing=False, grammar=N
 	stage, framing, motion = (structure[k] for k in ("stage", "framing", "subject_motion"))
 	precision = stage in {"grip", "extract", "unfold", "inspect", "detail"} or framing == "extreme_close_up"
 	if motion == "locomotion" and framing != "extreme_close_up":
-		behavior, purpose, energy = "tracking_backward", "follow", "measured"
+		behavior, purpose, energy = "tracking", "follow", "measured"
 		if grammar:
 			energy = grammar["moves"].get(stage, {}).get("energy", energy)
 	elif precision:
@@ -177,7 +177,7 @@ def executable_inferred_intent(intent, structure, roles, *, generated_compositio
 		return intent
 	result = dict(intent, allow_reframe=False)
 	if structure["subject_motion"] == "locomotion":
-		result.update(behavior="tracking_backward", purpose="follow")
+		result.update(behavior="tracking", purpose="follow")
 	elif structure["stage"] in {"establish", "present", "feel", "hero"} and structure["framing"] in {
 		"wide",
 		"full",
@@ -341,13 +341,18 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 		)
 		if (
 			behavior == "locked"
-			or (behavior == "tracking_backward" and structure and structure["subject_motion"] == "locomotion")
+			or (
+				behavior in {"tracking", "tracking_backward"}
+				and structure
+				and structure["subject_motion"] == "locomotion"
+			)
 			or intent["allow_reframe"]
 			or anchored_push
 			or allows_push(framing_safety)
 			or (generated_composition and broad_presentation and behavior == "push_in")
 		):
 			directions = {
+				"tracking": "The camera physically tracks parallel to the subject's authored travel at its real-time pace, maintaining the opening viewpoint, working distance and apparent subject size. Follow the actual route instead of assuming movement toward the lens. Preserve floor contacts, screen direction and continuous depth-dependent environmental parallax. No zoom, orbit, pan pulse or unrelated drift; settle with the subject at the ending composition. Camera movement never delays its action.",
 				"locked": "The camera holds one static shot with fixed position, focal length and focus throughout; no pan, tilt, orbit, zoom or rack focus.",
 				"tracking_backward": "The camera tracks backward smoothly at the moving subject's real-time pace, maintaining its screen size and the approved opening framing. Camera speed does not slow the action. The stationary setting has continuous depth-dependent parallax; no sliding or resetting backdrop. No orbit, zoom or lateral drift; settle at the ending composition.",
 				"push_in": "The camera makes one smooth controlled push-in along the same optical axis toward the authored focal subject, following the supplied opening and ending compositions. No simultaneous pan, tilt, orbit or focus pull. Settle into the final view before the end.",

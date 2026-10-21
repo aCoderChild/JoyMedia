@@ -495,6 +495,11 @@ cluttered working surfaces. The existing empty-setting renderer now follows the
 described location and preserves clear working areas and accessible openings;
 actual generated furniture and access still require inspection before animation.
 
+Inferred tracking follows the subject's actual route rather than always moving
+backward toward an assumed frontal walk. It preserves viewpoint, working distance
+and screen size with physical translation and parallax. Explicit backward-tracking
+intents remain available; carrying sideways must not silently become a pull-back.
+
 After an interrupted quality run, a batch may resume normal review finishing once
 every current scene has an explicitly selected native take with matching generation
 lineage and unchanged direction. Active runs, missing or unrelated takes, changed
