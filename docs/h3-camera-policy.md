@@ -449,7 +449,20 @@ The shared stage classifier distinguishes a shot's narrative purpose from incide
 hand movement: presenting a held product is not automatically a grip demonstration.
 Tracking still follows locomotion, but retains the source stage's declared camera
 energy. Precision manipulation remains stable and reference preferences cannot
-authorize unsupported spatial reveals.
+reframe a fixed opening without the required endpoints. Reference-only workflows
+generate their opening and planned viewpoint progression, so an allowed reference
+arc or reveal no longer falls back to a tiny push merely because no fixed opening
+frame is supplied. This does not claim calibrated camera control: actual frames,
+parallax, coverage and geometry remain subject to visual review.
+
+Reference-only location conditioning retains the full setting image for every
+shot size. The legacy fixed centre crop was intended for layout-bound image
+guidance; it can remove a required support surface and is not used as a new
+reference-only scene's setting. Shot structure owns the generated framing.
+Opening/end-state planning also carries unchanged posture, support and object
+placement across cuts. Automatic writing has no fixed five-second example to
+bias every scene's timing, and text review flags reaction-only or repeated
+presentation holds before workbook import.
 
 After an interrupted quality run, a batch may resume normal review finishing once
 every current scene has an explicitly selected native take with matching generation

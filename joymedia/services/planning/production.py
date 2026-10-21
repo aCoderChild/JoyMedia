@@ -413,6 +413,9 @@ def _apply_camera_profile(project, shot, plan):
 				str(r.get("reference_role") or r.get("input_role") or "").lower()
 				for r in shot.get("generation_inputs") or shot.get("references") or []
 			},
+			generated_composition=bool(
+				project.get("workflow") and "reference_only" in _workflow_controls(project.workflow)
+			),
 		)
 		plan["motion_plan"]["camera_intent"] = resolved
 		if resolved != preferred:
@@ -420,6 +423,12 @@ def _apply_camera_profile(project, shot, plan):
 				f"Reference preference {preferred['behavior']} resolved to {resolved['behavior']} using available boundaries; framing safeguards still apply."
 			)
 	return plan
+
+
+def _workflow_controls(workflow_name):
+	from joymedia.services.workflows.capabilities import controls
+
+	return controls(frappe.get_doc("Generation Workflow", workflow_name))
 
 
 def _timed_sheet_plan(project, shot, beat, references, base, authored, *, previous_end_state=""):
@@ -477,7 +486,8 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored, *, previo
 		"Preserve every subject and action; invent no objects, actors, packaging layers or claims. "
 		"image_prompt: ONE opening still before the first timed action, at most 60 words. "
 		"setting_prompt: place and lighting only, at most 30 words. video_prompt: authored motion only. "
-		"start_state and end_state: short descriptions. Use New Scene for a direct cut. "
+		"start_state and end_state: concise visible states including the actor's posture, support and held objects. "
+		"Carry unchanged posture, support and object placement from the preceding state; focusing on a new action must not silently move an actor onto furniture or move an object to a different support. Use New Scene for a direct cut. "
 		"needs_editing: report impossible action timing without omitting actions. "
 		"Infer motion_plan.shot_structure and physical scene constraints; "
 		"do NOT generate camera_intent, entities, events or actions: the application serializes authored events and timing. "
