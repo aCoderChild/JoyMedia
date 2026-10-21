@@ -151,7 +151,7 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 					)
 				):
 					raise ValueError("Every issue must quote the exact affected scene text.")
-			return _cross_check_missing_actions(result, script)
+			return _cross_check_opening(_cross_check_missing_actions(result, script), script)
 		except (ValueError, KeyError, TypeError) as exc:
 			repair = f"\nReview protocol repair {attempt + 1}: {exc} Return the full review, copying exact source text."
 	raise ValueError("Script review could not provide grounded scene evidence: " + repair)
@@ -219,4 +219,70 @@ def _cross_check_missing_actions(review, script):
 			continue
 		finding["text_cross_check"] = {"already_written": quote, "physical_qualification": False}
 		finding["category"] = "production_detail"
+	return review
+
+
+def _cross_check_opening(review, script):
+	"""Require an explicit incompatible opening and first action before blocking a draft."""
+	from joymedia.services.planning.production import _ask_planner
+
+	for finding in review["issues"]:
+		if finding["category"] != "opening_mismatch":
+			continue
+		scene = script["scenes"][finding["scene"] - 1]
+		opening = "\n".join(str(scene.get(key) or "") for key in ("visual_camera", "continuity_rules"))
+		action = str(scene.get("action") or "")
+		answer = _ask_planner(
+			"Check ONLY whether the stated opening pose or object state logically conflicts with "
+			"this scene's first visible action. Copy exact substrings from the opening and action. "
+			"Walking closer may begin near a table; do not infer a contradiction from ordinary movement. "
+			"If no opening state is actually written, opening_quote is empty and contradiction is false. "
+			"Never assess future rendered pixels.\nOPENING: "
+			+ opening
+			+ "\nACTION: "
+			+ action
+			+ "\nFINDING: "
+			+ json.dumps(finding, ensure_ascii=False),
+			system="You verify an alleged screenplay contradiction using exact quoted text. Return JSON only.",
+			capability="writer",
+			sampling_profile="creative_script_review",
+			response_schema={
+				"type": "object",
+				"properties": {
+					"opening_quote": {"type": "string", "maxLength": 200},
+					"action_quote": {"type": "string", "maxLength": 200},
+					"contradiction": {"type": "boolean"},
+				},
+				"required": ["opening_quote", "action_quote", "contradiction"],
+				"additionalProperties": False,
+			},
+		)
+		if not isinstance(answer, dict) or type(answer.get("contradiction")) is not bool:
+			finding["cross_check_error"] = "Opening cross-check returned no usable verdict; original finding retained."
+			continue
+		opening_quote, action_quote = answer.get("opening_quote"), answer.get("action_quote")
+		if not isinstance(opening_quote, str) or not isinstance(action_quote, str):
+			finding["cross_check_error"] = "Opening cross-check omitted quoted text; original finding retained."
+			continue
+		def contained(quote, source):
+			return " ".join(quote.split()).casefold() in " ".join(source.split()).casefold()
+
+		if (opening_quote.strip() and not contained(opening_quote, opening)) or (
+			action_quote.strip() and not contained(action_quote, action)
+		):
+			finding["cross_check_error"] = "Opening cross-check quoted absent text; original finding retained."
+			continue
+		if answer["contradiction"]:
+			if not opening_quote.strip() or not action_quote.strip():
+				finding["cross_check_error"] = "Opening contradiction lacks both exact states; original finding retained."
+			continue
+			finding["opening_evidence"] = {"opening": opening_quote, "action": action_quote}
+		else:
+			finding["category"] = "production_detail"
+			finding["text_cross_check"] = {
+				"opening": opening_quote,
+				"action": action_quote,
+				"contradiction": False,
+				"physical_qualification": False,
+			}
 	return review
