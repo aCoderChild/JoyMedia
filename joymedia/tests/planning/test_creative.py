@@ -66,6 +66,60 @@ class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
 
+	def test_action_sources_share_bounded_context_in_chronological_order(self):
+		from joymedia.services.intake.action_reference import action_observations
+
+		versions = [
+			frappe._dict(
+				name=name,
+				analysis_json=json.dumps(
+					{
+						"action_reference": {
+							"clips": [{"start": i, "end": i + 1, "caption": f"{name}-{i}"} for i in range(6)]
+						}
+					}
+				),
+			)
+			for name in ("camera", "action")
+		]
+		with patch("joymedia.services.intake.cinematography.motion_references", return_value=versions):
+			observations = action_observations(None)[:8]
+		self.assertEqual(["camera", "action"] * 4, [r["source"] for r in observations])
+		self.assertEqual([0, 0, 1, 1, 2, 2, 3, 3], [r["start"] for r in observations])
+
+	def test_script_repair_preserves_all_prior_errors_and_uses_script_system(self):
+		from joymedia.services.planning.creative import draft_script
+
+		bad_count = sample_script()
+		bad_count["scenes"] = bad_count["scenes"][:1]
+		bad_enum = sample_script()
+		bad_enum["scenes"][0]["shot_framing"] = "Medium"
+		project = frappe._dict(total_duration_seconds=10, delivery_width=1280, delivery_height=720)
+		inventory = [
+			{
+				"key": "product",
+				"role": "Product",
+				"identity": "internal-id",
+				"label": "Label",
+				"views": [{"description": "Blue product"}],
+			}
+		]
+		with (
+			patch("joymedia.services.planning.creative.reference_inventory", return_value=inventory),
+			patch("joymedia.services.intake.action_reference.action_observations", return_value=[]),
+			patch("joymedia.services.intake.references.brand", return_value={}),
+			patch(
+				"joymedia.services.planning.production._ask_planner",
+				side_effect=[bad_count, bad_enum, sample_script()],
+			) as planner,
+		):
+			self.assertEqual(sample_script(), draft_script(project, nonce="varied"))
+		last = planner.call_args
+		self.assertIn("2–12 scenes", last.args[0])
+		self.assertIn("Unsupported shot_framing", last.args[0])
+		self.assertNotIn('"identity": "internal-id"', last.args[0])
+		self.assertIn("multi-scene", last.kwargs["system"])
+
 	def test_authored_geometry_timing_and_cast_remain_authoritative(self):
 		self.assertEqual(sample_script(), validate_script(sample_script(), self.inventory, self.constraints))
 		for mutate in (
