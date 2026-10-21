@@ -683,6 +683,24 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.assertIn(sample_script()["scenes"][0]["visible_change"], demo["scenes"][0]["continuity"])
 		self.assertEqual([], demo["timing_warnings"])
 
+	def test_subject_travel_survives_template_import_for_shared_camera_policy(self):
+		from joymedia.services.planning.camera import infer_cinematic_intent
+		from joymedia.services.planning.shot_structure import authored_coverage
+		from joymedia.services.planning.workbook import read_workbook
+
+		script = sample_script()
+		script["scenes"][0]["subject_motion"] = "locomotion"
+		with tempfile.TemporaryDirectory() as directory:
+			path = Path(directory) / "motion.xlsx"
+			path.write_bytes(script_workbook(script, self.project))
+			parsed = read_workbook(path)
+		coverage = authored_coverage(parsed["demos"][0]["scenes"][0])
+		self.assertEqual("locomotion", coverage["subject_motion"])
+		intent = infer_cinematic_intent(
+			{"stage": "approach", "framing": "full", "subject_motion": coverage["subject_motion"]}
+		)
+		self.assertEqual("tracking_backward", intent["behavior"])
+
 	def test_generated_fractional_frame_timing_round_trips_without_gaps_or_lost_phases(self):
 		from joymedia.services.planning.creative import fit_generated_timing
 		from joymedia.services.planning.timed_actions import read_timed_actions

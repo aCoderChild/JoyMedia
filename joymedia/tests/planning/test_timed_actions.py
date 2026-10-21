@@ -153,6 +153,8 @@ class TestAuthoredCoverage(unittest.TestCase):
 		)
 		with self.assertRaises(ValueError):
 			authored_coverage({"shot_framing": "arbitrary crop"})
+		with self.assertRaises(ValueError):
+			authored_coverage({"subject_motion": "invented"})
 
 	def test_schema_repair_keeps_the_original_source_context(self):
 		import frappe

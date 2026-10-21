@@ -762,7 +762,10 @@ def creative_beat(project, shot):
 			break
 	text = {
 		"camera": source.get("visual_camera") or "",
-		**{k: source.get(k) or "" for k in ("shot_framing", "shot_angle", "narrative_stage")},
+		**{
+			k: source.get(k) or ""
+			for k in ("shot_framing", "shot_angle", "narrative_stage", "subject_motion")
+		},
 		"action": source.get("action") or "",
 		"voice_over": source.get("voice_over") or shot.voice_over or "",
 		"on_screen_text": source.get("on_screen_text") or shot.caption or "",

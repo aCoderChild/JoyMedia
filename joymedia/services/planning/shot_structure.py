@@ -44,6 +44,7 @@ def authored_coverage(beat):
 		("shot_framing", "framing", FRAMINGS),
 		("shot_angle", "angle", ANGLES),
 		("narrative_stage", "stage", STAGES),
+		("subject_motion", "subject_motion", MOTIONS),
 	]:
 		value = str(beat.get(column) or "").strip()
 		if value:
