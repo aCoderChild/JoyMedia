@@ -10,6 +10,13 @@ One continuous shot receives one main camera behavior, chosen independently of
 camera commands embedded in scene prose. The supplied opening frame owns its
 actual crop; movement must respect reviewed subject bounds and product margins.
 
+Every structured camera behavior carries the named `keep_visible` subjects into
+the execution prompt. Wide/full coverage keeps their complete group and ground
+contacts framed throughout the move, rather than centring the product while the
+actor drifts out. Close handling coverage retains the required working area and
+does not demand a whole actor. These are requests to the generator; inspect the
+decoded footage for compliance.
+
 H3 serialization keeps visual direction, reference roles, opening, chronological
 action, camera, sound and ending in that order. Timed actions appear once;
 event-specific physical checks remain attached to their time window. Reference
@@ -27,6 +34,12 @@ framing, support, action and package artwork before selecting a take. Installed
 Ref2VA weights and valid references do not establish release qualification.
 Failed or uncertain candidates retain their evidence and prior selected takes.
 The running Shera qualification is recorded separately from code verification.
+
+Temporal screening budgets its separate request windows together, bounded by
+twenty minutes within the existing thirty-minute admission job. The former
+three-minute total could leave later claims unexamined despite successful earlier
+requests. Missing evidence remains uncertain; the longer budget does not turn a
+timeout, unobserved action or ambiguous geometry into a pass.
 
 The Brand sheet may also contain `Camera reference grammar`, a version-1 JSON
 object with `sources` (name and SHA256), `notes` (observed editing/camera rules),
