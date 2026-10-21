@@ -34,6 +34,7 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 					"idle_pacing",
 					"camera_in_action",
 					"coverage",
+					"brief_contradiction",
 				],
 			},
 			"quote": quote,
@@ -70,6 +71,7 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 		for scene in script["scenes"]
 	]
 	prompt = (
+		"First check the creative_direction in REQUIREMENTS. Report explicit contradictions as brief_contradiction, quoting the contradictory scene text and the required correction. "
 		"Check the causal sequence of the complete screenplay, across ALL scenes in order. "
 		"Different shots perform different jobs: acquisition need not also demonstrate use; a later use shot can show contact and its result. "
 		"Do not request the same demonstration in every scene. A stated press/wipe against a spill is contact; a stated wet material or reduced liquid is a result. "

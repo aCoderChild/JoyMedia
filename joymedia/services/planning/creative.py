@@ -112,7 +112,19 @@ def script_schema(inventory, constraints):
 		cast=names({"Character", "Person"}),
 		products=names({"Product"}),
 	)
-	scene["action"] = {"type": "string", "pattern": r"^\[[0-9]+(?:\.[0-9]+)?-[0-9]+(?:\.[0-9]+)?s\] [\s\S]+$"}
+	scene["action"] = {
+		"type": "string",
+		"pattern": r"^\[[0-9]+(?:\.[0-9]+)?-[0-9]+(?:\.[0-9]+)?s\] [\s\S]+$",
+		"description": "Timed, tangible subject actions in order within one coherent interaction. Separate travel, acquisition and use into different shots. No camera or on-screen text commands here.",
+	}
+	scene["visual_camera"] = {
+		**text,
+		"description": "One opening composition before the first timed action, with environment and subject placement. Do not describe a later result or camera movement.",
+	}
+	scene["visible_change"] = {
+		**text,
+		"description": "The observable end-state change caused by this shot's actions, after their prerequisites.",
+	}
 	for key in ("voice_over", "audio_cues", "on_screen_text"):
 		scene[key] = {"type": "string"}
 	for key, options in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):

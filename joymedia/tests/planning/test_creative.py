@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from typing import ClassVar
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -65,6 +65,30 @@ def sample_script():
 class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
+
+	def test_schema_descriptions_reach_model_context_as_well_as_the_decoder(self):
+		from joymedia.services.planning.production import _request_planner
+
+		schema = {
+			"type": "object",
+			"properties": {"value": {"type": "string", "description": "A semantic field instruction."}},
+			"required": ["value"],
+			"additionalProperties": False,
+		}
+		response = Mock(ok=True)
+		response.json.return_value = {"choices": [{"message": {"content": '{"value":"done"}'}}]}
+		with (
+			patch(
+				"joymedia.services.runtime.endpoints.endpoint",
+				return_value=frappe._dict(base_url="http://planner/v1", model="configured", timeout=30),
+			),
+			patch("joymedia.services.planning.plan_parsing._completion_budget", return_value=100),
+			patch("joymedia.services.planning.production.requests.post", return_value=response) as post,
+		):
+			_request_planner("Write the object.", system="JSON only.", max_tokens=100, response_schema=schema)
+		payload = post.call_args.kwargs["json"]
+		self.assertIn("A semantic field instruction.", payload["messages"][0]["content"])
+		self.assertEqual(schema, payload["response_format"]["json_schema"]["schema"])
 
 	def test_frame_review_resume_requires_current_native_approval_without_erasing_findings(self):
 		from joymedia.services.generation.creative_batch import _keyframe_ready
