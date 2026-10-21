@@ -33,11 +33,15 @@ def camera_planning_rules(project):
 	grammar = reference_camera_grammar(project)
 	if not grammar:
 		return CINEMATIC_PLANNING_RULES
-	return CINEMATIC_PLANNING_RULES + (
-		"\nREFERENCE CINEMATOGRAPHY (analysis of supplied sources; not an uploaded video channel):\n"
+	# The compiler enforces movement and endpoint safety. Repeating those detailed
+	# execution rules here wastes the planner's context, especially on schema repair.
+	return (
+		"Infer semantic shot_structure only; the application derives camera_intent from "
+		"the validated stage preferences, so do not generate camera_intent. "
+		"Reference observations guide coverage, pacing and action-axis continuity. "
+		"Precision contact remains readable; a move must not replace the authored action.\n"
+		"REFERENCE CINEMATOGRAPHY (analysis of supplied sources; not an uploaded video channel):\n"
 		+ "\n".join(grammar["notes"])
-		+ "\nThe reference grammar owns movement preferences by narrative stage. "
-		"Keep contact readable and preserve action-axis continuity between the reviewed boundary images."
 	)
 
 
