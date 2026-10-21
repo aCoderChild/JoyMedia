@@ -19,6 +19,7 @@ CREATIVE_INVARIANTS = (
 	"Select a concrete supplied view key whose visible pose, anatomy and surfaces suit each action; preserve that view choice through repairs. Alternate views remain one identity. "
 	"Keep one coherent interaction per shot, chronological prerequisites and persistent object/support states. "
 	"Invent no opening mechanism. Extracted consumables remain outside their unused stock; do not reset the story by putting them back. "
+	"Do not invent a performance test or effect that the approved claims do not support; visible material handling is enough. "
 	"Name every ordinary prop and action target before use. Non-final shots advance tangible object/action state, not prolonged looking or posing. "
 	"A real change of material form, object location or contact is tangible progress. The final branded presentation may hold briefly. "
 	"Use purposeful coverage and action-driven phase timings, with camera behavior derived from semantic structure."
@@ -177,6 +178,9 @@ def script_schema(inventory, constraints):
 	)
 	if minimum_scenes > 12:
 		raise ValueError("The requested duration exceeds this workflow's automatic storyboard scene budget.")
+	# Capacity is a ceiling, not an editorial target. Reserve two further scene
+	# changes for brisk action/detail coverage when the twelve-scene budget allows.
+	minimum_scenes = min(12, minimum_scenes + 2)
 	root.update(
 		format={"const": constraints["aspect_ratio"]}
 		if constraints.get("aspect_ratio")
@@ -310,12 +314,13 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Supply every prerequisite action before its consequence: acquire, grip, move into contact, perform the use, reveal the changed state. Reaching for a container is not obtaining its contents: show removal before using the item. "
 		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. Repeat the same full place description for one location, not vague same-room placeholders. "
 		"Respect the observed product construction: do not invent rigid lids or closure actions for flexible wrapping. Used consumable material stays separate from unused stock; do not restore used material to its clean container as an unexplained reset. "
+		"Do not pour, stain, stress or otherwise test an unapproved product performance claim. When claims are limited, demonstrate directly visible handling, form and placement instead. "
 		"Each shot has ONE coherent interaction and its immediate consequence. Travel, acquisition, extraction and use are different interactions: give them separate shots rather than compressing all into an opening. "
 		"For supplied Environment references use the exact reference key as place; the reference description controls that location. "
 		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "
 		"Perform gestures promptly in real time. Each non-final shot needs at least two sequential visible actions within one coherent interaction; never a whole shot of noticing/looking. Only the advertised product or its material performs its function, never the actor body or an unrelated prop. "
 		"Propose positive relative scene durations and explicit chronological timed Action phases starting at zero, with no gaps. The application allocates exact frames to the requested total and rescales your phase timings. "
-		"Provide enough distinct scenes to fit the workflow's declared max_scene_frames at the given fps. Longer total videos need more motivated shots, not an over-capacity ending. "
+		"Provide at least two more motivated scenes than the workflow's minimum frame-capacity count, up to the twelve-scene schema limit. The capacity limit is a ceiling, not the desired shot length. Use shorter action and detail cuts instead of stretching each scene to the cap. "
 		"Use bracketed start-end seconds for each phase. Choose timing from the actual action; do not reuse one equal-duration timing pattern throughout the film. "
 		"Allocate most runtime to distinct visible product interactions. Result inspection and final presentation must not become repeated long looking/nodding/holding scenes; combine a brief reaction with a tangible action and use one concise ending. "
 		"Only supplied actors may appear in prose AND cast: no humans when only a mascot is supplied. Choose the best supplied view key for each scene in cast/products, one view per identity. Gallery views are alternatives of one identity, never additional cast. "
