@@ -274,6 +274,14 @@ def retry_product_variant(batch_name, index):
 			# Planning is already persisted; the normal preparer reuses the script
 			# and workbook, then queues only the missing shared-setting work.
 			stage = "Planning"
+		if stage == "Planning" and not variant.get("script"):
+			# An unchanged variation ID retrieves the same cached rejected draft.
+			# Keep the failed proposal's identity and reason, then ask for a new
+			# concept. Accepted scripts/workbooks and media retries remain stable.
+			variant.setdefault("script_attempts", []).append(
+				{"nonce": variant.get("nonce"), "error": variant.get("error", "")}
+			)
+			variant["nonce"] = uuid.uuid4().hex
 		variant.update(status=stage, error="")
 		frappe.db.set_value(
 			"Creative Batch",

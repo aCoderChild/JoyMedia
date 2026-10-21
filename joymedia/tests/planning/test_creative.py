@@ -170,6 +170,39 @@ class TestGeneratedScriptValidation(TestCase):
 					self.assertIn("absent", finding["cross_check_error"])
 					self.assertNotIn("text_cross_check", finding)
 
+	def test_retry_rejected_script_changes_cache_identity_but_keeps_accepted_work(self):
+		from joymedia.api.creative import retry_product_variant
+
+		for script in (None, {"title": "Accepted story"}):
+			variant = {
+				"status": "Needs Attention",
+				"resume_stage": "Planning",
+				"nonce": "old",
+				"error": "Rejected draft",
+			}
+			if script:
+				variant["script"] = script
+			batch = Mock(name="batch", status="Needs Attention", variants_json=json.dumps([variant]))
+			batch.name = "BATCH"
+			with (
+				self.subTest(script=script),
+				patch("frappe.get_doc", return_value=batch),
+				patch.object(frappe.cache, "lock"),
+				patch.object(frappe.db, "commit"),
+				patch.object(frappe.db, "set_value") as save,
+				patch("frappe.enqueue"),
+			):
+				retry_product_variant(batch.name, 1)
+				retried = json.loads(save.call_args.args[2]["variants_json"])[0]
+				if script:
+					self.assertEqual("old", retried["nonce"])
+					self.assertEqual(script, retried["script"])
+				else:
+					self.assertNotEqual("old", retried["nonce"])
+					self.assertEqual(
+						[{"nonce": "old", "error": "Rejected draft"}], retried["script_attempts"]
+					)
+
 	def test_gallery_views_remain_one_identity_and_can_be_selected_by_scene(self):
 		inventory = [
 			{
