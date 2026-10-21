@@ -208,13 +208,15 @@ def _cross_check_missing_actions(review, script):
 		)
 		quote = answer.get("already_written") if isinstance(answer, dict) else None
 		if not isinstance(quote, str):
-			raise ValueError("Omission cross-check requires quoted screenplay text.")
+			finding["cross_check_error"] = "Retraction did not supply quoted screenplay text; original finding retained."
+			continue
 		if not quote.strip():
 			continue
 		normalized = " ".join(quote.split()).casefold()
 		allowed_actions = [actions[finding["scene"] - 1]] if idle else actions
 		if not any(normalized in " ".join(action.split()).casefold() for action in allowed_actions):
-			raise ValueError("Omission cross-check quoted text absent from the action sequence.")
+			finding["cross_check_error"] = "Retraction quoted text absent from the applicable action sequence; original finding retained."
+			continue
 		finding["text_cross_check"] = {"already_written": quote, "physical_qualification": False}
 		finding["category"] = "production_detail"
 	return review

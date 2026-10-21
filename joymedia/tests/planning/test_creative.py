@@ -124,8 +124,10 @@ class TestGeneratedScriptValidation(TestCase):
 			):
 				review = {"issues": [copy.deepcopy(issue)]}
 				if quote == "Invented result not in the script":
-					with self.assertRaisesRegex(ValueError, "absent"):
-						_cross_check_missing_actions(review, sample_script())
+					finding = _cross_check_missing_actions(review, sample_script())["issues"][0]
+					self.assertEqual(issue["category"], finding["category"])
+					self.assertIn("absent", finding["cross_check_error"])
+					self.assertNotIn("text_cross_check", finding)
 				else:
 					finding = _cross_check_missing_actions(review, sample_script())["issues"][0]
 					self.assertEqual(
@@ -163,8 +165,10 @@ class TestGeneratedScriptValidation(TestCase):
 					finding = _cross_check_missing_actions(review, sample_script())["issues"][0]
 					self.assertEqual("production_detail" if quote else "idle_pacing", finding["category"])
 				else:
-					with self.assertRaisesRegex(ValueError, "absent"):
-						_cross_check_missing_actions(review, sample_script())
+					finding = _cross_check_missing_actions(review, sample_script())["issues"][0]
+					self.assertEqual("idle_pacing", finding["category"])
+					self.assertIn("absent", finding["cross_check_error"])
+					self.assertNotIn("text_cross_check", finding)
 
 	def test_gallery_views_remain_one_identity_and_can_be_selected_by_scene(self):
 		inventory = [
