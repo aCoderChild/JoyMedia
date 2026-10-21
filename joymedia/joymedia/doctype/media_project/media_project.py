@@ -326,6 +326,8 @@ class MediaProject(Document):
 		except ValueError as exc:
 			frappe.throw(_(str(exc)))
 		if self.status != "Archived":
+			from joymedia.services.generation.run_state import has_completed_export
+
 			latest_run = _get_latest_project_generation_run(self.name)
 			self.status = {
 				"Queued": "Generating",
@@ -334,6 +336,8 @@ class MediaProject(Document):
 				"Failed": "Needs Attention",
 				"Cancelled": "Cancelled",
 			}.get(latest_run.status if latest_run else None, "Draft")
+			if self.status != "Generating" and has_completed_export(self.name):
+				self.status = "Completed"
 		self.save(ignore_permissions=True)
 		frappe.db.commit()
 		return self.get_video_settings()

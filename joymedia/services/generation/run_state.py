@@ -7,6 +7,22 @@ from frappe.utils import now
 ACTIVE_RUN_STATUSES = ("Queued", "Running")
 
 
+def has_completed_export(project_name: str) -> bool:
+	"""A current finished edit takes precedence over an abandoned generation attempt."""
+	project = frappe.db.get_value(
+		"Media Project",
+		project_name,
+		["current_output_asset_version", "export_status", "post_production_status"],
+		as_dict=True,
+	)
+	return bool(
+		project
+		and project.current_output_asset_version
+		and project.export_status == "Completed"
+		and project.post_production_status == "Completed"
+	)
+
+
 def sync_media_project_status_for_run(run_name: str):
 	"""Derive the customer-facing Campaign status from its generation state."""
 	run = frappe.get_doc("Generation Run", run_name)
@@ -38,6 +54,8 @@ def sync_media_project_status_for_run(run_name: str):
 		status = "Cancelled"
 	else:
 		status = "Draft"
+	if status not in ("Generating", "Archived") and has_completed_export(media_project):
+		status = "Completed"
 
 	frappe.db.set_value("Media Project", media_project, "status", status, update_modified=False)
 
