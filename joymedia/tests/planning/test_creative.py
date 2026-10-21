@@ -771,3 +771,79 @@ class TestCreativeWorkflow(FrappeTestCase):
 			advance_batch(batch.name)
 			export.assert_called_once_with(self.project.name, purpose="review")
 		self.assertEqual("Exporting", frappe.parse_json(batch.reload().variants_json)[0]["status"])
+
+	def test_failed_render_resumes_only_after_complete_native_selection_and_not_cancellation(self):
+		from joymedia.services.generation.creative_batch import advance_batch
+
+		get_value = frappe.db.get_value
+		for run_status, selected, should_finish in [
+			("Failed", False, False),
+			("Failed", True, True),
+			("Cancelled", True, False),
+		]:
+			with self.subTest(run_status=run_status, selected=selected):
+				batch = self.batch()
+				variant = frappe.parse_json(batch.variants_json)[0]
+				variant.update(
+					project=self.project.name, status="Rendering", generation_request={"run": "review-run"}
+				)
+				batch.db_set({"status": "Rendering", "variants_json": frappe.as_json([variant])})
+				with (
+					patch.object(
+						frappe.db,
+						"get_value",
+						side_effect=lambda dt, *args, **kw: run_status
+						if dt == "Generation Run"
+						else get_value(dt, *args, **kw),
+					),
+					patch.object(frappe.db, "rollback"),
+					patch(
+						"joymedia.services.generation.creative_batch._selected_review_outputs",
+						return_value=selected,
+					),
+					patch("joymedia.services.audio.plan.build_audio_plan", return_value=[]),
+					patch(
+						"joymedia.services.editing.post_production.queue_post_production_internal"
+					) as finishing,
+				):
+					advance_batch(batch.name)
+				self.assertEqual(should_finish, finishing.called)
+
+
+class TestSelectedReviewOutputs(TestCase):
+	def test_only_current_scene_owned_native_takes_allow_review_finishing(self):
+		from joymedia.services.generation.creative_batch import _selected_review_outputs
+
+		for busy, selected, member, lineage, changed, expected in [
+			(False, "V", True, True, False, True),
+			(True, "V", True, True, False, False),
+			(False, None, True, True, False, False),
+			(False, "V", False, True, False, False),
+			(False, "V", True, False, False, False),
+			(False, "V", True, True, True, False),
+		]:
+			with self.subTest(busy=busy, selected=selected, member=member, lineage=lineage, changed=changed):
+				with (
+					patch.object(frappe.db, "exists", return_value=busy),
+					patch("frappe.get_all", return_value=["S"]),
+					patch(
+						"frappe.get_doc", return_value=frappe._dict(selected_output_asset_version=selected)
+					),
+					patch(
+						"joymedia.services.generation.takes.scene_takes",
+						return_value=[frappe._dict(name="V" if member else "other")],
+					),
+					patch.object(
+						frappe.db,
+						"get_value",
+						side_effect=lambda dt, *a, **kw: "A"
+						if dt == "Asset Version"
+						else "T"
+						if dt == "Generation Attempt"
+						else "S"
+						if lineage
+						else "other",
+					),
+					patch("joymedia.services.review.lineage.take_direction_changed", return_value=changed),
+				):
+					self.assertEqual(expected, _selected_review_outputs("P"))

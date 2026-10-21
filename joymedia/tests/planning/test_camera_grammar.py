@@ -42,6 +42,15 @@ class TestReferenceCameraGrammar(TestCase):
 		structure = {"stage": "establish", "framing": "wide", "subject_motion": "stationary"}
 		self.assertEqual("push_in", infer_cinematic_intent(structure, opening=True)["behavior"])
 
+	def test_tracking_preserves_reference_energy_without_replacing_subject_motion(self):
+		grammar = normalize_camera_grammar(self.grammar())
+		grammar["moves"]["establish"]["energy"] = "brisk"
+		intent = infer_cinematic_intent(
+			{"stage": "establish", "framing": "wide", "subject_motion": "locomotion"}, grammar=grammar
+		)
+		self.assertEqual("tracking_backward", intent["behavior"])
+		self.assertEqual("brisk", intent["energy"])
+
 	def test_invalid_profiles_are_rejected_instead_of_silently_falling_back(self):
 		bad = []
 		for field, value in [

@@ -27,8 +27,12 @@ PLANNING_RULES = """
   Describe only the authored action. Grip precedes extraction; a product clears its opening before placement;
   support remains until a hand visibly takes its weight. Place the item before releasing the grip.
   Do not invent a box, lid, hinge, hand, tag, tool or packaging layer from the word 'unboxing'.
-  Use separate shots for distinct interactions, framing changes and locations. Manipulation uses a locked
-  camera so the grip, opening and product stay legible; camera movement never substitutes for subject action.
+  Stage describes the dominant narrative job, not the first incidental hand gesture. Establish introduces
+  geography; present/hero shows the product; feel shows a reaction. Holding an object during presentation
+  does not make the shot a grip demonstration. Grip/extract/unfold/detail describe the interaction being shown.
+  Use separate shots for distinct interactions, framing changes and locations. Precision manipulation uses
+  locked coverage; broader presentation follows the shared stage grammar. Camera movement never substitutes
+  for subject action or hides contact.
   New keyframe framing follows this structure; an approved first image keeps its actual composition.
 """
 

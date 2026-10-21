@@ -130,6 +130,17 @@ class TestVisualAdmission(unittest.TestCase):
 		self.assertNotIn("action", [r["id"] for r in a.screening_claims(self.scene(["Product"]), False)])
 		self.assertIn("action", [r["id"] for r in a.screening_claims(self.scene(["Product"]), True)])
 
+	def test_rendered_canvas_is_screened_for_stills_and_motion(self):
+		for video in [False, True]:
+			claim = next(
+				row
+				for row in a.screening_claims(self.scene(["Product"]), video)
+				if row["id"] == "active_canvas"
+			)
+			self.assertEqual("invariant", claim["mode"])
+			self.assertIn("letterbox/pillarbox", claim["claim"])
+			self.assertIn("shadows", claim["claim"])
+
 	def test_quality_retry_requires_a_witness_and_never_retries_unknowns(self):
 		for report, expected in [
 			(None, False),

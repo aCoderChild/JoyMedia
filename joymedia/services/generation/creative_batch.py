@@ -318,6 +318,34 @@ def _keyframe_ready(shot):
 	return bool(approved_keyframe_task(frappe.get_doc("Shot", shot.name)))
 
 
+def _selected_review_outputs(project_name):
+	"""Resume finishing after native take review/repair, without rewriting failed jobs."""
+	from joymedia.services.generation.takes import scene_takes
+	from joymedia.services.review.lineage import take_direction_changed
+
+	if frappe.db.exists(
+		"Generation Run", {"media_project": project_name, "status": ["in", ["Draft", "Queued", "Running"]]}
+	):
+		return False
+	shots = frappe.get_all("Shot", filters={"media_project": project_name, "is_removed": 0}, pluck="name")
+	if not shots:
+		return False
+	for name in shots:
+		shot = frappe.get_doc("Shot", name)
+		selected = shot.selected_output_asset_version
+		if not selected or selected not in {row.name for row in scene_takes(project_name, name)}:
+			return False
+		attempt = frappe.db.get_value("Asset Version", selected, "source_generation_attempt")
+		task = frappe.db.get_value("Generation Attempt", attempt, "generation_task") if attempt else None
+		if (
+			not task
+			or frappe.db.get_value("Generation Task", task, "shot") != name
+			or take_direction_changed(shot)
+		):
+			return False
+	return True
+
+
 def advance_batch(batch_name, user=None):
 	from joymedia.services.audio.plan import build_audio_plan
 	from joymedia.services.audio.speech import generate_voiceover
@@ -408,7 +436,9 @@ def advance_batch(batch_name, user=None):
 				status = frappe.db.get_value("Generation Run", run_name, "status") if run_name else None
 				if status in {"Draft", "Queued", "Running"}:
 					continue
-				if status != "Completed":
+				if status != "Completed" and not (
+					status == "Failed" and _selected_review_outputs(project.name)
+				):
 					raise ValueError(
 						"Rendered scenes need attention. Inspect native generation evidence; quality gates remain in effect."
 					)

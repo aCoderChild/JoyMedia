@@ -28,6 +28,7 @@ def implementation_hash():
 			(root / name).read_bytes()
 			for name in (
 				"review/admission.py",
+				"review/canvas.py",
 				"review/consistency.py",
 				"runtime/sampling.py",
 				"../workflow_adapters/graphs/prompt_sampling.json",
@@ -122,6 +123,16 @@ def screening_claims(scene, video):
 			{"id": f"opening.{i}", "dimension": "staging", "claim": c}
 			for i, c in enumerate(opening_claims(plan, duration))
 		]
+	claims.append(
+		{
+			"id": "active_canvas",
+			"dimension": "staging",
+			"mode": "invariant",
+			"claim": "The intended scene fills the complete picture edge to edge. No persistent blank or black "
+			"letterbox/pillarbox bands, inset picture or decorative frame reduce the active picture. "
+			"Ordinary dark objects or shadows inside the continuous scene are not frame borders.",
+		}
+	)
 	roles = {
 		str(r.get("reference_role") or r.get("input_role") or "").lower() for r in scene.get("references", [])
 	}
@@ -244,6 +255,20 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		),
 	)
 	report = run_temporal_check(check, configured=frappe._dict(policy["judge"]))
+	if video:
+		from joymedia.services.review.canvas import inspect_active_canvas
+
+		canvas = inspect_active_canvas(path, int(stream["width"]), int(stream["height"]))
+		report["active_canvas_observation"] = canvas
+		if canvas["status"] != "full_frame":
+			for row in report["results"]:
+				if row["id"] == "active_canvas" and row["verdict"] != "violated":
+					row["vision_verdict"] = row["verdict"]
+					row.update(
+						verdict="uncertain",
+						reason="FFmpeg active-picture screening requires review: "
+						+ json.dumps(canvas, sort_keys=True),
+					)
 	from joymedia.services.review.consistency import COUNT, ask
 
 	identities = (scene.get("consistency_plan") or {}).get("identities")
@@ -526,6 +551,7 @@ def run_gate(attempt_name, artifact_name, history, last_frame_name, user):
 		# Result polling uses this same lock. Hold it only for the final writes,
 		# never while waiting for the remote visual judge.
 		with filelock(f"joymedia-sync-attempt-{attempt_name}"):
+
 			def save_computed_report():
 				attempt.reload()
 				run.reload()
