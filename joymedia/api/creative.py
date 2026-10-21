@@ -143,11 +143,14 @@ def get_product_batch(batch_name):
 def get_project_batches(project_name):
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_read_access()
+	from joymedia.services.project.versions import family, members
+
+	project_family = members(family(project))
 	return [
 		get_product_batch(name)
 		for name in frappe.get_all(
 			"Creative Batch",
-			filters={"source_project": project.name, "owner": project.owner},
+			filters={"source_project": ["in", project_family], "owner": project.owner},
 			pluck="name",
 			order_by="creation desc",
 			limit=10,

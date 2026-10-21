@@ -108,7 +108,7 @@ def prepare_batch(batch_name):
 	from joymedia.api.storyboard import _plan_project, import_storyboard_workbook
 	from joymedia.services.intake.action_reference import ensure_action_analysis
 	from joymedia.services.intake.cinematography import ensure_project_camera_analysis
-	from joymedia.services.planning.creative import draft_script, script_workbook
+	from joymedia.services.planning.creative import draft_script, reference_inventory, script_workbook
 
 	batch = frappe.get_doc("Creative Batch", batch_name)
 	if batch.status == "Cancelled":
@@ -132,6 +132,7 @@ def prepare_batch(batch_name):
 				return
 			ensure_project_camera_analysis(project)
 			ensure_action_analysis(project)
+			reference_inventory(project)
 			frappe.db.commit()
 			if not variant.get("script"):
 				script = draft_script(
