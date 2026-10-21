@@ -505,6 +505,11 @@ def _finish_once(project_name):
 	generation_mode = frappe.db.get_value("Media Project", project_name, "generation_mode") or "Multi-shot"
 	if generation_mode not in ("Continuous", "Consistency"):
 		for index, (outgoing, incoming) in enumerate(itertools.pairwise(clips), start=1):
+			# A new scene is an editorial cut. Synthesizing motion across independently
+			# staged scenes can invent props, people or product print in the bridge.
+			# Only a deliberately continued action calls for a generated handoff.
+			if frappe.db.get_value("Shot", incoming.shot, "continuity_mode") != "Continue":
+				continue
 			_set_status(project_name, "Running", step=f"Transition {index}/{len(clips) - 1}")
 			_insert_bridge(project_name, outgoing, incoming)
 			clips = _shot_video_clips(project_name)

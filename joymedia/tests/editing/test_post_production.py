@@ -266,6 +266,26 @@ class TestEditedTimelineIsKept(FrappeTestCase):
 
 
 class TestFinishingFollowsTheSoundMode(FrappeTestCase):
+	def test_new_scene_cuts_and_continued_action_uses_bridge(self):
+		clips = [frappe._dict(shot=name) for name in ("FIRST", "SECOND", "THIRD")]
+
+		def setting(doctype, name, field):
+			if doctype == "Media Project":
+				return {"generation_mode": "Multi-shot", "soundtrack_mode": "Sound effects only"}[field]
+			return {"SECOND": "New Scene", "THIRD": "Continue"}[name]
+
+		with (
+			patch("joymedia.services.editing.timeline.reset_project_timeline"),
+			patch("joymedia.services.editing.timeline.close_timeline_gaps"),
+			patch.object(post_production, "_shot_video_clips", return_value=clips),
+			patch.object(post_production, "_insert_bridge") as bridge,
+			patch.object(post_production, "_set_status"),
+			patch("joymedia.services.audio.plan.check_scene_audio"),
+			patch.object(post_production.frappe.db, "get_value", side_effect=setting),
+		):
+			post_production._finish_once("P")
+		bridge.assert_called_once_with("P", clips[1], clips[2])
+
 	def _finish(self, soundtrack_mode):
 		values = {"generation_mode": "Continuous", "soundtrack_mode": soundtrack_mode}
 		with (
