@@ -57,6 +57,47 @@ Services belong outside DocType controllers unless they enforce a persisted inva
 7. Assemble selected takes, narration, effects, music and editorial graphics into
    the timeline. Export a review version; release checks remain a separate gate.
 
+## Automatic product-reference production
+
+The New video dialog can accept product/mascot pictures without a written story.
+`api/creative.py` freezes the requested references, optional direction, inherited
+or explicit duration/geometry, variant count and auto-render authorization in a
+`Creative Batch`. Photo count never selects scene or video count. Reference
+identity keys group alternative views of one product or actor.
+
+`planning/creative.py` uses the configured planner and a persisted variation nonce
+to write distinct, timed scripts. Prior variant loglines guide variety. Approved
+claims and reference descriptions constrain the creative brief. Missing geometry
+or duration is proposed by the script and recorded with a format rationale;
+an explicit input always wins. There is no automatic reel-format substitution.
+
+The writer fills the existing downloadable JoyMedia workbook template. The normal
+workbook importer and timed production planner then create shots, reference
+bindings, scene contracts and camera intents. No parallel video renderer or
+provider-specific creative path exists. Every variant exposes its generated XLSX.
+
+The existing keyframe stage, ComfyUI Runs/Tasks/Attempts, admission checks,
+generation and finishing jobs remain authoritative. The batch scheduler advances
+each variant independently and uses short locks only for state transitions.
+Variant-level merges prevent planning/polling from erasing one another's results.
+Planning yields the long worker between variants. Cancellation is durable before
+native job interruption; uncertain or failed evidence becomes Needs Attention,
+never an invented pass or a falsely reviewed take. Completed means review export,
+not automatic release qualification. Music follows the generated script brief.
+
+Reference action analysis reuses Apache-2.0 OpenStoryline's clip-understanding
+prompt and its JSON parser; pinned source paths, hashes and license are under
+`joymedia/vendor/open_storyline`. CameraPath Lab supplies PTS probing and decoding.
+Short chronological windows preserve contact and consequences that whole-shot
+captions missed. These are sampled observations, not cut boundaries or verified
+product claims. Sampling lives in `workflow_adapters/graphs/action_reference_sampling.json`.
+
+Reviewed upstreams: FireRed-OpenStoryline at
+`c9e945215586f45c12a61c1951ee9a8e9c43a027` is integrated through existing vision
+and planning clients. DigitalMarketingAgent at
+`3b73c805a648df8d925901fd213c559504c6eb93` informed the photo-to-storyboard review;
+its fixed render settings and Wan/interpolation backend were not adopted.
+
 ## Finishing responsibilities
 
 `editing/post_production.py` keeps the stable whitelisted endpoints and queued job

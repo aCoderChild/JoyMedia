@@ -45,6 +45,22 @@ Implementation boundaries and deployment checks are in [architecture.md](archite
 
 ## Reference-video analysis integration
 
+Inferred reference preferences now resolve against available boundaries before
+approval. A spatial reveal without both endpoints can use tracking for locomotion
+or a bounded axial push for broad coverage, with the resolution recorded in plan
+notes. Explicit authored controls retain their strict endpoint gate. Tracking
+maintains crop and does not require push-in margins. An approved, current keyframe
+artifact can supply actual framing evidence even without a manually uploaded
+first-frame Asset Version. Its frozen artifact travels to the prompt compiler;
+pending or stale keyframes cannot authorize a move.
+
+Timed scripts can ground ordinary props, support surfaces, materials and body
+parts with exact quotes from their authored action/visual/continuity/place cells.
+These can participate in physical relations and checks without an extra reference
+photo. Extra actors/products and replacement reference IDs are rejected. The
+application still owns event IDs and timing; inferred constraints cannot rewrite
+the authored action sequence. Camera movement remains independent of that action.
+
 Motion videos selected in the existing reference picker are analyzed before
 storyboard and production planning. The inspector also has **Analyze reference
 camera**, which queues the same analysis through the normal long worker. General,

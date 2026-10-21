@@ -16,6 +16,7 @@
     <main class="jm-workspace-body">
       <p v-if="loading" role="status">{{ t('Loading your video…','Đang tải video…') }}</p>
       <template v-else-if="workspace">
+        <CreativeBatchPanel v-if="!access.reviewer" :project="project" />
         <div v-if="workspace.family && !workspace.family.is_working_edit" class="rounded-xl border border-outline-border p-4 flex flex-wrap items-center justify-between gap-3" data-test="alternate-edit-notice">
           <p class="text-sm">{{ t('Saved version','Phiên bản đã lưu') }} · {{ workspace.family.edit_label }}</p>
           <button class="jm-button-primary" data-test="open-working-edit" @click="emit('working-edit',workspace.family.current_edit)">{{ t('Open current version','Mở phiên bản hiện tại') }}</button>
@@ -74,6 +75,7 @@ import ClientStoryboard from './ClientStoryboard.vue';
 import VideoReviewDialog from './VideoReviewDialog.vue';
 import {shortCaption,sceneAction} from '../../utils/storyboard';
 import RoleBadge from '../RoleBadge.vue';
+import CreativeBatchPanel from './CreativeBatchPanel.vue';
 import {useSession} from "../../stores/session";
 import { computed, ref, watch } from 'vue';
 import {usePreviewPlayback} from '../../composables/usePreviewPlayback';

@@ -1,0 +1,95 @@
+{
+  "doctype": "DocType",
+  "name": "Creative Batch",
+  "module": "JoyMedia",
+  "autoname": "CRB-.#####",
+  "naming_rule": "Expression",
+  "engine": "InnoDB",
+  "track_changes": 1,
+  "field_order": [
+    "source_project",
+    "requested_by",
+    "status",
+    "request_json",
+    "variants_json",
+    "error"
+  ],
+  "fields": [
+    {
+      "fieldname": "source_project",
+      "fieldtype": "Link",
+      "options": "Media Project",
+      "label": "Reference Project",
+      "reqd": 1,
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Queued\nPlanning\nRendering\nFinishing\nCompleted\nScripts Ready\nNeeds Attention\nCancelled",
+      "default": "Queued",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "request_json",
+      "fieldtype": "JSON",
+      "label": "Frozen Request",
+      "reqd": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "variants_json",
+      "fieldtype": "JSON",
+      "label": "Variant Progress",
+      "read_only": 1
+    },
+    {
+      "fieldname": "error",
+      "fieldtype": "Small Text",
+      "label": "Error",
+      "read_only": 1
+    },
+    {
+      "fieldname": "requested_by",
+      "fieldtype": "Link",
+      "options": "User",
+      "label": "Requested By",
+      "read_only": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "JoyMedia User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "if_owner": 1
+    },
+    {
+      "role": "JoyMedia Specialist",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "if_owner": 1
+    },
+    {
+      "role": "JoyMedia Reviewer",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "if_owner": 1
+    },
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1
+    }
+  ],
+  "sort_field": "creation",
+  "sort_order": "DESC"
+}

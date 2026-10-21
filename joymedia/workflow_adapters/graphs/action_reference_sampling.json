@@ -1,0 +1,6 @@
+{
+  "window_seconds": 2.0,
+  "samples_per_window": 4,
+  "analysis_long_edge": 640,
+  "max_duration_seconds": 120
+}

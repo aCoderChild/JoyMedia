@@ -184,6 +184,7 @@ scheduler_events = {
 			"joymedia.services.generation.ingestor.sync_active_attempts",
 			"joymedia.services.generation.orchestrator.refresh_active_runs",
 			"joymedia.services.editing.post_production.resume_queued_post_productions",
+			"joymedia.services.generation.creative_batch.advance_batches",
 		],
 	},
 }

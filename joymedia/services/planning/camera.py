@@ -159,6 +159,30 @@ def infer_cinematic_intent(structure, *, opening=False, closing=False, grammar=N
 	return {"behavior": behavior, "allow_reframe": False, "purpose": purpose, "energy": energy}
 
 
+def executable_inferred_intent(intent, structure, roles):
+	"""Resolve a reference preference using actual available controls, before approval.
+
+	An unanchored spatial reveal must not silently turn every new scene into a
+	static shot. Tracking preserves crop; an axial alternative still needs normal
+	framing assessment. Explicit user-authored intents retain the strict gate.
+	"""
+	if intent["behavior"] not in BOUNDARY_MOVES or {"first_frame", "last_frame"} <= set(roles):
+		return intent
+	result = dict(intent, allow_reframe=False)
+	if structure["subject_motion"] == "locomotion":
+		result.update(behavior="tracking_backward", purpose="follow")
+	elif structure["stage"] in {"establish", "present", "feel", "hero"} and structure["framing"] in {
+		"wide",
+		"full",
+		"medium",
+		"medium_close_up",
+	}:
+		result["behavior"] = "push_in"
+	else:
+		result.update(behavior="locked", purpose="demonstrate")
+	return result
+
+
 def camera_intent(value):
 	if value is None:
 		return None
@@ -235,6 +259,7 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 			closing=closing,
 			grammar=normalize_camera_grammar(project.get("camera_grammar")),
 		)
+		intent = executable_inferred_intent(intent, structure, roles)
 	broad_presentation = bool(
 		structure
 		and intent
@@ -305,6 +330,7 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 		)
 		if (
 			behavior == "locked"
+			or (behavior == "tracking_backward" and structure and structure["subject_motion"] == "locomotion")
 			or intent["allow_reframe"]
 			or anchored_push
 			or allows_push(framing_safety)

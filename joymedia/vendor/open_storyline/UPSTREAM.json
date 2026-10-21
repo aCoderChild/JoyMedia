@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/FireRedTeam/FireRed-OpenStoryline",
+  "revision": "c9e945215586f45c12a61c1951ee9a8e9c43a027",
+  "license": "Apache-2.0",
+  "changes": "Selected files copied unchanged; paths flattened.",
+  "original_files": {
+    "parse_json.py": {
+      "path": "src/open_storyline/utils/parse_json.py",
+      "sha256": "e6b53a579c238aabc48357b0dc880fbf5abb5dcd3759bd946df5b55775d74157"
+    },
+    "understand_clips.md": {
+      "path": "prompts/tasks/understand_clips/en/system_detail.md",
+      "sha256": "8fcf8e20f7a51a784a8242b63f410bee98c81388da3ce90b847c7de47444fbdd"
+    }
+  }
+}
