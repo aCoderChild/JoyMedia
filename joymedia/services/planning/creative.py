@@ -46,7 +46,13 @@ def _validate_action_progress(scenes):
 		}:
 			continue
 		phases = read_timed_actions(scene["action"], scene["duration_seconds"])
-		if not any(TANGIBLE_ACTION.search(phase["action"]) for phase in phases):
+		# A relative clause can describe a prop's initial location ("the pack
+		# that is placed on the table") without the subject doing anything.
+		# Such set dressing must not satisfy the action-progress contract.
+		if not any(
+			TANGIBLE_ACTION.search(re.split(r"\b(?:where|which|that)\b", phase["action"], 1, flags=re.I)[0])
+			for phase in phases
+		):
 			raise ValueError(
 				f"Scene {index + 1} has no completed object or material action. Combine preparation or reaction with its resulting interaction in one shot."
 			)
