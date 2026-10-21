@@ -53,8 +53,14 @@ def _validate_action_progress(scenes):
 			TANGIBLE_ACTION.search(re.split(r"\b(?:where|which|that)\b", phase["action"], 1, flags=re.I)[0])
 			for phase in phases
 		):
+			next_action = scenes[index + 1]["action"]
 			raise ValueError(
-				f"Scene {index + 1} has no completed object or material action. Combine preparation or reaction with its resulting interaction in one shot."
+				f"Scene {index + 1} has no completed object or material action. "
+				"Replace its preparation/reaction with the actual interaction in this shot; "
+				"if the next shot performs that interaction, combine the two beats and give "
+				"the freed shot a distinct product action or detail. "
+				"Faulty action: " + json.dumps(scene["action"], ensure_ascii=False)
+				+ "; next action: " + json.dumps(next_action, ensure_ascii=False)
 			)
 
 
@@ -398,7 +404,8 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 			# writer to invent another story from a detached list of action quotes.
 			request_prompt = (
 				"Edit the supplied complete screenplay to fix the quoted defects. Keep its premise, "
-				"identities, format and duration; change only defective actions and their dependent "
+				"identities, format and duration; replace any filler shot entirely when needed, "
+				"and change its dependent "
 				"opening/continuity/result text. Preserve chronological prerequisites across scenes. "
 				"A later result must not be inserted into an earlier scene before acquisition/contact. "
 				"Mechanical staging notes belong in continuity_rules. Return the complete schema.\n"
