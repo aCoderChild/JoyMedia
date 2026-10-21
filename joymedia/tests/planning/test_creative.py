@@ -66,6 +66,13 @@ class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
 
+	def test_second_pass_rejects_missing_scene_evidence(self):
+		from joymedia.services.planning.creative import review_script_actions
+
+		with patch("joymedia.services.planning.production._ask_planner", return_value={"findings": []}):
+			with self.assertRaisesRegex(ValueError, "each scene"):
+				review_script_actions(sample_script())
+
 	def test_action_sources_share_bounded_context_in_chronological_order(self):
 		from joymedia.services.intake.action_reference import action_observations
 
@@ -108,12 +115,15 @@ class TestGeneratedScriptValidation(TestCase):
 			patch("joymedia.services.planning.creative.reference_inventory", return_value=inventory),
 			patch("joymedia.services.intake.action_reference.action_observations", return_value=[]),
 			patch("joymedia.services.intake.references.brand", return_value={}),
+			patch("joymedia.services.planning.creative.review_script_actions", return_value=[]),
 			patch(
 				"joymedia.services.planning.production._ask_planner",
 				side_effect=[bad_count, bad_enum, sample_script()],
 			) as planner,
 		):
-			self.assertEqual(sample_script(), draft_script(project, nonce="varied"))
+			expected = sample_script()
+			expected["action_review"] = []
+			self.assertEqual(expected, draft_script(project, nonce="varied"))
 		last = planner.call_args
 		self.assertIn("2–12 scenes", last.args[0])
 		self.assertIn("Unsupported shot_framing", last.args[0])

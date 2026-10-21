@@ -165,6 +165,7 @@ def cancel_product_batch(batch_name):
 	with frappe.cache.lock(f"joymedia-creative:{batch.name}", timeout=180, blocking_timeout=10):
 		frappe.db.set_value("Creative Batch", batch.name, "status", "Cancelled")
 		frappe.db.commit()  # Durable cancellation precedes interrupting any native jobs.
+		batch.reload()
 	from joymedia.api.projects import cancel_project_generation
 	from joymedia.services.editing.post_production import cancel_post_production
 

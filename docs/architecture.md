@@ -158,3 +158,11 @@ endpoint, then planner. No vendor or model name is selected in application code.
 Scripts use the existing runtime structured-output transport with a dynamic JSON
 schema for the supplied reference keys, format and camera enums. The ordinary
 validator still rejects invalid durations, action intervals and unknown cast.
+
+Before importing an automatic script, the writer performs a separate bounded
+compliance pass over every scene's action, causal handoff and pacing. This can
+reject camera-only prose, missing acquisition/contact phases and disproportionate
+holds; it does not certify the physics of a future render. Rejected scripts are
+rewritten through the same schema before any keyframe job is admitted.
+Native generation and finishing admission is committed inside the batch lock,
+so cancellation can observe and stop a newly admitted job before releasing control.

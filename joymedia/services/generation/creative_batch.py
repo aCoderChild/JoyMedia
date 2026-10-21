@@ -192,6 +192,7 @@ def prepare_batch(batch_name):
 					if frappe.db.get_value("Creative Batch", batch.name, "status") == "Cancelled":
 						return
 					_start_keyframes(project, variant)
+					frappe.db.commit()
 		except Exception as exc:
 			frappe.db.rollback()
 			variant.update(resume_stage=variant["status"], status="Needs Attention", error=str(exc)[:1600])
@@ -292,12 +293,14 @@ def advance_batch(batch_name, user=None):
 						if frappe.db.get_value("Creative Batch", batch.name, "status") == "Cancelled":
 							return
 						set_keyframe_approval(project.name, shot.name)
+						frappe.db.commit()
 				with frappe.cache.lock(f"joymedia-creative:{batch.name}", timeout=180, blocking_timeout=10):
 					frappe.db.commit()
 					if frappe.db.get_value("Creative Batch", batch.name, "status") == "Cancelled":
 						return
 					project.reload()
 					variant.update(status="Rendering", generation_request=project.generate_video())
+					frappe.db.commit()
 			elif variant["status"] == "Rendering":
 				run_name = variant.get("generation_request", {}).get("run")
 				status = frappe.db.get_value("Generation Run", run_name, "status") if run_name else None
@@ -319,6 +322,7 @@ def advance_batch(batch_name, user=None):
 						return
 					queue_post_production_internal(project.name)
 					variant["status"] = "Finishing"
+					frappe.db.commit()
 			elif variant["status"] == "Finishing" and project.post_production_status == "Completed":
 				with frappe.cache.lock(f"joymedia-creative:{batch.name}", timeout=180, blocking_timeout=10):
 					frappe.db.commit()
@@ -326,6 +330,7 @@ def advance_batch(batch_name, user=None):
 						return
 					queue_project_timeline_export(project.name, purpose="review")
 					variant["status"] = "Exporting"
+					frappe.db.commit()
 			elif (
 				variant["status"] == "Exporting"
 				and project.export_status == "Completed"
