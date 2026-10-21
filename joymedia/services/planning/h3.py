@@ -145,7 +145,7 @@ def compile_h3(
 		guard = (
 			"Only the declared physical subjects appear. Alternate pictures are views of the same identity, not extra subjects. "
 			"Packaging illustrations are flat printed artwork, never separate actors. Every visible limb belongs to the declared actor and retains its anatomy; no unrequested human hands. "
-			"One coherent three-dimensional setting and shared light; no photo cards, split panels or imported reference backgrounds. Reference poses do not add props or actions."
+			"One coherent three-dimensional setting and shared light. Retain the referenced setting when supplied; ignore backgrounds in identity-only photos. No photo cards or split panels. Reference poses do not add props or actions."
 		)
 	# Keep safety/continuity constraints, but one authoritative camera paragraph.
 	rules = "\n\n".join(
