@@ -25,6 +25,7 @@ BEHAVIORS = BOUNDARY_MOVES | {"locked", "tracking_backward", "push_in"}
 
 CINEMATIC_PLANNING_RULES = """
 Infer only motion_plan.shot_structure from the authored narrative beat.
+Every scene in this profile requires that semantic shot structure.
 The application derives camera_intent from that structure; do not generate camera_intent.
 The resulting policy chooses one motivated behavior independently of camera prose.
 Opening geography or broad acting can use a measured axial push to create a hook; no camera shake.
@@ -54,7 +55,7 @@ def camera_planning_rules(project):
 	# The compiler enforces movement and endpoint safety. Repeating those detailed
 	# execution rules here wastes the planner's context, especially on schema repair.
 	return (
-		"Infer semantic shot_structure only; the application derives camera_intent from "
+		"Every scene requires semantic motion_plan.shot_structure; the application derives camera_intent from "
 		"the validated stage preferences, so do not generate camera_intent. "
 		"Reference observations guide coverage, pacing and action-axis continuity. "
 		"Precision contact remains readable; a move must not replace the authored action.\n"
@@ -225,6 +226,15 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 	closing = is_final or shot.get("handoff_type") == "ending" or bool(shots and position == len(shots) - 1)
 	contract = plan.get("scene_contract") or {}
 	intent = camera_intent(plan.get("camera_intent"))
+	if not intent and project.get("cinematic_camera"):
+		if not structure:
+			raise ValueError("Cinematic generation requires semantic shot structure. Replan this scene.")
+		intent = infer_cinematic_intent(
+			structure,
+			opening=position == 0,
+			closing=closing,
+			grammar=normalize_camera_grammar(project.get("camera_grammar")),
+		)
 	broad_presentation = bool(
 		structure
 		and intent
@@ -261,7 +271,7 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 		and structure["subject_motion"] == "locomotion"
 		and plan.get("camera_motion") != "locked"
 		and not views
-		and not plan.get("camera_intent")
+		and not intent
 	):
 		return {
 			"version": 3,

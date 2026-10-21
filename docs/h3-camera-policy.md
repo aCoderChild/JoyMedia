@@ -72,6 +72,12 @@ The video hash must match the analyzed evidence, and the caller needs project
 and asset write access. Conflicting stage preferences across selected references
 or the workbook are rejected. Camera evidence and reviewed direction are part
 of the approved-plan signature, so changing either requires review before render.
+Reference grammar is also frozen in the normal generation snapshot. When an
+initial storyboard has semantic structure but no explicit camera intent, both
+prompt compilers derive it from that frozen grammar. Missing semantic structure
+in cinematic mode stops generation rather than reverting to unrelated camera
+defaults. Initial plans, revisions, appended scenes and production replans all
+receive the same source context.
 
 The article's vocabulary is separated into framing, angle/perspective and motion:
 pan/tilt rotate; truck/pedestal/dolly translate; zoom changes focal length.

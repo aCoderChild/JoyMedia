@@ -43,10 +43,38 @@ class TestUpstreamCinematography(TestCase):
 				workflow=frappe._dict(output_fps=24), video_idea="Authored action", story_film=False
 			)
 			analyze.assert_called_once_with(project)
-			self.assertEqual(
+			self.assertIn(
 				"Authored brief\nReference camera direction", director.call_args.kwargs["global_instructions"]
 			)
+			self.assertIn("motion_plan.shot_structure", director.call_args.kwargs["global_instructions"])
 			self.assertEqual("16:9", director.call_args.kwargs["format_preset"])
+
+	def test_frozen_reference_policy_reaches_compiler_without_planner_camera_prose(self):
+		structure = {
+			"stage": "establish",
+			"framing": "wide",
+			"angle": "eye_level",
+			"subject_motion": "stationary",
+			"keep_visible": [],
+		}
+		shot = {
+			"shot_number": 1,
+			"motion_plan_json": {"shot_structure": structure},
+			"references": [{"reference_role": "first_frame"}, {"reference_role": "last_frame"}],
+		}
+		grammar = {
+			"version": 1,
+			"sources": [{"name": "reference", "sha256": "a" * 64}],
+			"notes": ["Reference interpretation"],
+			"moves": {"establish": {"behavior": "truck_right", "allow_reframe": True}},
+		}
+		project = {"cinematic_camera": True, "camera_grammar": grammar}
+		self.assertEqual("truck_right", camera_plan(shot, project)["behavior"])
+		shot["references"].pop()
+		self.assertEqual("locked", camera_plan(shot, project)["behavior"])
+		shot["motion_plan_json"].pop("shot_structure")
+		with self.assertRaisesRegex(ValueError, "semantic shot structure"):
+			camera_plan(shot, project)
 
 	def test_real_cut_detection_preserves_source_geometry_and_evidence(self):
 		import cv2
