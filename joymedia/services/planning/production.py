@@ -363,6 +363,7 @@ def _discard_inferred_camera(project, raw):
 def _apply_camera_profile(project, shot, plan):
 	from joymedia.services.planning.camera import (
 		camera_planning_rules,
+		executable_inferred_intent,
 		infer_cinematic_intent,
 		reference_camera_grammar,
 	)
@@ -374,12 +375,25 @@ def _apply_camera_profile(project, shot, plan):
 				"The cinematic camera profile requires a structured shot plan. Replan this scene."
 			)
 		count = frappe.db.count("Shot", {"media_project": project.name, "is_removed": 0})
-		plan["motion_plan"]["camera_intent"] = infer_cinematic_intent(
+		preferred = infer_cinematic_intent(
 			structure,
 			opening=int(shot.shot_number or 0) == 1,
 			closing=int(shot.shot_number or 0) == count,
 			grammar=reference_camera_grammar(project),
 		)
+		resolved = executable_inferred_intent(
+			preferred,
+			structure,
+			{
+				str(r.get("reference_role") or r.get("input_role") or "").lower()
+				for r in shot.get("generation_inputs") or shot.get("references") or []
+			},
+		)
+		plan["motion_plan"]["camera_intent"] = resolved
+		if resolved != preferred:
+			plan.setdefault("notes", []).append(
+				f"Reference preference {preferred['behavior']} resolved to {resolved['behavior']} using available boundaries; framing safeguards still apply."
+			)
 	return plan
 
 
@@ -440,8 +454,11 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 		"setting_prompt: place and lighting only, at most 30 words. video_prompt: authored motion only. "
 		"start_state and end_state: short descriptions. Use New Scene for a direct cut. "
 		"needs_editing: report impossible action timing without omitting actions. "
-		"Infer motion_plan.shot_structure and optional motion_plan.scene_contract.transitions only; "
-		"do NOT generate camera_intent, entities, events, actions or checks: the application serializes authored events and timing. "
+		"Infer motion_plan.shot_structure and physical scene constraints; "
+		"do NOT generate camera_intent, entities, events or actions: the application serializes authored events and timing. "
+		"You may declare additional_entities:[{id:prop_id,source_quote:exact words from VISUAL/ACTIONS/CONTINUITY/PLACE,kind:prop|support|material|body_part}]. "
+		"Only explicitly authored props, supports, materials and body parts may be added; never another actor or product. "
+		"Optional relations/checks/proportions/counts/parts/properties must reference given or grounded entity IDs. "
 		"For state-changing authored interactions, supply visible before/during/after/forbidden transition observations, "
 		"using the given EVENT IDs. Preserve actions and infer only their observable physical consequences. "
 		"keep_visible must use the given ENTITY IDs. "
@@ -487,16 +504,25 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 	for attempt in range(3):
 		raw = _ask_planner(prompt, sampling_profile="timed_production_plan")
 		inferred = raw.setdefault("motion_plan", {}).get("scene_contract") or {}
-		# Only inferred observable transitions may augment the sheet's frozen actions.
-		authored_contract = {
-			**contract,
-			"transitions": inferred.get("transitions", []) if isinstance(inferred, dict) else inferred,
-		}
-		raw["motion_plan"].update(actions=actions, scene_contract=authored_contract)
-		if coverage:
-			raw["motion_plan"].setdefault("shot_structure", {}).update(coverage)
-		_discard_inferred_camera(project, raw)
 		try:
+			from joymedia.services.planning.grounding import grounded_contract
+
+			authored_contract = grounded_contract(
+				contract,
+				inferred,
+				"\n".join(
+					[
+						str(beat.get("camera") or ""),
+						str(beat.get("rules") or ""),
+						base["setting_prompt"],
+						*(row["action"] for row in actions),
+					]
+				),
+			)
+			raw["motion_plan"].update(actions=actions, scene_contract=authored_contract)
+			if coverage:
+				raw["motion_plan"].setdefault("shot_structure", {}).update(coverage)
+			_discard_inferred_camera(project, raw)
 			plan = normalize_production_shot(
 				raw,
 				reference_keys={r["key"] for r in references},
@@ -514,7 +540,7 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 				**raw,
 				"motion_plan": {
 					"shot_structure": raw["motion_plan"].get("shot_structure"),
-					"scene_contract": {"transitions": authored_contract["transitions"]},
+					"scene_contract": inferred,
 				},
 			}
 			prompt = (
@@ -1180,6 +1206,8 @@ def _request_planner(prompt, *, system, max_tokens, capability="planner", sampli
 			_("The planner request failed ({0}): {1}").format(response.status_code, response.text[:300])
 		)
 	try:
-		return json.loads(response.json()["choices"][0]["message"]["content"])
+		from joymedia.vendor.open_storyline.parse_json import parse_json_dict
+
+		return parse_json_dict(response.json()["choices"][0]["message"]["content"])
 	except (KeyError, IndexError, TypeError, ValueError) as exc:
 		frappe.throw(_("The planner returned invalid JSON: {0}").format(str(exc)))

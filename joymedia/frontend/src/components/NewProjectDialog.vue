@@ -4,17 +4,17 @@
       <div class="flex flex-col gap-4">
         <p class="text-sm text-ink-muted">
           {{ tr(
-            'Give us the story and the images the film must show. Format, duration and each scene\'s references are worked out for you.',
-            'Chỉ cần cung cấp kịch bản và những hình ảnh phải xuất hiện. Định dạng, thời lượng và tham chiếu từng cảnh sẽ được tự động xác định.'
+            'Upload your product and mascot images. AI can write the story and generate video variants. You can also supply your own brief or workbook.',
+            'Tải ảnh sản phẩm và mascot. AI có thể tự viết kịch bản và tạo nhiều video. Bạn cũng có thể cung cấp ý tưởng hoặc bảng kịch bản.'
           ) }}
         </p>
 
         <!-- 1. The story: a storyboard workbook, or a written brief -->
         <div>
-          <p class="mb-1.5 text-xs font-semibold text-ink-primary">{{ tr('1. The story', '1. Kịch bản') }}</p>
+          <p class="mb-1.5 text-xs font-semibold text-ink-primary">{{ tr('1. Creative direction (optional)', '1. Ý tưởng (tuỳ chọn)') }}</p>
           <FormControl
             v-model="form.brief" type="textarea" class="mt-2" :rows="3"
-            :placeholder="tr('Describe the video you want (optional when a workbook is uploaded)', 'Mô tả video bạn muốn (không bắt buộc nếu đã tải bảng kịch bản)')"
+            :placeholder="tr('Optional: mood, audience or creative direction', 'Tuỳ chọn: cảm xúc, khán giả hoặc hướng sáng tạo')"
           />
           <details class="mt-3 text-xs"><summary class="cursor-pointer text-ink-secondary">{{ tr('Or import a storyboard spreadsheet', 'Hoặc nhập bảng kịch bản') }}</summary>
           <FileUploader
@@ -116,6 +116,15 @@
           </p>
         </div>
 
+        <div v-if="!workbook" class="rounded-xl border border-outline-border p-3 space-y-3">
+          <label class="flex gap-2 text-sm"><input type="checkbox" v-model="form.autoScript" />{{ tr('Let AI write the script from my references', 'AI tự viết kịch bản từ ảnh tham chiếu') }}</label>
+          <template v-if="form.autoScript">
+            <FormControl v-model="form.variants" type="number" :min="1" :max="20" :label="tr('Number of video variants', 'Số video biến thể')" />
+            <label class="flex gap-2 text-sm"><input type="checkbox" v-model="form.autoRender" />{{ tr('Continue through video generation and music', 'Tự tạo tiếp video và nhạc nền') }}</label>
+            <p class="text-xs text-ink-muted">{{ tr('Multiple product photos are views of the same product. Variant count is independent of photo count. Assign mascot photos the Character role. Quality concerns remain visible for review.', 'Nhiều ảnh sản phẩm là các góc nhìn của cùng sản phẩm. Số video độc lập với số ảnh. Chọn vai trò Nhân vật cho ảnh mascot. Các vấn đề chất lượng vẫn được giữ để kiểm tra.') }}</p>
+          </template>
+        </div>
+
         <details class="rounded-xl border border-outline-border p-3" data-test="project-options">
           <summary class="cursor-pointer text-xs font-semibold text-ink-muted">{{ tr('Optional: name & format', 'Tuỳ chọn: tên và định dạng') }}</summary>
           <div class="mt-3 flex flex-col gap-3">
@@ -134,7 +143,7 @@
     </template>
     <template #actions>
       <Button variant="solid" :loading="creating" :disabled="!canCreate" @click="create">
-        {{ tr('Create project', 'Tạo dự án') }}
+        {{ form.autoScript && !workbook ? tr('Create videos', 'Tạo video') : tr('Create project', 'Tạo dự án') }}
       </Button>
     </template>
   </Dialog>
@@ -149,7 +158,7 @@ import { errorMessage } from "../utils/errors";
 const open = defineModel({ type: Boolean, default: false });
 const emit = defineEmits(["created"]);
 
-const form = reactive({ name: "", brief: "", format: "", customRatio: "", demo: "" });
+const form = reactive({ name: "", brief: "", format: "", customRatio: "", demo: "", autoScript: true, autoRender: true, variants: 1 });
 const workbook = ref(null);
 const references = ref([]);
 const creating = ref(false);
@@ -172,7 +181,7 @@ const formatOptions = computed(() => [
   { label: tr("Custom ratio", "Tỷ lệ khác"), value: "Custom" },
 ]);
 
-const canCreate = computed(() => workbook.value ? Boolean(selectedDemo.value?.can_create) : Boolean(form.brief.trim()));
+const canCreate = computed(() => workbook.value ? Boolean(selectedDemo.value?.can_create) : form.autoScript ? references.value.some(r => !r.pdf) && Number.isInteger(Number(form.variants)) && Number(form.variants) >= 1 && Number(form.variants) <= 20 : Boolean(form.brief.trim()));
 const templateUrl = (lang) => `/api/method/joymedia.services.intake.template.download_storyboard_template?lang=${lang}`;
 const firstLine = (value) => String(value || "").split("\n")[0];
 // Must-have fields first, so a missing one is the first thing the client sees.
@@ -219,6 +228,9 @@ async function create() {
       workbook_file: workbook.value?.name || null,
       demo_name: form.demo || null,
       format: form.format === "Custom" ? form.customRatio : form.format || null,
+      auto_script: form.autoScript && !workbook.value,
+      auto_render: form.autoRender,
+      variants: Number(form.variants),
       references: references.value.map(({ file_name, label, role }) => ({ file_name, label, role })),
     });
     open.value = false;

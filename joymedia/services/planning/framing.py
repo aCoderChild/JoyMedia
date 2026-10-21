@@ -30,10 +30,19 @@ def inspect_framing(shot):
 		if str(r.get("reference_role") or r.get("input_role") or "").lower() == "first_frame"
 		and r.get("asset_version")
 	]
-	if len(refs) != 1 or not is_configured("vision"):
+	if len(refs) > 1 or not is_configured("vision"):
 		return unknown
-	version = frappe.get_doc("Asset Version", refs[0])
-	file = frappe.get_doc("File", {"file_url": version.file})
+	if refs:
+		version = frappe.get_doc("Asset Version", refs[0])
+		file_url, source = version.file, {"asset_version": version.name}
+	elif shot.get("keyframe_artifact"):
+		artifact = frappe.get_doc("Generation Artifact", shot.get("keyframe_artifact"))
+		file_url, source = artifact.frappe_file, {"generation_artifact": artifact.name}
+	else:
+		return unknown
+	if not file_url:
+		return unknown
+	file = frappe.get_doc("File", {"file_url": file_url})
 	data = Path(file.get_full_path()).read_bytes()
 	digest = hashlib.sha256(data).hexdigest()
 	configured = endpoint("vision")
@@ -71,7 +80,7 @@ def inspect_framing(shot):
 			"version": VERSION,
 			"status": "assessed",
 			"frame_sha256": digest,
-			"asset_version": version.name,
+			**source,
 			"model": configured.model,
 			"bounds": bounds,
 			**{k: answer[k] for k in ("complete", "reason") if k in answer},

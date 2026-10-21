@@ -433,6 +433,7 @@ def _prepare_run(run_name: str):
 								generation_prompt=shot.get("generation_prompt"),
 								duration_seconds=shot.get("duration_seconds"),
 								image_prompt=shot.get("image_prompt"),
+								keyframe_artifact=shot.get("keyframe_artifact"),
 								setting_prompt=shot.get("setting_prompt"),
 								character_mode=shot.get("character_mode"),
 								views_json=shot.get("views_json"),

@@ -179,7 +179,15 @@ def preview_workbook(workbook_file):
 
 @frappe.whitelist()
 def create_project_from_brief(
-	project_name=None, video_idea=None, workbook_file=None, demo_name=None, references=None, format=None
+	project_name=None,
+	video_idea=None,
+	workbook_file=None,
+	demo_name=None,
+	references=None,
+	format=None,
+	auto_script=False,
+	variants=1,
+	auto_render=True,
 ):
 	"""Create a project from the client's inputs and report what is still missing.
 
@@ -191,6 +199,9 @@ def create_project_from_brief(
 	from joymedia.services.intake.assets import create_media_asset
 
 	references = frappe.parse_json(references) if isinstance(references, str) else (references or [])
+	auto_script = str(auto_script).lower() in {"1", "true", "yes", "on"}
+	if auto_script and workbook_file:
+		frappe.throw(_("Automatic scripting and an authored workbook are separate input modes."))
 	if not isinstance(references, list):
 		frappe.throw(_("References must be a list."))
 	if format and format not in ("Landscape", "Portrait", "Square") and not format_preset(format):
@@ -227,6 +238,8 @@ def create_project_from_brief(
 			label = str(item.get("label") or "").strip() or str(item.get("file_name") or "reference")
 			# Without a role the Project Reference controller classifies the image from its label.
 			role = item.get("role") if item.get("role") in ROLES else infer_reference_role(label)
+			if auto_script and role == "General":
+				role = "Product"
 			file_doc = frappe.get_doc("File", item["file_name"])
 			if str(file_doc.file_name or "").lower().endswith(".pdf"):
 				# A PDF (a product sheet, a brand book): its usable pictures become references, roles guessed per page.
@@ -244,7 +257,14 @@ def create_project_from_brief(
 			asset = create_media_asset(
 				label, ROLE_CATEGORY[role], file_url=file_doc.file_url, file_name=file_doc.name
 			)
-			select_project_asset(project.name, asset["media_asset"], role, label)
+			select_project_asset(
+				project.name,
+				asset["media_asset"],
+				role,
+				label,
+				identity_key=item.get("identity_key")
+				or (role.lower() if auto_script and role in {"Product", "Character", "Person"} else None),
+			)
 			added.append({"label": label, "role": role})
 		from joymedia.services.intake.references import apply_sheet_references
 
@@ -257,8 +277,16 @@ def create_project_from_brief(
 		frappe.delete_doc("Media Project", project.name, force=True, ignore_permissions=True)
 		frappe.db.commit()
 		raise
+	result = {"project": project.name, "references": added, "readiness": get_project_readiness(project.name)}
+	if auto_script:
+		from joymedia.api.creative import create_product_batch
+
+		project.reload()
+		result["creative_batch"] = create_product_batch(
+			project.name, count=variants, auto_render=auto_render, direction=video_idea, aspect_ratio=format
+		)
 	frappe.db.commit()
-	return {"project": project.name, "references": added, "readiness": get_project_readiness(project.name)}
+	return result
 
 
 def _sheet_characters(project):

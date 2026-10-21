@@ -31,7 +31,7 @@ build-backend = "flit_core.buildapi"
 packages = ["ffmpeg"]
 
 [tool.ruff]
-extend-exclude = ["joymedia/vendor/camerapath"]
+extend-exclude = ["joymedia/vendor/camerapath", "joymedia/vendor/open_storyline"]
 line-length = 110
 target-version = "py314"
 
