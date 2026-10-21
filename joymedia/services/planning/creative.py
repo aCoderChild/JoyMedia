@@ -7,6 +7,7 @@ Creative output is validated input to the ordinary workbook production path.
 import io
 import json
 import math
+import re
 
 import frappe
 
@@ -23,6 +24,11 @@ CREATIVE_INVARIANTS = (
 	"Name every ordinary prop and action target before use. Non-final shots advance tangible object/action state, not prolonged looking or posing. "
 	"A real change of material form, object location or contact is tangible progress. The final branded presentation may hold briefly. "
 	"Use purposeful coverage and action-driven phase timings, with camera behavior derived from semantic structure."
+)
+
+UNANCHORED_PHYSICAL_EFFECT = re.compile(
+	r"\b(?:water|liquid|spill|stain|soak|absorb|wet|dip|pour|rinse|tear|stretch|break)\b",
+	re.I,
 )
 
 
@@ -356,7 +362,12 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 	)
 
 	error, latest_script = "", None
-	for _attempt in range(3):
+	for _attempt in range(6):
+		if _attempt == 3:
+			# Repairs to an invalid causal premise often preserve the same bad action
+			# chain. Allow one fresh proposal before stopping the bounded job.
+			latest_script = None
+			error = "\nThe prior concept remained invalid after three repairs. Write a new premise and action chain that follows every invariant."
 		request_prompt = prompt + error
 		if latest_script is not None:
 			# Edit the complete latest screenplay, rather than asking the creative
@@ -488,6 +499,14 @@ def validate_script(script, inventory, constraints):
 
 		if any(without_camera(phase["action"]).strip() != phase["action"].strip() for phase in phases):
 			raise ValueError("Move camera movement out of Action; describe only the subject's visible state or action in each timed phase.")
+		if (
+			"action_reference_observations" in constraints
+			and not constraints["action_reference_observations"]
+			and UNANCHORED_PHYSICAL_EFFECT.search(scene["action"])
+		):
+			raise ValueError(
+				"A fluid, stain or material-stress effect needs a supplied action reference; choose a directly visible product-handling action instead."
+			)
 		for key, choices in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
 			if scene.get(key) not in choices:
 				raise ValueError("Unsupported " + key + ".")
