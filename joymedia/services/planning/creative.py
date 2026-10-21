@@ -27,7 +27,11 @@ CREATIVE_INVARIANTS = (
 )
 
 UNANCHORED_PHYSICAL_EFFECT = re.compile(
-	r"\b(?:water|liquid|spill|stain|soak|absorb|wet|dip|pour|rinse|tear|stretch|break)\b",
+	r"\b(?:water|liquid|spill|stain|dust|dirt|grime|clean|polish|soak|absorb|wet|dip|pour|rinse|tear|stretch|break)\w*\b",
+	re.I,
+)
+ANONYMOUS_HUMAN = re.compile(
+	r"\b(?:an?|the)\s+(?:(?:off[- ]screen|unseen|human)\s+){0,2}(?:hand|arm|person|human|man|woman)\b",
 	re.I,
 )
 PASSIVE_OPENING = re.compile(r"\b(?:seen|look|looks|looking|spot|spots|smile|smiles|nod|nods|sit|sits|sitting|stand|stands|standing|hold|holds|holding)\b", re.I)
@@ -537,8 +541,10 @@ def validate_script(script, inventory, constraints):
 			and UNANCHORED_PHYSICAL_EFFECT.search(scene["action"])
 		):
 			raise ValueError(
-				"A fluid, stain or material-stress effect needs a supplied action reference; choose a directly visible product-handling action instead."
+				"A cleaning, fluid or material-stress effect needs a supplied action reference; choose a directly visible product-handling action instead."
 			)
+		if not any(item["role"] == "Person" for item in inventory) and ANONYMOUS_HUMAN.search(scene["action"]):
+			raise ValueError("An anonymous human limb or actor is not among the supplied references; use a declared visible subject or the product alone.")
 		if scene_index < 2 and PASSIVE_OPENING.search(scene["action"]) and not TANGIBLE_ACTION.search(scene["action"]):
 			raise ValueError(
 				"The opening cannot consist only of looking, posing or holding; start with a visible object action or material state change."
