@@ -62,6 +62,14 @@ def compute_plan_signature(project_name):
 	# Keep legacy signatures stable when no Motion video is selected.
 	if camera_references:
 		payload["camera_references"] = camera_references
+	uses = [
+		{"asset_version": row.asset_version, "use": row.motion_reference_use}
+		for row in camera_project.get("selected_media") or []
+		if row.reference_role == "Motion"
+		and row.get("motion_reference_use") not in (None, "", "Camera and actions")
+	]
+	if uses:
+		payload["motion_reference_uses"] = uses
 	return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 

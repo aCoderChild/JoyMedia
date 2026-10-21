@@ -372,3 +372,16 @@ shared policy chooses its camera behavior from structure. Opening references mus
 show the row's actual starting state. Keep approved opening views in References
 and bind them through the workbook's opening/ending columns so a later import can
 reproduce the same controls.
+
+Product-only creative batches use the normal workbook importer and generation
+pipeline. A gallery represents views of an identity, not additional actors or a
+fixed number of shots. The writer can choose a supplied view per scene; native
+reference binding retains that image through planning. Bulk image upload uses
+Frappe UI's existing private-file uploader.
+
+Motion references have an explicit purpose: camera, subject actions, or both.
+Camera-only footage cannot supply subject action captions, and action-only footage
+cannot override camera grammar. Source-hashed editorial corrections preserve the
+original machine captions and record limitations; neither caption analysis nor
+editorial annotation qualifies physical correctness. Previous intended end state
+is passed into timed-sheet planning so persistent props do not silently reset.

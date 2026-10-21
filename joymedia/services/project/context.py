@@ -506,6 +506,7 @@ def _get_project_selected_assets(project):
 				or getattr(selection, "reference_key", None)
 				or "",
 				reference_role=selection.reference_role or "General",
+				motion_reference_use=getattr(selection, "motion_reference_use", None) or "Camera and actions",
 				label=selection.label or "",
 				relative_size=float(getattr(selection, "relative_size", None) or 1),
 				asset_name=asset.asset_name,

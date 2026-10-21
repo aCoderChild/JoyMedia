@@ -66,6 +66,25 @@ class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
 
+	def test_gallery_views_remain_one_identity_and_can_be_selected_by_scene(self):
+		inventory = [
+			{
+				"key": "front",
+				"role": "Product",
+				"identity": "one_product",
+				"views": [{"key": "front"}, {"key": "back"}],
+			}
+		]
+		script = sample_script()
+		for scene in script["scenes"]:
+			scene["products"] = ["back"]
+		self.assertEqual(
+			["back"], validate_script(script, inventory, self.constraints)["scenes"][0]["products"]
+		)
+		script["scenes"][0]["products"] = ["front", "back"]
+		with self.assertRaisesRegex(ValueError, "one view per identity"):
+			validate_script(script, inventory, self.constraints)
+
 	def test_generated_timing_reuses_frame_allocation_without_dropping_or_inventing_actions(self):
 		from joymedia.services.planning.creative import fit_generated_timing
 		from joymedia.services.planning.durations import allocate_frames

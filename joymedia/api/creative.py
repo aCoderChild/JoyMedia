@@ -89,6 +89,7 @@ def create_product_batch(
 				"identity_key",
 				"asset_version",
 				"reference_role",
+				"motion_reference_use",
 				"label",
 				"relative_size",
 				"keep_rule",

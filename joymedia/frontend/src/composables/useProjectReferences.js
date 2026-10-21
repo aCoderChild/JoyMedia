@@ -75,6 +75,14 @@ export function useProjectReferences(projectName, onRefresh) {
     }
   }
 
+  async function updateMotionReferenceUse(asset, use) {
+    if (!asset?.asset_version) return;
+    try {
+      await call("joymedia.api.assets.set_motion_reference_use", { media_project: project(), asset_version: asset.asset_version, use });
+      if (onRefresh) await onRefresh();
+    } catch (err) { notify({ title: "Error", text: errorMessage(err, "Could not update reference use."), type: "error" }); }
+  }
+
   async function analyzeCameraReference() {
     try {
       await call("joymedia.api.assets.analyze_project_camera_references", { project_name: project() });
@@ -215,6 +223,7 @@ export function useProjectReferences(projectName, onRefresh) {
     addReference,
     updateReferenceRole,
     analyzeCameraReference,
+    updateMotionReferenceUse,
     updateReferenceIdentity,
     updateReferenceSize,
     removeReference,
