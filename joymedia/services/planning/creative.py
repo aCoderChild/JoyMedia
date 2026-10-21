@@ -269,18 +269,42 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		+ nonce
 	)
 
-	error = ""
+	error, latest_script = "", None
 	for _attempt in range(3):
+		request_prompt = prompt + error
+		if latest_script is not None:
+			# Edit the complete latest screenplay, rather than asking the creative
+			# writer to invent another story from a detached list of action quotes.
+			request_prompt = (
+				"Edit the supplied complete screenplay to fix the quoted defects. Keep its premise, "
+				"identities, format and duration; change only defective actions and their dependent "
+				"opening/continuity/result text. Preserve chronological prerequisites across scenes. "
+				"A later result must not be inserted into an earlier scene before acquisition/contact. "
+				"Mechanical staging notes belong in continuity_rules. Return the complete schema.\n"
+				+ "REFERENCE ROSTER: "
+				+ json.dumps(roster, ensure_ascii=False)
+				+ "\nCONSTRAINTS: "
+				+ json.dumps(
+					{k: v for k, v in constraints.items() if k != "unresolved_feedback"}, ensure_ascii=False
+				)
+				+ "\nLATEST SCREENPLAY: "
+				+ json.dumps(
+					{k: v for k, v in latest_script.items() if k != "timing_compilation"}, ensure_ascii=False
+				)
+				+ "\nDEFECTS TO REPAIR: "
+				+ error
+			)
 		result = _ask_planner(
-			prompt + error,
+			request_prompt,
 			system="You write complete multi-scene commercial scripts from visual product references. Return only the requested JSON, using exact enum values and reference keys.",
-			sampling_profile="creative_script",
+			sampling_profile="creative_script_repair" if latest_script is not None else "creative_script",
 			capability="writer",
 			response_schema=script_schema(inventory, constraints),
 		)
 		try:
 			script = fit_generated_timing(result, constraints["duration_seconds"], fps)
 			script = validate_script(script, inventory, constraints)
+			latest_script = script
 			findings = review_script_actions(
 				script,
 				roster,

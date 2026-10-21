@@ -261,7 +261,7 @@ class TestGeneratedScriptValidation(TestCase):
 				patch(
 					"joymedia.services.planning.production._ask_planner",
 					side_effect=lambda *a, **k: copy.deepcopy(sample_script()),
-				),
+				) as writer,
 				patch(
 					"joymedia.services.planning.creative.review_script_actions",
 					return_value={
@@ -285,6 +285,9 @@ class TestGeneratedScriptValidation(TestCase):
 				else:
 					with self.assertRaisesRegex(ValueError, "missing_prerequisite"):
 						draft_script(project, nonce="blocking-note")
+					self.assertIn("LATEST SCREENPLAY:", writer.call_args.args[0])
+					self.assertIn(sample_script()["scenes"][0]["visual_camera"], writer.call_args.args[0])
+					self.assertEqual("creative_script_repair", writer.call_args.kwargs["sampling_profile"])
 
 	def test_authored_geometry_timing_and_cast_remain_authoritative(self):
 		self.assertEqual(sample_script(), validate_script(sample_script(), self.inventory, self.constraints))
