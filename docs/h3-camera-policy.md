@@ -543,3 +543,10 @@ every current scene has an explicitly selected native take with matching generat
 lineage and unchanged direction. Active runs, missing or unrelated takes, changed
 direction and cancellation remain blocking. Failed attempts and their findings are
 preserved; this handoff does not grant release qualification.
+
+Narration may use the optional operator setting `joymedia_tts_proxy` for the
+existing Edge adapter when the application's network route returns no audio.
+This uses the upstream client's HTTP CONNECT option; it never changes dialogue,
+voice selection or the configured speech-workflow boundary. A deployment may
+use upstream `abhinavsingh/proxy.py` (BSD-3-Clause), bound to loopback and reached
+through its existing SSH transport. No relay address belongs in a screenplay.
