@@ -361,7 +361,11 @@ def _discard_inferred_camera(project, raw):
 
 
 def _apply_camera_profile(project, shot, plan):
-	from joymedia.services.planning.camera import camera_planning_rules, infer_cinematic_intent
+	from joymedia.services.planning.camera import (
+		camera_planning_rules,
+		infer_cinematic_intent,
+		reference_camera_grammar,
+	)
 
 	if camera_planning_rules(project):
 		structure = plan.get("motion_plan", {}).get("shot_structure")
@@ -374,6 +378,7 @@ def _apply_camera_profile(project, shot, plan):
 			structure,
 			opening=int(shot.shot_number or 0) == 1,
 			closing=int(shot.shot_number or 0) == count,
+			grammar=reference_camera_grammar(project),
 		)
 	return plan
 

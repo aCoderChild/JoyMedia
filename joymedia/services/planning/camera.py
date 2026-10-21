@@ -28,19 +28,84 @@ settle before the final hold. Cinematic energy means purposeful movement, not co
 def camera_planning_rules(project):
 	from joymedia.services.intake.references import brand
 
-	return (
-		CINEMATIC_PLANNING_RULES
-		if str(brand(project).get("camera_style") or "").strip().lower() == "cinematic"
-		else ""
+	if str(brand(project).get("camera_style") or "").strip().lower() != "cinematic":
+		return ""
+	grammar = reference_camera_grammar(project)
+	if not grammar:
+		return CINEMATIC_PLANNING_RULES
+	return CINEMATIC_PLANNING_RULES + (
+		"\nREFERENCE CINEMATOGRAPHY (analysis of supplied sources; not an uploaded video channel):\n"
+		+ "\n".join(grammar["notes"])
+		+ "\nThe reference grammar owns movement preferences by narrative stage. "
+		"Keep contact readable and preserve action-axis continuity between the reviewed boundary images."
 	)
 
 
-def infer_cinematic_intent(structure, *, opening=False, closing=False):
+def reference_camera_grammar(project):
+	"""Authored global reference analysis; no product, filename or model defaults."""
+	from joymedia.services.intake.references import brand
+
+	return normalize_camera_grammar(brand(project).get("camera_grammar"))
+
+
+def normalize_camera_grammar(value):
+	from joymedia.services.planning.shot_structure import STAGES
+
+	if value in (None, ""):
+		return None
+	if isinstance(value, str):
+		try:
+			value = json.loads(value)
+		except (TypeError, ValueError) as exc:
+			raise ValueError("Camera reference grammar must be a JSON object.") from exc
+	if (
+		not isinstance(value, dict)
+		or set(value) != {"version", "sources", "notes", "moves"}
+		or type(value["version"]) is not int
+		or value["version"] != 1
+	):
+		raise ValueError("Camera reference grammar requires version, sources, notes and moves.")
+	sources, notes, moves = value["sources"], value["notes"], value["moves"]
+	if not isinstance(sources, list) or not 1 <= len(sources) <= 8:
+		raise ValueError("Camera reference grammar requires bounded source provenance.")
+	for row in sources:
+		if (
+			not isinstance(row, dict)
+			or set(row) != {"name", "sha256"}
+			or not isinstance(row["name"], str)
+			or not 1 <= len(row["name"]) <= 256
+			or not isinstance(row["sha256"], str)
+			or not re.fullmatch(r"[0-9a-f]{64}", row["sha256"])
+		):
+			raise ValueError("Camera reference sources require a name and immutable SHA256.")
+	if (
+		not isinstance(notes, list)
+		or not 1 <= len(notes) <= 16
+		or any(not isinstance(note, str) or not 1 <= len(note) <= 1200 for note in notes)
+		or not isinstance(moves, dict)
+		or not moves
+		or set(moves) - STAGES
+	):
+		raise ValueError("Camera grammar requires bounded reference notes and narrative-stage moves.")
+	parsed = {stage: camera_intent(intent) for stage, intent in moves.items()}
+	if any(intent is None for intent in parsed.values()):
+		raise ValueError("Camera grammar moves require a camera intent object.")
+	return {
+		"version": 1,
+		"sources": [dict(row) for row in sources],
+		"notes": list(notes),
+		"moves": parsed,
+	}
+
+
+def infer_cinematic_intent(structure, *, opening=False, closing=False, grammar=None):
 	"""Deterministic purpose-to-move grammar after semantic shot planning."""
 	stage, framing, motion = (structure[k] for k in ("stage", "framing", "subject_motion"))
 	precision = stage in {"grip", "extract", "unfold", "inspect", "detail"} or framing == "extreme_close_up"
 	if precision:
 		behavior, purpose, energy = "locked", "demonstrate", "measured"
+	elif grammar and stage in grammar["moves"]:
+		return dict(grammar["moves"][stage])
 	elif motion == "locomotion":
 		behavior, purpose, energy = "tracking_backward", "follow", "measured"
 	elif opening and framing in {"wide", "full", "medium", "medium_close_up"}:

@@ -467,6 +467,15 @@ BRAND_FIELDS = {
 		},
 		"example": {"vi": "cinematic", "en": "cinematic"},
 	},
+	"camera_grammar": {
+		"label": {"vi": "Ngữ pháp máy quay tham chiếu", "en": "Camera reference grammar"},
+		"names": ("ngữ pháp máy quay tham chiếu", "camera reference grammar"),
+		"hint": {
+			"vi": "JSON: nguồn tham chiếu, nguyên tắc dựng và chuyển động theo vai trò cảnh.",
+			"en": "JSON: reference sources, editing notes and moves by narrative stage.",
+		},
+		"example": {"vi": "", "en": ""},
+	},
 	"claims": {
 		"label": {"vi": "Công dụng đã xác nhận", "en": "Approved claims"},
 		"names": ("công dụng đã xác nhận", "công dụng", "approved claims", "claims", "reasons to believe"),

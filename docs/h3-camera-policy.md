@@ -28,6 +28,19 @@ Ref2VA weights and valid references do not establish release qualification.
 Failed or uncertain candidates retain their evidence and prior selected takes.
 The running Shera qualification is recorded separately from code verification.
 
+The Brand sheet may also contain `Camera reference grammar`, a version-1 JSON
+object with `sources` (name and SHA256), `notes` (observed editing/camera rules),
+and `moves` (narrative stage to validated camera intent). This is authored
+reference analysis, not an uploaded motion-reference channel. Stage preferences
+can select an arc for an introduction or a pull-back for a reaction; precision
+contact and extreme close-ups retain their stable demonstration coverage.
+Arc and pull-back still require both reviewed boundary images and explicit
+reframing permission. Source provenance alone never authorizes a move or proves
+physical correctness. Review both endpoints for connected furniture, plausible
+seated support and consistent anatomy before animation, then review the actual
+rendered motion. A defective starting frame must be replaced along with its
+endpoint; a corrected endpoint cannot repair invalid opening geometry.
+
 Implementation boundaries and deployment checks are in [architecture.md](architecture.md).
 The sections below retain earlier policy and qualification context.
 
