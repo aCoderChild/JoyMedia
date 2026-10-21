@@ -129,27 +129,27 @@ def keyframe_spec():
 	}
 
 
-def _register_keyframe():
+def _register_keyframe(*, graph=GRAPH, spec=None, workflow_key=WORKFLOW_KEY):
 	"""The latest klein keyframe workflow whose graph and specification are exactly the shipped ones, else a new version."""
 	name = frappe.db.get_value(
-		"Generation Workflow", {"workflow_key": WORKFLOW_KEY}, "name", order_by="version_number desc"
+		"Generation Workflow", {"workflow_key": workflow_key}, "name", order_by="version_number desc"
 	)
-	spec = keyframe_spec()
+	spec = keyframe_spec() if spec is None else spec
 	if name:
 		stored = frappe.db.get_value(
 			"Generation Workflow", name, ["execution_spec", "workflow_json"], as_dict=True
 		)
 		if (
-			json.loads(stored.workflow_json) == json.loads(GRAPH.read_text())
+			json.loads(stored.workflow_json) == json.loads(graph.read_text())
 			and json.loads(stored.execution_spec) == spec
 		):
 			return name
 	doc = frappe.get_doc(
 		{
 			"doctype": "Generation Workflow",
-			"workflow_key": WORKFLOW_KEY,
+			"workflow_key": workflow_key,
 			"adapter_key": "comfyui_generic",
-			"workflow_json": GRAPH.read_text(),
+			"workflow_json": graph.read_text(),
 			"execution_spec": json.dumps(spec),
 		}
 	)

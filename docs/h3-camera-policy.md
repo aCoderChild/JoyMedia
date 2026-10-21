@@ -56,6 +56,16 @@ endpoint; a corrected endpoint cannot repair invalid opening geometry.
 
 Implementation boundaries and deployment checks are in [architecture.md](architecture.md).
 
+An optional base image-edit profile reuses the same native image registration,
+multi-reference bindings and video stage. Its graph is adapted from Comfy-Org's
+`image_flux2_klein_image_edit_4b_base.json`: both CFG branches receive the same
+reference latents, with the upstream sampler settings kept in workflow JSON.
+`register_flux2_klein_base_pipeline.execute(video_workflow=...)` registers an
+opt-in version without promoting it. The adjacent model manifest records the
+upstream revision, source, size and SHA256. Validate installed weights and actual
+scene results before selecting that profile; changing a sampler does not prove
+physics, printed artwork retention or compliance with the requested action.
+
 ## Reference-video analysis integration
 
 Inferred reference preferences now resolve against available boundaries before

@@ -1,0 +1,14 @@
+{
+  "model": "flux-2-klein-base-4b-fp8.safetensors",
+  "size": 4089498488,
+  "sha256": "44bab3a86fe98b85d21dd2a4729ebdc3ae51fb8a39f76e457e18c724219e6840",
+  "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4b-fp8/resolve/103db268c10d4d3921101b46057671f9ac460da6/flux-2-klein-base-4b-fp8.safetensors",
+  "license": "Apache-2.0",
+  "upstream_template": {
+    "repository": "https://github.com/Comfy-Org/workflow_templates",
+    "revision": "d0e41fe5423f93db5b5872cf273d7b1af8aa68bc",
+    "path": "templates/image_flux2_klein_image_edit_4b_base.json",
+    "sha256": "e66871102ee6614be8d70b5414536da4c8ef7b0fd13580f2e36b69b2f56d2820"
+  },
+  "adaptation": "Reuse native multi-reference bindings and full FLUX.2 VAE; reference latents condition both CFG branches. No deployment promotion."
+}
