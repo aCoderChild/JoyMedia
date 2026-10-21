@@ -144,12 +144,12 @@ def infer_cinematic_intent(structure, *, opening=False, closing=False, grammar=N
 	"""Deterministic purpose-to-move grammar after semantic shot planning."""
 	stage, framing, motion = (structure[k] for k in ("stage", "framing", "subject_motion"))
 	precision = stage in {"grip", "extract", "unfold", "inspect", "detail"} or framing == "extreme_close_up"
-	if precision:
+	if motion == "locomotion" and framing != "extreme_close_up":
+		behavior, purpose, energy = "tracking_backward", "follow", "measured"
+	elif precision:
 		behavior, purpose, energy = "locked", "demonstrate", "measured"
 	elif grammar and stage in grammar["moves"]:
 		return dict(grammar["moves"][stage])
-	elif motion == "locomotion":
-		behavior, purpose, energy = "tracking_backward", "follow", "measured"
 	elif opening and framing in {"wide", "full", "medium", "medium_close_up"}:
 		behavior, purpose, energy = "push_in", "hook", "brisk"
 	elif (stage == "feel" and framing in {"wide", "full", "medium", "medium_close_up"}) or closing:

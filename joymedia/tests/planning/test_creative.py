@@ -376,7 +376,11 @@ class TestGeneratedScriptValidation(TestCase):
 				grounded_contract(base, bad, "The actor acts on a wooden table.")
 
 	def test_inferred_reveal_uses_available_tracking_without_changing_explicit_controls(self):
-		from joymedia.services.planning.camera import camera_plan, executable_inferred_intent
+		from joymedia.services.planning.camera import (
+			camera_plan,
+			executable_inferred_intent,
+			infer_cinematic_intent,
+		)
 
 		structure = {
 			"stage": "establish",
@@ -389,6 +393,11 @@ class TestGeneratedScriptValidation(TestCase):
 		resolved = executable_inferred_intent(preferred, structure, set())
 		self.assertEqual("tracking_backward", resolved["behavior"])
 		self.assertEqual("arc", preferred["behavior"])
+		# A coarse extraction label must not lock a genuinely travelling subject
+		# out of frame; explicit camera_motion=locked remains authoritative below.
+		self.assertEqual(
+			"tracking_backward", infer_cinematic_intent(dict(structure, stage="extract"))["behavior"]
+		)
 		shot = {
 			"shot_number": 1,
 			"motion_plan_json": {"shot_structure": structure, "camera_intent": resolved},

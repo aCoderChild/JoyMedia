@@ -459,7 +459,7 @@ def _image_reference_roles(references):
 	parts = []
 	if "product" in roles:
 		parts.append(
-			"Product references control the advertised object's geometry, complete visible artwork and material in the authored pose. Products incidentally visible in other reference roles must not override this design or introduce a different fold or crop."
+			"Product references control the advertised object's geometry, complete visible artwork and material in the authored pose. Characters depicted on packaging remain flat printed artwork, never additional physical actors. Products incidentally visible in other reference roles must not override this design or introduce a different fold or crop."
 		)
 	if roles & {"person", "character"}:
 		parts.append(
@@ -1128,7 +1128,12 @@ def _with_opening_staging(prompt, shot):
 		if contract:
 			plan["scene_contract"] = contract
 	staging = opening_instruction(plan, shot.get("duration_seconds"))
-	prompt = f"{prompt}\n\n{staging}" if staging else prompt
+	prompt = (
+		f"{staging}\nDraw only this opening state, before the first timed action. "
+		"Do not advance it to a later action or result described in the scene context below.\n\n" + prompt
+		if staging
+		else prompt
+	)
 	from joymedia.services.planning.shot_structure import framing_text, structure_for, visibility_instruction
 
 	structure = structure_for(shot)
@@ -1149,6 +1154,9 @@ def _draw_prompt(shot, project):
 	from joymedia.services.planning.roles import family_role, role_look
 
 	brief = sheet_brief(project)
+	from joymedia.services.scene.contract import opening_instruction
+
+	structured_opening = opening_instruction(shot.get("motion_plan_json"), shot.get("duration_seconds"))
 
 	# The reviewed still-frame direction is an independent control. Falling back
 	# to the motion paragraph first made first-frame edits silently ineffective.
@@ -1251,7 +1259,7 @@ def _draw_prompt(shot, project):
 		+ _no_outsiders(shot, project)
 		+ (f"Cast: {cast}. " if cast else "")
 		+ "Each character is exactly the subject of its picture: preserve its face, colours, markings, accessories, "
-		"body design and surface finish (a smooth surface stays smooth; never add fur, hair or texture it does not have). Characters perform only the action in this scene, not the pose or objects in their reference image. "
+		"body design and surface finish (a smooth surface stays smooth; never add fur, hair or texture it does not have). Each cast identity appears once, in the authored opening pose, not the pose or objects in their reference image. Characters printed on product packaging stay flat artwork, not additional cast. Do not perform later scene actions. "
 		+ size_rule
 		+ product_note
 		+ f"The place: {setting}"
@@ -1261,7 +1269,7 @@ def _draw_prompt(shot, project):
 			else ""
 		)
 		+ ". "
-		+ (f"In this scene: {scene_rules(shot)}. " if scene_rules(shot) else "")
+		+ (f"In this scene: {scene_rules(shot)}. " if not structured_opening and scene_rules(shot) else "")
 		+ (f"Must stay as is: {keep_rules(shot, project)}. " if keep_rules(shot, project) else "")
 		+ _mood(project)
 		+ "Natural, coherent lighting and composition."
