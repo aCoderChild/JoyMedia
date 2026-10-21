@@ -30,6 +30,8 @@ UNANCHORED_PHYSICAL_EFFECT = re.compile(
 	r"\b(?:water|liquid|spill|stain|soak|absorb|wet|dip|pour|rinse|tear|stretch|break)\b",
 	re.I,
 )
+PASSIVE_OPENING = re.compile(r"\b(?:seen|look|looks|looking|spot|spots|smile|smiles|nod|nods|sit|sits|sitting|stand|stands|standing|hold|holds|holding)\b", re.I)
+TANGIBLE_ACTION = re.compile(r"\b(?:pick|place|set|lift|grip|grab|pull|extract|unfold|fold|wipe|carry|turn|open|slide|tap|press|unwrap|wear|put|move|push|drop|rotate)\w*\b", re.I)
 
 
 def reference_inventory(project):
@@ -184,9 +186,6 @@ def script_schema(inventory, constraints):
 	)
 	if minimum_scenes > 12:
 		raise ValueError("The requested duration exceeds this workflow's automatic storyboard scene budget.")
-	# Capacity is a ceiling, not an editorial target. Reserve two further scene
-	# changes for brisk action/detail coverage when the twelve-scene budget allows.
-	minimum_scenes = min(12, minimum_scenes + 2)
 	root.update(
 		format={"const": constraints["aspect_ratio"]}
 		if constraints.get("aspect_ratio")
@@ -334,13 +333,14 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "
 		"Perform gestures promptly in real time. Each non-final shot needs at least two sequential visible actions within one coherent interaction; never a whole shot of noticing/looking. Only the advertised product or its material performs its function, never the actor body or an unrelated prop. "
 		"Propose positive relative scene durations and explicit chronological timed Action phases starting at zero, with no gaps. The application allocates exact frames to the requested total and rescales your phase timings. "
-		"Provide at least two more motivated scenes than the workflow's minimum frame-capacity count, up to the twelve-scene schema limit. The capacity limit is a ceiling, not the desired shot length. Use shorter action and detail cuts instead of stretching each scene to the cap. "
+		"Use the fewest purposeful scenes that fit the workflow's frame capacity. Add a cut only for a new physical action, product detail or distinct CTA; do not pad the film with looking, posing or repeated package holds. "
 		"Use bracketed start-end seconds for each phase. Choose timing from the actual action; do not reuse one equal-duration timing pattern throughout the film. "
 		"Allocate most runtime to distinct visible product interactions. Result inspection and final presentation must not become repeated long looking/nodding/holding scenes; combine a brief reaction with a tangible action and use one concise ending. "
 		"Only supplied actors may appear in prose AND cast: no humans when only a mascot is supplied. Choose the best supplied view key for each scene in cast/products, one view per identity. Gallery views are alternatives of one identity, never additional cast. "
 		"Reference observations supply action rhythms, never additional actors, products, claims or sounds. "
 		"Avoid applicable problems in unresolved feedback; historical scene numbers are not instructions to reuse an old story, and script writing never resolves feedback. Only state supplied approved claims. Ordinary props and a coherent location may be invented, but name them before use. "
 		"This is a product advertisement: give the real product or its directly handled material clear close coverage at acquisition, use and final presentation. Vary adjacent shot sizes with purpose; preserve the action axis; show printed product details in a stable readable view and clearly at the end. "
+		"Keep a mascot's weight on an established support surface; without an explicit supporting pose reference, stage it on the floor rather than sitting on a table or floating behind furniture. Do not translate or invent words printed on the product in Action; the image reference controls exact package print. "
 		"Classify each narrative_stage by its dominant job, not all establish. Use short purposeful beats, "
 		"allocate time to visible actions, and end promptly after the final branded composition reads. "
 		"Camera behavior is derived later from semantic stage/framing: do not put camera moves in Action. "
@@ -481,7 +481,7 @@ def validate_script(script, inventory, constraints):
 	if type(declared_duration) not in (int, float) or not math.isfinite(declared_duration):
 		raise ValueError("Declared script duration must be a finite number.")
 	total = 0.0
-	for scene in script["scenes"]:
+	for scene_index, scene in enumerate(script["scenes"]):
 		if not isinstance(scene, dict):
 			raise ValueError("Each scene must be an object.")
 		duration = scene.get("duration_seconds")
@@ -506,6 +506,10 @@ def validate_script(script, inventory, constraints):
 		):
 			raise ValueError(
 				"A fluid, stain or material-stress effect needs a supplied action reference; choose a directly visible product-handling action instead."
+			)
+		if scene_index < 2 and PASSIVE_OPENING.search(scene["action"]) and not TANGIBLE_ACTION.search(scene["action"]):
+			raise ValueError(
+				"The opening cannot consist only of looking, posing or holding; start with a visible object action or material state change."
 			)
 		for key, choices in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
 			if scene.get(key) not in choices:
