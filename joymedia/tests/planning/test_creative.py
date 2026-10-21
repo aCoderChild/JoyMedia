@@ -171,6 +171,15 @@ class TestGeneratedScriptValidation(TestCase):
 			validate_script(script, self.inventory, {**self.constraints, "action_reference_observations": ["observed spill contact"]}),
 		)
 
+	def test_unanchored_cleaning_and_anonymous_actor_are_rejected(self):
+		script = sample_script()
+		script["scenes"][0]["action"] = "[0-6s] The product wipes dust from a shelf."
+		with self.assertRaisesRegex(ValueError, "cleaning, fluid"):
+			validate_script(script, self.inventory, {**self.constraints, "action_reference_observations": []})
+		script["scenes"][0]["action"] = "[0-6s] An off-screen hand places the product on the table."
+		with self.assertRaisesRegex(ValueError, "anonymous human"):
+			validate_script(script, self.inventory, self.constraints)
+
 	def test_schema_descriptions_reach_model_context_as_well_as_the_decoder(self):
 		from joymedia.services.planning.production import _request_planner
 
