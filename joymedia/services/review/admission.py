@@ -28,6 +28,7 @@ def implementation_hash():
 			(root / name).read_bytes()
 			for name in (
 				"review/admission.py",
+				"review/recheck.py",
 				"review/canvas.py",
 				"review/consistency.py",
 				"runtime/sampling.py",

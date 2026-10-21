@@ -328,7 +328,13 @@ def _ensure_scene_free(project, shot):
 
 @frappe.whitelist(methods=["POST"])
 def retain_held_take_for_review(
-	project_name, shot_name, attempt_name, expected_current, expected_source_sha256, review_note
+	project_name,
+	shot_name,
+	attempt_name,
+	expected_current,
+	expected_source_sha256,
+	review_note,
+	review_artifact=None,
 ):
 	"""Keep action-qualified held footage as a separate, unselected review take.
 
@@ -353,12 +359,18 @@ def retain_held_take_for_review(
 		frappe.throw(_("Describe the evidence to inspect in this held take."))
 	attempt = frappe.get_doc("Generation Attempt", attempt_name)
 	task = frappe.get_doc("Generation Task", attempt.generation_task)
-	if task.shot != shot.name or attempt.status != "Failed" or task.status != "Failed":
+	terminal = {"Failed", "Cancelled"} if review_artifact else {"Failed"}
+	if task.shot != shot.name or attempt.status not in terminal or task.status not in terminal:
 		frappe.throw(_("Choose a held attempt from this scene."))
 	run = frappe.get_doc("Generation Run", task.generation_run)
-	if run.media_project != project.name or run.status != "Failed":
+	if run.media_project != project.name or run.status not in terminal:
 		frappe.throw(_("The held attempt does not belong to this failed project run."))
-	report = report_for(attempt.name)
+	original_report = report_for(attempt.name)
+	report = original_report
+	if review_artifact:
+		from joymedia.services.review.recheck import checked_recheck
+
+		report = checked_recheck(review_artifact, attempt.name, original_report)
 	if not report or not held_take_review_candidate(report):
 		frappe.throw(_("Resolve action, cast, identity or witnessed violations before retaining this take."))
 	artifact = frappe.get_doc(
@@ -404,6 +416,9 @@ def retain_held_take_for_review(
 		machine_status=report["status"],
 		machine_policy=report.get("policy"),
 		machine_findings=report["results"],
+		original_machine_status=(original_report or {}).get("status"),
+		original_machine_findings=(original_report or {}).get("results", []),
+		supplementary_review=review_artifact,
 		retained_by=frappe.session.user,
 		retained_at=str(frappe.utils.now_datetime()),
 		review_note=review_note.strip(),

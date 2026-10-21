@@ -789,6 +789,7 @@ def run_temporal_check(check, configured=None):
 							"verdict": {"type": "string", "enum": ["supported", "violated", "uncertain"]},
 							"frames": {
 								"type": "array",
+								"minItems": 1,
 								"maxItems": len(indices),
 								"items": {"type": "integer", "enum": list(indices)},
 							},
