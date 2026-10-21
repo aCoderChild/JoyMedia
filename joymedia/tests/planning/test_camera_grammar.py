@@ -51,6 +51,29 @@ class TestReferenceCameraGrammar(TestCase):
 		self.assertEqual("tracking_backward", intent["behavior"])
 		self.assertEqual("brisk", intent["energy"])
 
+	def test_free_composition_can_plan_reference_reveal_without_claiming_supplied_endpoints(self):
+		from joymedia.services.planning.camera import camera_plan, executable_inferred_intent
+
+		structure = {
+			"stage": "establish",
+			"framing": "wide",
+			"angle": "eye_level",
+			"subject_motion": "stationary",
+			"keep_visible": [],
+		}
+		intent = {"behavior": "arc", "allow_reframe": True, "purpose": "hook", "energy": "brisk"}
+		self.assertEqual("push_in", executable_inferred_intent(intent, structure, set())["behavior"])
+		self.assertEqual(
+			intent, executable_inferred_intent(intent, structure, set(), generated_composition=True)
+		)
+		shot = {"shot_number": 1, "motion_plan_json": {"shot_structure": structure, "camera_intent": intent}}
+		self.assertEqual("locked", camera_plan(shot, {})["behavior"])
+		generated = camera_plan(shot, {}, generated_composition=True)
+		self.assertEqual("arc", generated["behavior"])
+		self.assertIn("depth-dependent parallax", generated["direction"])
+		self.assertNotIn("reviewed viewpoints", generated["direction"])
+		self.assertIn("unverified", generated["framing_evidence"])
+
 	def test_invalid_profiles_are_rejected_instead_of_silently_falling_back(self):
 		bad = []
 		for field, value in [

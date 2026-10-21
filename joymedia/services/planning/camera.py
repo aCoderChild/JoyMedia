@@ -34,8 +34,9 @@ Grip, extraction, wiping, unfolding and material/contact inspection use locked d
 stage describes the narrative beat, not any incidental hand movement: establish for an opening,
 feel for an emotional response, hero for a final product presentation; extract only for extraction.
 Detail progression is motivated by what the viewer needs to see, not arbitrary shot-number alternation.
-A pull-back/reveal or arc requires reviewed opening AND ending references and allow_reframe=true;
-without both supplied endpoints choose a bounded push or locked frame, never invent unseen geometry.
+For a fixed opening image, pull-back/reveal or arc requires reviewed opening AND ending references
+and allow_reframe=true. A reference-only free-composition workflow instead generates the planned
+viewpoints and must have its actual resulting geometry and coverage reviewed after rendering.
 Keep product artwork, contact and required margins legible. Do not move to hide an interaction.
 No combined orbit+zoom+tilt or independent sliding background. Ease one continuous move in/out;
 settle before the final hold. Cinematic energy means purposeful movement, not constant movement.
@@ -161,14 +162,18 @@ def infer_cinematic_intent(structure, *, opening=False, closing=False, grammar=N
 	return {"behavior": behavior, "allow_reframe": False, "purpose": purpose, "energy": energy}
 
 
-def executable_inferred_intent(intent, structure, roles):
+def executable_inferred_intent(intent, structure, roles, *, generated_composition=False):
 	"""Resolve a reference preference using actual available controls, before approval.
 
 	An unanchored spatial reveal must not silently turn every new scene into a
 	static shot. Tracking preserves crop; an axial alternative still needs normal
 	framing assessment. Explicit user-authored intents retain the strict gate.
 	"""
-	if intent["behavior"] not in BOUNDARY_MOVES or {"first_frame", "last_frame"} <= set(roles):
+	if (
+		intent["behavior"] not in BOUNDARY_MOVES
+		or {"first_frame", "last_frame"} <= set(roles)
+		or (generated_composition and intent.get("allow_reframe"))
+	):
 		return intent
 	result = dict(intent, allow_reframe=False)
 	if structure["subject_motion"] == "locomotion":
@@ -261,7 +266,9 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 			closing=closing,
 			grammar=normalize_camera_grammar(project.get("camera_grammar")),
 		)
-		intent = executable_inferred_intent(intent, structure, roles)
+		intent = executable_inferred_intent(
+			intent, structure, roles, generated_composition=generated_composition
+		)
 	broad_presentation = bool(
 		structure
 		and intent
@@ -317,7 +324,9 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 		behavior = intent["behavior"]
 		if behavior in BOUNDARY_MOVES:
 			endpoints = {str(r.get("reference_role") or r.get("input_role") or "").lower() for r in refs}
-			if not intent["allow_reframe"] or not {"first_frame", "last_frame"} <= endpoints:
+			if not intent["allow_reframe"] or (
+				not generated_composition and not {"first_frame", "last_frame"} <= endpoints
+			):
 				return {
 					"version": 4,
 					"behavior": "locked",
@@ -375,7 +384,12 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 					f" Use a {intent.get('energy', 'measured')} travel rhythm with smooth acceleration and deceleration, "
 					"then settle at the reviewed final composition. Keep the authored subject action at its specified pace."
 				)
-			if behavior == "push_in" and not intent["allow_reframe"] and not anchored_push:
+			if (
+				behavior == "push_in"
+				and not intent["allow_reframe"]
+				and not anchored_push
+				and not generated_composition
+			):
 				limit = 6 if broad_presentation and intent.get("energy") in {"measured", "brisk"} else 2
 				duration = float(shot.get("duration_seconds") or 5)
 				settle = (
@@ -388,11 +402,17 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 					f"Ease in, travel with a {intent.get('energy', 'slow')} rhythm, and ease to a complete stop by {settle:g} seconds; hold the final composition through the end. "
 					"Keep every required edge and contact inside the frame. The room is stationary; near and far landmarks show continuous depth-dependent parallax. No lateral drift, tilt, orbit, digital zoom pulse or focus pull."
 				)
+			direction = directions[behavior]
+			if generated_composition:
+				# A generated composition has planned viewpoints, not supplied or
+				# approved boundary images. Never invent reference-control claims.
+				for anchored in ("reviewed", "approved", "supplied"):
+					direction = direction.replace(anchored, "planned")
 			return {
 				"version": 2,
 				"behavior": behavior,
 				"framing": framing,
-				"direction": directions[behavior],
+				"direction": direction,
 				"reason": "Structured camera intent in the approved plan; never parsed from storyboard prose.",
 				"product_focus": product,
 				"closing": closing,

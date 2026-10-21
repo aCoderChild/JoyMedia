@@ -164,8 +164,17 @@ def assign_places(project, shots):
 	"""Give each scene the picture of its place: the whole room, or the close view for a close-up. Returns how many
 	scenes changed."""
 	from joymedia.services.review.comments import _reseal_approved_plan
+	from joymedia.services.workflows.capabilities import controls
 
-	project = _ensure_close_views(project, shots)
+	free_composition = bool(
+		project.get("workflow")
+		and "reference_only" in controls(frappe.get_doc("Generation Workflow", project.workflow))
+	)
+	# A free-composition renderer receives setting identity, not a fixed opening
+	# crop. The legacy centre crop can remove the actual support surface and
+	# misleadingly condition a product onto furniture elsewhere in the room.
+	if not free_composition:
+		project = _ensure_close_views(project, shots)
 	pictures = {
 		row.reference_key: row.asset_version for row in project.selected_media or [] if row.reference_key
 	}
@@ -175,7 +184,7 @@ def assign_places(project, shots):
 		if _own_environment(shot, places):
 			continue
 		key = place_key(project, shot.setting_prompt)
-		wanted = pictures.get(key if shows_the_room(shot) else f"{key}{CLOSE}")
+		wanted = pictures.get(key if free_composition or shows_the_room(shot) else f"{key}{CLOSE}")
 		current = [row for row in shot.generation_inputs or [] if row.asset_version in places]
 		if [row.asset_version for row in current] == ([wanted] if wanted else []):
 			continue
