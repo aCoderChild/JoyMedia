@@ -138,6 +138,7 @@ def prepare_batch(batch_name):
 				script = draft_script(
 					project,
 					nonce=variant["nonce"],
+					review_notes=request.get("review_notes", []),
 					previous=[v["script"]["logline"] for v in variants[:index] if v.get("script")],
 				)
 				if any(
@@ -169,21 +170,12 @@ def prepare_batch(batch_name):
 			if any(p.get("held_back") for p in plans):
 				raise ValueError("One or more scenes could not be planned faithfully.")
 			variant["plans"] = [{"shot": p["shot"], "notes": p.get("notes", [])} for p in plans]
-			if index == 0:
-				from joymedia.services.project.versions import set_working_edit
-
-				root = request["root_project"]
-				# A newer user choice takes precedence over automatic navigation.
-				with frappe.cache.lock(f"joymedia-creative:{batch.name}", timeout=180, blocking_timeout=10):
-					frappe.db.commit()
-					if frappe.db.get_value("Creative Batch", batch.name, "status") == "Cancelled":
-						return
-					frappe.db.sql("select name from `tabMedia Project` where name=%s for update", root)
-					if (frappe.db.get_value("Media Project", root, "current_edit") or root) == request[
-						"expected_current"
-					]:
-						set_working_edit(root, project.name, request["expected_current"])
-					frappe.db.commit()
+			if (
+				index == 0
+				and not request["auto_render"]
+				and not _select_variant(batch, request, project.name)
+			):
+				return
 			if not request["auto_render"]:
 				variant["status"] = "Script Ready"
 			else:
@@ -203,6 +195,24 @@ def prepare_batch(batch_name):
 		_queue_prepare(batch.name, variants)
 		frappe.db.commit()
 		return
+
+
+def _select_variant(batch, request, project_name):
+	"""Navigate only to a ready script/export, preserving a newer user choice."""
+	from joymedia.services.project.versions import set_working_edit
+
+	root = request["root_project"]
+	with frappe.cache.lock(f"joymedia-creative:{batch.name}", timeout=180, blocking_timeout=10):
+		frappe.db.commit()
+		if frappe.db.get_value("Creative Batch", batch.name, "status") == "Cancelled":
+			return False
+		frappe.db.sql("select name from `tabMedia Project` where name=%s for update", root)
+		if (frappe.db.get_value("Media Project", root, "current_edit") or root) == request[
+			"expected_current"
+		]:
+			set_working_edit(root, project_name, request["expected_current"])
+		frappe.db.commit()
+		return True
 
 
 def _start_keyframes(project, variant):
@@ -336,6 +346,10 @@ def advance_batch(batch_name, user=None):
 				and project.export_status == "Completed"
 				and project.current_output_asset_version
 			):
+				if index == 0 and not _select_variant(
+					batch, frappe.parse_json(batch.request_json), project.name
+				):
+					return
 				variant.update(
 					status="Completed",
 					output_asset_version=project.current_output_asset_version,

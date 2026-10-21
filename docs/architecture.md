@@ -166,3 +166,12 @@ holds; it does not certify the physics of a future render. Rejected scripts are
 rewritten through the same schema before any keyframe job is admitted.
 Native generation and finishing admission is committed inside the batch lock,
 so cancellation can observe and stop a newly admitted job before releasing control.
+
+Automatic batch requests also freeze unresolved owner feedback from the project
+family and current source-scene comments. The script writer and action editor see
+those findings alongside reference keep rules. Historical scene numbers are
+context, not a fixed script; copying a finding never marks it resolved.
+
+The current working edit changes automatically only when the requested review
+export is ready (or the script is ready in scripts-only mode). Failed or cancelled
+planning/rendering does not replace the viewer's currently selected video.

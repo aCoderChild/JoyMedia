@@ -66,12 +66,43 @@ class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
 
+	def test_planner_cache_does_not_reuse_another_configured_models_answer(self):
+		from joymedia.services.planning.production import _ask_planner
+
+		with (
+			patch(
+				"joymedia.services.runtime.endpoints.endpoint",
+				side_effect=[
+					frappe._dict(model="first", base_url="http://planner/v1"),
+					frappe._dict(model="second", base_url="http://planner/v1"),
+				],
+			),
+			patch(
+				"joymedia.services.planning.production._request_planner",
+				side_effect=[{"from": "first"}, {"from": "second"}],
+			) as planner,
+			patch("frappe.cache.get_value", return_value=None) as cache_read,
+			patch("frappe.cache.set_value"),
+		):
+			self.assertEqual({"from": "first"}, _ask_planner("same script request"))
+			self.assertEqual({"from": "second"}, _ask_planner("same script request"))
+		self.assertEqual(2, planner.call_count)
+		self.assertNotEqual(cache_read.call_args_list[0].args[0], cache_read.call_args_list[1].args[0])
+
 	def test_second_pass_rejects_missing_scene_evidence(self):
 		from joymedia.services.planning.creative import review_script_actions
 
-		with patch("joymedia.services.planning.production._ask_planner", return_value={"findings": []}):
+		with patch(
+			"joymedia.services.planning.production._ask_planner", return_value={"findings": []}
+		) as planner:
 			with self.assertRaisesRegex(ValueError, "each scene"):
-				review_script_actions(sample_script())
+				review_script_actions(
+					sample_script(),
+					[{"key": "mascot-reference", "role": "Character"}],
+					[{"text": "Maintain real contact", "source": "owner-note"}],
+				)
+		self.assertIn("mascot-reference", planner.call_args.args[0])
+		self.assertIn("Maintain real contact", planner.call_args.args[0])
 
 	def test_action_sources_share_bounded_context_in_chronological_order(self):
 		from joymedia.services.intake.action_reference import action_observations
@@ -303,6 +334,12 @@ class TestCreativeWorkflow(FrappeTestCase):
 		for count in (0, 21, True, "many"):
 			with self.subTest(count=count), self.assertRaises(ValueError):
 				self.batch(count)
+
+	def test_automatic_request_freezes_existing_owner_feedback(self):
+		note = {"source": "owner-feedback", "category": "Physics", "text": "Maintain visible tool contact."}
+		with patch("joymedia.api.creative._review_context", return_value=[note]):
+			batch = self.batch()
+		self.assertEqual([note], frappe.parse_json(batch.request_json)["review_notes"])
 
 	def test_generated_workbook_round_trips_through_the_existing_import_schema(self):
 		from joymedia.services.planning.workbook import read_workbook
