@@ -107,6 +107,8 @@ class TestGeneratedScriptValidation(TestCase):
 			{"duration_seconds": 30, "aspect_ratio": "9:16", "fps": 24, "max_scene_frames": 124},
 		)
 		self.assertEqual(6, schema["properties"]["scenes"]["minItems"])
+		action_rule = schema["properties"]["scenes"]["items"]["properties"]["action"]["description"]
+		self.assertIn("Combine approach/reach with acquisition", action_rule)
 
 	def test_passive_opening_requires_an_object_action(self):
 		script = sample_script()

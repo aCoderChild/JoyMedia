@@ -164,7 +164,7 @@ def script_schema(inventory, constraints):
 	scene["action"] = {
 		"type": "string",
 		"pattern": r"^\[[0-9]+(?:\.[0-9]+)?-[0-9]+(?:\.[0-9]+)?s\] [\s\S]+$",
-		"description": "Timed, tangible subject actions in order within one coherent interaction. Separate travel, acquisition and use into different shots. No camera or on-screen text commands here.",
+		"description": "Timed, tangible subject actions in order within one coherent interaction. Combine approach/reach with acquisition in one shot; separate acquisition, extraction and use when each completes a distinct action. No camera or on-screen text commands here.",
 	}
 	scene["visual_camera"] = {
 		**text,
@@ -358,7 +358,7 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Do not pour, stain, stress or otherwise test an unapproved product performance claim. When claims are limited, demonstrate directly visible handling, form and placement instead. "
 		+ unsupported_effect_rule
 		+ "Even when a performance claim is approved, choose an interaction whose contact, support and visible result the supplied reference views can plausibly anchor; without a suitable action view, favor simple handling over complex liquids or deforming materials. "
-		"Each shot has ONE coherent interaction and its immediate consequence. Travel, acquisition, extraction and use are different interactions: give them separate shots rather than compressing all into an opening. "
+		"Each shot has ONE coherent interaction and its immediate consequence. Combine travel/reach with acquisition in the same shot; separate acquisition, extraction and use into distinct completed interactions. "
 		"Every non-closing shot must FINISH its own interaction: a reach must end with a grip/lift in the same shot; a look must lead to handling in the same shot. A package described as already placed on a table is set dressing, not a completed actor action. Keep subsequent shots for the next distinct interaction. "
 		"For supplied Environment references use the exact reference key as place; the reference description controls that location. "
 		"Action scenes must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. A single near-ending product-detail shot may hold the original printed artwork long enough to read before a distinct final CTA. "
