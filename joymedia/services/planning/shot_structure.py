@@ -156,6 +156,10 @@ def visibility_instruction(structure, contract):
 		+ (
 			" Show their complete outlines and supporting surfaces in this broad view, with clear margins."
 			if structure["framing"] in {"wide", "full"}
-			else ""
+			else (
+				" Fill this detail view with the authored focal subject and contact area; include only the actor parts needed for the action, allowing the rest of the body outside the frame. The setting provides background depth rather than full-room coverage."
+				if structure["framing"] in {"close_up", "extreme_close_up"}
+				else ""
+			)
 		)
 	)

@@ -303,7 +303,11 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 				"version": 3,
 				"behavior": "locked",
 				"framing": framing,
-				"direction": "The camera holds its supplied position, focal length and focus throughout the handling action. No pan, tilt, orbit, zoom or rack focus. "
+				"direction": (
+					f"Choose the authored {framing} starting position and working distance around the contact area, independently of the framing in the reference images. Then hold that generated camera position, focal length and focus throughout the handling action. No pan, tilt, orbit, zoom or rack focus. "
+					if generated_composition
+					else "The camera holds its supplied position, focal length and focus throughout the handling action. No pan, tilt, orbit, zoom or rack focus. "
+				)
 				+ visibility_instruction(structure, contract),
 				"reason": "Structured manipulation prioritizes readable contact and object-state changes.",
 				"product_focus": product,
