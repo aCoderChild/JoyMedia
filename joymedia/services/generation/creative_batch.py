@@ -259,6 +259,19 @@ def advance_batches():
 			)
 
 
+def _keyframe_ready(shot):
+	if shot.consistency_status == "Passed":
+		return True
+	if shot.get("keyframe_status") != "Approved":
+		return False
+	from joymedia.services.keyframes.stage import approved_keyframe_task
+
+	# Honor an explicit native frame approval only while its artifact/signature
+	# still matches. Preserve machine findings; approval is permission to animate,
+	# not a fabricated physics pass or release approval.
+	return bool(approved_keyframe_task(frappe.get_doc("Shot", shot.name)))
+
+
 def advance_batch(batch_name, user=None):
 	from joymedia.services.audio.plan import build_audio_plan
 	from joymedia.services.audio.speech import generate_voiceover
@@ -286,18 +299,22 @@ def advance_batch(batch_name, user=None):
 				shots = frappe.get_all(
 					"Shot",
 					filters={"media_project": project.name, "is_removed": 0},
-					fields=["name", "keyframe_artifact", "consistency_status", "consistency_notes"],
+					fields=[
+						"name",
+						"keyframe_artifact",
+						"keyframe_status",
+						"consistency_status",
+						"consistency_notes",
+					],
 				)
 				if not shots or any(not s.keyframe_artifact for s in shots):
 					raise ValueError("A keyframe job failed or did not produce an image.")
 				if any(s.consistency_status in {"Checking", "Redrawing"} for s in shots):
 					continue
-				if any(s.consistency_status != "Passed" for s in shots):
+				if any(not _keyframe_ready(s) for s in shots):
 					raise ValueError(
 						"Keyframes need review: "
-						+ "; ".join(
-							s.consistency_notes or s.name for s in shots if s.consistency_status != "Passed"
-						)
+						+ "; ".join(s.consistency_notes or s.name for s in shots if not _keyframe_ready(s))
 					)
 				for shot in shots:
 					with frappe.cache.lock(

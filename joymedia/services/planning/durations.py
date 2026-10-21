@@ -18,10 +18,26 @@ def _timeline_fps(workflow):
 	return fps if fps > 0 else DEFAULT_TIMELINE_FPS
 
 
-def allocate_frames(weights, total_frames):
+def allocate_frames(weights, total_frames, *, maximum=None):
 	"""Shared largest-remainder allocation, preserving order and at least one frame."""
 	if not weights or total_frames < len(weights) or any(not math.isfinite(w) or w <= 0 for w in weights):
 		raise ValueError("Positive timing weights need at least one frame per scene.")
+	if maximum is not None:
+		if type(maximum) is not int or maximum < 1 or total_frames > len(weights) * maximum:
+			raise ValueError("Provide enough scenes for the workflow's declared frame capacity.")
+		pending, remaining, result = list(range(len(weights))), total_frames, [0] * len(weights)
+		while pending:
+			proposal = allocate_frames([weights[i] for i in pending], remaining)
+			capped = [i for i, count in zip(pending, proposal, strict=True) if count > maximum]
+			if not capped:
+				for i, count in zip(pending, proposal, strict=True):
+					result[i] = count
+				break
+			for i in capped:
+				result[i] = maximum
+				pending.remove(i)
+				remaining -= maximum
+		return result
 	raw = [total_frames * weight / sum(weights) for weight in weights]
 	planned = [max(1, int(value)) for value in raw]
 	remaining = total_frames - sum(planned)

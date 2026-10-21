@@ -66,6 +66,21 @@ class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
 
+	def test_frame_review_resume_requires_current_native_approval_without_erasing_findings(self):
+		from joymedia.services.generation.creative_batch import _keyframe_ready
+
+		shot = frappe._dict(name="shot", consistency_status="Needs Review", keyframe_status="Pending Review")
+		self.assertFalse(_keyframe_ready(shot))
+		shot.keyframe_status = "Approved"
+		with (
+			patch("frappe.get_doc", return_value=shot),
+			patch("joymedia.services.keyframes.stage.approved_keyframe_task", return_value=None) as approved,
+		):
+			self.assertFalse(_keyframe_ready(shot))
+			approved.return_value = "current-keyframe-task"
+			self.assertTrue(_keyframe_ready(shot))
+		self.assertEqual("Needs Review", shot.consistency_status)
+
 	def test_omission_retraction_requires_existing_action_text_and_never_qualifies_pixels(self):
 		from joymedia.services.planning.script_review import _cross_check_missing_actions
 
@@ -512,6 +527,7 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.assertEqual([6, 4], [s["duration_seconds"] for s in demo["scenes"]])
 		self.assertEqual(sample_script()["scenes"][0]["action"], demo["scenes"][0]["action"])
 		self.assertEqual("medium", demo["scenes"][0]["shot_framing"])
+		self.assertFalse(demo["scenes"][0].get("narrative_stage"))
 		self.assertEqual("cinematic", parsed["brand"]["camera_style"])
 		self.assertIn(sample_script()["scenes"][0]["visible_change"], demo["scenes"][0]["continuity"])
 		self.assertEqual([], demo["timing_warnings"])
