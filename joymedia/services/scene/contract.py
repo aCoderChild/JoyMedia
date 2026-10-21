@@ -59,6 +59,9 @@ TRANSITION_RULES = """
   At most four transitions; one per declared event. Describe observable consequences, not a
   repeated action verb or a physics slogan. Derive them only from the authored interaction,
   never promise an unsupported product capability or require microscopic measurements.
+  Each transition belongs ONLY to its referenced event and its exact time window. Its after
+  observation is the state at that event's end, before the next event starts, not the whole
+  scene's eventual end state. Never advance a later event's consequence into an earlier event.
   Keep the contact region and the changed region visible before, during and after the action.
   before and after must describe the SAME affected material or object property, not the
   actor's pose or tool position. during names the actual contact/motion causing that change.

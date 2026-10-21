@@ -85,6 +85,7 @@ class TestTimedActions(unittest.TestCase):
 				previous_end_state="The displaced prop remains on its side.",
 			)
 		self.assertIn("The displaced prop remains on its side.", planner.call_args.args[0])
+		self.assertIn('"id": "action2", "description": "Lift the cup briskly."', planner.call_args.args[0])
 		self.assertEqual(authored, plan["motion_plan"]["actions"])
 		self.assertEqual(["cup"], plan["reference_keys"])
 		self.assertIn("briskly", plan["video_prompt"])

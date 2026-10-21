@@ -502,7 +502,7 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored, *, previo
 		+ "\nAUTHORITATIVE ACTIONS: "
 		+ json.dumps(actions, ensure_ascii=False)
 		+ "\nEVENT IDs: "
-		+ json.dumps([event["id"] for event in contract["events"]])
+		+ json.dumps(contract["events"], ensure_ascii=False)
 		+ "\nVISUAL: "
 		+ str(beat.get("camera") or "")
 		+ "\nCONTINUITY: "

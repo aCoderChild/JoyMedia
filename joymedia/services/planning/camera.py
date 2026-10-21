@@ -146,6 +146,8 @@ def infer_cinematic_intent(structure, *, opening=False, closing=False, grammar=N
 	precision = stage in {"grip", "extract", "unfold", "inspect", "detail"} or framing == "extreme_close_up"
 	if motion == "locomotion" and framing != "extreme_close_up":
 		behavior, purpose, energy = "tracking_backward", "follow", "measured"
+		if grammar:
+			energy = grammar["moves"].get(stage, {}).get("energy", energy)
 	elif precision:
 		behavior, purpose, energy = "locked", "demonstrate", "measured"
 	elif grammar and stage in grammar["moves"]:

@@ -428,3 +428,31 @@ transport's decoding constraint, with a cache revision. A live diagnostic return
 an explicit request to supply the missing schema before this change and followed
 the field instruction after it. Script review also checks explicit creative-brief
 contradictions before production planning.
+
+The delivery aspect also controls the active picture in the shared prompt compiler;
+wide shot size must not be interpreted as a landscape inset in a portrait canvas.
+A real reference-only test produced persistent black bands that the vision judge
+incorrectly accepted. Native video admission now supplements its visual claim with
+the installed FFmpeg `cropdetect` filter (upstream `FFmpeg/FFmpeg`, tag `n5.1.9`,
+`libavfilter/vf_cropdetect.c`; LGPL-2.1-or-later). This invokes upstream detection,
+without copying the detector or automatically cropping footage. Unrounded pixel
+extents avoid alignment-rounding false findings. Persistent dark-border candidates
+or unavailable detection hold acceptance for review; intentional dark sets can
+resemble borders. A supported language-model verdict cannot override that hold.
+
+Production planning receives each event's description and exact time window next
+to its ID. A physical transition describes only that event's result, not a later
+event or the whole shot's eventual ending. Authoritative workbook actions and
+timing remain unchanged.
+
+The shared stage classifier distinguishes a shot's narrative purpose from incidental
+hand movement: presenting a held product is not automatically a grip demonstration.
+Tracking still follows locomotion, but retains the source stage's declared camera
+energy. Precision manipulation remains stable and reference preferences cannot
+authorize unsupported spatial reveals.
+
+After an interrupted quality run, a batch may resume normal review finishing once
+every current scene has an explicitly selected native take with matching generation
+lineage and unchanged direction. Active runs, missing or unrelated takes, changed
+direction and cancellation remain blocking. Failed attempts and their findings are
+preserved; this handoff does not grant release qualification.
