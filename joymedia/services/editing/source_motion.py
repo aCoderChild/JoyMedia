@@ -10,7 +10,7 @@ from frappe import _
 
 
 @frappe.whitelist()
-def compose_source_motion_take(project_name, shot_name, image_version, expected_current):
+def compose_source_motion_take(project_name, shot_name, image_version, expected_current, crop=None):
 	"""Create an unselected, frame-exact camera move for a stationary source-art scene.
 
 	The scene's authored camera intent supplies the behavior. This is deliberately
@@ -54,6 +54,28 @@ def compose_source_motion_take(project_name, shot_name, image_version, expected_
 		frappe.throw(_("The scene needs a positive frame count."))
 	source = _project_asset_path(project, image_version)
 	width, height, fps = profile["width"], profile["height"], profile["fps"]
+	crop_filter = ""
+	if crop is not None:
+		from PIL import Image
+
+		if isinstance(crop, str):
+			crop = frappe.parse_json(crop)
+		if not isinstance(crop, list) or len(crop) != 4 or any(type(n) is not int for n in crop):
+			frappe.throw(_("Crop must be four integer source-pixel coordinates."))
+		x, y, crop_width, crop_height = crop
+		with Image.open(source) as source_image:
+			source_width, source_height = source_image.size
+		if (
+			x < 0
+			or y < 0
+			or crop_width < 2
+			or crop_height < 2
+			or x + crop_width > source_width
+			or y + crop_height > source_height
+			or abs(crop_width / crop_height - width / height) > 0.002
+		):
+			frappe.throw(_("Crop must stay in the source image and preserve the delivery aspect ratio."))
+		crop_filter = f"crop={crop_width}:{crop_height}:{x}:{y},"
 	# FFmpeg's standard zoompan preserves every source pixel's design/text while
 	# applying only the movement requested by the scene's camera contract.
 	progress = f"on/{max(1, frames - 1)}"
@@ -63,7 +85,7 @@ def compose_source_motion_take(project_name, shot_name, image_version, expected_
 		"locked": "1",
 	}[behavior]
 	filter_graph = (
-		f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+		crop_filter + f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
 		f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=white,"
 		f"zoompan=z='{zoom}':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':"
 		f"d=1:s={width}x{height}:fps={fps},format=yuv420p"
@@ -119,6 +141,7 @@ def compose_source_motion_take(project_name, shot_name, image_version, expected_
 		"source_sha256": version.content_hash,
 		"output_sha256": digest(content),
 		"behavior": behavior,
+		"crop": crop,
 		"frames": frames,
 		"fps": fps,
 	}
