@@ -117,6 +117,12 @@ def script_schema(inventory, constraints):
 		scene[key] = {"type": "string"}
 	for key, options in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
 		scene[key] = {"type": "string", "enum": sorted(options)}
+	scene["narrative_stage"]["description"] = (
+		"Dominant narrative job, not a generic scene label: establish=opening geography; "
+		"approach=travel toward target; grip=take hold; extract=remove contents; unfold=open material; "
+		"detail=demonstrate contact/function; inspect=examine result; present=show product; "
+		"feel=brief reaction; hero=final branded presentation."
+	)
 	root = {key: text for key in ("title", "logline", "format_reason", "visual_style", "music")}
 	root.update(
 		format={"const": constraints["aspect_ratio"]}
@@ -251,6 +257,8 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Reference observations supply action rhythms, never additional actors, products, claims or sounds. "
 		"Avoid applicable problems in unresolved feedback; historical scene numbers are not instructions to reuse an old story, and script writing never resolves feedback. Only state supplied approved claims. Ordinary props and a coherent location may be invented, but name them before use. "
 		"Vary adjacent shot sizes with purpose; preserve the action axis; show the product close at use and clearly at the end. "
+		"Classify each narrative_stage by its dominant job, not all establish. Use short purposeful beats, "
+		"allocate time to visible actions, and end promptly after the final branded composition reads. "
 		"Camera behavior is derived later from semantic stage/framing: do not put camera moves in Action. "
 		"Use layered depth, shaped directional lighting, material texture and a deliberate palette. "
 		"Music must name instrumentation, mood, tempo and cue changes aligned with story beats, ending with a resolved cadence. Sounds must link to visible actions. "
