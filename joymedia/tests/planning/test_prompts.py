@@ -701,6 +701,23 @@ class TestReferenceDescriptions(FrappeTestCase):
 
 
 class TestCastNames(FrappeTestCase):
+	def test_explicit_identity_joins_differently_named_reference_views(self):
+		from joymedia.services.planning import prompts
+
+		project = frappe._dict(
+			references=[
+				{"label": "Góc chính", "reference_role": "Character", "identity_key": "actor"},
+				{"label": "Tư thế đứng", "reference_role": "Character", "identity_key": "actor"},
+			]
+		)
+		for row in project.references:
+			self.assertEqual("the mascot", prompts.cast_name(row["label"], project))
+		project.references.append(
+			{"label": "Nhân vật khác", "reference_role": "Character", "identity_key": "other"}
+		)
+		self.assertEqual("mascot 1", prompts.cast_name("Tư thế đứng", project))
+		self.assertEqual("mascot 2", prompts.cast_name("Nhân vật khác", project))
+
 	def test_a_character_without_a_family_role_is_the_mascot_and_its_poses_are_the_same_mascot(self):
 		from joymedia.services.planning import prompts
 
