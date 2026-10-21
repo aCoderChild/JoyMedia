@@ -294,6 +294,8 @@ class TestSupportAndProportions(TestCase):
 		with patch("joymedia.services.keyframes.overlay.describe_colours", return_value=""):
 			prompt = compile_prompt_for_documents(shot, project, prompt_source="image")
 		self.assertEqual(prompt.count("Starting-frame staging:"), 1)
+		self.assertTrue(prompt.startswith("Starting-frame staging:"))
+		self.assertNotIn("In this scene:", prompt)
 		self.assertIn("operator remains supported by the chair seat", prompt)
 		self.assertIn("0.12-0.2 times the height", prompt)
 		self.assertNotIn("liquid originates", prompt)

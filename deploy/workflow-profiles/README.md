@@ -32,3 +32,12 @@ After changing that pin, allow the framework's site-config cache to expire or
 refresh the relevant service. Inspect the frozen Run's workflow and the submitted
 ComfyUI graph: the turbo switch must be false and base steps must be 20. An editor
 selection alone is not execution evidence.
+
+`minimax_h3_reference_only_base_20.json` reuses the deployed native Ref2VA
+checkpoint, 20-step base scheduler and role-separated original image inputs.
+It needs no FLUX keyframes or additional weights. It declares reference-only
+execution through the existing generic adapter. Delivery uses the requested
+aspect ratio with a short-edge quality target, rather than a fixed portrait
+canvas. This is a comparison profile; original-reference conditioning does not
+qualify identity, support or action correctness. Native visual admission and
+release evidence still apply.
