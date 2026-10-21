@@ -178,3 +178,52 @@ def cancel_product_batch(batch_name):
 		}:
 			cancel_post_production(variant["project"])
 	return {"batch": batch.name, "status": "Cancelled"}
+
+
+@frappe.whitelist(methods=["POST"])
+def retry_product_variant(batch_name, index):
+	"""Resume a stopped variant through its native stage, retaining prior evidence."""
+	batch = frappe.get_doc("Creative Batch", batch_name)
+	batch.check_permission("write")
+	if type(index) is bool or str(index) not in {str(i) for i in range(1, 21)}:
+		raise ValueError("Choose a variant number from one to twenty.")
+	with frappe.cache.lock(f"joymedia-creative:{batch.name}", timeout=180, blocking_timeout=10):
+		frappe.db.commit()
+		batch.reload()
+		if batch.status == "Cancelled":
+			raise ValueError("A cancelled batch cannot be resumed.")
+		variants = frappe.parse_json(batch.variants_json)
+		position = int(index) - 1
+		if position >= len(variants) or variants[position]["status"] != "Needs Attention":
+			raise ValueError("Only a stopped variant can be retried.")
+		variant = variants[position]
+		stage = variant.get("resume_stage", "Planning")
+		if stage not in {"Planning", "Keyframes", "Rendering", "Finishing", "Exporting"}:
+			raise ValueError("The stopped stage is not resumable.")
+		variant.update(status=stage, error="")
+		frappe.db.set_value(
+			"Creative Batch",
+			batch.name,
+			{
+				"variants_json": frappe.as_json(variants),
+				"error": "",
+				"status": "Planning"
+				if stage == "Planning"
+				else "Rendering"
+				if stage in {"Keyframes", "Rendering"}
+				else "Finishing",
+			},
+		)
+		frappe.enqueue(
+			"joymedia.services.generation.creative_batch.prepare_batch"
+			if stage == "Planning"
+			else "joymedia.services.generation.creative_batch.advance_batch",
+			queue="long",
+			timeout=3600,
+			batch_name=batch.name,
+			job_id=f"joymedia-creative-retry:{batch.name}:{index}",
+			deduplicate=True,
+			enqueue_after_commit=True,
+		)
+		frappe.db.commit()
+	return {"batch": batch.name, "index": int(index), "status": stage}

@@ -363,6 +363,28 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.assertEqual("Needs Attention", batch.reload().status)
 		self.assertIn("Unsupported seated geometry", frappe.parse_json(batch.variants_json)[0]["error"])
 
+	def test_retry_resumes_failed_stage_without_erasing_evidence_or_cancel_state(self):
+		from joymedia.api.creative import retry_product_variant
+
+		batch = self.batch()
+		variants = frappe.parse_json(batch.variants_json)
+		variants[0].update(
+			status="Needs Attention",
+			resume_stage="Keyframes",
+			keyframe_request={"run": "original-run"},
+			error="Check geometry",
+		)
+		batch.db_set({"status": "Needs Attention", "variants_json": frappe.as_json(variants)})
+		with patch("frappe.enqueue") as enqueue:
+			result = retry_product_variant(batch.name, 1)
+		self.assertEqual("Keyframes", result["status"])
+		self.assertIn("advance_batch", enqueue.call_args.args[0])
+		updated = frappe.parse_json(batch.reload().variants_json)[0]
+		self.assertEqual({"run": "original-run"}, updated["keyframe_request"])
+		batch.db_set("status", "Cancelled")
+		with self.assertRaisesRegex(ValueError, "cancelled"):
+			retry_product_variant(batch.name, 1)
+
 	def test_guest_cannot_read_batch_or_create_from_another_users_project(self):
 		from joymedia.api.creative import create_product_batch, get_product_batch
 
