@@ -183,3 +183,12 @@ The workbook records the compiled frame-aligned timing, while batch metadata kee
 the original proposals. The action editor evaluates the resulting actual pacing.
 This compiler is used only for automatic proposals, before workbook import;
 imported client-authored timing continues through the strict source-timing path.
+
+Script action review lives in `planning/script_review.py`. It quotes exact scene
+text for actionable findings. Blocking story/identity/causal errors trigger a
+rewrite; mechanical specificity for an otherwise valid action becomes production
+direction in the workbook continuity column. Required visible before/after state
+is included there too, so normal production planning and rendered-media admission
+receive it. These text findings never certify future video physics.
+Feedback scope uses the existing selected-footage lineage checks: current/affected
+notes and historical observations are distinguished without resolving records.

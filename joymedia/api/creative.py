@@ -9,24 +9,45 @@ import frappe
 def _review_context(project):
 	"""Snapshot unresolved first-party feedback; never resolve it by copying it."""
 	from joymedia.services.project.versions import family
+	from joymedia.services.review.release_feedback import unresolved_cut_feedback
 
 	root = family(project)
+	clips = frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project.name},
+		fields=["enabled", "source_asset_version", "track_type"],
+	)
+	affected = set(unresolved_cut_feedback(project.name, clips))
 	notes = [
-		{"source": r.name, "category": r.category, "text": r.feedback}
+		{
+			"source": r.name,
+			"category": r.category,
+			"text": r.feedback,
+			"scope": "Current"
+			if r.asset_version == project.current_output_asset_version or r.name in affected
+			else "Historical",
+		}
 		for r in frappe.get_all(
 			"Video Review Feedback",
 			filters={"media_project": root.name, "status": ["in", ["Open", "Investigating"]]},
-			fields=["name", "category", "feedback"],
+			fields=["name", "category", "feedback", "asset_version"],
 			order_by="creation desc",
 			limit=12,
 		)
 	]
 	notes.extend(
-		{"source": r.name, "category": "Scene", "text": r.comment}
+		{
+			"source": r.name,
+			"category": "Scene",
+			"text": r.comment,
+			"scope": "Current"
+			if r.output_asset_version == frappe.db.get_value("Shot", r.shot, "selected_output_asset_version")
+			else "Historical",
+		}
 		for r in frappe.get_all(
 			"Review Comment",
 			filters={"media_project": project.name, "status": "Open"},
-			fields=["name", "comment"],
+			fields=["name", "comment", "shot", "output_asset_version"],
 			order_by="creation desc",
 			limit=12,
 		)
