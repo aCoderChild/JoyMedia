@@ -646,6 +646,41 @@ class TestRoleInputCount(FrappeTestCase):
 
 
 class TestVisionAnalysis(FrappeTestCase):
+	def test_product_rigidity_requires_visible_evidence_and_is_available_to_the_writer(self):
+		for construction in [{}, {"rigidity": "rigid"}, {"rigidity": [], "evidence": "guess"}]:
+			with self.subTest(construction=construction):
+				result = vision_analysis.normalize_analysis(
+					{"description": "A rectangular package.", "construction": construction}, as_product=True
+				)
+				self.assertEqual("uncertain", result["construction"]["rigidity"])
+				self.assertNotIn("Visible construction:", result["description"])
+		result = vision_analysis.normalize_analysis(
+			{
+				"description": "A rectangular package.",
+				"construction": {"rigidity": "flexible", "evidence": "Wrinkled film and sealed edges"},
+			},
+			as_product=True,
+		)
+		self.assertTrue(result["description"].startswith("Visible construction: flexible"))
+
+	def test_old_packaging_description_is_reanalysed_after_material_rules_change(self):
+		self.assertFalse(
+			vision_analysis._is_current(
+				frappe._dict(analysis_status="Ready", analysis_json='{"version":2,"kind":"product"}'), True
+			)
+		)
+		self.assertTrue(
+			vision_analysis._is_current(
+				frappe._dict(
+					analysis_status="Ready",
+					analysis_json=frappe.as_json(
+						{"version": vision_analysis.ANALYSIS_VERSION, "kind": "product"}
+					),
+				),
+				True,
+			)
+		)
+
 	def test_analysis_is_normalized(self):
 		analysis = vision_analysis.normalize_analysis(
 			{

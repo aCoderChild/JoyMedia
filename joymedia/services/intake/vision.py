@@ -33,6 +33,8 @@ Rules: describe only what is visible, never guess. kind is "person" when a perso
 object shown on its own: goods, packaging, jewellery, decor, and artworks, prints, plates or stickers
 EVEN WHEN they depict a scene. For a product, describe the object first (shape, material, border,
 colours), then what it depicts, e.g. "A round mosaic artwork with a jewelled border, depicting a harbour".
+For a stylized character, describe body silhouette, head/body proportions, limb lengths and identifying
+features before its incidental pose. Do not infer anatomy hidden by the pose.
 """.strip()
 
 PRODUCT_ANALYSIS_PROMPT = """
@@ -41,13 +43,17 @@ Describe it for a video director who cannot see it. Return only JSON:
 {"kind": "product",
  "scene_type": "product",
  "description": "at most 45 words: first the object itself (type of object, shape, size impression, material, frame or border, finish, main colours), then what is printed, painted or shown on it, e.g. 'A tall frosted-glass bottle with a brushed silver cap; its label shows a green mountain logo'",
+ "construction": {"rigidity": "flexible|rigid|uncertain", "evidence": "visible physical creases, seams, faces or edges supporting this observation; empty when uncertain"},
  "outfit": "",
  "lighting": "a few words"}
 Rules: describe only what is visible, never guess. Never describe the depicted scene as if it were the setting.
+Distinguish flexible wrapping from rigid construction using visible creases, seams and edges. A rectangular
+silhouette alone does not establish a rigid box. Use pack/package when rigidity is uncertain; reserve
+box/carton for visible rigid construction. Do not infer a hinged lid, an opening mechanism or hidden layers.
 """.strip()
 
 # Stored with each analysis; analyses made with an older prompt are redone.
-ANALYSIS_VERSION = 2
+ANALYSIS_VERSION = 3
 
 
 def is_configured():
@@ -152,7 +158,7 @@ def normalize_analysis(result, as_product=False):
 	kind = str(result.get("kind") or "").strip().lower()
 	if as_product:
 		kind = "product"
-	return {
+	analysis = {
 		"kind": kind if kind in VALID_KINDS else "other",
 		"scene_type": str(result.get("scene_type") or "").strip().lower()[:40],
 		"description": str(result.get("description") or "").strip()[:400],
@@ -160,6 +166,20 @@ def normalize_analysis(result, as_product=False):
 		"lighting": str(result.get("lighting") or "").strip()[:100],
 		"version": ANALYSIS_VERSION,
 	}
+	if as_product:
+		construction = result.get("construction") or {}
+		construction = construction if isinstance(construction, dict) else {}
+		rigidity = construction.get("rigidity")
+		evidence = construction.get("evidence")
+		evidence = evidence.strip()[:240] if isinstance(evidence, str) else ""
+		if not isinstance(rigidity, str) or rigidity not in {"flexible", "rigid"} or not evidence:
+			rigidity, evidence = "uncertain", ""
+		analysis["construction"] = {"rigidity": rigidity, "evidence": evidence}
+		if evidence:
+			analysis["description"] = (
+				f"Visible construction: {rigidity}; {evidence}. " + analysis["description"]
+			)
+	return analysis
 
 
 def _image_data_url(file_url):

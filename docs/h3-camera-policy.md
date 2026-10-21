@@ -464,6 +464,15 @@ placement across cuts. Automatic writing has no fixed five-second example to
 bias every scene's timing, and text review flags reaction-only or repeated
 presentation holds before workbook import.
 
+Image analysis version 3 records product rigidity only with visible construction
+evidence, distinguishing creased wrapping from a rigid container without assuming
+an opening mechanism. This fixed a live case whose older caption called a flexible
+pack a box, biasing scripts toward lids, closure and returning used contents.
+Product observations are frozen into scene references and serialized into reference
+roles without later database reinterpretation. They remain observations, not new
+approved claims or physical qualification. Text review also rejects restoring used
+consumables to unused stock as a narrative reset.
+
 After an interrupted quality run, a batch may resume normal review finishing once
 every current scene has an explicitly selected native take with matching generation
 lineage and unchanged direction. Active runs, missing or unrelated takes, changed

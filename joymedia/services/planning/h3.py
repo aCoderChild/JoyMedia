@@ -234,8 +234,11 @@ def _direct_reference_roles(shot, workflow):
 			for r in shot.get("references") or []
 			if str(r.get("reference_role") or r.get("input_role") or "").lower() == role
 		]
-		for _ref in matches:
-			statements.append(f"<Picture {len(statements) + 1}> controls {descriptions[role]}.")
+		for ref in matches:
+			statement = f"<Picture {len(statements) + 1}> controls {descriptions[role]}."
+			if role == "product" and ref.get("visual_description"):
+				statement += " Visible product construction and markings: " + str(ref["visual_description"])
+			statements.append(statement)
 	if not statements:
 		raise ValueError("Reference-only video needs at least one declared image reference.")
 	return " ".join(statements)
