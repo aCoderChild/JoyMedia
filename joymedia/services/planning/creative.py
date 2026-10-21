@@ -16,6 +16,7 @@ from joymedia.services.planning.timed_actions import normalize_action_separators
 
 CREATIVE_INVARIANTS = (
 	"Preserve reference identities, observed product construction, explicit format/duration and approved claims. "
+	"Select a concrete supplied view key whose visible pose, anatomy and surfaces suit each action; preserve that view choice through repairs. Alternate views remain one identity. "
 	"Keep one coherent interaction per shot, chronological prerequisites and persistent object/support states. "
 	"Invent no opening mechanism. Extracted consumables remain outside their unused stock; do not reset the story by putting them back. "
 	"Name every ordinary prop and action target before use. Non-final shots advance tangible object/action state, not prolonged looking or posing. "

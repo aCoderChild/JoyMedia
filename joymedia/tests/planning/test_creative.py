@@ -345,6 +345,7 @@ class TestGeneratedScriptValidation(TestCase):
 		self.assertIn("Keep the original connected proportions.", last.args[0])
 		self.assertNotIn("Prior version observation.", last.args[0])
 		self.assertIn("PRIMARY USER DIRECTION:", last.kwargs["system"])
+		self.assertIn("concrete supplied view key", last.kwargs["system"])
 		self.assertIn("multi-scene", last.kwargs["system"])
 		self.assertEqual("writer", last.kwargs["capability"])
 		self.assertIn("scenes", last.kwargs["response_schema"]["properties"])
@@ -461,9 +462,7 @@ class TestGeneratedScriptValidation(TestCase):
 		self.assertEqual("arc", preferred["behavior"])
 		# A coarse extraction label must not lock a genuinely travelling subject
 		# out of frame; explicit camera_motion=locked remains authoritative below.
-		self.assertEqual(
-			"tracking", infer_cinematic_intent(dict(structure, stage="extract"))["behavior"]
-		)
+		self.assertEqual("tracking", infer_cinematic_intent(dict(structure, stage="extract"))["behavior"])
 		shot = {
 			"shot_number": 1,
 			"motion_plan_json": {"shot_structure": structure, "camera_intent": resolved},

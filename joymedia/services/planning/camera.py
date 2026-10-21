@@ -229,7 +229,7 @@ def camera_plan(shot, project, is_final=False, framing_safety=None, generated_co
 			result["direction"] += " " + visibility
 		if structure["framing"] in {"wide", "full"}:
 			result["direction"] += (
-				" Frame all required subjects together as one group throughout the move, including the complete actor silhouette and its ground contacts. "
+				" Frame all required subjects together as one group throughout the move, including their complete outlines and support contacts. "
 				"Centre the group rather than the product alone; do not let any required subject drift through a frame edge."
 			)
 	if generated_composition:
@@ -369,7 +369,7 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 				"tracking_backward": "The camera tracks backward smoothly at the moving subject's real-time pace, maintaining its screen size and the approved opening framing. Camera speed does not slow the action. The stationary setting has continuous depth-dependent parallax; no sliding or resetting backdrop. No orbit, zoom or lateral drift; settle at the ending composition.",
 				"push_in": "The camera makes one smooth controlled push-in along the same optical axis toward the authored focal subject, following the supplied opening and ending compositions. No simultaneous pan, tilt, orbit or focus pull. Settle into the final view before the end.",
 				"pull_back": "The camera makes one smooth axial dolly backward from the supplied opening to the reviewed wider ending, revealing the same three-dimensional setting. Preserve screen direction, subject scale progression and depth-dependent parallax; no orbit, pan or zoom pulse.",
-				"arc": "The camera follows one smooth shallow arc of at most 12 degrees between the supplied reviewed viewpoints, keeping subject distance and screen size stable. The setting remains stationary with depth-dependent parallax. No simultaneous zoom, tilt or axis crossing.",
+				"arc": "The camera follows one smooth arc between the supplied reviewed viewpoints, keeping subject distance and screen size stable. The setting remains stationary with depth-dependent parallax. No simultaneous zoom, tilt or axis crossing.",
 			}
 			# Separate rotation, physical translation and lens changes, as in the
 			# reference taxonomy. Each still uses the same endpoint safety gate.
