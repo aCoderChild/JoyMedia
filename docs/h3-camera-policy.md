@@ -473,6 +473,15 @@ roles without later database reinterpretation. They remain observations, not new
 approved claims or physical qualification. Text review also rejects restoring used
 consumables to unused stock as a narrative reset.
 
+Creative invariants remain in model context during every repair, rather than being
+lost when a compact repair request replaces the original drafting prompt. Pacing
+findings receive the same quotation-backed cross-check as omission findings, but
+must cite progress in the affected scene; motion elsewhere cannot excuse an idle
+scene. A live planner check retained a looking-only finding and retracted a false
+idle finding on material folding. Neither judgment qualifies rendered physics.
+Generated sound cues use the native SFX/BGM labels so workbook import and H3
+serialization do not silently discard unlabelled action sounds.
+
 After an interrupted quality run, a batch may resume normal review finishing once
 every current scene has an explicitly selected native take with matching generation
 lineage and unchanged direction. Active runs, missing or unrelated takes, changed

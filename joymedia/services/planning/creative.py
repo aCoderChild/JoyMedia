@@ -14,6 +14,15 @@ from joymedia.services.planning.script_review import review_script_actions
 from joymedia.services.planning.shot_structure import ANGLES, FRAMINGS, STAGES
 from joymedia.services.planning.timed_actions import normalize_action_separators, read_timed_actions
 
+CREATIVE_INVARIANTS = (
+	"Preserve reference identities, observed product construction, explicit format/duration and approved claims. "
+	"Keep one coherent interaction per shot, chronological prerequisites and persistent object/support states. "
+	"Invent no opening mechanism. Extracted consumables remain outside their unused stock; do not reset the story by putting them back. "
+	"Name every ordinary prop and action target before use. Non-final shots advance tangible object/action state, not prolonged looking or posing. "
+	"A real change of material form, object location or contact is tangible progress. The final branded presentation may hold briefly. "
+	"Use purposeful coverage and action-driven phase timings, with camera behavior derived from semantic structure."
+)
+
 
 def reference_inventory(project):
 	from joymedia.services.intake.vision import ensure_project_image_analysis
@@ -127,6 +136,10 @@ def script_schema(inventory, constraints):
 	}
 	for key in ("voice_over", "audio_cues", "on_screen_text"):
 		scene[key] = {"type": "string"}
+	scene["audio_cues"].update(
+		pattern=r"^(?:(?:SFX|BGM):[^\n]+(?:\n|$))*$",
+		description="Native audio cue lines: SFX: physical sounds caused by visible actions; optional BGM: score cue change. One labelled cue per line, or empty. Dialogue belongs in voice_over; the continuous score is described in music.",
+	)
 	for key, options in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
 		scene[key] = {"type": "string", "enum": sorted(options)}
 	scene["narrative_stage"]["description"] = (
@@ -351,7 +364,9 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		result = _ask_planner(
 			request_prompt,
 			system="You write complete multi-scene commercial scripts from visual product references. Return only the requested JSON, using exact enum values and reference keys. The primary user direction takes precedence over motion observations, which are examples rather than a required story.\nPRIMARY USER DIRECTION: "
-			+ constraints["creative_direction"],
+			+ constraints["creative_direction"]
+			+ "\nINVARIANTS FOR ORIGINAL WRITING AND EVERY REPAIR: "
+			+ CREATIVE_INVARIANTS,
 			sampling_profile="creative_script_repair" if latest_script is not None else "creative_script",
 			capability="writer",
 			response_schema=script_schema(inventory, constraints),

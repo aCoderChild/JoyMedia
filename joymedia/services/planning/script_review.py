@@ -82,6 +82,7 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 		"An action changing an object/state is progress, even if a brief reaction accompanies it. Do not invent problems in a valid action. "
 		"Check: only roster actors in prose; items obtained before use; holding a container does not obtain its contents; contact precedes the visible result; no unexplained state reset or reversal of consumption; opening and action agree. "
 		"Check product construction against reference descriptions: no invented rigid lids or closure mechanisms. Returning used consumable material to unused stock is a state_reset, not a valid way to reset a demonstration. "
+		"Name each interaction target before use; an unspecified target is not a concrete demonstration. Never replace an existing tangible action with an invented unrelated prop. "
 		"A scene spent solely approaching, staring or posing lacks brisk action. Camera commands belong outside Action, even at the end. Only the final scene may hold the product briefly. "
 		"For idle_pacing, looking/inspecting followed only by nodding or smiling is still a reaction-only scene. Flag repeated product-presentation holds across consecutive scenes; move that runtime to distinct tangible product interactions without adding unsupported capabilities. "
 		"Use purposeful shot-size/angle contrast and a product detail at use, with coherent axis and state handoffs. Do not demand an object reset unless a later opening explicitly contradicts its retained state. Historical feedback describes earlier renders, not defects proven in this draft. Never copy historical scene numbers, review/sign-off requests or old judgments into new issues. "
@@ -154,7 +155,7 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 
 
 def _cross_check_missing_actions(review, script):
-	"""Check omission findings against surrounding authored action text.
+	"""Cross-check omission and pacing findings against authored action text.
 
 	An exact quotation is needed to retract a claimed omission. This checks text
 	coverage, never whether future generated pixels satisfy that text.
@@ -163,18 +164,36 @@ def _cross_check_missing_actions(review, script):
 
 	actions = [scene["action"] for scene in script["scenes"]]
 	for finding in review["issues"]:
-		if finding["category"] not in {"missing_contact_or_result", "missing_prerequisite"}:
+		if finding["category"] not in {"missing_contact_or_result", "missing_prerequisite", "idle_pacing"}:
 			continue
-		answer = _ask_planner(
-			"Check one alleged omission against the COMPLETE ordered action sequence. "
+		idle = finding["category"] == "idle_pacing"
+		question = (
+			"Check an idle_pacing finding against ONLY the quoted scene's full action. "
+			"A visible change of material form, object location or contact is tangible progress, even with a brief reaction. "
+			"The final branded presentation may hold briefly; it need not introduce another product use. "
+			"Copy an exact action substring FROM THIS SCENE demonstrating such progress or the allowed final presentation. "
+			"Return an empty string if the scene is only idle posing/looking. Do not invent an unrelated prop or demand an additional use.\n"
+			+ json.dumps(
+				{
+					"scene": finding["scene"],
+					"is_final": finding["scene"] == len(actions),
+					"action": actions[finding["scene"] - 1],
+				}
+			)
+			if idle
+			else "Check one alleged omission against the COMPLETE ordered action sequence. "
 			"Is the requested action/result already explicitly written, either in a later phase of the "
 			"same shot or the appropriate earlier/later shot? Return an exact action substring that "
 			"already satisfies it, or an empty string when absent or causally out of order. "
-			"Do not add actions, infer unseen results, or judge future video quality.\nFINDING: "
+			"Do not add actions, infer unseen results, or judge future video quality.\n"
+		)
+		answer = _ask_planner(
+			question
+			+ "\nFINDING: "
 			+ json.dumps(finding, ensure_ascii=False)
 			+ "\nORDERED ACTIONS: "
 			+ json.dumps(actions, ensure_ascii=False),
-			system="You check quoted screenplay text for a claimed omission. Return JSON only.",
+			system="You check a quoted screenplay defect against written actions. Return JSON only; never qualify future pixels.",
 			capability="writer",
 			sampling_profile="creative_script_review",
 			response_schema={
@@ -190,7 +209,8 @@ def _cross_check_missing_actions(review, script):
 		if not quote.strip():
 			continue
 		normalized = " ".join(quote.split()).casefold()
-		if not any(normalized in " ".join(action.split()).casefold() for action in actions):
+		allowed_actions = [actions[finding["scene"] - 1]] if idle else actions
+		if not any(normalized in " ".join(action.split()).casefold() for action in allowed_actions):
 			raise ValueError("Omission cross-check quoted text absent from the action sequence.")
 		finding["text_cross_check"] = {"already_written": quote, "physical_qualification": False}
 		finding["category"] = "production_detail"
