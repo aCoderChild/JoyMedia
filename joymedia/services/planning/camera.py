@@ -217,6 +217,21 @@ def camera_plan(shot, project, is_final=False, framing_safety=None, generated_co
 		framing_safety=framing_safety,
 		generated_composition=generated_composition,
 	)
+	from joymedia.services.planning.shot_structure import structure_for, visibility_instruction
+
+	structure = structure_for(shot)
+	if structure:
+		plan = shot.get("motion_plan_json") or {}
+		if isinstance(plan, str):
+			plan = json.loads(plan)
+		visibility = visibility_instruction(structure, plan.get("scene_contract") or {})
+		if visibility and visibility not in result["direction"]:
+			result["direction"] += " " + visibility
+		if structure["framing"] in {"wide", "full"}:
+			result["direction"] += (
+				" Frame all required subjects together as one group throughout the move, including the complete actor silhouette and its ground contacts. "
+				"Centre the group rather than the product alone; do not let any required subject drift through a frame edge."
+			)
 	if generated_composition:
 		result["direction"] = (
 			"Generate the authored opening framing with the required action area visible; for a broad moving shot reserve at least ten percent margin around all required subjects. "
@@ -227,9 +242,6 @@ def camera_plan(shot, project, is_final=False, framing_safety=None, generated_co
 		)
 	if result["product_focus"]:
 		result["direction"] += " Keep the visible product surface and contact area sharp and supported."
-		from joymedia.services.planning.shot_structure import structure_for
-
-		structure = structure_for(shot)
 		if structure and structure["framing"] in {"close_up", "extreme_close_up"}:
 			result["direction"] += (
 				" Camera framing alone must not reveal unseen parts merely to show the whole object; a detail view stays a detail. Authored object movement and natural occlusion changes remain allowed."

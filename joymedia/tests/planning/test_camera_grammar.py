@@ -74,6 +74,40 @@ class TestReferenceCameraGrammar(TestCase):
 		self.assertNotIn("reviewed viewpoints", generated["direction"])
 		self.assertIn("unverified", generated["framing_evidence"])
 
+	def test_moving_coverage_carries_named_subjects_and_complete_wide_group(self):
+		from joymedia.services.planning.camera import camera_plan
+
+		structure = {
+			"stage": "establish",
+			"framing": "wide",
+			"angle": "oblique",
+			"subject_motion": "stationary",
+			"keep_visible": ["actor", "product"],
+		}
+		shot = {
+			"motion_plan_json": {
+				"shot_structure": structure,
+				"camera_intent": {"behavior": "arc", "allow_reframe": True, "purpose": "hook"},
+				"scene_contract": {
+					"entities": [
+						{"id": "actor", "label": "the supplied character"},
+						{"id": "product", "label": "the advertised package"},
+					]
+				},
+			}
+		}
+		result = camera_plan(shot, {}, generated_composition=True)
+		self.assertEqual("arc", result["behavior"])
+		self.assertIn("the supplied character, the advertised package", result["direction"])
+		self.assertIn("Centre the group", result["direction"])
+		self.assertIn("ground contacts", result["direction"])
+		# A close detail must retain its working area without demanding a whole actor.
+		structure.update(stage="detail", framing="close_up", subject_motion="manipulation")
+		result = camera_plan(shot, {}, generated_composition=True)
+		self.assertEqual("locked", result["behavior"])
+		self.assertIn("the supplied character, the advertised package", result["direction"])
+		self.assertNotIn("complete actor silhouette", result["direction"])
+
 	def test_invalid_profiles_are_rejected_instead_of_silently_falling_back(self):
 		bad = []
 		for field, value in [
