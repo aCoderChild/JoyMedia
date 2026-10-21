@@ -489,6 +489,12 @@ inferred hand-only classification when the actor actually travels while carrying
 The existing shared camera policy still derives tracking, and all output review
 requirements remain independent of that classification.
 
+Setting preparation no longer imposes an empty room or a blank lower-third floor.
+That legacy layout instruction conflicted with authored floor props and encouraged
+cluttered working surfaces. The existing empty-setting renderer now follows the
+described location and preserves clear working areas and accessible openings;
+actual generated furniture and access still require inspection before animation.
+
 After an interrupted quality run, a batch may resume normal review finishing once
 every current scene has an explicitly selected native take with matching generation
 lineage and unchanged direction. Active runs, missing or unrelated takes, changed
