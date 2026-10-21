@@ -114,6 +114,28 @@ class TestGeneratedScriptValidation(TestCase):
 		with self.assertRaisesRegex(ValueError, "opening cannot consist only"):
 			validate_script(script, self.inventory, self.constraints)
 
+	def test_preparatory_reach_cannot_consume_an_entire_action_shot(self):
+		script = sample_script()
+		script["scenes"][0]["action"] = "[0-6s] The mascot reaches toward the product."
+		with self.assertRaisesRegex(ValueError, "no completed object or material action"):
+			validate_script(script, self.inventory, self.constraints)
+		script["scenes"][0]["action"] = (
+			"[0-1s] The mascot reaches toward the product.\n"
+			"[1-6s] The mascot grips and lifts the product."
+		)
+		self.assertEqual(script, validate_script(script, self.inventory, self.constraints))
+
+	def test_middle_reaction_shot_requires_product_progress(self):
+		script = sample_script()
+		middle = copy.deepcopy(script["scenes"][0])
+		middle["duration_seconds"] = 2
+		middle["action"] = "[0-2s] The mascot looks at the product and smiles."
+		script["scenes"][0]["duration_seconds"] = 4
+		script["scenes"][0]["action"] = "[0-1s] Grip the product.\n[1-4s] Move it along the table."
+		script["scenes"].insert(1, middle)
+		with self.assertRaisesRegex(ValueError, "Scene 2 has no completed"):
+			validate_script(script, self.inventory, self.constraints)
+
 	def test_stationary_product_detail_is_not_rejected_by_motion_label_alone(self):
 		script = sample_script()
 		script["scenes"][0]["subject_motion"] = "stationary"
