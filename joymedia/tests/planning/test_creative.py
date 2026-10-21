@@ -120,6 +120,18 @@ class TestGeneratedScriptValidation(TestCase):
 		with self.assertRaisesRegex(ValueError, "Move camera movement out of Action"):
 			validate_script(script, self.inventory, self.constraints)
 
+	def test_unanchored_fluid_effect_requires_action_reference(self):
+		script = sample_script()
+		script["scenes"][0]["action"] = "[0-6s] The product absorbs a liquid spill."
+		with self.assertRaisesRegex(ValueError, "supplied action reference"):
+			validate_script(
+				script, self.inventory, {**self.constraints, "action_reference_observations": []}
+			)
+		self.assertEqual(
+			script,
+			validate_script(script, self.inventory, {**self.constraints, "action_reference_observations": ["observed spill contact"]}),
+		)
+
 	def test_schema_descriptions_reach_model_context_as_well_as_the_decoder(self):
 		from joymedia.services.planning.production import _request_planner
 
