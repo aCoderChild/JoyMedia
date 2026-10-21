@@ -89,6 +89,10 @@ def run_project_timeline_export(project_name: str, purpose="review"):
 		)
 		project.db_set("export_status", "Completed")
 		project.db_set("export_completed_at", frappe.utils.now())
+		from joymedia.services.generation.run_state import has_completed_export
+
+		if project.status != "Archived" and has_completed_export(project.name):
+			project.db_set("status", "Completed")
 		frappe.db.commit()
 		return result
 	except Exception as exc:
