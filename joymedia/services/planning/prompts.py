@@ -127,6 +127,11 @@ def compile_segment_prompt_from_snapshot(
 		prompt_source=base_prompt_source,
 		is_final=is_final,
 	)
+	from joymedia.services.project.formats import composition_instruction
+
+	canvas = composition_instruction(project)
+	if canvas:
+		base += "\n\n" + canvas
 	if prompt_source == "image":
 		base += _ordered_image_reference_roles(shot, workflow)
 

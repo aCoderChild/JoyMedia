@@ -35,6 +35,17 @@ class TestH3(FrappeTestCase):
 	def project(self, **values):
 		return frappe._dict(dict(generation_mode="Multi-shot", soundtrack_mode="Full soundtrack") | values)
 
+	@patch("joymedia.services.planning.prompts._mood", return_value="Cinematic.")
+	def test_active_picture_uses_authored_format_in_both_prompt_paths(self, mood):
+		project = self.project(delivery_width=1920, delivery_height=1080)
+		for prompt in [
+			compile_h3(self.shot(), project, kind="text"),
+			compile_segment_prompt_from_snapshot(self.shot(), project, 1, 1),
+		]:
+			self.assertIn("full 16:9 delivery canvas", prompt)
+			self.assertNotIn("9:16", prompt)
+			self.assertIn("without letterboxing", prompt)
+
 	@patch(
 		"joymedia.services.planning.prompts._mood",
 		return_value="Warm cinematic live action with soft side light.",
