@@ -98,7 +98,8 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 	for attempt in range(2):
 		result = _ask_planner(
 			prompt + repair,
-			system="You edit commercial scripts using exact quoted text. Return only the required JSON.",
+			system="You edit commercial scripts using exact quoted text. Return only the required JSON. Enforce the primary creative direction before other stylistic checks.\nPRIMARY USER DIRECTION: "
+			+ str((requirements or {}).get("creative_direction") or ""),
 			capability="writer",
 			sampling_profile="creative_script_review",
 			response_schema=schema,

@@ -268,7 +268,12 @@ class TestGeneratedScriptValidation(TestCase):
 		bad_count["scenes"] = bad_count["scenes"][:1]
 		bad_enum = sample_script()
 		bad_enum["scenes"][0]["shot_framing"] = "Medium"
-		project = frappe._dict(total_duration_seconds=10, delivery_width=1280, delivery_height=720)
+		project = frappe._dict(
+			total_duration_seconds=10,
+			delivery_width=1280,
+			delivery_height=720,
+			video_idea="Keep the foreground clear.",
+		)
 		inventory = [
 			{
 				"key": "product",
@@ -306,7 +311,8 @@ class TestGeneratedScriptValidation(TestCase):
 		self.assertIn("Unsupported shot_framing", last.args[0])
 		self.assertNotIn('"identity": "internal-id"', last.args[0])
 		self.assertIn("Keep the original connected proportions.", last.args[0])
-		self.assertIn('"scope": "Historical"', last.args[0])
+		self.assertNotIn("Prior version observation.", last.args[0])
+		self.assertIn("PRIMARY USER DIRECTION:", last.kwargs["system"])
 		self.assertIn("multi-scene", last.kwargs["system"])
 		self.assertEqual("writer", last.kwargs["capability"])
 		self.assertIn("scenes", last.kwargs["response_schema"]["properties"])
