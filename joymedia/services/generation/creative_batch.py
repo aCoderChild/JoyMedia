@@ -194,7 +194,7 @@ def prepare_batch(batch_name):
 					_start_keyframes(project, variant)
 		except Exception as exc:
 			frappe.db.rollback()
-			variant.update(status="Needs Attention", error=str(exc)[:1600])
+			variant.update(resume_stage=variant["status"], status="Needs Attention", error=str(exc)[:1600])
 			frappe.log_error(title=f"Automatic creative variant failed: {batch.name}/{index + 1}")
 		if not _write(batch.name, variants, changed_index=index):
 			return
@@ -342,5 +342,5 @@ def advance_batch(batch_name, user=None):
 				raise ValueError(project.export_error or "Review export did not complete.")
 		except Exception as exc:
 			frappe.db.rollback()
-			variant.update(status="Needs Attention", error=str(exc)[:1600])
+			variant.update(resume_stage=variant["status"], status="Needs Attention", error=str(exc)[:1600])
 		_write(batch.name, variants, changed_index=index)

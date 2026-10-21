@@ -14,6 +14,7 @@
           <a v-if="variant.workbook" :href="variant.workbook" download class="underline">{{ tr('Download script', 'Tải kịch bản') }}</a>
           <a v-if="variant.video" :href="variant.video" class="underline">{{ tr('Watch video', 'Xem video') }}</a>
         </div>
+        <button v-if="variant.status === 'Needs Attention' && batch.status !== 'Cancelled'" class="text-xs underline" @click="retry(batch, variant)">{{ tr('Retry after correction', 'Chạy lại sau khi sửa') }}</button>
         <p v-if="variant.error" class="text-xs text-rose-500">{{ variant.error }}</p>
       </div>
     </article>
@@ -48,6 +49,12 @@ async function refresh() {
     if (current === epoch) error.value = errorMessage(e, 'Could not load video variants.');
   }
   if (current === epoch) timer = setTimeout(refresh, batches.value.some(active) ? 5000 : 30000);
+}
+async function retry(batch, variant) {
+  try {
+    await call('joymedia.api.creative.retry_product_variant', { batch_name: batch.name, index: variant.index });
+    clearTimeout(timer); await refresh();
+  } catch (e) { error.value = errorMessage(e, 'Could not resume the variant.'); }
 }
 async function cancel(batch) {
   try {
