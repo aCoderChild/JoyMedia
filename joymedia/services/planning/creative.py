@@ -50,7 +50,7 @@ def _validate_action_progress(scenes):
 		# that is placed on the table") without the subject doing anything.
 		# Such set dressing must not satisfy the action-progress contract.
 		if not any(
-			TANGIBLE_ACTION.search(re.split(r"\b(?:where|which|that)\b", phase["action"], 1, flags=re.I)[0])
+			TANGIBLE_ACTION.search(re.split(r"\b(?:where|which|that)\b", phase["action"], maxsplit=1, flags=re.I)[0])
 			for phase in phases
 		):
 			next_action = scenes[index + 1]["action"]
