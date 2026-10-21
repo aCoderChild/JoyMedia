@@ -137,7 +137,9 @@ def _start_takes_run_locked(
 		project.db_set("approved_plan_signature", compute_plan_signature(project.name), update_modified=False)
 	assert_plan_matches_approval(project)
 
-	snapshot_json, snapshot_hash = build_project_snapshot(project, require_production_pipeline=True)
+	snapshot_json, snapshot_hash = build_project_snapshot(
+		project, require_production_pipeline=True, keyframe_stage=stage == "keyframe"
+	)
 	# The snapshot selected the production pipeline once. Reuse that immutable
 	# choice rather than re-reading the active setting after a possible promotion.
 	pipeline_name = (frappe.parse_json(snapshot_json) or {}).get("generation_pipeline")

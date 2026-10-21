@@ -204,7 +204,7 @@ def _active_project_shots(project_name, fields=None):
 	)
 
 
-def build_project_snapshot(project, *, require_production_pipeline=False):
+def build_project_snapshot(project, *, require_production_pipeline=False, keyframe_stage=False):
 	settings = _project_settings(project)
 	configured_pipeline = settings.generation_pipeline or ""
 	# A run may carry a project-level pipeline only when its immutable final stage
@@ -395,7 +395,7 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 			from joymedia.services.consistency.retention import route_presentation
 
 			route_presentation(scene, retention_policy)
-	_compose_end_card(snapshot["shots"])
+	_compose_end_card(snapshot["shots"], keyframe_stage=keyframe_stage)
 	from joymedia.services.editing.graphics import requested_graphics
 
 	for scene in snapshot["shots"]:
@@ -436,14 +436,14 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 	return serialized, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def _compose_end_card(shots):
+def _compose_end_card(shots, *, keyframe_stage=False):
 	"""The film's last scene, when it shows the product, is laid out by rules instead of drawn by the image model.
 
 	A generated scene leaves composition to a model and can obscure the product. An advertisement ends on the product,
 	so its source-art protection remains independent of the actor performance. Hold only the final two seconds;
 	never replace a requested wave or pose transition with a whole-shot source card.
 	"""
-	if not shots:
+	if keyframe_stage or not shots:
 		return
 	last = max(shots, key=lambda row: int(row.get("shot_number") or 0))
 	from joymedia.services.planning.shot_structure import structure_for

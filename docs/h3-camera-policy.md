@@ -66,6 +66,11 @@ upstream revision, source, size and SHA256. Validate installed weights and actua
 scene results before selecting that profile; changing a sampler does not prove
 physics, printed artwork retention or compliance with the requested action.
 
+Native keyframe-only runs prepare still images and do not need a video's final
+readable hold. Their snapshots omit that video-only requirement, so a short
+reference-editing slot remains valid. Video runs retain the final-hold duration
+check; image admission, unchanged direction and explicit frame review still apply.
+
 ## Reference-video analysis integration
 
 Inferred reference preferences now resolve against available boundaries before

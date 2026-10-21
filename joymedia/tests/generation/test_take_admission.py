@@ -34,7 +34,7 @@ class TestTakeAdmission(TestCase):
 			patch(
 				"joymedia.services.project.context.build_project_snapshot",
 				return_value=(json.dumps({"generation_pipeline": "PIPE"}), "hash"),
-			),
+			) as snapshot,
 			patch.object(takes, "_continuation_source_task", return_value=None),
 			patch(
 				"joymedia.services.generation.orchestrator.validate_run_preflight",
@@ -46,8 +46,11 @@ class TestTakeAdmission(TestCase):
 			) as start,
 		):
 			takes._start_takes_run_locked(project, ["S"])
-		self.assertEqual(events, ["preflight", "insert"])
-		start.assert_called_once_with("R", preflight_checked=True)
+			self.assertFalse(snapshot.call_args.kwargs["keyframe_stage"])
+			start.assert_called_once_with("R", preflight_checked=True)
+			takes._start_takes_run_locked(project, ["S"], stage="keyframe")
+			self.assertTrue(snapshot.call_args.kwargs["keyframe_stage"])
+		self.assertEqual(events, ["preflight", "insert", "preflight", "insert"])
 
 	def exercise(self, names):
 		gate = threading.Lock()
