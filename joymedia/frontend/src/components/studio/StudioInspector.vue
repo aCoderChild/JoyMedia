@@ -324,8 +324,14 @@
           </div>
 
           <div v-if="selectedAsset.media_type === 'Video' && selectedAsset.reference_role === 'Motion'" class="space-y-1.5">
+            <label class="block text-[11px] font-semibold">{{ currentLang === 'vi' ? 'Video này điều khiển' : 'This video controls' }}</label>
+            <select class="w-full rounded-xl border border-outline-border bg-surface-card px-2 py-1 text-xs" :value="selectedAsset.motion_reference_use || 'Camera and actions'" :disabled="isProductionActive" @change="$emit('updateMotionReferenceUse', selectedAsset, $event.target.value)">
+              <option value="Camera and actions">{{ currentLang === 'vi' ? 'Máy quay và hành động' : 'Camera and actions' }}</option>
+              <option value="Camera only">{{ currentLang === 'vi' ? 'Chỉ máy quay' : 'Camera only' }}</option>
+              <option value="Actions only">{{ currentLang === 'vi' ? 'Chỉ hành động' : 'Actions only' }}</option>
+            </select>
             <p class="text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Tham chiếu nhịp máy quay và bố cục cho quá trình lập kế hoạch.' : 'Reference for camera rhythm and coverage during planning.' }}</p>
-            <button type="button" class="jm-btn-secondary text-xs" :disabled="isProductionActive" @click="$emit('analyzeCameraReference')">
+            <button v-if="selectedAsset.motion_reference_use !== 'Actions only'" type="button" class="jm-btn-secondary text-xs" :disabled="isProductionActive" @click="$emit('analyzeCameraReference')">
               {{ currentLang === 'vi' ? 'Phân tích máy quay tham chiếu' : 'Analyze reference camera' }}
             </button>
             <p v-if="selectedAsset.analysis_error" class="text-[11px] text-red-600">{{ selectedAsset.analysis_error }}</p>
@@ -669,6 +675,7 @@ const emit = defineEmits([
   "removeAsset",
   "updateAssetRole",
   "analyzeCameraReference",
+  "updateMotionReferenceUse",
   "updateAssetIdentity",
   "updateAssetSize",
   "selectKeyframeTarget",

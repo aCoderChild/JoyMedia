@@ -53,6 +53,15 @@ def reference_inventory(project):
 	return items
 
 
+def reference_choices(inventory):
+	"""Alternative image keys resolve to one identity, never additional cast."""
+	return {
+		view.get("key", item["key"]): {"role": item["role"], "identity": item.get("identity") or item["key"]}
+		for item in inventory
+		for view in item.get("views") or [{"key": item["key"]}]
+	}
+
+
 def script_schema(inventory, constraints):
 	"""Constrain syntax with the existing runtime transport; validation owns meaning."""
 
@@ -67,9 +76,16 @@ def script_schema(inventory, constraints):
 	text = {"type": "string", "minLength": 1}
 
 	def names(roles):
-		keys = [r["key"] for r in inventory if r["role"] in roles]
+		choices = {
+			key: value for key, value in reference_choices(inventory).items() if value["role"] in roles
+		}
+		keys = list(choices)
 		return (
-			{"type": "array", "items": {"type": "string", "enum": keys}, "maxItems": len(keys)}
+			{
+				"type": "array",
+				"items": {"type": "string", "enum": keys},
+				"maxItems": len({value["identity"] for value in choices.values()}),
+			}
 			if keys
 			else {"type": "array", "items": text, "maxItems": 0}
 		)
@@ -206,7 +222,10 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 			"label": item["label"],
 			"keep_rule": item.get("keep_rule", "")[:400],
 			"view_count": len(item["views"]),
-			"description": " | ".join(dict.fromkeys(v["description"] for v in item["views"]))[:600],
+			"views": [
+				{"key": v.get("key", item["key"]), "description": v["description"][:200]}
+				for v in item["views"]
+			],
 		}
 		for item in inventory
 	]
@@ -225,10 +244,10 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Supply every prerequisite action before its consequence: acquire, grip, move into contact, perform the use, reveal the changed state. Reaching for a container is not obtaining its contents: show removal before using the item. "
 		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. Repeat the same full place description for one location, not vague same-room placeholders. "
 		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "
-		"Perform gestures promptly in real time; use several purposeful actions across the film. "
+		"Perform gestures promptly in real time. Each non-final shot needs at least two sequential visible actions within one coherent interaction; never a whole shot of noticing/looking. Only the advertised product or its material performs its function, never the actor body or an unrelated prop. "
 		"Propose positive relative scene durations and explicit chronological timed Action phases starting at zero, with no gaps. The application allocates exact frames to the requested total and rescales your phase timings. "
 		"Example syntax for a five-second scene: [0-2s] one visible action\n[2-5s] its consequence. "
-		"Only supplied actors may appear in prose AND cast: no humans when only a mascot is supplied. Use exact roster keys in cast/products. Gallery views are one identity, not additional cast. "
+		"Only supplied actors may appear in prose AND cast: no humans when only a mascot is supplied. Choose the best supplied view key for each scene in cast/products, one view per identity. Gallery views are alternatives of one identity, never additional cast. "
 		"Reference observations supply action rhythms, never additional actors, products, claims or sounds. "
 		"Avoid applicable problems in unresolved feedback; historical scene numbers are not instructions to reuse an old story, and script writing never resolves feedback. Only state supplied approved claims. Ordinary props and a coherent location may be invented, but name them before use. "
 		"Vary adjacent shot sizes with purpose; preserve the action axis; show the product close at use and clearly at the end. "
@@ -316,7 +335,8 @@ def validate_script(script, inventory, constraints):
 		constraints["aspect_ratio"]
 	):
 		raise ValueError("Keep the requested aspect ratio exactly.")
-	roles = {r["key"]: r["role"] for r in inventory}
+	reference_options = reference_choices(inventory)
+	roles = {key: value["role"] for key, value in reference_options.items()}
 	declared_duration = script.get("duration_seconds")
 	if type(declared_duration) not in (int, float) or not math.isfinite(declared_duration):
 		raise ValueError("Declared script duration must be a finite number.")
@@ -346,6 +366,10 @@ def validate_script(script, inventory, constraints):
 				or any(roles.get(k) not in allowed for k in keys)
 			):
 				raise ValueError("Scene " + field + " must use supplied identities only.")
+			if len({reference_options[k]["identity"] for k in keys}) != len(keys):
+				raise ValueError(
+					"Use one view per identity in each scene; alternate photos are not extra cast."
+				)
 		for field in ("voice_over", "audio_cues", "on_screen_text"):
 			if not isinstance(scene.get(field, ""), str):
 				raise ValueError("Scene audio and text must be strings.")

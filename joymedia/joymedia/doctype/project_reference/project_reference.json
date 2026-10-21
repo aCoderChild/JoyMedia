@@ -8,6 +8,7 @@
   "identity_key",
   "asset_version",
   "reference_role",
+  "motion_reference_use",
   "label",
   "relative_size",
   "keep_rule"
@@ -45,6 +46,15 @@
    "label": "Reference Role",
    "options": "Product\nCharacter\nPerson\nLogo\nEnvironment\nStyle\nComposition\nMotion\nAudio\nGeneral",
    "reqd": 1
+  },
+  {
+   "fieldname": "motion_reference_use",
+   "fieldtype": "Select",
+   "label": "Video Reference Use",
+   "default": "Camera and actions",
+   "options": "Camera and actions\nCamera only\nActions only",
+   "depends_on": "eval:doc.reference_role==\"Motion\"",
+   "description": "Choose which planning layer this selected video controls."
   },
   {
    "fieldname": "label",

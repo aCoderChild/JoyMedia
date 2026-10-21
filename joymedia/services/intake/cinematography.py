@@ -50,10 +50,13 @@ def analyze_video(path):
 	}
 
 
-def motion_references(project):
+def motion_references(project, *, purpose=None):
 	"""Only explicitly selected Motion videos control cinematography."""
 	for row in project.get("selected_media") or []:
 		if row.get("reference_role") != "Motion" or not row.get("asset_version"):
+			continue
+		use = row.get("motion_reference_use") or "Camera and actions"
+		if (purpose == "Camera" and use == "Actions only") or (purpose == "Actions" and use == "Camera only"):
 			continue
 		version = frappe.db.get_value(
 			"Asset Version",
@@ -67,7 +70,7 @@ def motion_references(project):
 
 def ensure_project_camera_analysis(project):
 	"""Runs in the existing background planning job, never at prompt compilation."""
-	for version in motion_references(project):
+	for version in motion_references(project, purpose="Camera"):
 		stored = frappe.parse_json(version.analysis_json or "{}") or {}
 		analysis = stored.get("cinematography") or {}
 		if (
@@ -106,7 +109,7 @@ def ensure_project_camera_analysis(project):
 
 def reference_direction(project):
 	profiles, observations = [], []
-	for version in motion_references(project):
+	for version in motion_references(project, purpose="Camera"):
 		stored = frappe.parse_json(version.analysis_json or "{}") or {}
 		analysis = stored.get("cinematography") or {}
 		if (
@@ -136,7 +139,7 @@ def reference_direction(project):
 
 def review_reference(project, asset_version, grammar):
 	"""Attach an explicit editorial interpretation to analyzed, selected evidence."""
-	version = next((v for v in motion_references(project) if v.name == asset_version), None)
+	version = next((v for v in motion_references(project, purpose="Camera") if v.name == asset_version), None)
 	if not version:
 		raise ValueError("Select this video as a Motion reference in this project first.")
 	frappe.get_doc("Media Asset", version.media_asset).check_permission("write")

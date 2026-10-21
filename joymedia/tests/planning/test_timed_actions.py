@@ -69,7 +69,7 @@ class TestTimedActions(unittest.TestCase):
 		authored = read_timed_actions("[0-0.4s] Grip the cup.\n[0.4-2s] Lift the cup briskly.", 2)
 		with (
 			patch.object(p, "build_planning_prompt", return_value="generic plan"),
-			patch.object(p, "_ask_planner", return_value=raw),
+			patch.object(p, "_ask_planner", return_value=raw) as planner,
 			patch.object(p, "translate", side_effect=lambda text, project: text),
 			patch.object(p, "english_roles", side_effect=lambda text, refs, product: text),
 			patch.object(p, "normalize_production_shot", return_value=normalized),
@@ -82,7 +82,9 @@ class TestTimedActions(unittest.TestCase):
 				[],
 				{"reference_keys": ["cup"], "setting_prompt": "table", "notes": []},
 				authored,
+				previous_end_state="The displaced prop remains on its side.",
 			)
+		self.assertIn("The displaced prop remains on its side.", planner.call_args.args[0])
 		self.assertEqual(authored, plan["motion_plan"]["actions"])
 		self.assertEqual(["cup"], plan["reference_keys"])
 		self.assertIn("briskly", plan["video_prompt"])

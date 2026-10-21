@@ -105,12 +105,11 @@
             <Button variant="ghost" @click="references.splice(index, 1)">✕</Button>
           </div>
           <div v-if="form.autoScript && !workbook" class="flex flex-wrap gap-2">
-            <FileUploader :file-types="['image/*']" @success="(file) => addReference(file, 'Product')" @failure="(e) => (error = String(e?.message || e))">
-              <template #default="{ uploading, progress, openFileSelector }"><Button :loading="uploading" @click="openFileSelector">{{ uploading ? `${progress}%` : tr('+ Product images', '+ Ảnh sản phẩm') }}</Button></template>
-            </FileUploader>
-            <FileUploader :file-types="['image/*']" @success="(file) => addReference(file, 'Character')" @failure="(e) => (error = String(e?.message || e))">
-              <template #default="{ uploading, progress, openFileSelector }"><Button :loading="uploading" @click="openFileSelector">{{ uploading ? `${progress}%` : tr('+ Mascot images', '+ Ảnh mascot') }}</Button></template>
-            </FileUploader>
+            <input ref="productImagesInput" type="file" multiple accept="image/*" class="hidden" @change="uploadImages($event, 'Product')" />
+            <input ref="mascotImagesInput" type="file" multiple accept="image/*" class="hidden" @change="uploadImages($event, 'Character')" />
+            <Button :loading="uploadingImages" @click="productImagesInput?.click()">{{ tr('+ Product images', '+ Ảnh sản phẩm') }}</Button>
+            <Button :disabled="uploadingImages" @click="mascotImagesInput?.click()">{{ tr('+ Mascot images', '+ Ảnh mascot') }}</Button>
+            <span v-if="uploadingImages" class="text-xs text-ink-muted">{{ uploadProgress }}</span>
           </div>
           <FileUploader v-else :file-types="['image/*', '.pdf']" @success="addReference" @failure="(e) => (error = String(e?.message || e))">
             <template #default="{ uploading, progress, openFileSelector }">
@@ -150,7 +149,7 @@
       </div>
     </template>
     <template #actions>
-      <Button variant="solid" :loading="creating" :disabled="!canCreate" @click="create">
+      <Button variant="solid" :loading="creating" :disabled="!canCreate || uploadingImages" @click="create">
         {{ form.autoScript && !workbook ? tr('Create videos', 'Tạo video') : tr('Create project', 'Tạo dự án') }}
       </Button>
     </template>
@@ -159,7 +158,7 @@
 
 <script setup>
 import { computed, reactive, ref } from "vue";
-import { Alert, Badge, Button, Dialog, FileUploader, FormControl, call, createResource } from "frappe-ui";
+import { Alert, Badge, Button, Dialog, FileUploader, FormControl, call, createResource, upload as uploadFile } from "frappe-ui";
 import { tr } from "../stores/i18n";
 import { errorMessage } from "../utils/errors";
 
@@ -168,6 +167,7 @@ const emit = defineEmits(["created"]);
 
 const form = reactive({ name: "", brief: "", format: "", customRatio: "", demo: "", autoScript: true, autoRender: true, variants: 1 });
 const workbook = ref(null);
+const productImagesInput = ref(null), mascotImagesInput = ref(null), uploadingImages = ref(false), uploadProgress = ref("");
 const references = ref([]);
 const creating = ref(false);
 const error = ref("");
@@ -221,12 +221,28 @@ function requireWorkbook(file) {
   return file.name.toLowerCase().endsWith(".xlsx") ? null : tr("Please choose an .xlsx workbook.", "Vui lòng chọn tệp .xlsx.");
 }
 
+async function uploadImages(event, role) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length || uploadingImages.value) return;
+  uploadingImages.value = true; error.value = '';
+  try {
+    for (let i = 0; i < files.length; i++) {
+      uploadProgress.value = `${i + 1} / ${files.length}`;
+      const file = await uploadFile(files[i], { private: true });
+      if (!file?.name || !file?.file_url) throw new Error('Image upload did not complete.');
+      addReference(file, role);
+    }
+  } catch (e) { error.value = errorMessage(e, 'Could not upload the images.'); }
+  finally { uploadingImages.value = false; event.target.value = ''; }
+}
+
 function addReference(file, role = "") {
   const stem = String(file.file_name || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
   references.value.push({ file_name: file.name, file_url: file.file_url, label: stem, role, pdf: /\.pdf$/i.test(file.file_name || "") });
 }
 
 async function create() {
+  if (creating.value || uploadingImages.value) return;
   creating.value = true;
   error.value = "";
   try {

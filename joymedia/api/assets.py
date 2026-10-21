@@ -56,6 +56,18 @@ def review_project_camera_reference(project_name, asset_version, grammar):
 	return result
 
 
+@frappe.whitelist(methods=["POST"])
+def annotate_project_action_reference(project_name, asset_version, source_sha256, clips, limitations=""):
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	from joymedia.api.storyboard import _mark_storyboard_needs_review
+	from joymedia.services.intake.action_reference import annotate_reference
+
+	result = annotate_reference(project, asset_version, source_sha256, clips, limitations)
+	_mark_storyboard_needs_review(project)
+	return result
+
+
 def get_project_asset_candidates(media_project, media_type=None):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_read_access()
@@ -197,6 +209,33 @@ def set_reference_identity(media_project, asset_version, identity_key):
 	project.save(ignore_permissions=True)
 	frappe.db.commit()
 	return {"asset_version": asset_version, "identity_key": row.identity_key}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_motion_reference_use(media_project, asset_version, use):
+	project = frappe.get_doc("Media Project", media_project)
+	project._require_write_access()
+	if use not in {"Camera and actions", "Camera only", "Actions only"}:
+		frappe.throw(_("Choose camera, actions, or both."))
+	row = next(
+		(
+			r
+			for r in project.selected_media
+			if r.asset_version == asset_version and r.reference_role == "Motion"
+		),
+		None,
+	)
+	if not row:
+		frappe.throw(_("Select a Motion video in this project."))
+	asset = frappe.db.get_value("Asset Version", asset_version, "media_asset")
+	if frappe.db.get_value("Media Asset", asset, "media_type") != "Video":
+		frappe.throw(_("This reference use applies to videos."))
+	row.motion_reference_use = use
+	project.save(ignore_permissions=True)
+	from joymedia.api.storyboard import _mark_storyboard_needs_review
+
+	_mark_storyboard_needs_review(project)
+	return {"asset_version": asset_version, "motion_reference_use": use}
 
 
 @frappe.whitelist()

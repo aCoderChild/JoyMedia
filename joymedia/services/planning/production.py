@@ -57,12 +57,35 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 	references = references if references is not None else project_reference_options(project)
 	beat = creative_beat(project, shot)
 	if project.get("planning_mode") == "Follow the sheet":
-		plan = follow_the_sheet(project, shot, beat, references, previous_setting)
-		from joymedia.services.scene.references import named_reference_views
+		from joymedia.services.scene.references import identity_key, named_reference_views
 
-		plan["reference_views"] = named_reference_views(
+		view_keys = named_reference_views(
 			project.get("selected_media") or [], [*(beat.get("cast") or []), *(beat.get("products") or [])]
 		)
+		rows = {row.reference_key: row for row in project.get("selected_media") or []}
+		references = [dict(reference) for reference in references]
+		for reference in references:
+			canonical = rows.get(reference["key"])
+			views = [
+				rows[key]
+				for key in view_keys
+				if key in rows and canonical and identity_key(rows[key]) == identity_key(canonical)
+			]
+			if views:
+				descriptions = []
+				for view in views:
+					analysis = (
+						frappe.parse_json(
+							frappe.db.get_value("Asset Version", view.asset_version, "analysis_json") or "{}"
+						)
+						or {}
+					)
+					if analysis.get("description"):
+						descriptions.append(analysis["description"])
+				if descriptions:
+					reference["description"] = "Chosen source view: " + " | ".join(descriptions)
+		plan = follow_the_sheet(project, shot, beat, references, previous_setting, previous_end_state)
+		plan["reference_views"] = view_keys
 		return plan
 	prompt = build_planning_prompt(project, shot, beat, references, previous_end_state)
 	raw = _ask_planner(prompt)
@@ -196,7 +219,7 @@ def faithful_rewrite(project, source, references, inventory=""):
 	return source if is_english(source) else "The characters act out the scene."
 
 
-def follow_the_sheet(project, shot, beat, references, previous_setting=""):
+def follow_the_sheet(project, shot, beat, references, previous_setting="", previous_end_state=""):
 	"""A production plan taken from the storyboard's own text.
 
 	Free prose uses faithful translation. Explicit timed phases retain their authored
@@ -300,7 +323,9 @@ def follow_the_sheet(project, shot, beat, references, previous_setting=""):
 		authored = timed or [
 			{"start": 0, "end": float(shot.duration_seconds), "action": beat.get("action") or beat["summary"]}
 		]
-		return _timed_sheet_plan(project, shot, beat, references, plan, authored)
+		return _timed_sheet_plan(
+			project, shot, beat, references, plan, authored, previous_end_state=previous_end_state
+		)
 	camera = (beat.get("camera") or "") + " " + (beat.get("action") or "")
 	split_screen = bool(re.search(r"split[- ]?screen|chia \d? ?màn", camera, re.I))
 	# Only the action describes what moves; the camera text is the part the translator garbles most.
@@ -397,7 +422,7 @@ def _apply_camera_profile(project, shot, plan):
 	return plan
 
 
-def _timed_sheet_plan(project, shot, beat, references, base, authored):
+def _timed_sheet_plan(project, shot, beat, references, base, authored, *, previous_end_state=""):
 	"""Use the normal production planner for staging; preserve the sheet's intervals.
 
 	The shared shot grammar chooses camera behavior downstream. No provider,
@@ -484,10 +509,13 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored):
 		+ str(beat.get("rules") or "")
 		+ "\nPLACE: "
 		+ base["setting_prompt"]
+		+ "\nPREVIOUS INTENDED END STATE: "
+		+ previous_end_state
+		+ "\nPreserve unchanged prop states across coverage of the same location; do not reset them without an authored action. The current authored action/location takes precedence; do not transfer fixed room props to a new place."
 		+ "\nREFERENCES: "
 		+ json.dumps(
 			[
-				{k: r.get(k) for k in ("key", "label", "role")}
+				{k: r.get(k) for k in ("key", "label", "role", "description")}
 				for r in references
 				if r["key"] in base["reference_keys"]
 			],
@@ -676,9 +704,15 @@ def project_reference_options(project):
 			"label": row.label or row.reference_key,
 			"role": row.reference_role or "General",
 		}
-		option["aliases"] = [
-			item.label or item.reference_key for item in all_rows if identity_key(item) == identity_key(row)
-		]
+		option["aliases"] = list(
+			dict.fromkeys(
+				alias
+				for item in all_rows
+				if identity_key(item) == identity_key(row)
+				for alias in (item.label, item.reference_key)
+				if alias
+			)
+		)
 		if variant_count > 1:
 			option["description"] = f"{variant_count} approved views of this one identity."
 		try:

@@ -523,6 +523,7 @@
 				@remove-asset="removeReference"
 				@update-asset-role="updateReferenceRole"
 				@analyze-camera-reference="analyzeCameraReference"
+				@update-motion-reference-use="updateMotionReferenceUse"
 				@update-asset-identity="updateReferenceIdentity"
 				@update-asset-size="updateReferenceSize"
 				@select-keyframe-target="onSelectKeyframe"
@@ -821,6 +822,7 @@ const {
 	addReference,
 	updateReferenceRole,
 	analyzeCameraReference,
+	updateMotionReferenceUse,
 	updateReferenceIdentity,
 	updateReferenceSize,
 	removeReference,

@@ -17,6 +17,41 @@ from joymedia.services.planning.camera import (
 
 
 class TestUpstreamCinematography(TestCase):
+	def test_reference_use_separates_camera_and_subject_action_sources(self):
+		from joymedia.services.intake.cinematography import motion_references
+
+		project = {
+			"selected_media": [
+				{
+					"reference_role": "Motion",
+					"asset_version": "camera",
+					"motion_reference_use": "Camera only",
+				},
+				{
+					"reference_role": "Motion",
+					"asset_version": "action",
+					"motion_reference_use": "Actions only",
+				},
+				{"reference_role": "Motion", "asset_version": "both"},
+			]
+		}
+
+		def value(doctype, name, *args, **kwargs):
+			return (
+				frappe._dict(name=name, media_asset=name, file=name)
+				if doctype == "Asset Version"
+				else "Video"
+			)
+
+		with patch.object(frappe.db, "get_value", side_effect=value):
+			self.assertEqual(
+				["camera", "both"], [v.name for v in motion_references(project, purpose="Camera")]
+			)
+			self.assertEqual(
+				["action", "both"], [v.name for v in motion_references(project, purpose="Actions")]
+			)
+			self.assertEqual(3, len(list(motion_references(project))))
+
 	def test_initial_director_and_revision_entry_receive_reference_policy(self):
 		project = frappe.get_doc({"doctype": "Media Project", "product_name": "Supplied product"})
 		settings = frappe._dict(
