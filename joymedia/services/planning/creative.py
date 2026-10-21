@@ -11,7 +11,7 @@ import math
 import frappe
 
 from joymedia.services.planning.shot_structure import ANGLES, FRAMINGS, STAGES
-from joymedia.services.planning.timed_actions import read_timed_actions
+from joymedia.services.planning.timed_actions import normalize_action_separators, read_timed_actions
 
 
 def reference_inventory(project):
@@ -117,15 +117,18 @@ def script_schema(inventory, constraints):
 def draft_script(project, *, nonce, previous=(), review_notes=()):
 	from joymedia.services.intake.action_reference import action_observations
 	from joymedia.services.intake.references import brand
+	from joymedia.services.planning.camera import reference_camera_grammar
 	from joymedia.services.planning.production import _ask_planner
 	from joymedia.services.project.formats import ratio_label
 
 	inventory = reference_inventory(project)
+	camera_grammar = reference_camera_grammar(project) or {}
 	constraints = {
 		"duration_seconds": project.total_duration_seconds or None,
 		"aspect_ratio": ratio_label(project.delivery_width, project.delivery_height) or None,
 		"approved_claims": brand(project).get("claims") or "Only directly visible product features.",
 		"creative_direction": project.video_idea or "",
+		"camera_reference_notes": [note[:400] for note in camera_grammar.get("notes", [])[:4]],
 		"unresolved_feedback": [
 			{**r, "text": r["text"] if len(r["text"]) <= 400 else r["text"][:250] + " … " + r["text"][-150:]}
 			for r in review_notes
@@ -153,7 +156,7 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Create an original, brisk product commercial from these references, not a slideshow. "
 		"Invent a coherent situation with a visible cause, reaction, product acquisition/use and visible result. "
 		"Supply every prerequisite action before its consequence: acquire, grip, move into contact, perform the use, reveal the changed state. Reaching for a container is not obtaining its contents: show removal before using the item. "
-		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. "
+		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. Repeat the same full place description for one location, not vague same-room placeholders. "
 		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "
 		"Perform gestures promptly in real time; use several purposeful actions across the film. "
 		"Write timed Action phases that start at 0 and end exactly at that scene duration, with no gaps. "
@@ -164,7 +167,7 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Vary adjacent shot sizes with purpose; preserve the action axis; show the product close at use and clearly at the end. "
 		"Camera behavior is derived later from semantic stage/framing: do not put camera moves in Action. "
 		"Use layered depth, shaped directional lighting, material texture and a deliberate palette. "
-		"Choose developing rhythmic music aligned with action, event-linked sounds and a resolved ending. "
+		"Music must name instrumentation, mood, tempo and cue changes aligned with story beats, ending with a resolved cadence. Sounds must link to visible actions. "
 		"Preserve explicit format/duration. If absent, propose suitable ones with rationale, never default to reels. "
 		"Return the complete schema with 2–12 scenes, totaling at most sixty seconds. "
 		"Keep visual/continuity/state fields concise; scene voiceover may be empty. "
@@ -241,7 +244,17 @@ def review_script_actions(script, roster=(), review_notes=()):
 	draft = [
 		{
 			k: scene[k]
-			for k in ("duration_seconds", "visual_camera", "action", "visible_change", "cast", "products")
+			for k in (
+				"duration_seconds",
+				"visual_camera",
+				"action",
+				"visible_change",
+				"cast",
+				"products",
+				"shot_framing",
+				"shot_angle",
+				"narrative_stage",
+			)
 		}
 		for scene in script["scenes"]
 	]
@@ -250,7 +263,7 @@ def review_script_actions(script, roster=(), review_notes=()):
 		"progresses: a concrete subject action changes an object/state; camera motion, a hero-shot label, posing or approaching alone do not count. Only the FINAL scene may use a product hold. "
 		"causal: every object/tool is visibly acquired before use, required contact precedes a resulting change, no skipped prerequisite or reset between shots, no contradictory opening/action. Reaching/holding a container does NOT acquire its contents: later use of an item without its removal is causal=false. "
 		"paced: allocated time supports active real-time action. A shot spent entirely just reaching, leaning or looking is NOT brisk pacing. The final hold must not consume a disproportionate share of this action-led film. "
-		"Reason must cite the specific action text or missing prerequisite; never accept generic claims of realism. "
+		"Pacing also needs purposeful framing contrast and a product detail at use; repeated identical size/angle without motivation is not engaging coverage. Reason must cite specific action or missing prerequisite; never accept generic claims of realism. "
 		"This is script review only, not evidence of rendered physics.\nROSTER: "
 		+ json.dumps(roster, ensure_ascii=False)
 		+ "\nUNRESOLVED FEEDBACK (apply relevant pitfalls, not historical scene numbers): "
@@ -305,6 +318,7 @@ def validate_script(script, inventory, constraints):
 		for field in ("beat_name", "visual_camera", "action", "visible_change", "place", "continuity_rules"):
 			if not isinstance(scene.get(field), str) or not scene[field].strip() or len(scene[field]) > 2400:
 				raise ValueError("Every scene requires " + field + ".")
+		scene["action"] = normalize_action_separators(scene["action"])
 		if read_timed_actions(scene["action"], duration) is None:
 			raise ValueError("Use explicit chronological timed action phases, not camera-only prose.")
 		for key, choices in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):

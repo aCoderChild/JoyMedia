@@ -5,13 +5,19 @@ import re
 _LINE = re.compile(r"^\s*\[(\d+(?:\.\d+)?)\s*[-–→]\s*(\d+(?:\.\d+)?)\s*s?\]\s*(\S.*)$")
 
 
+def normalize_action_separators(text):
+	"""Accept inline explicit intervals without changing timing or action words."""
+	marker = r"\[\d+(?:\.\d+)?\s*[-–→]\s*\d+(?:\.\d+)?\s*s?\]"
+	return re.sub(r"[ \t]+(?=" + marker + ")", "\n", str(text or ""))
+
+
 def read_timed_actions(text, duration):
 	"""Return explicit intervals, or None for legacy free prose. Never guess timing.
 
 	Once any line starts a timed list, every nonempty line must be timed. Invalid
 	lists fail planning rather than silently replacing the advertiser's pace.
 	"""
-	lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+	lines = [line.strip() for line in normalize_action_separators(text).splitlines() if line.strip()]
 	if not any(re.match(r"^\s*\[\d", line) for line in lines):
 		return None
 	result, previous = [], 0.0
