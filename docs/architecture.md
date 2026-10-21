@@ -150,3 +150,11 @@ Use `PYTHONSAFEPATH=1` and an explicit `PYTHONPATH`, with the Bench as working d
 
 Historical qualification reports under `docs` describe their recorded runs. They
 are evidence of those runs, not the current model inventory or release status.
+
+The automatic script writer calls the `writer` capability, independently of the
+per-shot production `planner`. Configure `joymedia_writer` for a general
+instruction endpoint; absent an override, it inherits the existing translator
+endpoint, then planner. No vendor or model name is selected in application code.
+Scripts use the existing runtime structured-output transport with a dynamic JSON
+schema for the supplied reference keys, format and camera enums. The ordinary
+validator still rejects invalid durations, action intervals and unknown cast.

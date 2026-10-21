@@ -1158,6 +1158,7 @@ def _ask_planner(
 	refresh=False,
 	capability="planner",
 	sampling_profile="production_plan",
+	response_schema=None,
 ):
 	"""Ask the planner; an identical request returns the stored answer.
 
@@ -1167,19 +1168,34 @@ def _ask_planner(
 	"""
 	settings = sampling(sampling_profile)
 	max_tokens = settings["max_tokens"] if max_tokens is None else max_tokens
-	cache_key = f"joymedia_{capability}:{request_seed(system, prompt, str(max_tokens), json.dumps(settings, sort_keys=True))}"
+	cache_settings = {**settings, "response_schema": response_schema} if response_schema else settings
+	cache_key = f"joymedia_{capability}:{request_seed(system, prompt, str(max_tokens), json.dumps(cache_settings, sort_keys=True))}"
 	if not refresh:
 		cached = frappe.cache.get_value(cache_key)
 		if cached is not None:
 			return cached
+	schema_options = {"response_schema": response_schema} if response_schema else {}
 	answer = _request_planner(
-		prompt, system=system, max_tokens=max_tokens, capability=capability, sampling_profile=sampling_profile
+		prompt,
+		system=system,
+		max_tokens=max_tokens,
+		capability=capability,
+		sampling_profile=sampling_profile,
+		**schema_options,
 	)
 	frappe.cache.set_value(cache_key, answer, expires_in_sec=CACHE_SECONDS)
 	return answer
 
 
-def _request_planner(prompt, *, system, max_tokens, capability="planner", sampling_profile="production_plan"):
+def _request_planner(
+	prompt,
+	*,
+	system,
+	max_tokens,
+	capability="planner",
+	sampling_profile="production_plan",
+	response_schema=None,
+):
 	from joymedia.services.runtime.endpoints import endpoint
 
 	configured = endpoint(capability)
@@ -1193,7 +1209,11 @@ def _request_planner(prompt, *, system, max_tokens, capability="planner", sampli
 		"seed": request_seed(system, prompt),
 		"max_tokens": max_tokens,
 	}
-	if capability == "planner":
+	if response_schema:
+		from joymedia.services.runtime.endpoints import structured_response
+
+		payload.update(structured_response(configured, response_schema, "production_script"))
+	if capability in {"planner", "writer"}:
 		from joymedia.services.planning.plan_parsing import _completion_budget
 
 		payload["max_tokens"] = _completion_budget(base_url, payload)

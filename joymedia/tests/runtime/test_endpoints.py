@@ -59,6 +59,20 @@ class TestRuntimeEndpoints(FrappeTestCase):
 		self.assertEqual("vision", configured.model)
 		self.assertEqual(15, configured.timeout)
 
+	def test_writer_can_use_general_instruction_endpoint_without_changing_production_planner(self):
+		with patch.object(
+			frappe,
+			"conf",
+			frappe._dict(
+				{
+					"joymedia_planner": {"base_url": "http://planner/v1", "model": "specialized"},
+					"joymedia_translator": {"base_url": "http://general/v1", "model": "instruction"},
+				}
+			),
+		):
+			self.assertEqual("instruction", endpoints.endpoint("writer").model)
+			self.assertEqual("specialized", endpoints.endpoint("planner").model)
+
 	def test_missing_or_invalid_endpoint_is_not_reported_as_ready(self):
 		with patch.object(
 			frappe, "conf", frappe._dict({"joymedia_vision": {"base_url": "http://vision/v1"}})

@@ -119,6 +119,8 @@ class TestGeneratedScriptValidation(TestCase):
 		self.assertIn("Unsupported shot_framing", last.args[0])
 		self.assertNotIn('"identity": "internal-id"', last.args[0])
 		self.assertIn("multi-scene", last.kwargs["system"])
+		self.assertEqual("writer", last.kwargs["capability"])
+		self.assertIn("scenes", last.kwargs["response_schema"]["properties"])
 
 	def test_authored_geometry_timing_and_cast_remain_authoritative(self):
 		self.assertEqual(sample_script(), validate_script(sample_script(), self.inventory, self.constraints))

@@ -6,11 +6,16 @@ these neutral objects::
 
     "joymedia_planner": {"base_url": "http://…/v1", "model": "…", "timeout": 600}
     "joymedia_vision": {"base_url": "http://…/v1", "model": "…", "timeout": 120}
+    "joymedia_writer": {"base_url": "http://…/v1", "model": "…", "timeout": 600}
     "joymedia_translator": {"base_url": "http://…/v1", "model": "…"}
 
 ``translator`` does the tasks that must stay faithful to the client's words (translation, a rewrite of a scene's own
 text, reading its place). A planner fine-tuned to write advertising copy embellishes them ("hero product in f&b…"),
 so a plain instruction model belongs here; without one, the planner is used.
+
+``writer`` creates original multi-scene scripts. It uses the configured general
+instruction endpoint by default, while the production planner may retain its
+specialized adapter. Either capability can be replaced without changing scripts.
 
 The legacy scalar keys remain readable during deployment migration.  They are an
 input-compatibility boundary only; no caller should depend on their names.
@@ -24,7 +29,7 @@ from collections.abc import Mapping
 import frappe
 from frappe import _
 
-DEFAULT_TIMEOUTS = {"planner": 600, "vision": 120, "translator": 300}
+DEFAULT_TIMEOUTS = {"planner": 600, "vision": 120, "translator": 300, "writer": 600}
 _LEGACY_KEYS = {
 	"planner": {
 		"base_url": "qwen_base_url",
@@ -34,9 +39,10 @@ _LEGACY_KEYS = {
 	},
 	"vision": {"base_url": "qwen_vl_base_url", "model": "qwen_vl_model", "timeout": "qwen_vl_timeout"},
 	"translator": {},
+	"writer": {},
 }
 # Capabilities that use another one's endpoint when they have none of their own.
-_FALLBACK = {"translator": "planner"}
+_FALLBACK = {"translator": "planner", "writer": "translator"}
 
 
 def is_configured(capability: str) -> bool:

@@ -51,6 +51,65 @@ def reference_inventory(project):
 	return items
 
 
+def script_schema(inventory, constraints):
+	"""Constrain syntax with the existing runtime transport; validation owns meaning."""
+
+	def object_schema(properties):
+		return {
+			"type": "object",
+			"properties": properties,
+			"required": list(properties),
+			"additionalProperties": False,
+		}
+
+	text = {"type": "string"}
+
+	def names(roles):
+		keys = [r["key"] for r in inventory if r["role"] in roles]
+		return (
+			{"type": "array", "items": {"type": "string", "enum": keys}, "maxItems": len(keys)}
+			if keys
+			else {"type": "array", "items": text, "maxItems": 0}
+		)
+
+	scene = {"beat_name": text, "duration_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 30}}
+	scene.update(
+		{
+			key: text
+			for key in (
+				"beat_name",
+				"visual_camera",
+				"action",
+				"visible_change",
+				"place",
+				"continuity_rules",
+				"voice_over",
+				"audio_cues",
+				"on_screen_text",
+			)
+		}
+	)
+	scene.update(
+		duration_seconds={"type": "number", "exclusiveMinimum": 0, "maximum": 30},
+		cast=names({"Character", "Person"}),
+		products=names({"Product"}),
+	)
+	for key, options in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
+		scene[key] = {"type": "string", "enum": sorted(options)}
+	root = {key: text for key in ("title", "logline", "format_reason", "visual_style", "music")}
+	root.update(
+		format={"const": constraints["aspect_ratio"]}
+		if constraints.get("aspect_ratio")
+		else {"type": "string", "pattern": "^[1-9][0-9]*:[1-9][0-9]*$"},
+		duration_seconds={"const": constraints["duration_seconds"]}
+		if constraints.get("duration_seconds")
+		else {"type": "number", "minimum": 1, "maximum": 60},
+		features={"type": "array", "items": text, "minItems": 1, "maxItems": 12},
+		scenes={"type": "array", "items": object_schema(scene), "minItems": 2, "maxItems": 12},
+	)
+	return object_schema(root)
+
+
 def draft_script(project, *, nonce, previous=()):
 	from joymedia.services.intake.action_reference import action_observations
 	from joymedia.services.intake.references import brand
@@ -92,8 +151,8 @@ def draft_script(project, *, nonce, previous=()):
 		"Select actions compatible with the actual product and reference anatomy; do not force an example onto another category. "
 		"Return 2–12 separate scenes, not one 30-second scene. Each non-closing scene must advance a visible subject action or object-state change; camera motion and posing alone do not count. "
 		"Use one main interaction per continuous shot and motivated cuts between phases. Actions happen promptly in real time; "
-		"do not fill the clip with waiting or repeat one gesture. Every scene action starts at 0 and ends at that scene duration, with no gaps. "
-		"Use depth, foreground/background separation, directional light and material texture, with an uncluttered action area. "
+		"do not fill the clip with waiting or repeat one gesture. Every scene action starts at 0 and ends at that scene duration, with no gaps. For a 5-second scene a single phase [0-5s] with one continuous action is valid. "
+		"Use depth, foreground/background separation, directional light and material texture, with an uncluttered action area. Music needs a clear rhythmic pulse and developing cues that support action, with a resolved ending. Write event-linked sounds for the actual visible actions; never transfer unrelated sounds from a reference. "
 		"Only referenced actors may participate. Multiple photos of ONE identity are alternative views, not extra actors or products. "
 		"Use only the roster key field EXACTLY in cast/products, never labels, identity names or invented keys. Ordinary props may be invented for a coherent situation, "
 		"but must be named in visual/action before use and kept consistent. Never invent performance claims. "
@@ -136,6 +195,8 @@ def draft_script(project, *, nonce, previous=()):
 			prompt + error,
 			system="You write complete multi-scene commercial scripts from visual product references. Return only the requested JSON, using exact enum values and reference keys.",
 			sampling_profile="creative_script",
+			capability="writer",
+			response_schema=script_schema(inventory, constraints),
 		)
 		try:
 			return validate_script(result, inventory, constraints)
