@@ -99,6 +99,15 @@ class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
 
+	def test_thirty_second_workflow_reserves_action_coverage_beyond_capacity_minimum(self):
+		from joymedia.services.planning.creative import script_schema
+
+		schema = script_schema(
+			self.inventory,
+			{"duration_seconds": 30, "aspect_ratio": "9:16", "fps": 24, "max_scene_frames": 124},
+		)
+		self.assertEqual(8, schema["properties"]["scenes"]["minItems"])
+
 	def test_generated_idle_beats_cannot_use_camera_motion_as_subject_progress(self):
 		script = sample_script()
 		script["scenes"][0]["subject_motion"] = "stationary"
