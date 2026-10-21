@@ -46,9 +46,18 @@ class TestRef2VA(FrappeTestCase):
 		self.assertIn("ref2va", graph["6"]["inputs"]["unet_name"])
 		self.assertNotIn("guide_last", graph)
 
+	def test_original_character_is_separate_optional_reference(self):
+		graph = self.graph(product=["original-product.png"], character=["original-mascot.png"])
+		self.assertEqual("original-mascot.png", graph["character"]["inputs"]["image"])
+		self.assertEqual(["character", 0], graph["104"]["inputs"]["ref_images.ref_image_2"])
+		self.assertEqual(["product", 0], graph["104"]["inputs"]["ref_images.ref_image_1"])
+		self.assertIn("original mascot", graph["104"]["inputs"]["prompt"])
+		self.assertEqual(["114", 0], graph["guide_first"]["inputs"]["image"])
+
 	def test_no_product_has_no_second_picture_or_invented_last_frame(self):
 		graph = self.graph()
 		self.assertIsNone(graph["104"]["inputs"]["ref_images.ref_image_1"])
+		self.assertIsNone(graph["104"]["inputs"]["ref_images.ref_image_2"])
 		self.assertNotIn("<Picture 2>", graph["104"]["inputs"]["prompt"])
 		self.assertNotIn("guide_last", graph)
 		self.assertNotIn("115", graph)
@@ -70,7 +79,10 @@ class TestRef2VA(FrappeTestCase):
 				{"reference_role": "Character", "asset_version": "ACTOR"},
 			]
 		}
-		self.assertEqual({"product": ["ORIGINAL"]}, video_reference_inputs(shot, self.workflow))
+		self.assertEqual(
+			{"product": ["ORIGINAL"], "character": ["ACTOR"]},
+			video_reference_inputs(shot, self.workflow),
+		)
 		# Existing I2V workflows receive no undeclared references.
 		original = frappe._dict(
 			name="I2V",
