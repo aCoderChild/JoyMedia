@@ -86,8 +86,8 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 		"Check any performance demonstration against approved_claims in REQUIREMENTS. Pouring liquid, removing stains or claiming strength/absorbency is a brief_contradiction unless the corresponding capability is approved; ordinary handling is allowed. Quote the demonstration and request a visible action within the supplied claims. "
 		"Check action_reference_observations in REQUIREMENTS. When empty, a fluid, stain, stress or other multi-object performance effect lacks a motion anchor even if its marketing claim is approved; flag the unsupported action as brief_contradiction and request a simple observable product interaction instead. Ordinary acquisition, extraction, placement, folding and wearing remain allowed without motion footage. "
 		"Name each interaction target before use; an unspecified target is not a concrete demonstration. Never replace an existing tangible action with an invented unrelated prop. "
-		"A scene spent solely approaching, staring or posing lacks brisk action. Camera commands belong outside Action, even at the end. Only the final scene may hold the product briefly. "
-		"For idle_pacing, looking/inspecting followed only by nodding or smiling is still a reaction-only scene. Flag repeated product-presentation holds across consecutive scenes; move that runtime to distinct tangible product interactions without adding unsupported capabilities. "
+		"A scene spent solely approaching, staring or posing lacks brisk action. Camera commands belong outside Action, even at the end. One near-ending product-detail view may hold readable original packaging before a distinct final CTA. "
+		"For idle_pacing, looking/inspecting followed only by nodding or smiling is still a reaction-only scene. Flag repeated presentation holds only when adjacent scenes repeat the same framing and information; use the time for a new product detail or tangible interaction without adding unsupported capabilities. "
 		"Use purposeful shot-size/angle contrast and a product detail at use, with coherent axis and state handoffs. Do not demand an object reset unless a later opening explicitly contradicts its retained state. Historical feedback describes earlier renders, not defects proven in this draft. Never copy historical scene numbers, review/sign-off requests or old judgments into new issues. "
 		"Narrative stage labels are proposals recomputed by the production planner, so review visible actions, framing and continuity rather than rejecting a label. "
 		"For subject_motion, whole-body travel is locomotion even while carrying an object. Handling in place is manipulation; no subject movement is stationary. Flag a contradictory label as coverage, quoting the authored movement. "
@@ -174,13 +174,13 @@ def _cross_check_missing_actions(review, script):
 		question = (
 			"Check an idle_pacing finding against ONLY the quoted scene's full action. "
 			"A visible change of material form, object location or contact is tangible progress, even with a brief reaction. "
-			"The final branded presentation may hold briefly; it need not introduce another product use. "
+			"A near-ending product-detail view or final branded presentation may hold briefly; it need not introduce another product use. "
 			"Copy an exact action substring FROM THIS SCENE demonstrating such progress or the allowed final presentation. "
 			"Return an empty string if the scene is only idle posing/looking. Do not invent an unrelated prop or demand an additional use.\n"
 			+ json.dumps(
 				{
 					"scene": finding["scene"],
-					"is_final": finding["scene"] == len(actions),
+					"is_closing_detail": finding["scene"] >= len(actions) - 1,
 					"action": actions[finding["scene"] - 1],
 				}
 			)
