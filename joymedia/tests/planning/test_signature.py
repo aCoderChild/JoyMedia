@@ -8,6 +8,13 @@ from joymedia.tests.editing.test_timeline import _create_workflow
 
 
 class TestPlanSignature(FrappeTestCase):
+	def test_changing_reviewed_camera_reference_invalidates_approval(self):
+		version = frappe._dict(name="reference", analysis_json='{"camera_grammar":"before"}')
+		with patch("joymedia.services.intake.cinematography.motion_references", return_value=[version]):
+			before = compute_plan_signature(self.project.name)
+			version.analysis_json = '{"camera_grammar":"after"}'
+			self.assertNotEqual(before, compute_plan_signature(self.project.name))
+
 	def setUp(self):
 		super().setUp()
 		commit = patch.object(frappe.db, "commit")

@@ -13,6 +13,49 @@ from joymedia.services.project.context import (
 )
 
 
+@frappe.whitelist()
+def analyze_project_camera_references(project_name):
+	"""Analyze selected Motion videos using the normal long-job queue."""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	from joymedia.services.intake.cinematography import motion_references
+
+	if not list(motion_references(project)):
+		frappe.throw(_("Select a video with the Motion role first."))
+	frappe.enqueue(
+		"joymedia.api.assets.run_camera_reference_analysis",
+		queue="long",
+		timeout=1800,
+		job_id=f"joymedia:camera-reference:{project.name}",
+		deduplicate=True,
+		enqueue_after_commit=True,
+		project_name=project.name,
+	)
+	return {"project": project.name, "status": "Queued"}
+
+
+def run_camera_reference_analysis(project_name):
+	from joymedia.services.intake.cinematography import ensure_project_camera_analysis
+
+	try:
+		ensure_project_camera_analysis(frappe.get_doc("Media Project", project_name))
+	finally:
+		frappe.db.commit()  # Preserve failed-analysis evidence as well as successful measurements.
+
+
+@frappe.whitelist()
+def review_project_camera_reference(project_name, asset_version, grammar):
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	from joymedia.services.intake.cinematography import review_reference
+
+	result = review_reference(project, asset_version, grammar)
+	from joymedia.api.storyboard import _mark_storyboard_needs_review
+
+	_mark_storyboard_needs_review(project)
+	return result
+
+
 def get_project_asset_candidates(media_project, media_type=None):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_read_access()

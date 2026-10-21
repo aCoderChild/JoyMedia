@@ -224,8 +224,10 @@ def _mark_storyboard_needs_review(project):
 
 def _plan_project(project, wanted, apply, progress=None):
 	"""Plan each wanted scene in order; `progress(done, total, result)` is called after every scene."""
+	from joymedia.services.intake.cinematography import ensure_project_camera_analysis
 	from joymedia.services.planning import production as production_planner
 
+	ensure_project_camera_analysis(project)
 	busy = _busy_shots(project.name)
 	shots = [
 		frappe.get_doc("Shot", name)

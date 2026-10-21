@@ -1,0 +1,24 @@
+{
+  "repository": "https://github.com/Kayariyan28/CameraPath-Lab",
+  "revision": "a7d1ddd7c2d78ea772a01ecc612e679034d5da23",
+  "license": "MIT",
+  "change": "Only import namespace changed: app. -> joymedia.vendor.camerapath.",
+  "original_sha256": {
+    "core/logging.py": "e5b9d1fac369cf44925152e78e1765bc4703d05ffc840f527c6059dd498dec34",
+    "models/schemas/motion.py": "77cb18d4c9dc471d08bcad9bfe501569cefcf10be00805a884d9d83805e37f24",
+    "models/schemas/video.py": "95bd172517050b8e54f805f4402c215b46abb8f9c90fb46c93cb7586a9559c0d",
+    "tracking/keyframe_geometry.py": "2961d01d8246a7c14d37e152ab576cb5bd9caa721a956d785fc09a5060304222",
+    "tracking/parallax.py": "01db36130dd7be8731ca0fdcfeec008a07555ef8c8ed97b378b0b6cfe73aacdb",
+    "tracking/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tracking/flow.py": "c3489645dc2514409175ca146c9af20cdbbb6412afdeaeb7cb2b39beb4b5ed53",
+    "tracking/features.py": "28f73653ecb69a6f7d7151c3a5c288017e318cd0107cf23d172ee41c78c0786a",
+    "tracking/dynamic_rejection.py": "1c8af406c7761c591ad483a40c005ddddb76070e0e3f9e71e6689cb3da95ca14",
+    "tracking/robust.py": "494a6dcb94dd4166cb38a4b636741ca15a39f09f4e1cf6c8da46daf793c176c1",
+    "tracking/shot_motion.py": "bd223199424bc98ddb177bd8b21480acda5bbdbef8f1b3128b391b4ba4cfe48a",
+    "tracking/global_motion.py": "520566e898c499d6a75c1877b1251f3c53b9bc6fd3e74c8e5deb97b148f2619d",
+    "video/shots.py": "6de1d084a39416aa7962d45e2bfa48f9b0e3880f505345d187cc84d210906386",
+    "video/decoder.py": "980b45df93db089506429d7ca0fde7afcdeae08e88c8944ac412eba2b05a8202",
+    "video/ffprobe.py": "ae751781b1a40d359192c02ecd89e2170c8e2e88634ec84a001371ed0abb61ce",
+    "video/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

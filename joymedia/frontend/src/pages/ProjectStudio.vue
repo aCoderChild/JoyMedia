@@ -522,6 +522,7 @@
 				@apply-asset-to-shot="applyAssetToShot"
 				@remove-asset="removeReference"
 				@update-asset-role="updateReferenceRole"
+				@analyze-camera-reference="analyzeCameraReference"
 				@update-asset-identity="updateReferenceIdentity"
 				@update-asset-size="updateReferenceSize"
 				@select-keyframe-target="onSelectKeyframe"
@@ -819,6 +820,7 @@ const {
 	openPicker,
 	addReference,
 	updateReferenceRole,
+	analyzeCameraReference,
 	updateReferenceIdentity,
 	updateReferenceSize,
 	removeReference,

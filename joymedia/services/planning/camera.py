@@ -7,6 +7,22 @@ keyframes only; an approved frame is never reframed by this policy.
 import json
 import re
 
+BOUNDARY_MOVES = {
+	"arc",
+	"pull_back",
+	"pan_left",
+	"pan_right",
+	"tilt_up",
+	"tilt_down",
+	"truck_left",
+	"truck_right",
+	"pedestal_up",
+	"pedestal_down",
+	"zoom_in",
+	"zoom_out",
+}
+BEHAVIORS = BOUNDARY_MOVES | {"locked", "tracking_backward", "push_in"}
+
 CINEMATIC_PLANNING_RULES = """
 Infer only motion_plan.shot_structure from the authored narrative beat.
 The application derives camera_intent from that structure; do not generate camera_intent.
@@ -26,13 +42,15 @@ settle before the final hold. Cinematic energy means purposeful movement, not co
 
 
 def camera_planning_rules(project):
+	from joymedia.services.intake.cinematography import reference_direction
 	from joymedia.services.intake.references import brand
 
-	if str(brand(project).get("camera_style") or "").strip().lower() != "cinematic":
+	_profiles, observations = reference_direction(project)
+	if str(brand(project).get("camera_style") or "").strip().lower() != "cinematic" and not observations:
 		return ""
 	grammar = reference_camera_grammar(project)
 	if not grammar:
-		return CINEMATIC_PLANNING_RULES
+		return CINEMATIC_PLANNING_RULES + "\n" + "\n".join(observations)
 	# The compiler enforces movement and endpoint safety. Repeating those detailed
 	# execution rules here wastes the planner's context, especially on schema repair.
 	return (
@@ -41,15 +59,34 @@ def camera_planning_rules(project):
 		"Reference observations guide coverage, pacing and action-axis continuity. "
 		"Precision contact remains readable; a move must not replace the authored action.\n"
 		"REFERENCE CINEMATOGRAPHY (analysis of supplied sources; not an uploaded video channel):\n"
-		+ "\n".join(grammar["notes"])
+		+ "\n".join([*grammar["notes"], *observations])
 	)
 
 
 def reference_camera_grammar(project):
 	"""Authored global reference analysis; no product, filename or model defaults."""
+	from joymedia.services.intake.cinematography import reference_direction
 	from joymedia.services.intake.references import brand
 
-	return normalize_camera_grammar(brand(project).get("camera_grammar"))
+	profiles, _observations = reference_direction(project)
+	authored = normalize_camera_grammar(brand(project).get("camera_grammar"))
+	if authored:
+		profiles.append(authored)
+	if not profiles:
+		return None
+	sources, notes, moves = [], [], {}
+	for profile in profiles:
+		for stage, intent in profile["moves"].items():
+			if stage in moves and moves[stage] != intent:
+				raise ValueError("Conflicting camera references for narrative stage: " + stage)
+			moves[stage] = intent
+		for source in profile["sources"]:
+			if source not in sources:
+				sources.append(source)
+		for note in profile["notes"]:
+			if note not in notes:
+				notes.append(note)
+	return normalize_camera_grammar({"version": 1, "sources": sources, "notes": notes, "moves": moves})
 
 
 def normalize_camera_grammar(value):
@@ -126,10 +163,7 @@ def camera_intent(value):
 		return None
 	if not isinstance(value, dict) or set(value) - {"behavior", "allow_reframe", "purpose", "energy"}:
 		raise ValueError("Camera intent requires one behavior and optional allow_reframe.")
-	if (
-		value.get("behavior") not in {"locked", "tracking_backward", "push_in", "pull_back", "arc"}
-		or type(value.get("allow_reframe", False)) is not bool
-	):
+	if value.get("behavior") not in BEHAVIORS or type(value.get("allow_reframe", False)) is not bool:
 		raise ValueError("Unsupported camera behavior or invalid reframing permission.")
 	result = {"behavior": value["behavior"], "allow_reframe": value.get("allow_reframe", False)}
 	for name, options in [
@@ -244,7 +278,7 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 		}
 	if intent and plan.get("camera_motion") != "locked" and not views:
 		behavior = intent["behavior"]
-		if behavior in {"arc", "pull_back"}:
+		if behavior in BOUNDARY_MOVES:
 			endpoints = {str(r.get("reference_role") or r.get("input_role") or "").lower() for r in refs}
 			if not intent["allow_reframe"] or not {"first_frame", "last_frame"} <= endpoints:
 				return {
@@ -273,6 +307,36 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 				"pull_back": "The camera makes one smooth axial dolly backward from the supplied opening to the reviewed wider ending, revealing the same three-dimensional setting. Preserve screen direction, subject scale progression and depth-dependent parallax; no orbit, pan or zoom pulse.",
 				"arc": "The camera follows one smooth shallow arc of at most 12 degrees between the supplied reviewed viewpoints, keeping subject distance and screen size stable. The setting remains stationary with depth-dependent parallax. No simultaneous zoom, tilt or axis crossing.",
 			}
+			# Separate rotation, physical translation and lens changes, as in the
+			# reference taxonomy. Each still uses the same endpoint safety gate.
+			for side in ("left", "right"):
+				directions["pan_" + side] = (
+					f"The camera pans {side} smoothly from the approved opening to the reviewed ending: "
+					"rotate horizontally about one fixed camera position. No truck, dolly, tilt or zoom; preserve the action axis."
+				)
+				directions["truck_" + side] = (
+					f"The camera trucks {side} smoothly between the reviewed endpoints: translate laterally "
+					"with constant heading, height and focal length. Preserve continuous depth parallax and screen direction; no pan or zoom."
+				)
+			for side in ("up", "down"):
+				directions["tilt_" + side] = (
+					f"The camera tilts {side} smoothly between the reviewed endpoints: rotate vertically "
+					"about one fixed camera position. No pedestal, pan, dolly or zoom."
+				)
+				directions["pedestal_" + side] = (
+					f"The camera moves straight {side} smoothly between the reviewed endpoints, "
+					"keeping its heading and focal length fixed. Preserve depth parallax; no tilt, pan, dolly or zoom."
+				)
+			for side in ("in", "out"):
+				directions["zoom_" + side] = (
+					f"The camera zooms {side} smoothly between the reviewed compositions by changing focal length only. "
+					"Keep camera position and heading fixed; no invented translation parallax, dolly, pan or tilt."
+				)
+			if behavior != "locked":
+				directions[behavior] += (
+					f" Use a {intent.get('energy', 'measured')} travel rhythm with smooth acceleration and deceleration, "
+					"then settle at the reviewed final composition. Keep the authored subject action at its specified pace."
+				)
 			if behavior == "push_in" and not intent["allow_reframe"] and not anchored_push:
 				limit = 6 if broad_presentation and intent.get("energy") in {"measured", "brisk"} else 2
 				duration = float(shot.get("duration_seconds") or 5)

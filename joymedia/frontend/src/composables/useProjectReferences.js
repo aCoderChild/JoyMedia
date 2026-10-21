@@ -75,6 +75,16 @@ export function useProjectReferences(projectName, onRefresh) {
     }
   }
 
+  async function analyzeCameraReference() {
+    try {
+      await call("joymedia.api.assets.analyze_project_camera_references", { project_name: project() });
+      notify({ title: tr("Camera reference", "Máy quay tham chiếu"), text: tr("Analysis queued. Results are used when planning scenes.", "Đã xếp hàng phân tích. Kết quả sẽ được dùng khi lập kế hoạch cảnh."), type: "success" });
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      notify({ title: "Error", text: errorMessage(err, "Camera reference analysis failed."), type: "error" });
+    }
+  }
+
   async function updateReferenceSize(asset, size) {
     if (!asset?.asset_version) return;
     try {
@@ -204,6 +214,7 @@ export function useProjectReferences(projectName, onRefresh) {
     openPicker,
     addReference,
     updateReferenceRole,
+    analyzeCameraReference,
     updateReferenceIdentity,
     updateReferenceSize,
     removeReference,
