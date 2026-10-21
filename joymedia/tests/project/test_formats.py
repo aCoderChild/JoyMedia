@@ -1,6 +1,7 @@
 from unittest import TestCase
 
 from joymedia.services.project.formats import (
+	composition_instruction,
 	delivery_dimensions,
 	duration_from_description,
 	orientation,
@@ -11,6 +12,14 @@ from joymedia.services.project.formats import (
 
 
 class TestAuthoredGeometry(TestCase):
+	def test_active_picture_instruction_uses_input_ratio_without_reel_default(self):
+		self.assertEqual("", composition_instruction({}))
+		for width, height, expected in [(1440, 2560, "9:16"), (1920, 1080, "16:9"), (720, 900, "4:5")]:
+			with self.subTest(expected=expected):
+				text = composition_instruction({"delivery_width": width, "delivery_height": height})
+				self.assertIn(f"full {expected} delivery canvas", text)
+				self.assertIn("edge to edge throughout", text)
+
 	def test_arbitrary_ratios_keep_the_authored_shape(self):
 		for text, expected in [
 			("4:5 product commercial", (720, 900)),

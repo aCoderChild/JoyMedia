@@ -54,6 +54,20 @@ def require_dimensions(snapshot):
 	return int(width), int(height)
 
 
+def composition_instruction(project):
+	"""Describe the authored active picture, independently of a provider's grid."""
+	ratio = ratio_label(project.get("delivery_width"), project.get("delivery_height"))
+	if not ratio:
+		return ""
+	return (
+		f"Compose the scene for the full {ratio} delivery canvas. "
+		"The continuous environment fills the entire frame edge to edge throughout the shot, "
+		"including above and below the subject. Shot size describes subject coverage within this canvas, "
+		"not a different screen shape. Keep the active picture full frame without letterboxing, "
+		"pillarboxing, borders or an inset landscape picture."
+	)
+
+
 def duration_from_description(text):
 	"""Read a duration only with a time unit, never the first number in an aspect."""
 	match = re.search(

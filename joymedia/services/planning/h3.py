@@ -48,6 +48,7 @@ def compile_h3(
 		temporal_timing_instruction,
 	)
 	from joymedia.services.project.context import scene_direction
+	from joymedia.services.project.formats import composition_instruction
 	from joymedia.services.scene.contract import instruction
 	from joymedia.services.workflows.capabilities import controls
 
@@ -182,6 +183,7 @@ def compile_h3(
 		p
 		for p in [
 			style,
+			composition_instruction(project),
 			refs,
 			opening,
 			action,
