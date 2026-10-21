@@ -9,7 +9,7 @@ import copy
 import frappe
 
 from joymedia.services.project.render_queue import is_render_alive
-from joymedia.services.workflows.pipeline import pinned_execution
+from joymedia.services.workflows.pipeline import persist_execution_pin, pinned_execution
 
 
 def _write(batch, variants, status=None, error="", changed_index=None):
@@ -99,6 +99,7 @@ def _create_variant(batch, request, index):
 		[{"project": project.name, "label": f"AI {batch.name} · {index + 1}", "kind": "Experiment"}],
 	)
 	frappe.db.commit()
+	persist_execution_pin(project.name, request["generation_pipeline"])
 	return project
 
 

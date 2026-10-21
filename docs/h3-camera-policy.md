@@ -387,9 +387,10 @@ editorial annotation qualifies physical correctness. Previous intended end state
 is passed into timed-sheet planning so persistent props do not silently reset.
 
 Automatic versions retain their frozen backend execution profile during workbook
-format application and native generation admission. A scoped internal pipeline
-pin prevents those operations from reverting to site defaults; it is not exposed
-as a client model selector. Native runs still freeze immutable workflow steps.
+format application and native generation admission. The existing server-side execution-pin registry persists the selected profile
+across environment rendering and later worker requests; explicit site configuration
+keeps precedence. Scoped pins also cover immediate native operations. Neither is
+exposed as a client model selector. Native runs still freeze immutable workflow steps.
 Generated narrative-stage labels are semantic jobs (acquisition, demonstration,
 inspection, final presentation), and are reviewed against the complete action
 sequence before camera grammar is compiled.

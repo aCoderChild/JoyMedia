@@ -11,6 +11,31 @@ import frappe
 from frappe import _
 
 
+def _pin_mapping(value):
+	import json
+
+	value = json.loads(value) if isinstance(value, str) else (value or {})
+	if not isinstance(value, dict):
+		raise ValueError("Project generation pipeline pins must be a mapping.")
+	return value
+
+
+def persist_execution_pin(project_name, pipeline_name):
+	"""Persist a backend-selected profile across asynchronous native job boundaries.
+
+	Internal orchestration only; no client RPC accepts an execution pipeline.
+	"""
+	if not pipeline_name or not frappe.db.exists("Generation Pipeline", pipeline_name):
+		raise ValueError("The frozen execution pipeline is unavailable.")
+	get_pipeline_steps(pipeline_name)
+	with frappe.cache.lock("joymedia-execution-profile-pins", timeout=60, blocking_timeout=10):
+		frappe.db.commit()
+		pins = _pin_mapping(frappe.defaults.get_global_default("joymedia_project_generation_pipelines"))
+		pins[project_name] = pipeline_name
+		frappe.defaults.set_global_default("joymedia_project_generation_pipelines", frappe.as_json(pins))
+		frappe.db.commit()
+
+
 @contextmanager
 def pinned_execution(project_name, pipeline_name):
 	"""Scope a trusted server-side execution snapshot to a native operation.
@@ -28,15 +53,10 @@ def pinned_execution(project_name, pipeline_name):
 
 def get_pinned_generation_pipeline(project_name):
 	"""An operator's explicit per-project deployment pin; never a client model choice."""
-	import json
-
-	value = frappe.conf.get("joymedia_project_generation_pipelines")
-	if value is None:
-		value = frappe.defaults.get_global_default("joymedia_project_generation_pipelines") or {}
-	if isinstance(value, str):
-		value = json.loads(value)
-	if not isinstance(value, dict):
-		raise ValueError("Project generation pipeline pins must be a mapping.")
+	value = {
+		**_pin_mapping(frappe.defaults.get_global_default("joymedia_project_generation_pipelines")),
+		**_pin_mapping(frappe.conf.get("joymedia_project_generation_pipelines")),
+	}
 	name = (frappe.flags.get("joymedia_execution_pipelines") or {}).get(project_name) or value.get(
 		project_name
 	)
