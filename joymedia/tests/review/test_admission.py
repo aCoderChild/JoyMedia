@@ -29,6 +29,7 @@ class TestVisualAdmission(unittest.TestCase):
 			)
 		attempt.save.assert_not_called()
 		enqueue.assert_called_once()
+		self.assertEqual(1800, enqueue.call_args.kwargs["timeout"])
 
 	def test_gate_commits_under_the_ingestion_lock_and_rechecks_cancellation(self):
 		from contextlib import contextmanager
