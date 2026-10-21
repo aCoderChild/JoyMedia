@@ -134,6 +134,38 @@ class TestGeneratedScriptValidation(TestCase):
 					if quote:
 						self.assertFalse(finding["text_cross_check"]["physical_qualification"])
 
+	def test_idle_retraction_requires_progress_in_the_same_scene(self):
+		from joymedia.services.planning.script_review import _cross_check_missing_actions
+
+		for quote, accepted in [
+			("Move it along the table.", True),
+			("Turn the product to face forward.", False),
+			("", True),
+		]:
+			with (
+				self.subTest(quote=quote),
+				patch(
+					"joymedia.services.planning.production._ask_planner",
+					return_value={"already_written": quote},
+				),
+			):
+				review = {
+					"issues": [
+						{
+							"scene": 1,
+							"category": "idle_pacing",
+							"quote": "Grip the product.",
+							"instruction": "Add movement.",
+						}
+					]
+				}
+				if accepted:
+					finding = _cross_check_missing_actions(review, sample_script())["issues"][0]
+					self.assertEqual("production_detail" if quote else "idle_pacing", finding["category"])
+				else:
+					with self.assertRaisesRegex(ValueError, "absent"):
+						_cross_check_missing_actions(review, sample_script())
+
 	def test_gallery_views_remain_one_identity_and_can_be_selected_by_scene(self):
 		inventory = [
 			{
@@ -363,6 +395,10 @@ class TestGeneratedScriptValidation(TestCase):
 				else:
 					with self.assertRaisesRegex(ValueError, "missing_prerequisite"):
 						draft_script(project, nonce="blocking-note")
+					self.assertIn(
+						"INVARIANTS FOR ORIGINAL WRITING AND EVERY REPAIR", writer.call_args.kwargs["system"]
+					)
+					self.assertIn("unused stock", writer.call_args.kwargs["system"])
 					self.assertIn("LATEST SCREENPLAY:", writer.call_args.args[0])
 					self.assertIn(sample_script()["scenes"][0]["visual_camera"], writer.call_args.args[0])
 					self.assertEqual("creative_script_repair", writer.call_args.kwargs["sampling_profile"])
