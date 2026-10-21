@@ -128,12 +128,15 @@ class TestGeneratedScriptValidation(TestCase):
 	def test_middle_reaction_shot_requires_product_progress(self):
 		script = sample_script()
 		middle = copy.deepcopy(script["scenes"][0])
-		middle["duration_seconds"] = 2
-		middle["action"] = "[0-2s] The mascot looks at the product and smiles."
+		middle["duration_seconds"] = 1
+		middle["action"] = "[0-1s] The mascot looks at the product and smiles."
+		second = copy.deepcopy(script["scenes"][0])
+		second["duration_seconds"] = 1
+		second["action"] = "[0-1s] The mascot turns the product to the side."
 		script["scenes"][0]["duration_seconds"] = 4
 		script["scenes"][0]["action"] = "[0-1s] Grip the product.\n[1-4s] Move it along the table."
-		script["scenes"].insert(1, middle)
-		with self.assertRaisesRegex(ValueError, "Scene 2 has no completed"):
+		script["scenes"][1:1] = [second, middle]
+		with self.assertRaisesRegex(ValueError, "Scene 3 has no completed"):
 			validate_script(script, self.inventory, self.constraints)
 
 	def test_stationary_product_detail_is_not_rejected_by_motion_label_alone(self):
