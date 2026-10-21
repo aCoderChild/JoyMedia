@@ -259,6 +259,7 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 				"text": r["text"] if len(r["text"]) <= 400 else r["text"][:250] + " … " + r["text"][-150:],
 			}
 			for r in review_notes
+			if r.get("scope") == "Current"
 		],
 	}
 	roster = [
@@ -347,7 +348,8 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 			)
 		result = _ask_planner(
 			request_prompt,
-			system="You write complete multi-scene commercial scripts from visual product references. Return only the requested JSON, using exact enum values and reference keys.",
+			system="You write complete multi-scene commercial scripts from visual product references. Return only the requested JSON, using exact enum values and reference keys. The primary user direction takes precedence over motion observations, which are examples rather than a required story.\nPRIMARY USER DIRECTION: "
+			+ constraints["creative_direction"],
 			sampling_profile="creative_script_repair" if latest_script is not None else "creative_script",
 			capability="writer",
 			response_schema=script_schema(inventory, constraints),
