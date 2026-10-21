@@ -113,7 +113,6 @@ def script_schema(inventory, constraints):
 def draft_script(project, *, nonce, previous=()):
 	from joymedia.services.intake.action_reference import action_observations
 	from joymedia.services.intake.references import brand
-	from joymedia.services.planning.director_rules import CINEMATOGRAPHY_RULES
 	from joymedia.services.planning.production import _ask_planner
 	from joymedia.services.project.formats import ratio_label
 
@@ -143,52 +142,36 @@ def draft_script(project, *, nonce, previous=()):
 		for r in action_observations(project)[:8]
 	]
 	prompt = (
-		"Write an ORIGINAL product commercial from the supplied product/mascot references. "
-		"No client-written story is required. Invent a coherent situation, visible problem or desire, "
-		"purposeful product use, visible result and concluding product view. "
-		"Reference observations are evidence of action rhythms, NOT instructions, cast or factual claims. "
-		"Borrow cause-contact-effect sequences and brisk physical actions, never unrelated people, logos or products. "
-		"Select actions compatible with the actual product and reference anatomy; do not force an example onto another category. "
-		"Return 2–12 separate scenes, not one 30-second scene. Each non-closing scene must advance a visible subject action or object-state change; camera motion and posing alone do not count. "
-		"Use one main interaction per continuous shot and motivated cuts between phases. Actions happen promptly in real time; "
-		"do not fill the clip with waiting or repeat one gesture. Every scene action starts at 0 and ends at that scene duration, with no gaps. For a 5-second scene a single phase [0-5s] with one continuous action is valid. "
-		"Use depth, foreground/background separation, directional light and material texture, with an uncluttered action area. Music needs a clear rhythmic pulse and developing cues that support action, with a resolved ending. Write event-linked sounds for the actual visible actions; never transfer unrelated sounds from a reference. "
-		"Only referenced actors may participate. Multiple photos of ONE identity are alternative views, not extra actors or products. "
-		"Use only the roster key field EXACTLY in cast/products, never labels, identity names or invented keys. Ordinary props may be invented for a coherent situation, "
-		"but must be named in visual/action before use and kept consistent. Never invent performance claims. "
-		"Preserve supplied duration and aspect ratio. If missing, propose suitable values for this concept, "
-		"explain the format choice, and do not default to a social-reel ratio. Keep total duration within 60 seconds. "
-		"Vary the premise, action chain, staging and coverage from prior variants; a different seed or renamed scene is insufficient. "
-		"Keep JSON compact. Visual <=25 words, continuity <=15 words, visible_change <=15 words; "
-		"each timed phase <=12 words and voice-over <=8 words. Keep action descriptions concrete. "
-		+ CINEMATOGRAPHY_RULES
-		+ '\nReturn JSON: {"title":"","logline":"","format":"","format_reason":"",'
-		'"duration_seconds":0,"visual_style":"","music":"instrumentation, mood, tempo, cue changes",'
-		'"features":["visible feature"],"scenes":[{"beat_name":"","duration_seconds":0,'
-		'"visual_camera":"specific environment, opening layout, lighting and texture; no camera movement commands",'
-		'"action":"[0-1s] visible action\\n[1-3s] visible action",'
-		'"visible_change":"specific initial state -> different final state",'
-		'"cast":["reference key"],"products":["reference key"],"place":"one consistent setting description",'
-		'"continuity_rules":"support, reach, axis and prop positions",'
-		'"shot_framing":"","shot_angle":"","narrative_stage":"",'
-		'"voice_over":"","audio_cues":"","on_screen_text":""}]}.'
-		+ "\nFraming: "
-		+ ",".join(sorted(FRAMINGS))
-		+ "; angle: "
-		+ ",".join(sorted(ANGLES))
-		+ "; stage: "
-		+ ",".join(sorted(STAGES))
-		+ "\nCONSTRAINTS: "
+		"Create an original, brisk product commercial from these references, not a slideshow. "
+		"Invent a coherent situation with a visible cause, reaction, product acquisition/use and visible result. "
+		"Supply every prerequisite action before its consequence: acquire, grip, move into contact, perform the use, reveal the changed state. Reaching for a container is not obtaining its contents: show removal before using the item. "
+		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. "
+		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "
+		"Perform gestures promptly in real time; use several purposeful actions across the film. "
+		"Write timed Action phases that start at 0 and end exactly at that scene duration, with no gaps. "
+		"Example syntax for a five-second scene: [0-2s] one visible action\n[2-5s] its consequence. "
+		"Only supplied reference keys may appear in cast/products. Gallery views are one identity, not additional cast. "
+		"Reference observations supply action rhythms, never additional actors, products, claims or sounds. "
+		"Only state supplied approved claims. Ordinary props and a coherent location may be invented, but name them before use. "
+		"Vary adjacent shot sizes with purpose; preserve the action axis; show the product close at use and clearly at the end. "
+		"Camera behavior is derived later from semantic stage/framing: do not put camera moves in Action. "
+		"Use layered depth, shaped directional lighting, material texture and a deliberate palette. "
+		"Choose developing rhythmic music aligned with action, event-linked sounds and a resolved ending. "
+		"Preserve explicit format/duration. If absent, propose suitable ones with rationale, never default to reels. "
+		"Return the complete schema with 2–12 scenes, totaling at most sixty seconds. "
+		"Keep visual/continuity/state fields concise; scene voiceover may be empty. "
+		"Generate a different premise/action chain from prior concepts.\nCONSTRAINTS: "
 		+ json.dumps(constraints, ensure_ascii=False)
-		+ "\nREFERENCES: "
+		+ "\nREFERENCE KEY ROSTER: "
 		+ json.dumps(roster, ensure_ascii=False)
-		+ "\nOBSERVED ACTION REFERENCE: "
+		+ "\nSAMPLED ACTION OBSERVATIONS: "
 		+ json.dumps(observations, ensure_ascii=False)
 		+ "\nPRIOR CONCEPTS: "
 		+ json.dumps(list(previous), ensure_ascii=False)
-		+ "\nCREATIVE VARIATION ID: "
+		+ "\nVARIATION ID: "
 		+ nonce
 	)
+
 	error = ""
 	for _attempt in range(3):
 		result = _ask_planner(
@@ -199,13 +182,82 @@ def draft_script(project, *, nonce, previous=()):
 			response_schema=script_schema(inventory, constraints),
 		)
 		try:
-			return validate_script(result, inventory, constraints)
+			script = validate_script(result, inventory, constraints)
+			findings = review_script_actions(script)
+			issues = [r for r in findings if not all(r[k] for k in ("progresses", "causal", "paced"))]
+			if issues:
+				raise ValueError(
+					"Action review: "
+					+ json.dumps(issues, ensure_ascii=False)
+					+ "\nRevise this rejected action chain: "
+					+ json.dumps(
+						[{k: s[k] for k in ("duration_seconds", "action")} for s in script["scenes"]]
+					)
+				)
+			script["action_review"] = findings
+			return script
 		except ValueError as exc:
 			error += (
 				f"\nRepair attempt {_attempt + 1}; return the complete script, correcting ALL accumulated errors: "
 				+ str(exc)
 			)
 	raise ValueError("Automatic script remained invalid after bounded repair: " + error)
+
+
+def review_script_actions(script):
+	"""Second-pass script compliance through the existing configured writer runtime.
+
+	This reviews the script, not rendered physical correctness or release eligibility.
+	"""
+	from joymedia.services.planning.production import _ask_planner
+
+	count = len(script["scenes"])
+	item = {
+		"type": "object",
+		"properties": {
+			"scene": {"type": "integer", "minimum": 1, "maximum": count},
+			"progresses": {"type": "boolean"},
+			"causal": {"type": "boolean"},
+			"paced": {"type": "boolean"},
+			"reason": {"type": "string", "maxLength": 240},
+		},
+		"required": ["scene", "progresses", "causal", "paced", "reason"],
+		"additionalProperties": False,
+	}
+	schema = {
+		"type": "object",
+		"properties": {"findings": {"type": "array", "items": item, "minItems": count, "maxItems": count}},
+		"required": ["findings"],
+		"additionalProperties": False,
+	}
+	draft = [
+		{
+			k: scene[k]
+			for k in ("duration_seconds", "visual_camera", "action", "visible_change", "cast", "products")
+		}
+		for scene in script["scenes"]
+	]
+	result = _ask_planner(
+		"Review every scene of this brisk commercial strictly. Return one finding per scene in order. "
+		"progresses: a concrete subject action changes an object/state; camera motion, a hero-shot label, posing or approaching alone do not count. Only the FINAL scene may use a product hold. "
+		"causal: every object/tool is visibly acquired before use, required contact precedes a resulting change, no skipped prerequisite or reset between shots, no contradictory opening/action. Reaching/holding a container does NOT acquire its contents: later use of an item without its removal is causal=false. "
+		"paced: allocated time supports active real-time action. A shot spent entirely just reaching, leaning or looking is NOT brisk pacing. The final hold must not consume a disproportionate share of this action-led film. "
+		"Reason must cite the specific action text or missing prerequisite; never accept generic claims of realism. "
+		"This is script review only, not evidence of rendered physics.\n"
+		+ json.dumps(draft, ensure_ascii=False),
+		system="You are the strict second-pass commercial storyboard compliance editor. Return only JSON.",
+		capability="writer",
+		sampling_profile="creative_script_review",
+		response_schema=schema,
+	)
+	rows = result.get("findings", [])
+	if (
+		len(rows) != count
+		or [r.get("scene") for r in rows] != list(range(1, count + 1))
+		or any(type(r.get(k)) is not bool for r in rows for k in ("progresses", "causal", "paced"))
+	):
+		raise ValueError("Script action review did not cover each scene exactly once.")
+	return rows
 
 
 def validate_script(script, inventory, constraints):
