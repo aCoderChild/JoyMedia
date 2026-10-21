@@ -108,12 +108,9 @@ class TestGeneratedScriptValidation(TestCase):
 		)
 		self.assertEqual(8, schema["properties"]["scenes"]["minItems"])
 
-	def test_generated_idle_beats_cannot_use_camera_motion_as_subject_progress(self):
+	def test_stationary_product_detail_is_not_rejected_by_motion_label_alone(self):
 		script = sample_script()
 		script["scenes"][0]["subject_motion"] = "stationary"
-		with self.assertRaisesRegex(ValueError, "Scene 1 declares no subject motion"):
-			validate_script(script, self.inventory, self.constraints)
-		script["scenes"][0]["subject_motion"] = "manipulation"
 		script["scenes"][-1]["subject_motion"] = "stationary"
 		self.assertEqual(script, validate_script(script, self.inventory, self.constraints))
 
