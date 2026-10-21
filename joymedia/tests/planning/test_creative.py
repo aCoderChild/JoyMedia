@@ -99,14 +99,20 @@ class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
 
-	def test_thirty_second_workflow_reserves_action_coverage_beyond_capacity_minimum(self):
+	def test_thirty_second_workflow_uses_frame_capacity_without_padding_scenes(self):
 		from joymedia.services.planning.creative import script_schema
 
 		schema = script_schema(
 			self.inventory,
 			{"duration_seconds": 30, "aspect_ratio": "9:16", "fps": 24, "max_scene_frames": 124},
 		)
-		self.assertEqual(8, schema["properties"]["scenes"]["minItems"])
+		self.assertEqual(6, schema["properties"]["scenes"]["minItems"])
+
+	def test_passive_opening_requires_an_object_action(self):
+		script = sample_script()
+		script["scenes"][0]["action"] = "[0-6s] The mascot sits and looks at the product."
+		with self.assertRaisesRegex(ValueError, "opening cannot consist only"):
+			validate_script(script, self.inventory, self.constraints)
 
 	def test_stationary_product_detail_is_not_rejected_by_motion_label_alone(self):
 		script = sample_script()
