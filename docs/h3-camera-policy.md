@@ -550,3 +550,16 @@ This uses the upstream client's HTTP CONNECT option; it never changes dialogue,
 voice selection or the configured speech-workflow boundary. A deployment may
 use upstream `abhinavsingh/proxy.py` (BSD-3-Clause), bound to loopback and reached
 through its existing SSH transport. No relay address belongs in a screenplay.
+
+Evidence-only review retries preserve original failed/cancelled attempts and their
+admission reports. `joymedia.services.review.recheck.queue_held_evidence_recheck`
+checks access, terminal state, unchanged source bytes, unchanged authored direction
+and absence of a witnessed violation before queueing the existing visual evaluator.
+`held_evidence_recheck_status` exposes its separate immutable report. Reviews have
+a 30-minute worker budget matching the bounded evaluator; structured observations
+must cite at least one supplied frame. Missing or ambiguous evidence remains uncertain.
+A supplementary report may be passed as `review_artifact` to the existing
+`retain_held_take_for_review` operation. Original and supplementary findings remain
+in its manifest. This creates an unselected review take; neither original run status
+nor release qualification is changed. It cannot accept a previously witnessed
+violation or changed direction by merely retrying the reviewer.
