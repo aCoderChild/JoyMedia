@@ -1000,9 +1000,16 @@ def _mood(project):
 	"""The sheet's Tone & Mood, visual style and what must not be shown: one line for the image and video models,
 	the same in every scene."""
 	brief = sheet_brief(project)
+	tone, style = brief["tone"], brief["style"]
+	if (
+		tone
+		and style
+		and " ".join(tone.split()).rstrip(" .").casefold() == " ".join(style.split()).rstrip(" .").casefold()
+	):
+		tone = ""
 	return (
-		(f"Mood: {brief['tone']}. " if brief["tone"] else "")
-		+ (f"Visual style: {brief['style']}. " if brief["style"] else "")
+		(f"Mood: {tone}. " if tone else "")
+		+ (f"Visual style: {style}. " if style else "")
 		+ (f"Never show: {brief['avoid']}. " if brief["avoid"] else "")
 	)
 
