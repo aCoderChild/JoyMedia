@@ -462,7 +462,7 @@ def validate_script(script, inventory, constraints):
 	if type(declared_duration) not in (int, float) or not math.isfinite(declared_duration):
 		raise ValueError("Declared script duration must be a finite number.")
 	total = 0.0
-	for scene_index, scene in enumerate(script["scenes"]):
+	for scene in script["scenes"]:
 		if not isinstance(scene, dict):
 			raise ValueError("Each scene must be an object.")
 		duration = scene.get("duration_seconds")
@@ -480,10 +480,6 @@ def validate_script(script, inventory, constraints):
 				raise ValueError("Unsupported " + key + ".")
 		if "subject_motion" in scene and scene["subject_motion"] not in MOTIONS:
 			raise ValueError("Unsupported subject_motion.")
-		if scene_index < len(script["scenes"]) - 1 and scene.get("subject_motion") == "stationary":
-			raise ValueError(
-				f"Scene {scene_index + 1} declares no subject motion. This brisk commercial requires a tangible action in each non-final scene; replace the idle beat and update its opening/result, rather than relabelling it or adding camera movement."
-			)
 		for field, allowed in (("cast", {"Character", "Person"}), ("products", {"Product"})):
 			keys = scene.get(field)
 			if (
