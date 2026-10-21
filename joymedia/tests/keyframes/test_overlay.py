@@ -515,8 +515,8 @@ class TestEndCard(FrappeTestCase):
 		]
 		_compose_end_card(shots)
 		self.assertEqual(["Draw in scene", "Draw in scene"], [row["character_mode"] for row in shots])
-		self.assertEqual(2, shots[-1]["closing_hold_seconds"])
-		self.assertEqual("generated_pose", shots[-1]["closing_hold_mode"])
+		self.assertNotIn("closing_hold_seconds", shots[-1])
+		self.assertNotIn("closing_hold_mode", shots[-1])
 
 	def test_a_last_scene_without_a_product_keeps_its_mode(self):
 		from joymedia.services.project.context import _compose_end_card

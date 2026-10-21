@@ -15,11 +15,10 @@ class TestActionHold(TestCase):
 		_compose_end_card([row], keyframe_stage=True)
 		self.assertNotIn("closing_hold_seconds", row)
 		self.assertNotIn("closing_hold_mode", row)
-		# The same scene still requires enough runtime when actually animated.
-		with self.assertRaises(ValueError):
-			_compose_end_card([row])
+		_compose_end_card([row])
+		self.assertNotIn("closing_hold_seconds", row)
 
-	def test_motion_survives_before_the_readable_tail_for_unrelated_products(self):
+	def test_authored_closing_motion_survives_for_unrelated_products(self):
 		for subject in ["vase", "furniture", "mascot"]:
 			row = {
 				"shot_number": 1,
@@ -30,12 +29,13 @@ class TestActionHold(TestCase):
 			}
 			_compose_end_card([row])
 			self.assertEqual("Draw in scene", row["character_mode"])
-			self.assertEqual(2, row["closing_hold_seconds"])
-			self.assertEqual("generated_pose", row["closing_hold_mode"])
+			self.assertNotIn("closing_hold_seconds", row)
+			self.assertNotIn("closing_hold_mode", row)
 
-	def test_an_impossible_action_and_two_second_hold_is_not_silently_frozen(self):
-		with self.assertRaises(ValueError):
-			_compose_end_card([{"duration_seconds": 2, "references": [{"reference_role": "Product"}]}])
+	def test_a_short_authored_performance_is_not_replaced_with_a_fixed_tail(self):
+		row = {"duration_seconds": 2, "references": [{"reference_role": "Product"}]}
+		_compose_end_card([row])
+		self.assertNotIn("closing_hold_seconds", row)
 
 	def test_a_source_only_card_requires_an_explicit_static_contract(self):
 		row = {
@@ -52,6 +52,7 @@ class TestActionHold(TestCase):
 		}
 		_compose_end_card([row])
 		self.assertEqual("source_artwork", row["closing_hold_mode"])
+		self.assertEqual(5, row["closing_hold_seconds"])
 
 	def test_static_source_presentation_preserves_the_authored_composition_mode(self):
 		for mode in ("Draw in scene", "Paste exact art"):

@@ -68,8 +68,10 @@ physics, printed artwork retention or compliance with the requested action.
 
 Native keyframe-only runs prepare still images and do not need a video's final
 readable hold. Their snapshots omit that video-only requirement, so a short
-reference-editing slot remains valid. Video runs retain the final-hold duration
-check; image admission, unchanged direction and explicit frame review still apply.
+reference-editing slot remains valid. Dynamic video endings follow their authored
+action and timing without an injected two-second freeze. Only an explicit static
+source presentation is held for its declared scene duration. Image admission,
+unchanged direction and explicit frame review still apply.
 
 ## Reference-video analysis integration
 
