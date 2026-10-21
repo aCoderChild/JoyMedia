@@ -62,7 +62,7 @@ def script_schema(inventory, constraints):
 			"additionalProperties": False,
 		}
 
-	text = {"type": "string"}
+	text = {"type": "string", "minLength": 1}
 
 	def names(roles):
 		keys = [r["key"] for r in inventory if r["role"] in roles]
@@ -94,6 +94,9 @@ def script_schema(inventory, constraints):
 		cast=names({"Character", "Person"}),
 		products=names({"Product"}),
 	)
+	scene["action"] = {"type": "string", "pattern": r"^\[[0-9]+(?:\.[0-9]+)?-[0-9]+(?:\.[0-9]+)?s\] [\s\S]+$"}
+	for key in ("voice_over", "audio_cues", "on_screen_text"):
+		scene[key] = {"type": "string"}
 	for key, options in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
 		scene[key] = {"type": "string", "enum": sorted(options)}
 	root = {key: text for key in ("title", "logline", "format_reason", "visual_style", "music")}
@@ -150,7 +153,7 @@ def draft_script(project, *, nonce, previous=()):
 		"Perform gestures promptly in real time; use several purposeful actions across the film. "
 		"Write timed Action phases that start at 0 and end exactly at that scene duration, with no gaps. "
 		"Example syntax for a five-second scene: [0-2s] one visible action\n[2-5s] its consequence. "
-		"Only supplied reference keys may appear in cast/products. Gallery views are one identity, not additional cast. "
+		"Only supplied actors may appear in prose AND cast: no humans when only a mascot is supplied. Use exact roster keys in cast/products. Gallery views are one identity, not additional cast. "
 		"Reference observations supply action rhythms, never additional actors, products, claims or sounds. "
 		"Only state supplied approved claims. Ordinary props and a coherent location may be invented, but name them before use. "
 		"Vary adjacent shot sizes with purpose; preserve the action axis; show the product close at use and clearly at the end. "
@@ -183,7 +186,7 @@ def draft_script(project, *, nonce, previous=()):
 		)
 		try:
 			script = validate_script(result, inventory, constraints)
-			findings = review_script_actions(script)
+			findings = review_script_actions(script, roster)
 			issues = [r for r in findings if not all(r[k] for k in ("progresses", "causal", "paced"))]
 			if issues:
 				raise ValueError(
@@ -204,7 +207,7 @@ def draft_script(project, *, nonce, previous=()):
 	raise ValueError("Automatic script remained invalid after bounded repair: " + error)
 
 
-def review_script_actions(script):
+def review_script_actions(script, roster=()):
 	"""Second-pass script compliance through the existing configured writer runtime.
 
 	This reviews the script, not rendered physical correctness or release eligibility.
@@ -238,7 +241,7 @@ def review_script_actions(script):
 		for scene in script["scenes"]
 	]
 	result = _ask_planner(
-		"Review every scene of this brisk commercial strictly. Return one finding per scene in order. "
+		"Review every scene of this brisk commercial strictly. Return one finding per scene in order. Compare prose to the supplied actor roster: an unreferenced human or extra mascot is causal=false, even if a valid reference key was put in cast. "
 		"progresses: a concrete subject action changes an object/state; camera motion, a hero-shot label, posing or approaching alone do not count. Only the FINAL scene may use a product hold. "
 		"causal: every object/tool is visibly acquired before use, required contact precedes a resulting change, no skipped prerequisite or reset between shots, no contradictory opening/action. Reaching/holding a container does NOT acquire its contents: later use of an item without its removal is causal=false. "
 		"paced: allocated time supports active real-time action. A shot spent entirely just reaching, leaning or looking is NOT brisk pacing. The final hold must not consume a disproportionate share of this action-led film. "
@@ -311,7 +314,9 @@ def validate_script(script, inventory, constraints):
 			if not isinstance(scene.get(field, ""), str):
 				raise ValueError("Scene audio and text must be strings.")
 	if not 1 <= total <= 60 or abs(total - declared_duration) > 0.001:
-		raise ValueError("Scene durations must sum to the declared duration, within sixty seconds.")
+		raise ValueError(
+			f"Scene durations sum to {total:g}s, but declared total is {declared_duration:g}s. Redistribute {declared_duration - total:g}s across purposeful action scenes so the sum is exact, not a prolonged closing hold."
+		)
 	if constraints.get("duration_seconds") and abs(total - float(constraints["duration_seconds"])) > 0.001:
 		raise ValueError("Keep the requested total duration.")
 	if (
