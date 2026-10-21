@@ -66,6 +66,12 @@ upstream revision, source, size and SHA256. Validate installed weights and actua
 scene results before selecting that profile; changing a sampler does not prove
 physics, printed artwork retention or compliance with the requested action.
 
+An image stage declaring `free_composition` receives the full shared setting
+reference, including floor and support surfaces. It derives the generated crop
+from the shot structure; legacy layout-bound image stages retain their closer
+context crops. This prevents an automatic centre crop from removing a support
+surface before the image model composes the shot.
+
 Native keyframe-only runs prepare still images and do not need a video's final
 readable hold. Their snapshots omit that video-only requirement, so a short
 reference-editing slot remains valid. Dynamic video endings follow their authored

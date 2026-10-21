@@ -170,6 +170,15 @@ def assign_places(project, shots):
 		project.get("workflow")
 		and "reference_only" in controls(frappe.get_doc("Generation Workflow", project.workflow))
 	)
+	if not free_composition and project.get("generation_pipeline"):
+		from joymedia.services.workflows.pipeline import get_pipeline_steps
+
+		image_stage = frappe.get_doc(
+			"Generation Workflow", get_pipeline_steps(project.generation_pipeline)[0].workflow
+		)
+		free_composition = bool(
+			image_stage.get("output_media_type") == "Image" and "free_composition" in controls(image_stage)
+		)
 	# A free-composition renderer receives setting identity, not a fixed opening
 	# crop. The legacy centre crop can remove the actual support surface and
 	# misleadingly condition a product onto furniture elsewhere in the room.

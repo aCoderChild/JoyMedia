@@ -1,7 +1,8 @@
 {
   "capabilities": [
     "reference_image",
-    "multi_reference"
+    "multi_reference",
+    "free_composition"
   ],
   "parameters": [
     {

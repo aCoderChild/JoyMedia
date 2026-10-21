@@ -172,6 +172,36 @@ class TestLocationPlates(FrappeTestCase):
 			crop.assert_not_called()
 		self.assertEqual(["ROOM"], [row.asset_version for row in shot.generation_inputs])
 
+	def test_reference_composed_image_stage_keeps_floor_and_support_context(self):
+		key = locations.location_key("A dining room.")
+		project = frappe._dict(
+			name="P",
+			generation_pipeline="PIPE",
+			selected_media=[
+				frappe._dict(reference_key=key, asset_version="ROOM"),
+				frappe._dict(reference_key=key + locations.CLOSE, asset_version="CROP"),
+			],
+		)
+		shot = _shot("S", "A dining room.", environment="CROP", camera="Close-up of the product.")
+		with (
+			patch(
+				"joymedia.services.workflows.pipeline.get_pipeline_steps",
+				return_value=[frappe._dict(workflow="IMAGE")],
+			),
+			patch(
+				"frappe.get_doc",
+				return_value=frappe._dict(
+					output_media_type="Image", execution_spec={"capabilities": ["free_composition"]}
+				),
+			),
+			patch("frappe.db.delete"),
+			patch("joymedia.services.review.comments._reseal_approved_plan"),
+			patch.object(locations, "_ensure_close_views") as crop,
+		):
+			self.assertEqual(1, locations.assign_places(project, [shot]))
+			crop.assert_not_called()
+		self.assertEqual(["ROOM"], [row.asset_version for row in shot.generation_inputs])
+
 	def test_a_missing_place_is_drawn_in_the_background_before_the_frames(self):
 		from joymedia.services.keyframes import stage
 
