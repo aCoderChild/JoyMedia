@@ -64,6 +64,32 @@ class TestComposedOutputPersistence(FrappeTestCase):
 		self.assertIsNone(result)
 		docs.assert_not_called()
 
+	def test_cancelled_run_can_retain_only_an_unselected_evidenced_review_take(self):
+		from joymedia.services.editing.composer import _persist_composed_output
+
+		file = Mock()
+		file.insert.return_value.file_url = "/private/files/review.mp4"
+		version = Mock()
+		version.insert.return_value.name = "AV-REVIEW"
+		with (
+			patch.object(frappe.db, "commit"),
+			patch.object(frappe.db, "get_value", side_effect=["Cancelled", None]),
+			patch("joymedia.services.editing.composer.frappe.get_doc", side_effect=[file, version]),
+		):
+			result = _persist_composed_output(
+				"RUN", "SHOT", "ASSET", frappe._dict(generation_attempt="ATT", name="ART"),
+				b"review bytes", 4, 24, select_output=False, can_select=False,
+				review_manifest={"original_attempt": "ATT"}, retained_review=True,
+			)
+		self.assertEqual("AV-REVIEW", result)
+
+		with self.assertRaisesRegex(ValueError, "unselected"):
+			_persist_composed_output(
+				"RUN", "SHOT", "ASSET", frappe._dict(), b"bytes", 4, 24,
+				select_output=True, can_select=False, review_manifest={"original_attempt": "ATT"},
+				retained_review=True,
+			)
+
 	def test_retry_reuses_the_same_immutable_output(self):
 		from joymedia.services.editing.composer import _persist_composed_output
 

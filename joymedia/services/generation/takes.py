@@ -434,6 +434,7 @@ def retain_held_take_for_review(
 		select_output=False,
 		can_select=False,
 		review_manifest=manifest,
+		retained_review=True,
 	)
 	return dict(asset_version=version, selected=False, status="Review Required")
 
