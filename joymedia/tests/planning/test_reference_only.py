@@ -37,6 +37,22 @@ class TestReferenceOnly(TestCase):
 		with self.assertRaises(ValueError):
 			_direct_reference_roles(s, self.workflow())
 
+	def test_product_construction_comes_from_frozen_observation_without_live_lookup(self):
+		s = {
+			"references": [
+				{
+					"reference_role": "Product",
+					"visual_description": "A flexible sealed package with visible film creases.",
+				}
+			]
+		}
+		with patch(
+			"frappe.db.get_value", side_effect=AssertionError("Do not reinterpret a frozen reference")
+		):
+			text = _direct_reference_roles(s, self.workflow())
+		self.assertIn("flexible sealed package", text)
+		self.assertIn("film creases", text)
+
 	@patch("joymedia.services.planning.prompts._mood", return_value="Premium commercial light.")
 	@patch("joymedia.services.planning.prompts._identity_guard", return_value="WRONG FIXED FRAME GUARD")
 	def test_direct_prompt_never_claims_an_anchored_opening(self, guard, mood):

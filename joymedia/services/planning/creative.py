@@ -290,6 +290,7 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"Open with a visible causal event already happening. Invent a coherent situation, prompt reaction, product acquisition/use and visible result. A reaction must not occupy an entire scene on its own. "
 		"Supply every prerequisite action before its consequence: acquire, grip, move into contact, perform the use, reveal the changed state. Reaching for a container is not obtaining its contents: show removal before using the item. "
 		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. Repeat the same full place description for one location, not vague same-room placeholders. "
+		"Respect the observed product construction: do not invent rigid lids or closure actions for flexible wrapping. Used consumable material stays separate from unused stock; do not restore used material to its clean container as an unexplained reset. "
 		"Each shot has ONE coherent interaction and its immediate consequence. Travel, acquisition, extraction and use are different interactions: give them separate shots rather than compressing all into an opening. "
 		"For supplied Environment references use the exact reference key as place; the reference description controls that location. "
 		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "

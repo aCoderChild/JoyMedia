@@ -249,9 +249,14 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 		if settings.workflow and frappe.db.exists("Generation Workflow", settings.workflow)
 		else None
 	)
-	visual_asset_versions = {
-		asset.asset_version for asset in _get_project_selected_assets(project) if asset.media_type == "Image"
-	}
+	visual_assets = [asset for asset in _get_project_selected_assets(project) if asset.media_type == "Image"]
+	visual_asset_versions = {asset.asset_version for asset in visual_assets}
+	visual_descriptions = {}
+	for asset in visual_assets:
+		if asset.get("analysis_status") == "Ready":
+			analysis = frappe.parse_json(asset.get("analysis_json") or "{}") or {}
+			if isinstance(analysis, dict):
+				visual_descriptions[asset.asset_version] = str(analysis.get("description") or "")
 	snapshot = {
 		"media_project": project.name,
 		"project_name": project.project_name or "",
@@ -338,6 +343,11 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 				{
 					"reference_role": row.reference_role or "",
 					"asset_version": row.asset_version,
+					**(
+						{"visual_description": visual_descriptions[row.asset_version]}
+						if row.reference_role == "Product" and visual_descriptions.get(row.asset_version)
+						else {}
+					),
 				}
 				for row in shot_doc.generation_inputs or []
 				if row.reference_role and row.asset_version
