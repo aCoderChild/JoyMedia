@@ -323,6 +323,14 @@
             </select>
           </div>
 
+          <div v-if="selectedAsset.media_type === 'Video' && selectedAsset.reference_role === 'Motion'" class="space-y-1.5">
+            <p class="text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Tham chiếu nhịp máy quay và bố cục cho quá trình lập kế hoạch.' : 'Reference for camera rhythm and coverage during planning.' }}</p>
+            <button type="button" class="jm-btn-secondary text-xs" :disabled="isProductionActive" @click="$emit('analyzeCameraReference')">
+              {{ currentLang === 'vi' ? 'Phân tích máy quay tham chiếu' : 'Analyze reference camera' }}
+            </button>
+            <p v-if="selectedAsset.analysis_error" class="text-[11px] text-red-600">{{ selectedAsset.analysis_error }}</p>
+          </div>
+
           <div v-if="['Character', 'Person'].includes(selectedAsset.reference_role)" class="space-y-1.5 pt-1">
             <label class="block text-[11px] font-semibold text-ink-secondary">
               {{ currentLang === 'vi' ? 'Mã nhận diện (gộp các góc nhìn của cùng một nhân vật):' : 'Identity key (group approved views of this character):' }}
@@ -660,6 +668,7 @@ const emit = defineEmits([
   "applyAssetToShot",
   "removeAsset",
   "updateAssetRole",
+  "analyzeCameraReference",
   "updateAssetIdentity",
   "updateAssetSize",
   "selectKeyframeTarget",

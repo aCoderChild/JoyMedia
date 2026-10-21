@@ -51,7 +51,17 @@ def compute_plan_signature(project_name):
 			(row.reference_role or "", row.asset_version or "") for row in shot.generation_inputs or []
 		)
 		shots.append(entry)
+	from joymedia.services.intake.cinematography import motion_references
+
+	camera_project = frappe.get_doc("Media Project", project_name)
+	camera_references = [
+		{"asset_version": version.name, "analysis_json": version.analysis_json}
+		for version in motion_references(camera_project)
+	]
 	payload = {"project": {field: _plain(project.get(field)) for field in PROJECT_FIELDS}, "shots": shots}
+	# Keep legacy signatures stable when no Motion video is selected.
+	if camera_references:
+		payload["camera_references"] = camera_references
 	return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 

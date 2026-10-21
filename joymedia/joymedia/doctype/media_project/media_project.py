@@ -412,8 +412,10 @@ class MediaProject(Document):
 	def generate_video_plan(self):
 		self._require_read_access()
 		self._require_video_idea()
+		from joymedia.services.intake.cinematography import ensure_project_camera_analysis
 		from joymedia.services.intake.vision import ensure_project_image_analysis
 
+		ensure_project_camera_analysis(self)
 		# Pictures added or analysed with an older prompt are (re)described first.
 		ensure_project_image_analysis(self)
 		frappe.db.commit()

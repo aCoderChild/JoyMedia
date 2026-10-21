@@ -42,6 +42,61 @@ rendered motion. A defective starting frame must be replaced along with its
 endpoint; a corrected endpoint cannot repair invalid opening geometry.
 
 Implementation boundaries and deployment checks are in [architecture.md](architecture.md).
+
+## Reference-video analysis integration
+
+Motion videos selected in the existing reference picker are analyzed before
+storyboard and production planning. The inspector also has **Analyze reference
+camera**, which queues the same analysis through the normal long worker. General,
+Style, product and output videos do not silently become camera controls.
+
+The analysis core is reused from [CameraPath Lab](https://github.com/Kayariyan28/CameraPath-Lab),
+revision `a7d1ddd7c2d78ea772a01ecc612e679034d5da23`, under MIT. Only the
+portable video/tracking core is vendored; its import namespace is relocated.
+`joymedia/vendor/camerapath/UPSTREAM.json` records original file hashes and the
+license is retained. No separate web server, Blender, COLMAP or new GPU model is
+required. Install the `cinematography` optional dependency group on planning workers.
+
+`services/intake/cinematography.py` calls the upstream container-PTS probe,
+motion-compensated cut detector and two-pass foreground-rejecting motion
+analysis. Asset Version analysis retains source SHA256, dimensions, detected
+boundaries, pixel-space signatures and warnings. These inform planner context;
+they are never relabeled as metric camera paths. Analysis failures stop planning
+instead of silently applying an unrelated default. Rendering does not reanalyze
+reference footage.
+
+Editorial interpretations remain explicit reviewed inputs. The existing workbook
+Brand grammar works, and `joymedia.api.assets.review_project_camera_reference`
+can attach that same validated grammar to an analyzed, selected Motion asset.
+The video hash must match the analyzed evidence, and the caller needs project
+and asset write access. Conflicting stage preferences across selected references
+or the workbook are rejected. Camera evidence and reviewed direction are part
+of the approved-plan signature, so changing either requires review before render.
+
+The article's vocabulary is separated into framing, angle/perspective and motion:
+pan/tilt rotate; truck/pedestal/dolly translate; zoom changes focal length.
+The shared camera compiler now accepts directional pan, tilt, truck, pedestal
+and zoom in addition to existing locked, axial, tracking and arc moves. New
+reveals require both reviewed endpoints and explicit reframing permission.
+Contact demonstrations retain the existing stability guard. Speed phrasing now
+applies to arc/reveal moves as well as axial pushes. The same decisions feed H3
+and the plain prompt adapter; no provider or product identifiers select moves.
+
+The DOCX's four editorial rules remain in `director_rules.CINEMATOGRAPHY_RULES`
+and previous-shot coverage context: motivated shot-size changes, pacing by
+information/action, the 180-degree axis with match action, and geography →
+action → feeling. They guide planning rather than mechanically alternating
+sizes or overriding authored timing, approved images or output aspect ratio.
+Visual continuity still requires reviewing the rendered footage.
+
+Reference verification: the supplied hoodie master has 620 frames at 24 fps,
+1440×2560. Both PySceneDetect and the integrated CameraPath detector find one
+continuous shot. The observed introductory viewpoint change, product-detail
+coverage, widening city view and final floating-product view are visual phases,
+not four detected cuts. The tracking result did not establish a 3D path;
+the active H3 workflow receives compiled text and supported image inputs, not
+an invented pose or reference-video channel.
+
 The sections below retain earlier policy and qualification context.
 
 Authored format and coverage authority are documented in [input-authority.md](input-authority.md).
