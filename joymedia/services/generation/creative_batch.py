@@ -9,6 +9,7 @@ import copy
 import frappe
 
 from joymedia.services.project.render_queue import is_render_alive
+from joymedia.services.workflows.pipeline import pinned_execution
 
 
 def _write(batch, variants, status=None, error="", changed_index=None):
@@ -158,7 +159,8 @@ def prepare_batch(batch_name):
 					project.name,
 					is_private=1,
 				)
-				import_storyboard_workbook(project.name, file.name, "Storyboard")
+				with pinned_execution(project.name, request["generation_pipeline"]):
+					import_storyboard_workbook(project.name, file.name, "Storyboard")
 				project.reload()
 				project.soundtrack_prompt = script["music"]
 				project.save(ignore_permissions=True)
@@ -224,10 +226,11 @@ def _start_keyframes(project, variant):
 	# storyboard permission, not a claim of human image or video review.
 	approve_project_storyboard(project.name)
 	project.reload()
-	if "reference_only" in controls(frappe.get_doc("Generation Workflow", project.workflow)):
-		variant.update(status="Rendering", generation_request=project.generate_video())
-	else:
-		variant.update(status="Keyframes", keyframe_request=generate_keyframes(project.name))
+	with pinned_execution(project.name, project.generation_pipeline):
+		if "reference_only" in controls(frappe.get_doc("Generation Workflow", project.workflow)):
+			variant.update(status="Rendering", generation_request=project.generate_video())
+		else:
+			variant.update(status="Keyframes", keyframe_request=generate_keyframes(project.name))
 
 
 def advance_batches():
@@ -309,7 +312,9 @@ def advance_batch(batch_name, user=None):
 					if frappe.db.get_value("Creative Batch", batch.name, "status") == "Cancelled":
 						return
 					project.reload()
-					variant.update(status="Rendering", generation_request=project.generate_video())
+					request = frappe.parse_json(batch.request_json)
+					with pinned_execution(project.name, request["generation_pipeline"]):
+						variant.update(status="Rendering", generation_request=project.generate_video())
 					frappe.db.commit()
 			elif variant["status"] == "Rendering":
 				run_name = variant.get("generation_request", {}).get("run")

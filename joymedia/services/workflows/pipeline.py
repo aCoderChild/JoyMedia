@@ -5,8 +5,25 @@ the selected pipeline name, so later workflow registrations cannot change an exi
 execution plan.
 """
 
+from contextlib import contextmanager
+
 import frappe
 from frappe import _
+
+
+@contextmanager
+def pinned_execution(project_name, pipeline_name):
+	"""Scope a trusted server-side execution snapshot to a native operation.
+
+	This is not an RPC or a client model selector. Durable orchestration supplies
+	its immutable backend-selected pipeline; native runs freeze their own steps.
+	"""
+	previous = frappe.flags.get("joymedia_execution_pipelines")
+	frappe.flags.joymedia_execution_pipelines = {**(previous or {}), project_name: pipeline_name}
+	try:
+		yield
+	finally:
+		frappe.flags.joymedia_execution_pipelines = previous
 
 
 def get_pinned_generation_pipeline(project_name):
@@ -20,7 +37,9 @@ def get_pinned_generation_pipeline(project_name):
 		value = json.loads(value)
 	if not isinstance(value, dict):
 		raise ValueError("Project generation pipeline pins must be a mapping.")
-	name = value.get(project_name)
+	name = (frappe.flags.get("joymedia_execution_pipelines") or {}).get(project_name) or value.get(
+		project_name
+	)
 	if not name:
 		return None
 	if not isinstance(name, str) or not frappe.db.exists("Generation Pipeline", name):
