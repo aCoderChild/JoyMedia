@@ -714,9 +714,6 @@ def _describe_character(label, project=None):
 	return cast_name(label, project) if project is not None else _display_name(label)
 
 
-EXTREME_CLOSEUP = re.compile(
-	r"\b(?:macro|extreme|super)(?:[ -]+(?:macro|extreme|super))*[ -]+close[ -]?ups?\b|\bmacro\b", re.I
-)
 QUANTITY = re.compile(
 	r"\(\s*\d[^)]*\)|\b\d+\s*(?:packs?|boxes|box|sheets?|ply|layers?|rolls?|pcs|pieces)\b(?:\s+of)?|[\"“”][^\"“”]*[\"“”]|(?<![\w])'[^'\n]{2,}'(?!\w)",
 	re.I,
@@ -814,14 +811,8 @@ def _no_outsiders(shot, project):
 
 
 def _scrub_for_drawing(text):
-	"""Make a planner's image description safe for a generated starting frame.
-
-	Extreme close-ups become a medium shot so the selected reference subject can
-	be composed in its setting. Quantities and quoted words are removed because
-	image models commonly render them as incorrect text.
-	"""
+	"""Filter legacy quantity/overlay text without changing the authored shot size."""
 	text = QUANTITY.sub("", without_overlay_text(text))
-	text = EXTREME_CLOSEUP.sub("medium shot", text)
 	text = re.sub(r"\s{2,}", " ", text)
 	return re.sub(r"\s+([.,;:!?])", r"\1", text).strip()
 

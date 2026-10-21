@@ -448,7 +448,7 @@ class TestAudioLineLast(FrappeTestCase):
 		from joymedia.services.planning.prompts import _scrub_for_drawing
 
 		self.assertEqual(
-			"medium shot on hand pulling out tissue. Full box of Shera appearing beside the kid.",
+			"Macro super close-up on hand pulling out tissue. Full box of Shera appearing beside the kid.",
 			_scrub_for_drawing(
 				"Macro super close-up on hand pulling out tissue. Full box of 30 packs of Shera appearing beside the kid."
 			),
@@ -551,8 +551,7 @@ class TestOpeningFraming(FrappeTestCase):
 		)
 		self.assertEqual("Wide shot", framing("Wide shot to close-up."))
 		self.assertEqual("Top-down", framing("Top-down -> Macro close-up"))
-		# An extreme close-up opens as a medium shot, so the characters are seen acting.
-		self.assertEqual("medium shot of the pack", framing("Extreme close-up of the pack."))
+		self.assertEqual("Extreme close-up of the pack", framing("Extreme close-up of the pack."))
 		self.assertEqual("", opening_framing(frappe._dict(generation_prompt="The kid spills juice.")))
 		self.assertEqual(
 			"",

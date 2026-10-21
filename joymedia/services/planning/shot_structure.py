@@ -151,6 +151,11 @@ def visibility_instruction(structure, contract):
 	return (
 		"Preserve the visible working area for "
 		+ ", ".join(targets)
-		+ ". Keep contact points and the container opening readable; natural hand occlusion is allowed. "
+		+ ". Keep the authored contact points and action targets readable; natural hand occlusion is allowed. "
 		"Do not crop away the action to simulate progress or create an extra copy during handling."
+		+ (
+			" Show their complete outlines and supporting surfaces in this broad view, with clear margins."
+			if structure["framing"] in {"wide", "full"}
+			else ""
+		)
 	)

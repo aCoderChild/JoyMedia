@@ -100,7 +100,8 @@ class TestReferenceCameraGrammar(TestCase):
 		self.assertEqual("arc", result["behavior"])
 		self.assertIn("the supplied character, the advertised package", result["direction"])
 		self.assertIn("Centre the group", result["direction"])
-		self.assertIn("ground contacts", result["direction"])
+		self.assertIn("support contacts", result["direction"])
+		self.assertNotIn("actor silhouette", result["direction"])
 		# A close detail must retain its working area without demanding a whole actor.
 		structure.update(stage="detail", framing="close_up", subject_motion="manipulation")
 		result = camera_plan(shot, {}, generated_composition=True)

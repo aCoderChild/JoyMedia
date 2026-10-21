@@ -9,6 +9,8 @@ override that policy. Explicit authored camera plans still use strict validation
 One continuous shot receives one main camera behavior, chosen independently of
 camera commands embedded in scene prose. The supplied opening frame owns its
 actual crop; movement must respect reviewed subject bounds and product margins.
+Authored macro and extreme close-up coverage is preserved through image-prompt
+cleaning; it is no longer silently rewritten as a medium shot.
 
 Every structured camera behavior carries the named `keep_visible` subjects into
 the execution prompt. Wide/full coverage keeps their complete group and ground
