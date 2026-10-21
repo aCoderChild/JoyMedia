@@ -675,6 +675,30 @@ class TestSheetBrief(FrappeTestCase):
 
 
 class TestReferenceDescriptions(FrappeTestCase):
+	def test_identical_tone_and_style_do_not_repeat_the_same_visual_direction(self):
+		from joymedia.services.planning import prompts
+
+		with patch.object(
+			prompts,
+			"sheet_brief",
+			return_value={
+				"tone": "Warm directional light",
+				"style": "Warm directional light",
+				"avoid": "",
+			},
+		):
+			self.assertEqual("Visual style: Warm directional light. ", prompts._mood(frappe._dict()))
+		with patch.object(
+			prompts,
+			"sheet_brief",
+			return_value={
+				"tone": "Cheerful",
+				"style": "Tactile 3D",
+				"avoid": "",
+			},
+		):
+			self.assertEqual("Mood: Cheerful. Visual style: Tactile 3D. ", prompts._mood(frappe._dict()))
+
 	def test_a_vietnamese_description_is_translated_and_a_place_never_shows_what_must_not_be_shown(self):
 		from joymedia.services.planning import prompts
 
