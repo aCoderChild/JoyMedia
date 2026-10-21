@@ -102,6 +102,10 @@
       "ref_images.ref_image_1": [
         "product",
         0
+      ],
+      "ref_images.ref_image_2": [
+        "character",
+        0
       ]
     }
   },
@@ -220,6 +224,12 @@
     "class_type": "LoadImage",
     "inputs": {
       "image": "product.png"
+    }
+  },
+  "character": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "character.png"
     }
   },
   "guide_first": {

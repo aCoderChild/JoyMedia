@@ -3,6 +3,7 @@
     "first_frame",
     "last_frame",
     "reference_image",
+    "multi_reference",
     "native_audio"
   ],
   "limits": {
@@ -65,6 +66,18 @@
         0
       ],
       "when_absent": null
+    },
+    {
+      "role": "character",
+      "target": {
+        "node_key": "104",
+        "input_name": "ref_images.ref_image_2"
+      },
+      "when_present": [
+        "character",
+        0
+      ],
+      "when_absent": null
     }
   ],
   "input_preprocessing": {
@@ -103,6 +116,12 @@
       "input_name": "prompt",
       "when_role_present": "product",
       "append_text": "Use <Picture 2> only for the exact advertised product silhouette, proportions, colours and printed artwork. It is the same physical product visible in <Picture 1>, not a second product or a new scene. Keep its artwork attached to its surface through perspective, motion and occlusion."
+    },
+    {
+      "node_key": "104",
+      "input_name": "prompt",
+      "when_role_present": "character",
+      "append_text": "Use the separate character reference only for the original mascot's face, flower, body proportions, paw shape, and cream colour. Retain the opening frame's pose and placement; do not add the reference image as a cutaway or duplicate actor."
     }
   ]
 }

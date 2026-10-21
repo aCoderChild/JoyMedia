@@ -46,6 +46,7 @@ def register_video():
 				("first_frame", "114", 1),
 				("last_frame", "115", 0),
 				("product", "product", 0),
+				("character", "character", 0),
 			]
 		],
 	]
