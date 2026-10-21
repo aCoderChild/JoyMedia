@@ -10,6 +10,14 @@ class TestTimedActions(unittest.TestCase):
 		self.assertEqual([(0, 0.4), (0.4, 1.2), (1.2, 2)], [(a["start"], a["end"]) for a in actions])
 		self.assertEqual("Lift it.", actions[1]["action"])
 
+	def test_inline_explicit_intervals_keep_all_actions_and_exact_timing(self):
+		inline = "[0-0.4s] Grip the cup. [0.4-1.2s] Lift it. [1.2-2s] Hold still."
+		lines = inline.replace(". [", ".\n[")
+		self.assertEqual(read_timed_actions(lines, 2), read_timed_actions(inline, 2))
+		for bad in ("[0-1s] Grip. [1.2-2s] Lift.", "[0-1.2s] Grip. [1-2s] Lift."):
+			with self.assertRaises(ValueError):
+				read_timed_actions(bad, 2)
+
 	def test_legacy_prose_is_unchanged(self):
 		self.assertIsNone(read_timed_actions("Lift the cup and set it down.", 3))
 
