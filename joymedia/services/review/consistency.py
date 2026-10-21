@@ -743,8 +743,14 @@ def run_temporal_check(check, configured=None):
 		raise ValueError("Too many claims for a bounded temporal review.")
 	configured = configured or endpoint("vision")
 	reports, raw_answers = [], []
-	deadline = time.monotonic() + 180
-	for indices, claims in batches(check):
+	windows = list(batches(check))
+	# Each window is a separate bounded request. A fixed three-minute budget
+	# starved later claims on scenes with several contact transitions, even
+	# when every request completed normally. Stay within the admission worker's
+	# thirty-minute timeout and leave time for identity/count observations.
+	budget = min(1200, max(180, configured.timeout * len(windows)))
+	deadline = time.monotonic() + budget
+	for indices, claims in windows:
 		if time.monotonic() >= deadline:
 			break  # Unreviewed claims merge as uncertain; no implicit support.
 		content = []
@@ -831,6 +837,7 @@ def run_temporal_check(check, configured=None):
 		"temperature": sampling("vision_observation")["temperature"],
 		"max_images_per_request": 4,
 		"max_claims_per_request": 1,
+		"review_budget_seconds": budget,
 	}
 	report["windows"] = reports
 	report["raw_responses"] = raw_answers

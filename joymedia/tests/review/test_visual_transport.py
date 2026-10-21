@@ -7,6 +7,54 @@ from joymedia.services.review.consistency import _post_visual_request
 
 
 class TestVisualTransport(TestCase):
+	def test_later_windows_are_not_starved_by_a_single_request_deadline(self):
+		import json
+
+		import frappe
+
+		from joymedia.services.review.consistency import run_temporal_check
+		from joymedia.services.scene.evidence import SequenceCheck
+
+		claim = {"id": "action", "dimension": "action", "claim": "Lift the cup."}
+		check = SequenceCheck(
+			[b"before", b"after"],
+			[{"index": 0, "time": 0}, {"index": 1, "time": 1}],
+			[claim],
+			{"asset_version": "V"},
+		)
+		response = Mock()
+		response.json.return_value = {
+			"choices": [
+				{
+					"message": {
+						"content": json.dumps(
+							{
+								"observations": [
+									{
+										"id": "action",
+										"verdict": "supported",
+										"frames": [0, 1],
+										"reason": "The cup moves from the table into the hand.",
+									}
+								],
+							}
+						)
+					}
+				}
+			]
+		}
+		with (
+			patch("joymedia.services.scene.evidence.batches", return_value=[((0, 1), [claim])] * 2),
+			patch("joymedia.services.review.consistency.time.monotonic", side_effect=[0, 0, 0, 200, 200]),
+			patch("joymedia.services.review.consistency._post_visual_request", return_value=response) as post,
+			patch("joymedia.services.review.consistency._data_url", return_value="image"),
+			patch("frappe.utils.file_manager.save_file", return_value=frappe._dict(file_url="report.json")),
+		):
+			report = run_temporal_check(check, frappe._dict(base_url="endpoint", model="vision", timeout=120))
+		self.assertEqual(2, post.call_count)
+		self.assertEqual(240, report["judge"]["review_budget_seconds"])
+		self.assertEqual("supported", report["results"][0]["verdict"])
+
 	def test_dropped_observation_retries_the_same_request(self):
 		response = Mock()
 		payload = {"messages": ["same immutable image and question"]}
