@@ -406,3 +406,17 @@ When screening holds a frame, automatic generation stops. After explicit native
 approval of the actual current artifact, a batch can resume without erasing the
 screening findings. Stale approvals do not resume generation. Neither this
 permission to animate nor a review export is a physical or release qualification.
+
+Automatic batches freeze explicit reference preservation modes and write them into
+the normal References sheet. Native workbook import therefore retains the same
+choice; it must not silently revert a moving reference-guided product to strict
+source-pixel compositing. Optional `execution_spec.reference_defaults` supplies
+backend defaults only when the source has no explicit choice. Reference-guided
+rendering still requires identity review and never asserts exact artwork proof.
+
+Shared-setting preparation is a separate durable batch stage, reusing native
+location generation and assignment for both image-guided and reference-only
+workflows. The batch owns the subsequent visual handoff, so cancelling it cannot
+launch new scene renders from a deferred setting callback. Failed location work
+resumes from the persisted script/workbook. Existing image-only commercials can
+state no cast explicitly in the generated template.

@@ -412,6 +412,9 @@
       "brightness": 0,
       "saturation": 1.02,
       "short_edge": 1440
+    },
+    "reference_defaults": {
+      "Product": "reference_guided"
     }
   },
   "bindings": [

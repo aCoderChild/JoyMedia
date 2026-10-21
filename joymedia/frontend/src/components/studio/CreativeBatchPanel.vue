@@ -33,6 +33,7 @@ let timer, epoch = 0;
 const active = batch => ['Queued', 'Planning', 'Rendering', 'Finishing'].includes(batch.status);
 const label = status => ({
   Queued: tr('Queued', 'Đang chờ'), Planning: tr('Writing and planning', 'Đang viết và lập kế hoạch'),
+  Locations: tr('Preparing shared settings', 'Đang chuẩn bị bối cảnh chung'),
   Keyframes: tr('Drawing scene references', 'Đang tạo hình cảnh'), Rendering: tr('Generating video', 'Đang tạo video'),
   Finishing: tr('Editing and adding music', 'Đang dựng và thêm nhạc'), Completed: tr('Video ready', 'Video đã xong'),
   Exporting: tr('Exporting video', 'Đang xuất video'),

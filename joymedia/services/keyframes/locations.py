@@ -333,6 +333,12 @@ def draw_places_then_frames(project_name, shot_names, user):
 	"""Background job: draw the missing places, give them to their scenes, then draw the scenes' first frames."""
 	from joymedia.services.keyframes.stage import generate_keyframes
 
+	draw_project_places(project_name, shot_names, user)
+	generate_keyframes(project_name, shot_names, draw_places=False)
+
+
+def draw_project_places(project_name, shot_names, user):
+	"""Reuse native shared-setting generation without requiring an image-guided video workflow."""
 	frappe.set_user(user)
 	project = frappe.get_doc("Media Project", project_name)
 	shots = [frappe.get_doc("Shot", name) for name in shot_names]
@@ -355,4 +361,5 @@ def draw_places_then_frames(project_name, shot_names, user):
 		frappe.db.commit()
 		project = frappe.get_doc("Media Project", project_name)
 		publish_project_event(project_name, PROJECT_UPDATED, {"doctype": "Media Project"})
-	generate_keyframes(project_name, shot_names, draw_places=False)
+	assign_places(project, shots)
+	frappe.db.commit()

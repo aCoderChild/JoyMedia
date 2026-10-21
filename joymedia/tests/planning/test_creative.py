@@ -524,6 +524,82 @@ class TestCreativeWorkflow(FrappeTestCase):
 			batch = self.batch()
 		self.assertEqual([note], frappe.parse_json(batch.request_json)["review_notes"])
 
+	def test_reference_preservation_survives_batch_copy_workbook_and_native_import(self):
+		from frappe.utils.file_manager import save_file
+
+		from joymedia.api.storyboard import import_storyboard_workbook
+		from joymedia.services.generation.creative_batch import _create_variant
+		from joymedia.services.intake.references import preservation_modes
+		from joymedia.tests.editing.test_timeline import _create_workflow
+
+		self.project.workflow = _create_workflow()
+		self.project.save(ignore_permissions=True)
+		file_url = frappe.db.get_value("Asset Version", self.version, "file")
+		file_name = frappe.db.get_value("File", {"file_url": file_url}, "file_name")
+		for mode in ("reference_guided", "source_pixels"):
+			self.project.db_set(
+				"storyboard_source_json",
+				frappe.as_json(
+					{
+						"references": [
+							{
+								"name": "product",
+								"file": file_name,
+								"role": "Product",
+								"preservation_mode": mode,
+							}
+						]
+					}
+				),
+			)
+			batch = self.batch()
+			request = frappe.parse_json(batch.request_json)
+			self.assertEqual(mode, request["reference_preservation_modes"][self.version])
+			with (
+				patch("frappe.enqueue"),
+				patch("joymedia.services.generation.creative_batch.persist_execution_pin"),
+			):
+				derived = _create_variant(batch, request, 0)
+				self.assertEqual(mode, preservation_modes(derived)[self.version])
+				file = save_file(
+					"preservation-roundtrip.xlsx",
+					script_workbook(sample_script(), derived),
+					"Media Project",
+					derived.name,
+					is_private=1,
+				)
+				import_storyboard_workbook(derived.name, file.name, "Storyboard")
+				derived.reload()
+				self.assertEqual(mode, preservation_modes(derived)[self.version])
+
+	def test_shared_settings_wait_for_native_job_and_cancel_prevents_visual_handoff(self):
+		from joymedia.services.generation.creative_batch import advance_batch
+
+		batch = self.batch()
+		variants = frappe.parse_json(batch.variants_json)
+		variants[0].update(project=self.project.name, status="Locations", location_job="native-places")
+		batch.db_set({"status": "Rendering", "variants_json": frappe.as_json(variants)})
+		with (
+			patch("joymedia.services.generation.creative_batch.is_render_alive", return_value=True),
+			patch("joymedia.services.generation.creative_batch._submit_visual_stage") as submit,
+		):
+			advance_batch(batch.name)
+			submit.assert_not_called()
+		with (
+			patch("joymedia.services.generation.creative_batch.is_render_alive", return_value=False),
+			patch("joymedia.services.keyframes.locations.missing_places", return_value={}),
+			patch("joymedia.services.keyframes.locations.missing_views", return_value={}),
+			patch("joymedia.services.keyframes.locations.assign_places") as assign,
+			patch("joymedia.services.generation.creative_batch._submit_visual_stage") as submit,
+		):
+			advance_batch(batch.name)
+			assign.assert_called_once()
+			submit.assert_called_once()
+		batch.db_set("status", "Cancelled")
+		with patch("joymedia.services.generation.creative_batch._submit_visual_stage") as submit:
+			advance_batch(batch.name)
+			submit.assert_not_called()
+
 	def test_generated_workbook_round_trips_through_the_existing_import_schema(self):
 		from joymedia.services.planning.workbook import read_workbook
 
