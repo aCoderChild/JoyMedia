@@ -116,9 +116,15 @@ class TestGeneratedScriptValidation(TestCase):
 
 	def test_preparatory_reach_cannot_consume_an_entire_action_shot(self):
 		script = sample_script()
-		script["scenes"][0]["action"] = "[0-6s] The mascot reaches toward the product."
-		with self.assertRaisesRegex(ValueError, "no completed object or material action"):
-			validate_script(script, self.inventory, self.constraints)
+		for action in (
+			"[0-6s] The mascot reaches toward the product.",
+			"[0-6s] The mascot reaches toward the table where the product is placed.",
+		):
+			with self.subTest(action=action), self.assertRaisesRegex(
+				ValueError, "no completed object or material action"
+			):
+				script["scenes"][0]["action"] = action
+				validate_script(script, self.inventory, self.constraints)
 		script["scenes"][0]["action"] = (
 			"[0-1s] The mascot reaches toward the product.\n"
 			"[1-6s] The mascot grips and lifts the product."
