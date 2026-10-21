@@ -109,6 +109,35 @@ class TestReferenceCameraGrammar(TestCase):
 		self.assertIn("the supplied character, the advertised package", result["direction"])
 		self.assertNotIn("complete actor silhouette", result["direction"])
 
+	def test_generated_detail_does_not_lock_to_the_reference_photo_viewpoint(self):
+		from joymedia.services.planning.camera import camera_plan
+
+		shot = {
+			"motion_plan_json": {
+				"shot_structure": {
+					"stage": "extract",
+					"framing": "close_up",
+					"angle": "high_angle",
+					"subject_motion": "manipulation",
+					"keep_visible": ["product", "actor"],
+				},
+				"scene_contract": {
+					"entities": [
+						{"id": "product", "label": "the product"},
+						{"id": "actor", "label": "the actor"},
+					]
+				},
+			}
+		}
+		fixed = camera_plan(shot, {})
+		generated = camera_plan(shot, {}, generated_composition=True)
+		self.assertEqual("locked", generated["behavior"])
+		self.assertIn("supplied position", fixed["direction"])
+		self.assertNotIn("supplied position", generated["direction"])
+		self.assertIn("high-angle close-up starting position", generated["direction"])
+		self.assertIn("only the actor parts needed", generated["direction"])
+		self.assertIn("the product, the actor", generated["direction"])
+
 	def test_invalid_profiles_are_rejected_instead_of_silently_falling_back(self):
 		bad = []
 		for field, value in [
