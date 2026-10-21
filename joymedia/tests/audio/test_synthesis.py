@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import frappe
 
@@ -64,3 +64,19 @@ class TestSpeechProviderBoundary(TestCase):
 				{"generation_prompt": "Exact dialogue: 123.", "voice": "speaker"},
 			)
 			self.assertEqual(output.read_bytes(), b"audio")
+
+	def test_edge_uses_the_operator_route_without_changing_dialogue_or_voice(self):
+		client = Mock()
+		client.save = AsyncMock()
+		with (
+			patch("joymedia.services.workflows.capabilities.configured_workflow", return_value=None),
+			patch("frappe.conf", frappe._dict(joymedia_tts_proxy="http://127.0.0.1:12345")),
+			patch("edge_tts.Communicate", return_value=client) as communicate,
+			tempfile.TemporaryDirectory() as directory,
+		):
+			configuration = provider("vi-VN-HoaiMyNeural")
+			synthesize("Exact dialogue.", configuration, Path(directory) / "voice.mp3", 3)
+			communicate.assert_called_once_with(
+				"Exact dialogue.", "vi-VN-HoaiMyNeural", proxy="http://127.0.0.1:12345"
+			)
+			client.save.assert_awaited_once()

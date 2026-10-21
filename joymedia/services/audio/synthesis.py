@@ -22,7 +22,12 @@ def provider(voice=None):
 	voice = str(voice or frappe.conf.get("joymedia_tts_voice") or "vi-VN-HoaiMyNeural")
 	if not re.fullmatch(r"[a-z]{2}-[A-Z]{2}-[A-Za-z0-9]+Neural", voice):
 		raise ValueError("Choose a supported voice for the configured Edge speech adapter.")
-	return {"workflow": None, "voice": voice, "key": "edge"}
+	return {
+		"workflow": None,
+		"voice": voice,
+		"key": "edge",
+		"proxy": frappe.conf.get("joymedia_tts_proxy") or None,
+	}
 
 
 def synthesize(text, configuration, output, seconds):
@@ -56,7 +61,10 @@ def synthesize(text, configuration, output, seconds):
 
 	async def run():
 		await asyncio.wait_for(
-			edge_tts.Communicate(text, configuration["voice"]).save(str(output)), timeout=90
+			edge_tts.Communicate(text, configuration["voice"], proxy=configuration.get("proxy")).save(
+				str(output)
+			),
+			timeout=90,
 		)
 
 	asyncio.run(run())
