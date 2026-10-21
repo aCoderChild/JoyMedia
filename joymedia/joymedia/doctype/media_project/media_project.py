@@ -393,10 +393,12 @@ class MediaProject(Document):
 		from joymedia.services.intake.cinematography import ensure_project_camera_analysis
 		from joymedia.services.planning.camera import camera_planning_rules
 		from joymedia.services.planning.llm import generate_video_plan
+		from joymedia.services.planning.shot_structure import PLANNING_RULES as STRUCTURE_RULES
 		from joymedia.services.workflows.routing import automatic_planning_input_contract
 
 		settings = _project_settings(self)
 		ensure_project_camera_analysis(self)
+		camera_rules = camera_planning_rules(self)
 		return generate_video_plan(
 			product_name=_meaningful_project_value(self.product_name, "The supplied product"),
 			video_idea=video_idea,
@@ -408,7 +410,14 @@ class MediaProject(Document):
 			reference_media=reference_media,
 			generation_mode=_normalize_generation_mode(settings.generation_mode),
 			global_instructions="\n".join(
-				filter(None, (settings.global_instructions, camera_planning_rules(self)))
+				filter(
+					None,
+					(
+						settings.global_instructions,
+						camera_rules,
+						STRUCTURE_RULES if camera_rules else "",
+					),
+				)
 			),
 			format_preset=ratio_label(settings.delivery_width, settings.delivery_height),
 			workflow_input_contract=automatic_planning_input_contract(),
@@ -644,6 +653,7 @@ class MediaProject(Document):
 		from joymedia.services.intake.cinematography import ensure_project_camera_analysis
 		from joymedia.services.planning.camera import camera_planning_rules
 		from joymedia.services.planning.llm import generate_video_plan
+		from joymedia.services.planning.shot_structure import PLANNING_RULES as STRUCTURE_RULES
 		from joymedia.services.planning.video_plan import append_video_plan
 		from joymedia.services.workflows.routing import automatic_planning_input_contract
 
@@ -707,6 +717,7 @@ class MediaProject(Document):
 			target_frames = _plan_append_scene_frames(duration_seconds, workflow.output_fps)
 			image_inputs = self._get_project_image_inputs()
 			ensure_project_camera_analysis(self)
+			camera_rules = camera_planning_rules(self)
 			plan = generate_video_plan(
 				product_name=_meaningful_project_value(self.product_name, "The supplied product"),
 				video_idea=_meaningful_project_value(
@@ -719,7 +730,14 @@ class MediaProject(Document):
 				reference_media=_get_project_reference_contexts(self),
 				generation_mode="Continuous" if continuity else self.generation_mode,
 				global_instructions="\n".join(
-					filter(None, (self.global_instructions, camera_planning_rules(self)))
+					filter(
+						None,
+						(
+							self.global_instructions,
+							camera_rules,
+							STRUCTURE_RULES if camera_rules else "",
+						),
+					)
 				),
 				format_preset=ratio_label(self.delivery_width, self.delivery_height),
 				workflow_input_contract=automatic_planning_input_contract(),

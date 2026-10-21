@@ -409,8 +409,14 @@ def build_project_snapshot(project, *, require_production_pipeline=False):
 			references,
 			controls(frappe.get_doc("Generation Workflow", scene.get("workflow") or snapshot["workflow"])),
 		)
+	from joymedia.services.planning.camera import camera_planning_rules, reference_camera_grammar
 	from joymedia.services.review.admission import freeze_policy
 
+	# Freeze reference direction at the same boundary as workflows and subjects.
+	# Both H3 and plain prompt compilation consume this model-independent policy.
+	if camera_planning_rules(project):
+		snapshot["cinematic_camera"] = True
+		snapshot["camera_grammar"] = reference_camera_grammar(project)
 	admission = freeze_policy()
 	if admission:
 		snapshot["visual_admission"] = admission
