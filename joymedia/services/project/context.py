@@ -437,11 +437,10 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 
 
 def _compose_end_card(shots, *, keyframe_stage=False):
-	"""The film's last scene, when it shows the product, is laid out by rules instead of drawn by the image model.
+	"""Keep explicit static source presentations still; preserve authored performances.
 
-	A generated scene leaves composition to a model and can obscure the product. An advertisement ends on the product,
-	so its source-art protection remains independent of the actor performance. Hold only the final two seconds;
-	never replace a requested wave or pose transition with a whole-shot source card.
+	A fixed editorial tail must not truncate a timed wave, placement or invitation.
+	Generated performances resolve naturally according to their own action plan.
 	"""
 	if keyframe_stage or not shots:
 		return
@@ -456,15 +455,11 @@ def _compose_end_card(shots, *, keyframe_stage=False):
 	):
 		from joymedia.services.consistency.retention import is_static_presentation
 
-		static = is_static_presentation(last)
-		duration = float(last.get("duration_seconds") or 0)
-		if not static and duration <= 2:
-			raise ValueError(
-				"A closing product action needs more than two seconds to leave a readable final hold."
-			)
-		last["closing_hold_seconds"] = min(2.0, duration)
-		last["closing_hold_mode"] = "source_artwork" if static else "generated_pose"
-		if static and not last.get("character_mode"):
+		if not is_static_presentation(last):
+			return
+		last["closing_hold_seconds"] = float(last.get("duration_seconds") or 0)
+		last["closing_hold_mode"] = "source_artwork"
+		if not last.get("character_mode"):
 			last["character_mode"] = "Paste exact art"
 
 
