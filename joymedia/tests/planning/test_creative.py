@@ -124,6 +124,31 @@ class TestGeneratedScriptValidation(TestCase):
 		self.assertIn("mascot-reference", planner.call_args.args[0])
 		self.assertIn("Maintain real contact", planner.call_args.args[0])
 
+	def test_script_review_accepts_grounded_coverage_and_rejects_invented_issue_evidence(self):
+		from joymedia.services.planning.creative import review_script_actions
+
+		good = {
+			"coverage": [
+				{"scene": 1, "action_quote": "Grip the product."},
+				{"scene": 2, "action_quote": "Turn the product to face forward."},
+			],
+			"issues": [],
+		}
+		with patch("joymedia.services.planning.production._ask_planner", return_value=good):
+			self.assertEqual(good, review_script_actions(sample_script()))
+		bad = copy.deepcopy(good)
+		bad["issues"] = [
+			{
+				"scene": 1,
+				"category": "unreferenced_actor",
+				"quote": "An unreferenced presenter appears.",
+				"instruction": "Remove the presenter.",
+			}
+		]
+		with patch("joymedia.services.planning.production._ask_planner", return_value=bad):
+			with self.assertRaisesRegex(ValueError, "grounded"):
+				review_script_actions(sample_script())
+
 	def test_action_sources_share_bounded_context_in_chronological_order(self):
 		from joymedia.services.intake.action_reference import action_observations
 
@@ -159,6 +184,7 @@ class TestGeneratedScriptValidation(TestCase):
 				"role": "Product",
 				"identity": "internal-id",
 				"label": "Label",
+				"keep_rule": "Keep the original connected proportions.",
 				"views": [{"description": "Blue product"}],
 			}
 		]
@@ -166,24 +192,80 @@ class TestGeneratedScriptValidation(TestCase):
 			patch("joymedia.services.planning.creative.reference_inventory", return_value=inventory),
 			patch("joymedia.services.intake.action_reference.action_observations", return_value=[]),
 			patch("joymedia.services.intake.references.brand", return_value={}),
-			patch("joymedia.services.planning.creative.review_script_actions", return_value=[]),
+			patch(
+				"joymedia.services.planning.creative.review_script_actions",
+				return_value={"coverage": [], "issues": []},
+			),
 			patch(
 				"joymedia.services.planning.production._ask_planner",
 				side_effect=[bad_count, bad_enum, sample_script()],
 			) as planner,
 		):
 			expected = sample_script()
-			expected["action_review"] = []
-			actual = draft_script(project, nonce="varied")
+			expected["action_review"] = {"coverage": [], "issues": []}
+			actual = draft_script(
+				project,
+				nonce="varied",
+				review_notes=[{"source": "old-note", "text": "Prior version observation."}],
+			)
 			actual.pop("timing_compilation")
 			self.assertEqual(expected, actual)
 		last = planner.call_args
 		self.assertIn("2–12 scenes", last.args[0])
 		self.assertIn("Unsupported shot_framing", last.args[0])
 		self.assertNotIn('"identity": "internal-id"', last.args[0])
+		self.assertIn("Keep the original connected proportions.", last.args[0])
+		self.assertIn('"scope": "Historical"', last.args[0])
 		self.assertIn("multi-scene", last.kwargs["system"])
 		self.assertEqual("writer", last.kwargs["capability"])
 		self.assertIn("scenes", last.kwargs["response_schema"]["properties"])
+
+	def test_production_detail_reaches_planning_but_missing_prerequisite_still_blocks(self):
+		from joymedia.services.planning.creative import draft_script
+
+		project = frappe._dict(total_duration_seconds=10, delivery_width=1280, delivery_height=720)
+		inventory = [
+			{
+				"key": "product",
+				"role": "Product",
+				"identity": "product",
+				"label": "Product",
+				"views": [{"description": "Blue product"}],
+			}
+		]
+		instruction = "Maintain supported contact throughout the movement."
+		for category in ("production_detail", "missing_prerequisite"):
+			with (
+				patch("joymedia.services.planning.creative.reference_inventory", return_value=inventory),
+				patch("joymedia.services.intake.action_reference.action_observations", return_value=[]),
+				patch("joymedia.services.intake.references.brand", return_value={}),
+				patch(
+					"joymedia.services.planning.production._ask_planner",
+					side_effect=lambda *a, **k: copy.deepcopy(sample_script()),
+				),
+				patch(
+					"joymedia.services.planning.creative.review_script_actions",
+					return_value={
+						"coverage": [],
+						"issues": [
+							{
+								"scene": 1,
+								"category": category,
+								"quote": "Move it along the table.",
+								"instruction": instruction,
+							}
+						],
+					},
+				),
+			):
+				if category == "production_detail":
+					self.assertIn(
+						instruction,
+						draft_script(project, nonce="production-note")["scenes"][0]["continuity_rules"],
+					)
+				else:
+					with self.assertRaisesRegex(ValueError, "missing_prerequisite"):
+						draft_script(project, nonce="blocking-note")
 
 	def test_authored_geometry_timing_and_cast_remain_authoritative(self):
 		self.assertEqual(sample_script(), validate_script(sample_script(), self.inventory, self.constraints))
@@ -376,6 +458,7 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.assertEqual(sample_script()["scenes"][0]["action"], demo["scenes"][0]["action"])
 		self.assertEqual("medium", demo["scenes"][0]["shot_framing"])
 		self.assertEqual("cinematic", parsed["brand"]["camera_style"])
+		self.assertIn(sample_script()["scenes"][0]["visible_change"], demo["scenes"][0]["continuity"])
 		self.assertEqual([], demo["timing_warnings"])
 
 	def test_generated_fractional_frame_timing_round_trips_without_gaps_or_lost_phases(self):

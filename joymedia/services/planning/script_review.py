@@ -1,0 +1,144 @@
+"""Quoted script compliance findings; independent of rendered-media admission."""
+
+import json
+
+
+def review_script_actions(script, roster=(), review_notes=(), requirements=None):
+	"""Ground script revisions in exact text; this never reviews future pixels."""
+	from joymedia.services.planning.production import _ask_planner
+
+	count = len(script["scenes"])
+
+	def obj(properties):
+		return {
+			"type": "object",
+			"properties": properties,
+			"required": list(properties),
+			"additionalProperties": False,
+		}
+
+	index = {"type": "integer", "minimum": 1, "maximum": count}
+	quote = {"type": "string", "minLength": 1, "maxLength": 200}
+	issue = obj(
+		{
+			"scene": index,
+			"category": {
+				"type": "string",
+				"enum": [
+					"unreferenced_actor",
+					"missing_prerequisite",
+					"missing_contact_or_result",
+					"production_detail",
+					"state_reset",
+					"opening_mismatch",
+					"idle_pacing",
+					"camera_in_action",
+					"coverage",
+				],
+			},
+			"quote": quote,
+			"instruction": {"type": "string", "minLength": 1, "maxLength": 280},
+		}
+	)
+	schema = obj(
+		{
+			"coverage": {
+				"type": "array",
+				"items": obj({"scene": index, "action_quote": quote}),
+				"minItems": count,
+				"maxItems": count,
+			},
+			"issues": {"type": "array", "items": issue, "maxItems": 8},
+		}
+	)
+	draft = [
+		{
+			k: scene[k]
+			for k in (
+				"duration_seconds",
+				"visual_camera",
+				"action",
+				"visible_change",
+				"continuity_rules",
+				"cast",
+				"products",
+				"shot_framing",
+				"shot_angle",
+				"narrative_stage",
+			)
+		}
+		for scene in script["scenes"]
+	]
+	prompt = (
+		"Identify concrete text defects in this brisk commercial script. Review ALL scenes in order. "
+		"For coverage copy one exact action substring from each scene, without paraphrasing. "
+		"Use production_detail for additional mechanical/staging specificity that expands an otherwise valid action. These notes go to the normal production planner. Reserve missing_contact_or_result for an actually absent demonstration/result or an effect contradicting stated contact; do not confuse high-level script wording with a rendered failure. "
+		"Report only actionable TEXT defects, each with an EXACT substring demonstrating that defect and a precise rewrite instruction. A merely related action is not evidence of a defect. Request concrete revised action/staging text, not generic review, ensure or clarify instructions. An empty issues list is valid. "
+		"An action changing an object/state is progress, even if a brief reaction accompanies it. Do not invent problems in a valid action. "
+		"Check: only roster actors in prose; items obtained before use; holding a container does not obtain its contents; contact precedes the visible result; no unexplained state reset or reversal of consumption; opening and action agree. "
+		"A scene spent solely approaching, staring or posing lacks brisk action. Camera commands belong outside Action, even at the end. Only the final scene may hold the product briefly. "
+		"Use purposeful shot-size/angle contrast and a product detail at use, with coherent axis and state handoffs. Do not demand an object reset unless a later opening explicitly contradicts its retained state. Historical feedback describes earlier renders, not defects proven in this draft. Never copy historical scene numbers, review/sign-off requests or old judgments into new issues. "
+		"This is TEXT review, not video review. Do not claim an action is convincing/unconvincing, or physical correctness is proven. If text already specifies contact and visible result, do not repeat an old request to verify physical correctness. Missing contact/result text needs a specific proposed visible-state edit. "
+		"Never reject a valid causal event merely for lacking emotional complexity.\nROSTER: "
+		+ json.dumps(roster, ensure_ascii=False)
+		+ "\nREQUIREMENTS: "
+		+ json.dumps(requirements or {}, ensure_ascii=False)
+		+ "\nUNRESOLVED FEEDBACK (apply relevant pitfalls, not historical scene numbers): "
+		+ json.dumps(review_notes, ensure_ascii=False)
+		+ "\nDRAFT: "
+		+ json.dumps(draft, ensure_ascii=False)
+	)
+	repair = ""
+	for attempt in range(2):
+		result = _ask_planner(
+			prompt + repair,
+			system="You edit commercial scripts using exact quoted text. Return only the required JSON.",
+			capability="writer",
+			sampling_profile="creative_script_review",
+			response_schema=schema,
+		)
+		try:
+			coverage, issues = result.get("coverage", []), result.get("issues", [])
+			if (
+				not isinstance(coverage, list)
+				or len(coverage) != count
+				or any(not isinstance(row, dict) or type(row.get("scene")) is not int for row in coverage)
+				or [r.get("scene") for r in coverage] != list(range(1, count + 1))
+			):
+				raise ValueError("Review must cover each scene exactly once in order.")
+
+			def contained(quote, text):
+				return (
+					isinstance(quote, str)
+					and bool(quote.strip())
+					and " ".join(quote.split()).casefold() in " ".join(text.split()).casefold()
+				)
+
+			for row in coverage:
+				if not contained(row.get("action_quote"), script["scenes"][row["scene"] - 1]["action"]):
+					raise ValueError("Copy an exact action substring; do not paraphrase coverage evidence.")
+			if not isinstance(issues, list) or len(issues) > 8:
+				raise ValueError("Return a bounded list of actionable issues.")
+			for row in issues:
+				if (
+					not isinstance(row, dict)
+					or row.get("category") not in issue["properties"]["category"]["enum"]
+					or not isinstance(row.get("instruction"), str)
+					or not row["instruction"].strip()
+					or len(row["instruction"]) > 280
+				):
+					raise ValueError(
+						"Every issue needs a supported category and concrete rewrite instruction."
+					)
+				if (
+					type(row.get("scene")) is not int
+					or not 1 <= row["scene"] <= count
+					or not contained(
+						row.get("quote"), "\n".join(str(value) for value in draft[row["scene"] - 1].values())
+					)
+				):
+					raise ValueError("Every issue must quote the exact affected scene text.")
+			return result
+		except (ValueError, KeyError, TypeError) as exc:
+			repair = f"\nReview protocol repair {attempt + 1}: {exc} Return the full review, copying exact source text."
+	raise ValueError("Script review could not provide grounded scene evidence: " + repair)

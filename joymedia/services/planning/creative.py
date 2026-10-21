@@ -10,6 +10,7 @@ import math
 
 import frappe
 
+from joymedia.services.planning.script_review import review_script_actions
 from joymedia.services.planning.shot_structure import ANGLES, FRAMINGS, STAGES
 from joymedia.services.planning.timed_actions import normalize_action_separators, read_timed_actions
 
@@ -185,10 +186,16 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		"fps": fps,
 		"aspect_ratio": ratio_label(project.delivery_width, project.delivery_height) or None,
 		"approved_claims": brand(project).get("claims") or "Only directly visible product features.",
+		"avoid": brand(project).get("avoid") or "",
+		"mandatories": brand(project).get("mandatories") or "",
 		"creative_direction": project.video_idea or "",
 		"camera_reference_notes": [note[:400] for note in camera_grammar.get("notes", [])[:4]],
 		"unresolved_feedback": [
-			{**r, "text": r["text"] if len(r["text"]) <= 400 else r["text"][:250] + " … " + r["text"][-150:]}
+			{
+				**r,
+				"scope": r.get("scope", "Historical"),
+				"text": r["text"] if len(r["text"]) <= 400 else r["text"][:250] + " … " + r["text"][-150:],
+			}
 			for r in review_notes
 		],
 	}
@@ -196,6 +203,8 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		{
 			"key": item["key"],
 			"role": item["role"],
+			"label": item["label"],
+			"keep_rule": item.get("keep_rule", "")[:400],
 			"view_count": len(item["views"]),
 			"description": " | ".join(dict.fromkeys(v["description"] for v in item["views"]))[:600],
 		}
@@ -212,7 +221,7 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 	]
 	prompt = (
 		"Create an original, brisk product commercial from these references, not a slideshow. "
-		"Invent a coherent situation with a visible cause, reaction, product acquisition/use and visible result. "
+		"Open with a visible causal event already happening. Invent a coherent situation, prompt reaction, product acquisition/use and visible result. A reaction must not occupy an entire scene on its own. "
 		"Supply every prerequisite action before its consequence: acquire, grip, move into contact, perform the use, reveal the changed state. Reaching for a container is not obtaining its contents: show removal before using the item. "
 		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. Repeat the same full place description for one location, not vague same-room placeholders. "
 		"Each non-final scene must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. "
@@ -253,95 +262,40 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		try:
 			script = fit_generated_timing(result, constraints["duration_seconds"], fps)
 			script = validate_script(script, inventory, constraints)
-			findings = review_script_actions(script, roster, constraints["unresolved_feedback"])
-			issues = [r for r in findings if not all(r[k] for k in ("progresses", "causal", "paced"))]
-			if issues:
-				raise ValueError(
-					"Action review: "
-					+ json.dumps(issues, ensure_ascii=False)
-					+ "\nRevise this rejected action chain: "
+			findings = review_script_actions(
+				script,
+				roster,
+				constraints["unresolved_feedback"],
+				{
+					k: constraints[k]
+					for k in ("approved_claims", "avoid", "mandatories", "camera_reference_notes")
+				},
+			)
+			blocking = [row for row in findings["issues"] if row["category"] != "production_detail"]
+			if blocking:
+				error = (
+					"\nRevise the complete script to fix these grounded issues in the LATEST draft: "
+					+ json.dumps(findings["issues"], ensure_ascii=False)
+					+ "\nREJECTED ACTION CHAIN: "
 					+ json.dumps(
-						[{k: s[k] for k in ("duration_seconds", "action")} for s in script["scenes"]]
+						[{k: scene[k] for k in ("duration_seconds", "action")} for scene in script["scenes"]],
+						ensure_ascii=False,
 					)
 				)
+				continue
+			for row in findings["issues"]:
+				scene = script["scenes"][row["scene"] - 1]
+				scene["continuity_rules"] += "\nProduction direction: " + row["instruction"]
+			script = validate_script(script, inventory, constraints)
 			script["action_review"] = findings
 			return script
+
 		except ValueError as exc:
 			error += (
 				f"\nRepair attempt {_attempt + 1}; return the complete script, correcting ALL accumulated errors: "
 				+ str(exc)
 			)
 	raise ValueError("Automatic script remained invalid after bounded repair: " + error)
-
-
-def review_script_actions(script, roster=(), review_notes=()):
-	"""Second-pass script compliance through the existing configured writer runtime.
-
-	This reviews the script, not rendered physical correctness or release eligibility.
-	"""
-	from joymedia.services.planning.production import _ask_planner
-
-	count = len(script["scenes"])
-	item = {
-		"type": "object",
-		"properties": {
-			"scene": {"type": "integer", "minimum": 1, "maximum": count},
-			"progresses": {"type": "boolean"},
-			"causal": {"type": "boolean"},
-			"paced": {"type": "boolean"},
-			"reason": {"type": "string", "maxLength": 240},
-		},
-		"required": ["scene", "progresses", "causal", "paced", "reason"],
-		"additionalProperties": False,
-	}
-	schema = {
-		"type": "object",
-		"properties": {"findings": {"type": "array", "items": item, "minItems": count, "maxItems": count}},
-		"required": ["findings"],
-		"additionalProperties": False,
-	}
-	draft = [
-		{
-			k: scene[k]
-			for k in (
-				"duration_seconds",
-				"visual_camera",
-				"action",
-				"visible_change",
-				"cast",
-				"products",
-				"shot_framing",
-				"shot_angle",
-				"narrative_stage",
-			)
-		}
-		for scene in script["scenes"]
-	]
-	result = _ask_planner(
-		"Review every scene of this brisk commercial strictly. Return one finding per scene in order. Compare prose to the supplied actor roster: an unreferenced human or extra mascot is causal=false, even if a valid reference key was put in cast. "
-		"progresses: a concrete subject action changes an object/state; camera motion, a hero-shot label, posing or approaching alone do not count. Only the FINAL scene may use a product hold. "
-		"causal: every object/tool is visibly acquired before use, required contact precedes a resulting change, no skipped prerequisite or reset between shots, no contradictory opening/action. Reaching/holding a container does NOT acquire its contents: later use of an item without its removal is causal=false. "
-		"paced: allocated time supports active real-time action. A shot spent entirely just reaching, leaning or looking is NOT brisk pacing. The final hold must not consume a disproportionate share of this action-led film. "
-		"Pacing also needs purposeful framing contrast and a product detail at use; repeated identical size/angle without motivation is not engaging coverage. Reason must cite specific action or missing prerequisite; never accept generic claims of realism. "
-		"This is script review only, not evidence of rendered physics.\nROSTER: "
-		+ json.dumps(roster, ensure_ascii=False)
-		+ "\nUNRESOLVED FEEDBACK (apply relevant pitfalls, not historical scene numbers): "
-		+ json.dumps(review_notes, ensure_ascii=False)
-		+ "\nDRAFT: "
-		+ json.dumps(draft, ensure_ascii=False),
-		system="You are the strict second-pass commercial storyboard compliance editor. Return only JSON.",
-		capability="writer",
-		sampling_profile="creative_script_review",
-		response_schema=schema,
-	)
-	rows = result.get("findings", [])
-	if (
-		len(rows) != count
-		or [r.get("scene") for r in rows] != list(range(1, count + 1))
-		or any(type(r.get(k)) is not bool for r in rows for k in ("progresses", "causal", "paced"))
-	):
-		raise ValueError("Script action review did not cover each scene exactly once.")
-	return rows
 
 
 def validate_script(script, inventory, constraints):
@@ -421,6 +375,7 @@ def script_workbook(script, project):
 	from joymedia.services.intake.references import brand
 	from joymedia.services.intake.template import BRIEF_ROWS, HEADER_ROW, SHEET_TITLES, build_template
 	from joymedia.services.planning.workbook import BRAND_FIELDS, REFERENCE_COLUMNS, SCENE_COLUMNS
+	from joymedia.services.scene.references import canonical_reference_rows
 
 	book = load_workbook(io.BytesIO(build_template("en")))
 	sheet = book[SHEET_TITLES["sheet"]["en"]]
@@ -439,7 +394,9 @@ def script_workbook(script, project):
 		"format": script["format"],
 		"tone_mood": script["visual_style"],
 		"characters": ", ".join(
-			r.reference_key for r in project.selected_media if r.reference_role in {"Character", "Person"}
+			r.reference_key
+			for r in canonical_reference_rows(project.selected_media)
+			if r.reference_role in {"Character", "Person"}
 		),
 	}
 	for key, row in BRIEF_ROWS:
@@ -454,6 +411,7 @@ def script_workbook(script, project):
 		values = {
 			**scene,
 			"timing": f"{clock(cursor)} - {clock(end)}",
+			"continuity": scene["continuity_rules"] + "\nRequired visible change: " + scene["visible_change"],
 			"cast": ", ".join(scene["cast"]) or "none",
 			"products": ", ".join(scene["products"]) or "none",
 		}
