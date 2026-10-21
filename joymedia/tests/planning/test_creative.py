@@ -62,6 +62,39 @@ def sample_script():
 	}
 
 
+class TestOpeningTextCrossCheck(TestCase):
+	def test_unproven_opening_conflict_does_not_block_the_script(self):
+		from joymedia.services.planning.script_review import _cross_check_opening
+
+		script = sample_script()
+		script["scenes"][0]["visual_camera"] = "The actor stands near the table."
+		script["scenes"][0]["action"] = "[0-1s] The actor walks toward the table and grips the product."
+		finding = {"scene": 1, "category": "opening_mismatch", "quote": "walks toward the table", "instruction": "Start closer."}
+		with patch(
+			"joymedia.services.planning.production._ask_planner",
+			return_value={
+				"opening_quote": "stands near the table",
+				"action_quote": "walks toward the table",
+				"contradiction": False,
+			},
+		):
+			result = _cross_check_opening({"issues": [finding]}, script)
+		self.assertEqual("production_detail", result["issues"][0]["category"])
+		self.assertFalse(result["issues"][0]["text_cross_check"]["physical_qualification"])
+
+	def test_hallucinated_retraction_preserves_original_issue(self):
+		from joymedia.services.planning.script_review import _cross_check_opening
+
+		finding = {"scene": 1, "category": "opening_mismatch", "quote": "Grip the product", "instruction": "Fix pose."}
+		with patch(
+			"joymedia.services.planning.production._ask_planner",
+			return_value={"opening_quote": "product floats in air", "action_quote": "Grip the product", "contradiction": False},
+		):
+			result = _cross_check_opening({"issues": [finding]}, sample_script())
+		self.assertEqual("opening_mismatch", result["issues"][0]["category"])
+		self.assertIn("absent", result["issues"][0]["cross_check_error"])
+
+
 class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
