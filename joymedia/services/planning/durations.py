@@ -1,5 +1,7 @@
 """Frame-exact planning for Shots within a Media Project."""
 
+import math
+
 import frappe
 from frappe import _
 
@@ -14,6 +16,27 @@ def _timeline_fps(workflow):
 	"""
 	fps = float(getattr(workflow, "output_fps", 0) or 0)
 	return fps if fps > 0 else DEFAULT_TIMELINE_FPS
+
+
+def allocate_frames(weights, total_frames):
+	"""Shared largest-remainder allocation, preserving order and at least one frame."""
+	if not weights or total_frames < len(weights) or any(not math.isfinite(w) or w <= 0 for w in weights):
+		raise ValueError("Positive timing weights need at least one frame per scene.")
+	raw = [total_frames * weight / sum(weights) for weight in weights]
+	planned = [max(1, int(value)) for value in raw]
+	remaining = total_frames - sum(planned)
+	order = sorted(range(len(weights)), key=lambda index: raw[index] - int(raw[index]), reverse=True)
+	if remaining > 0:
+		for index in order[:remaining]:
+			planned[index] += 1
+	while remaining < 0:
+		for index in reversed(order):
+			if remaining == 0:
+				break
+			if planned[index] > 1:
+				planned[index] -= 1
+				remaining += 1
+	return planned
 
 
 def ensure_shot_planning_editable(media_project_name: str):
@@ -63,16 +86,7 @@ def rebalance_shot_duration(media_project_name: str, shot_name: str, target_dura
 		planned_frames = [target_frames]
 	else:
 		weights = [max(1.0, float(shots[index].duration_seconds or 0) * fps) for index in other_indexes]
-		weight_total = sum(weights)
-		raw = [remaining_frames * weight / weight_total for weight in weights]
-		planned_other = [max(1, int(value)) for value in raw]
-		left = remaining_frames - sum(planned_other)
-		order = sorted(range(len(raw)), key=lambda index: raw[index] - int(raw[index]), reverse=True)
-		for index in order:
-			if left <= 0:
-				break
-			planned_other[index] += 1
-			left -= 1
+		planned_other = allocate_frames(weights, remaining_frames)
 		planned_frames = [0] * len(shots)
 		planned_frames[target] = target_frames
 		for index, shot_index in enumerate(other_indexes):
@@ -147,29 +161,11 @@ def recalculate_shot_durations(media_project_name: str):
 	# positive duration. Newly-created storyboards start at zero and therefore
 	# still receive the deterministic equal split below.
 	existing_durations = [float(shot.duration_seconds or 0) for shot in shots]
-	if all(duration > 0 for duration in existing_durations):
-		duration_total = sum(existing_durations)
-		if duration_total > 0:
-			raw_frames = [total_frames * duration / duration_total for duration in existing_durations]
-			planned_frames = [max(1, int(value)) for value in raw_frames]
-			remaining = total_frames - sum(planned_frames)
-			order = sorted(
-				range(len(shots)), key=lambda index: raw_frames[index] - int(raw_frames[index]), reverse=True
-			)
-			if remaining > 0:
-				for index in order[:remaining]:
-					planned_frames[index] += 1
-			elif remaining < 0:
-				for index in reversed(order):
-					if remaining == 0:
-						break
-					if planned_frames[index] > 1:
-						planned_frames[index] -= 1
-						remaining += 1
-		else:
-			planned_frames = []
-	else:
-		planned_frames = []
+	planned_frames = (
+		allocate_frames(existing_durations, total_frames)
+		if all(duration > 0 for duration in existing_durations)
+		else []
+	)
 
 	if not planned_frames:
 		base_frames, remainder = divmod(total_frames, len(shots))

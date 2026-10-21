@@ -251,7 +251,11 @@ def retry_product_variant(batch_name, index):
 			queue="long",
 			timeout=3600,
 			batch_name=batch.name,
-			job_id=f"joymedia-creative-retry:{batch.name}:{index}",
+			job_id=(
+				f"joymedia-creative-prepare:{batch.name}:{position}"
+				if stage == "Planning"
+				else f"joymedia-creative-advance:{batch.name}"
+			),
 			deduplicate=True,
 			enqueue_after_commit=True,
 		)

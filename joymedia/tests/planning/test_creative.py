@@ -66,6 +66,26 @@ class TestGeneratedScriptValidation(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
 
+	def test_generated_timing_reuses_frame_allocation_without_dropping_or_inventing_actions(self):
+		from joymedia.services.planning.creative import fit_generated_timing
+		from joymedia.services.planning.durations import allocate_frames
+		from joymedia.services.planning.timed_actions import read_timed_actions
+
+		script = sample_script()
+		script["scenes"][0].update(
+			duration_seconds=3, action="[0-0.5s] Grip the product. [0.5-3s] Move it along the table."
+		)
+		script["scenes"][1].update(duration_seconds=2, action="[0-1s] Turn it. [1-2s] Hold it.")
+		compiled = fit_generated_timing(script, 10, 24)
+		self.assertEqual([6, 4], [s["duration_seconds"] for s in compiled["scenes"]])
+		self.assertEqual(240, sum(compiled["timing_compilation"]["scene_frames"]))
+		self.assertEqual(
+			["Grip the product.", "Move it along the table."],
+			[p["action"] for p in read_timed_actions(compiled["scenes"][0]["action"], 6)],
+		)
+		self.assertEqual([22, 1, 1], allocate_frames([1000, 0.001, 0.001], 24))
+		self.assertEqual(2, len(compiled["scenes"]))
+
 	def test_planner_cache_does_not_reuse_another_configured_models_answer(self):
 		from joymedia.services.planning.production import _ask_planner
 
@@ -154,7 +174,9 @@ class TestGeneratedScriptValidation(TestCase):
 		):
 			expected = sample_script()
 			expected["action_review"] = []
-			self.assertEqual(expected, draft_script(project, nonce="varied"))
+			actual = draft_script(project, nonce="varied")
+			actual.pop("timing_compilation")
+			self.assertEqual(expected, actual)
 		last = planner.call_args
 		self.assertIn("2–12 scenes", last.args[0])
 		self.assertIn("Unsupported shot_framing", last.args[0])
@@ -356,6 +378,24 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.assertEqual("cinematic", parsed["brand"]["camera_style"])
 		self.assertEqual([], demo["timing_warnings"])
 
+	def test_generated_fractional_frame_timing_round_trips_without_gaps_or_lost_phases(self):
+		from joymedia.services.planning.creative import fit_generated_timing
+		from joymedia.services.planning.timed_actions import read_timed_actions
+		from joymedia.services.planning.workbook import read_workbook
+
+		script = sample_script()
+		script["scenes"] = [copy.deepcopy(script["scenes"][0]) for _ in range(7)]
+		script = fit_generated_timing(script, 30, 24)
+		with tempfile.TemporaryDirectory() as directory:
+			path = Path(directory) / "frame-script.xlsx"
+			path.write_bytes(script_workbook(script, self.project))
+			demo = read_workbook(path)["demos"][0]
+		self.assertEqual([], demo["timing_warnings"])
+		self.assertAlmostEqual(30, sum(s["duration_seconds"] for s in demo["scenes"]))
+		self.assertEqual(720, sum(round(s["duration_seconds"] * 24) for s in demo["scenes"]))
+		for scene in demo["scenes"]:
+			self.assertEqual(2, len(read_timed_actions(scene["action"], scene["duration_seconds"])))
+
 	def test_cancellation_is_durable_and_concurrent_variant_writes_do_not_erase_progress(self):
 		from joymedia.services.generation.creative_batch import _write
 
@@ -428,6 +468,7 @@ class TestCreativeWorkflow(FrappeTestCase):
 			result = retry_product_variant(batch.name, 1)
 		self.assertEqual("Keyframes", result["status"])
 		self.assertIn("advance_batch", enqueue.call_args.args[0])
+		self.assertEqual(f"joymedia-creative-advance:{batch.name}", enqueue.call_args.kwargs["job_id"])
 		updated = frappe.parse_json(batch.reload().variants_json)[0]
 		self.assertEqual({"run": "original-run"}, updated["keyframe_request"])
 		batch.db_set("status", "Cancelled")
