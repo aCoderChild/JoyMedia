@@ -25,8 +25,10 @@ SUBJECT_WORDS = re.compile(
 	re.I,
 )
 EMPTY_SETTING = (
-	"A wide view of an empty, uninhabited room seen from standing height, with a large, open, clear floor filling "
-	"the lower third of the frame and nothing standing on it."
+	"Establish the complete authored location in coherent perspective, retaining its specified architecture, "
+	"furniture, ground and fixed props. Leave working surfaces clear unless the setting explicitly places "
+	"an object on them. Keep described openings reachable and unobstructed by objects or overhanging furniture. "
+	"Do not add decorative clutter to working areas or impose a different floor layout."
 )
 
 
