@@ -1213,6 +1213,7 @@ def _ask_planner(
 	}
 	if response_schema:
 		cache_settings["response_schema"] = response_schema
+		cache_settings["schema_context_version"] = 1
 	cache_key = f"joymedia_{capability}:{request_seed(system, prompt, str(max_tokens), json.dumps(cache_settings, sort_keys=True))}"
 	if not refresh:
 		cached = frappe.cache.get_value(cache_key)
@@ -1244,6 +1245,14 @@ def _request_planner(
 
 	configured = endpoint(capability)
 	base_url, model, timeout = configured.base_url, configured.model, configured.timeout
+	if response_schema:
+		# Constrained decoding supplies syntax, not semantic field descriptions
+		# to a local model's context. Keep those instructions visible regardless
+		# of the configured structured-output transport.
+		system += (
+			"\nReturn JSON following this output schema, including its field descriptions:\n"
+			+ json.dumps(response_schema, ensure_ascii=False, separators=(",", ":"))
+		)
 	payload = {
 		"model": model,
 		"messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],

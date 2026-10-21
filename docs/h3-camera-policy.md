@@ -420,3 +420,11 @@ workflows. The batch owns the subsequent visual handoff, so cancelling it cannot
 launch new scene renders from a deferred setting callback. Failed location work
 resumes from the persisted script/workbook. Existing image-only commercials can
 state no cast explicitly in the generated template.
+
+Structured output constrains JSON syntax but does not itself expose field
+semantics to every configured language-model server. The shared planner request
+now includes the schema and its descriptions in model context as well as in the
+transport's decoding constraint, with a cache revision. A live diagnostic returned
+an explicit request to supply the missing schema before this change and followed
+the field instruction after it. Script review also checks explicit creative-brief
+contradictions before production planning.
