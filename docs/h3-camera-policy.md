@@ -482,6 +482,13 @@ idle finding on material folding. Neither judgment qualifies rendered physics.
 Generated sound cues use the native SFX/BGM labels so workbook import and H3
 serialization do not silently discard unlabelled action sounds.
 
+The native template also accepts optional `subject_motion` (locomotion,
+manipulation, stationary), and the automatic script schema supplies it. This is
+subject intent, not a camera prompt. It survives workbook import and overrides an
+inferred hand-only classification when the actor actually travels while carrying.
+The existing shared camera policy still derives tracking, and all output review
+requirements remain independent of that classification.
+
 After an interrupted quality run, a batch may resume normal review finishing once
 every current scene has an explicitly selected native take with matching generation
 lineage and unchanged direction. Active runs, missing or unrelated takes, changed

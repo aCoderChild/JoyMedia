@@ -11,7 +11,7 @@ import math
 import frappe
 
 from joymedia.services.planning.script_review import review_script_actions
-from joymedia.services.planning.shot_structure import ANGLES, FRAMINGS, STAGES
+from joymedia.services.planning.shot_structure import ANGLES, FRAMINGS, MOTIONS, STAGES
 from joymedia.services.planning.timed_actions import normalize_action_separators, read_timed_actions
 
 CREATIVE_INVARIANTS = (
@@ -142,6 +142,11 @@ def script_schema(inventory, constraints):
 	)
 	for key, options in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
 		scene[key] = {"type": "string", "enum": sorted(options)}
+	scene["subject_motion"] = {
+		"type": "string",
+		"enum": sorted(MOTIONS),
+		"description": "Locomotion when the subject's whole body travels through the setting, including walking while carrying. Manipulation for object handling in place; stationary for no subject movement. Body travel takes priority over incidental hand gestures.",
+	}
 	scene["narrative_stage"]["description"] = (
 		"Dominant narrative job, not a generic scene label: establish=opening geography; "
 		"approach=travel toward target; grip=take hold; extract=remove contents; unfold=open material; "
@@ -463,6 +468,8 @@ def validate_script(script, inventory, constraints):
 		for key, choices in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
 			if scene.get(key) not in choices:
 				raise ValueError("Unsupported " + key + ".")
+		if "subject_motion" in scene and scene["subject_motion"] not in MOTIONS:
+			raise ValueError("Unsupported subject_motion.")
 		for field, allowed in (("cast", {"Character", "Person"}), ("products", {"Product"})):
 			keys = scene.get(field)
 			if (

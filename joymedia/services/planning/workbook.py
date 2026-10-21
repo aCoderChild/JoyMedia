@@ -318,6 +318,16 @@ SCENE_COLUMNS = {
 		},
 		"example": {"vi": "", "en": ""},
 	},
+	"subject_motion": {
+		"required": False,
+		"label": {"vi": "Chuyển động chủ thể", "en": "Subject motion"},
+		"names": ("chuyển động chủ thể", "subject motion"),
+		"hint": {
+			"vi": "Tuỳ chọn: locomotion khi chủ thể di chuyển vị trí, manipulation khi thao tác tại chỗ, stationary khi đứng yên.",
+			"en": "Optional: locomotion for body travel, manipulation for handling in place, stationary for no subject movement. Carrying while walking is locomotion.",
+		},
+		"example": {"vi": "", "en": ""},
+	},
 	"narrative_stage": {
 		"required": False,
 		"label": {"vi": "Vai trò cảnh", "en": "Narrative stage"},
@@ -754,7 +764,7 @@ def _scenes(rows, header_index, columns):
 				"visual_camera": values.get("visual_camera", ""),
 				**{
 					k: _meaningful_text(values.get(k, ""))
-					for k in ("shot_framing", "shot_angle", "narrative_stage")
+					for k in ("shot_framing", "shot_angle", "narrative_stage", "subject_motion")
 				},
 				"action": values.get("action", ""),
 				"voice_over": values.get("voice_over", ""),

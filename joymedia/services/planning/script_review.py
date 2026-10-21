@@ -54,7 +54,7 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 	)
 	draft = [
 		{
-			k: scene[k]
+			k: scene.get(k, "")
 			for k in (
 				"duration_seconds",
 				"visual_camera",
@@ -66,6 +66,7 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 				"shot_framing",
 				"shot_angle",
 				"narrative_stage",
+				"subject_motion",
 			)
 		}
 		for scene in script["scenes"]
@@ -87,6 +88,7 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 		"For idle_pacing, looking/inspecting followed only by nodding or smiling is still a reaction-only scene. Flag repeated product-presentation holds across consecutive scenes; move that runtime to distinct tangible product interactions without adding unsupported capabilities. "
 		"Use purposeful shot-size/angle contrast and a product detail at use, with coherent axis and state handoffs. Do not demand an object reset unless a later opening explicitly contradicts its retained state. Historical feedback describes earlier renders, not defects proven in this draft. Never copy historical scene numbers, review/sign-off requests or old judgments into new issues. "
 		"Use coverage for contradictory narrative_stage labels: establish is introductory geography, extract is contents removal, detail is contact/function, inspect is result examination and hero is final branded presentation. Do not label every shot establish. "
+		"For subject_motion, whole-body travel is locomotion even while carrying an object. Handling in place is manipulation; no subject movement is stationary. Flag a contradictory label as coverage, quoting the authored movement. "
 		"This is TEXT review, not video review. Do not claim an action is convincing/unconvincing, or physical correctness is proven. If text already specifies contact and visible result, do not repeat an old request to verify physical correctness. Missing contact/result text needs a specific proposed visible-state edit. "
 		"Never reject a valid causal event merely for lacking emotional complexity.\nROSTER: "
 		+ json.dumps(roster, ensure_ascii=False)
