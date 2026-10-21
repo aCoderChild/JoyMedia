@@ -205,12 +205,15 @@ def _persist_composed_output(
 	select_output,
 	can_select,
 	review_manifest=None,
+	retained_review=False,
 ):
 	"""Promote computed bytes in a short retryable transaction, without replaying QA."""
 	from joymedia.services.runtime.transactions import persist_result
 
 	def write():
-		if frappe.db.get_value("Generation Run", run_name, "status") == "Cancelled":
+		if retained_review and (select_output or can_select or not review_manifest):
+			raise ValueError("A retained review take must remain unselected and carry its review evidence.")
+		if frappe.db.get_value("Generation Run", run_name, "status") == "Cancelled" and not retained_review:
 			return None
 		version = frappe.db.get_value(
 			"Asset Version",
