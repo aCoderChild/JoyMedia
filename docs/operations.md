@@ -5,6 +5,10 @@ configured vision endpoint, and renders with ComfyUI on a separate GPU server.
 Install the Frappe app first, then configure the required workers and external
 services.
 
+For the current Shera film and product-only automation status, including open
+release blockers and acceptance checks, see
+[Shera open issues (22 October 2026)](shera-open-issues-2026-10-22.md).
+
 ## Workers
 
 ```bash
