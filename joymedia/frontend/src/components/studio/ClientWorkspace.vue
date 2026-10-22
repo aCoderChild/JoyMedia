@@ -16,7 +16,8 @@
     <main class="jm-workspace-body">
       <p v-if="loading" role="status">{{ t('Loading your video…','Đang tải video…') }}</p>
       <template v-else-if="workspace">
-        <CreativeBatchPanel v-if="!access.reviewer" :project="project" />
+        <VideoShelf :project="project" :readonly="access.reviewer || archived" />
+        <CreativeBatchPanel v-if="!access.reviewer" :project="project" :focus="workspace.family && workspace.family.root !== project ? project : ''" @loaded="(count) => (aiBatches = count)" />
         <div v-if="workspace.family && !workspace.family.is_working_edit" class="rounded-xl border border-outline-border p-4 flex flex-wrap items-center justify-between gap-3" data-test="alternate-edit-notice">
           <p class="text-sm">{{ t('Saved version','Phiên bản đã lưu') }} · {{ workspace.family.edit_label }}</p>
           <button class="jm-button-primary" data-test="open-working-edit" @click="emit('working-edit',workspace.family.current_edit)">{{ t('Open current version','Mở phiên bản hiện tại') }}</button>
@@ -26,7 +27,7 @@
           <button class="jm-btn-primary px-3 py-2" :disabled="busy" @click="emit('restore')">{{ t('Restore video','Khôi phục video') }}</button>
         </div>
         <p v-if="error" role="alert" class="text-sm text-rose-500">{{ error }}</p>
-        <ol class="flex flex-wrap gap-5 text-xs text-ink-muted" :aria-label="t('Video steps','Các bước tạo video')">
+        <ol v-if="!aiContainer" class="flex flex-wrap gap-5 text-xs text-ink-muted" :aria-label="t('Video steps','Các bước tạo video')">
           <li :class="{'text-indigo-500 font-bold':step===1}">1. {{ t('Your idea','Ý tưởng') }}</li>
           <li :class="{'text-indigo-500 font-bold':step===2}">2. {{ t('Review scenes','Duyệt cảnh') }}</li>
           <li :class="{'text-indigo-500 font-bold':step===3}">3. {{ t('Your video','Video của bạn') }}</li>
@@ -52,7 +53,7 @@
             <button v-for="(shot,index) in shots" :key="shot.name" type="button" class="jm-scene-tile" :aria-pressed="selectedScene?.name===shot.name" :data-media-key="shot.name" :data-test="'select-scene-'+index" :aria-label="t('Preview scene','Xem cảnh')+' '+(index+1)" @click="selectMedia(shot.name)"><img v-if="frame(shot)?.url" :src="frame(shot).url" alt="" loading="lazy" /><span v-else class="jm-scene-placeholder">{{ String(index+1).padStart(2,'0') }}</span><span class="jm-scene-tile-label">{{ t('Scene','Cảnh') }} {{ index+1 }} <small>{{ Number(shot.duration_seconds || 0).toFixed(0) }}s</small></span></button>
           </div>
         </section>
-        <section v-if="!archived && (action!=='watch' || !video?.file)" class="jm-creation-panel" data-test="client-next-step">
+        <section v-if="!archived && !aiContainer && (action!=='watch' || !video?.file)" class="jm-creation-panel" data-test="client-next-step">
           <h2 class="text-lg font-semibold">{{ instruction[0] }}</h2>
           <p class="text-sm text-ink-secondary">{{ instruction[1] }}</p>
           <textarea v-if="['brief','plan'].includes(action)" :value="prompt" :aria-label="t('Video idea','Ý tưởng video')" :placeholder="t('What product are you promoting, and what should happen in the video?','Bạn quảng cáo sản phẩm nào và muốn video có nội dung gì?')" rows="4" class="jm-prompt-input" @input="emit('update:prompt',$event.target.value)" />
@@ -76,6 +77,7 @@ import VideoReviewDialog from './VideoReviewDialog.vue';
 import {shortCaption,sceneAction} from '../../utils/storyboard';
 import RoleBadge from '../RoleBadge.vue';
 import CreativeBatchPanel from './CreativeBatchPanel.vue';
+import VideoShelf from './VideoShelf.vue';
 import {useSession} from "../../stores/session";
 import { computed, ref, watch } from 'vue';
 import {usePreviewPlayback} from '../../composables/usePreviewPlayback';
@@ -108,6 +110,10 @@ function navigateScenes(event){
 const archived=computed(()=>props.workspace?.family?.archived || props.workspace?.project?.status==='Archived');
 const images=computed(()=>(props.workspace?.assets||[]).filter(a=>/\.(png|jpe?g|webp)(\?|$)/i.test(a.file||a.file_url||'')));
 const frame=shot=>props.frames.find(f=>f.shot===shot.name);
+// A project that only holds the product inputs of its AI-written videos is not itself a video:
+// its manual idea → storyboard steps would start a stray second storyboard.
+const aiBatches=ref(0);
+const aiContainer=computed(()=>aiBatches.value>0 && !props.shots.length && !props.video?.file);
 const step=computed(()=>props.video?.file||props.action==='watch'?3:['brief','plan'].includes(props.action)?1:2);
 const instruction=computed(()=>({
  brief:[t('Tell us your idea','Mô tả ý tưởng của bạn'),t('Describe your product and the video you want.','Mô tả sản phẩm và video bạn muốn.'),t('Create scene plan','Lên kịch bản')],

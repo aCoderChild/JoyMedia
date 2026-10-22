@@ -66,6 +66,8 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 				"shot_framing",
 				"shot_angle",
 				"subject_motion",
+				"voice_over",
+				"on_screen_text",
 			)
 		}
 		for scene in script["scenes"]
@@ -73,6 +75,7 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 	prompt = (
 		"First check the creative_direction in REQUIREMENTS. Report explicit contradictions as brief_contradiction, quoting the contradictory scene text and the required correction. "
 		"Check the causal sequence of the complete screenplay, across ALL scenes in order. "
+		"A prerequisite written in a later scene cannot justify an earlier use. Compare voice_over and on_screen_text to what the visible action demonstrates; report a concrete contradiction as brief_contradiction, without treating an ordinary brand statement as an action claim. "
 		"Different shots perform different jobs: acquisition need not also demonstrate use; a later use shot can show contact and its result. "
 		"Do not request the same demonstration in every scene. A stated press/wipe against a spill is contact; a stated wet material or reduced liquid is a result. "
 		"Report a defect only when the screenplay actually contradicts prerequisites or omits a necessary action throughout the whole sequence. "
@@ -83,7 +86,7 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 		"Use opening_mismatch only for a stated opening object/pose state that conflicts with the first action; cite both incompatible states in the rewrite instruction. A suggestion to face a product differently or hold it longer is not such a contradiction. Never lengthen idle presentation to fix pacing. "
 		"Check: only roster actors in prose; items obtained before use; holding a container does not obtain its contents; contact precedes the visible result; no unexplained state reset or reversal of consumption; opening and action agree. "
 		"Check product construction against reference descriptions: no invented rigid lids or closure mechanisms. Returning used consumable material to unused stock is a state_reset, not a valid way to reset a demonstration. "
-		"Check any performance demonstration against approved_claims in REQUIREMENTS. Pouring liquid, removing stains or claiming strength/absorbency is a brief_contradiction unless the corresponding capability is approved; ordinary handling is allowed. Quote the demonstration and request a visible action within the supplied claims. "
+		"Check any performance demonstration against approved_claims and its literal approved_claims_english translation in REQUIREMENTS. Do not reject a capability that either clearly approves; do not infer a stronger capability from a loose translation. Pouring liquid, removing stains or claiming strength/absorbency is a brief_contradiction only when the corresponding capability is absent; ordinary handling is allowed. Quote the demonstration and request a visible action within the supplied claims. "
 		"Check action_reference_observations in REQUIREMENTS. When empty, a fluid, stain, stress or other multi-object performance effect lacks a motion anchor even if its marketing claim is approved; flag the unsupported action as brief_contradiction and request a simple observable product interaction instead. Ordinary acquisition, extraction, placement, folding and wearing remain allowed without motion footage. "
 		"Name each interaction target before use; an unspecified target is not a concrete demonstration. Never replace an existing tangible action with an invented unrelated prop. "
 		"A scene spent solely approaching, staring or posing lacks brisk action. Camera commands belong outside Action, even at the end. One near-ending product-detail view may hold readable original packaging before a distinct final CTA. "
@@ -152,10 +155,30 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 					)
 				):
 					raise ValueError("Every issue must quote the exact affected scene text.")
-			return _cross_check_opening(_cross_check_missing_actions(result, script), script)
+			return _cross_check_opening(
+				_cross_check_missing_actions(_filter_unsubstantiated_camera_issues(result, script), script),
+				script,
+			)
 		except (ValueError, KeyError, TypeError) as exc:
 			repair = f"\nReview protocol repair {attempt + 1}: {exc} Return the full review, copying exact source text."
 	raise ValueError("Script review could not provide grounded scene evidence: " + repair)
+
+
+def _filter_unsubstantiated_camera_issues(review, script):
+	"""A camera-in-action finding must actually quote camera prose from Action."""
+	from joymedia.services.planning.camera import without_camera
+
+	kept = []
+	for finding in review["issues"]:
+		if finding["category"] != "camera_in_action":
+			kept.append(finding)
+			continue
+		quote = str(finding["quote"])
+		action = str(script["scenes"][finding["scene"] - 1].get("action") or "")
+		if quote.casefold() in action.casefold() and without_camera(quote).strip() != quote.strip():
+			kept.append(finding)
+	review["issues"] = kept
+	return review
 
 
 def _cross_check_missing_actions(review, script):
@@ -209,15 +232,37 @@ def _cross_check_missing_actions(review, script):
 		)
 		quote = answer.get("already_written") if isinstance(answer, dict) else None
 		if not isinstance(quote, str):
-			finding["cross_check_error"] = "Retraction did not supply quoted screenplay text; original finding retained."
+			finding["cross_check_error"] = (
+				"Retraction did not supply quoted screenplay text; original finding retained."
+			)
 			continue
 		if not quote.strip():
 			continue
 		normalized = " ".join(quote.split()).casefold()
 		allowed_actions = [actions[finding["scene"] - 1]] if idle else actions
 		if not any(normalized in " ".join(action.split()).casefold() for action in allowed_actions):
-			finding["cross_check_error"] = "Retraction quoted text absent from the applicable action sequence; original finding retained."
+			finding["cross_check_error"] = (
+				"Retraction quoted text absent from the applicable action sequence; original finding retained."
+			)
 			continue
+		if finding["category"] == "missing_prerequisite":
+			# Acquisition in a later shot is not evidence for an earlier use.
+			# A same-shot prerequisite must precede the quoted dependent action.
+			dependent = " ".join(str(finding.get("quote") or "").split()).casefold()
+			scene_index = finding["scene"] - 1
+			prior = any(normalized in " ".join(action.split()).casefold() for action in actions[:scene_index])
+			current = " ".join(actions[scene_index].split()).casefold()
+			within = (
+				bool(dependent)
+				and normalized in current
+				and dependent in current
+				and current.index(normalized) + len(normalized) <= current.index(dependent)
+			)
+			if not prior and not within:
+				finding["cross_check_error"] = (
+					"The quoted prerequisite does not precede the dependent action; original finding retained."
+				)
+				continue
 		finding["text_cross_check"] = {"already_written": quote, "physical_qualification": False}
 		finding["category"] = "production_detail"
 	return review
@@ -259,23 +304,32 @@ def _cross_check_opening(review, script):
 			},
 		)
 		if not isinstance(answer, dict) or type(answer.get("contradiction")) is not bool:
-			finding["cross_check_error"] = "Opening cross-check returned no usable verdict; original finding retained."
+			finding["cross_check_error"] = (
+				"Opening cross-check returned no usable verdict; original finding retained."
+			)
 			continue
 		opening_quote, action_quote = answer.get("opening_quote"), answer.get("action_quote")
 		if not isinstance(opening_quote, str) or not isinstance(action_quote, str):
-			finding["cross_check_error"] = "Opening cross-check omitted quoted text; original finding retained."
+			finding["cross_check_error"] = (
+				"Opening cross-check omitted quoted text; original finding retained."
+			)
 			continue
+
 		def contained(quote, source):
 			return " ".join(quote.split()).casefold() in " ".join(source.split()).casefold()
 
 		if (opening_quote.strip() and not contained(opening_quote, opening)) or (
 			action_quote.strip() and not contained(action_quote, action)
 		):
-			finding["cross_check_error"] = "Opening cross-check quoted absent text; original finding retained."
+			finding["cross_check_error"] = (
+				"Opening cross-check quoted absent text; original finding retained."
+			)
 			continue
 		if answer["contradiction"]:
 			if not opening_quote.strip() or not action_quote.strip():
-				finding["cross_check_error"] = "Opening contradiction lacks both exact states; original finding retained."
+				finding["cross_check_error"] = (
+					"Opening contradiction lacks both exact states; original finding retained."
+				)
 			continue
 			finding["opening_evidence"] = {"opening": opening_quote, "action": action_quote}
 		else:

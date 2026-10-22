@@ -49,6 +49,7 @@ class TestVisualTransport(TestCase):
 			patch("joymedia.services.review.consistency._post_visual_request", return_value=response) as post,
 			patch("joymedia.services.review.consistency._data_url", return_value="image"),
 			patch("frappe.utils.file_manager.save_file", return_value=frappe._dict(file_url="report.json")),
+			patch("frappe.db.get_value", return_value=None),
 		):
 			report = run_temporal_check(check, frappe._dict(base_url="endpoint", model="vision", timeout=120))
 		self.assertEqual(2, post.call_count)
@@ -129,9 +130,29 @@ class TestVisualTransport(TestCase):
 			patch("joymedia.services.review.consistency.time.sleep") as delay,
 			patch("joymedia.services.review.consistency._data_url", return_value="image"),
 			patch("frappe.utils.file_manager.save_file", return_value=frappe._dict(file_url="report.json")),
+			patch("frappe.db.get_value", return_value=None),
 		):
 			report = run_temporal_check(check, frappe._dict(base_url="endpoint", model="vision", timeout=120))
 		self.assertEqual(2, post.call_count)
 		self.assertEqual(post.call_args_list[0], post.call_args_list[1])
 		delay.assert_called_once_with(5)
 		self.assertEqual("supported", report["results"][0]["verdict"])
+
+
+
+class TestEvidenceReuse(TestCase):
+	def test_identical_recheck_evidence_reuses_the_stored_file(self):
+		import frappe
+
+		from joymedia.services.review.consistency import run_temporal_check
+		from joymedia.services.scene.evidence import SequenceCheck
+
+		check = SequenceCheck([], [], [], {"evidence_doctype": "Generation Artifact", "evidence_name": "GART"})
+		with (
+			patch("joymedia.services.scene.evidence.batches", return_value=[]),
+			patch("frappe.db.get_value", return_value="/private/files/existing.json"),
+			patch("frappe.utils.file_manager.save_file") as save,
+		):
+			report = run_temporal_check(check, frappe._dict(base_url="endpoint", model="vision", timeout=120))
+		save.assert_not_called()
+		self.assertEqual("/private/files/existing.json", report["evidence_file"])

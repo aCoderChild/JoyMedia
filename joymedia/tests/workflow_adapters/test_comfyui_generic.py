@@ -364,12 +364,11 @@ class TestRoundToMultiple(FrappeTestCase):
 		graph = json.loads(Path(GRAPHS / "minimax_h3_i2v.json").read_text())
 		adapter.validate_specification(graph)
 		sizes = {p["semantic"]: p for p in _h3_spec()["parameters"] if p["semantic"] in ("width", "height")}
-		self.assertEqual({"nearest_size_dimension"}, {p["transform"] for p in sizes.values()})
+		# The native H3 canvas can follow an authored aspect ratio instead of
+		# snapping every request to one of three preset dimensions.
+		self.assertEqual({"round_to_multiple"}, {p["transform"] for p in sizes.values()})
 		for mapping in sizes.values():
-			self.assertEqual(
-				{(1344, 768), (768, 1344), (1024, 1024)},
-				{(p["width"], p["height"]) for p in mapping["options"]},
-			)
+			self.assertEqual(32, mapping["multiple"])
 
 	def test_input_mirror_copies_one_bound_file_without_extra_asset_slots(self):
 		adapter = GenericComfyUIAdapter()

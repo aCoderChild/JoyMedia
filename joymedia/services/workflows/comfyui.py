@@ -76,6 +76,27 @@ def get_request_auth():
 	return username, password
 
 
+def _transfer_urls(base_url, config_key):
+	"""Only an explicitly declared transport of the same server may receive a retry."""
+	from urllib.parse import urlsplit
+
+	logical = get_base_url(base_url)
+	routes = frappe.conf.get(config_key) or {}
+	if not isinstance(routes, dict):
+		raise ValueError(f"{config_key} must map endpoint URLs to alternate transports.")
+	target = routes.get(logical)
+	if target is None:
+		return [logical]
+	url = urlsplit(target) if isinstance(target, str) else None
+	if not url or url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password or url.query or url.fragment:
+		raise ValueError("A ComfyUI transfer fallback must be an HTTP(S) transport URL without credentials.")
+	target = target.rstrip("/")
+	return [logical, target] if target != logical else [logical]
+
+
+def get_upload_urls(base_url=None):
+	return _transfer_urls(base_url, "comfyui_upload_fallback_routes")
+
 def upload_frappe_file(file_url: str, *, base_url: str | None = None, input_dir: str | None = None) -> dict:
 	if not file_url:
 		frappe.throw(_("File URL is required."))
@@ -94,18 +115,24 @@ def upload_local_file(local_path, *, base_url: str | None = None) -> dict:
 	# Generation Tasks can run concurrently, but staging their inputs must be
 	# serialized across Frappe workers to keep the remote server responsive.
 	with filelock("joymedia-comfyui-upload"):
-		try:
-			comfyui_filename = f"joymedia_{uuid.uuid4().hex}{path.suffix.lower()}"
-			with open(local_path, "rb") as file_handle:
-				response = requests.post(
-					f"{get_base_url(base_url)}/upload/image",
-					files={"image": (comfyui_filename, file_handle)},
-					data={"type": "input", "overwrite": "true"},
-					auth=get_request_auth(),
-					timeout=DEFAULT_TIMEOUT,
-				)
-		except requests.ConnectionError as exc:
-			frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
+		urls = get_upload_urls(base_url)
+		comfyui_filename = f"joymedia_{uuid.uuid4().hex}{path.suffix.lower()}"
+		for index, url in enumerate(urls):
+			try:
+				# Reopen from byte zero and retain one filename: a timed-out upload
+				# may already exist on the same server. Prompt submission is not retried here.
+				with open(local_path, "rb") as file_handle:
+					response = requests.post(
+						f"{url}/upload/image",
+						files={"image": (comfyui_filename, file_handle)},
+						data={"type": "input", "overwrite": "true"},
+						auth=get_request_auth(),
+						timeout=DEFAULT_TIMEOUT,
+					)
+				break
+			except (requests.ConnectionError, requests.Timeout) as exc:
+				if index == len(urls) - 1:
+					frappe.throw(_("Unable to upload to ComfyUI: {0}").format(str(exc)))
 
 	_raise_for_comfyui_error(response)
 	result = response.json()
@@ -283,15 +310,19 @@ def get_object_info(*, base_url: str | None = None) -> dict:
 def download_output(
 	filename: str, subfolder: str = "", file_type: str = "output", *, base_url: str | None = None
 ) -> bytes:
-	try:
-		response = requests.get(
-			f"{get_base_url(base_url)}/view",
-			params={"filename": filename, "subfolder": subfolder, "type": file_type},
-			auth=get_request_auth(),
-			timeout=120,
-		)
-	except requests.ConnectionError as exc:
-		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
+	urls = _transfer_urls(base_url, "comfyui_download_fallback_routes")
+	for index, url in enumerate(urls):
+		try:
+			response = requests.get(
+				f"{url}/view",
+				params={"filename": filename, "subfolder": subfolder, "type": file_type},
+				auth=get_request_auth(),
+				timeout=120,
+			)
+			break
+		except (requests.ConnectionError, requests.Timeout) as exc:
+			if index == len(urls) - 1:
+				frappe.throw(_("Unable to download from ComfyUI: {0}").format(str(exc)))
 	_raise_for_comfyui_error(response)
 	return response.content
 

@@ -80,20 +80,44 @@ class TestLocationPlates(FrappeTestCase):
 			locations.missing_places(project, shots),
 		)
 
+	def test_one_supplied_environment_anchors_room_and_table_views(self):
+		project = frappe._dict(
+			name="PRJ-X",
+			selected_media=[
+				frappe._dict(
+					reference_key="supplied_room",
+					reference_role="Environment",
+					asset_version="ASTV-CLIENT-ROOM",
+				)
+			],
+		)
+		shots = [_shot("S1", "Room with a table and sofa."), _shot("S2", "Table with the pack.")]
+		self.assertEqual({}, locations.missing_places(project, shots))
+		with patch("joymedia.services.review.comments._reseal_approved_plan"):
+			self.assertEqual(2, locations.assign_places(project, shots))
+		self.assertEqual(
+			["ASTV-CLIENT-ROOM", "ASTV-CLIENT-ROOM"],
+			[s.generation_inputs[0].asset_version for s in shots],
+		)
+
 	def test_only_a_scene_that_shows_the_room_gets_the_place(self):
 		def shows(camera):
 			return locations.shows_the_room(_shot("S", "A room.", camera=camera))
 
-		# An extreme close-up is drawn as a medium shot (prompts.opening_framing), so it shows the room.
+		# Authored close-up framing stays close; it does not show the whole room.
 		for camera in (
 			"Wide shot.",
 			"Medium shot, front view.",
 			"Wide shot to close-up.",
 			"Eye-level.",
-			"Extreme close-up of the pack.",
 		):
 			self.assertTrue(shows(camera), camera)
-		for camera in ("Close-up of family dining table.", "Top-down (overhead)", "Close-up, side angle"):
+		for camera in (
+			"Close-up of family dining table.",
+			"Top-down (overhead)",
+			"Close-up, side angle",
+			"Extreme close-up of the pack.",
+		):
 			self.assertFalse(shows(camera), camera)
 		self.assertTrue(locations.shows_the_room(frappe._dict(generation_prompt="The kid plays.")))
 

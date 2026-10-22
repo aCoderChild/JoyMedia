@@ -193,11 +193,15 @@ def executable_inferred_intent(intent, structure, roles, *, generated_compositio
 def camera_intent(value):
 	if value is None:
 		return None
-	if not isinstance(value, dict) or set(value) - {"behavior", "allow_reframe", "purpose", "energy"}:
+	if not isinstance(value, dict) or set(value) - {"behavior", "allow_reframe", "purpose", "energy", "source"}:
 		raise ValueError("Camera intent requires one behavior and optional allow_reframe.")
+	if value.get("source", "authored") not in {"authored", "inferred"}:
+		raise ValueError("Unsupported camera intent source.")
 	if value.get("behavior") not in BEHAVIORS or type(value.get("allow_reframe", False)) is not bool:
 		raise ValueError("Unsupported camera behavior or invalid reframing permission.")
 	result = {"behavior": value["behavior"], "allow_reframe": value.get("allow_reframe", False)}
+	if "source" in value:
+		result["source"] = value["source"]
 	for name, options in [
 		("purpose", {"hook", "follow", "demonstrate", "detail", "reveal", "resolve"}),
 		("energy", {"slow", "measured", "brisk"}),
@@ -269,6 +273,10 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 	closing = is_final or shot.get("handoff_type") == "ending" or bool(shots and position == len(shots) - 1)
 	contract = plan.get("scene_contract") or {}
 	intent = camera_intent(plan.get("camera_intent"))
+	# A move chosen by the director (sheet column or AI script) is honoured even in
+	# handling scenes and without boundary images; it is worded as planned, never
+	# as reviewed, and keeps contact and product legibility instructions.
+	authored = bool(intent and intent.get("source") == "authored" and intent["behavior"] != "locked")
 	if not intent and project.get("cinematic_camera"):
 		if not structure:
 			raise ValueError("Cinematic generation requires semantic shot structure. Replan this scene.")
@@ -298,7 +306,7 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 	framing = "the supplied opening composition"
 	if structure:
 		framing = framing_text(structure)
-		if structure["subject_motion"] == "manipulation" and not broad_presentation:
+		if structure["subject_motion"] == "manipulation" and not broad_presentation and not authored:
 			return {
 				"version": 3,
 				"behavior": "locked",
@@ -340,8 +348,9 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 		behavior = intent["behavior"]
 		if behavior in BOUNDARY_MOVES:
 			endpoints = {str(r.get("reference_role") or r.get("input_role") or "").lower() for r in refs}
-			if not intent["allow_reframe"] or (
-				not generated_composition and not {"first_frame", "last_frame"} <= endpoints
+			if not authored and (
+				not intent["allow_reframe"]
+				or (not generated_composition and not {"first_frame", "last_frame"} <= endpoints)
 			):
 				return {
 					"version": 4,
@@ -424,7 +433,12 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 					"Keep every required edge and contact inside the frame. The room is stationary; near and far landmarks show continuous depth-dependent parallax. No lateral drift, tilt, orbit, digital zoom pulse or focus pull."
 				)
 			direction = directions[behavior]
-			if generated_composition:
+			if authored and structure and structure["subject_motion"] == "manipulation":
+				direction += (
+					" The move is gentle and never hides the hand or paw contact, the object being handled or the "
+					"product label; keep them sharp and inside the frame throughout."
+				)
+			if generated_composition or (authored and not {"first_frame", "last_frame"} <= roles):
 				# A generated composition has planned viewpoints, not supplied or
 				# approved boundary images. Never invent reference-control claims.
 				for anchored in ("reviewed", "approved", "supplied"):

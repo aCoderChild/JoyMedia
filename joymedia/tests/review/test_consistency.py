@@ -74,10 +74,11 @@ class TestChecks(FrappeTestCase):
 		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
 			checks = consistency.frame_checks(shot)
 		self.assertEqual(
-			[1, True, False], [expected for _p, _q, expected, _m in checks]
-		)  # cast, action, no stranger
+			[1, True, False, False], [expected for _p, _q, expected, _m in checks]
+		)  # cast, action, no stranger, no character standing on the product
 		self.assertIn('"The kid spills juice."', checks[1][1])
 		self.assertNotIn("Camera", checks[1][1])
+		self.assertIn("ON TOP OF the advertised product", checks[3][1])
 
 	def test_a_split_screen_frame_is_checked_for_its_panels(self):
 		shot = frappe._dict(
@@ -91,6 +92,50 @@ class TestChecks(FrappeTestCase):
 			checks = consistency.frame_checks(shot)
 		self.assertEqual(1, len(checks))
 		self.assertIn("split screen of 3 separate panels", checks[0][1])
+
+	def test_close_action_frame_rejects_visible_full_body_and_feet(self):
+		shot = frappe._dict(
+			keyframe_artifact="GART-1",
+			media_project="PRJ-X",
+			views_json="",
+			generation_inputs=[frappe._dict(reference_role="Character")],
+			motion_plan_json={
+				"shot_structure": {
+					"stage": "unfold",
+					"framing": "extreme_close_up",
+					"angle": "eye_level",
+					"subject_motion": "manipulation",
+					"keep_visible": [],
+				},
+			},
+		)
+		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
+			checks = consistency.frame_checks(shot)
+		self.assertTrue(any("Critical framing:" in meaning for *_rest, meaning in checks))
+
+	def test_actor_without_product_reference_checks_for_extra_held_package(self):
+		shot = frappe._dict(
+			keyframe_artifact="GART-1",
+			media_project="PRJ-X",
+			views_json="",
+			image_prompt="A mascot holding a loose cloth.",
+			generation_inputs=[frappe._dict(reference_role="Character")],
+		)
+		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
+			checks = consistency.frame_checks(shot)
+		self.assertTrue(any("Critical prop:" in meaning for *_rest, meaning in checks))
+
+	def test_product_scene_checks_authored_physical_support(self):
+		shot = frappe._dict(
+			keyframe_artifact="GART-1",
+			media_project="PRJ-X",
+			views_json="",
+			start_state="The product pack rests on a side table.",
+			generation_inputs=[frappe._dict(reference_role="Product")],
+		)
+		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
+			checks = consistency.frame_checks(shot)
+		self.assertTrue(any("Critical geometry: advertised product" in meaning for *_rest, meaning in checks))
 
 	def test_still_review_uses_the_starting_frame_instead_of_future_actions(self):
 		shot = frappe._dict(
@@ -139,6 +184,26 @@ class TestConsistencyLoop(FrappeTestCase):
 		recorded, redo = self._run(self._shot(), ["Physical staging review: missing contact"], kind="take")
 		self.assertEqual(recorded, [("Needs Review", "Physical staging review: missing contact")])
 		redo.assert_not_called()
+
+	def test_clear_character_on_product_uses_bounded_frame_redraw(self):
+		recorded, redo = self._run(
+			self._shot(), ["Critical geometry: character stands on the advertised product"]
+		)
+		self.assertEqual("Redrawing", recorded[0][0])
+		redo.assert_called_once_with("PRJ-X")
+		recorded, redo = self._run(
+			self._shot(consistency.MAX_FRAME_REDOS),
+			["Critical geometry: character stands on the advertised product"],
+		)
+		self.assertEqual("Needs Review", recorded[0][0])
+		redo.assert_not_called()
+
+	def test_full_body_in_close_detail_uses_bounded_frame_redraw(self):
+		recorded, redo = self._run(
+			self._shot(), ["Critical framing: full character body appears in a close product/action detail"]
+		)
+		self.assertEqual("Redrawing", recorded[0][0])
+		redo.assert_called_once_with("PRJ-X")
 
 	def test_no_checks_is_not_a_pass(self):
 		with (

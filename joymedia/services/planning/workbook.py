@@ -313,8 +313,18 @@ SCENE_COLUMNS = {
 		"label": {"vi": "Góc máy cấu trúc", "en": "Shot angle"},
 		"names": ("góc máy cấu trúc", "shot angle"),
 		"hint": {
-			"vi": "Tuỳ chọn: eye_level, low_angle, high_angle, overhead, oblique, over_shoulder.",
-			"en": "Optional: eye_level, low_angle, high_angle, overhead, oblique, over_shoulder.",
+			"vi": "Tuỳ chọn: eye_level, low_angle, high_angle, overhead, oblique, over_shoulder, point_of_view.",
+			"en": "Optional: eye_level, low_angle, high_angle, overhead, oblique, over_shoulder, point_of_view.",
+		},
+		"example": {"vi": "", "en": ""},
+	},
+	"camera_move": {
+		"required": False,
+		"label": {"vi": "Chuyển động máy", "en": "Camera move"},
+		"names": ("chuyển động máy", "chuyển động camera", "camera move", "camera movement"),
+		"hint": {
+			"vi": "Tuỳ chọn: static, dolly_in, dolly_out, zoom_in, zoom_out, pan_left, pan_right, tilt_up, tilt_down, truck_left, truck_right, pedestal_up, pedestal_down.",
+			"en": "Optional: static, dolly_in, dolly_out, zoom_in, zoom_out, pan_left, pan_right, tilt_up, tilt_down, truck_left, truck_right, pedestal_up, pedestal_down.",
 		},
 		"example": {"vi": "", "en": ""},
 	},
@@ -764,7 +774,7 @@ def _scenes(rows, header_index, columns):
 				"visual_camera": values.get("visual_camera", ""),
 				**{
 					k: _meaningful_text(values.get(k, ""))
-					for k in ("shot_framing", "shot_angle", "narrative_stage", "subject_motion")
+					for k in ("shot_framing", "shot_angle", "narrative_stage", "subject_motion", "camera_move")
 				},
 				"action": values.get("action", ""),
 				"voice_over": values.get("voice_over", ""),

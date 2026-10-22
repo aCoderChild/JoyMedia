@@ -427,7 +427,12 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 	if camera_planning_rules(project):
 		snapshot["cinematic_camera"] = True
 		snapshot["camera_grammar"] = reference_camera_grammar(project)
-	admission = freeze_policy()
+	from joymedia.services.generation.automation import current_delivery
+
+	automatic_delivery = current_delivery()
+	if automatic_delivery:
+		snapshot["automatic_delivery"] = dict(automatic_delivery)
+	admission = None if automatic_delivery else freeze_policy()
 	if admission:
 		snapshot["visual_admission"] = admission
 		for scene in snapshot["shots"]:

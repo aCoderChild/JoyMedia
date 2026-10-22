@@ -20,6 +20,9 @@ install -m 0755 "$script_dir/run-profile.py" /usr/local/lib/joymedia/run-profile
 install -m 0644 "$script_dir/planner.service" /etc/systemd/system/joymedia-planner.service
 install -m 0644 "$script_dir/vision.service" /etc/systemd/system/joymedia-vision.service
 install -m 0644 "$script_dir/comfyui.service" /etc/systemd/system/joymedia-comfyui.service
+install -m 0755 "$script_dir/runtime-retention.sh" /usr/local/lib/joymedia/runtime-retention.sh
+install -m 0644 "$script_dir/runtime-retention.service" /etc/systemd/system/joymedia-runtime-retention.service
+install -m 0644 "$script_dir/runtime-retention.timer" /etc/systemd/system/joymedia-runtime-retention.timer
 if [ ! -f /etc/joymedia/runtime.json ]; then
 	install -m 0600 "$script_dir/runtime.example.json" /etc/joymedia/runtime.json
 	echo "Created /etc/joymedia/runtime.json; edit it to select the runtime profiles for this host."
@@ -35,6 +38,7 @@ systemctl daemon-reload
 # Migrate the historical model-named unit when the generic profiles replace it.
 systemctl disable --now joymedia-qwen.service 2>/dev/null || true
 systemctl enable joymedia-planner.service joymedia-vision.service joymedia-comfyui.service
+systemctl enable --now joymedia-runtime-retention.timer
 systemctl restart joymedia-planner.service joymedia-vision.service joymedia-comfyui.service
 
 echo "Installed JoyMedia planner, vision, and ComfyUI profiles. Check with: systemctl status joymedia-planner joymedia-vision joymedia-comfyui"

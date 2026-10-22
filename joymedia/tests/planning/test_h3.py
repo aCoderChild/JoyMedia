@@ -6,11 +6,21 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.planning.camera import camera_plan
-from joymedia.services.planning.h3 import _without_camera, compile_h3, h3_kind
+from joymedia.services.planning.h3 import LAYERS, _without_camera, compile_h3, h3_kind
 from joymedia.services.planning.prompts import compile_segment_prompt_from_snapshot
 
 
 class TestH3(FrappeTestCase):
+	def test_product_vision_copy_is_not_promoted_to_video_prompt(self):
+		from joymedia.services.planning.h3 import subject_identities
+
+		shot = self.shot(references=[{"reference_role": "product", "asset_version": "ASTV-PRODUCT"}])
+		analysis = '{"description":"Visible construction: flexible; visible physical creases. A blue flexible pack. Text reads \\"Invented strength claim\\"."}'
+		with patch("frappe.db.get_value", return_value=analysis):
+			identity = subject_identities(shot)
+		self.assertIn("A blue flexible pack", identity)
+		self.assertNotIn("Invented strength claim", identity)
+
 	def setUp(self):
 		super().setUp()
 		self.framing = patch(
@@ -54,13 +64,18 @@ class TestH3(FrappeTestCase):
 		s = self.shot()
 		s.generation_prompt = 'The woman lifts the cup and says, "Take the morning with you."\n\nAudio: soft footsteps; music: sparse piano, slow tempo.'
 		p = compile_h3(s, self.project())
-		self.assertLess(p.index("Warm cinematic"), p.index("first frame controls"))
+		# Input-standards-H3: [Camera Direction] + [Subject Identity] + [Motion & Physics]
+		# + [Lighting & Atmosphere] + [Audio SFX], in this order.
+		layers = [p.index(label + ":") for label in LAYERS]
+		self.assertEqual(sorted(layers), layers)
+		self.assertLess(p.index("The camera makes"), p.index("Subject Identity:"))
+		self.assertLess(p.index("first frame controls"), p.index("Motion & Physics:"))
 		self.assertLess(p.index("Begin with"), p.index("The woman lifts"))
-		self.assertLess(p.index("The woman lifts"), p.index("The camera makes"))
-		self.assertLess(p.index("The camera makes"), p.index("End with"))
+		self.assertLess(p.index("The woman lifts"), p.index("End with"))
+		self.assertLess(p.index("Lighting & Atmosphere:"), p.index("Warm cinematic"))
 		self.assertIn('"Take the morning with you."', p)
-		self.assertTrue(p.endswith("non_diegetic_music: sparse piano, slow tempo."))
-		self.assertNotIn("piano", p.split("non_diegetic_music:")[0])
+		self.assertTrue(p.endswith("Music: sparse piano, slow tempo."))
+		self.assertNotIn("piano", p.split("Audio SFX:")[0])
 		self.assertNotIn("<Picture 2>", p)
 		self.assertNotIn("Video 1", p)
 
@@ -170,7 +185,7 @@ class TestH3(FrappeTestCase):
 		s = self.shot()
 		s.generation_prompt = "The woman lifts the cup.\n\nAudio: cup tap; music: piano; singing and speech."
 		p = compile_h3(s, self.project(soundtrack_mode="Sound effects only"))
-		self.assertTrue(p.endswith("non_diegetic_music: N/A"))
+		self.assertIn("No music.", p.split("Audio SFX:")[1])
 		self.assertNotIn("piano", p)
 		self.assertIn("cup tap", p)
 		self.assertIn("no speech", p)
@@ -202,8 +217,7 @@ class TestH3(FrappeTestCase):
 		s.references = [{"reference_role": "last_frame", "asset_version": "LAST"}]
 		with patch("joymedia.services.planning.prompts._identity_guard", return_value="Reference fidelity."):
 			p = compile_h3(s, self.project())
-		self.assertIn("5.00-second mark", p)
-		self.assertIn("Picture 2", p)
+		self.assertIn("Picture 2 with 5.00 s", p)
 		s.references = []
 		p = compile_h3(s, self.project())
 		self.assertNotIn("Picture 2", p)
@@ -215,25 +229,23 @@ class TestH3(FrappeTestCase):
 		s = self.shot()
 		s.image_prompt = "One cup on a table."
 		p = compile_segment_prompt_from_snapshot(s, self.project(), 1, 1, workflow=w)
-		self.assertIn("integrated_multimodal_description:", p)
+		self.assertTrue(p.startswith("Camera Direction:"))
 		self.assertEqual(
 			compile_segment_prompt_from_snapshot(s, self.project(), 1, 1, prompt_source="image", workflow=w),
 			"One cup on a table.",
 		)
-		self.assertNotIn(
-			"integrated_multimodal_description:",
-			compile_segment_prompt_from_snapshot(s, self.project(), 1, 1),
-		)
+		self.assertNotIn("Camera Direction:", compile_segment_prompt_from_snapshot(s, self.project(), 1, 1))
 
 	@patch("joymedia.services.planning.prompts._mood", return_value="Cinematic.")
 	def test_named_dialogue_audio_stays_out_of_the_soundscape(self, mood):
 		s = self.shot()
 		s.generation_prompt = "The woman lifts the cup.\n\nAudio: SFX: a cup tap; Dialogue: Maya (S1) says: <d>[English] Take the morning; keep it yours.</d>; music: slow guitar."
 		p = compile_h3(s, self.project())
-		visual, sound = p.split("overall_soundscape:")
-		self.assertIn("<d>[English] Take the morning; keep it yours.</d>", visual)
-		self.assertNotIn("Take the morning", sound)
-		self.assertNotIn("No spoken dialogue", visual)
+		visual, audio = p.split("Audio SFX:")
+		# The line is spoken audio: it stays whole and separate from the sound effects.
+		self.assertIn('Speech: "Maya (S1) says: <d>[English] Take the morning; keep it yours.</d>"', audio)
+		self.assertIn("a cup tap", audio.split("Speech:")[0])
+		self.assertNotIn("Take the morning", visual)
 
 	def test_inline_camera_removal_keeps_the_subject_action(self):
 		self.assertEqual(
@@ -272,8 +284,7 @@ class TestH3(FrappeTestCase):
 	@patch("joymedia.services.planning.prompts._mood", return_value="Cinematic.")
 	def test_reference_format_does_not_pretend_the_library_was_uploaded(self, mood):
 		p = compile_h3(self.shot(), self.project(), kind="reference")
-		self.assertTrue(p.startswith("subject_definitions:"))
-		self.assertIn("detailed_description: [Shot 1]", p)
+		self.assertEqual([label for label in LAYERS if f"{label}:" in p], list(LAYERS))
 		self.assertNotIn("Picture 2", p)
 		self.assertNotIn("Video 1", p)
 
@@ -283,7 +294,9 @@ class TestH3(FrappeTestCase):
 		s.generation_prompt = "integrated_multimodal_description: [Shot 1] A woman lifts a cup.\n\noverall_soundscape: A soft cup tap.\n\nnon_diegetic_music: Sparse piano at slow tempo."
 		p = compile_h3(s, self.project())
 		for field in ["integrated_multimodal_description:", "overall_soundscape:", "non_diegetic_music:"]:
-			self.assertEqual(p.count(field), 1)
+			self.assertNotIn(field, p)
+		for label in LAYERS:
+			self.assertEqual(p.count(f"{label}:"), 1)
 		self.assertIn("A woman lifts a cup.", p)
 		self.assertIn("Sparse piano at slow tempo.", p)
 

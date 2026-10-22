@@ -103,6 +103,48 @@ class TestCreateFromBrief(FrappeTestCase):
 		)  # no References sheet: every page
 		self.assertEqual(extracted, result["references"])
 
+	def _picture(self, name, colour):
+		from PIL import Image
+
+		buffer = io.BytesIO()
+		Image.new("RGB", (120, 160), colour).save(buffer, "PNG")
+		return self._file(name, buffer.getvalue())
+
+	def test_new_videos_of_a_known_product_join_its_project(self):
+		pack = self._picture("pack.png", (20, 120, 220))
+		first = project_intake.create_project_from_brief(
+			"Pack film", references=[{"file_name": pack.name, "label": "pack", "role": "Product"}]
+		)["project"]
+		again, mascot = self._picture("pack copy.png", (20, 120, 220)), self._picture("bear.png", (240, 240, 230))
+		self.assertEqual([first], [row.name for row in project_intake.find_product_project([again.name])])
+		self.assertEqual([], project_intake.find_product_project([mascot.name]))
+
+		with patch("joymedia.api.creative.create_product_batch", return_value="CRB-TEST") as batch:
+			result = project_intake.create_project_from_brief(
+				auto_script=True,
+				variants=2,
+				into_project=first,
+				references=[
+					{"file_name": again.name, "label": "pack copy", "role": "Product"},
+					{"file_name": mascot.name, "label": "bear", "role": "Character"},
+				],
+			)
+		self.assertEqual(first, result["project"])
+		# The project had no character yet; its product pictures stay as they are.
+		self.assertEqual([{"label": "bear", "role": "Character"}], result["references"])
+
+		other_bear = self._picture("bear two.png", (200, 150, 90))
+		with patch("joymedia.api.creative.create_product_batch", return_value="CRB-TEST"):
+			result = project_intake.create_project_from_brief(
+				auto_script=True,
+				into_project=first,
+				references=[{"file_name": other_bear.name, "label": "mascot", "role": "Character"}],
+			)
+		# A second photo of "the mascot" is never added as a second character.
+		self.assertEqual([], result["references"])
+		self.assertEqual((first,), batch.call_args.args)
+		self.assertEqual(2, batch.call_args.kwargs["count"])
+
 	def test_a_workbook_and_two_images_become_a_project_with_format_and_roles(self):
 		workbook = self._file("story.xlsx", _workbook_bytes())
 		mascot = self._file("mascot.png", _generate_image_bytes())

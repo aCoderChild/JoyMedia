@@ -6,6 +6,13 @@ import uuid
 import frappe
 
 
+def _named(code):
+	code = str(code or "").lower()
+	return (
+		"Vietnamese" if code.startswith(("vi", "vietnam")) else "English" if code.startswith("en") else None
+	)
+
+
 def _review_context(project):
 	"""Snapshot unresolved first-party feedback; never resolve it by copying it."""
 	from joymedia.services.project.versions import family
@@ -64,7 +71,14 @@ def create_product_batch(
 	direction=None,
 	duration_seconds=None,
 	aspect_ratio=None,
+	hero_products=None,
+	example_workbooks=None,
+	language=None,
+	delivery_mode=None,
 ):
+	"""Queue `count` AI-written videos. Each video features ONE hero product so its
+	packaging never changes between shots; several heroes rotate across the videos.
+	Example workbooks are the client's own scripts, used as style references."""
 	from joymedia.services.intake.references import brand, preservation_modes
 	from joymedia.services.project.formats import delivery_dimensions, orientation, parse_ratio, ratio_label
 
@@ -77,6 +91,12 @@ def create_product_batch(
 	if type(count) is bool or str(count) not in {str(i) for i in range(1, 21)}:
 		raise ValueError("Choose one to twenty video variants.")
 	count = int(count)
+	auto_render = str(auto_render).lower() in {"1", "true", "yes", "on"}
+	delivery_mode = delivery_mode or ("automatic" if auto_render else "assisted")
+	if delivery_mode not in {"automatic", "assisted"}:
+		raise ValueError("Choose automatic delivery or assisted review.")
+	if delivery_mode == "automatic" and not auto_render:
+		raise ValueError("Automatic delivery requires video generation to be enabled.")
 	keys = frappe.parse_json(reference_keys) if isinstance(reference_keys, str) else reference_keys
 	if keys is not None and (not isinstance(keys, list) or any(not isinstance(k, str) for k in keys)):
 		raise ValueError("Reference keys must be a list.")
@@ -102,6 +122,33 @@ def create_product_batch(
 		raise ValueError("Choose only selected product, mascot, person, logo or creative-reference keys.")
 	if not any(row["reference_role"] == "Product" for row in references):
 		raise ValueError("Select product images before automatic generation.")
+	products = list(
+		dict.fromkeys(
+			r["identity_key"] or r["reference_key"] for r in references if r["reference_role"] == "Product"
+		)
+	)
+	heroes = (
+		frappe.parse_json(hero_products)
+		if isinstance(hero_products, str) and hero_products != "all"
+		else hero_products
+	)
+	if heroes in (None, []):
+		heroes = products[:1]
+	elif heroes == "all":
+		heroes = products
+	if not isinstance(heroes, list) or len(heroes) > 20 or set(heroes) - set(products):
+		raise ValueError("Choose the featured products from the selected product images.")
+	examples = (
+		frappe.parse_json(example_workbooks) if isinstance(example_workbooks, str) else example_workbooks
+	)
+	examples = examples or []
+	if not isinstance(examples, list) or len(examples) > 5:
+		raise ValueError("Attach up to five example scripts.")
+	for name in examples:
+		file = frappe.get_doc("File", name)
+		file.check_permission("read")
+		if not str(file.file_name or "").lower().endswith(".xlsx"):
+			raise ValueError("Example scripts must be .xlsx workbooks.")
 	modes = preservation_modes(project)
 	from joymedia.services.workflows.capabilities import execution_spec
 
@@ -148,13 +195,19 @@ def create_product_batch(
 		"references": references,
 		"reference_preservation_modes": frozen_modes,
 		"count": count,
-		"auto_render": str(auto_render).lower() in {"1", "true", "yes", "on"},
+		"auto_render": auto_render,
+		"delivery_mode": delivery_mode,
 		"direction": direction or "",
 		"duration_seconds": duration or None,
 		"width": width,
 		"height": height,
 		"delivery_preset": orientation(ratio) if ratio else None,
 		"product_name": project.product_name or "",
+		"hero_products": heroes,
+		# Language of what viewers hear and read; production prompts stay English.
+		# Explicit choice, else the example scripts' language (detected when writing), else the user's.
+		"language": _named(language) or (None if examples else _named(frappe.local.lang)),
+		"example_workbooks": examples,
 		"workflow": project.workflow,
 		"generation_pipeline": project.generation_pipeline,
 		"render_profile": {
@@ -171,7 +224,15 @@ def create_product_batch(
 
 	root = family(project)
 	request.update(root_project=root.name, expected_current=root.current_edit or root.name)
-	variants = [{"index": i + 1, "status": "Queued", "nonce": uuid.uuid4().hex} for i in range(count)]
+	variants = [
+		{
+			"index": i + 1,
+			"status": "Queued",
+			"nonce": uuid.uuid4().hex,
+			"hero_product": heroes[i % len(heroes)],
+		}
+		for i in range(count)
+	]
 	batch = frappe.get_doc(
 		{
 			"doctype": "Creative Batch",
@@ -199,13 +260,79 @@ def create_product_batch(
 def get_product_batch(batch_name):
 	batch = frappe.get_doc("Creative Batch", batch_name)
 	batch.check_permission("read")
+	variants = frappe.parse_json(batch.variants_json or "[]")
+	request = frappe.parse_json(batch.request_json or "{}")
+	for variant in variants:
+		# The name read from the package, not the internal reference key.
+		variant["product"] = (variant.get("script") or {}).get("product_name") or (
+			frappe.db.get_value("Media Project", variant["project"], "product_name")
+			if variant.get("project")
+			else None
+		)
+		if (
+			variant.get("status") == "Needs Attention"
+			and variant.get("resume_stage") == "Rendering"
+			and variant.get("project")
+		):
+			from joymedia.services.generation.creative_batch import held_scene_clips
+
+			variant["held_clips"] = held_scene_clips(variant["project"])
+		if variant.get("script") and variant.get("project"):
+			from joymedia.services.generation.creative_batch import _unprotected
+			from joymedia.services.keyframes.stage import get_project_keyframes
+
+			notes = variant.get("picture_notes") or {}
+			variant["pictures"] = [
+				{
+					**row,
+					"note": notes.get(row["shot"], "")
+					if row.get("url")
+					else (
+						_missing_picture_reason(row["shot"])
+						if variant.get("status") in {"Pictures Ready", "Needs Attention"}
+						else notes.get(row["shot"], "")
+					),
+					"label_unlocked": _unprotected(frappe.get_doc("Shot", row["shot"])),
+				}
+				for row in get_project_keyframes(variant["project"])
+			]
 	return {
 		"name": batch.name,
 		"source_project": batch.source_project,
 		"status": batch.status,
-		"variants": frappe.parse_json(batch.variants_json or "[]"),
+		"variants": variants,
 		"error": batch.error,
+		"delivery_mode": request.get("delivery_mode", "assisted"),
 	}
+
+
+def _missing_picture_reason(shot_name):
+	"""Why a scene has no picture, from the visual check's own findings, in reviewer terms."""
+	from joymedia.services.review.admission import report_for
+
+	failed = frappe.db.sql(
+		"""select a.name, a.error_details from `tabGeneration Attempt` a
+		join `tabGeneration Task` t on t.name = a.generation_task
+		where t.shot = %s and a.status = 'Failed' order by a.creation desc limit 10""",
+		shot_name,
+		as_dict=True,
+	)
+	if not failed:
+		return ""
+	report = report_for(failed[0].name) or {}
+	missing = [
+		row["claim"]
+		for row in report.get("results") or []
+		if row.get("verdict") in {"violated", "uncertain"}
+		and "independently qualified" not in str(row.get("claim"))
+	]
+	reason = "; ".join(missing[:3]) or str(failed[0].error_details or "").removeprefix(
+		"Reference preparation was rejected. "
+	)
+	return (
+		f"Not drawn after {len(failed)} tries. The check could not confirm: {reason[:300].rstrip('. ')}. "
+		"Draw again, or add a note to rewrite this scene."
+	)
 
 
 @frappe.whitelist()
@@ -274,6 +401,12 @@ def retry_product_variant(batch_name, index):
 			# Planning is already persisted; the normal preparer reuses the script
 			# and workbook, then queues only the missing shared-setting work.
 			stage = "Planning"
+		if stage == "Rendering" and variant.get("project"):
+			from joymedia.services.generation.creative_batch import rerender_failed_scenes
+
+			# Re-reading the failed run would stop again: render new takes of the
+			# scenes that have none, keeping every finished take and approved picture.
+			rerender_failed_scenes(variant, frappe.parse_json(batch.request_json))
 		if stage == "Planning" and not variant.get("script"):
 			# An unchanged variation ID retrieves the same cached rejected draft.
 			# Keep the failed proposal's identity and reason, then ask for a new
@@ -313,3 +446,86 @@ def retry_product_variant(batch_name, index):
 		)
 		frappe.db.commit()
 	return {"batch": batch.name, "index": int(index), "status": stage}
+
+
+@frappe.whitelist(methods=["POST"])
+def revise_product_variant(batch_name, index, notes):
+	"""Ask the AI to rewrite one script from the reviewer's notes before any video is made.
+
+	notes: list of {"scene": scene number or null for the whole script, "text": note}.
+	"""
+	from joymedia.services.generation.creative_batch import revise_variant
+
+	batch = frappe.get_doc("Creative Batch", batch_name)
+	batch.check_permission("write")
+	if type(index) is bool or str(index) not in {str(i) for i in range(1, 21)}:
+		raise ValueError("Choose a variant number from one to twenty.")
+	notes = frappe.parse_json(notes) if isinstance(notes, str) else notes
+	if (
+		not isinstance(notes, list)
+		or not 1 <= len(notes) <= 30
+		or any(
+			not isinstance(n, dict)
+			or not str(n.get("text") or "").strip()
+			or len(str(n["text"])) > 1000
+			or (n.get("scene") is not None and (type(n["scene"]) is not int or not 1 <= n["scene"] <= 12))
+			for n in notes
+		)
+	):
+		raise ValueError("Write one to thirty notes, each up to 1000 characters.")
+	notes = [{"scene": n.get("scene"), "text": str(n["text"]).strip()} for n in notes]
+	return revise_variant(batch.name, int(index) - 1, notes)
+
+
+def _variant_position(batch_name, index):
+	batch = frappe.get_doc("Creative Batch", batch_name)
+	batch.check_permission("write")
+	if type(index) is bool or str(index) not in {str(i) for i in range(1, 21)}:
+		raise ValueError("Choose a variant number from one to twenty.")
+	return batch.name, int(index) - 1
+
+
+@frappe.whitelist(methods=["POST"])
+def approve_variant_pictures(batch_name, index):
+	"""Approve every scene picture of one video and make the video."""
+	from joymedia.services.generation.creative_batch import approve_variant_pictures as approve
+
+	return approve(*_variant_position(batch_name, index))
+
+
+@frappe.whitelist(methods=["POST"])
+def accept_held_clip(batch_name, index, shot_name, note, attempt_name=None, asset_version=None):
+	"""Use a clip the automatic check could not qualify, after a person watched it."""
+	from joymedia.services.generation.creative_batch import accept_held_clip as accept
+
+	if not isinstance(note, str) or not note.strip():
+		raise ValueError("Say what you checked in this clip.")
+	if not attempt_name and not asset_version:
+		raise ValueError("Choose the clip to use.")
+	return accept(
+		*_variant_position(batch_name, index),
+		shot_name,
+		note.strip(),
+		attempt_name=attempt_name,
+		asset_version=asset_version,
+	)
+
+
+@frappe.whitelist(methods=["POST"])
+def redraw_variant_picture(batch_name, index, shot_name):
+	"""Draw one scene picture of one video again."""
+	from joymedia.services.generation.creative_batch import redraw_variant_picture as redraw
+
+	return redraw(*_variant_position(batch_name, index), shot_name)
+
+
+@frappe.whitelist(methods=["POST"])
+def render_product_variant(batch_name, index):
+	"""The reviewer approved a written script: continue that video through rendering."""
+	from joymedia.services.generation.creative_batch import start_variant_render
+
+	batch = frappe.get_doc("Creative Batch", batch_name)
+	batch.check_permission("write")
+	if type(index) is bool or str(index) not in {str(i) for i in range(1, 21)}:
+		raise ValueError("Choose a variant number from one to twenty.")
+	return start_variant_render(batch.name, int(index) - 1)

@@ -32,7 +32,11 @@ class TestHeldTakeReview(TestCase):
 		original = copy.deepcopy(report)
 		self.assertTrue(held_take_review_candidate(report))
 		self.assertEqual(report, original)
-		for index, verdict in [(0, "uncertain"), (1, "uncertain"), (2, "uncertain"), (3, "violated")]:
+		# The reviewer watched the clip, so an uncertain sampled action verdict is theirs to resolve.
+		action = copy.deepcopy(report)
+		action["results"][0]["verdict"] = "uncertain"
+		self.assertTrue(held_take_review_candidate(action))
+		for index, verdict in [(0, "violated"), (1, "uncertain"), (2, "uncertain"), (3, "violated")]:
 			bad = copy.deepcopy(report)
 			bad["results"][index]["verdict"] = verdict
 			self.assertFalse(held_take_review_candidate(bad))

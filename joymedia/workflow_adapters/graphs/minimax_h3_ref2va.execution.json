@@ -121,7 +121,7 @@
       "node_key": "104",
       "input_name": "prompt",
       "when_role_present": "character",
-      "append_text": "Use the separate character reference only for the original mascot's face, flower, body proportions, paw shape, and cream colour. Retain the opening frame's pose and placement; do not add the reference image as a cutaway or duplicate actor."
+      "append_text": "Use the separate character reference only for the original character's face, markings, accessories, body proportions, limb and hand shape, and colours. Retain the opening frame's pose and placement; do not add the reference image as a cutaway or duplicate actor."
     }
   ]
 }

@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -15,6 +16,89 @@ def _reference(role, number):
 
 
 class TestWorkflowRouting(FrappeTestCase):
+	def test_endpoint_route_uses_explicit_last_frame_and_validated_sibling_pipeline(self):
+		from joymedia.services.workflows.routing import _endpoint_pipeline
+
+		base = SimpleNamespace(name="PIPE-BASE")
+		candidate = SimpleNamespace(name="PIPE-ENDPOINT")
+		end_video = SimpleNamespace(name="WF-END", output_media_type="Video", output_fps=24)
+		base_video = SimpleNamespace(name="WF-REF", output_media_type="Video", output_fps=24)
+		steps = {
+			"PIPE-BASE": [SimpleNamespace(workflow="WF-IMAGE"), SimpleNamespace(workflow="WF-REF")],
+			"PIPE-ENDPOINT": [SimpleNamespace(workflow="WF-IMAGE"), SimpleNamespace(workflow="WF-END")],
+		}
+		plan = json.dumps(
+			{"shot_structure": {"subject_motion": "locomotion"}, "camera_intent": {"behavior": "tracking"}}
+		)
+		refs = [_reference("Character", 1), _reference("Product", 2), _reference("last_frame", 3)]
+		with (
+			patch(
+				"joymedia.services.workflows.routing.frappe.conf",
+				{"joymedia_endpoint_generation_pipelines": {"PIPE-BASE": candidate.name}},
+			),
+			patch.object(frappe.db, "exists", return_value=True),
+			patch(
+				"joymedia.services.workflows.pipeline.get_pipeline_steps",
+				side_effect=lambda name: steps[name],
+			),
+			patch(
+				"joymedia.services.workflows.routing.frappe.get_doc",
+				side_effect=lambda doctype, name: {
+					"PIPE-ENDPOINT": candidate,
+					"WF-END": end_video,
+					"WF-REF": base_video,
+				}[name],
+			),
+			patch(
+				"joymedia.services.workflows.resolver.get_workflow_input_contract",
+				return_value=[
+					{"role": "first_frame", "max_count": 1},
+					{"role": "last_frame", "max_count": 1},
+				],
+			),
+		):
+			self.assertEqual((candidate, end_video), _endpoint_pipeline(base, refs, plan))
+			self.assertIsNone(_endpoint_pipeline(base, refs[:-1], plan))
+			self.assertIsNone(
+				_endpoint_pipeline(
+					base,
+					refs,
+					json.dumps(
+						{
+							"shot_structure": {"subject_motion": "manipulation"},
+							"camera_intent": {"behavior": "tracking"},
+						}
+					),
+				)
+			)
+			self.assertIsNone(
+				_endpoint_pipeline(
+					base,
+					refs,
+					json.dumps(
+						{
+							"shot_structure": {"subject_motion": "contact"},
+							"camera_intent": {"behavior": "tracking"},
+						}
+					),
+				)
+			)
+			self.assertIsNone(
+				_endpoint_pipeline(
+					base,
+					refs,
+					json.dumps(
+						{
+							"shot_structure": {"subject_motion": "locomotion"},
+							"camera_intent": {"behavior": "locked"},
+						}
+					),
+				)
+			)
+			end_video.output_fps = 30
+			with self.assertRaisesRegex(ValueError, "matching FPS"):
+				_endpoint_pipeline(base, refs, plan)
+
 	def test_illustrated_characters_are_not_silently_sent_to_human_face_controls(self):
 		from joymedia.services.workflows.routing import _map_pipeline_references
 

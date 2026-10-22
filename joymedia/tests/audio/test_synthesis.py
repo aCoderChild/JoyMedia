@@ -80,3 +80,28 @@ class TestSpeechProviderBoundary(TestCase):
 				"Exact dialogue.", "vi-VN-HoaiMyNeural", proxy="http://127.0.0.1:12345"
 			)
 			client.save.assert_awaited_once()
+
+	def test_default_voice_follows_the_spoken_language(self):
+		with (
+			patch("joymedia.services.workflows.capabilities.configured_workflow", return_value=None),
+			patch("frappe.conf", frappe._dict()),
+		):
+			self.assertEqual("vi-VN-HoaiMyNeural", provider(text="Mềm mại như mây")["voice"])
+			self.assertEqual("en-US-AriaNeural", provider(text="Soft as a cloud")["voice"])
+			self.assertEqual("en-GB-SoniaNeural", provider("en-GB-SoniaNeural", text="Mềm")["voice"])
+
+	def test_an_unreachable_operator_route_falls_back_to_the_direct_route_once(self):
+		down, direct = Mock(), Mock()
+		down.save = AsyncMock(side_effect=ConnectionRefusedError("proxy forward is down"))
+		direct.save = AsyncMock()
+		with (
+			patch("joymedia.services.workflows.capabilities.configured_workflow", return_value=None),
+			patch("frappe.conf", frappe._dict(joymedia_tts_proxy="http://127.0.0.1:12345")),
+			patch("edge_tts.Communicate", side_effect=[down, direct]) as communicate,
+			tempfile.TemporaryDirectory() as directory,
+		):
+			synthesize("Exact dialogue.", provider("vi-VN-HoaiMyNeural"), Path(directory) / "voice.mp3", 3)
+		self.assertEqual(
+			[call.kwargs["proxy"] for call in communicate.call_args_list], ["http://127.0.0.1:12345", None]
+		)
+		direct.save.assert_awaited_once()

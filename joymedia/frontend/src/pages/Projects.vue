@@ -22,7 +22,8 @@
           <MediaThumbnail :src="project.cover_image" :alt="project.project_name" aspect="aspect-video" contain />
           <div class="jm-project-copy p-4 space-y-2"><h2 class="font-semibold text-ink-primary line-clamp-2">{{ project.project_name }}</h2>
             <p class="text-xs text-ink-secondary">{{ project.status==='Archived' ? (currentLang==='vi'?'Đã lưu trữ · chỉ xem':'Archived · view only') : project.status==='Generating' ? (currentLang==='vi'?'Đang tạo video…':'Making your video…') : project.has_video ? (currentLang==='vi'?'Có video để xem':'Video available to watch') : (currentLang==='vi'?'Tiếp tục tạo video':'Continue creating your video') }}</p>
-            <span class="inline-block pt-2 text-sm font-semibold text-indigo-500">{{ currentLang==='vi'?'Mở video →':'Open video →' }}</span>
+            <p v-if="project.video_count > 1" class="text-xs text-ink-secondary" data-test="video-count">{{ project.video_count }} {{ currentLang==='vi'?'video trong dự án':'videos in this project' }}</p>
+            <span class="inline-block pt-2 text-sm font-semibold text-indigo-500">{{ project.video_count > 1 ? (currentLang==='vi'?'Xem các video →':'See the videos →') : (currentLang==='vi'?'Mở video →':'Open video →') }}</span>
           </div>
         </button>
         <details class="border-t border-outline-border px-4 py-2 text-xs" @click.stop>

@@ -145,6 +145,63 @@ class TestComfyUIClient(FrappeTestCase):
 		self.assertEqual(3, get_history.call_count)
 
 
+class TestComfyUIUploadRoutes(FrappeTestCase):
+	@patch("joymedia.services.workflows.comfyui.frappe.conf", {
+		"comfyui_download_fallback_routes": {"http://data": "http://alternate"},
+	})
+	@patch("joymedia.services.workflows.comfyui.requests.get")
+	def test_output_timeout_fetches_same_file_without_resubmitting(self, get):
+		get.side_effect = [requests.ReadTimeout("response lost"), Mock(ok=True, content=b"audio")]
+		self.assertEqual(b"audio", download_output("scene.flac", "audio", base_url="http://data"))
+		self.assertEqual(["http://data/view", "http://alternate/view"], [c.args[0] for c in get.call_args_list])
+		self.assertEqual(get.call_args_list[0].kwargs["params"], get.call_args_list[1].kwargs["params"])
+
+	@patch("joymedia.services.workflows.comfyui.frappe.conf", {
+		"comfyui_upload_fallback_routes": {"http://data": "http://alternate"},
+	})
+	@patch("joymedia.services.workflows.comfyui.filelock", return_value=nullcontext())
+	@patch("joymedia.services.workflows.comfyui.requests.post")
+	def test_timeout_reopens_same_upload_on_explicit_transport(self, post, lock):
+		from PIL import Image
+
+		from joymedia.services.workflows.comfyui import upload_local_file
+
+		seen = []
+		def receive(url, **kwargs):
+			name, handle = kwargs["files"]["image"]
+			seen.append((url, name, handle.read()))
+			if len(seen) == 1:
+				raise requests.ReadTimeout("response lost")
+			response = Mock(ok=True)
+			response.json.return_value = {"name": name}
+			return response
+		post.side_effect = receive
+		with tempfile.TemporaryDirectory() as directory:
+			path = Path(directory) / "input.png"
+			Image.new("RGB", (2, 2), "white").save(path)
+			expected = path.read_bytes()
+			result = upload_local_file(path, base_url="http://data")
+		self.assertEqual(["http://data/upload/image", "http://alternate/upload/image"], [x[0] for x in seen])
+		self.assertEqual(seen[0][1], result["name"])
+		self.assertEqual(seen[0][1:], seen[1][1:])
+		self.assertEqual(expected, seen[1][2])
+
+	@patch("joymedia.services.workflows.comfyui.frappe.conf", {
+		"comfyui_upload_fallback_routes": {"http://data": "http://alternate"},
+	})
+	def test_unmapped_server_has_no_implicit_upload_fallback(self):
+		from joymedia.services.workflows.comfyui import get_upload_urls
+		self.assertEqual(["http://other"], get_upload_urls("http://other/"))
+
+	@patch("joymedia.services.workflows.comfyui.frappe.conf", {
+		"comfyui_upload_fallback_routes": {"http://data": "file:///tmp"},
+	})
+	def test_invalid_upload_route_is_rejected(self):
+		from joymedia.services.workflows.comfyui import get_upload_urls
+		with self.assertRaises(ValueError):
+			get_upload_urls("http://data")
+
+
 class TestComfyUIControlRoutes(FrappeTestCase):
 	@patch(
 		"joymedia.services.workflows.comfyui.frappe.conf",

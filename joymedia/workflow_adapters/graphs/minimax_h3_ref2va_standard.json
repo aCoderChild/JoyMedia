@@ -1,0 +1,313 @@
+{
+ "6": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+   "weight_dtype": "default"
+  }
+ },
+ "13": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+   "type": "minimax",
+   "device": "default"
+  }
+ },
+ "11": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+  }
+ },
+ "24": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+  }
+ },
+ "9": {
+  "class_type": "BasicScheduler",
+  "inputs": {
+   "model": [
+    "sigma_shift",
+    0
+   ],
+   "scheduler": "simple",
+   "steps": 20,
+   "denoise": 1
+  },
+  "_meta": {
+   "title": "Official Comfy-Org r2v template: simple / 20 steps (no FL2VA turbo LoRA on REF2VA)"
+  }
+ },
+ "17": {
+  "class_type": "KSamplerSelect",
+  "inputs": {
+   "sampler_name": "res_multistep"
+  }
+ },
+ "15": {
+  "class_type": "RandomNoise",
+  "inputs": {
+   "noise_seed": 1
+  }
+ },
+ "111": {
+  "class_type": "PrimitiveFloat",
+  "inputs": {
+   "value": 5.166666666666667
+  }
+ },
+ "107": {
+  "class_type": "ComfyMathExpression",
+  "inputs": {
+   "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
+   "values.a": [
+    "111",
+    0
+   ]
+  }
+ },
+ "114": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "opening.png"
+  }
+ },
+ "104": {
+  "class_type": "MiniMaxH3ReferenceToVideo",
+  "inputs": {
+   "clip": [
+    "13",
+    0
+   ],
+   "vae": [
+    "11",
+    0
+   ],
+   "audio_vae": [
+    "24",
+    0
+   ],
+   "prompt": "",
+   "width": 768,
+   "height": 1344,
+   "length": [
+    "107",
+    1
+   ],
+   "ref_image_size": "match",
+   "ref_images.ref_image_0": [
+    "opening_size",
+    0
+   ],
+   "ref_images.ref_image_1": [
+    "product",
+    0
+   ],
+   "ref_images.ref_image_2": [
+    "character",
+    0
+   ]
+  }
+ },
+ "16": {
+  "class_type": "BasicGuider",
+  "inputs": {
+   "model": [
+    "sigma_shift",
+    0
+   ],
+   "conditioning": [
+    "guide_first",
+    0
+   ]
+  }
+ },
+ "14": {
+  "class_type": "SamplerCustomAdvanced",
+  "inputs": {
+   "noise": [
+    "15",
+    0
+   ],
+   "guider": [
+    "16",
+    0
+   ],
+   "sampler": [
+    "17",
+    0
+   ],
+   "sigmas": [
+    "9",
+    0
+   ],
+   "latent_image": [
+    "104",
+    1
+   ]
+  }
+ },
+ "10": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "14",
+    0
+   ],
+   "vae": [
+    "11",
+    0
+   ]
+  }
+ },
+ "23": {
+  "class_type": "VAEDecodeAudio",
+  "inputs": {
+   "samples": [
+    "14",
+    0
+   ],
+   "vae": [
+    "24",
+    0
+   ]
+  }
+ },
+ "92": {
+  "class_type": "VHS_VideoCombine",
+  "inputs": {
+   "images": [
+    "10",
+    0
+   ],
+   "audio": [
+    "23",
+    0
+   ],
+   "frame_rate": 24.0,
+   "loop_count": 0,
+   "filename_prefix": "joymedia_h3",
+   "format": "video/h264-mp4",
+   "pix_fmt": "yuv420p",
+   "crf": 18,
+   "save_metadata": true,
+   "trim_to_audio": false,
+   "pingpong": false,
+   "save_output": true
+  },
+  "_meta": {
+   "title": "Native 24 fps h264 CRF 18 with stereo audio"
+  }
+ },
+ "115": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "endpoint.png"
+  },
+  "_meta": {
+   "title": "Last frame (optional keyframe anchor)"
+  }
+ },
+ "sigma_shift": {
+  "class_type": "MiniMaxH3SigmaShift",
+  "inputs": {
+   "model": [
+    "6",
+    0
+   ],
+   "shift_video": 12.0,
+   "shift_audio": 3.0
+  }
+ },
+ "product": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "product.png"
+  }
+ },
+ "character": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "character.png"
+  }
+ },
+ "guide_first": {
+  "class_type": "MiniMaxH3AddGuide",
+  "inputs": {
+   "positive": [
+    "104",
+    0
+   ],
+   "latent": [
+    "104",
+    1
+   ],
+   "vae": [
+    "11",
+    0
+   ],
+   "image": [
+    "opening_size",
+    0
+   ],
+   "frame_idx": 0
+  }
+ },
+ "guide_last": {
+  "class_type": "MiniMaxH3AddGuide",
+  "inputs": {
+   "positive": [
+    "guide_first",
+    0
+   ],
+   "latent": [
+    "104",
+    1
+   ],
+   "vae": [
+    "11",
+    0
+   ],
+   "image": [
+    "closing_size",
+    0
+   ],
+   "frame_idx": -1
+  }
+ },
+ "opening_size": {
+  "class_type": "ImageScale",
+  "inputs": {
+   "image": [
+    "114",
+    0
+   ],
+   "upscale_method": "lanczos",
+   "width": 768,
+   "height": 1344,
+   "crop": "center"
+  },
+  "_meta": {
+   "title": "Native H3 size: center crop + Lanczos"
+  }
+ },
+ "closing_size": {
+  "class_type": "ImageScale",
+  "inputs": {
+   "image": [
+    "115",
+    0
+   ],
+   "upscale_method": "lanczos",
+   "width": 768,
+   "height": 1344,
+   "crop": "center"
+  },
+  "_meta": {
+   "title": "Native H3 size for an optional closing frame"
+  }
+ }
+}

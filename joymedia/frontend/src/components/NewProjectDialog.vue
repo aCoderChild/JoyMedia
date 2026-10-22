@@ -111,6 +111,12 @@
             <Button :disabled="uploadingImages" @click="mascotImagesInput?.click()">{{ tr('+ Mascot images', '+ Ảnh mascot') }}</Button>
             <span v-if="uploadingImages" class="text-xs text-ink-muted">{{ uploadProgress }}</span>
           </div>
+          <div v-if="form.autoScript && !workbook && sameProduct.length" class="mt-2 rounded-lg border border-indigo-300 bg-indigo-50/40 p-3 text-sm" data-test="same-product-project">
+            <p class="font-medium">{{ tr('This product already has a project', 'Sản phẩm này đã có dự án') }}</p>
+            <label v-for="match in sameProduct" :key="match.name" class="flex gap-2 mt-1"><input type="radio" :value="match.name" v-model="intoProject" />{{ tr('Add the new videos to', 'Thêm video mới vào') }} “{{ match.project_name }}” ({{ match.video_count }} {{ tr('videos', 'video') }})</label>
+            <label class="flex gap-2 mt-1"><input type="radio" value="" v-model="intoProject" />{{ tr('Start a separate project', 'Tạo dự án riêng') }}</label>
+            <p v-if="intoProject" class="mt-1 text-xs text-ink-muted">{{ tr('The new videos use the same product and mascot pictures as that project, so every video stays consistent.', 'Video mới dùng cùng ảnh sản phẩm và mascot của dự án đó để mọi video đồng nhất.') }}</p>
+          </div>
           <FileUploader v-else :file-types="['image/*', '.pdf']" @success="addReference" @failure="(e) => (error = String(e?.message || e))">
             <template #default="{ uploading, progress, openFileSelector }">
               <Button :loading="uploading" @click="openFileSelector">
@@ -126,9 +132,23 @@
         <div v-if="!workbook" class="rounded-xl border border-outline-border p-3 space-y-3">
           <label class="flex gap-2 text-sm"><input type="checkbox" v-model="form.autoScript" />{{ tr('Let AI write the script from my references', 'AI tự viết kịch bản từ ảnh tham chiếu') }}</label>
           <template v-if="form.autoScript">
-            <FormControl v-model="form.variants" type="number" :min="1" :max="20" :label="tr('Number of video variants', 'Số video biến thể')" />
-            <label class="flex gap-2 text-sm"><input type="checkbox" v-model="form.autoRender" />{{ tr('Continue through video generation and music', 'Tự tạo tiếp video và nhạc nền') }}</label>
-            <p class="text-xs text-ink-muted">{{ tr('Multiple product photos are views of the same product. Variant count is independent of photo count. Assign mascot photos the Character role. Quality concerns remain visible for review.', 'Nhiều ảnh sản phẩm là các góc nhìn của cùng sản phẩm. Số video độc lập với số ảnh. Chọn vai trò Nhân vật cho ảnh mascot. Các vấn đề chất lượng vẫn được giữ để kiểm tra.') }}</p>
+            <div class="grid grid-cols-2 gap-3">
+              <FormControl v-model="form.variants" type="number" :min="1" :max="20" :label="tr('How many videos?', 'Bao nhiêu video?')" />
+              <FormControl v-model="form.duration" type="select" :label="tr('Video length', 'Độ dài video')" :options="durationOptions" />
+            </div>
+            <FormControl v-model="form.language" type="select" data-test="viewer-language" :label="tr('On-screen text language', 'Ngôn ngữ chữ trên video')" :options="[{ label: 'Tiếng Việt', value: 'vi' }, { label: 'English', value: 'en' }]" />
+            <label v-if="productCount > 1" class="flex gap-2 text-sm" data-test="rotate-products"><input type="checkbox" v-model="form.everyProduct" />{{ tr('One product per video, rotating through all products', 'Mỗi video một sản phẩm, lần lượt qua tất cả sản phẩm') }}</label>
+            <div data-test="example-scripts">
+              <p class="text-xs font-medium text-ink-primary">{{ tr('Example scripts to learn from (optional)', 'Kịch bản mẫu để AI học theo (tuỳ chọn)') }}</p>
+              <input ref="examplesInput" type="file" multiple accept=".xlsx" class="hidden" @change="uploadExamples" />
+              <div class="mt-1 flex flex-wrap items-center gap-2">
+                <Button :loading="uploadingExamples" @click="examplesInput?.click()">{{ tr('+ Example scripts (.xlsx)', '+ Kịch bản mẫu (.xlsx)') }}</Button>
+                <span v-for="(file, index) in examples" :key="file.name" class="flex items-center gap-1 text-xs">✓ {{ file.file_name }} <button class="text-ink-muted" :aria-label="tr('Remove', 'Bỏ')" @click="examples.splice(index, 1)">✕</button></span>
+              </div>
+              <p class="mt-1 text-[11px] text-ink-muted">{{ tr('The AI copies their structure, pacing and tone, then writes a new story. Without examples it writes a random story.', 'AI học cấu trúc, nhịp và giọng văn rồi viết câu chuyện mới. Không có mẫu thì AI tự viết ngẫu nhiên.') }}</p>
+            </div>
+            <label class="flex gap-2 text-sm"><input type="checkbox" v-model="form.autoRender" />{{ tr('Make the videos straight away (untick to review scripts first)', 'Tạo video ngay (bỏ chọn để duyệt kịch bản trước)') }}</label>
+            <p class="text-xs text-ink-muted">{{ tr('Photos of the same product or mascot from other angles are grouped automatically; each different product stays separate, so its packaging never changes inside a video.', 'Ảnh cùng một sản phẩm hoặc mascot ở các góc khác nhau được tự động gộp; mỗi sản phẩm khác nhau được giữ riêng, nên bao bì không bị đổi trong video.') }}</p>
           </template>
         </div>
 
@@ -149,7 +169,7 @@
       </div>
     </template>
     <template #actions>
-      <Button variant="solid" :loading="creating" :disabled="!canCreate || uploadingImages" @click="create">
+      <Button variant="solid" :loading="creating" :disabled="!canCreate || uploadingImages || uploadingExamples" @click="create">
         {{ form.autoScript && !workbook ? tr('Create videos', 'Tạo video') : tr('Create project', 'Tạo dự án') }}
       </Button>
     </template>
@@ -157,7 +177,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { Alert, Badge, Button, Dialog, FileUploader, FormControl, call, createResource, upload as uploadFile } from "frappe-ui";
 import { tr } from "../stores/i18n";
 import { errorMessage } from "../utils/errors";
@@ -165,11 +185,29 @@ import { errorMessage } from "../utils/errors";
 const open = defineModel({ type: Boolean, default: false });
 const emit = defineEmits(["created"]);
 
-const form = reactive({ name: "", brief: "", format: "", customRatio: "", demo: "", autoScript: true, autoRender: true, variants: 1 });
+const form = reactive({ name: "", brief: "", format: "", customRatio: "", demo: "", autoScript: true, autoRender: true, variants: 1, duration: "", everyProduct: false, language: tr("en", "vi") });
+const examples = ref([]), examplesInput = ref(null), uploadingExamples = ref(false);
+const productCount = computed(() => references.value.filter((r) => r.role === "Product").length);
+const durationOptions = computed(() => [
+  { label: tr("Auto", "Tự động"), value: "" },
+  ...[15, 30, 45, 60].map((s) => ({ label: `${s}s`, value: String(s) })),
+]);
 const workbook = ref(null);
 const productImagesInput = ref(null), mascotImagesInput = ref(null), uploadingImages = ref(false), uploadProgress = ref("");
 const references = ref([]);
 const creating = ref(false);
+// Every variation of one product stays in one project, as ad tools group variations under their product.
+const sameProduct = ref([]), intoProject = ref("");
+let matchEpoch = 0;
+async function findSameProduct() {
+  const epoch = ++matchEpoch;
+  const files = references.value.filter((r) => r.role === "Product" && !r.pdf).map((r) => r.file_name);
+  const matches = files.length ? await call("joymedia.services.intake.project.find_product_project", { file_names: files }).catch(() => []) : [];
+  if (epoch !== matchEpoch) return;
+  sameProduct.value = matches;
+  if (!matches.some((m) => m.name === intoProject.value)) intoProject.value = matches[0]?.name || "";
+}
+watch(() => references.value.filter((r) => r.role === "Product").map((r) => r.file_name).join(), findSameProduct);
 const error = ref("");
 
 const roleOptions = computed(() => [
@@ -241,6 +279,21 @@ function addReference(file, role = "") {
   references.value.push({ file_name: file.name, file_url: file.file_url, label: stem, role, pdf: /\.pdf$/i.test(file.file_name || "") });
 }
 
+async function uploadExamples(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length || uploadingExamples.value) return;
+  uploadingExamples.value = true; error.value = "";
+  try {
+    for (const file of files) {
+      if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error(tr("Please choose .xlsx workbooks.", "Vui lòng chọn tệp .xlsx."));
+      const uploaded = await uploadFile(file, { private: true });
+      if (!uploaded?.name) throw new Error("Upload did not complete.");
+      examples.value.push(uploaded);
+    }
+  } catch (e) { error.value = errorMessage(e, "Could not upload the example scripts."); }
+  finally { uploadingExamples.value = false; event.target.value = ""; }
+}
+
 async function create() {
   if (creating.value || uploadingImages.value) return;
   creating.value = true;
@@ -255,7 +308,12 @@ async function create() {
       auto_script: form.autoScript && !workbook.value,
       auto_render: form.autoRender,
       variants: Number(form.variants),
+      duration_seconds: form.autoScript && !workbook.value && form.duration ? Number(form.duration) : null,
+      hero_products: form.autoScript && !workbook.value && form.everyProduct ? "all" : null,
+      example_workbooks: form.autoScript && !workbook.value ? examples.value.map((f) => f.name) : null,
+      language: form.autoScript && !workbook.value ? form.language : null,
       references: references.value.map(({ file_name, label, role }) => ({ file_name, label, role })),
+      into_project: form.autoScript && !workbook.value ? intoProject.value || null : null,
     });
     open.value = false;
     emit("created", result.project);

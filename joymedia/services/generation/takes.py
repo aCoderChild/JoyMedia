@@ -84,6 +84,10 @@ def _start_takes_run(
 	while waiting for the other request. Redis coordinates admission across app
 	workers; this lock is released when the run is durably queued, before inference.
 	"""
+	if retry_reason:
+		choices = (frappe.get_meta("Generation Attempt").get_field("retry_reason").options or "").splitlines()
+		if retry_reason not in choices:
+			frappe.throw(_("Choose a configured retry reason before starting generation."))
 	frappe.db.commit()
 	lock = frappe.cache.lock(
 		f"joymedia-take-admission:{frappe.local.site}:{project.name}",
@@ -243,7 +247,12 @@ def select_scene_take(project_name, shot_name, take_index):
 
 	frappe.db.commit()
 	try:
-		finishing = resume_post_production(project.name) if selection_changed else {"status": "Unchanged"}
+		if not selection_changed:
+			finishing = {"status": "Unchanged"}
+		elif frappe.flags.get("joymedia_defer_finishing"):
+			finishing = {"status": "Deferred"}
+		else:
+			finishing = resume_post_production(project.name)
 	except Exception:
 		# The take selection is durable. Finishing can be retried independently.
 		frappe.logger("joymedia.scene_takes").exception("Unable to resume finishing for %s", project.name)
@@ -339,8 +348,9 @@ def retain_held_take_for_review(
 	"""Keep action-qualified held footage as a separate, unselected review take.
 
 	This never changes the failed attempt, machine findings or selected output.
-	Only physical/continuity uncertainty is eligible; missing action, identity or
-	cast evidence and every witnessed violation remain blocking.
+	Uncertain action/physical/continuity verdicts are eligible because the
+	reviewer watched the footage; identity or cast gaps and every witnessed
+	violation remain blocking.
 	"""
 	import tempfile
 	from pathlib import Path
@@ -372,7 +382,7 @@ def retain_held_take_for_review(
 
 		report = checked_recheck(review_artifact, attempt.name, original_report)
 	if not report or not held_take_review_candidate(report):
-		frappe.throw(_("Resolve action, cast, identity or witnessed violations before retaining this take."))
+		frappe.throw(_("Resolve cast, identity or witnessed violations before retaining this take."))
 	artifact = frappe.get_doc(
 		"Generation Artifact", {"generation_attempt": attempt.name, "artifact_role": "Primary Video"}
 	)

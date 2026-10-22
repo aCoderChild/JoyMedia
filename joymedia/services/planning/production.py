@@ -393,6 +393,24 @@ def _apply_camera_profile(project, shot, plan):
 		reference_camera_grammar,
 	)
 
+	move = _authored_camera_move(project, shot)
+	if move:
+		# An authored move (sheet column or AI script) is the director's choice;
+		# the compiler still applies its framing and product-legibility safeguards.
+		from joymedia.services.planning.shot_structure import CAMERA_MOVES, MOVE_BEHAVIOR
+
+		if move not in CAMERA_MOVES:
+			raise ValueError("Unsupported authored camera move: " + move)
+		count = frappe.db.count("Shot", {"media_project": project.name, "is_removed": 0})
+		number = int(shot.shot_number or 0)
+		plan.setdefault("motion_plan", {})["camera_intent"] = {
+			"behavior": MOVE_BEHAVIOR[move],
+			"allow_reframe": move != "static",
+			"purpose": "hook" if number == 1 else "resolve" if number == count else "reveal",
+			"energy": "brisk" if number == 1 else "measured",
+			"source": "authored",
+		}
+		return plan
 	if camera_planning_rules(project):
 		structure = plan.get("motion_plan", {}).get("shot_structure")
 		if not structure:
@@ -400,6 +418,24 @@ def _apply_camera_profile(project, shot, plan):
 				"The cinematic camera profile requires a structured shot plan. Replan this scene."
 			)
 		count = frappe.db.count("Shot", {"media_project": project.name, "is_removed": 0})
+		# The production planner infers stage from prose, but an unsupported
+		# precision label would wrongly lock a wide opening. Extraction needs an
+		# actual removal action; placement alone is a presentation/establish beat.
+		if structure.get("stage") == "extract":
+			import re
+
+			action_text = " ".join(
+				str(row.get("action") or "") for row in plan.get("motion_plan", {}).get("actions") or []
+			)
+			if not re.search(r"\b(?:extract|pull|withdraw|remove|take\s+out)\w*\b", action_text, re.I):
+				structure["stage"] = (
+					"establish"
+					if int(shot.shot_number or 0) == 1 and structure.get("framing") in {"wide", "full"}
+					else "present"
+				)
+				plan.setdefault("notes", []).append(
+					"Camera stage corrected: no extraction action is present in this shot."
+				)
 		preferred = infer_cinematic_intent(
 			structure,
 			opening=int(shot.shot_number or 0) == 1,
@@ -423,6 +459,19 @@ def _apply_camera_profile(project, shot, plan):
 				f"Reference preference {preferred['behavior']} resolved to {resolved['behavior']} using available boundaries; framing safeguards still apply."
 			)
 	return plan
+
+
+def _authored_camera_move(project, shot):
+	"""The sheet's "Camera move" for this scene, read directly (it needs no translation)."""
+	try:
+		source = frappe.parse_json(project.storyboard_source_json or "{}") or {}
+		if source.get("generation_origin") == "ai_director":
+			return ""
+		scenes = source.get("selected_demo", {}).get("scenes", [])
+	except (TypeError, ValueError):
+		return ""
+	name = shot.get("storyboard_beat") or shot.get("shot_name")
+	return next((str(s.get("camera_move") or "").strip() for s in scenes if s.get("beat_name") == name), "")
 
 
 def _workflow_controls(workflow_name):
@@ -764,7 +813,7 @@ def creative_beat(project, shot):
 		"camera": source.get("visual_camera") or "",
 		**{
 			k: source.get(k) or ""
-			for k in ("shot_framing", "shot_angle", "narrative_stage", "subject_motion")
+			for k in ("shot_framing", "shot_angle", "narrative_stage", "subject_motion", "camera_move")
 		},
 		"action": source.get("action") or "",
 		"voice_over": source.get("voice_over") or shot.voice_over or "",

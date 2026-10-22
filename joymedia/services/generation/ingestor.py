@@ -458,6 +458,13 @@ def _store_artifact_file_in_frappe(artifact, attempt, output=None):
 		from joymedia.services.keyframes.overlay import store_product_lock
 
 		artifact.product_lock_json = store_product_lock(artifact, lock)
+	elif lock.get("unprotected"):
+		import json
+
+		# Recorded so review and finishing know the label was not locked.
+		artifact.product_lock_json = json.dumps(
+			{"canvas": lock.get("canvas"), "items": [], "unprotected": lock["unprotected"]}
+		)
 	artifact.save(ignore_permissions=True)
 	if precheck:
 		from joymedia.services.review.admission import store_report

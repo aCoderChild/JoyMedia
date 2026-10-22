@@ -73,6 +73,23 @@ def _own_environment(shot, places):
 	)
 
 
+def _single_authored_environment(project, shots):
+	"""A sole supplied Environment anchors every scene without its own place.
+
+	A writer may name the whole room in a wide shot and only its table in a
+	close-up. Those are views of the client's one supplied place, not requests
+	to invent two new rooms from slightly different text.
+	"""
+	choices = {
+		row.asset_version
+		for row in project.get("selected_media") or []
+		if frappe.scrub(row.get("reference_role") or "") == "environment"
+		and row.get("asset_version")
+		and not str(row.get("reference_key") or "").startswith("location_")
+	}
+	return next(iter(choices)) if len(choices) == 1 else None
+
+
 def shot_views(shot):
 	"""A split-screen scene's views ([{"text", "source"}], top to bottom); empty for a full-frame scene."""
 	try:
@@ -152,10 +169,11 @@ def missing_places(project, shots):
 	"""{key: setting} for each place shown by these scenes that has no picture yet."""
 	have = {row.reference_key for row in project.selected_media or []}
 	places = _location_versions(project, shots)
+	provided = _single_authored_environment(project, shots)
 	missing = {}
 	for shot in shots:
 		key = place_key(project, shot.setting_prompt)
-		if not _own_environment(shot, places) and key not in have:
+		if not provided and not _own_environment(shot, places) and key not in have:
 			missing.setdefault(key, usable_setting(shot.setting_prompt))
 	return missing
 
@@ -188,12 +206,15 @@ def assign_places(project, shots):
 		row.reference_key: row.asset_version for row in project.selected_media or [] if row.reference_key
 	}
 	places = _location_versions(project, shots)
+	provided = _single_authored_environment(project, shots)
 	changed = 0
 	for shot in shots:
 		if _own_environment(shot, places):
 			continue
 		key = place_key(project, shot.setting_prompt)
-		wanted = pictures.get(key if free_composition or shows_the_room(shot) else f"{key}{CLOSE}")
+		wanted = provided or pictures.get(
+			key if free_composition or shows_the_room(shot) else f"{key}{CLOSE}"
+		)
 		current = [row for row in shot.generation_inputs or [] if row.asset_version in places]
 		if [row.asset_version for row in current] == ([wanted] if wanted else []):
 			continue

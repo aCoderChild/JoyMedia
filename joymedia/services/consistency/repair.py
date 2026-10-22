@@ -603,10 +603,16 @@ def repair_review_candidate(report):
 
 
 def held_take_review_candidate(report):
-	"""Retain an explicitly requested candidate without overriding failed admission."""
-	if report.get("status") != "Needs Review" or not repair_review_candidate(report):
-		return False
+	"""Whether a person may retain held footage as an unselected review take.
+
+	Only for an explicit human request: the reviewer watched the clip, so the
+	sampled judge's *uncertain* action or physics verdict can be resolved by them.
+	Cast and identity must be supported and any witnessed violation still blocks.
+	The machine report itself is never changed.
+	"""
 	rows = report.get("results") or []
+	if report.get("status") != "Needs Review" or not rows:
+		return False
 	ids = [r.get("id") for r in rows]
 	if len(ids) != len(set(ids)) or set(ids) != set(report.get("required_claim_ids") or []):
 		return False
@@ -614,7 +620,10 @@ def held_take_review_candidate(report):
 		r.get("verdict") == "supported"
 		or (
 			r.get("verdict") == "uncertain"
-			and (r.get("dimension") == "physics" or r.get("id") in {"continuity", "geometry_qualification"})
+			and (
+				r.get("dimension") in {"physics", "action"}
+				or r.get("id") in {"continuity", "geometry_qualification"}
+			)
 		)
 		for r in rows
 	)

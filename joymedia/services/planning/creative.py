@@ -4,6 +4,7 @@ No product names, action examples, aspect ratio or model selection live here.
 Creative output is validated input to the ordinary workbook production path.
 """
 
+import copy
 import io
 import json
 import math
@@ -12,12 +13,21 @@ import re
 import frappe
 
 from joymedia.services.planning.script_review import review_script_actions
-from joymedia.services.planning.shot_structure import ANGLES, FRAMINGS, MOTIONS, STAGES
+from joymedia.services.planning.shot_structure import (
+	ANGLES,
+	CAMERA_MOVES,
+	FRAMINGS,
+	MOTIONS,
+	MOVE_BEHAVIOR,
+	SHOT_GUIDE,
+	STAGES,
+)
 from joymedia.services.planning.timed_actions import normalize_action_separators, read_timed_actions
 
 CREATIVE_INVARIANTS = (
 	"Preserve reference identities, observed product construction, explicit format/duration and approved claims. "
 	"Select a concrete supplied view key whose visible pose, anatomy and surfaces suit each action; preserve that view choice through repairs. Alternate views remain one identity. "
+	"Choose a supplied pose and support compatible with the action; show any necessary change of support before travel. Do not describe walking while the subject remains seated or attached to stationary furniture. "
 	"Keep one coherent interaction per shot, chronological prerequisites and persistent object/support states. "
 	"Invent no opening mechanism. Extracted consumables remain outside their unused stock; do not reset the story by putting them back. "
 	"Do not invent a performance test or effect that the approved claims do not support; visible material handling is enough. "
@@ -30,12 +40,108 @@ UNANCHORED_PHYSICAL_EFFECT = re.compile(
 	r"\b(?:water|liquid|spill|stain|dust|dirt|grime|clean|polish|soak|absorb|wet|dip|pour|rinse|tear|stretch|break)\w*\b",
 	re.I,
 )
-ANONYMOUS_HUMAN = re.compile(
-	r"\b(?:an?|the)\s+(?:(?:off[- ]screen|unseen|human)\s+){0,2}(?:hand|arm|person|human|man|woman)\b",
+# The style is appended to every picture prompt, including empty-place drawings:
+# naming subjects there puts extra characters or products into the set.
+STYLE_SUBJECT = re.compile(
+	r"\b(?:mascots?|characters?|people|persons?|humans?|animals?|toys?|products?|packag\w*|packs?|logos?)\b",
 	re.I,
 )
-PASSIVE_OPENING = re.compile(r"\b(?:seen|look|looks|looking|spot|spots|smile|smiles|nod|nods|sit|sits|sitting|stand|stands|standing|hold|holds|holding)\b", re.I)
-TANGIBLE_ACTION = re.compile(r"\b(?:pick|place|set|lift|grip|grab|pull|extract|unfold|fold|wipe|rub|absorb|carry|turn|open|slide|tap|press|unwrap|wear|put|move|push|drop|rotate)\w*\b", re.I)
+# Reference analysis states construction as "Visible construction: flexible|rigid".
+RIGID_CONTAINER = re.compile(
+	r"\b(?:box|boxes|carton|cartons|lid|lids|crate|tin|jar|bottle|can)\b|\b(?:peel\w*|unseal\w*|seal|protective film|shrink[- ]?wrap)\b",
+	re.I,
+)
+STATE_RESET = re.compile(
+	r"\b(?:put|puts|place|places|return|returns|tuck|tucks|stuff|stuffs|push|pushes)\b[^.;\n]*\bback\s+(?:in|into|inside)\b",
+	re.I,
+)
+EDITORIAL_TEXT = re.compile(
+	r"\b(?:on[- ]screen text|text (?:appears|overlay|pops up)|captions? appears?|title card)\b", re.I
+)
+BODY_PART = re.compile(r"\b(?:hands?|fingers?|arms?|palms?)\b", re.I)
+MONTAGE = re.compile(
+	r"\b(?:split[- ]?screens?|montage|various (?:situations|places|locations|settings|scenes)|several (?:situations|places|locations))\b",
+	re.I,
+)
+ANONYMOUS_HUMAN = re.compile(
+	r"\b(?:an?|the)\s+(?:(?:off[- ]screen|unseen|human)\s+){0,2}(?:hand|arm|person|human|man|woman|adult|child|kid|boy|girl|someone|customer|user|mother|father)\b"
+	# Groups of people are just as absent from the references as one stranger.
+	r"|\b(?:an?|the|their|his|her|its|whole|some)\s+(?:\w+\s+){0,2}(?:family|families|people|children|kids|friends|parents|guests|crowd|couple|mom|dad|baby|toddler|teenagers?)\b(?![-\s]+(?:room|size|pack|car|table|kitchen|home|dining|living|house|sofa|couch|photo|album|style|meal|dinner|breakfast))",
+	re.I,
+)
+# A mess the product cleans up must happen on camera first; a still picture cannot
+# stage a spill that appears from nowhere, and viewers cannot follow it either.
+MESS = re.compile(
+	r"\b(?:spill(?:s|ed|ing)?|stain(?:s|ed)?|mess(?:y|es)?|crumbs|splash(?:es|ed)?|drips?|puddles?)\b", re.I
+)
+MESS_EVENT = re.compile(
+	r"\b(?:spills|spilled|spilling|spill(?:s)?\s+(?:over|out)|tips?\s+over|knocks?\s+over|drops?|splash(?:es|ed)|drips|dripping|smears|leaks|overflows?)\b",
+	re.I,
+)
+# A continuity rule that keeps a subject in place contradicts an action that moves it;
+# the video model cannot satisfy both and the visual check then rejects the clip.
+STAY_RULE = re.compile(
+	r"\b(?:remains?|stays?|keeps?)\s+(?:seated|sitting|standing\s+still|still|in\s+place|"
+	r"(?:on|in|at)\s+(?:the\s+)?(?:couch|sofa|chair|bed|floor|table|seat|spot))\b",
+	re.I,
+)
+LOCOMOTION = re.compile(
+	r"\b(?:walks?|walking|approach(?:es|ing)?|steps?|stepping|enters?|crosses|runs?|jumps?|hops?|climbs?|"
+	r"(?:stands?|gets?)\s+up|moves?\s+(?:to|towards|toward|across|over))\b",
+	re.I,
+)
+CLOSING_BEAT = re.compile(r"\b(?:pack\s?shot|cta|call to action|end card|closing shot)\b", re.I)
+PASSIVE_OPENING = re.compile(
+	r"\b(?:seen|look|looks|looking|spot|spots|smile|smiles|nod|nods|sit|sits|sitting|stand|stands|standing|hold|holds|holding)\b",
+	re.I,
+)
+TANGIBLE_ACTION = re.compile(
+	r"\b(?:pick|place|set|lift|grip|grab|pull|extract|unfold|fold|wipe|rub|dab|pat|blot|touch|apply|absorb|carry|turn|open|slide|tap|press|unwrap|wear|put|move|push|drop|rotate)\w*\b",
+	re.I,
+)
+
+# Conservative causal precheck for an item explicitly acquired *later* from a
+# source after an earlier shot already used that same named item. The screenplay
+# writer uses English production prose; nouns come from the screenplay, never a
+# product-specific list. The semantic reviewer remains responsible for cases
+# that this narrow textual check cannot prove.
+SOURCE_ACQUISITION = re.compile(
+	r"\b(?:extracts?|pulls?|removes?|takes?|draws?|lifts?)\b(?P<object>[^.;\n]{0,100}?)\b(?:from|out of)\b",
+	re.I,
+)
+MATERIAL_USE = re.compile(
+	r"\b(?:press|wipe|dab|apply|wear|unfold|fold|clean|dry|rub|use|spread|touch)\w*\b[^.;\n]{0,100}", re.I
+)
+
+
+def _later_acquisition_conflict(scenes):
+	"""Return the first demonstrable use-before-acquisition pair, if any."""
+	for later_index, scene in enumerate(scenes):
+		for acquisition in SOURCE_ACQUISITION.finditer(scene.get("action") or ""):
+			phrase = acquisition.group("object").strip().casefold()
+			if re.search(r"\b(?:another|additional|second|more)\b", phrase) or not re.search(
+				r"\bthe\b", phrase
+			):
+				continue
+			tokens = re.findall(r"[a-z][a-z-]*", phrase)
+			if not tokens:
+				continue
+			item = tokens[-1]
+			if item in {"edge", "corner", "piece", "part", "fold", "top", "bottom"}:
+				continue
+			article_item = re.compile(
+				r"\b(?:a|an|the|one|this|that)\s+(?:[a-z-]+\s+){0,3}"
+				+ re.escape(item)
+				+ r"\b(?=\s+(?:against|onto|on|with|to|into|across|over|under|from|at|in)\b|[.,;]|$)",
+				re.I,
+			)
+			for earlier_index, earlier in enumerate(scenes[:later_index]):
+				if any(
+					article_item.search(use.group(0))
+					for use in MATERIAL_USE.finditer(earlier.get("action") or "")
+				):
+					return earlier_index + 1, later_index + 1, item
+	return None
 
 
 def _validate_action_progress(scenes):
@@ -45,27 +151,151 @@ def _validate_action_progress(scenes):
 	visible actions, independent of proposed narrative labels and model choice.
 	"""
 	for index, scene in enumerate(scenes[:-1]):
-		if index == len(scenes) - 2 and scene.get("products") and scene.get("shot_framing") in {
-			"close_up", "extreme_close_up"
-		}:
+		if (
+			index == len(scenes) - 2
+			and scene.get("products")
+			and scene.get("shot_framing") in {"close_up", "extreme_close_up"}
+		):
 			continue
 		phases = read_timed_actions(scene["action"], scene["duration_seconds"])
 		# A relative clause can describe a prop's initial location ("the pack
 		# that is placed on the table") without the subject doing anything.
 		# Such set dressing must not satisfy the action-progress contract.
 		if not any(
-			TANGIBLE_ACTION.search(re.split(r"\b(?:where|which|that)\b", phase["action"], maxsplit=1, flags=re.I)[0])
+			TANGIBLE_ACTION.search(
+				re.split(r"\b(?:where|which|that)\b", phase["action"], maxsplit=1, flags=re.I)[0]
+			)
 			for phase in phases
 		):
 			next_action = scenes[index + 1]["action"]
 			raise ValueError(
 				f"Scene {index + 1} has no completed object or material action. "
-				"Replace its preparation/reaction with the actual interaction in this shot; "
-				"if the next shot performs that interaction, combine the two beats and give "
-				"the freed shot a distinct product action or detail. "
-				"Faulty action: " + json.dumps(scene["action"], ensure_ascii=False)
-				+ "; next action: " + json.dumps(next_action, ensure_ascii=False)
+				"Replace a camera-only reveal, preparation or reaction with a visible "
+				"subject/product interaction completed in this shot (for example, a supplied actor places "
+				"or grips the product). If the next shot performs that same interaction, "
+				"shift the subsequent beats rather than repeating it. "
+				"Faulty action: "
+				+ json.dumps(scene["action"], ensure_ascii=False)
+				+ "; next action: "
+				+ json.dumps(next_action, ensure_ascii=False)
 			)
+
+
+ENGLISH_WORDS = re.compile(
+	r"\b(?:the|and|with|your|you|for|now|buy|get|our|this|that|of|to|is|are|every|today)\b", re.I
+)
+VIETNAMESE = re.compile(r"[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]", re.I)
+
+
+# What viewers see or hear: written in English with the script, then translated
+# into the viewers' language by one faithful pass; the description stays English.
+VIEWER_FIELDS = ("voice_over", "on_screen_text")
+
+
+def _foreign(text):
+	"""Vietnamese wording, ignoring capitalised names ("Gấu Shera") that stay as written."""
+	return VIETNAMESE.search(re.sub(r"\b[A-ZÀ-Ỹ][a-zà-ỹ]+\b", "", str(text or "")))
+
+
+def _plain(text):
+	return " ".join(re.sub(r"[^\w]+", " ", str(text or "").casefold()).split())
+
+
+def _place_frames(sheet, header_row, column, pictures, lang):
+	"""Each scene's drawn first frame beside its row, as a small embedded picture."""
+	from openpyxl.drawing.image import Image as SheetImage
+	from PIL import Image
+
+	cell = sheet.cell(header_row, column, "Khung hình đầu" if lang == "vi" else "First frame")
+	sheet.column_dimensions[cell.column_letter].width = 24
+	for number, path in sorted(pictures.items()):
+		with Image.open(path) as image:
+			image = image.convert("RGB")
+			image.thumbnail((160, 240))
+			buffer = io.BytesIO()
+			image.save(buffer, "PNG")
+			height = image.height
+		picture = SheetImage(buffer)
+		row = header_row + int(number)
+		sheet.row_dimensions[row].height = max(sheet.row_dimensions[row].height or 15, height * 0.75 + 6)
+		sheet.add_image(picture, sheet.cell(row, column).coordinate)
+
+
+def _ratio_text(text):
+	"""An authored format such as "Dọc 9:16" as "9:16", or "" when it names no ratio."""
+	from joymedia.services.project.formats import parse_ratio, ratio_label
+
+	ratio = parse_ratio(str(text or ""))
+	return ratio_label(*ratio) if ratio else ""
+
+
+def script_exemplars(file_names, index=0, *, scene_chars=520):
+	"""Client-authored example workbooks -> compact style examples for the writer.
+
+	Examples teach structure, pacing, tone and how the client writes voice-over and
+	on-screen text. The writer gets a new premise; their selling points are client
+	claims. The primary example rotates with the variant so variants differ.
+	"""
+	from joymedia.services.planning.workbook import parse_storyboard_workbook
+
+	examples, claims, formats = [], [], set()
+	for name in file_names or []:
+		path = frappe.get_doc("File", name).get_full_path()
+		for demo in parse_storyboard_workbook(path)["demos"]:
+			if not demo.get("scenes"):
+				continue
+			meta = demo.get("metadata") or {}
+			formats.add(_ratio_text(meta.get("format")))
+			claims.extend(
+				line.strip(" -•") for line in str(meta.get("usp") or "").splitlines() if line.strip(" -•")
+			)
+
+			def clip(value, limit):
+				value = " ".join(str(value or "").split())
+				return value if len(value) <= limit else value[: limit - 1] + "…"
+
+			examples.append(
+				{
+					"product": clip(meta.get("product_name"), 80),
+					"duration": meta.get("duration") or "",
+					"tone": clip(meta.get("tone_mood"), 120),
+					"scenes": [
+						{
+							"beat_name": clip(s.get("beat_name"), 50),
+							"seconds": round(float(s.get("duration_seconds") or 0), 1),
+							# Shot size and VO style only: full example actions get copied as a story.
+							"visual_camera": clip(s.get("visual_camera"), scene_chars // 6),
+							"voice_over": clip(s.get("voice_over"), 90),
+							"on_screen_text": clip(s.get("on_screen_text"), 50),
+						}
+						for s in demo["scenes"][:8]
+					],
+				}
+			)
+	if not examples:
+		return {}
+	start = index % len(examples)
+	ordered = examples[start:] + examples[:start]
+	voice_lines = [
+		_plain(s.get(field))
+		for e in examples
+		for s in e["scenes"]
+		for field in ("voice_over", "on_screen_text")
+		if len(_plain(s.get(field))) > 8
+	]
+	return {
+		"screen_lines": [
+			s["on_screen_text"] for e in examples for s in e["scenes"] if s.get("on_screen_text")
+		],
+		"language": "Vietnamese" if len(VIETNAMESE.findall(" ".join(voice_lines))) > 20 else "English",
+		# The client's authored format, when every example states the same one.
+		"format": next(iter(formats)) if len(formats) == 1 and all(formats) else None,
+		"voice_lines": voice_lines,
+		# The first example in full, the rest as beat outlines, to stay inside the writer's context.
+		"examples": [ordered[0]]
+		+ [{"product": e["product"], "beats": [s["beat_name"] for s in e["scenes"]]} for e in ordered[1:3]],
+		"claims": list(dict.fromkeys(claims))[:12],
+	}
 
 
 def reference_inventory(project):
@@ -87,7 +317,18 @@ def reference_inventory(project):
 			views.append(
 				{
 					"key": view.reference_key,
-					"description": analysis.get("description", ""),
+					"description": " ".join(
+						filter(
+							None,
+							[
+								analysis.get("description", ""),
+								("Visible pose/support: " + analysis["pose_and_support"])
+								if analysis.get("pose_and_support")
+								else "",
+								("View constraint: " + view.keep_rule) if view.keep_rule else "",
+							],
+						)
+					),
 					"file": frappe.get_doc("File", {"file_url": asset.file}).file_name,
 				}
 			)
@@ -184,8 +425,16 @@ def script_schema(inventory, constraints):
 		pattern=r"^(?:(?:SFX|BGM):[^\n]+(?:\n|$))*$",
 		description="Native audio cue lines: SFX: physical sounds caused by visible actions; optional BGM: score cue change. One labelled cue per line, or empty. Dialogue belongs in voice_over; the continuous score is described in music.",
 	)
-	for key, options in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
+	for key, options in (
+		("shot_framing", FRAMINGS),
+		("shot_angle", ANGLES),
+		("narrative_stage", STAGES),
+		("camera_move", CAMERA_MOVES),
+	):
 		scene[key] = {"type": "string", "enum": sorted(options)}
+	scene["camera_move"]["description"] = (
+		"One of the six basic moves with its direction, or static: the move that best serves this beat."
+	)
 	scene["subject_motion"] = {
 		"type": "string",
 		"enum": sorted(MOTIONS),
@@ -204,7 +453,7 @@ def script_schema(inventory, constraints):
 	}
 	root["music"] = {
 		**text,
-		"description": "Instrumentation, mood, tempo and cue changes aligned with the story, with a resolved ending.",
+		"description": "Name at least two instruments or sound sources, tempo, and the visible beats where the arrangement changes; end with a resolved musical cadence. Avoid generic mood-only music text.",
 	}
 	minimum_scenes = (
 		max(
@@ -260,6 +509,12 @@ def fit_generated_timing(script, total_seconds, fps, *, max_scene_frames=None):
 	total = total_seconds or script.get("duration_seconds")
 	if type(total) not in (int, float) or not math.isfinite(total) or not 1 <= total <= 60:
 		raise ValueError("Requested duration must be within sixty seconds.")
+	if len(weights) > 2 and all(w > 0 for w in weights):
+		# Pacing is compiled here, not left to the model: a closing presentation
+		# gets at most max(6 s, 20 %) and the rest goes back to the action scenes.
+		share = max(6.0 / total, 0.2)
+		others = sum(weights[:-1])
+		weights[-1] = min(weights[-1], share * others / (1 - share))
 	frames = allocate_frames(weights, round(total * fps), maximum=max_scene_frames)
 	for scene, phases, count in zip(script["scenes"], actions, frames, strict=True):
 		plan = {"duration_seconds": count / fps, "motion_plan": {"actions": phases}}
@@ -282,14 +537,36 @@ def fit_generated_timing(script, total_seconds, fps, *, max_scene_frames=None):
 	return script
 
 
-def draft_script(project, *, nonce, previous=(), review_notes=()):
+def draft_script(
+	project,
+	*,
+	nonce,
+	previous=(),
+	review_notes=(),
+	examples=None,
+	hero_product=None,
+	revision=None,
+	language=None,
+	require_clean=False,
+):
+	"""Write one timed screenplay.
+
+	Structural errors are repaired until valid (bounded). Heuristic story findings
+	and the text reviewer get one rewrite; whatever remains is returned as
+	`director_notes` for the person approving the script, instead of discarding
+	an otherwise usable draft. Every rejected draft is kept as private evidence.
+	"""
 	from joymedia.services.intake.action_reference import action_observations
 	from joymedia.services.intake.references import brand
 	from joymedia.services.planning.camera import reference_camera_grammar
 	from joymedia.services.planning.durations import _timeline_fps
 	from joymedia.services.planning.production import _ask_planner
+	from joymedia.services.planning.production import translate as translate_claims
 	from joymedia.services.project.formats import ratio_label
 
+	# Views remain selectable pose/construction anchors of one canonical identity.
+	# The schema limits one view per identity per shot; collapsing them to the
+	# first image would force a seated pose into a standing action.
 	inventory = reference_inventory(project)
 	from joymedia.services.workflows.capabilities import capacity
 
@@ -301,18 +578,41 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 			else 0
 		)
 	)
+	examples = examples or {}
+	viewer_language = language or (examples or {}).get("language") or "English"
 	camera_grammar = reference_camera_grammar(project) or {}
+	claims = brand(project).get("claims") or ""
+	claims_english = (
+		translate_claims(
+			claims,
+			project,
+			about="Approved product claims only; translate literally without adding benefits.",
+		)
+		if claims
+		else ""
+	)
 	constraints = {
 		"duration_seconds": project.total_duration_seconds or None,
 		"fps": fps,
-		"max_scene_frames": capacity(workflow)
-		if workflow and not workflow.get("continuation_workflow")
-		else None,
-		"aspect_ratio": ratio_label(project.delivery_width, project.delivery_height) or None,
-		"approved_claims": brand(project).get("claims") or "Only directly visible product features.",
+		# One shot, one generation: continuation segments would split a scene's
+		# timed events across renders, which the visual check cannot verify.
+		"max_scene_frames": capacity(workflow) if workflow else None,
+		# The input decides the format (project settings, else the example scripts);
+		# with neither, the writer proposes one with a reason. Never an assumed reel ratio.
+		"aspect_ratio": ratio_label(project.delivery_width, project.delivery_height)
+		or (examples or {}).get("format"),
+		"approved_claims": claims or "Only directly visible product features.",
+		"approved_claims_english": claims_english,
 		"avoid": brand(project).get("avoid") or "",
 		"mandatories": brand(project).get("mandatories") or "",
 		"creative_direction": project.video_idea or "",
+		"hero_product": hero_product or "",
+		# Stock phrases ("Mua ngay") are shared vocabulary; only distinctive lines count as copies.
+		"example_voice_lines": [line for line in examples.get("voice_lines") or [] if len(line.split()) >= 4],
+		# The writer works in English; on-screen text is translated afterwards.
+		"language": "English",
+		"viewer_language": viewer_language,
+		"client_examples": bool(examples.get("examples")),
 		"camera_reference_notes": [note[:400] for note in camera_grammar.get("notes", [])[:4]],
 		"unresolved_feedback": [
 			{
@@ -323,6 +623,11 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 			for r in review_notes
 			if r.get("scope") == "Current"
 		],
+		"historical_failure_patterns": [
+			{"category": r.get("category", ""), "text": str(r.get("text") or "")[:320]}
+			for r in review_notes
+			if r.get("scope") == "Historical" and r.get("text")
+		][:12],
 	}
 	roster = [
 		{
@@ -330,10 +635,9 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 			"role": item["role"],
 			"label": item["label"],
 			"keep_rule": item.get("keep_rule", "")[:400],
-			"view_count": len(item["views"]),
 			"views": [
-				{"key": v.get("key", item["key"]), "description": v["description"][:200]}
-				for v in item["views"]
+				{"key": view.get("key", item["key"]), "description": view["description"][:320]}
+				for view in item["views"]
 			],
 		}
 		for item in inventory
@@ -347,56 +651,123 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 		}
 		for r in action_observations(project)[:8]
 	]
-	unsupported_effect_rule = (
-		"No action-motion reference was supplied. Do not invent a fluid, spill, stain-removal, breaking, stretching or other multi-object performance demonstration; use directly visible handling and product-detail actions. "
-		if not observations
-		else "Use any supplied action observations only for the motion they actually depict. "
-	)
 	constraints["action_reference_observations"] = observations
+	effect_rule = (
+		"Liquids, spills and cleaning appear only if the client examples or action observations use them; keep such an effect small and contained, with contact before the result. "
+		if examples.get("examples") or observations
+		else "No action reference was supplied: do not invent liquids, spills, stains, tearing or stretching; show direct handling and product detail instead. "
+	)
 	prompt = (
-		"Create an original, brisk product commercial from these references, not a slideshow. "
-		"Open with a visible causal event already happening. Invent a coherent situation, prompt reaction, product acquisition/use and visible result. A reaction must not occupy an entire scene on its own. "
-		"Supply every prerequisite action before its consequence: acquire, grip, move into contact, perform the use, reveal the changed state. Reaching for a container is not obtaining its contents: show removal before using the item. "
-		"Split distinct interactions into motivated shots; preserve object states, supports, screen direction and anatomy across cuts. Repeat the same full place description for one location, not vague same-room placeholders. "
-		"Respect the observed product construction: do not invent rigid lids or closure actions for flexible wrapping. Used consumable material stays separate from unused stock; do not restore used material to its clean container as an unexplained reset. "
-		"Do not pour, stain, stress or otherwise test an unapproved product performance claim. When claims are limited, demonstrate directly visible handling, form and placement instead. "
-		+ unsupported_effect_rule
-		+ "Even when a performance claim is approved, choose an interaction whose contact, support and visible result the supplied reference views can plausibly anchor; without a suitable action view, favor simple handling over complex liquids or deforming materials. "
-		"Each shot has ONE coherent interaction and its immediate consequence. Combine travel/reach with acquisition in the same shot; separate acquisition, extraction and use into distinct completed interactions. "
-		"Every non-closing shot must FINISH its own interaction: a reach must end with a grip/lift in the same shot; a look must lead to handling in the same shot. A package described as already placed on a table is set dressing, not a completed actor action. Keep subsequent shots for the next distinct interaction. "
-		"For supplied Environment references use the exact reference key as place; the reference description controls that location. "
-		"Action scenes must advance a concrete subject action, not waiting, approaching alone, posing or camera motion. A single near-ending product-detail shot may hold the original printed artwork long enough to read before a distinct final CTA. "
-		"Perform gestures promptly in real time. Each action shot needs sequential visible actions within one coherent interaction; never a whole shot of noticing/looking. Only the advertised product or its material performs its function, never the actor body or an unrelated prop. "
-		"Propose positive relative scene durations and explicit chronological timed Action phases starting at zero, with no gaps. The application allocates exact frames to the requested total and rescales your phase timings. "
-		"Use the fewest purposeful scenes that fit the workflow's frame capacity. Add a cut only for a new physical action, product detail or distinct CTA; do not pad the film with looking, posing or repeated package holds. "
-		"Use bracketed start-end seconds for each phase. Choose timing from the actual action; do not reuse one equal-duration timing pattern throughout the film. "
-		"Allocate most runtime to distinct visible product interactions. Result inspection and final presentation must not become repeated long looking/nodding/holding scenes; combine a brief reaction with a tangible action and use one concise ending. "
-		"Only supplied actors may appear in prose AND cast: no humans when only a mascot is supplied. Choose the best supplied view key for each scene in cast/products, one view per identity. Gallery views are alternatives of one identity, never additional cast. "
-		"Reference observations supply action rhythms, never additional actors, products, claims or sounds. "
-		"Avoid applicable problems in unresolved feedback; historical scene numbers are not instructions to reuse an old story, and script writing never resolves feedback. Only state supplied approved claims. Ordinary props and a coherent location may be invented, but name them before use. "
-		"This is a product advertisement: give the real product or its directly handled material clear close coverage at acquisition, use and final presentation. Vary adjacent shot sizes with purpose; preserve the action axis; show printed product details in a stable readable view and clearly at the end. "
-		"Keep a mascot's weight on an established support surface; without an explicit supporting pose reference, stage it on the floor rather than sitting on a table or floating behind furniture. Do not translate or invent words printed on the product in Action; the image reference controls exact package print. "
-		"Classify each narrative_stage by its dominant job, not all establish. Use short purposeful beats, "
-		"allocate time to visible actions, and end promptly after the final branded composition reads. "
-		"Camera behavior is derived later from semantic stage/framing: do not put camera moves in Action. "
-		"Use layered depth, shaped directional lighting, material texture and a deliberate palette. "
-		"Music must name instrumentation, mood, tempo and cue changes aligned with story beats, ending with a resolved cadence. Sounds must link to visible actions. "
-		"Preserve explicit format/duration. If absent, propose suitable ones with rationale, never default to reels. "
-		"Return the complete schema with 2–12 scenes, totaling at most sixty seconds. "
-		"Keep visual/continuity/state fields concise; scene voiceover may be empty. "
-		"Generate a different premise/action chain from prior concepts.\nCONSTRAINTS: "
-		+ json.dumps(constraints, ensure_ascii=False)
+		"Write an ORIGINAL product commercial screenplay. "
+		+ (
+			"Follow the CLIENT EXAMPLE SCRIPTS for structure, pacing, tone, voice-over and on-screen text style (hook, problem, product use, benefit, packshot with CTA), but invent a new premise; never copy their story, products or cast. "
+			if examples.get("examples")
+			else "Use a classic structure: hook, problem, product use, benefit, packshot with CTA. "
+		)
+		+ "Write every field in English (examples may be in another language; never copy their wording). "
+		+ (
+			f"voice_over and on_screen_text (including the CTA) will be translated into {viewer_language} for the viewers: keep them short. "
+			if viewer_language != "English"
+			else ""
+		)
+		+ SHOT_GUIDE
+		+ " "
+		"RULES: "
+		"1) Use roster keys only in cast and products; in prose describe subjects visually (e.g. 'the bear mascot'), never by key. Each identity is exactly ONE subject; its view keys are alternative poses, never additional characters. Choose the supplied pose that supports the action and keep one view per identity in a scene. Only roster actors appear in prose and cast (example scripts' characters do not exist here); no human or hand unless a Person is supplied. "
+		"2) Every shot that shows the hero product uses the same roster product; never change its package, colour, print or construction. Do not translate or invent printed words. Once a consumable piece has been physically removed, a close action shot of only that detached piece and the actor may leave products empty so the image generator does not introduce a second container. Keep the product reference in any shot where the package or hero object is actually visible, especially the opening and final packshot. "
+		"3) The supplied characters are the protagonists who perform the product actions. Open on a visible event already happening. Each non-final scene completes ONE tangible interaction (grip, take out, open, press, place, carry, apply...) with a visible result; combine reach and grab in one scene; no scene of only looking, posing or walking. "
+		"4) Prerequisites first: take an item out before using it; used material never returns to the pack; objects keep their state across cuts. "
+		"5) "
+		+ effect_rule
+		+ "6) Each scene is ONE continuous shot in ONE place: no split screens, montages or location changes inside a scene. A character keeps its weight on a support (floor or seat); one place keeps one identical description. "
+		"7) The last scene is a stable product packshot with readable original print and the CTA from mandatories. For a static hero view, leave cast empty and place the original product on a real supporting surface so source artwork can remain exact; include a supplied actor in the closing shot only when that actor performs a meaningful visible product action. The on_screen_text field is only for an added viewer-facing overlay/CTA; do not transcribe or translate the physical package's logo, specifications or printed copy into that field. Source artwork owns those printed details. "
+		"8) action is timed phases '[0-1.5s] ...' from 0 to the scene end, no gaps and no camera words. visual_camera is the opening composition only: a state one still picture can show. Preserve any grip, material location and support established by the preceding scene; never reset a carried product onto a table without placement. A new acquisition begins before its first contact, while an ongoing use begins in its retained state. Broad shots establish connected anatomy and support. Product close-ups show the focal material, original limb shape and contact area; the rest of the body may remain naturally outside the frame. Vary coverage with purpose. "
+		"9) State only approved_claims from this product's brief; example scripts supply style, never product facts, certifications or performance claims. Sounds follow visible actions. Music must name concrete instruments, tempo and arrangement changes tied to visible beats, with a resolved ending; 'lively music' alone is insufficient. "
+		"10) Give action scenes chronological beats completing one interaction and show each demonstration once. Choose scene count and phase timings from the requested duration, visible action and workflow frame capacity. Open with a supplied subject already completing a tangible product interaction; a camera moving toward a static product is not an action hook. Do not spend the hook on noticing, walking or waiting. Never pad with filler. Scene durations are relative weights. Write a different premise from PRIOR CONCEPTS. "
+		"Historical failure patterns are warnings from older renders: avoid the same failure only if its action or object appears in this new concept. They do not authorize copying old scenes, props, claims or actors. "
+		"Preserve explicit format/duration; if absent, propose them with a reason.\nCONSTRAINTS: "
+		+ json.dumps({k: v for k, v in constraints.items() if k != "example_voice_lines"}, ensure_ascii=False)
 		+ "\nREFERENCE KEY ROSTER: "
 		+ json.dumps(roster, ensure_ascii=False)
-		+ "\nSAMPLED ACTION OBSERVATIONS: "
-		+ json.dumps(observations, ensure_ascii=False)
+		+ (
+			"\nSAMPLED ACTION OBSERVATIONS: " + json.dumps(observations, ensure_ascii=False)
+			if observations
+			else ""
+		)
+		+ (
+			"\nCLIENT EXAMPLE SCRIPTS: " + json.dumps(examples["examples"], ensure_ascii=False)
+			if examples.get("examples")
+			else ""
+		)
 		+ "\nPRIOR CONCEPTS: "
 		+ json.dumps(list(previous), ensure_ascii=False)
 		+ "\nVARIATION ID: "
 		+ nonce
 	)
+	schema = script_schema(inventory, constraints)
+	schema["properties"]["product_name"] = {
+		"type": "string",
+		"minLength": 1,
+		"description": "Full product name with its specification, as printed or labelled.",
+	}
+	schema["properties"]["key_message"] = {
+		"type": "string",
+		"minLength": 1,
+		"description": "The one sentence viewers must remember.",
+	}
+	schema["properties"]["audience"] = {
+		"type": "string",
+		"minLength": 1,
+		"description": "Who the film is for.",
+	}
+	schema["required"] = [*schema["required"], "product_name", "key_message", "audience"]
 
-	error, latest_script = "", None
+	def finish(script, findings, advisory, wording, attempts):
+		blocking = [row for row in findings["issues"] if row["category"] != "production_detail"]
+		for row in findings["issues"]:
+			if row.get("text_cross_check") or row["category"] != "production_detail":
+				# A retracted omission is already covered by the action sequence;
+				# repeating its requested action would introduce duplicate use.
+				continue
+			scene = script["scenes"][row["scene"] - 1]
+			scene["continuity_rules"] += "\nProduction direction: " + row["instruction"]
+		script = validate_script(script, inventory, constraints, [])
+		script["camera_adjustments"] = direct_camera(script["scenes"], camera_grammar)
+		script["action_review"] = findings
+		script["director_notes"] = advisory + [
+			f"Scene {row['scene']}: {row['instruction']}" for row in blocking
+		]
+		script["writer_attempts"] = attempts
+		script["wording_adjustments"] = wording
+		if claims:
+			script["claims"] = constraints["approved_claims"]
+		if viewer_language != "English":
+			script = localize_viewer_text(
+				script, viewer_language, examples=examples.get("screen_lines") or ()
+			)
+			validate_script(script, inventory, {**constraints, "language": viewer_language}, [])
+		if require_clean and script.get("director_notes"):
+			_save_rejected_drafts(
+				project,
+				nonce,
+				[*rejected, {"attempt": attempts, "script": script, "findings": script["director_notes"]}],
+			)
+			raise ValueError(
+				"Automatic screenplay still has unresolved director or translation findings; inspect the saved draft evidence before rendering."
+			)
+		return script
+
+	error, latest_script, rejected, rewrite_budget = "", None, [], 5 if require_clean else 2
+	best_valid = None
+	if revision:
+		# A reviewer's notes on an earlier script: edit that script, starting from the repair path.
+		latest_script = {
+			k: v for k, v in revision["script"].items() if k not in {"action_review", "director_notes"}
+		}
+		error = (
+			"\nREVIEWER NOTES (apply every note; change only the scenes they name and copy every other scene unchanged): "
+			+ json.dumps(revision["notes"], ensure_ascii=False)
+		)
 	for _attempt in range(6):
 		if _attempt == 3:
 			# Repairs to an invalid causal premise often preserve the same bad action
@@ -409,7 +780,7 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 			# writer to invent another story from a detached list of action quotes.
 			request_prompt = (
 				"Edit the supplied complete screenplay to fix the quoted defects. Keep its premise, "
-				"identities, format and duration; replace any filler shot entirely when needed, "
+				"identities, format, duration and languages; replace any filler shot entirely when needed, "
 				"and change its dependent "
 				"opening/continuity/result text. Preserve chronological prerequisites across scenes. "
 				"A later result must not be inserted into an earlier scene before acquisition/contact. "
@@ -418,7 +789,12 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 				+ json.dumps(roster, ensure_ascii=False)
 				+ "\nCONSTRAINTS: "
 				+ json.dumps(
-					{k: v for k, v in constraints.items() if k != "unresolved_feedback"}, ensure_ascii=False
+					{
+						k: v
+						for k, v in constraints.items()
+						if k not in {"unresolved_feedback", "example_voice_lines"}
+					},
+					ensure_ascii=False,
 				)
 				+ "\nLATEST SCREENPLAY: "
 				+ json.dumps(
@@ -427,46 +803,75 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 				+ "\nDEFECTS TO REPAIR: "
 				+ error
 			)
-		result = _ask_planner(
-			request_prompt,
-			system="You write complete multi-scene commercial scripts from visual product references. Return only the requested JSON, using exact enum values and reference keys. The primary user direction takes precedence over motion observations, which are examples rather than a required story.\nPRIMARY USER DIRECTION: "
-			+ constraints["creative_direction"]
-			+ "\nINVARIANTS FOR ORIGINAL WRITING AND EVERY REPAIR: "
-			+ CREATIVE_INVARIANTS,
-			sampling_profile="creative_script_repair" if latest_script is not None else "creative_script",
-			capability="writer",
-			response_schema=script_schema(inventory, constraints),
-		)
 		try:
+			result = _ask_planner(
+				request_prompt,
+				system="You write complete multi-scene commercial scripts from visual product references. Return only the requested JSON, using exact enum values and reference keys. The primary user direction takes precedence over examples and motion observations.\nPRIMARY USER DIRECTION: "
+				+ constraints["creative_direction"]
+				+ "\nINVARIANTS FOR ORIGINAL WRITING AND EVERY REPAIR: "
+				+ CREATIVE_INVARIANTS,
+				sampling_profile="creative_script_repair" if latest_script is not None else "creative_script",
+				capability="writer",
+				response_schema=schema,
+			)
+		except (frappe.ValidationError, ValueError) as exc:
+			if best_valid is None:
+				raise
+			rejected.append({"attempt": _attempt + 1, "error": str(exc)})
+			break
+		try:
+			if revision:
+				result = _keep_unnoted_scenes(result, revision)
 			script = fit_generated_timing(
 				result, constraints["duration_seconds"], fps, max_scene_frames=constraints["max_scene_frames"]
+			)
+			wording = (
+				english_production_text(script, viewer_language)
+				+ normalize_product_wording(script, inventory)
+				+ normalize_product_camera_inserts(script)
+				+ fresh_example_copies(script, constraints)
 			)
 			# Keep the complete proposal for repair even when semantic validation
 			# rejects it; detached error messages otherwise recreate the same defect.
 			latest_script = script
-			script = validate_script(script, inventory, constraints)
+			advisory = []
+			script = validate_script(script, inventory, constraints, advisory)
 			latest_script = script
-			findings = review_script_actions(
-				script,
-				roster,
-				constraints["unresolved_feedback"],
-				{
-					k: constraints[k]
-					for k in (
-						"approved_claims",
-						"avoid",
-						"mandatories",
-						"camera_reference_notes",
-						"creative_direction",
-						"action_reference_observations",
-					)
-				},
-			)
+			try:
+				findings = review_script_actions(
+					script,
+					roster,
+					constraints["unresolved_feedback"],
+					{
+						k: constraints[k]
+						for k in (
+							"approved_claims",
+							"approved_claims_english",
+							"avoid",
+							"mandatories",
+							"camera_reference_notes",
+							"creative_direction",
+							"action_reference_observations",
+							"historical_failure_patterns",
+						)
+					},
+				)
+			except ValueError as exc:
+				# The reviewer failing its own quoting protocol is not a script defect.
+				findings = {"coverage": [], "issues": []}
+				advisory.append("Automatic text review could not run: " + str(exc)[:200])
 			blocking = [row for row in findings["issues"] if row["category"] != "production_detail"]
-			if blocking:
+			score = len(blocking) + len(advisory)
+			if best_valid is None or score < best_valid[0]:
+				best_valid = (score, copy.deepcopy((script, findings, advisory, wording)))
+			# The last attempt never discards a valid script over review findings:
+			# they become notes for the human review instead.
+			if (blocking or advisory) and rewrite_budget and _attempt < 5:
+				rewrite_budget -= 1
+				rejected.append({"attempt": _attempt + 1, "script": script, "findings": advisory + blocking})
 				error = (
 					"\nRevise the complete script to fix these grounded issues in the LATEST draft: "
-					+ json.dumps(findings["issues"], ensure_ascii=False)
+					+ json.dumps(advisory + findings["issues"], ensure_ascii=False)
 					+ "\nREJECTED ACTION CHAIN: "
 					+ json.dumps(
 						[{k: scene[k] for k in ("duration_seconds", "action")} for scene in script["scenes"]],
@@ -474,27 +879,461 @@ def draft_script(project, *, nonce, previous=(), review_notes=()):
 					)
 				)
 				continue
-			for row in findings["issues"]:
-				if row.get("text_cross_check"):
-					# A retracted omission is already covered by the action sequence;
-					# repeating its requested action would introduce duplicate use.
-					continue
-				scene = script["scenes"][row["scene"] - 1]
-				scene["continuity_rules"] += "\nProduction direction: " + row["instruction"]
-			script = validate_script(script, inventory, constraints)
-			script["action_review"] = findings
-			return script
+			if require_clean and (blocking or advisory):
+				rejected.append({"attempt": _attempt + 1, "script": script, "findings": advisory + blocking})
+				continue
+			return finish(script, findings, advisory, wording, _attempt + 1)
 
 		except ValueError as exc:
+			rejected.append({"attempt": _attempt + 1, "script": latest_script, "error": str(exc)})
 			error += (
 				f"\nRepair attempt {_attempt + 1}; return the complete script, correcting ALL accumulated errors: "
 				+ str(exc)
 			)
+	_save_rejected_drafts(project, nonce, rejected)
+	if require_clean and best_valid is not None:
+		raise ValueError(
+			"Automatic screenplay still has unresolved causal, claim or director findings after bounded repair; "
+			"inspect the saved draft evidence before rendering."
+		)
+	if best_valid is not None:
+		script, findings, advisory, wording = best_valid[1]
+		script["writer_fallback"] = {
+			"reason": "Later optional rewrites failed structural validation; retained the best structurally valid draft.",
+			"quality_review": "deferred",
+		}
+		return finish(script, findings, advisory, wording, _attempt + 1)
 	raise ValueError("Automatic script remained invalid after bounded repair: " + error)
 
 
-def validate_script(script, inventory, constraints):
+def translate_lines(source, language, *, attempts=2, examples=(), keep=frozenset(), check=None):
+	"""Faithfully translate a list of lines with the translator capability (same order and count)."""
+	from joymedia.services.planning.production import _ask_planner
+
+	schema = {
+		"type": "object",
+		"properties": {
+			"lines": {
+				"type": "array",
+				"items": {"type": "string", "minLength": 1},
+				"minItems": len(source),
+				"maxItems": len(source),
+			}
+		},
+		"required": ["lines"],
+		"additionalProperties": False,
+	}
+	best = None
+	for attempt in range(attempts):
+		names = (
+			"Keep the brand name; describe the product in English (e.g. its type, sheet count and ply)"
+			if language == "English"
+			else "Keep brand and product names"
+		)
+		result = _ask_planner(
+			f"Translate each line into natural {language}. {names}, numbers and meaning exactly; "
+			"keep each line as short as the original; do not add claims. "
+			f"Return the lines in the same order.{' Every word must be ' + language + ' except the brand name.' if attempt else ''}"
+			+ (
+				"\nSTYLE OF THE CLIENT'S OWN ON-SCREEN TEXT: "
+				+ json.dumps(list(examples)[:12], ensure_ascii=False)
+				if examples
+				else ""
+			)
+			+ "\nLINES: "
+			+ json.dumps(source, ensure_ascii=False),
+			system="You translate faithfully. Return only the requested JSON.",
+			capability="translator",
+			sampling_profile="scene_translation",
+			response_schema=schema,
+		)
+		translated = result.get("lines") if isinstance(result, dict) else None
+		if (
+			isinstance(translated, list)
+			and len(translated) == len(source)
+			and all(isinstance(t, str) and t.strip() for t in translated)
+		):
+			best = [t.strip() for t in translated]
+			# The language check is a heuristic: it earns a stricter retry, never a failure.
+			if check is None or all(check(s, t) for s, t in zip(source, best, strict=True)):
+				return best
+	if best is not None:
+		return best
+	raise ValueError(f"The text could not be translated into {language}.")
+
+
+def fresh_example_copies(script, constraints):
+	"""Rewrite only the voice-over/on-screen lines copied verbatim from the client's examples.
+
+	The examples teach tone; a copied line is a local defect, so it gets a line-level
+	rewrite instead of a whole new script attempt.
+	"""
+	from joymedia.services.planning.production import _ask_planner
+
+	examples = set(constraints.get("example_voice_lines") or [])
+	targets, seen = [], set()
+	for scene in script["scenes"]:
+		for field in ("voice_over", "on_screen_text"):
+			line = _plain(scene.get(field))
+			# A copied example line, or a line already used by an earlier scene.
+			if line and (line in examples or (field, line) in seen):
+				targets.append((scene, field))
+			seen.add((field, line))
+	if not targets:
+		return []
+	source = [scene[field] for scene, field in targets]
+	schema = {
+		"type": "object",
+		"properties": {
+			"lines": {
+				"type": "array",
+				"items": {"type": "string", "minLength": 1},
+				"minItems": len(source),
+				"maxItems": len(source),
+			}
+		},
+		"required": ["lines"],
+		"additionalProperties": False,
+	}
+	for _attempt in range(2):
+		result = _ask_planner(
+			"These lines were copied from another commercial or repeat an earlier scene. Write a new line for each with the same purpose, "
+			"language and length, for this product only; no wording reused from the original. "
+			f"PRODUCT: {script.get('product_name') or ''}\nKEY MESSAGE: {script.get('key_message') or ''}"
+			"\nLINES: " + json.dumps(source, ensure_ascii=False),
+			system="You write short commercial copy. Return only the requested JSON.",
+			capability="writer",
+			sampling_profile="creative_script_repair",
+			response_schema=schema,
+		)
+		lines = result.get("lines") if isinstance(result, dict) else None
+		if (
+			isinstance(lines, list)
+			and len(lines) == len(source)
+			and all(isinstance(t, str) and t.strip() and _plain(t) not in examples for t in lines)
+			and len({_plain(t) for t in lines}) == len(lines)
+		):
+			for (scene, field), text in zip(targets, lines, strict=True):
+				scene[field] = text.strip()
+			return [f"Rewrote {len(targets)} copied or repeated line(s)."]
+	return []
+
+
+def english_production_text(script, viewer_language="English"):
+	"""Translate non-English production text (the writer imitating foreign examples) into English.
+
+	Production prompts are English; this is translation of external language, not
+	a rewrite, so it costs no writer attempt.
+	"""
+	fields = (
+		"beat_name",
+		"visual_camera",
+		"action",
+		"visible_change",
+		"place",
+		"continuity_rules",
+	)
+	# Viewer lines are English here too when the viewers are English; otherwise the
+	# viewer translation pass handles them.
+	fields += VIEWER_FIELDS if viewer_language == "English" else ()
+	targets = [(scene, f) for scene in script["scenes"] for f in fields if _foreign(scene.get(f))]
+	targets += [(script, f) for f in ("visual_style", "music") if _foreign(script.get(f))]
+	if not targets:
+		return []
+	lines = translate_lines(
+		[holder[f] for holder, f in targets], "English", check=lambda s, t: not _foreign(t)
+	)
+	for (holder, field), text in zip(targets, lines, strict=True):
+		holder[field] = text
+	return [f"Translated {len(targets)} production field(s) into English."]
+
+
+# One Vietnamese syllable written without tone marks ("MUA NGAY", "NHANH"); English words rarely fit.
+VIETNAMESE_SYLLABLE = re.compile(
+	r"(?:ngh|ng|nh|ch|gh|gi|kh|ph|qu|th|tr|[bcdghklmnpqrstvx])?[aeiouy]{1,3}(?:ch|ng|nh|[cmnpt])?", re.I
+)
+
+
+def _untranslated(source, text, keep, language=None):
+	"""English words of 4+ letters copied unchanged, other than brand/product names."""
+	words = {w.lower() for w in re.findall(r"[A-Za-z]{4,}", source)} - keep
+	if language == "Vietnamese":
+		# Four-letter brand/design loanwords overlap Vietnamese copy; longer
+		# untranslated source words still trigger a second translator attempt.
+		words = {w for w in words if len(w) >= 5 and not VIETNAMESE_SYLLABLE.fullmatch(w)}
+	return {w for w in re.findall(r"[A-Za-z]{4,}", text) if w.lower() in words}
+
+
+def localize_viewer_text(script, language, attempts=2, examples=()):
+	"""Translate what viewers see or hear (voice-over, on-screen text, CTA), faithfully.
+
+	Writing the whole script in one language and translating only these lines is
+	far more reliable than asking the writer to mix languages. English originals
+	are kept for the reviewer.
+	"""
+
+	lines = [
+		(scene, field)
+		for scene in script["scenes"]
+		for field in VIEWER_FIELDS
+		if str(scene.get(field) or "").strip()
+	]
+	if not lines:
+		return script
+	source = [scene[field] for scene, field in lines]
+	keep = {
+		w.lower()
+		for w in re.findall(
+			r"[A-Za-z]{4,}", " ".join([script.get("product_name") or "", script.get("title") or ""])
+		)
+		if w[0].isupper()
+	}
+
+	def check(s, t):
+		return len(ENGLISH_WORDS.findall(t)) < 2 and not _untranslated(s, t, keep, language)
+
+	translated = translate_lines(source, language, attempts=attempts, examples=examples, check=check)
+	script["viewer_text_source"] = {"language": "English", "lines": source}
+	for (scene, field), text in zip(lines, translated, strict=True):
+		scene[field] = text
+	doubtful = [t for s, t in zip(source, translated, strict=True) if not check(s, t)]
+	if doubtful:
+		script.setdefault("director_notes", []).append(
+			f"Check that this on-screen text reads naturally in {language}: " + " | ".join(doubtful)
+		)
+	return script
+
+
+CAMERA_ROTATION = [
+	"dolly_in",
+	"truck_right",
+	"pedestal_up",
+	"pan_left",
+	"tilt_up",
+	"dolly_out",
+	"truck_left",
+	"pan_right",
+]
+
+
+def normalize_product_camera_inserts(script):
+	"""Separate an AI camera-only packshot from its unchanged product state.
+
+	This applies only when no actor is cast and every phase describes the camera.
+	It cannot replace a requested interaction or silently remove actor actions.
+	"""
+	changes = []
+	for index, scene in enumerate(script["scenes"], 1):
+		phases = read_timed_actions(scene.get("action"), scene.get("duration_seconds"))
+		if scene.get("cast") or not scene.get("products") or not phases:
+			continue
+		if not all(re.match(r"^(?:the\s+)?camera\b", phase["action"].strip(), re.I) for phase in phases):
+			continue
+		for phase in phases:
+			phase["action"] = (
+				"The original product stays in its opening position with unchanged visible artwork and support."
+			)
+		scene["action"] = "\n".join(
+			f"[{phase['start']:.9f}-{phase['end']:.9f}s] {phase['action']}" for phase in phases
+		)
+		scene["visible_change"] = (
+			"The original product remains in its declared position; its printed artwork is unchanged."
+		)
+		changes.append(
+			f"Scene {index}: kept the product-only insert still; camera direction remains in camera_move."
+		)
+	return changes
+
+
+PRODUCT_CONTAINER_WORDS = re.compile(r"\b(?:tissue\s+)?(box|boxes|carton|cartons)\b", re.I)
+
+
+def normalize_product_wording(script, inventory):
+	"""Call a flexible product a pack: a deterministic wording fix, not a rewrite.
+
+	Invented lids, films or seals still go back to the writer (validate_script).
+	"""
+	changes = []
+	label = r"^\s*(?:cta|call to action|on-screen text|text|vo|v\.o\.|voice[- ]?over|narrator|lời thoại)\s*[:\-–]\s*"
+	for index, scene in enumerate(script["scenes"], 1):
+		for field in VIEWER_FIELDS:
+			text = scene.get(field) or ""
+			bare = re.sub(label, "", text, flags=re.I)
+			if bare != text:
+				scene[field] = bare
+				changes.append(f"Scene {index} {field}: removed the label from the viewer-facing text.")
+	nouns = {
+		"Character": "the character",
+		"Person": "the person",
+		"Product": "the product",
+		"Logo": "the logo",
+	}
+	keys = {
+		view.get("key", item["key"]): nouns.get(item["role"], "it")
+		for item in inventory
+		for view in item.get("views") or [{"key": item["key"]}]
+		if re.search(r"[_\d]", view.get("key", item["key"]))
+	}
+	for index, scene in enumerate(script["scenes"], 1):
+		for field in ("visual_camera", "action", "visible_change", "continuity_rules", "voice_over"):
+			text = scene.get(field) or ""
+			for key, noun in keys.items():
+				text = re.sub(rf"(?<![\w])(?:the\s+)?{re.escape(key)}(?![\w])", noun, text, flags=re.I)
+			if text != (scene.get(field) or ""):
+				scene[field] = text
+				changes.append(f"Scene {index} {field}: described subjects instead of naming reference keys.")
+	style = script.get("visual_style") or ""
+	if STYLE_SUBJECT.search(style):
+		kept = [part for part in re.split(r"(?<=[,.;])\s+", style) if not STYLE_SUBJECT.search(part)]
+		script["visual_style"] = (
+			" ".join(kept).strip(" ,;") or "Soft directional lighting with a coherent palette."
+		)
+		changes.append("visual_style: removed subjects; style describes art direction only.")
+	flexible = any(
+		item["role"] == "Product"
+		and any(
+			"construction: flexible" in str(v.get("description") or "").lower()
+			for v in item.get("views") or []
+		)
+		for item in inventory
+	)
+	if not flexible:
+		return changes
+	for index, scene in enumerate(script["scenes"], 1):
+		for field in ("visual_camera", "action", "visible_change", "continuity_rules"):
+			text = scene.get(field) or ""
+			fixed = PRODUCT_CONTAINER_WORDS.sub(
+				lambda m: "packs" if m.group(1).lower().endswith("s") else "pack", text
+			)
+			if fixed != text:
+				scene[field] = fixed
+				changes.append(f"Scene {index} {field}: called the flexible product a pack.")
+	return changes
+
+
+def vary_against_neighbours(scenes, index):
+	"""Change only this scene's move when it repeats a neighbour or makes two statics in a row."""
+	scene = scenes[index]
+	if scene_motion(scene) in {"contact", "locomotion"}:
+		return []
+	neighbours = [scenes[i] for i in (index - 1, index + 1) if 0 <= i < len(scenes)]
+
+	def coverage(s):
+		return (s.get("shot_framing"), s.get("shot_angle"), s.get("camera_move", "static"))
+
+	move = scene.get("camera_move", "static")
+	if not any(
+		coverage(n) == coverage(scene) or (move == "static" == n.get("camera_move", "static"))
+		for n in neighbours
+	):
+		return []
+	taken = {n.get("camera_move", "static") for n in neighbours}
+	scene["camera_move"] = next(m for m in CAMERA_ROTATION if m not in taken)
+	return [f"Scene {index + 1}: camera_move {move} -> {scene['camera_move']} (vary against its neighbours)."]
+
+
+# A paw or hand working on the product: the camera holds still so contact stays readable.
+CONTACT_ACTION = re.compile(
+	r"\b(?:pull|extract|wipe|dab|blot|press|open|unfold|fold|grip|pick|lift|place|touch|tear|rub|hand|put|set|take)"
+	r"(?:s|es|ed|ing)?\b",
+	re.I,
+)
+
+
+def scene_motion(scene):
+	"""What the subject does in the scene, which decides how the camera may move."""
+	action, cast = scene.get("action") or "", scene.get("cast") or []
+	if cast and (scene.get("subject_motion") == "locomotion" or LOCOMOTION.search(action)):
+		return "locomotion"
+	if cast and (scene.get("subject_motion") == "manipulation" or CONTACT_ACTION.search(action)):
+		return "contact"
+	if scene.get("products") and not cast:
+		return "detail"
+	return "other"
+
+
+def direct_camera(scenes, grammar=None):
+	"""Apply reference preferences by narrative job, with physical action first.
+
+	An opening is not automatically an orbit and a CTA is not automatically a
+	pull-back. Valid director choices survive unless precise contact or subject
+	travel needs stable/following coverage. This applies to every product.
+	"""
+	changes = []
+	preferences = (grammar or {}).get("moves") or {}
+	move_for = {behavior: move for move, behavior in MOVE_BEHAVIOR.items()}
+
+	def change(index, value, reason):
+		old = scenes[index].get("camera_move")
+		if old != value:
+			changes.append(f"Scene {index + 1}: camera_move {old or 'unset'} -> {value} ({reason}).")
+			scenes[index]["camera_move"] = value
+
+	for index, scene in enumerate(scenes):
+		motion = scene_motion(scene)
+		if motion == "contact":
+			change(index, "static", "keep physical contact readable")
+		elif motion == "locomotion":
+			change(index, "tracking", "follow subject travel")
+		else:
+			preference = preferences.get(scene.get("narrative_stage"), {})
+			move = move_for.get(preference.get("behavior"))
+			if move:
+				change(index, move, "the supplied reference grammar for this narrative job")
+			elif scene.get("camera_move") not in CAMERA_MOVES:
+				change(index, "dolly_in" if motion == "detail" else "static", "fill a missing camera choice")
+	return changes
+
+
+def _keep_unnoted_scenes(result, revision):
+	"""Reviewer notes on named scenes change only those scenes.
+
+	Every other scene is copied verbatim from the reviewed script, so an approved
+	scene never changes behind the reviewer's back. A whole-script note (no scene
+	number) or a changed scene count leaves the rewrite as written.
+	"""
+	import copy
+
+	noted = {n.get("scene") for n in revision["notes"]}
+	old = revision["script"].get("scenes") or []
+	if None in noted or not isinstance(result, dict) or len(result.get("scenes") or []) != len(old):
+		return result
+	result["scenes"] = [
+		scene if index in noted else copy.deepcopy(old[index - 1])
+		for index, scene in enumerate(result["scenes"], 1)
+	]
+	return result
+
+
+def _save_rejected_drafts(project, nonce, rejected):
+	"""Rejected drafts are private evidence for diagnosis, never an accepted script."""
+	from frappe.utils.file_manager import save_file
+
+	try:
+		save_file(
+			f"rejected-scripts-{nonce[:12]}.json",
+			json.dumps(rejected, ensure_ascii=False, indent=1, default=str).encode(),
+			"Media Project",
+			project.name,
+			is_private=1,
+		)
+		# The caller rolls back on the failure that follows; the evidence must survive it.
+		frappe.db.commit()
+	except Exception:
+		frappe.log_error(title="Could not keep rejected script drafts")
+
+
+def validate_script(script, inventory, constraints, advisory=None):
+	"""Structural errors always raise. Pass a list as `advisory` to collect the
+	heuristic story findings (idle beats, unanchored effects) instead of raising;
+	they then go to the human script review rather than stopping the batch."""
 	from joymedia.services.project.formats import parse_ratio
+
+	def heuristic(message):
+		if advisory is None:
+			raise ValueError(message)
+		if message not in advisory:
+			advisory.append(message)
 
 	if (
 		not isinstance(script, dict)
@@ -505,6 +1344,16 @@ def validate_script(script, inventory, constraints):
 	for key in ("title", "logline", "format", "format_reason", "visual_style", "music"):
 		if not isinstance(script.get(key), str) or not script[key].strip() or len(script[key]) > 1200:
 			raise ValueError("Script requires concise " + key + ".")
+	for key in ("visual_style", "music"):
+		# Both feed model prompts (pictures, music) and must be English.
+		if VIETNAMESE.search(script[key]):
+			raise ValueError(f"Write {key} in English; it is a production prompt, not viewer text.")
+	if STYLE_SUBJECT.search(script["visual_style"]):
+		raise ValueError(
+			"visual_style is art direction only (rendering, lighting, palette, material, mood); remove the subjects it names, such as "
+			+ ", ".join(sorted({m.lower() for m in STYLE_SUBJECT.findall(script["visual_style"])}))
+			+ "."
+		)
 	if not parse_ratio(script["format"]):
 		raise ValueError("Script format must be an aspect ratio.")
 	if constraints.get("aspect_ratio") and parse_ratio(script["format"]) != parse_ratio(
@@ -527,31 +1376,141 @@ def validate_script(script, inventory, constraints):
 		for field in ("beat_name", "visual_camera", "action", "visible_change", "place", "continuity_rules"):
 			if not isinstance(scene.get(field), str) or not scene[field].strip() or len(scene[field]) > 2400:
 				raise ValueError("Every scene requires " + field + ".")
+		# Everything is English except what viewers see or hear (voice-over,
+		# on-screen text and CTA), which uses the viewers' language.
+		viewer = VIEWER_FIELDS
+		english = constraints.get("language", "English") == "English"
+		# Before translation, on-screen text may already be in the viewers' language.
+		checked_viewer = (
+			viewer if english and constraints.get("viewer_language", "English") == "English" else ()
+		)
+		for field in (
+			"beat_name",
+			"visual_camera",
+			"action",
+			"visible_change",
+			"place",
+			*checked_viewer,
+		):
+			if _foreign(scene.get(field)):
+				raise ValueError(f"Scene {scene_index + 1} {field} must be written in English.")
+		if not english:
+			for field in viewer:
+				if len(ENGLISH_WORDS.findall(scene.get(field) or "")) >= 2:
+					raise ValueError(
+						f"Scene {scene_index + 1} {field} must be written in {constraints['language']}, the viewers' language."
+					)
+		flexible = any(
+			item["role"] == "Product"
+			and any(
+				"construction: flexible" in str(view.get("description") or "").lower()
+				for view in item.get("views") or []
+			)
+			and any(
+				reference_options.get(key, {}).get("identity") == (item.get("identity") or item["key"])
+				for key in scene.get("products") or []
+			)
+			for item in inventory
+		)
+		wrong = (
+			sorted(
+				{
+					m.lower()
+					for field in ("visual_camera", "action", "visible_change")
+					for m in RIGID_CONTAINER.findall(scene.get(field) or "")
+				}
+			)
+			if flexible
+			else []
+		)
+		if wrong:
+			raise ValueError(
+				f"Scene {scene_index + 1} treats the flexible pack as a rigid container ({', '.join(wrong)}); call it a pack and use only its real opening, without invented lids, films or seals."
+			)
+		if STATE_RESET.search(scene["action"]):
+			raise ValueError(
+				f"Scene {scene_index + 1} puts used material back into its container; used items stay out (set aside or discarded) and the story moves forward."
+			)
+		if EDITORIAL_TEXT.search(scene["action"]):
+			raise ValueError(
+				f"Scene {scene_index + 1} puts editing text in action; write it in on_screen_text and give the scene a visible action or a stable product view."
+			)
+		named = sorted(
+			key
+			for key in reference_options
+			if re.search(r"[_\d]", key)
+			and any(
+				re.search(rf"(?<![\w]){re.escape(key)}(?![\w])", scene.get(field) or "", re.I)
+				for field in ("visual_camera", "action", "visible_change", "continuity_rules", "voice_over")
+			)
+		)
+		if named:
+			raise ValueError(
+				f"Scene {scene_index + 1} names subjects by reference keys ({', '.join(named)}); keys belong only in cast/products. Describe them visually in prose, for example 'the bear mascot' or 'the tissue pack'."
+			)
+		if MONTAGE.search(scene["action"]):
+			raise ValueError(
+				f"Scene {scene_index + 1} packs a montage into one shot; give each place or situation its own scene, or keep one continuous action."
+			)
 		scene["action"] = normalize_action_separators(scene["action"])
 		phases = read_timed_actions(scene["action"], duration)
 		if phases is None:
-			raise ValueError("Use explicit chronological timed action phases, not camera-only prose.")
+			raise ValueError(
+				"Use explicit chronological timed action phases for a visible subject/product event. "
+				"A camera move belongs in camera direction and cannot replace the shot's physical action."
+			)
 		from joymedia.services.planning.camera import without_camera
 
-		if any(without_camera(phase["action"]).strip() != phase["action"].strip() for phase in phases):
-			raise ValueError("Move camera movement out of Action; describe only the subject's visible state or action in each timed phase.")
+		cleaned = [without_camera(phase["action"]).strip() for phase in phases]
+		if any(clean != phase["action"].strip() for clean, phase in zip(cleaned, phases, strict=True)):
+			if not all(cleaned):
+				raise ValueError(
+					"Move camera movement out of Action and into camera direction. Replace a camera-only "
+					"phase with the supplied subject visibly completing a product interaction; do not "
+					"merely delete camera words and leave the product static."
+				)
+			scene["action"] = "\n".join(
+				f'[{phase["start"]:g}-{phase["end"]:g}s] {clean}'
+				for phase, clean in zip(phases, cleaned, strict=True)
+			)
+			phases = read_timed_actions(scene["action"], duration)
 		if (
 			"action_reference_observations" in constraints
 			and not constraints["action_reference_observations"]
+			and not constraints.get("client_examples")
 			and UNANCHORED_PHYSICAL_EFFECT.search(scene["action"])
 		):
-			raise ValueError(
+			heuristic(
 				"A cleaning, fluid or material-stress effect needs a supplied action reference; choose a directly visible product-handling action instead."
 			)
-		if not any(item["role"] == "Person" for item in inventory) and ANONYMOUS_HUMAN.search(scene["action"]):
-			raise ValueError("An anonymous human limb or actor is not among the supplied references; use a declared visible subject or the product alone.")
-		if scene_index < 2 and PASSIVE_OPENING.search(scene["action"]) and not TANGIBLE_ACTION.search(scene["action"]):
+		stranger = None
+		if not any(item["role"] == "Person" for item in inventory):
+			stranger = ANONYMOUS_HUMAN.search(
+				scene["action"] + "\n" + (scene.get("visual_camera") or "")
+			) or (not scene.get("cast") and BODY_PART.search(scene["action"]))
+		if stranger:
 			raise ValueError(
+				f'Scene {scene_index + 1}: an anonymous human limb or actor ("{stranger.group(0)}") is not among the supplied references; cast a supplied character to perform the action, or show the product alone.'
+			)
+		if {_plain(scene.get("voice_over")), _plain(scene.get("on_screen_text"))} & set(
+			constraints.get("example_voice_lines") or []
+		):
+			raise ValueError(
+				f"Scene {scene_index + 1} copies an example script's voice-over or on-screen text; write new lines for this product."
+			)
+		if (
+			scene_index < 2
+			and PASSIVE_OPENING.search(scene["action"])
+			and not TANGIBLE_ACTION.search(scene["action"])
+		):
+			heuristic(
 				"The opening cannot consist only of looking, posing or holding; start with a visible object action or material state change."
 			)
 		for key, choices in (("shot_framing", FRAMINGS), ("shot_angle", ANGLES), ("narrative_stage", STAGES)):
 			if scene.get(key) not in choices:
 				raise ValueError("Unsupported " + key + ".")
+		if "camera_move" in scene and scene["camera_move"] not in CAMERA_MOVES:
+			raise ValueError("Unsupported camera_move.")
 		if "subject_motion" in scene and scene["subject_motion"] not in MOTIONS:
 			raise ValueError("Unsupported subject_motion.")
 		for field, allowed in (("cast", {"Character", "Person"}), ("products", {"Product"})):
@@ -570,7 +1529,24 @@ def validate_script(script, inventory, constraints):
 		for field in ("voice_over", "audio_cues", "on_screen_text"):
 			if not isinstance(scene.get(field, ""), str):
 				raise ValueError("Scene audio and text must be strings.")
-	_validate_action_progress(script["scenes"])
+	try:
+		_validate_action_progress(script["scenes"])
+	except ValueError as exc:
+		heuristic(str(exc))
+	closing = script["scenes"][-1]
+	if closing.get("products") and closing.get("cast") and not TANGIBLE_ACTION.search(closing.get("action") or ""):
+		raise ValueError(
+			"A static closing product packshot must not add an inactive actor. "
+			"Keep the final hero product on its real support with cast empty, or give the supplied actor "
+			"one meaningful completed product action in that shot."
+		)
+	conflict = _later_acquisition_conflict(script["scenes"])
+	if conflict:
+		earlier, later, item = conflict
+		raise ValueError(
+			f"Scene {earlier} uses the {item} before scene {later} obtains it from its source. "
+			"Reorder the action or explicitly establish a different already-available item."
+		)
 	if not 1 <= total <= 60 or abs(total - declared_duration) > 0.001:
 		raise ValueError(
 			f"Scene durations sum to {total:g}s, but declared total is {declared_duration:g}s. Redistribute {declared_duration - total:g}s across purposeful action scenes so the sum is exact, not a prolonged closing hold."
@@ -587,20 +1563,73 @@ def validate_script(script, inventory, constraints):
 		raise ValueError("Describe bounded, directly visible product features.")
 	if not any(scene["products"] for scene in script["scenes"]):
 		raise ValueError("The script must show the supplied product.")
+	if not script["scenes"][-1]["products"]:
+		raise ValueError("End on the product: the final scene must show the supplied product with its CTA.")
+	for index, scene in enumerate(script["scenes"], 1):
+		rules, action = scene.get("continuity_rules") or "", scene["action"]
+		stay, move = STAY_RULE.search(rules), LOCOMOTION.search(action)
+
+		def actor(text, match):
+			# The words just before the verb name who stays or moves ("Bear remains", "the bear walks").
+			return {w for w in re.findall(r"[a-z]{4,}", text[: match.start()].lower().split(".")[-1])[-3:]}
+
+		if stay and move and actor(rules, stay) & actor(action, move):
+			raise ValueError(
+				f'Scene {index}: the continuity rule "{stay.group(0)}" contradicts the action "{move.group(0)}"; make the rule and the action agree.'
+			)
+	happened = False
+	for index, scene in enumerate(script["scenes"], 1):
+		for phase in read_timed_actions(scene["action"]) or [{"action": scene["action"]}]:
+			if MESS.search(phase["action"]) and not happened and not MESS_EVENT.search(phase["action"]):
+				raise ValueError(
+					f'Scene {index} cleans a mess that never happened on camera ("{MESS.search(phase["action"]).group(0)}"); show it being made in an earlier action phase or scene first.'
+				)
+			happened = happened or bool(MESS_EVENT.search(phase["action"]))
+	for index, scene in enumerate(script["scenes"][:-1], 1):
+		if CLOSING_BEAT.search(scene.get("beat_name") or ""):
+			raise ValueError(
+				f"Scene {index} is the packshot/CTA but the film continues after it. "
+				f"Replace scene {index}'s beat name, on-screen text and action with a distinct "
+				f"product-use or detail beat; move its CTA text to final scene {len(script['scenes'])}. "
+				"The final scene alone must be named packshot/CTA and finish on the supplied product."
+			)
+	if len(script["scenes"]) > 2 and script["scenes"][-1]["duration_seconds"] > max(6.0, 0.2 * total):
+		raise ValueError(
+			f"The closing scene lasts {script['scenes'][-1]['duration_seconds']:g}s; keep the final presentation brief (at most {max(6.0, 0.2 * total):g}s) and give the time to product actions."
+		)
+	cast = {key for scene in script["scenes"] for key in scene["cast"]}
+	for item in inventory:
+		if item["role"] in {"Character", "Person"} and not any(
+			v.get("key", item["key"]) in cast for v in item.get("views") or [{"key": item["key"]}]
+		):
+			raise ValueError(
+				f"The supplied character {item['key']} never appears; make it the protagonist who performs the product actions."
+			)
 	return script
 
 
-def script_workbook(script, project):
-	"""Fill the existing downloadable template; its importer remains authoritative."""
+def script_workbook(script, project, lang="en", pictures=None):
+	"""Fill the existing downloadable template; its importer remains authoritative.
+
+	pictures: {scene number: image path}, each scene's drawn first frame; placed in a
+	column after the template's, which the importer ignores.
+	"""
 	from openpyxl import load_workbook
 
 	from joymedia.services.intake.references import brand, preservation_modes
 	from joymedia.services.intake.template import BRIEF_ROWS, HEADER_ROW, SHEET_TITLES, build_template
-	from joymedia.services.planning.workbook import BRAND_FIELDS, REFERENCE_COLUMNS, SCENE_COLUMNS
+	from joymedia.services.planning.workbook import (
+		BRAND_FIELDS,
+		REFERENCE_COLUMNS,
+		REFERENCE_TYPE_LABELS,
+		SCENE_COLUMNS,
+	)
 	from joymedia.services.scene.references import canonical_reference_rows
 
-	book = load_workbook(io.BytesIO(build_template("en")))
-	sheet = book[SHEET_TITLES["sheet"]["en"]]
+	# AI-written workbooks use the English template so planning reads them without
+	# translation; only an imported client workbook in another language is translated.
+	book = load_workbook(io.BytesIO(build_template(lang)))
+	sheet = book[SHEET_TITLES["sheet"][lang]]
 	# Remove every example value, preserving schema headers and styling.
 	for row in sheet.iter_rows(min_row=1, max_row=HEADER_ROW - 1, min_col=2, max_col=2):
 		for cell in row:
@@ -609,7 +1638,7 @@ def script_workbook(script, project):
 		for cell in row:
 			cell.value = None
 	metadata = {
-		"product_name": project.product_name or script["title"],
+		"product_name": project.product_name or script.get("product_name") or script["title"],
 		"objective": "Product advertisement",
 		"usp": "\n".join(script["features"]),
 		"duration": f"{script['duration_seconds']:g}s",
@@ -647,7 +1676,9 @@ def script_workbook(script, project):
 		cursor = end
 	last = sheet.cell(HEADER_ROW, len(SCENE_COLUMNS)).column_letter
 	sheet.tables["Storyboard"].ref = f"A{HEADER_ROW}:{last}{HEADER_ROW + len(script['scenes'])}"
-	refs = book[SHEET_TITLES["references"]["en"]]
+	if pictures:
+		_place_frames(sheet, HEADER_ROW, len(SCENE_COLUMNS) + 2, pictures, lang)
+	refs = book[SHEET_TITLES["references"][lang]]
 	modes = preservation_modes(project)
 	for row in refs.iter_rows(min_row=2):
 		for cell in row:
@@ -659,7 +1690,7 @@ def script_workbook(script, project):
 		analysis = frappe.parse_json(asset.analysis_json or "{}") or {}
 		values = {
 			"name": row.reference_key,
-			"type": "Real person" if row.reference_role == "Person" else row.reference_role,
+			"type": REFERENCE_TYPE_LABELS.get(row.reference_role, {}).get(lang, row.reference_role),
 			"file": frappe.get_doc("File", {"file_url": asset.file}).file_name,
 			"keep_rule": row.keep_rule or "",
 			"preservation_mode": modes.get(row.asset_version, ""),
@@ -667,17 +1698,32 @@ def script_workbook(script, project):
 		}
 		for col, key in enumerate(REFERENCE_COLUMNS, 1):
 			refs.cell(i, col, values.get(key, ""))
-	bs = book[SHEET_TITLES["brand"]["en"]]
+	bs = book[SHEET_TITLES["brand"][lang]]
 	bs.delete_rows(1, bs.max_row)
+	authored = brand(project)
+	cta = next((s["on_screen_text"] for s in reversed(script["scenes"]) if s.get("on_screen_text")), "")
 	values = {
-		**brand(project),
+		"key_message": script.get("key_message", ""),
+		"audience": script.get("audience", ""),
+		"avoid": "Use only the approved claims; no other products, characters or people.",
+		"mandatories": "\n".join(
+			filter(
+				None,
+				[
+					f"Logo {script.get('product_name') or project.product_name or ''}".strip(),
+					cta and "CTA: " + cta,
+				],
+			)
+		),
+		**{k: v for k, v in authored.items() if v},
+		**({"claims": script["claims"]} if script.get("claims") and not authored.get("claims") else {}),
 		"logline": script["logline"],
 		"visual_style": script["visual_style"],
 		"camera_style": "cinematic",
 	}
 	for i, (key, spec) in enumerate(BRAND_FIELDS.items(), 1):
 		value = values.get(key, "")
-		bs.cell(i, 1, spec["label"]["en"])
+		bs.cell(i, 1, spec["label"][lang])
 		bs.cell(i, 2, json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value)
 	buffer = io.BytesIO()
 	book.save(buffer)

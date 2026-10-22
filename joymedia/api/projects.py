@@ -28,7 +28,7 @@ from joymedia.services.project.context import (
 
 @frappe.whitelist()
 def get_project_cards(search=None, status=None, start=0, page_length=24):
-	from joymedia.services.project.versions import card_rows
+	from joymedia.services.project.versions import card_rows, get_videos
 
 	result = card_rows(search, status, start, page_length)
 	for project in result["items"]:
@@ -43,6 +43,7 @@ def get_project_cards(search=None, status=None, start=0, page_length=24):
 			asset_count=len(assets),
 			cover_image=cover,
 			asset_categories=sorted({a.asset_category for a in assets if a.asset_category}),
+			video_count=len(get_videos(project["name"])["videos"]),
 		)
 	return result
 

@@ -326,6 +326,9 @@ class TestVisualAdmission(unittest.TestCase):
 				("action", "action", "uncertain", False),
 				("reference.AV", "identity", "uncertain", False),
 				("check.count", "staging", "uncertain", False),
+				# An unconfirmed opening state goes to the reviewer; a contradicted one stops.
+				("opening.0", "staging", "uncertain", True),
+				("opening.0", "staging", "violated", False),
 			]:
 				report = {
 					"results": [{"id": identifier, "dimension": dimension, "verdict": verdict}],
@@ -396,7 +399,9 @@ class TestVisualAdmission(unittest.TestCase):
 		):
 			consistency.check_scene("shot", "frame", "Administrator")
 		self.assertEqual("Needs Review", record.call_args.args[1])
-		checks.assert_not_called()
+		# An advisory geometry warning remains open, while explicit critical
+		# framing/prop checks still run and can add their own findings.
+		checks.assert_called_once_with(shot)
 
 
 class TestAuthoredActionAdmission(unittest.TestCase):

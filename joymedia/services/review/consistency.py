@@ -83,17 +83,24 @@ def check_scene(shot_name, kind, user, subject=None):
 			"consistency_retries",
 		)
 	}
+	report = None
 	if kind == "frame" and shot.keyframe_artifact:
 		from joymedia.services.review.admission import report_for
 
 		attempt = frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "generation_attempt")
 		report = report_for(attempt) if attempt else None
 		if report and report.get("review_only"):
-			return _record(
-				shot,
-				"Needs Review",
-				"Automatic screening does not qualify this geometry. Review the source frame before animation.",
-			)
+			unconfirmed = [
+				r["claim"].rstrip(". ")
+				for r in report.get("results") or []
+				if str(r.get("id")).startswith("opening.") and r.get("verdict") == "uncertain"
+			]
+			if unconfirmed:
+				return _record(
+					shot,
+					"Needs Review",
+					f"Check that the picture shows: {'; '.join(unconfirmed)}. Automatic screening could not confirm it.",
+				)
 	try:
 		checks = (frame_checks if kind == "frame" else take_checks)(shot)
 		if not checks:
@@ -103,13 +110,23 @@ def check_scene(shot_name, kind, user, subject=None):
 		frappe.logger("joymedia.consistency").warning("Consistency check of %s failed: %s", shot_name, exc)
 		return _record(shot, "Not Checked", f"The automatic check could not run: {str(exc)[:200]}")
 	if not failures:
+		if kind == "frame" and report and report.get("review_only"):
+			return _record(
+				shot,
+				"Needs Review",
+				"Geometry qualification remains uncertain; this frame is suitable only for an automatic preview.",
+			)
 		return _record(shot, "Passed", "")
 	notes = "; ".join(failures)[:900]
 	from joymedia.services.scene.contract import read_contract
 
-	if read_contract(shot.get("motion_plan_json"), shot.get("duration_seconds")) or any(
+	critical_geometry = any(
+		reason.startswith(("Critical geometry:", "Critical framing:", "Critical prop:"))
+		for reason in failures
+	)
+	if not critical_geometry and (read_contract(shot.get("motion_plan_json"), shot.get("duration_seconds")) or any(
 		reason.startswith("Physical staging review:") for reason in failures
-	):
+	)):
 		# These new relational/order questions are advisory until calibrated for
 		# the configured judge. Never spend GPU retries on an uncalibrated verdict.
 		return _record(shot, "Needs Review", notes)
@@ -276,6 +293,32 @@ OUTSIDER = (
 	"Return a JSON object with answer set to true, false, or null for uncertainty, and reason explaining the evidence."
 )
 
+UNSUPPORTED_CAST = (
+	"Does the physical character clearly stand or sit ON TOP OF the advertised product package "
+	"itself, instead of being supported by the floor or a proper seat? Answer true only for a "
+	"clearly visible violation. If support is cropped, hidden or uncertain, answer false. "
+	'Return JSON with answer boolean and reason.'
+)
+FULL_BODY_IN_DETAIL = (
+	"Does this image clearly show the entire or nearly entire character body including both feet? "
+	"Return a JSON object with answer set to true, false, or null for uncertainty, "
+	"and reason explaining visible evidence."
+)
+PRODUCT_SUPPORT = (
+	"Does the advertised product clearly occupy the physical support and location specified in "
+	"this opening direction: {opening}? Judge product support only. For example, a product on the "
+	"floor does not satisfy a direction placing it on a table. If the direction does not specify "
+	"the product's support or location, answer true. Return JSON with answer true, false, or "
+	"null for uncertainty, and reason explaining visible evidence."
+)
+UNDECLARED_HELD_PACKAGE = (
+	"Does the actor clearly hold a rigid printed retail package or product container that is "
+	"absent from this required opening composition: {opening}? Answer true only if the actor "
+	"clearly holds such an extra physical object; a loose sheet, plain cloth, background package, "
+	"or artwork printed in the setting does not count. Return JSON with answer true, false, or "
+	"null for uncertainty, and reason explaining visible evidence."
+)
+
 
 def _illustrated_cast(shot):
 	"""Whether the scene's cast is only illustrated characters (no real person's photo)."""
@@ -317,6 +360,7 @@ def frame_checks(shot):
 		return []
 	views = shot_views(shot)
 	checks = []
+	cast = 0
 	if views:
 		checks.append(
 			(
@@ -345,6 +389,49 @@ def frame_checks(shot):
 	if _illustrated_cast(shot):
 		checks.append(
 			(file_url, OUTSIDER, False, "a human hand, arm or person appears; only the cast may act")
+		)
+	from joymedia.services.planning.shot_structure import structure_for
+
+	structure = structure_for(shot)
+	has_product = any(
+		frappe.scrub(row.reference_role or "") == "product" for row in shot.generation_inputs or []
+	)
+	if has_product:
+		if _cast_size(shot):
+			checks.append(
+				(file_url, UNSUPPORTED_CAST, False, "Critical geometry: character stands on the advertised product")
+			)
+		opening = shot.get("start_state") or shot.get("image_prompt") or ""
+		if opening:
+			checks.append(
+				(
+					file_url,
+					PRODUCT_SUPPORT.format(opening=opening[:280]),
+					True,
+					"Critical geometry: advertised product is not on its authored support",
+				)
+			)
+	elif (
+		_cast_size(shot)
+		and (shot.get("image_prompt") or shot.get("start_state"))
+		and (not structure or structure["framing"] not in {"close_up", "extreme_close_up"})
+	):
+		checks.append(
+			(
+				file_url,
+				UNDECLARED_HELD_PACKAGE.format(opening=(shot.get("image_prompt") or shot.get("start_state"))[:280]),
+				False,
+				"Critical prop: actor holds an undeclared retail package instead of the authored object",
+			)
+		)
+	if cast and structure and structure["framing"] in {"close_up", "extreme_close_up"}:
+		checks.append(
+			(
+				file_url,
+				FULL_BODY_IN_DETAIL,
+				False,
+				"Critical framing: full character body appears in a close product/action detail",
+			)
 		)
 	from joymedia.services.scene.contract import opening_claims
 
@@ -843,14 +930,19 @@ def run_temporal_check(check, configured=None):
 	report["windows"] = reports
 	report["raw_responses"] = raw_answers
 	payload = json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2).encode()
-	file = save_file(
-		f"temporal-review-{digest(payload)[:20]}.json",
-		payload,
-		check.context.get("evidence_doctype", "Asset Version"),
-		check.context.get("evidence_name") or check.context["asset_version"],
-		is_private=1,
+	name = f"temporal-review-{digest(payload)[:20]}.json"
+	doctype = check.context.get("evidence_doctype", "Asset Version")
+	docname = check.context.get("evidence_name") or check.context["asset_version"]
+	# Content-addressed: identical evidence (a deterministic re-check of the same
+	# footage) is reused rather than re-saved under a reviewer who may not own it.
+	report["evidence_file"] = (
+		frappe.db.get_value(
+			"File",
+			{"file_name": name, "attached_to_doctype": doctype, "attached_to_name": docname},
+			"file_url",
+		)
+		or save_file(name, payload, doctype, docname, is_private=1).file_url
 	)
-	report["evidence_file"] = file.file_url
 	return report
 
 

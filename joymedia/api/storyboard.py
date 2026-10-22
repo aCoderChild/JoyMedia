@@ -599,6 +599,16 @@ def update_project_shot(project_name, shot_name, values):
 			frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))
 		image_prompt_changed = image_prompt != (shot.image_prompt or "")
 		shot.image_prompt = image_prompt
+	state_changed = False
+	for state_field in ("start_state", "end_state"):
+		if state_field not in values:
+			continue
+		state = " ".join(str(values[state_field] or "").split())[:300]
+		if state != (shot.get(state_field) or ""):
+			if shot.name in _busy_shots(project.name):
+				frappe.throw(_("This scene is still being rendered. Please wait until it is ready."))
+			state_changed = True
+		shot.set(state_field, state)
 	caption_changed = False
 	if "caption" in values:
 		# Captions are drawn at export time, so they can change at any moment.
@@ -622,12 +632,13 @@ def update_project_shot(project_name, shot_name, values):
 		or changed
 		or contract_changed
 		or image_prompt_changed
+		or state_changed
 		or caption_changed
 		or continuity_changed
 	):
 		shot.save(ignore_permissions=True)
 	# Captions are finishing-only; the approved plan signature already covers generation inputs.
-	if action_changed or changed or contract_changed or image_prompt_changed or continuity_changed:
+	if action_changed or changed or contract_changed or image_prompt_changed or state_changed or continuity_changed:
 		_mark_storyboard_needs_review(project)
 	if caption_changed:
 		from joymedia.services.editing.timeline import _invalidate_project_output

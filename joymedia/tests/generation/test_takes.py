@@ -55,6 +55,12 @@ class TestSceneTakes(FrappeTestCase):
 	def test_storyboard_card_knows_its_takes(self):
 		self.assertEqual((2, 2), scene_takes.take_position(self.project.name, self.shot))
 
+	def test_invalid_retry_reason_fails_before_queuing_native_jobs(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "configured retry reason"):
+			scene_takes._start_takes_run(
+				self.project, [self.shot.name], retry_reason="arbitrary operator note"
+			)
+
 	@patch(
 		"joymedia.services.editing.post_production.resume_post_production", return_value={"status": "Queued"}
 	)
@@ -83,6 +89,17 @@ class TestSceneTakes(FrappeTestCase):
 		result = scene_takes.select_scene_take(self.project.name, self.shot.name, 2)
 
 		self.assertEqual("Unchanged", result["finishing"])
+		resume.assert_not_called()
+
+	@patch("joymedia.services.editing.post_production.resume_post_production")
+	def test_batch_selection_defers_finishing_until_all_scenes_are_selected(self, resume):
+		previous = frappe.flags.get("joymedia_defer_finishing")
+		frappe.flags.joymedia_defer_finishing = True
+		try:
+			result = scene_takes.select_scene_take(self.project.name, self.shot.name, 1)
+		finally:
+			frappe.flags.joymedia_defer_finishing = previous
+		self.assertEqual("Deferred", result["finishing"])
 		resume.assert_not_called()
 
 	def test_regenerate_run_replaces_the_take_selected_before_it_started_once(self):

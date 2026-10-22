@@ -6,8 +6,18 @@ import re
 
 import frappe
 
+# Default Edge voice per spoken language when no voice is chosen or configured.
+LANGUAGE_VOICES = {"vi": "vi-VN-HoaiMyNeural", "en": "en-US-AriaNeural"}
 
-def provider(voice=None):
+
+def spoken_language(text):
+	"""'vi' for Vietnamese text, otherwise 'en'; only used to pick a default voice."""
+	from joymedia.services.planning.creative import VIETNAMESE
+
+	return "vi" if VIETNAMESE.search(str(text or "")) else "en"
+
+
+def provider(voice=None, text=None):
 	from joymedia.services.workflows.capabilities import configured_workflow, require_controls
 
 	workflow = configured_workflow("narration")
@@ -19,7 +29,11 @@ def provider(voice=None):
 		if voice and not any(row.binding_key == "voice" for row in version.bindings):
 			raise ValueError("The configured speech workflow does not expose a voice control.")
 		return {"workflow": workflow, "voice": str(voice or ""), "key": workflow}
-	voice = str(voice or frappe.conf.get("joymedia_tts_voice") or "vi-VN-HoaiMyNeural")
+	voice = str(
+		voice
+		or frappe.conf.get("joymedia_tts_voice")
+		or LANGUAGE_VOICES[spoken_language(text) if text is not None else "vi"]
+	)
 	if not re.fullmatch(r"[a-z]{2}-[A-Z]{2}-[A-Za-z0-9]+Neural", voice):
 		raise ValueError("Choose a supported voice for the configured Edge speech adapter.")
 	return {
@@ -59,12 +73,19 @@ def synthesize(text, configuration, output, seconds):
 	except ImportError as exc:
 		raise ValueError("Install the narration extra or configure a speech workflow.") from exc
 
-	async def run():
+	async def run(proxy):
 		await asyncio.wait_for(
-			edge_tts.Communicate(text, configuration["voice"], proxy=configuration.get("proxy")).save(
-				str(output)
-			),
+			edge_tts.Communicate(text, configuration["voice"], proxy=proxy).save(str(output)),
 			timeout=90,
 		)
 
-	asyncio.run(run())
+	try:
+		asyncio.run(run(configuration.get("proxy")))
+	except OSError as exc:
+		# An unreachable or hanging proxy (e.g. its SSH forward is down) must not
+		# stop narration; the direct route is tried once. A proxy that answers
+		# without audio raises a non-OSError and still fails as before.
+		if not configuration.get("proxy"):
+			raise
+		frappe.logger("joymedia.audio").warning("Narration proxy unreachable (%s); trying the direct route.", exc)
+		asyncio.run(run(None))

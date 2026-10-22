@@ -73,6 +73,73 @@ def normalize_reference_role(value):
 	return aliases.get(role, role or "general")
 
 
+def _endpoint_pipeline(base_pipeline, references, motion_plan_json):
+	"""Choose an operator-pinned endpoint profile only for a suitable shot.
+
+	The plan supplies the camera/action semantics; the two actual images supply
+	geometry. A description of an ending is not an endpoint image. Rendering
+	contracts, model weights and sampling stay in versioned workflow records.
+	"""
+	endings = [
+		r
+		for r in references or []
+		if normalize_reference_role(r.get("reference_role") or r.get("input_role")) == "last_frame"
+		and r.get("asset_version")
+	]
+	if not endings:
+		return None
+	if len(endings) != 1:
+		raise ValueError("Choose exactly one last-frame image for a scene.")
+	plan = (
+		frappe.parse_json(motion_plan_json or "{}")
+		if isinstance(motion_plan_json, str)
+		else motion_plan_json or {}
+	)
+	if not isinstance(plan, dict):
+		raise ValueError("A scene motion plan must be an object.")
+	structure = plan.get("shot_structure") or {}
+	camera = plan.get("camera_intent") or {}
+	if not isinstance(structure, dict) or not isinstance(camera, dict):
+		raise ValueError("A scene's camera and shot structure must be objects.")
+	if structure.get("subject_motion") not in {"stationary", "locomotion"} or camera.get("behavior") in {
+		None,
+		"",
+		"locked",
+		"static",
+	}:
+		return None
+	# Product-only print details use the existing source-art route when eligible.
+	roles = {normalize_reference_role(r.get("reference_role") or r.get("input_role")) for r in references}
+	if "product" in roles and not roles & {"character", "person"}:
+		return None
+	routes = frappe.conf.get("joymedia_endpoint_generation_pipelines") or {}
+	if not isinstance(routes, dict):
+		raise ValueError("joymedia_endpoint_generation_pipelines must map base to endpoint pipelines.")
+	name = routes.get(base_pipeline.name)
+	if not name:
+		return None
+	if not isinstance(name, str) or not frappe.db.exists("Generation Pipeline", name):
+		raise ValueError("The configured endpoint pipeline is unavailable.")
+	from joymedia.services.workflows.pipeline import get_pipeline_steps
+	from joymedia.services.workflows.resolver import get_workflow_input_contract
+
+	base_steps, steps = get_pipeline_steps(base_pipeline.name), get_pipeline_steps(name)
+	if len(base_steps) < 2 or len(steps) < 2 or steps[0].workflow != base_steps[0].workflow:
+		raise ValueError("The endpoint pipeline must share the base image preparation stage.")
+	workflow = frappe.get_doc("Generation Workflow", steps[-1].workflow)
+	base_video = frappe.get_doc("Generation Workflow", base_steps[-1].workflow)
+	contract = {item["role"]: item for item in get_workflow_input_contract(workflow)}
+	if (
+		workflow.output_media_type != "Video"
+		or {"first_frame", "last_frame"} - set(contract)
+		or int(contract["first_frame"].get("max_count") or 1) != 1
+		or int(contract["last_frame"].get("max_count") or 1) != 1
+		or float(workflow.output_fps or 0) != float(base_video.output_fps or 0)
+	):
+		raise ValueError("The endpoint pipeline needs one first/last-frame slot and matching FPS.")
+	return frappe.get_doc("Generation Pipeline", name), workflow
+
+
 def resolve_shot_render_route(
 	default_workflow, references, *, handoff_type="", motion_plan_json="", pipeline_name=None
 ):
@@ -110,7 +177,12 @@ def resolve_shot_render_route(
 	steps = get_pipeline_steps(pipeline.name)
 	if len(steps) < 2:
 		frappe.throw(frappe._("The active Generation Pipeline must contain at least two ordered stages."))
-	workflow = frappe.get_doc("Generation Workflow", steps[-1].workflow)
+	endpoint = _endpoint_pipeline(pipeline, references, motion_plan_json)
+	if endpoint:
+		pipeline, workflow = endpoint
+		steps = get_pipeline_steps(pipeline.name)
+	else:
+		workflow = frappe.get_doc("Generation Workflow", steps[-1].workflow)
 	keyframe = frappe.get_doc("Generation Workflow", steps[0].workflow)
 	from joymedia.services.workflows.capabilities import controls
 
@@ -133,7 +205,11 @@ def resolve_shot_render_route(
 		"workflow": workflow.name,
 		"generation_pipeline": pipeline.name,
 		"references": normalized,
-		"reason": "Configured promoted production pipeline.",
+		"reason": (
+			"Explicit last-frame image and moving camera; configured endpoint pipeline."
+			if endpoint
+			else "Configured promoted production pipeline."
+		),
 		"requires_recomposition": new_scene,
 	}
 

@@ -111,7 +111,7 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 							normalized_path, generation_run_name, shot.name, segments[-1][1].name
 						)
 						is not False
-					)
+					) and not getattr(shot, "_product_unlocked", None)
 					video_bytes = normalized_path.read_bytes()
 					video_duration = _get_video_duration(normalized_path)
 			except (OSError, subprocess.CalledProcessError, ValueError) as exc:
@@ -171,10 +171,9 @@ def compose_shot_segments(generation_run_name, shot_name, *, select_output=True)
 				)
 				from joymedia.services.review.admission import screen_composition
 
-				can_select = (
-					screen_composition(assembled_path, generation_run_name, shot.name, segments[-1][1].name)
-					is not False
-				)
+				can_select = screen_composition(
+					assembled_path, generation_run_name, shot.name, segments[-1][1].name
+				) is not False and not getattr(shot, "_product_unlocked", None)
 				video_bytes = assembled_path.read_bytes()
 				video_duration = _get_video_duration(assembled_path)
 		except (OSError, subprocess.CalledProcessError, ValueError) as exc:
@@ -360,10 +359,27 @@ def _with_locked_product(path, generation_run_name, shot, jobs, profile, expecte
 			raise ValueError("Required source-art product lock produced no protected output.")
 	except SourceArtCoverageError:
 		from joymedia.services.consistency.repair import track_product_lock
+		from joymedia.services.consistency.tracking import PreservationError
 
-		certificates = track_product_lock(
-			path, lock, locked, frappe.get_doc("Media Project", shot.media_project)
-		)
+		try:
+			certificates = track_product_lock(
+				path, lock, locked, frappe.get_doc("Media Project", shot.media_project)
+			)
+		except PreservationError as exc:
+			# The pack moved beyond what tracking can hold. Keep the model's clip
+			# (conditioned on the real first frame) as an unselected review take, like
+			# an occluded picture: a person compares the label; nothing is auto-approved.
+			from frappe.utils.file_manager import save_file
+
+			save_file(
+				f"{generation_run_name}-{shot.name}-product-unlocked.json",
+				json.dumps({"reason": str(exc)}).encode(),
+				"Generation Run",
+				generation_run_name,
+				is_private=1,
+			)
+			shot._product_unlocked = str(exc)
+			return path
 		# The normal post-composition visual gate still checks geometry/occlusion.
 		from frappe.utils.file_manager import save_file
 

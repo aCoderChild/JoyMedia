@@ -13,8 +13,49 @@ STAGES = {
 	"hero",
 }
 FRAMINGS = {"wide", "full", "medium", "medium_close_up", "close_up", "extreme_close_up"}
-ANGLES = {"eye_level", "low_angle", "high_angle", "overhead", "oblique", "over_shoulder"}
+ANGLES = {"eye_level", "low_angle", "high_angle", "overhead", "oblique", "over_shoulder", "point_of_view"}
 MOTIONS = {"stationary", "locomotion", "manipulation"}
+# The six basic camera moves (each with its direction) plus a static camera. With
+# FRAMINGS and ANGLES this covers the 16 storyboard shots of the Boords guide
+# (brandsvietnam.com "16 góc quay phổ biến"): zoom, pan, tilt, dolly, truck,
+# pedestal; establishing/wide, full, medium, close, extreme close; low angle, high
+# angle, over-the-shoulder, point of view. A two-shot is a cast arrangement.
+CAMERA_MOVES = {
+	"static",
+	"dolly_in",
+	"dolly_out",
+	"zoom_in",
+	"zoom_out",
+	"pan_left",
+	"pan_right",
+	"tilt_up",
+	"tilt_down",
+	"truck_left",
+	"truck_right",
+	"pedestal_up",
+	"pedestal_down",
+	"arc",
+	"tracking",
+}
+# Camera-compiler behavior for each authored move (dolly in/out are the axial moves).
+MOVE_BEHAVIOR = {
+	**{move: move for move in CAMERA_MOVES},
+	"static": "locked",
+	"dolly_in": "push_in",
+	"dolly_out": "pull_back",
+}
+SHOT_GUIDE = (
+	"Camera language (choose per scene from the 16 storyboard shots): "
+	"wide/establishing sets place and mood; full shows the whole body and its action; medium balances gesture and setting; "
+	"close_up centres emotion or the product; extreme_close_up isolates one detail (use sparingly, at a peak). "
+	"low_angle makes the subject or product heroic; high_angle makes it small or overwhelmed; over_shoulder shows what a "
+	"character faces; point_of_view puts the viewer in the character's eyes for discovery. "
+	"Moves: dolly_in builds intimacy and focus (prefer it to zoom); dolly_out reveals context; pan follows action or reveals "
+	"a space; tilt_up adds grandeur, tilt_down reveals what lies below; truck travels beside the action; pedestal rises or "
+	"descends to reveal height; zoom is a punchy accent used at most once. "
+	"Open with a hook: a motivated move or striking angle in the first shot. Vary framing, angle and move between adjacent "
+	"shots, escalate closer toward the emotional or product peak, and end on a heroic product view."
+)
 
 PLANNING_RULES = """
 - Optional motion_plan.shot_structure describes cinematography independently of the video model:
@@ -22,7 +63,7 @@ PLANNING_RULES = """
    "subject_motion":"manipulation","keep_visible":["actor","product","container"]}.
   stage is establish|approach|grip|extract|present|unfold|inspect|detail|feel|hero;
   framing is wide|full|medium|medium_close_up|close_up|extreme_close_up;
-  angle is eye_level|low_angle|high_angle|overhead|oblique|over_shoulder;
+  angle is eye_level|low_angle|high_angle|overhead|oblique|over_shoulder|point_of_view;
   subject_motion is stationary|locomotion|manipulation. keep_visible lists declared scene-contract entity IDs.
   Describe only the authored action. Grip precedes extraction; a product clears its opening before placement;
   support remains until a hand visibly takes its weight. Place the item before releasing the grip.

@@ -646,6 +646,12 @@ class TestRoleInputCount(FrappeTestCase):
 
 
 class TestVisionAnalysis(FrappeTestCase):
+	def test_pose_and_support_survive_analysis_without_inventing_hidden_geometry(self):
+		analysis = vision_analysis.normalize_analysis({"kind": "other", "description": "A stylized figure.", "pose_and_support": "Seated on the visible floor; feet face forward."})
+		self.assertEqual("Seated on the visible floor; feet face forward.", analysis["pose_and_support"])
+		self.assertEqual("", vision_analysis.normalize_analysis({"description": "A figure."})["pose_and_support"])
+		self.assertFalse(vision_analysis._is_current(frappe._dict(analysis_status="Ready", analysis_json='{"version":3,"kind":"product"}')))
+
 	def test_product_rigidity_requires_visible_evidence_and_is_available_to_the_writer(self):
 		for construction in [{}, {"rigidity": "rigid"}, {"rigidity": [], "evidence": "guess"}]:
 			with self.subTest(construction=construction):

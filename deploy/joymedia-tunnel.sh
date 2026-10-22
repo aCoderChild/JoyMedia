@@ -47,12 +47,32 @@ stop_transports() {
 trap stop_transports TERM INT
 if [ "${JOYMEDIA_SEPARATE_COMFY_TRANSPORTS:-1}" = "1" ]; then
 	transport_script="$(dirname -- "$0")/joymedia-comfyui-tunnel.sh"
-	"$transport_script" &
+	# A transport that exits for any reason is started again; a lost port
+	# otherwise stays closed until the whole supervisor restarts.
+	respawn() {
+		local transport=""
+		trap '[ -z "$transport" ] || kill "$transport" 2>/dev/null; exit 0' TERM INT
+		while true; do
+			"$@" &
+			transport=$!
+			wait "$transport"
+			echo "$(date -Is) transport $* exited ($?); restarting in 5 s" >&2
+			transport=""
+			sleep 5
+		done
+	}
+	respawn "$transport_script" &
 	sidecar_pids+=("$!")
-	JOYMEDIA_COMFY_LOCAL_PORT="${JOYMEDIA_COMFY_CONTROL_PORT:-18189}" "$transport_script" &
+	JOYMEDIA_COMFY_LOCAL_PORT="${JOYMEDIA_COMFY_CONTROL_PORT:-18189}" respawn "$transport_script" &
 	sidecar_pids+=("$!")
-	JOYMEDIA_COMFY_LOCAL_PORT="${JOYMEDIA_VISION_LOCAL_PORT:-18002}" JOYMEDIA_TUNNEL_REMOTE_PORT=8002 "$transport_script" &
+	JOYMEDIA_COMFY_LOCAL_PORT="${JOYMEDIA_VISION_LOCAL_PORT:-18002}" JOYMEDIA_TUNNEL_REMOTE_PORT=8002 respawn "$transport_script" &
 	sidecar_pids+=("$!")
+	# Optional narration egress (site setting joymedia_tts_proxy); 0 disables it.
+	tts_port="${JOYMEDIA_TTS_PROXY_PORT:-18899}"
+	if [ "$tts_port" != "0" ]; then
+		JOYMEDIA_COMFY_LOCAL_PORT="$tts_port" JOYMEDIA_TUNNEL_REMOTE_PORT="$tts_port" respawn "$transport_script" &
+		sidecar_pids+=("$!")
+	fi
 fi
 
 while true; do

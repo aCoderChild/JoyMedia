@@ -716,3 +716,39 @@ class TestResultTransactionBoundary(FrappeTestCase):
 			generation_orchestrator._advance_run(run)
 		self.assertLess(order.index("status"), order.index("render"))
 		self.assertIn("commit", order[order.index("status") + 1 : order.index("render")])
+
+
+class TestSceneFinalizationIsolation(FrappeTestCase):
+	def test_one_held_composition_does_not_abandon_the_other_scenes(self):
+		orchestrator = generation_orchestrator
+		run = frappe._dict(name="RUN", execution_scope_json="{}", project_snapshot_json="{}", media_project="P")
+		completed = [frappe._dict(status="Completed")]
+		with (
+			patch.object(orchestrator, "_is_keyframe_run", return_value=False),
+			patch.object(orchestrator, "_keeps_selected_output", return_value=False),
+			patch("joymedia.services.consistency.retention.needs_candidate_review", return_value=False),
+			patch("frappe.get_all", side_effect=[["A", "B"], completed, completed]),
+			patch.object(
+				orchestrator, "compose_shot_segments", side_effect=[ValueError("held composition"), None]
+			) as compose,
+			patch.object(orchestrator, "_hold_composition") as hold,
+		):
+			orchestrator._finalize_completed_shots(run)
+		self.assertEqual(2, compose.call_count)
+		self.assertEqual(("RUN", "A"), hold.call_args.args[:2])
+
+
+class TestHeldComposition(FrappeTestCase):
+	def test_a_held_composition_fails_its_attempt_so_the_task_stays_failed(self):
+		orchestrator = generation_orchestrator
+		with (
+			patch("frappe.get_all", side_effect=[["TASK"], ["ATT"]]),
+			patch("frappe.db.set_value") as set_value,
+			patch("frappe.get_doc", return_value=frappe._dict(name="TASK")),
+			patch.object(orchestrator, "_update_job_summary") as summary,
+			patch("frappe.db.commit"),
+		):
+			orchestrator._hold_composition("RUN", "SHOT", ValueError("tracking ambiguous"))
+		doctype, name, values = set_value.call_args.args[:3]
+		self.assertEqual(("Generation Attempt", "ATT", "Failed", "Input"), (doctype, name, values["status"], values["failure_class"]))
+		summary.assert_called_once()

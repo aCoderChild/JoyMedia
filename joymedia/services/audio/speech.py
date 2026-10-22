@@ -41,7 +41,7 @@ def generate_voiceover(project_name, shot_name, voice=None, place=True):
 		frappe.throw(_("This scene has no spoken dialogue."))
 	from joymedia.services.audio.synthesis import provider, synthesize
 
-	configuration = provider(voice)
+	configuration = provider(voice, text=text)
 	voice = configuration["voice"]
 	place = str(place).lower() in {"1", "true", "yes", "on"}
 	start, end = _shot_frame_range(project.name, shot.name)

@@ -96,7 +96,11 @@ def screening_claims(scene, video):
 	"""No product, species, furniture topology or model names in these defaults."""
 	plan, duration = scene.get("motion_plan_json"), scene.get("duration_seconds")
 	if video:
-		claims = claims_for(plan, duration, scene.get("generation_prompt"))
+		from joymedia.services.project.context import scene_direction
+
+		# Judge the visible action only, as the scene check does: rules, required
+		# end states and audio cues in the prompt cannot be confirmed from frames.
+		claims = claims_for(plan, duration, scene_direction(scene.get("generation_prompt") or "")["action"])
 		if scene.get("authored_action"):
 			claims.append(
 				{
@@ -403,14 +407,19 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		"Passed" if all(r["verdict"] == "supported" for r in report["results"]) else "Needs Review"
 	)
 	# Physics uncertainty retains a manual-review candidate, never an automatic
-	# approval. Composition returns False for review-only evidence; witnessed
-	# violations and uncertain action/cast claims still stop the task.
+	# approval. So does an unconfirmed opening state (a wet cloth, a spill): the
+	# reviewer checks the named detail. Composition returns False for review-only
+	# evidence; witnessed violations and uncertain action/cast claims still stop the task.
 	report["review_only"] = bool(
 		report["status"] == "Needs Review"
 		and all(
 			r["verdict"] == "supported"
 			or (
-				(r.get("dimension") == "physics" or r["id"] in {"geometry_qualification", "physics"})
+				(
+					r.get("dimension") == "physics"
+					or r["id"] in {"geometry_qualification", "physics"}
+					or str(r["id"]).startswith("opening.")
+				)
 				and r["verdict"] == "uncertain"
 			)
 			for r in report["results"]

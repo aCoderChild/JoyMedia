@@ -65,6 +65,41 @@ or explicit duration/geometry, variant count and auto-render authorization in a
 `Creative Batch`. Photo count never selects scene or video count. Reference
 identity keys group alternative views of one product or actor.
 
+Uploaded pictures are grouped into subjects: names that differ only by view words
+(front, side, các góc…) or near-identical copies share one identity; colour or size
+variants stay separate products. Each video features one hero product (several
+heroes rotate across a batch) and receives only that product's pictures, so the
+packaging cannot change between its shots.
+
+Optional example workbooks are the client's own scripts. The writer learns their
+structure, beat timing, shot sizes and voice-over/on-screen-text style, never their
+story actions; copying their lines is rejected, and their selling points become
+approved claims. The writer produces the whole script in English (prompts,
+actions, voice-over). A separate translation pass, using the `translator`
+capability, converts only the text shown on the video (on-screen text and CTA)
+into the input language: the language chosen in the New video dialog, else the
+example scripts', else the user's. English originals are kept on the script for
+review. The default narration voice follows the voice-over's language.
+AI-written workbooks use the English template, so planning reads them directly;
+translation happens only when a client's own workbook is in another language.
+Mechanical defects are fixed deterministically rather than by another model
+rewrite: subjects are removed from the style, a flexible product is called a
+pack, and a failed text review becomes a reviewer note. A translation that leaves
+English words untranslated (other than brand and product names) is retried,
+with the client example sheets' on-screen lines as the style guide.
+Without examples the writer invents a random premise.
+
+Camera language follows the 16 storyboard shots of the Boords guide (via
+brandsvietnam.com): six moves (zoom, pan, tilt, dolly, truck, pedestal) with
+direction, the framings and the angles in `shot_structure.py`. Scripts and client
+workbooks carry an optional "Camera move" column; an authored move becomes the
+plan's `camera_intent` (source "authored") and the compiler honours it, also in
+handling scenes, adding contact/label legibility instructions and describing it
+as planned rather than reviewed. Like timing, camera pacing is compiled: the
+writer proposes, and `direct_camera` guarantees a hook move, varied adjacent
+shots, at least three distinct moves, at most one zoom, sparing extreme
+close-ups and a heroic product ending, recording each adjustment.
+
 `planning/creative.py` uses the configured planner and a persisted variation nonce
 to write distinct, timed scripts. Prior variant loglines guide variety. Approved
 claims and reference descriptions constrain the creative brief. Missing geometry
@@ -160,10 +195,18 @@ schema for the supplied reference keys, format and camera enums. The ordinary
 validator still rejects invalid durations, action intervals and unknown cast.
 
 Before importing an automatic script, the writer performs a separate bounded
-compliance pass over every scene's action, causal handoff and pacing. This can
-reject camera-only prose, missing acquisition/contact phases and disproportionate
-holds; it does not certify the physics of a future render. Rejected scripts are
-rewritten through the same schema before any keyframe job is admitted.
+compliance pass over every scene's action, causal handoff and pacing. Structural
+errors (schema, timing, cast, format, language, montage inside one shot, missing
+final product, unsupplied actors) are always rewritten. Heuristic story findings
+and the reviewer's blocking findings get two rewrites; whatever remains is stored
+as `director_notes` and shown to the person reviewing the script, instead of
+discarding a usable draft. Rejected drafts are kept as a private project file.
+None of this certifies the physics of a future render.
+
+A reviewer can approve a "Script Ready" variant for rendering, or send per-scene
+notes; the writer then edits that script into a new version project and the old
+one stays in the variant's history. Comments on a rendered video use the normal
+scene comment and re-render flow.
 Native generation and finishing admission is committed inside the batch lock,
 so cancellation can observe and stop a newly admitted job before releasing control.
 

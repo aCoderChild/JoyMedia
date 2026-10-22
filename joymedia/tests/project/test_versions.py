@@ -36,6 +36,32 @@ class TestProjectVersions(FrappeTestCase):
 			{row["name"] for row in versions.get_history(root.name)["items"]}, {root.name, edit.name}
 		)
 
+	def test_videos_stack_numbers_variants_and_skips_an_empty_parent(self):
+		root, first, second = project(), project("Variant"), project("Variant")
+		versions.organize_edits(
+			root.name,
+			[
+				{"project": first.name, "label": "Video 1", "kind": "Experiment"},
+				{"project": second.name, "label": "Video 2", "kind": "Experiment"},
+			],
+		)
+		self.assertEqual(3, versions.next_video_number(root))
+		stack = versions.get_videos(second.name)
+		self.assertEqual(root.name, stack["root"])
+		# No storyboard, film or script in progress yet: nothing to watch or compare.
+		self.assertEqual([], stack["videos"])
+		frappe.get_doc(
+			{
+				"doctype": "Creative Batch",
+				"source_project": root.name,
+				"status": "Planning",
+				"request_json": "{}",
+				"variants_json": json.dumps([{"project": first.name, "status": "Planning"}]),
+			}
+		).insert(ignore_permissions=True)
+		stack = versions.get_videos(second.name)
+		self.assertEqual([("Video 1", "Planning")], [(v["label"], v["stage"]) for v in stack["videos"]])
+
 	def test_other_owner_cannot_be_grouped_even_by_admin(self):
 		root, edit = project(), project()
 		frappe.db.set_value("Media Project", edit.name, "owner", "foreign@example.com")

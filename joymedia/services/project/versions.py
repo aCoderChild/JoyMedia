@@ -88,6 +88,90 @@ def _label(value):
 	return value
 
 
+def next_video_number(root):
+	"""Monotonic within a family, archived videos included, so "Video 3" means one video for good."""
+	return frappe.db.count("Media Project", {"version_of": root.name}) + 1
+
+
+@frappe.whitelist()
+def get_videos(project_name):
+	"""The project's videos as one stack (Frame.io-style): the reviewer switches and compares in place.
+
+	The parent is listed only when it holds a storyboard of its own; a parent that only
+	collects the product inputs for generated variants is the container, not a video.
+	"""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_read_access()
+	root = family(project)
+	working = root.get("current_edit") or root.name
+	rows = frappe.get_all(
+		"Media Project",
+		filters={"name": ["in", members(root)], "status": ["!=", "Archived"]},
+		fields=[
+			"name",
+			"project_name",
+			"version_label",
+			"status",
+			"creation",
+			"current_output_asset_version",
+		],
+		order_by="creation asc",
+		limit_page_length=0,
+	)
+	with_shots = set(
+		frappe.get_all(
+			"Shot",
+			filters={"media_project": ["in", [row.name for row in rows]], "is_removed": 0},
+			pluck="media_project",
+			distinct=True,
+		)
+	)
+	files = dict(
+		frappe.get_all(
+			"Asset Version",
+			filters={
+				"name": [
+					"in",
+					[row.current_output_asset_version for row in rows if row.current_output_asset_version],
+				]
+			},
+			fields=["name", "file"],
+			as_list=True,
+		)
+	)
+	# The batch knows where an AI-written video stands; its project status alone does not.
+	stages = {}
+	for batch in frappe.get_all(
+		"Creative Batch",
+		filters={"source_project": ["in", [row.name for row in rows]]},
+		fields=["status", "variants_json"],
+		order_by="creation asc",
+	):
+		for variant in frappe.parse_json(batch.variants_json or "[]"):
+			if variant.get("project"):
+				stopped = batch.status == "Cancelled" and variant.get("status") != "Completed"
+				stages[variant["project"]] = "Cancelled" if stopped else variant.get("status")
+	writing = {"Queued", "Planning", "Rewriting"}
+	videos = [
+		{
+			"name": row.name,
+			"label": row.version_label or ("Original" if row.name == root.name else row.project_name),
+			"status": row.status,
+			"stage": stages.get(row.name),
+			"video": files.get(row.current_output_asset_version),
+			"is_working_edit": row.name == working,
+			"is_open": row.name == project.name,
+		}
+		for row in rows
+		# Like a version stack, only real videos: a storyboard, a film, or a script being written now.
+		# A script that failed or was stopped stays with its batch, where it can be tried again.
+		if row.name in with_shots
+		or row.current_output_asset_version
+		or (row.name != root.name and stages.get(row.name) in writing)
+	]
+	return {"root": root.name, "project_name": root.project_name, "working_edit": working, "videos": videos}
+
+
 @frappe.whitelist(methods=["POST"])
 def organize_edits(project_name, edits):
 	"""Explicit, atomic grouping; suitable for repairing legacy duplicate projects."""

@@ -770,11 +770,20 @@ def _finalize_completed_shots(run):
 			fields=["status"],
 		)
 		if jobs and all(job.status == "Completed" for job in jobs):
-			assembled_version = (
-				compose_shot_segments(run.name, shot_name, select_output=False)
-				if review_candidate
-				else compose_shot_segments(run.name, shot_name)
-			)
+			try:
+				assembled_version = (
+					compose_shot_segments(run.name, shot_name, select_output=False)
+					if review_candidate
+					else compose_shot_segments(run.name, shot_name)
+				)
+			except (frappe.ValidationError, ValueError) as exc:
+				# One scene's held or failed composition must not abandon the
+				# scenes still waiting to render. Hold it on the attempt, which task
+				# status derives from, so it is not composed again on every tick;
+				# the held footage stays available for explicit human review.
+				frappe.clear_last_message()
+				_hold_composition(run.name, shot_name, exc)
+				continue
 			if (
 				assembled_version
 				and not review_candidate
@@ -792,6 +801,30 @@ def _finalize_completed_shots(run):
 					from joymedia.services.editing.timeline import sync_timeline_source_for_shot
 
 					sync_timeline_source_for_shot(shot_name)
+
+
+def _hold_composition(run_name, shot_name, exc):
+	for task_name in frappe.get_all(
+		"Generation Task", filters={"generation_run": run_name, "shot": shot_name}, pluck="name"
+	):
+		for attempt in frappe.get_all(
+			"Generation Attempt",
+			filters={"generation_task": task_name, "status": "Completed"},
+			pluck="name",
+		):
+			frappe.db.set_value(
+				"Generation Attempt",
+				attempt,
+				{
+					"status": "Failed",
+					"failure_class": "Input",
+					"error_summary": "The final check held this scene. Your previous video is preserved; review its evidence.",
+					"error_details": str(exc)[:4000],
+				},
+				update_modified=False,
+			)
+		_update_job_summary(frappe.get_doc("Generation Task", task_name))
+	frappe.db.commit()
 
 
 def _keeps_selected_output(run, shot_name):

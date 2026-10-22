@@ -1,0 +1,174 @@
+{
+ "parameters": [
+  {
+   "semantic": "seed",
+   "node_key": "sampler",
+   "input_name": "seed"
+  },
+  {
+   "semantic": "width",
+   "node_key": "104",
+   "input_name": "width",
+   "transform": "nearest_size_dimension",
+   "dimension": "width",
+   "options": [
+    {
+     "width": 768,
+     "height": 1344
+    },
+    {
+     "width": 1344,
+     "height": 768
+    }
+   ],
+   "max_ratio_error": 0.02,
+   "fallback_multiple": 32
+  },
+  {
+   "semantic": "height",
+   "node_key": "104",
+   "input_name": "height",
+   "transform": "nearest_size_dimension",
+   "dimension": "height",
+   "options": [
+    {
+     "width": 768,
+     "height": 1344
+    },
+    {
+     "width": 1344,
+     "height": 768
+    }
+   ],
+   "max_ratio_error": 0.02,
+   "fallback_multiple": 32
+  },
+  {
+   "semantic": "width",
+   "node_key": "first_frame_size",
+   "input_name": "width",
+   "transform": "nearest_size_dimension",
+   "dimension": "width",
+   "options": [
+    {
+     "width": 768,
+     "height": 1344
+    },
+    {
+     "width": 1344,
+     "height": 768
+    }
+   ],
+   "max_ratio_error": 0.02,
+   "fallback_multiple": 32
+  },
+  {
+   "semantic": "height",
+   "node_key": "first_frame_size",
+   "input_name": "height",
+   "transform": "nearest_size_dimension",
+   "dimension": "height",
+   "options": [
+    {
+     "width": 768,
+     "height": 1344
+    },
+    {
+     "width": 1344,
+     "height": 768
+    }
+   ],
+   "max_ratio_error": 0.02,
+   "fallback_multiple": 32
+  },
+  {
+   "semantic": "width",
+   "node_key": "last_frame_size",
+   "input_name": "width",
+   "transform": "nearest_size_dimension",
+   "dimension": "width",
+   "options": [
+    {
+     "width": 768,
+     "height": 1344
+    },
+    {
+     "width": 1344,
+     "height": 768
+    }
+   ],
+   "max_ratio_error": 0.02,
+   "fallback_multiple": 32
+  },
+  {
+   "semantic": "height",
+   "node_key": "last_frame_size",
+   "input_name": "height",
+   "transform": "nearest_size_dimension",
+   "dimension": "height",
+   "options": [
+    {
+     "width": 768,
+     "height": 1344
+    },
+    {
+     "width": 1344,
+     "height": 768
+    }
+   ],
+   "max_ratio_error": 0.02,
+   "fallback_multiple": 32
+  },
+  {
+   "semantic": "frame_count",
+   "node_key": "111",
+   "input_name": "value",
+   "transform": "frames_to_seconds",
+   "fps": 24
+  },
+  {
+   "semantic": "output_prefix",
+   "node_key": "92",
+   "input_name": "filename_prefix"
+  }
+ ],
+ "outputs": {
+  "primary": {
+   "node_key": "92",
+   "media_type": "Video"
+  }
+ },
+ "conditional_inputs": [
+  {
+   "role": "last_frame",
+   "target": {
+    "node_key": "104",
+    "input_name": "last_frame"
+   },
+   "when_present": [
+    "last_frame_size",
+    0
+   ],
+   "when_absent": null
+  }
+ ],
+ "metadata": {
+  "frame_count": 124,
+  "output_fps": 24,
+  "produces_video": 1,
+  "produces_audio": 1
+ },
+ "delivery": {
+  "fps": 24,
+  "audio_sample_rate": 44100,
+  "audio_channels": 2,
+  "crf": 14,
+  "preset": "slow",
+  "sharpen": 0.9,
+  "contrast": 1.03,
+  "brightness": 0.01,
+  "saturation": 1.04,
+  "short_edge": 1440,
+  "temporal_fit": "preserve_endpoints"
+ }
+}

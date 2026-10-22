@@ -51,7 +51,7 @@ class TestRef2VA(FrappeTestCase):
 		self.assertEqual("original-mascot.png", graph["character"]["inputs"]["image"])
 		self.assertEqual(["character", 0], graph["104"]["inputs"]["ref_images.ref_image_2"])
 		self.assertEqual(["product", 0], graph["104"]["inputs"]["ref_images.ref_image_1"])
-		self.assertIn("original mascot", graph["104"]["inputs"]["prompt"])
+		self.assertIn("original character", graph["104"]["inputs"]["prompt"])
 		self.assertEqual(["114", 0], graph["guide_first"]["inputs"]["image"])
 
 	def test_no_product_has_no_second_picture_or_invented_last_frame(self):

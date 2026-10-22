@@ -5,12 +5,23 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.planning.prompts import (
+	_keyframe_retry_direction,
 	compile_prompt_for_documents,
 	compile_segment_prompt_from_snapshot,
 )
 
 
 class TestPromptCompiler(FrappeTestCase):
+	def test_keyframe_retry_direction_is_bounded_to_critical_redraws(self):
+		shot = frappe._dict(consistency_status="Redrawing", consistency_notes="Critical framing: full body")
+		self.assertIn("actor's feet", _keyframe_retry_direction(shot))
+		shot.consistency_notes = "Critical geometry: unsupported product"
+		self.assertIn("supporting surface", _keyframe_retry_direction(shot))
+		shot.consistency_notes = "Critical prop: extra printed package"
+		self.assertIn("undeclared retail package", _keyframe_retry_direction(shot))
+		shot.consistency_status = "Needs Review"
+		self.assertEqual("", _keyframe_retry_direction(shot))
+
 	def test_an_explicit_scene_reset_overrides_the_project_continuity_default(self):
 		project = frappe._dict(generation_mode="Continuous", global_instructions="")
 		shot = frappe._dict(
@@ -954,3 +965,13 @@ class TestDeclaredReferenceRole(TestCase):
 			rule = keep_rules(shot, project)
 		self.assertIn("the supplied reference", rule)
 		self.assertNotIn("logo", rule)
+
+
+class TestUnheldProductStaging(TestCase):
+	def test_product_only_scenes_stage_the_product_by_itself(self):
+		from joymedia.services.planning.prompts import _unheld_product_staging
+
+		alone = _unheld_product_staging({"references": [{"reference_role": "Product"}]}, "Close-up.")
+		self.assertIn("nothing and no one holding it", alone)
+		cast = {"references": [{"reference_role": "Product"}, {"reference_role": "Character"}]}
+		self.assertEqual("Close-up.", _unheld_product_staging(cast, "Close-up."))

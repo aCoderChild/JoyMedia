@@ -658,6 +658,15 @@ def paste_subjects_into_keyframe(attempt, image_bytes, lock=None):
 				lock if lock is not None else {},
 			)
 		except ValueError as exc:
+			if lock is not None and OCCLUDED_PRODUCT.search(str(exc)):
+				# A hand or paw covers the pack, so its original pixels cannot be
+				# pasted. Keep the drawing as an explicitly unprotected candidate for
+				# a person to compare with the product photo; never approved automatically.
+				from PIL import Image
+
+				with Image.open(io.BytesIO(image_bytes)) as drawn:
+					lock.update(canvas=list(drawn.size), items=[], unprotected=str(exc)[:300])
+				return image_bytes
 			raise RetentionRejected(str(exc)) from exc
 	hero = closes_film(shot_snapshot, snapshot) and not staged
 	mode = scene_mode(shot_snapshot.get("references"), shot_snapshot.get("character_mode") or PASTE)
@@ -827,25 +836,22 @@ def split_screen_keyframe(image_bytes, views, setting, project_name, subjects, l
 
 
 def store_product_lock(artifact, lock):
-	"""Save each pasted pack's exact pixels as a private file and return the lock as JSON for the artifact."""
+	"""Save each pasted pack's exact pixels and return the lock as JSON for the artifact.
+
+	Each patch becomes an immutable, project-owned Asset Version: the video stage's
+	tracked fallback only accepts content-hashed versions, so a pack that moves out
+	of its fixed position can still be restored instead of failing the run.
+	"""
 	import json
 
 	items = []
 	for number, item in enumerate(lock["items"], 1):
-		file_doc = frappe.get_doc(
-			{
-				"doctype": "File",
-				"file_name": f"{artifact.name}-product-{number}.png",
-				"content": item["png"],
-				"is_private": 1,
-				"attached_to_doctype": "Generation Artifact",
-				"attached_to_name": artifact.name,
-			}
-		).insert(ignore_permissions=True)
+		version = lock_patch_version(artifact, number, item["png"], item.get("source_asset_version"))
 		items.append(
 			{
 				"box": item["box"],
-				"file": file_doc.file_url,
+				"file": version.file,
+				"patch_asset_version": version.name,
 				**(
 					{"source_asset_version": item["source_asset_version"]}
 					if item.get("source_asset_version")
@@ -860,6 +866,49 @@ def store_product_lock(artifact, lock):
 			**({"provenance": lock["provenance"]} if lock.get("provenance") else {}),
 		}
 	)
+
+
+def lock_patch_version(artifact, number, content, source_asset_version=None):
+	"""An immutable project Asset Version holding one locked product patch."""
+	attempt = frappe.db.get_value("Generation Artifact", artifact.name, "generation_attempt") or artifact.get(
+		"generation_attempt"
+	)
+	task = frappe.db.get_value("Generation Attempt", attempt, "generation_task")
+	run = frappe.db.get_value("Generation Task", task, "generation_run")
+	project = frappe.db.get_value("Generation Run", run, "media_project")
+	asset = frappe.get_doc(
+		{
+			"doctype": "Media Asset",
+			"media_project": project,
+			"asset_name": f"{artifact.name} product lock {number}",
+			"media_type": "Image",
+			"asset_category": "Reference",
+			"asset_scope": "Project Output",
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
+	file_doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"{artifact.name}-product-{number}.png",
+			"content": content,
+			"is_private": 1,
+			"attached_to_doctype": "Media Asset",
+			"attached_to_name": asset.name,
+		}
+	).insert(ignore_permissions=True)
+	return frappe.get_doc(
+		{
+			"doctype": "Asset Version",
+			"media_asset": asset.name,
+			"file": file_doc.file_url,
+			"source": "Composed",
+			**({"derived_from": source_asset_version} if source_asset_version else {}),
+		}
+	).insert(ignore_permissions=True)
+
+
+OCCLUDED_PRODUCT = re.compile(r"overlaps a limb|physically occluded", re.I)
 
 
 class SourceArtCoverageError(ValueError):

@@ -164,6 +164,8 @@ def compile_segment_prompt_from_snapshot(
 				if segment_effective_frames
 				else float(shot.get("duration_seconds") or 5),
 			)
+		text = _unheld_product_staging(shot, text)
+		text = _grounded_cast_staging(shot, text)
 		# Continuation segments are written from the creative text, so they need the cast and audio rules too.
 		if prompt_source != "motion" or segment_count == 1:
 			return text
@@ -236,6 +238,32 @@ def compile_segment_prompt_from_snapshot(
 	)
 
 
+def _keyframe_retry_direction(shot):
+	"""Feed a bounded, evidence-backed correction into a redrawn still only."""
+	if shot.get("consistency_status") != "Redrawing":
+		return ""
+	note = str(shot.get("consistency_notes") or "")
+	if note.startswith("Critical framing:"):
+		return (
+			"\n\nRetry correction: the previous image showed the whole actor in a detail shot. "
+			"Fill the image with the authored focal action and contact area. Keep the actor's feet "
+			"and all unrelated body parts outside the frame."
+		)
+	if note.startswith("Critical geometry:"):
+		return (
+			"\n\nRetry correction: the previous image had invalid physical support. "
+			"Place each actor on the floor or a proper seat, and each product on its authored "
+			"supporting surface. Do not place an actor on the advertised product."
+		)
+	if note.startswith("Critical prop:"):
+		return (
+			"\n\nRetry correction: the previous image added an undeclared retail package. "
+			"Show only the physical object in the authored opening direction in the actor's hands; "
+			"do not substitute or add a printed container."
+		)
+	return ""
+
+
 def compile_prompt_for_documents(
 	shot, project, include_global_instructions=True, prompt_source="motion", is_final=False
 ):
@@ -274,8 +302,10 @@ def compile_prompt_for_documents(
 		mode = getattr(shot, "character_mode", None) or PASTE
 		references = getattr(shot, "references", None) or []
 		if mode == DRAW and any(_role_of(r) in ("character", "person") for r in references):
-			return _with_opening_staging(_draw_prompt(shot, project), shot) + _image_reference_roles(
-				references
+			return (
+				_with_opening_staging(_draw_prompt(shot, project), shot)
+				+ _image_reference_roles(references)
+				+ _keyframe_retry_direction(shot)
 			)
 		if pasted_references(references, mode):
 			# The real characters and products are pasted in afterwards, so the image model gets the place only.
@@ -335,6 +365,44 @@ def compile_prompt_for_documents(
 			duration=float(getattr(shot, "duration_seconds", None) or 5.0),
 		)
 	return prompt.strip()
+
+
+def _grounded_cast_staging(shot, text):
+	"""A cast character is placed the way a real body could be: whole and supported.
+
+	Picture models otherwise cut a mascot through furniture (upper body above a
+	table, the rest below it) or let it float. Where it stands or sits is free.
+	"""
+	refs = (shot.get("references") if hasattr(shot, "get") else getattr(shot, "references", None)) or []
+	roles = {str(_ref_field(r, "reference_role") or _ref_field(r, "input_role") or "").lower() for r in refs}
+	if roles & {"character", "person"}:
+		text += (
+			"\n\nPlace the character the way a real body could be: its whole body is supported "
+			"by one surface and stays in front of, beside or behind furniture, never passing "
+			"through it or cut by a tabletop, and it reaches the product at a plausible height."
+		)
+	return text
+
+
+def _unheld_product_staging(shot, text):
+	"""A product-only scene stages the product by itself.
+
+	Picture and video models otherwise add a pair of human hands holding it (a
+	stock product-photo habit), which admission rightly rejects when no person
+	is cast. Positive staging works where a negative instruction does not.
+	"""
+	refs = (shot.get("references") if hasattr(shot, "get") else getattr(shot, "references", None)) or []
+	roles = {str(_ref_field(r, "reference_role") or _ref_field(r, "input_role") or "").lower() for r in refs}
+	if "product" in roles and not roles & {"character", "person", "people", "talent"}:
+		text += (
+			"\n\nThe product stands on its own on a stable surface, fully visible and untouched, "
+			"with nothing and no one holding it."
+		)
+	return text
+
+
+def _ref_field(row, name):
+	return row.get(name) if hasattr(row, "get") else getattr(row, name, None)
 
 
 def _identity_guard(shot, project, include_camera=True, include_style=True, concise=False):
@@ -996,9 +1064,9 @@ def keep_rules(shot, project):
 	return "; ".join(dict.fromkeys(rules))
 
 
-def _mood(project):
+def _mood(project, avoid=True):
 	"""The sheet's Tone & Mood, visual style and what must not be shown: one line for the image and video models,
-	the same in every scene."""
+	the same in every scene. `avoid=False` leaves out what must not be shown (see `_avoid`)."""
 	brief = sheet_brief(project)
 	tone, style = brief["tone"], brief["style"]
 	if (
@@ -1010,8 +1078,13 @@ def _mood(project):
 	return (
 		(f"Mood: {tone}. " if tone else "")
 		+ (f"Visual style: {style}. " if style else "")
-		+ (f"Never show: {brief['avoid']}. " if brief["avoid"] else "")
+		+ (f"Never show: {brief['avoid']}. " if avoid and brief["avoid"] else "")
 	)
+
+
+def _avoid(project):
+	brief = sheet_brief(project)
+	return f"Never show: {brief['avoid']}." if brief["avoid"] else ""
 
 
 def product_identity(project, shows=True):
@@ -1141,7 +1214,12 @@ def _with_opening_staging(prompt, shot):
 	staging = opening_instruction(plan, shot.get("duration_seconds"))
 	prompt = (
 		f"{staging}\nDraw only this opening state, before the first timed action. "
-		"Do not advance it to a later action or result described in the scene context below.\n\n" + prompt
+		"Do not advance it to a later action or result described in the scene context below.\n\n"
+		+ prompt
+		# Repeated last: a long scene description otherwise drowns the required
+		# state (e.g. the spill the scene will wipe) and the still omits it.
+		+ "\n\nThe opening still must visibly include: "
+		+ staging.removeprefix("Starting-frame staging: ")
 		if staging
 		else prompt
 	)

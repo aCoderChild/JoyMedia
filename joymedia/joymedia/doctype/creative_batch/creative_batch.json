@@ -28,7 +28,7 @@
       "fieldname": "status",
       "fieldtype": "Select",
       "label": "Status",
-      "options": "Queued\nPlanning\nRendering\nFinishing\nCompleted\nScripts Ready\nNeeds Attention\nCancelled",
+      "options": "Queued\nPlanning\nRendering\nFinishing\nCompleted\nScripts Ready\nAwaiting Review\nNeeds Attention\nCancelled",
       "default": "Queued",
       "read_only": 1,
       "in_list_view": 1

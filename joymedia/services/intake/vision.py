@@ -26,6 +26,7 @@ Describe this reference image for a video director who cannot see it. Return onl
 {"kind": "person|place|product|other",
  "scene_type": "exterior|interior|amenity|landscape|portrait|product|other",
  "description": "at most 45 words of concrete visible details: layout, architecture, materials, furniture, colours, and what is seen through any windows",
+ "pose_and_support": "visible pose and support: standing, seated, lying, airborne or uncertain; name only the supporting surface actually visible",
  "outfit": "for a person: the exact garment type (name traditional dress such as a Vietnamese ao dai), colour, hair; otherwise empty",
  "lighting": "a few words"}
 Rules: describe only what is visible, never guess. kind is "person" when a person is the main subject,
@@ -53,7 +54,7 @@ box/carton for visible rigid construction. Do not infer a hinged lid, an opening
 """.strip()
 
 # Stored with each analysis; analyses made with an older prompt are redone.
-ANALYSIS_VERSION = 3
+ANALYSIS_VERSION = 4
 
 
 def is_configured():
@@ -164,6 +165,7 @@ def normalize_analysis(result, as_product=False):
 		"description": str(result.get("description") or "").strip()[:400],
 		"outfit": str(result.get("outfit") or "").strip()[:200],
 		"lighting": str(result.get("lighting") or "").strip()[:100],
+		"pose_and_support": str(result.get("pose_and_support") or "").strip()[:240],
 		"version": ANALYSIS_VERSION,
 	}
 	if as_product:

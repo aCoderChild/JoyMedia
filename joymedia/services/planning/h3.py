@@ -42,6 +42,7 @@ def compile_h3(
 	from joymedia.services.planning.framing import inspect_framing
 	from joymedia.services.planning.prompts import (
 		_audio_line_last,
+		_avoid,
 		_identity_guard,
 		_mood,
 		first_frame_inventory,
@@ -104,11 +105,13 @@ def compile_h3(
 	)
 	if segment_count > 1 and physical and not timing:
 		action = ""
-	style = _mood(project) or (
+	# Lighting & Atmosphere carries only the look; what must never appear is a subject constraint.
+	style = _mood(project, avoid=False) or (
 		"Cinematic visual direction, preserving the established lighting and materials."
 		if kind == "text"
-		else "Use the visual style, lighting, materials and mood established by the supplied frame."
+		else "Keep the lighting, colour palette and mood established by the supplied frame."
 	)
+	never = _avoid(project)
 	refs = "The supplied first frame controls identity, clothing, product geometry and artwork, environment, lighting and opening composition. Reference poses do not add actions."
 	if kind == "text":
 		refs = "Use only the subjects and environment described in this scene; no image or video references are supplied."
@@ -116,8 +119,15 @@ def compile_h3(
 		# This graph receives the opening plus an optional product image, not
 		# every Character/Environment row from the project library.
 		refs = "<Picture 1> controls the opening composition, identity, environment and action state."
-		if camera["product_focus"]:
+		roles = {str(r.get("reference_role") or "").lower() for r in shot.get("references") or []}
+		if camera["product_focus"] or "product" in roles:
 			refs += " <Picture 2> controls only exact product geometry, material and printed artwork; it depicts the same physical product, not another object or scene."
+		if workflow and "product" in roles:
+			# The roles the reference graph receives, inside Subject Identity rather than
+			# appended after the five layers.
+			refs += " Use <Picture 2> only for the exact advertised product silhouette, proportions, colours and printed artwork; keep its artwork attached to its surface through perspective, motion and occlusion."
+		if workflow and roles & {"character", "person"}:
+			refs += " Use the separate character reference only for the original character's face, markings, accessories, body proportions, limb and hand shape, and colours. Retain the opening frame's pose and placement; do not add the reference image as a cutaway or duplicate actor."
 	if reference_only:
 		refs = _direct_reference_roles(shot, workflow)
 	opening = (
@@ -179,25 +189,6 @@ def compile_h3(
 	)
 	if camera["closing"]:
 		ending += " Settle into a stable final hold; CTA lettering is added by the editor."
-	body = "\n\n".join(
-		p
-		for p in [
-			style,
-			composition_instruction(project),
-			refs,
-			opening,
-			action,
-			physical,
-			rules,
-			guard,
-			camera["direction"],
-			" ".join(speech_parts),
-			ending,
-		]
-		if p
-	)
-	if kind == "reference":
-		return f"subject_definitions: {refs}\n\nsummary: One continuous shot.\n\nretention_analysis: Preserve the declared reference identities and product artwork.\n\ndetailed_description: [Shot 1] {body}\n\noverall_soundscape: {sound or 'Only sounds caused by the visible action; no invented speech.'}\n\nnon_diegetic_music: {music}"
 	anchor = ""
 	if kind == "image":
 		last = any(
@@ -205,13 +196,79 @@ def compile_h3(
 			for r in shot.get("references") or []
 		)
 		if last:
-			anchor = f"How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot 1) aligns with the {duration:.2f}-second mark of the target video.\n\n"
-			body += (
-				"\n\nReach the final pose and composition established by Picture 2 at the end of the shot."
-			)
+			anchor = f"Picture 1 aligns with 0.00 s of the target video and Picture 2 with {duration:.2f} s."
+			ending += " Reach the final pose and composition established by Picture 2 at the end of the shot."
 		else:
-			anchor = "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\n"
-	return f"{anchor}integrated_multimodal_description: [Shot 1] {body}\n\noverall_soundscape: {sound or 'Only sounds caused by the visible action; no invented speech.'}\n\nnon_diegetic_music: {music}"
+			anchor = "At 0.00 s of the target video, <Picture 1> is fully referenced."
+	return five_layers(
+		camera=[camera["direction"], composition_instruction(project)],
+		subject=[anchor, refs, subject_identities(shot), opening, guard, unheld_product(shot), never],
+		motion=[action, physical, rules, ending],
+		lighting=[style],
+		audio=[
+			sound or "Only sounds caused by the visible action.",
+			" ".join(f'Speech: "{line}"' for line in speech_parts),
+			"No speech, no narration, no singing."
+			if sfx_only and not re.search(r"no speech", sound or "", re.I)
+			else "",
+			"No music." if music == "N/A" else "Music: " + music,
+		],
+	)
+
+
+def subject_identities(shot):
+	"""What each subject in the scene looks like, from its reference's stored analysis.
+
+	Reference keys mean nothing to the video model; the analysed appearance of the
+	approved picture (an immutable Asset Version) does.
+	"""
+	import frappe
+
+	lines, seen = [], set()
+	for row in shot.get("references") or []:
+		role = str(row.get("reference_role") or "").lower()
+		if role not in {"character", "person", "product"} or row.get("asset_version") in seen:
+			continue
+		seen.add(row.get("asset_version"))
+		analysis = frappe.parse_json(
+			frappe.db.get_value("Asset Version", row.get("asset_version"), "analysis_json") or "{}"
+		)
+		description = " ".join(str((analysis or {}).get("description") or "").split())
+		description = re.sub(r"^Visible construction:[^.]*\.\s*", "", description)
+		if role == "product":
+			# Vision descriptions are useful for geometry, but OCR-like prose can invent
+			# packaging copy. The original product image, not generated OCR, owns print.
+			description = re.sub(
+				r"(?i)(?:^|(?<=\.\s))(?:text|label|lettering|words|print(?:ed text)?)\s+(?:reads?|says?|shows?|states?|includes?)\b[^.]*\.?\s*",
+				"",
+				description,
+			).strip()
+		if description:
+			lines.append(f"The {'product' if role == 'product' else 'character'}: {description}")
+	return " ".join(lines)
+
+
+def unheld_product(shot):
+	"""A product-only scene: no actor exists to touch it, so no hand may appear."""
+	roles = {str(r.get("reference_role") or "").lower() for r in shot.get("references") or []}
+	if "product" in roles and not roles & {"character", "person"}:
+		return "The product stands on its own: nothing and no one touches it; no hands, arms, paws or people enter the frame."
+	return ""
+
+
+LAYERS = ("Camera Direction", "Subject Identity", "Motion & Physics", "Lighting & Atmosphere", "Audio SFX")
+
+
+def five_layers(camera, subject, motion, lighting, audio):
+	"""Input-standards-H3: every H3 prompt is English, in five ordered layers:
+	[Camera Direction] + [Subject Identity] + [Motion & Physics] + [Lighting & Atmosphere] + [Audio SFX].
+	"""
+	parts = (camera, subject, motion, lighting, audio)
+	return "\n\n".join(
+		f"{label}: "
+		+ re.sub(r"\.(\s*\.)+", ".", " ".join(" ".join(str(p).split()) for p in part if str(p or "").strip()))
+		for label, part in zip(LAYERS, parts, strict=True)
+	)
 
 
 def _direct_reference_roles(shot, workflow):

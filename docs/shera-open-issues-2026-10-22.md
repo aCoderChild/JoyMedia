@@ -8,6 +8,21 @@ describe their own versions; see [Shera workflow audit](shera-workflow-audit.md)
 [Ref2VA integration](ref2va-integration.md), and
 [camera policy](h3-camera-policy.md).
 
+Later same-day automatic-delivery execution and updated findings are recorded in
+[Automatic reference video](automatic-reference-video.md). The table below remains
+the earlier snapshot; its unresolved quality findings are not closed by a preview export.
+
+**Latest same-day result:** `CRB-00036` / `PRJ-02621` completed an automatic
+seven-shot screenplay-to-ComfyUI preview, then a reviewed three-shot FL2VA
+replacement and a final 30.000 s export `ASTV-05446`. The extracted-sheet
+action and beige-room carry/ending defects visible in the first export were
+repaired in the selected takes. This supersedes the table's old claim that no
+source-reference batch has reached export. It does **not** close the moving
+package-print, subjective music-listening, non-Shera aspect-ratio, multi-video
+scale or release-review gaps. Native run IDs, failure evidence, code fixes,
+tests and decoded contact sheets are in
+[the PRJ-02593 automatic-pipeline audit](prj02593-pipeline-audit-2026-10-22.md).
+
 ## Current deliverables and evidence
 
 | Item | Observed state | What it proves |

@@ -1,0 +1,239 @@
+{
+ "6": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+   "weight_dtype": "default"
+  }
+ },
+ "13": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+   "type": "minimax",
+   "device": "default"
+  }
+ },
+ "11": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+  }
+ },
+ "24": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+  }
+ },
+ "121": {
+  "class_type": "LoraLoaderModelOnly",
+  "inputs": {
+   "model": [
+    "6",
+    0
+   ],
+   "lora_name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+   "strength_model": 1.0
+  }
+ },
+ "111": {
+  "class_type": "PrimitiveFloat",
+  "inputs": {
+   "value": 5.166666666666667
+  }
+ },
+ "107": {
+  "class_type": "ComfyMathExpression",
+  "inputs": {
+   "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
+   "values.a": [
+    "111",
+    0
+   ]
+  }
+ },
+ "114": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "Gau me.png"
+  }
+ },
+ "115": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "example.png"
+  },
+  "_meta": {
+   "title": "Last frame (optional keyframe anchor)"
+  }
+ },
+ "sigma_shift": {
+  "class_type": "MiniMaxH3SigmaShift",
+  "inputs": {
+   "model": [
+    "121",
+    0
+   ],
+   "shift_video": 12.0,
+   "shift_audio": 3.0
+  },
+  "_meta": {
+   "title": "Input-standards-H3: SigmaShift after the turbo LoRA"
+  }
+ },
+ "first_frame_size": {
+  "class_type": "ImageScale",
+  "inputs": {
+   "image": [
+    "114",
+    0
+   ],
+   "upscale_method": "lanczos",
+   "width": 768,
+   "height": 1344,
+   "crop": "center"
+  },
+  "_meta": {
+   "title": "Native H3 size: center crop + Lanczos"
+  }
+ },
+ "last_frame_size": {
+  "class_type": "ImageScale",
+  "inputs": {
+   "image": [
+    "115",
+    0
+   ],
+   "upscale_method": "lanczos",
+   "width": 768,
+   "height": 1344,
+   "crop": "center"
+  },
+  "_meta": {
+   "title": "Native H3 size for an optional last frame"
+  }
+ },
+ "104": {
+  "class_type": "MiniMaxH3ImageToVideo",
+  "inputs": {
+   "clip": [
+    "13",
+    0
+   ],
+   "vae": [
+    "11",
+    0
+   ],
+   "prompt": "",
+   "width": 768,
+   "height": 1344,
+   "length": [
+    "107",
+    1
+   ],
+   "first_frame": [
+    "first_frame_size",
+    0
+   ],
+   "last_frame": null
+  },
+  "_meta": {
+   "title": "MiniMaxH3ImageToVideo (first/last frame conditioning)"
+  }
+ },
+ "negative": {
+  "class_type": "ConditioningZeroOut",
+  "inputs": {
+   "conditioning": [
+    "104",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Unused at CFG 1.0 (KSampler requires a negative)"
+  }
+ },
+ "sampler": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "sigma_shift",
+    0
+   ],
+   "seed": 1,
+   "steps": 8,
+   "cfg": 1.0,
+   "sampler_name": "euler",
+   "scheduler": "simple",
+   "positive": [
+    "104",
+    0
+   ],
+   "negative": [
+    "negative",
+    0
+   ],
+   "latent_image": [
+    "104",
+    1
+   ],
+   "denoise": 1.0
+  },
+  "_meta": {
+   "title": "KSampler euler/simple/8 steps/CFG 1.0 (turbo distilled)"
+  }
+ },
+ "10": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "sampler",
+    0
+   ],
+   "vae": [
+    "11",
+    0
+   ]
+  }
+ },
+ "23": {
+  "class_type": "VAEDecodeAudio",
+  "inputs": {
+   "samples": [
+    "sampler",
+    0
+   ],
+   "vae": [
+    "24",
+    0
+   ]
+  }
+ },
+ "92": {
+  "class_type": "VHS_VideoCombine",
+  "inputs": {
+   "images": [
+    "10",
+    0
+   ],
+   "audio": [
+    "23",
+    0
+   ],
+   "frame_rate": 24.0,
+   "loop_count": 0,
+   "filename_prefix": "joymedia_h3",
+   "format": "video/h264-mp4",
+   "pix_fmt": "yuv420p",
+   "crf": 18,
+   "save_metadata": true,
+   "trim_to_audio": false,
+   "pingpong": false,
+   "save_output": true
+  },
+  "_meta": {
+   "title": "Native 24 fps h264 CRF 18 with stereo audio"
+  }
+ }
+}

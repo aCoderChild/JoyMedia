@@ -87,6 +87,8 @@ class GenericComfyUIAdapter(GenericWorkflowAdapter):
 					for size in options
 				):
 					raise ValueError("nearest_size_dimension options need positive width and height values")
+				if mapping.get("fallback_multiple") is not None and int(mapping["fallback_multiple"]) < 1:
+					raise ValueError("nearest_size_dimension fallback_multiple must be a positive integer")
 			if transform in {"round_to_multiple", "ceil_to_multiple"}:
 				try:
 					if int(mapping["multiple"]) < 1:
@@ -457,6 +459,12 @@ def _transform_value(mapping, value, values):
 			mapping["options"],
 			key=lambda size: abs(float(size["width"]) / float(size["height"]) - ratio),
 		)
+		# A model's native sizes cover only some ratios; any other delivery ratio keeps
+		# its own shape, aligned to the latent grid (docs/input-authority.md).
+		error = abs(float(option["width"]) / float(option["height"]) - ratio) / ratio
+		if mapping.get("fallback_multiple") and error > float(mapping.get("max_ratio_error", 0)):
+			multiple = int(mapping["fallback_multiple"])
+			return max(multiple, int(float(values[mapping["dimension"]]) / multiple + 0.5) * multiple)
 		return int(option[mapping["dimension"]])
 	return value  # validate_specification rejects transforms outside the allowlist
 

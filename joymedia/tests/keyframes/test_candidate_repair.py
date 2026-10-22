@@ -118,3 +118,44 @@ class TestCandidateRepairAccess(TestCase):
 			bad["results"].append({"id": "bad", "dimension": dim, "verdict": verdict})
 			self.assertFalse(repair.repair_review_candidate(bad))
 		self.assertFalse(repair.repair_review_candidate({"status": "Not Checked"}))
+
+
+class TestStoredProductLock(TestCase):
+	def test_every_locked_patch_is_an_immutable_version_the_tracked_fallback_accepts(self):
+		import json
+
+		from joymedia.services.keyframes.overlay import store_product_lock
+
+		version = Mock(file="/private/files/patch.png")
+		version.name = "ASTV-PATCH"
+		with patch(
+			"joymedia.services.keyframes.overlay.lock_patch_version", return_value=version
+		) as create:
+			stored = json.loads(
+				store_product_lock(
+					Mock(name="GART"),
+					{"canvas": [720, 1280], "items": [{"box": [1, 2, 3, 4], "png": b"x", "source_asset_version": "SRC"}]},
+				)
+			)
+		create.assert_called_once()
+		self.assertEqual(
+			[{"box": [1, 2, 3, 4], "file": "/private/files/patch.png", "patch_asset_version": "ASTV-PATCH", "source_asset_version": "SRC"}],
+			stored["items"],
+		)
+
+
+class TestHeldTakeReview(TestCase):
+	def report(self, **verdicts):
+		rows = [
+			{"id": "authored_action", "dimension": "action", "verdict": verdicts.get("action", "supported")},
+			{"id": "cast_inventory", "dimension": "cast", "verdict": verdicts.get("cast", "supported")},
+			{"id": "reference.R", "dimension": "identity", "verdict": verdicts.get("identity", "supported")},
+			{"id": "physics", "dimension": "physics", "verdict": verdicts.get("physics", "supported")},
+		]
+		return {"status": "Needs Review", "results": rows, "required_claim_ids": [r["id"] for r in rows]}
+
+	def test_a_reviewer_may_resolve_uncertain_action_but_not_cast_identity_or_violations(self):
+		self.assertTrue(repair.held_take_review_candidate(self.report(action="uncertain", physics="uncertain")))
+		for verdicts in ({"cast": "uncertain"}, {"identity": "uncertain"}, {"action": "violated"}, {"cast": "violated"}):
+			with self.subTest(**verdicts):
+				self.assertFalse(repair.held_take_review_candidate(self.report(**verdicts)))

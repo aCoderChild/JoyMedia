@@ -1,0 +1,9 @@
+[Unit]
+Description=JoyMedia ComfyUI per-attempt media retention
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/usr/local/lib/joymedia/runtime-retention.sh
+StandardOutput=append:/var/lib/kubelet/joymedia-model-store/runtime/retention.log
+StandardError=append:/var/lib/kubelet/joymedia-model-store/runtime/retention.log

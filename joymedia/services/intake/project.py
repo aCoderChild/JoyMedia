@@ -75,6 +75,102 @@ ROLE_CATEGORY = {
 	"General": "Reference",
 }
 ROLES = ("Product", "Character", "Person", "Logo", "Environment", "General")
+# Trailing filename words that name a camera view of one subject, not a different subject.
+VIEW_WORDS = {
+	"front",
+	"back",
+	"side",
+	"left",
+	"right",
+	"top",
+	"bottom",
+	"angle",
+	"angles",
+	"view",
+	"views",
+	"closeup",
+	"close",
+	"detail",
+	"portrait",
+	"standing",
+	"sitting",
+	"original",
+	"turnaround",
+	"sheet",
+	"cac",
+	"goc",
+	"mat",
+	"truoc",
+	"sau",
+	"ben",
+	"trai",
+	"phai",
+	"nghieng",
+	"tren",
+	"duoi",
+}
+
+
+def _label_stem(label):
+	import unicodedata
+
+	text = unicodedata.normalize("NFKD", str(label or "").replace("đ", "d").replace("Đ", "D"))
+	words = re.sub(
+		r"[^a-z0-9]+", " ", "".join(c for c in text if not unicodedata.combining(c)).lower()
+	).split()
+	while len(words) > 1 and (words[-1] in VIEW_WORDS or re.fullmatch(r"v?\d{1,2}", words[-1])):
+		words.pop()
+	return " ".join(words)
+
+
+def _image_signature(file_name):
+	"""A 12x12 colour thumbnail; a re-encoded or resized copy of one picture stays close."""
+	from PIL import Image
+
+	try:
+		with Image.open(frappe.get_doc("File", file_name).get_full_path()) as image:
+			ratio = image.width / image.height
+			pixels = image.convert("RGB").resize((12, 12)).getdata()
+			return ratio, [channel for pixel in pixels for channel in pixel]
+	except Exception:
+		return None
+
+
+def _same_picture(a, b):
+	return bool(
+		a
+		and b
+		and abs(a[0] - b[0]) < 0.02
+		and sum(abs(x - y) for x, y in zip(a[1], b[1], strict=True)) / len(b[1]) < 4
+	)
+
+
+def identity_groups(items):
+	"""Group uploaded pictures into subjects: alternative views share one identity key.
+
+	Pictures are one subject when their names differ only by view words (front, side,
+	các góc…) or when they are copies of the same picture. Everything else, such as
+	colour variants of a package, stays a separate subject.
+	"""
+	groups, stems, signatures = [], [], []
+	for item in items:
+		stems.append(_label_stem(item.get("label") or item.get("file_name")))
+		signature = _image_signature(item["file_name"]) if item.get("file_name") else None
+		group = len(groups)
+		for index, other in enumerate(items[: len(groups)]):
+			if other.get("role") != item.get("role"):
+				continue
+			if (stems[-1] and stems[-1] == stems[index]) or _same_picture(signature, signatures[index]):
+				group = groups[index]
+				break
+		groups.append(group)
+		signatures.append(signature)
+	# Name a subject after its most descriptive picture name ("product" < the full pack name).
+	names = {}
+	for group, stem in zip(groups, stems, strict=True):
+		if len(stem) > len(names.get(group, "")):
+			names[group] = stem
+	return [re.sub(r"\W+", "_", names[g]).strip("_")[:60] or f"subject_{g + 1}" for g in groups]
 
 
 def infer_reference_role(name):
@@ -178,6 +274,35 @@ def preview_workbook(workbook_file):
 
 
 @frappe.whitelist()
+def find_product_project(file_names):
+	"""The user's existing projects that already show one of these product pictures.
+
+	A new brief for a product that already has a project adds its videos there, the way
+	ad tools keep every variation of one product together.
+	"""
+	file_names = frappe.parse_json(file_names) if isinstance(file_names, str) else file_names or []
+	uploaded = [s for s in map(_image_signature, file_names[:20]) if s]
+	if not uploaded:
+		return []
+	matches = []
+	for row in frappe.get_list(
+		"Media Project",
+		filters={"owner": frappe.session.user, "version_of": ["is", "not set"], "status": ["!=", "Archived"]},
+		fields=["name", "project_name", "product_name"],
+		order_by="modified desc",
+		limit_page_length=50,
+	):
+		if any(
+			_same_picture(mine, theirs)
+			for theirs in map(_image_signature, _reference_files(row.name).get("Product", []))
+			for mine in uploaded
+		):
+			row["video_count"] = frappe.db.count("Media Project", {"version_of": row.name}) or 1
+			matches.append(row)
+	return matches
+
+
+@frappe.whitelist(methods=["POST"])
 def create_project_from_brief(
 	project_name=None,
 	video_idea=None,
@@ -188,10 +313,16 @@ def create_project_from_brief(
 	auto_script=False,
 	variants=1,
 	auto_render=True,
+	example_workbooks=None,
+	hero_products=None,
+	duration_seconds=None,
+	language=None,
+	into_project=None,
 ):
 	"""Create a project from the client's inputs and report what is still missing.
 
 	references: list of {file_name, label, role}; role may be empty (inferred from the label).
+	into_project: an existing project of the same product; the new videos join it.
 	"""
 	from joymedia.api.assets import select_project_asset
 	from joymedia.api.projects import create_project
@@ -206,6 +337,25 @@ def create_project_from_brief(
 		frappe.throw(_("References must be a list."))
 	if format and format not in ("Landscape", "Portrait", "Square") and not format_preset(format):
 		frappe.throw(_("Choose Landscape, Portrait or Square."))
+	if into_project:
+		if not auto_script or workbook_file:
+			frappe.throw(_("Only automatically scripted videos can be added to an existing project."))
+		project = frappe.get_doc("Media Project", into_project)
+		project._require_write_access()
+		if project.get("version_of"):
+			project = frappe.get_doc("Media Project", project.version_of)
+		return _add_videos(
+			project,
+			references,
+			variants=variants,
+			auto_render=auto_render,
+			direction=video_idea,
+			aspect_ratio=format,
+			duration_seconds=duration_seconds,
+			hero_products=hero_products,
+			example_workbooks=example_workbooks,
+			language=language,
+		)
 	project = create_project(project_name or _("Untitled Project"), "", video_idea or None)
 	try:
 		if workbook_file:
@@ -235,11 +385,19 @@ def create_project_from_brief(
 				project.save(ignore_permissions=True)
 		added = []
 		for item in references:
-			label = str(item.get("label") or "").strip() or str(item.get("file_name") or "reference")
+			item["label"] = str(item.get("label") or "").strip() or str(item.get("file_name") or "reference")
 			# Without a role the Project Reference controller classifies the image from its label.
-			role = item.get("role") if item.get("role") in ROLES else infer_reference_role(label)
-			if auto_script and role == "General":
-				role = "Product"
+			item["role"] = (
+				item.get("role") if item.get("role") in ROLES else infer_reference_role(item["label"])
+			)
+			if auto_script and item["role"] == "General":
+				item["role"] = "Product"
+		if auto_script:
+			grouped = [item for item in references if item["role"] in {"Product", "Character", "Person"}]
+			for item, key in zip(grouped, identity_groups(grouped), strict=True):
+				item.setdefault("identity_key", key)
+		for item in references:
+			label, role = item["label"], item["role"]
 			file_doc = frappe.get_doc("File", item["file_name"])
 			if str(file_doc.file_name or "").lower().endswith(".pdf"):
 				# A PDF (a product sheet, a brand book): its usable pictures become references, roles guessed per page.
@@ -262,8 +420,7 @@ def create_project_from_brief(
 				asset["media_asset"],
 				role,
 				label,
-				identity_key=item.get("identity_key")
-				or (role.lower() if auto_script and role in {"Product", "Character", "Person"} else None),
+				identity_key=item.get("identity_key"),
 			)
 			added.append({"label": label, "role": role})
 		from joymedia.services.intake.references import apply_sheet_references
@@ -283,10 +440,96 @@ def create_project_from_brief(
 
 		project.reload()
 		result["creative_batch"] = create_product_batch(
-			project.name, count=variants, auto_render=auto_render, direction=video_idea, aspect_ratio=format
+			project.name,
+			count=variants,
+			auto_render=auto_render,
+			direction=video_idea,
+			aspect_ratio=format,
+			duration_seconds=duration_seconds,
+			hero_products=hero_products,
+			example_workbooks=example_workbooks,
+			language=language,
 		)
 	frappe.db.commit()
 	return result
+
+
+def _add_videos(project, references, **batch):
+	"""One project, one cast: new videos reuse the project's own subject pictures.
+
+	The uploads found the project; they do not redefine its subjects. A new photo of the
+	mascot cannot be told apart from a second character by name or pixels, and a second
+	character breaks consistency, so only what the project lacks is added: a character
+	when it has none, and new products when the videos rotate through products.
+	"""
+	from joymedia.api.assets import select_project_asset
+	from joymedia.api.creative import create_product_batch
+	from joymedia.services.intake.assets import create_media_asset
+
+	known = {
+		role: [s for s in (_image_signature(f) for f in files) if s]
+		for role, files in _reference_files(project.name).items()
+	}
+	rotate = batch.get("hero_products") == "all"
+	for item in references:
+		item["label"] = str(item.get("label") or "").strip() or str(item.get("file_name") or "reference")
+		role = item.get("role") if item.get("role") in ROLES else infer_reference_role(item["label"])
+		item["role"] = "Product" if role == "General" else role
+	wanted = [
+		item
+		for item in references
+		if (item["role"] == "Product" and rotate)
+		or (item["role"] in {"Character", "Person"} and not known.get(item["role"]))
+	]
+	wanted = [
+		item
+		for item in wanted
+		if not any(_same_picture(_image_signature(item["file_name"]), s) for s in known.get(item["role"], []))
+	]
+	added = []
+	for item, key in zip(wanted, identity_groups(wanted), strict=True):
+		file_doc = frappe.get_doc("File", item["file_name"])
+		asset = create_media_asset(
+			item["label"], ROLE_CATEGORY[item["role"]], file_url=file_doc.file_url, file_name=file_doc.name
+		)
+		select_project_asset(
+			project.name, asset["media_asset"], item["role"], item["label"], identity_key=key
+		)
+		added.append({"label": item["label"], "role": item["role"]})
+	project.reload()
+	result = {"project": project.name, "references": added, "added_to_existing": True}
+	result["creative_batch"] = create_product_batch(project.name, count=batch.pop("variants"), **batch)
+	frappe.db.commit()
+	return result
+
+
+def _reference_files(project_name):
+	rows = frappe.get_all(
+		"Project Reference",
+		filters={"parent": project_name, "parenttype": "Media Project"},
+		fields=["reference_role", "asset_version"],
+	)
+	urls = dict(
+		frappe.get_all(
+			"Asset Version",
+			filters={"name": ["in", [r.asset_version for r in rows]]},
+			fields=["name", "file"],
+			as_list=True,
+		)
+	)
+	names = dict(
+		frappe.get_all(
+			"File",
+			filters={"file_url": ["in", list(urls.values())]},
+			fields=["file_url", "name"],
+			as_list=True,
+		)
+	)
+	files = {}
+	for row in rows:
+		if names.get(urls.get(row.asset_version)):
+			files.setdefault(row.reference_role, []).append(names[urls[row.asset_version]])
+	return files
 
 
 def _sheet_characters(project):

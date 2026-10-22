@@ -91,6 +91,21 @@ class TestStoryboardApprovalWorkflow(FrappeTestCase):
 		self.assertFalse(shot.end_state)
 		self.assertFalse(shot.handoff_type)
 
+	def test_a_direction_edit_can_supply_new_opening_and_ending_states(self):
+		storyboard.update_project_shot(
+			self.project.name,
+			self.shot.name,
+			{
+				"generation_prompt": "Open the already-held sheet once.",
+				"image_prompt": "One sheet is already held outside its pack.",
+				"start_state": "The actor holds one extracted sheet above the supported pack.",
+				"end_state": "The same sheet is open between the actor's hands.",
+			},
+		)
+		shot = frappe.get_doc("Shot", self.shot.name)
+		self.assertIn("one extracted sheet", shot.start_state)
+		self.assertIn("same sheet", shot.end_state)
+
 	def test_the_desk_actions_move_the_state_and_leave_an_audit_trail(self):
 		project = frappe.get_doc("Media Project", self.project.name)
 		apply_workflow(project, "Submit for review")
