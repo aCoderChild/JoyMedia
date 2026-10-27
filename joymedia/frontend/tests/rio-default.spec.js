@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 const session = process.env.JOYMEDIA_TEST_SESSION;
 const project = process.env.JOYMEDIA_UX_PROJECT;
 
-test('project opens the connected RIO workspace and can return to guided view', async ({ context, page }) => {
+test('project and legacy editor links open the JoyMedia studio workspace', async ({ context, page }) => {
   test.skip(!session || !project, 'Authorized live project and session required');
   const cookies = JSON.parse(await fs.readFile(session, 'utf8'));
   await context.addCookies(Object.entries(cookies).map(([name, value]) => ({
@@ -27,7 +27,8 @@ test('project opens the connected RIO workspace and can return to guided view', 
   await expect(page.locator('.rio-asset-card').first()).toBeVisible();
   await expect(page.locator('.rio-node textarea').first()).toBeDisabled();
   await expect(page.locator('.rio-asset-card').first()).toHaveAttribute('draggable', 'false');
-  await expect(page.locator('.rio-header-actions .rio-classic')).toHaveCount(1);
+  await expect(page.locator('.rio-header-actions .rio-classic')).toHaveCount(0);
+  await expect(page.locator('.rio-brand')).toContainText('JOYMEDIA');
   await expect(page.locator('.rio-header-link')).toHaveAttribute('href', '/joymedia/projects');
   await page.locator('[data-test="rio-versions-toggle"]').click();
   await expect(page.locator('[data-test="rio-versions"]')).toBeVisible();
@@ -66,9 +67,9 @@ test('project opens the connected RIO workspace and can return to guided view', 
   await page.locator('.rio-header-actions button[title="Cài đặt dự án"]').click();
   await expect(page.locator('[data-test="video-settings-modal"]')).toBeVisible();
   await page.locator('[data-test="video-settings-modal"] button').first().click();
-  await page.getByRole('button', { name: 'Xem theo bước' }).click();
-  await expect(page.locator('[data-test="client-workspace"]')).toBeVisible();
-  await page.locator('[data-test="open-rio-studio"]').click();
+  await page.goto(`/joymedia/projects/${project}?editor=simple`);
+  await expect(page).not.toHaveURL(/editor=simple/);
+  await expect(page.locator('[data-test="client-workspace"]')).toHaveCount(0);
   await expect(page.locator('[data-test="rio-studio"]')).toBeVisible();
   expect(writes).toEqual([]);
   expect(errors).toEqual([]);

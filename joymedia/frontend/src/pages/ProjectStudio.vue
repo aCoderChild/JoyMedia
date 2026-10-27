@@ -117,8 +117,9 @@
 			:project-title="projectTitle"
 			:project-status="projectStatus"
 			:idea="videoIdeaPrompt"
-			:can-edit="access.can_use_advanced_editor"
-			:can-work="!access.reviewer"
+			:can-edit="access.can_use_advanced_editor && !workspace?.family?.archived"
+			:can-work="!access.reviewer && !workspace?.family?.archived"
+			:can-restore="Boolean(workspace?.family?.archived) && !access.reviewer"
 			:current-lang="currentLang"
 			:assets="projectAssets"
 			:selected-asset="selectedAsset"
@@ -139,8 +140,8 @@
 			:frames="clientFrames.rows.value"
 			:next-action="clientNextAction"
 			:error="productionError || syncError"
-			@classic="rioMode = false"
-			@video="setEditorMode(false)"
+			@restore="restoreClientProject"
+			@open-history="historyOpen = true"
 			@update:idea="videoIdeaPrompt = $event"
 			@settings="openProjectSettings"
 			@add-scene="openAddScenePopover"
@@ -208,7 +209,7 @@
 			</div>
 		</div>
 		<div v-if="advancedMode && !rioMode" class="px-4 py-1 border-b border-outline-border text-right">
-			<button type="button" class="text-xs text-rio-400 underline" data-test="open-rio-studio" @click="rioMode = true">RIO Studio</button>
+			<button type="button" class="text-xs text-rio-400 underline" data-test="open-rio-studio" @click="rioMode = true">JoyMedia Studio</button>
 		</div>
 
 		<div
@@ -860,11 +861,8 @@ function closeVideoReview() {
 		router.replace({ path: route.path, query });
 	}
 }
-// The project URL opens RIO for every project role. The guided workspace
-// remains available explicitly and handles archived projects.
-const advancedMode = computed(
-	() => route.query.editor !== "simple" && !workspace.value?.family?.archived
-);
+// Every project uses the same studio workspace, including archived projects.
+const advancedMode = computed(() => true);
 const rioMode = ref(true);
 const rioTimelineOpen = ref(false);
 const rioShotInspectorOpen = ref(false);

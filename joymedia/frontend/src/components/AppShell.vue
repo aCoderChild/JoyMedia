@@ -14,14 +14,14 @@
                 'justify-center p-1.5': isCollapsed,
                 'justify-between p-2': !isCollapsed,
               }"
-              :title="isCollapsed ? 'RIO Studio' : undefined"
+              :title="isCollapsed ? 'JoyMedia' : undefined"
             >
               <div class="flex items-center gap-2.5 min-w-0">
                 <div class="brand-mark shrink-0">
                   <span class="text-xl font-bold text-white">◇</span>
                 </div>
                 <div v-if="!isCollapsed" class="flex flex-col text-left min-w-0">
-                  <span class="text-xs font-bold uppercase tracking-wider text-rio-400 leading-tight">RIO</span>
+                  <span class="text-xs font-bold uppercase tracking-wider text-rio-400 leading-tight">JoyMedia</span>
                   <span class="text-xs font-semibold text-ink-primary leading-tight truncate">Studio</span>
                 </div>
               </div>
@@ -126,7 +126,7 @@
       <header v-if="!isProjectStudio" class="topbar">
         <!-- Left: Home / Project Navigation -->
         <div class="flex items-center gap-3">
-          <RouterLink v-if="isRioLibrary" to="/projects" class="rio-library-brand" aria-label="RIO Studio — Videos"><span aria-hidden="true">◇</span><strong>RIO <em>STUDIO</em></strong></RouterLink>
+          <RouterLink v-if="isRioLibrary" to="/projects" class="rio-library-brand" aria-label="JoyMedia — Videos"><span aria-hidden="true">◇</span><strong>JOY<em>MEDIA</em></strong></RouterLink>
           <button
             v-if="!isRioLibrary"
             type="button"

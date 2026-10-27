@@ -1,10 +1,10 @@
 <template>
   <div class="jm-workspace h-full overflow-y-auto" data-test="client-workspace">
     <header class="jm-workspace-header">
-      <span class="jm-project-brand" aria-label="RIO Studio"><span aria-hidden="true">◇</span><strong>RIO</strong></span>
+      <span class="jm-project-brand" aria-label="JoyMedia"><span aria-hidden="true">◇</span><strong>JoyMedia</strong></span>
       <button class="text-sm text-ink-secondary shrink-0" @click="emit('back')">← {{ t('Your videos','Video của bạn') }}</button>
       <h1 class="font-semibold truncate flex-1">{{ title }}</h1>
-      <button v-if="!archived" type="button" class="text-sm text-rio-500 shrink-0" data-test="open-rio-studio" @click="emit('advanced')">RIO Studio</button>
+      <button v-if="!archived" type="button" class="text-sm text-rio-500 shrink-0" data-test="open-rio-studio" @click="emit('advanced')">JoyMedia Studio</button>
       <details ref="moreMenu" class="relative text-sm"><summary class="cursor-pointer px-2">{{ t('More','Thêm') }}</summary>
         <div class="absolute right-0 top-8 w-52 rounded-xl border border-outline-border bg-surface-card p-2 shadow-xl flex flex-col items-stretch">
           <button class="text-left p-2" data-test="open-project-history" @click="emit('history')">{{ t('Version history','Lịch sử phiên bản') }}</button>

@@ -1,23 +1,23 @@
 <template>
 	<div class="rio-studio" data-test="rio-studio">
 		<header class="rio-header">
-			<div class="rio-brand" aria-label="RIO Studio">
+			<div class="rio-brand" aria-label="JoyMedia">
 				<span class="rio-brand-mark" aria-hidden="true">◇</span>
-				<strong>RIO <span>STUDIO</span></strong>
+				<strong>JOY<span>MEDIA</span></strong>
 				<span class="rio-status" :class="{ 'is-busy': busy }"><i />{{ statusLabel }}</span>
 			</div>
 			<div class="rio-project-name" :title="projectTitle">{{ projectTitle }}</div>
 			<div class="rio-header-actions">
 				<router-link class="rio-header-link" to="/projects">{{ t('Projects', 'Dự án') }}</router-link>
 				<button type="button" data-test="rio-versions-toggle" :aria-expanded="versionsOpen" @click="versionsOpen = !versionsOpen">{{ t('Video versions', 'Các phiên bản') }}</button>
+				<button v-if="canRestore" type="button" @click="emit('restore')">{{ t('Restore project', 'Khôi phục dự án') }}</button>
+				<button type="button" @click="emit('open-history')">{{ t('History', 'Lịch sử') }}</button>
 				<button v-if="canWork && nextActionLabel" type="button" class="rio-next-action" :disabled="busy || (nextAction === 'brief' && !idea?.trim())" @click="emit('continue')">{{ nextActionLabel }}</button>
 				<button v-if="canWork" type="button" :title="t('Project settings', 'Cài đặt dự án')" :aria-label="t('Project settings', 'Cài đặt dự án')" @click="emit('settings')">⚙</button>
 				<button v-if="canEdit" type="button" :title="t('Add scene', 'Thêm cảnh')" :aria-label="t('Add scene', 'Thêm cảnh')" @click="emit('add-scene')">＋</button>
 				<button type="button" :title="t('Project media', 'Tư liệu dự án')" :aria-label="t('Show or hide project media', 'Hiện hoặc ẩn tư liệu dự án')" :aria-expanded="assetsOpen" @click="assetsOpen = !assetsOpen">▧</button>
 				<button type="button" :title="t('Toggle minimap', 'Bật/tắt sơ đồ nhỏ')" :aria-label="t('Toggle minimap', 'Bật/tắt sơ đồ nhỏ')" :aria-pressed="showMinimap" @click="showMinimap = !showMinimap">▦</button>
 				<button type="button" :title="t('Fit canvas', 'Toàn cảnh')" :aria-label="t('Fit all scenes on screen', 'Hiện tất cả cảnh trên màn hình')" @click="fitCanvas">⛶</button>
-				<button v-if="canEdit" type="button" class="rio-classic" @click="emit('classic')">{{ t('Classic editor', 'Trình biên tập cũ') }}</button>
-				<button type="button" class="rio-classic" @click="emit('video')">{{ t('Guided view', 'Xem theo bước') }}</button>
 			</div>
 		</header>
 		<div v-if="versionsOpen" class="rio-versions" data-test="rio-versions"><header><strong>{{ t('Videos in this project', 'Video trong dự án') }}</strong><button type="button" :aria-label="t('Close versions', 'Đóng phiên bản')" @click="versionsOpen = false">×</button></header><VideoShelf :project="projectName" :readonly="!canWork" /></div>
@@ -112,7 +112,7 @@ import { aspectRatio, categoryIcon, categoryLabel as getCategoryLabel, categoryO
 
 const props = defineProps({
 	projectName: String, projectTitle: String, projectStatus: String, currentLang: String, idea: String,
-	canEdit: Boolean, canWork: Boolean,
+	canEdit: Boolean, canWork: Boolean, canRestore: Boolean,
 	assets: { type: Array, default: () => [] }, selectedAsset: Object,
 	shots: { type: Array, default: () => [] }, selectedShotIndex: { type: Number, default: 0 },
 	clips: { type: Array, default: () => [] }, audioClips: { type: Array, default: () => [] },
@@ -121,7 +121,7 @@ const props = defineProps({
 	storyboardApproved: Boolean, busyShots: { type: Array, default: () => [] },
 	frames: { type: Array, default: () => [] }, nextAction: String, error: String,
 });
-const emit = defineEmits(['classic', 'video', 'update:idea', 'settings', 'add-scene', 'open-media', 'select-asset', 'assign-asset', 'update-asset', 'remove-asset', 'update-shot-references', 'select-shot', 'edit-shot', 'draw-shot', 'approve-frame', 'render-shot', 'save-prompt', 'open-timeline', 'add-audio', 'toggle-audio', 'remove-audio', 'export', 'retry', 'continue']);
+const emit = defineEmits(['restore', 'open-history', 'update:idea', 'settings', 'add-scene', 'open-media', 'select-asset', 'assign-asset', 'update-asset', 'remove-asset', 'update-shot-references', 'select-shot', 'edit-shot', 'draw-shot', 'approve-frame', 'render-shot', 'save-prompt', 'open-timeline', 'add-audio', 'toggle-audio', 'remove-audio', 'export', 'retry', 'continue']);
 const t = (en, vi) => props.currentLang === 'vi' ? vi : en;
 const assetsOpen = ref(typeof window === 'undefined' || window.innerWidth > 640), assetSize = ref('m'), draggedAsset = ref(null), editingAsset = ref(null), editingAssetName = ref(''), detailsShotName = ref(null), canvasRef = ref(null), videoRef = ref(null), playing = ref(false), elapsed = ref(0), zoom = ref(1), showMinimap = ref(false), versionsOpen = ref(false), selectedAudioName = ref(null), audioAddOpen = ref(false);
 const pan = reactive({ x: 0, y: 0 });
