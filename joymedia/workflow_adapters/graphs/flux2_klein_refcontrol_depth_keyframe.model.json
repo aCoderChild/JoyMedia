@@ -1,0 +1,14 @@
+{
+  "upstream_repository": "https://huggingface.co/thedeoxen/refcontrol-FLUX.2-klein-4B-reference-depth-lora",
+  "revision": "0ae1ef7f9acc4e55ec2237360943c3c3032d3583",
+  "workflow": "image_flux2_klein_image_edit_4b_refcontrol_depth.json",
+  "license": "Apache-2.0",
+  "model": "flux2_klein_4b_refcontrol_depth.safetensors",
+  "model_size": 92426784,
+  "model_sha256": "65ec4c71fa7538b2201481928609a5836773f0dc06a4041b2d28abd05826c401",
+  "requires": [
+    "flux-2-klein-base-4b-fp8.safetensors",
+    "depth_anything_v2_vitl.pth",
+    "comfyui_controlnet_aux"
+  ]
+}

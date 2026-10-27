@@ -1,6 +1,7 @@
 <template>
 	<div
 		class="project-studio-root relative flex flex-col w-screen h-screen overflow-hidden bg-surface-base text-ink-primary"
+		:class="{ 'rio-project-theme': advancedMode && rioMode }"
 	>
 		<ClientWorkspace
 			v-if="!advancedMode"
@@ -8,6 +9,7 @@
 			:title="projectTitle"
 			:current-lang="currentLang"
 			:workspace="workspace"
+			:missing="workspaceMissing"
 			:loading="workspaceLoading"
 			v-model:prompt="videoIdeaPrompt"
 			:shots="storyboardShots"
@@ -39,10 +41,11 @@
 				}
 			"
 			@advanced="setEditorMode(true)"
-			@settings="showSettings = true"
+			@settings="openProjectSettings"
 			@continue="continueClientJourney"
 			@approve="(shot, approved) => clientFrames.approve(shot, approved)"
 			@redraw="(shot) => clientFrames.draw([shot])"
+			@retry-scene="regenerateCurrentShot"
 			@restore="restoreClientProject"
 			@refresh="fetchWorkspace"
 			@assemble="assembleClientPreview"
@@ -55,12 +58,12 @@
 			"
 		/>
 		<div
-			v-if="advancedMode"
+			v-if="advancedMode && !rioMode"
 			class="flex items-center justify-between px-4 py-2 border-b border-outline-border text-xs"
 		>
 			<span>{{ currentLang === "vi" ? "Trình chỉnh sửa nâng cao" : "Advanced editor" }}</span
 			><button
-				class="text-indigo-500 underline"
+				class="text-rio-500 underline"
 				data-test="back-to-simple"
 				@click="setEditorMode(false)"
 			>
@@ -69,7 +72,7 @@
 		</div>
 		<!-- 1. Single Studio Header (Full width across top: Projects | Title | Media | Export) -->
 		<StudioHeader
-			v-if="advancedMode"
+			v-if="advancedMode && !rioMode"
 			:project-name="projectName"
 			:project-title="projectTitle"
 			:edit-label="workspace?.family?.edit_label"
@@ -108,10 +111,109 @@
 			@cancel-finishing="cancelFinishing"
 			@select-shot="selectShotFromActivity"
 		/>
+		<RioStudioWorkspace
+			v-if="advancedMode && rioMode"
+			:project-name="projectName"
+			:project-title="projectTitle"
+			:project-status="projectStatus"
+			:idea="videoIdeaPrompt"
+			:can-edit="access.can_use_advanced_editor"
+			:can-work="!access.reviewer"
+			:current-lang="currentLang"
+			:assets="projectAssets"
+			:selected-asset="selectedAsset"
+			:shots="storyboardShots"
+			:selected-shot-index="selectedShotIndex"
+			:clips="videoClips"
+			:audio-clips="audioClips"
+			:final-video="finalVideo"
+			:timeline="timeline"
+			:fps="fps"
+			:width="videoSettings.delivery_width"
+			:height="videoSettings.delivery_height"
+			:busy="isGenerating || isProductionActive || clientFrames.drawingAll.value"
+			:exporting="isExporting"
+			:can-export="timelineReady"
+			:storyboard-approved="workspace?.project?.storyboard_approval_status === 'Approved'"
+			:busy-shots="workspace?.project?.busy_shots || []"
+			:frames="clientFrames.rows.value"
+			:next-action="clientNextAction"
+			:error="productionError || syncError"
+			@classic="rioMode = false"
+			@video="setEditorMode(false)"
+			@update:idea="videoIdeaPrompt = $event"
+			@settings="openProjectSettings"
+			@add-scene="openAddScenePopover"
+			@open-media="openPicker"
+			@select-asset="openRioAssetDetails"
+			@assign-asset="assignRioAssetToShot"
+			@update-shot-references="updateShotReferences"
+			@update-asset="updateRioAsset"
+			@remove-asset="removeRioAsset"
+			@select-shot="onSelectShot"
+			@edit-shot="openRioShotDetails"
+			@draw-shot="(shot) => clientFrames.draw([shot.name])"
+			@approve-frame="(shot, approved) => clientFrames.approve(shot, approved)"
+			@render-shot="regenerateCurrentShot"
+			@save-prompt="(shot, prompt) => saveActiveShot(shot.name, prompt)"
+			@open-timeline="openRioTimeline"
+			@add-audio="openAudioPicker"
+			@toggle-audio="onSetAudioClipEnabled"
+			@remove-audio="deleteClip"
+			@export="exportAndRefresh"
+			@retry="handleGenerationRetry"
+			@continue="continueClientJourney"
+		/>
+		<StudioInspector
+			v-if="advancedMode && rioMode && rioShotInspectorOpen && activeSelectedShot"
+			v-model:open="rioShotInspectorOpen"
+			studio-mode="storyboard" selected-target="shot"
+			:active-selected-shot="activeSelectedShot" :selected-shot-index="selectedShotIndex"
+			:selected-shot-frame="selectedShotFrame" :generation-mode="videoSettings.generation_mode"
+			:current-duration="videoSettings.duration || 15" :current-preset="videoSettings.delivery_preset || 'Landscape'"
+			:is-production-active="isProductionActive" :ai-revision-loading="aiRevisionLoading"
+			:project-name="projectName" :busy-shots="workspace?.project?.busy_shots || []"
+			:current-lang="currentLang" :estimate-shot-duration="estimateShotDuration"
+			:format-shot-keyframe-time="formatShotKeyframeTime"
+			@change-shot-duration="changeShotDuration" @regenerate-current-shot="regenerateCurrentShot"
+			@save-scene-description="saveActiveShot" @ask-ai="onAskAiRewriteShot"
+			@review-changed="onReviewChanged" @open-settings="showSettings = true" @open-media-picker="openPicker"
+		/>
+		<div v-if="advancedMode && rioMode && rioTimelineOpen" class="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-6" role="dialog" aria-modal="true" :aria-label="currentLang === 'vi' ? 'Biên tập dòng thời gian' : 'Edit timeline'">
+			<div class="relative w-full max-w-7xl max-h-full overflow-auto rounded-xl border border-outline-border bg-surface-card p-4">
+				<div class="flex items-center justify-between pb-3"><strong>{{ currentLang === 'vi' ? 'Biên tập dòng thời gian' : 'Edit timeline' }}</strong><button type="button" class="text-rio-400" @click="rioTimelineOpen = false">{{ currentLang === 'vi' ? 'Đóng' : 'Close' }} ×</button></div>
+				<EditTimeline
+					:clips="clips" :video-clips="videoClips" :audio-clips="audioClips" :fps="fps"
+					:selected-clip-name="selectedClipName" :playhead-frame="playheadFrame" :busy="timelineBusy"
+					:total-frames="timeline?.total_frames || 0" :total-seconds="timeline?.total_seconds || 0"
+					:canvas-total-frames="timeline?.canvas_total_frames || timeline?.total_frames || 0"
+					:render-total-frames="timeline?.render_total_frames || timeline?.total_frames || 0"
+					:current-lang="currentLang" :can-undo="canUndo" :can-redo="canRedo" :markers="timelineMarkers"
+					@select-clip="onSelectClip" @update:playhead-frame="onSeekPlayhead" @trim="handleTrimClip"
+					@split="handleSplitClip" @duplicate="duplicateClip" @delete="deleteClip" @reorder="handleReorderClip"
+					@move="handleMoveClip" @select-transition="setTransition" @open-inspector="openClipInspector"
+					@open-audio-picker="openAudioPicker" @add-scene="openAddScenePopover" @undo="undo" @redo="redo"
+					@set-audio-clip-enabled="onSetAudioClipEnabled"
+				/>
+				<StudioInspector v-if="inspectorOpen && selectedClip" v-model:open="inspectorOpen"
+					studio-mode="edit" selected-target="clip" :selected-clip="selectedClip" :selected-clip-source-shot="selectedClipSourceShot"
+					:timeline-busy="timelineBusy" :fps="fps" :current-lang="currentLang" :project-name="projectName"
+					@change-transition="onClipTransitionChange" @change-transition-frames="onClipTransitionFramesChange"
+					@split-clip="splitClipAtPlayhead" @duplicate-clip="duplicateClip(selectedClip)" @delete-clip="deleteClip(selectedClip)"
+					@update-audio-clip="onUpdateAudioClip" @fit-audio-clip-to-video="onFitAudioClipToVideo"
+					@fit-audio-clip-to-full-video="onFitAudioClipToFullVideo" @set-source-audio-enabled="onSetSourceAudioEnabled"
+					@use-full-audio-source="onUseFullAudioSource" @set-audio-clip-enabled="onSetAudioClipEnabled"
+					@update-source-for-selected-clip="onUpdateSourceForClip" @regenerate-source-for-selected-clip="onRegenerateSourceForClip"
+				/>
+			</div>
+		</div>
+		<div v-if="advancedMode && !rioMode" class="px-4 py-1 border-b border-outline-border text-right">
+			<button type="button" class="text-xs text-rio-400 underline" data-test="open-rio-studio" @click="rioMode = true">RIO Studio</button>
+		</div>
 
 		<div
-			v-if="advancedMode && workspace?.family && !workspace.family.is_working_edit"
-			class="px-4 py-2 bg-indigo-500/10 border-b border-outline-border text-xs flex items-center justify-between gap-2"
+			v-if="advancedMode && !rioMode && workspace?.family && !workspace.family.is_working_edit"
+			class="px-4 py-2 bg-rio-500/10 border-b border-outline-border text-xs flex items-center justify-between gap-2"
 		>
 			<span
 				>{{
@@ -123,7 +225,7 @@
 			>
 			<button
 				type="button"
-				class="text-indigo-400 font-semibold"
+				class="text-rio-400 font-semibold"
 				@click="router.push(`/projects/${workspace.family.current_edit}`)"
 			>
 				{{ currentLang === "vi" ? "Mở bản đang dùng" : "Open working edit" }}
@@ -131,7 +233,7 @@
 		</div>
 
 		<!-- 2. Studio Workspace Body: Media Drawer + Canvas + Contextual Inspector -->
-		<div v-if="advancedMode" class="flex-1 flex min-h-0 w-full overflow-hidden relative">
+		<div v-if="advancedMode && !rioMode" class="flex-1 flex min-h-0 w-full overflow-hidden relative">
 			<!-- Media Drawer (Begins below header, 270px width, pushes canvas) -->
 			<MediaDrawer
 				v-if="mediaDrawerOpen"
@@ -225,7 +327,7 @@
 								class="px-3.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
 								:class="
 									studioMode === 'scene'
-										? 'bg-indigo-600 text-white shadow-xs'
+										? 'bg-rio-600 text-white shadow-xs'
 										: 'text-ink-secondary hover:text-ink-primary'
 								"
 								aria-label="Storyboard / Scenes"
@@ -245,7 +347,7 @@
 								class="px-3.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
 								:class="[
 									studioMode === 'edit'
-										? 'bg-indigo-600 text-white shadow-xs'
+										? 'bg-rio-600 text-white shadow-xs'
 										: 'text-ink-secondary hover:text-ink-primary',
 									{ 'opacity-50 cursor-not-allowed': !timelineReady },
 								]"
@@ -549,6 +651,17 @@
 				/>
 			</div>
 		</div>
+		<div v-if="advancedMode && rioMode && addScenePopoverOpen" class="absolute right-4 top-28 z-40">
+			<AddScenePopover
+				:open="addScenePopoverOpen"
+				:after-shot="addSceneAfterShot"
+				:current-lang="currentLang"
+				:busy="isGenerating"
+				:error="appendSceneError"
+				@close="closeAddScenePopover"
+				@submit="handleAddSceneRequest"
+			/>
+		</div>
 
 		<!-- Modal: Explicit Role Reference Picker -->
 		<MediaPicker
@@ -707,6 +820,7 @@ import { useTimelinePreviewEngine } from "../composables/useTimelinePreviewEngin
 
 // Studio Components
 import StudioHeader from "../components/studio/StudioHeader.vue";
+import RioStudioWorkspace from "../components/studio/RioStudioWorkspace.vue";
 import MediaDrawer from "../components/studio/MediaDrawer.vue";
 import GenerationComposer from "../components/studio/GenerationComposer.vue";
 import StudioPreview from "../components/studio/StudioPreview.vue";
@@ -726,6 +840,10 @@ const router = useRouter();
 const { user, access } = useSession();
 const { currentLang, toggleLang } = useI18n();
 
+function openProjectSettings() {
+	showSettings.value = true;
+}
+
 const projectName = computed(() => route.params.name);
 const historyOpen = ref(false);
 const historyShot = ref("");
@@ -742,13 +860,33 @@ function closeVideoReview() {
 		router.replace({ path: route.path, query });
 	}
 }
+// The project URL opens RIO for every project role. The guided workspace
+// remains available explicitly and handles archived projects.
 const advancedMode = computed(
-	() => access.value.can_use_advanced_editor && route.query.editor === "advanced"
+	() => route.query.editor !== "simple" && !workspace.value?.family?.archived
 );
+const rioMode = ref(true);
+const rioTimelineOpen = ref(false);
+const rioShotInspectorOpen = ref(false);
+function openRioTimeline(clip) {
+	if (clip?.name) {
+		selectedClipName.value = clip.name;
+		playheadFrame.value = Number(clip.timeline_start_frame || 0);
+	}
+	rioTimelineOpen.value = true;
+}
+function openRioShotDetails(shot, index) {
+	editStoryboardShot(shot, index);
+	rioShotInspectorOpen.value = true;
+}
+function openClassicTimeline() {
+	rioMode.value = false;
+	studioMode.value = "edit";
+}
 function setEditorMode(advanced) {
 	const query = { ...route.query };
-	if (advanced && access.value.can_use_advanced_editor) query.editor = "advanced";
-	else delete query.editor;
+	if (advanced) delete query.editor;
+	else query.editor = "simple";
 	router.replace({ path: route.path, query });
 }
 async function restoreClientProject() {
@@ -804,6 +942,7 @@ const {
 	isOutdated: generationOutputOutdated,
 	videoSettings,
 	fetchWorkspace,
+	missing: workspaceMissing,
 	applyWorkspaceSnapshot,
 	updateProjectName,
 	saveVideoSettings,
@@ -887,7 +1026,7 @@ const clientNextAction = computed(() =>
 
 async function prepareMissingPreviews() {
 	const names = clientFrames.needed.value
-		.filter((row) => !row.url || row.stale)
+		.filter((row) => !row.authored_frame && (!row.url || row.stale))
 		.map((row) => row.shot);
 	if (names.length) await clientFrames.draw(names);
 }
@@ -900,16 +1039,28 @@ async function continueClientJourney() {
 		if (action === "approve") {
 			if (!(await approveStoryboard())) return;
 			await clientFrames.reload();
-			if (clientFrames.needed.value.some((row) => !row.url || row.stale))
+			if (clientFrames.needed.value.some((row) => !row.authored_frame && (!row.url || row.stale)))
 				await prepareMissingPreviews();
 		} else if (action === "previews") {
 			await prepareMissingPreviews();
 		} else if (action === "retry") {
 			await clientFrames.reload();
 		} else if (action === "review") {
-			sceneStripRef.value?.$el?.scrollIntoView({ behavior: "smooth", block: "start" });
+			if (advancedMode.value && rioMode.value) {
+				const pending = storyboardShots.value.findIndex((shot) => {
+					const frame = clientFrames.rows.value.find((row) => row.shot === shot.name);
+					return frame?.needs_keyframe && frame.status !== "Approved";
+				});
+				if (pending >= 0) openRioShotDetails(storyboardShots.value[pending], pending);
+			} else {
+				sceneStripRef.value?.$el?.scrollIntoView({ behavior: "smooth", block: "start" });
+			}
 		} else if (action === "watch") {
-			studioMode.value = "edit";
+			if (advancedMode.value && rioMode.value) {
+				document.querySelector('.rio-monitor video')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+			} else {
+				studioMode.value = "edit";
+			}
 		} else if (["brief", "plan", "render"].includes(action)) {
 			await generateVideo();
 		}
@@ -1881,6 +2032,43 @@ function onSelectAssetTarget(asset) {
 	inspectorOpen.value = true;
 }
 
+function openRioAssetDetails(asset) {
+	onSelectAssetTarget(asset);
+}
+
+async function assignRioAssetToShot(asset, targetShot = null) {
+	const shot = targetShot || activeSelectedShot.value;
+	if (!shot?.name || !asset?.reference_key) return;
+	const keys = Array.isArray(shot.references)
+		? shot.references.map((reference) => reference.reference_key).filter(Boolean)
+		: [];
+	if (keys.includes(asset.reference_key)) return;
+	await updateShotReferences(shot, [...keys, asset.reference_key]);
+}
+
+async function updateRioAsset(asset, changes) {
+	if (!asset?.asset_version) return;
+	try {
+		await call("joymedia.api.assets.update_project_reference_metadata", {
+			media_project: projectName.value,
+			asset_version: asset.asset_version,
+			...changes,
+		});
+		await fetchWorkspace();
+		if (selectedAsset.value?.asset_version === asset.asset_version) {
+			selectedAsset.value = projectAssets.value.find((item) => item.asset_version === asset.asset_version) || null;
+		}
+	} catch (err) {
+		notify({ title: "Error", text: errorMessage(err, "Could not update this project asset."), type: "error" });
+	}
+}
+
+async function removeRioAsset(asset) {
+	if (await removeReference(asset) && selectedAsset.value?.asset_version === asset?.asset_version) {
+		selectedAsset.value = null;
+	}
+}
+
 function onSelectClip(clip, sourceFrame = null) {
 	selectedClipName.value = clip.name;
 	selectedTarget.value = "clip";
@@ -2231,3 +2419,21 @@ onUnmounted(() => {
 	stopPolling();
 });
 </script>
+
+<style scoped>
+.rio-project-theme {
+	color-scheme: dark;
+	--surface-base: #07090e;
+	--surface-card: #101722;
+	--surface-hover: #172130;
+	--surface-active: #1d2b3c;
+	--surface-muted: #0b111a;
+	--outline-border: #223443;
+	--outline-subtle: #162635;
+	--ink-primary: #eaf7fb;
+	--ink-secondary: #a3bac7;
+	--ink-muted: #7c98a6;
+	--primary-accent: #22d3ee;
+	--primary-accent-hover: #67e8f9;
+}
+</style>

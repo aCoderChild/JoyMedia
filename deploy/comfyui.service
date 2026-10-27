@@ -6,8 +6,9 @@ Wants=network-online.target joymedia-planner.service joymedia-vision.service
 [Service]
 Type=simple
 User=ubuntu
-ExecStartPre=/usr/local/lib/joymedia/run-profile.py --wait planner --wait vision
+ExecStartPre=/usr/local/lib/joymedia/run-profile.py --timeout 600 --wait planner --wait vision
 ExecStart=/usr/local/lib/joymedia/run-profile.py comfyui
+TimeoutStartSec=660
 Restart=always
 RestartSec=5
 StandardOutput=append:/home/ubuntu/comfyui-systemd.log

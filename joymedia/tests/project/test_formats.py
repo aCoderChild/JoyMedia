@@ -6,6 +6,7 @@ from joymedia.services.project.formats import (
 	duration_from_description,
 	orientation,
 	parse_ratio,
+	preparation_dimensions,
 	ratio_label,
 	require_dimensions,
 )
@@ -43,6 +44,12 @@ class TestAuthoredGeometry(TestCase):
 		for snapshot in [{}, {"delivery_width": 720}, {"delivery_width": 0, "delivery_height": 1280}]:
 			with self.assertRaisesRegex(ValueError, "aspect ratio"):
 				require_dimensions(snapshot)
+
+	def test_reference_preparation_uses_declared_preset_before_final_pixels(self):
+		self.assertEqual((1024, 576), preparation_dimensions({"delivery_preset": "Landscape"}))
+		self.assertEqual((900, 720), preparation_dimensions({}, "5:4", short_edge=720))
+		with self.assertRaisesRegex(ValueError, "aspect ratio"):
+			preparation_dimensions({})
 
 	def test_duration_uses_units_instead_of_format_numbers(self):
 		self.assertEqual(30, duration_from_description("A 4:5 commercial lasting 30 seconds."))

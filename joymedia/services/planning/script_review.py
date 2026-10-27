@@ -85,13 +85,15 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 		"An action changing an object/state is progress, even if a brief reaction accompanies it. Do not invent problems in a valid action. "
 		"Use opening_mismatch only for a stated opening object/pose state that conflicts with the first action; cite both incompatible states in the rewrite instruction. A suggestion to face a product differently or hold it longer is not such a contradiction. Never lengthen idle presentation to fix pacing. "
 		"Check: only roster actors in prose; items obtained before use; holding a container does not obtain its contents; contact precedes the visible result; no unexplained state reset or reversal of consumption; opening and action agree. "
+		"Audit reach and object occupancy across consecutive shots. If an actor is seated away from a table, do not accept a reach to objects on that table without a visible change of position or a reachable staging description. Count occupied hands or paws: an actor cannot simultaneously hold more separate props than available hands or paws, and must visibly set down or transfer an object before grasping another. Flag these as missing_prerequisite with the exact action quote and a concrete staging or transfer correction. Check that an object does not change support surface or location between shots without an explicit move. A product interaction must have a plausible contact path and support, not pass through a table or actor body. "
 		"Check product construction against reference descriptions: no invented rigid lids or closure mechanisms. Returning used consumable material to unused stock is a state_reset, not a valid way to reset a demonstration. "
 		"Check any performance demonstration against approved_claims and its literal approved_claims_english translation in REQUIREMENTS. Do not reject a capability that either clearly approves; do not infer a stronger capability from a loose translation. Pouring liquid, removing stains or claiming strength/absorbency is a brief_contradiction only when the corresponding capability is absent; ordinary handling is allowed. Quote the demonstration and request a visible action within the supplied claims. "
-		"Check action_reference_observations in REQUIREMENTS. When empty, a fluid, stain, stress or other multi-object performance effect lacks a motion anchor even if its marketing claim is approved; flag the unsupported action as brief_contradiction and request a simple observable product interaction instead. Ordinary acquisition, extraction, placement, folding and wearing remain allowed without motion footage. "
+		"Check action_reference_observations and mandatories in REQUIREMENTS. When action observations are empty, allow only a physical effect explicitly required by mandatories and supported by approved claims; its cause, contact and gradual visible result must be staged in order. Flag any other invented fluid, stain, stress or multi-object performance effect as brief_contradiction. Ordinary acquisition, extraction, placement, folding and wearing remain allowed without motion footage. "
 		"Name each interaction target before use; an unspecified target is not a concrete demonstration. Never replace an existing tangible action with an invented unrelated prop. "
 		"A scene spent solely approaching, staring or posing lacks brisk action. Camera commands belong outside Action, even at the end. One near-ending product-detail view may hold readable original packaging before a distinct final CTA. "
 		"For idle_pacing, looking/inspecting followed only by nodding or smiling is still a reaction-only scene. Flag repeated presentation holds only when adjacent scenes repeat the same framing and information; use the time for a new product detail or tangible interaction without adding unsupported capabilities. "
 		"Use purposeful shot-size/angle contrast and a product detail at use, with coherent axis and state handoffs. Do not demand an object reset unless a later opening explicitly contradicts its retained state. Historical feedback describes earlier renders, not defects proven in this draft. Never copy historical scene numbers, review/sign-off requests or old judgments into new issues. "
+		"When a multi-scene character commercial keeps the actor in the source pose for every opening despite authored actions needing different reach, support or orientation, report a coverage issue with an exact scene quote. Ask for one feasible, visible body-state transition and carry that state forward; do not demand gratuitous movement or an impossible pose. A new camera crop of the same seated body does not resolve this issue. "
 		"Narrative stage labels are proposals recomputed by the production planner, so review visible actions, framing and continuity rather than rejecting a label. "
 		"For subject_motion, whole-body travel is locomotion even while carrying an object. Handling in place is manipulation; no subject movement is stationary. Flag a contradictory label as coverage, quoting the authored movement. "
 		"This is TEXT review, not video review. Do not claim an action is convincing/unconvincing, or physical correctness is proven. If text already specifies contact and visible result, do not repeat an old request to verify physical correctness. Missing contact/result text needs a specific proposed visible-state edit. "
@@ -156,12 +158,39 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 				):
 					raise ValueError("Every issue must quote the exact affected scene text.")
 			return _cross_check_opening(
-				_cross_check_missing_actions(_filter_unsubstantiated_camera_issues(result, script), script),
+				_cross_check_missing_actions(
+					_filter_allowed_product_presentation(
+						_filter_unsubstantiated_camera_issues(result, script), script
+					),
+					script,
+				),
 				script,
 			)
 		except (ValueError, KeyError, TypeError) as exc:
 			repair = f"\nReview protocol repair {attempt + 1}: {exc} Return the full review, copying exact source text."
 	raise ValueError("Script review could not provide grounded scene evidence: " + repair)
+
+
+def _filter_allowed_product_presentation(review, script):
+	"""A brief closing product insert is an intentional ad beat, not idle pacing."""
+	last = len(script["scenes"])
+	kept = []
+	for finding in review["issues"]:
+		index = finding["scene"]
+		scene = script["scenes"][index - 1]
+		allowed = index == last or (
+			index == last - 1 and scene.get("shot_framing") in {"close_up", "extreme_close_up"}
+		)
+		if (
+			finding["category"] == "idle_pacing"
+			and allowed
+			and scene.get("products")
+			and not scene.get("cast")
+		):
+			continue
+		kept.append(finding)
+	review["issues"] = kept
+	return review
 
 
 def _filter_unsubstantiated_camera_issues(review, script):
@@ -190,6 +219,10 @@ def _cross_check_missing_actions(review, script):
 	from joymedia.services.planning.production import _ask_planner
 
 	actions = [scene["action"] for scene in script["scenes"]]
+	openings = [
+		"\n".join(str(scene.get(key) or "") for key in ("visual_camera", "continuity_rules"))
+		for scene in script["scenes"]
+	]
 	for finding in review["issues"]:
 		if finding["category"] not in {"missing_contact_or_result", "missing_prerequisite", "idle_pacing"}:
 			continue
@@ -209,6 +242,9 @@ def _cross_check_missing_actions(review, script):
 			)
 			if idle
 			else "Check one alleged omission against the COMPLETE ordered action sequence. "
+			"For a missing prerequisite, an explicitly staged opening position or support "
+			"exists before that scene's first action; it can establish reach but cannot "
+			"substitute for an acquisition, contact, transfer or visible result. "
 			"Is the requested action/result already explicitly written, either in a later phase of the "
 			"same shot or the appropriate earlier/later shot? Return an exact action substring that "
 			"already satisfies it, or an empty string when absent or causally out of order. "
@@ -219,7 +255,9 @@ def _cross_check_missing_actions(review, script):
 			+ "\nFINDING: "
 			+ json.dumps(finding, ensure_ascii=False)
 			+ "\nORDERED ACTIONS: "
-			+ json.dumps(actions, ensure_ascii=False),
+			+ json.dumps(actions, ensure_ascii=False)
+			+ "\nOPENING STATES: "
+			+ json.dumps(openings, ensure_ascii=False),
 			system="You check a quoted screenplay defect against written actions. Return JSON only; never qualify future pixels.",
 			capability="writer",
 			sampling_profile="creative_script_review",
@@ -240,6 +278,8 @@ def _cross_check_missing_actions(review, script):
 			continue
 		normalized = " ".join(quote.split()).casefold()
 		allowed_actions = [actions[finding["scene"] - 1]] if idle else actions
+		if finding["category"] == "missing_prerequisite":
+			allowed_actions = [*allowed_actions, openings[finding["scene"] - 1]]
 		if not any(normalized in " ".join(action.split()).casefold() for action in allowed_actions):
 			finding["cross_check_error"] = (
 				"Retraction quoted text absent from the applicable action sequence; original finding retained."
@@ -252,11 +292,14 @@ def _cross_check_missing_actions(review, script):
 			scene_index = finding["scene"] - 1
 			prior = any(normalized in " ".join(action.split()).casefold() for action in actions[:scene_index])
 			current = " ".join(actions[scene_index].split()).casefold()
-			within = (
-				bool(dependent)
-				and normalized in current
-				and dependent in current
-				and current.index(normalized) + len(normalized) <= current.index(dependent)
+			opening = " ".join(openings[scene_index].split()).casefold()
+			within = bool(dependent) and (
+				(normalized in opening)
+				or (
+					normalized in current
+					and dependent in current
+					and current.index(normalized) + len(normalized) <= current.index(dependent)
+				)
 			)
 			if not prior and not within:
 				finding["cross_check_error"] = (

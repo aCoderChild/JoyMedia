@@ -3,20 +3,108 @@
     <template #default>
       <div class="flex flex-col gap-4">
         <p class="text-sm text-ink-muted">
-          {{ tr(
-            'Upload your product and mascot images. AI can write the story and generate video variants. You can also supply your own brief or workbook.',
-            'Tải ảnh sản phẩm và mascot. AI có thể tự viết kịch bản và tạo nhiều video. Bạn cũng có thể cung cấp ý tưởng hoặc bảng kịch bản.'
-          ) }}
+          {{ tr('Add photos of your product. The AI writes the story, draws every scene for you to check, then makes the video.', 'Thêm ảnh sản phẩm của bạn. AI viết kịch bản, vẽ từng cảnh để bạn duyệt, rồi làm video.') }}
         </p>
 
-        <!-- 1. The story: a storyboard workbook, or a written brief -->
+        <!-- 2. The images the film must show -->
         <div>
-          <p class="mb-1.5 text-xs font-semibold text-ink-primary">{{ tr('1. Creative direction (optional)', '1. Ý tưởng (tuỳ chọn)') }}</p>
-          <FormControl
-            v-model="form.brief" type="textarea" class="mt-2" :rows="3"
-            :placeholder="tr('Optional: mood, audience or creative direction', 'Tuỳ chọn: cảm xúc, khán giả hoặc hướng sáng tạo')"
-          />
-          <details class="mt-3 text-xs"><summary class="cursor-pointer text-ink-secondary">{{ tr('Or import a storyboard spreadsheet', 'Hoặc nhập bảng kịch bản') }}</summary>
+          <p class="mb-1.5 text-xs font-semibold text-ink-primary">{{ tr('1. Your product (and mascot) photos', '1. Ảnh sản phẩm (và nhân vật)') }}</p>
+          <div v-if="form.autoScript && !workbook" class="grid grid-cols-1 gap-3 sm:grid-cols-2" data-test="photo-tiles">
+            <input ref="productImagesInput" type="file" multiple accept="image/*,.pdf" class="hidden" @change="uploadImages($event, 'Product')" />
+            <input ref="mascotImagesInput" type="file" multiple accept="image/*" class="hidden" @change="uploadImages($event, 'Character')" />
+            <div
+              v-for="tile in photoTiles" :key="tile.role" role="button" tabindex="0" :data-test="'photos-' + tile.role"
+              class="cursor-pointer rounded-xl border-2 border-dashed p-3 transition-colors"
+              :class="dragging === tile.role ? 'border-rio-500 bg-rio-50/40' : 'border-outline-border hover:border-rio-400'"
+              @click="tile.input.value?.click()" @keydown.enter.prevent="tile.input.value?.click()"
+              @dragover.prevent="dragging = tile.role" @dragleave="dragging = ''" @drop.prevent="dropFiles($event, tile.role)"
+            >
+              <p class="text-sm font-medium text-ink-primary">{{ tile.title }} <span class="text-xs font-normal" :class="tile.required ? 'text-rose-500' : 'text-ink-muted'">{{ tile.badge }}</span></p>
+              <div v-if="photosFor(tile.role).length" class="mt-2 flex flex-wrap gap-2">
+                <div v-for="reference in photosFor(tile.role)" :key="reference.file_url" class="relative size-16">
+                  <span v-if="reference.pdf" class="grid size-16 place-items-center rounded-lg bg-surface-muted text-[10px] font-semibold">PDF</span>
+                  <img v-else :src="reference.file_url" :alt="reference.label" :title="reference.label" class="size-16 rounded-lg object-cover bg-surface-muted" />
+                  <button type="button" class="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-surface-card text-[10px] text-ink-muted shadow hover:text-rose-600" :aria-label="tr('Remove', 'Bỏ') + ' ' + reference.label" @click.stop="references.splice(references.indexOf(reference), 1)">✕</button>
+                </div>
+              </div>
+              <p class="mt-2 text-xs text-rio-500">+ {{ tr('Click or drop photos here', 'Bấm hoặc kéo ảnh vào đây') }}</p>
+              <p class="text-[11px] text-ink-muted">{{ tile.hint }}</p>
+            </div>
+          </div>
+          <template v-else>
+          <div v-for="(reference, index) in references" :key="reference.file_url" class="mb-2 flex items-center gap-2">
+            <template v-if="reference.pdf">
+              <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-surface-muted text-[10px] font-semibold">PDF</span>
+              <span class="grow truncate text-sm">{{ reference.label }}</span>
+              <span class="w-36 text-[11px] text-ink-muted">{{ tr('Pictures are extracted; roles are guessed per page', 'Hình sẽ được tách ra; loại tự đoán theo trang') }}</span>
+            </template>
+            <template v-else>
+              <img :src="reference.file_url" class="size-10 shrink-0 rounded-lg object-cover bg-surface-muted" alt="" />
+              <span class="grow truncate text-sm">{{ reference.label }}</span>
+              <details class="text-xs"><summary class="cursor-pointer text-ink-muted">{{ tr('Details', 'Chi tiết') }}</summary><div class="flex flex-col gap-2 py-2">
+                <FormControl v-model="reference.label" type="text" :label="tr('Name', 'Tên')" />
+                <FormControl v-model="reference.role" type="select" :options="roleOptions" :label="tr('Image type', 'Loại hình')" />
+              </div></details>
+            </template>
+            <Button variant="ghost" @click="references.splice(index, 1)">✕</Button>
+          </div>
+          <FileUploader :file-types="['image/*', '.pdf']" @success="addReference" @failure="(e) => (error = String(e?.message || e))">
+            <template #default="{ uploading, progress, openFileSelector }">
+              <Button :loading="uploading" @click="openFileSelector">
+                {{ uploading ? `${progress}%` : '+ ' + tr('Add images or a PDF', 'Thêm hình ảnh hoặc PDF') }}
+              </Button>
+            </template>
+          </FileUploader>
+          </template>
+          <p v-if="uploadingImages" class="mt-1 text-xs text-ink-muted" role="status">{{ tr('Uploading', 'Đang tải lên') }} {{ uploadProgress }}…</p>
+          <div v-if="form.autoScript && !workbook && sameProduct.length" class="mt-2 rounded-lg border border-rio-300 bg-rio-50/60 p-3 text-sm text-ink-primary dark:border-rio-700 dark:bg-rio-950/40" data-test="same-product-project">
+            <p class="font-medium">{{ tr('This product already has a project', 'Sản phẩm này đã có dự án') }}</p>
+            <label v-for="match in sameProduct" :key="match.name" class="flex gap-2 mt-1"><input type="radio" :value="match.name" v-model="intoProject" />{{ tr('Add the new videos to', 'Thêm video mới vào') }} “{{ match.project_name }}” ({{ match.video_count }} {{ tr('videos', 'video') }})</label>
+            <label class="flex gap-2 mt-1"><input type="radio" value="" v-model="intoProject" />{{ tr('Start a separate project', 'Tạo dự án riêng') }}</label>
+            <p v-if="intoProject" class="mt-1 text-xs text-ink-muted">{{ tr('The new videos use the same product and mascot pictures as that project, so every video stays consistent.', 'Video mới dùng cùng ảnh sản phẩm và mascot của dự án đó để mọi video đồng nhất.') }}</p>
+          </div>
+        </div>
+
+        <div v-if="!workbook" class="space-y-3" data-test="video-basics">
+          <p class="text-xs font-semibold text-ink-primary">{{ tr('2. The video you want', '2. Video bạn muốn') }}</p>
+          <div v-if="form.autoScript" class="grid grid-cols-2 gap-3">
+            <div>
+              <FormControl v-model="form.variants" type="number" :min="1" :max="20" :label="tr('How many videos?', 'Bao nhiêu video?')" />
+              <p class="mt-1 text-[11px] text-ink-muted" data-test="variants-hint">{{ tr('Each video has its own story and pictures. Stages can overlap; clips share the GPU queue.', 'Mỗi video có kịch bản và hình riêng. Các bước có thể chạy đồng thời; clip dùng chung hàng đợi GPU.') }}</p>
+            </div>
+            <FormControl v-model="form.duration" type="select" :label="tr('Video length', 'Độ dài video')" :options="durationOptions" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <FormControl v-model="form.format" type="select" :label="tr('Format', 'Định dạng')" :options="formatOptions" />
+            <FormControl v-if="form.autoScript" v-model="form.language" type="select" data-test="viewer-language" :label="tr('Language of the voice and text', 'Ngôn ngữ lời thoại và chữ')" :options="[{ label: 'Tiếng Việt', value: 'vi' }, { label: 'English', value: 'en' }]" />
+          </div>
+          <FormControl v-if="form.format === 'Custom'" v-model="form.customRatio" :label="tr('Aspect ratio', 'Tỷ lệ khung hình')" placeholder="4:5, 21:9…" />
+        </div>
+
+        <details class="rounded-xl border border-outline-border p-3" data-test="project-options">
+          <summary class="cursor-pointer text-sm font-medium text-ink-primary">{{ tr('More options', 'Tuỳ chọn thêm') }} <span class="text-xs font-normal text-ink-muted">· {{ tr('idea, example scripts, project name', 'ý tưởng, kịch bản mẫu, tên dự án') }}</span></summary>
+          <div class="mt-4 flex flex-col gap-4">
+            <FormControl
+              v-model="form.brief" type="textarea" :rows="2" :label="tr('Your idea for the video', 'Ý tưởng cho video')"
+              :placeholder="tr('e.g. for young mothers, warm and gentle, show how soft it is', 'VD: dành cho mẹ bỉm sữa, tông ấm áp, nhấn mạnh độ mềm mịn')"
+            />
+            <div data-test="example-scripts">
+              <p class="text-xs font-medium text-ink-primary">{{ tr('Example scripts for the AI to learn from', 'Kịch bản mẫu để AI học theo') }}</p>
+              <input ref="examplesInput" type="file" multiple accept=".xlsx" class="hidden" @change="uploadExamples" />
+              <div class="mt-1 flex flex-wrap items-center gap-2">
+                <Button :loading="uploadingExamples" @click="examplesInput?.click()">{{ tr('+ Example scripts (.xlsx)', '+ Kịch bản mẫu (.xlsx)') }}</Button>
+                <span v-for="(file, index) in examples" :key="file.name" class="flex items-center gap-1 text-xs">✓ {{ file.file_name }} <button class="text-ink-muted" :aria-label="tr('Remove', 'Bỏ')" @click="examples.splice(index, 1)">✕</button></span>
+              </div>
+              <p class="mt-1 text-[11px] text-ink-muted">{{ tr('The AI copies their structure, pacing and tone, then writes a new story. Without examples it writes a random story.', 'AI học cấu trúc, nhịp và giọng văn rồi viết câu chuyện mới. Không có mẫu thì AI tự viết ngẫu nhiên.') }}</p>
+            </div>
+            <label v-if="productCount > 1" class="flex gap-2 text-sm" data-test="rotate-products"><input type="checkbox" v-model="form.everyProduct" />{{ tr('One product per video, rotating through all products', 'Mỗi video một sản phẩm, lần lượt qua tất cả sản phẩm') }}</label>
+        <FormControl
+          v-model="form.name" type="text" :label="tr('Project name', 'Tên dự án')"
+          :placeholder="selectedDemo?.product_name || tr('You can rename it later', 'Có thể đổi tên sau')"
+        />
+          <div class="border-t border-outline-border pt-3" data-test="own-workbook">
+          <p class="text-sm font-medium text-ink-primary">{{ tr('Already have your own script?', 'Đã có kịch bản riêng?') }}</p>
+          <p class="mb-2 text-xs text-ink-muted">{{ tr('Upload your storyboard sheet and the video follows it instead of an AI-written story.', 'Tải bảng kịch bản lên, video sẽ làm theo bảng của bạn thay vì AI tự viết.') }}</p>
           <FileUploader
             :file-types="['.xlsx']" :validate-file="requireWorkbook" @success="onWorkbook"
             @failure="(e) => (error = String(e?.message || e))"
@@ -27,7 +115,6 @@
                   {{ uploading ? `${progress}%` : tr('Upload storyboard (.xlsx)', 'Tải bảng kịch bản (.xlsx)') }}
                 </Button>
                 <span v-if="workbook" class="text-sm text-ink-primary">✓ {{ workbook.file_name }}</span>
-                <span v-else class="text-xs text-ink-muted">{{ tr('or write a brief below', 'hoặc viết mô tả bên dưới') }}</span>
               </div>
             </template>
           </FileUploader>
@@ -82,86 +169,7 @@
             </p>
           </details>
 
-          </details>
-        </div>
-
-        <!-- 2. The images the film must show -->
-        <div>
-          <p class="mb-1.5 text-xs font-semibold text-ink-primary">{{ tr('2. Images the film must show', '2. Hình ảnh phải xuất hiện') }}</p>
-          <div v-for="(reference, index) in references" :key="reference.file_url" class="mb-2 flex items-center gap-2">
-            <template v-if="reference.pdf">
-              <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-surface-muted text-[10px] font-semibold">PDF</span>
-              <span class="grow truncate text-sm">{{ reference.label }}</span>
-              <span class="w-36 text-[11px] text-ink-muted">{{ tr('Pictures are extracted; roles are guessed per page', 'Hình sẽ được tách ra; loại tự đoán theo trang') }}</span>
-            </template>
-            <template v-else>
-              <img :src="reference.file_url" class="size-10 shrink-0 rounded-lg object-cover bg-surface-muted" alt="" />
-              <span class="grow truncate text-sm">{{ reference.label }}</span>
-              <details class="text-xs"><summary class="cursor-pointer text-ink-muted">{{ tr('Details', 'Chi tiết') }}</summary><div class="flex flex-col gap-2 py-2">
-                <FormControl v-model="reference.label" type="text" :label="tr('Name', 'Tên')" />
-                <FormControl v-model="reference.role" type="select" :options="roleOptions" :label="tr('Image type', 'Loại hình')" />
-              </div></details>
-            </template>
-            <Button variant="ghost" @click="references.splice(index, 1)">✕</Button>
           </div>
-          <div v-if="form.autoScript && !workbook" class="flex flex-wrap gap-2">
-            <input ref="productImagesInput" type="file" multiple accept="image/*" class="hidden" @change="uploadImages($event, 'Product')" />
-            <input ref="mascotImagesInput" type="file" multiple accept="image/*" class="hidden" @change="uploadImages($event, 'Character')" />
-            <Button :loading="uploadingImages" @click="productImagesInput?.click()">{{ tr('+ Product images', '+ Ảnh sản phẩm') }}</Button>
-            <Button :disabled="uploadingImages" @click="mascotImagesInput?.click()">{{ tr('+ Mascot images', '+ Ảnh mascot') }}</Button>
-            <span v-if="uploadingImages" class="text-xs text-ink-muted">{{ uploadProgress }}</span>
-          </div>
-          <div v-if="form.autoScript && !workbook && sameProduct.length" class="mt-2 rounded-lg border border-indigo-300 bg-indigo-50/40 p-3 text-sm" data-test="same-product-project">
-            <p class="font-medium">{{ tr('This product already has a project', 'Sản phẩm này đã có dự án') }}</p>
-            <label v-for="match in sameProduct" :key="match.name" class="flex gap-2 mt-1"><input type="radio" :value="match.name" v-model="intoProject" />{{ tr('Add the new videos to', 'Thêm video mới vào') }} “{{ match.project_name }}” ({{ match.video_count }} {{ tr('videos', 'video') }})</label>
-            <label class="flex gap-2 mt-1"><input type="radio" value="" v-model="intoProject" />{{ tr('Start a separate project', 'Tạo dự án riêng') }}</label>
-            <p v-if="intoProject" class="mt-1 text-xs text-ink-muted">{{ tr('The new videos use the same product and mascot pictures as that project, so every video stays consistent.', 'Video mới dùng cùng ảnh sản phẩm và mascot của dự án đó để mọi video đồng nhất.') }}</p>
-          </div>
-          <FileUploader v-else :file-types="['image/*', '.pdf']" @success="addReference" @failure="(e) => (error = String(e?.message || e))">
-            <template #default="{ uploading, progress, openFileSelector }">
-              <Button :loading="uploading" @click="openFileSelector">
-                {{ uploading ? `${progress}%` : '+ ' + tr('Add images or a PDF', 'Thêm hình ảnh hoặc PDF') }}
-              </Button>
-            </template>
-          </FileUploader>
-          <p class="mt-1 text-[11px] text-ink-muted">
-            {{ tr('Use clear photos of your product, logo and character.', 'Dùng ảnh rõ nét của sản phẩm, logo và nhân vật.') }}
-          </p>
-        </div>
-
-        <div v-if="!workbook" class="rounded-xl border border-outline-border p-3 space-y-3">
-          <label class="flex gap-2 text-sm"><input type="checkbox" v-model="form.autoScript" />{{ tr('Let AI write the script from my references', 'AI tự viết kịch bản từ ảnh tham chiếu') }}</label>
-          <template v-if="form.autoScript">
-            <div class="grid grid-cols-2 gap-3">
-              <FormControl v-model="form.variants" type="number" :min="1" :max="20" :label="tr('How many videos?', 'Bao nhiêu video?')" />
-              <FormControl v-model="form.duration" type="select" :label="tr('Video length', 'Độ dài video')" :options="durationOptions" />
-            </div>
-            <FormControl v-model="form.language" type="select" data-test="viewer-language" :label="tr('On-screen text language', 'Ngôn ngữ chữ trên video')" :options="[{ label: 'Tiếng Việt', value: 'vi' }, { label: 'English', value: 'en' }]" />
-            <label v-if="productCount > 1" class="flex gap-2 text-sm" data-test="rotate-products"><input type="checkbox" v-model="form.everyProduct" />{{ tr('One product per video, rotating through all products', 'Mỗi video một sản phẩm, lần lượt qua tất cả sản phẩm') }}</label>
-            <div data-test="example-scripts">
-              <p class="text-xs font-medium text-ink-primary">{{ tr('Example scripts to learn from (optional)', 'Kịch bản mẫu để AI học theo (tuỳ chọn)') }}</p>
-              <input ref="examplesInput" type="file" multiple accept=".xlsx" class="hidden" @change="uploadExamples" />
-              <div class="mt-1 flex flex-wrap items-center gap-2">
-                <Button :loading="uploadingExamples" @click="examplesInput?.click()">{{ tr('+ Example scripts (.xlsx)', '+ Kịch bản mẫu (.xlsx)') }}</Button>
-                <span v-for="(file, index) in examples" :key="file.name" class="flex items-center gap-1 text-xs">✓ {{ file.file_name }} <button class="text-ink-muted" :aria-label="tr('Remove', 'Bỏ')" @click="examples.splice(index, 1)">✕</button></span>
-              </div>
-              <p class="mt-1 text-[11px] text-ink-muted">{{ tr('The AI copies their structure, pacing and tone, then writes a new story. Without examples it writes a random story.', 'AI học cấu trúc, nhịp và giọng văn rồi viết câu chuyện mới. Không có mẫu thì AI tự viết ngẫu nhiên.') }}</p>
-            </div>
-            <label class="flex gap-2 text-sm"><input type="checkbox" v-model="form.autoRender" />{{ tr('Make the videos straight away (untick to review scripts first)', 'Tạo video ngay (bỏ chọn để duyệt kịch bản trước)') }}</label>
-            <p class="text-xs text-ink-muted">{{ tr('Photos of the same product or mascot from other angles are grouped automatically; each different product stays separate, so its packaging never changes inside a video.', 'Ảnh cùng một sản phẩm hoặc mascot ở các góc khác nhau được tự động gộp; mỗi sản phẩm khác nhau được giữ riêng, nên bao bì không bị đổi trong video.') }}</p>
-          </template>
-        </div>
-
-        <details class="rounded-xl border border-outline-border p-3" data-test="project-options">
-          <summary class="cursor-pointer text-xs font-semibold text-ink-muted">{{ tr('Optional: name & format', 'Tuỳ chọn: tên và định dạng') }}</summary>
-          <div class="mt-3 flex flex-col gap-3">
-        <FormControl
-          v-model="form.name" type="text" :label="tr('Project name', 'Tên dự án')"
-          :placeholder="selectedDemo?.product_name || tr('Optional — you can rename it later', 'Tuỳ chọn — có thể đổi tên sau')"
-        />
-
-            <FormControl v-model="form.format" type="select" :label="tr('Format', 'Định dạng')" :options="formatOptions" />
-            <FormControl v-if="form.format === 'Custom'" v-model="form.customRatio" :label="tr('Aspect ratio', 'Tỷ lệ khung hình')" placeholder="4:5, 21:9…" />
           </div>
         </details>
 
@@ -169,6 +177,7 @@
       </div>
     </template>
     <template #actions>
+      <p v-if="!canCreate && !workbook" class="mr-auto self-center text-xs text-ink-muted" data-test="create-hint">{{ tr('Add at least one product photo to start.', 'Thêm ít nhất một ảnh sản phẩm để bắt đầu.') }}</p>
       <Button variant="solid" :loading="creating" :disabled="!canCreate || uploadingImages || uploadingExamples" @click="create">
         {{ form.autoScript && !workbook ? tr('Create videos', 'Tạo video') : tr('Create project', 'Tạo dự án') }}
       </Button>
@@ -227,7 +236,7 @@ const formatOptions = computed(() => [
   { label: tr("Custom ratio", "Tỷ lệ khác"), value: "Custom" },
 ]);
 
-const canCreate = computed(() => workbook.value ? Boolean(selectedDemo.value?.can_create) : form.autoScript ? references.value.some(r => !r.pdf) && Number.isInteger(Number(form.variants)) && Number(form.variants) >= 1 && Number(form.variants) <= 20 : Boolean(form.brief.trim()));
+const canCreate = computed(() => workbook.value ? Boolean(selectedDemo.value?.can_create) : form.autoScript ? references.value.some(r => r.role === "Product") && Number.isInteger(Number(form.variants)) && Number(form.variants) >= 1 && Number(form.variants) <= 20 : Boolean(form.brief.trim()));
 const templateUrl = (lang) => `/api/method/joymedia.services.intake.template.download_storyboard_template?lang=${lang}`;
 const firstLine = (value) => String(value || "").split("\n")[0];
 // Must-have fields first, so a missing one is the first thing the client sees.
@@ -259,9 +268,29 @@ function requireWorkbook(file) {
   return file.name.toLowerCase().endsWith(".xlsx") ? null : tr("Please choose an .xlsx workbook.", "Vui lòng chọn tệp .xlsx.");
 }
 
+// The two photo tiles: the product is required, a mascot is optional.
+const dragging = ref("");
+const photoTiles = [
+  { role: "Product", input: productImagesInput, required: true, title: tr("Product photos", "Ảnh sản phẩm"), badge: tr("required", "bắt buộc"), hint: tr("Clear photos of the pack from the front and other angles, or a PDF product sheet.", "Ảnh rõ nét của bao bì, mặt trước và các góc khác, hoặc tệp PDF sản phẩm.") },
+  { role: "Character", input: mascotImagesInput, required: false, title: tr("Mascot / character photos", "Ảnh mascot / nhân vật"), badge: tr("if you have one", "nếu có"), hint: tr("The mascot appears in every scene exactly as in these photos.", "Mascot sẽ xuất hiện trong video đúng như ảnh này.") },
+];
+const photosFor = (role) => references.value.filter((r) => (role === "Product" ? r.role === "Product" : ["Character", "Person"].includes(r.role)));
+function dropFiles(event, role) {
+  dragging.value = "";
+  uploadFiles(Array.from(event.dataTransfer?.files || []).filter((f) => /^image\//.test(f.type) || (role === "Product" && /\.pdf$/i.test(f.name))), role);
+}
 async function uploadImages(event, role) {
-  const files = Array.from(event.target.files || []);
-  if (!files.length || uploadingImages.value) return;
+  await uploadFiles(Array.from(event.target.files || []), role);
+  event.target.value = '';
+}
+// Files added while an upload runs wait their turn instead of being dropped.
+let uploadQueue = Promise.resolve();
+function uploadFiles(files, role) {
+  uploadQueue = uploadQueue.then(() => uploadNow(files, role));
+  return uploadQueue;
+}
+async function uploadNow(files, role) {
+  if (!files.length) return;
   uploadingImages.value = true; error.value = '';
   try {
     for (let i = 0; i < files.length; i++) {
@@ -271,7 +300,7 @@ async function uploadImages(event, role) {
       addReference(file, role);
     }
   } catch (e) { error.value = errorMessage(e, 'Could not upload the images.'); }
-  finally { uploadingImages.value = false; event.target.value = ''; }
+  finally { uploadingImages.value = false; }
 }
 
 function addReference(file, role = "") {

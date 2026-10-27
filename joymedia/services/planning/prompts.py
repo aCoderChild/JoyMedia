@@ -165,7 +165,8 @@ def compile_segment_prompt_from_snapshot(
 				else float(shot.get("duration_seconds") or 5),
 			)
 		text = _unheld_product_staging(shot, text)
-		text = _grounded_cast_staging(shot, text)
+		if prompt_source != "image":
+			text = _grounded_cast_staging(shot, text)
 		# Continuation segments are written from the creative text, so they need the cast and audio rules too.
 		if prompt_source != "motion" or segment_count == 1:
 			return text
@@ -240,28 +241,98 @@ def compile_segment_prompt_from_snapshot(
 
 def _keyframe_retry_direction(shot):
 	"""Feed a bounded, evidence-backed correction into a redrawn still only."""
-	if shot.get("consistency_status") != "Redrawing":
+	if shot.get("consistency_status") != "Redrawing" and not shot.get("keyframe_retry_note"):
 		return ""
-	note = str(shot.get("consistency_notes") or "")
+	note = str(shot.get("keyframe_retry_note") or shot.get("consistency_notes") or "")
+	identity_issue = next(
+		(part.strip() for part in note.split("; ") if part.strip().startswith("Critical identity:")),
+		"",
+	)
+	geometry_issue = next(
+		(part.strip() for part in note.split("; ") if part.strip().startswith("Critical geometry:")),
+		"",
+	)
+	identity_retry = (
+		"\n\nRetry identity correction: the previous image changed the character: "
+		+ identity_issue.removeprefix("Critical identity:").strip()[:240]
+		+ ". The customer's original character image controls the face, eye design, head-to-body ratio, "
+		"torso width and limb proportions. The selected pose may change articulation only; "
+		"do not elongate limbs, narrow the body, or substitute a different face."
+		if identity_issue
+		else ""
+	)
+	if "Product lock:" in note or "product packages are drawn" in note:
+		return (
+			"\n\nRetry correction: show exactly one advertised product package anywhere in the frame, fully inside "
+			"it with space around it, in the same orientation and proportions as its product photo: the same face "
+			"toward the camera, never stood on end, rotated or seen edge-on. No second package, poster or printed copy."
+		)
+	if "Critical style:" in note:
+		return (
+			"\n\nRetry correction: the previous image was a flat 2D drawing. Render a photorealistic scene in which "
+			"the characters and products keep the photographed three-dimensional look of their reference photos."
+		)
+	if "the cast appears twice" in note:
+		return (
+			"\n\nRetry correction: the previous image drew the same character twice. Each supplied character "
+			"appears exactly once in the frame; no second copy, toy, reflection or poster of it."
+		)
+	if "human hand" in note:
+		return (
+			"\n\nRetry correction: the previous image showed a real human hand, arm or person. Show only the "
+			"supplied cast; every visible hand or paw belongs to that cast."
+		)
 	if note.startswith("Critical framing:"):
 		return (
 			"\n\nRetry correction: the previous image showed the whole actor in a detail shot. "
 			"Fill the image with the authored focal action and contact area. Keep the actor's feet "
 			"and all unrelated body parts outside the frame."
 		)
-	if note.startswith("Critical geometry:"):
+	if geometry_issue:
 		return (
-			"\n\nRetry correction: the previous image had invalid physical support. "
-			"Place each actor on the floor or a proper seat, and each product on its authored "
-			"supporting surface. Do not place an actor on the advertised product."
-		)
+			"\n\nRetry correction: the previous image had invalid physical support or scale: "
+			+ geometry_issue.removeprefix("Critical geometry:").strip()[:320]
+			+ ". Redraw the authored opening pose on its stated support. If the scene says floor, keep the "
+			"whole actor on the floor; do not invent a chair. Keep the actor and separate furniture in "
+			"the positions specified by the scene, with solid silhouettes that do not overlap. "
+			"Keep the furniture within the authored limb's reach without placing the actor underneath "
+			"or inside it. No solid surface may run through "
+			"the actor's body. Show visible contact with the actor's own support and the product's separate support. "
+			"Keep every rigid prop on its own supporting surface, separate from the actor's head and body "
+			"unless explicitly wearable."
+		) + identity_retry
 	if note.startswith("Critical prop:"):
 		return (
 			"\n\nRetry correction: the previous image added an undeclared retail package. "
 			"Show only the physical object in the authored opening direction in the actor's hands; "
 			"do not substitute or add a printed container."
 		)
+	if identity_retry:
+		return identity_retry
 	return ""
+
+
+def _compact_geometry_retry(shot, project, references):
+	"""Use the authored opening and evidence correction without a second script.
+
+	The normal image prompt layers the director, cast, scene and continuity text.
+	On a failed support layout, those repeated descriptions can overpower the
+	spatial correction. Keep the same references and workflow, but make the
+	retry a short opening-still composition. The motion prompt is untouched.
+	"""
+	opening = str(shot.get("image_prompt") or shot.get("generation_prompt") or "").strip()
+	parts = [
+		"Opening still, before any action. " + opening,
+		_keyframe_retry_direction(shot).strip(),
+		_image_reference_roles(references),
+		_mood(project, avoid=False),
+	]
+	if any(_role_of(ref) == "product" for ref in references):
+		parts.append(
+			"The product photo controls the one physical product's geometry and printed artwork. "
+			"Preserve its existing face, proportions and text; do not redraw a different pack."
+		)
+	return "\n\n".join(part.strip() for part in parts if part.strip())
 
 
 def compile_prompt_for_documents(
@@ -302,9 +373,13 @@ def compile_prompt_for_documents(
 		mode = getattr(shot, "character_mode", None) or PASTE
 		references = getattr(shot, "references", None) or []
 		if mode == DRAW and any(_role_of(r) in ("character", "person") for r in references):
+			retry_note = str(shot.get("keyframe_retry_note") or shot.get("consistency_notes") or "")
+			if "Critical geometry:" in retry_note and _keyframe_retry_direction(shot):
+				return _compact_geometry_retry(shot, project, references)
 			return (
-				_with_opening_staging(_draw_prompt(shot, project), shot)
+				_grounded_cast_staging(shot, _with_opening_staging(_draw_prompt(shot, project), shot))
 				+ _image_reference_roles(references)
+				+ "\n\nPhysical staging: every rigid product, container and furniture item has its own visible support. Keep props separate from actors' heads and bodies unless explicitly authored as wearable. Show each advertised product as one physical object in its authored position; do not repeat it as another box, reflection, background prop or oversized printed cutout. Packaging artwork remains flat on that single object."
 				+ _keyframe_retry_direction(shot)
 			)
 		if pasted_references(references, mode):
@@ -316,6 +391,40 @@ def compile_prompt_for_documents(
 		prompt = _with_opening_staging(prompt, shot) + _image_reference_roles(
 			getattr(shot, "references", None) or []
 		)
+		prompt = _grounded_cast_staging(shot, prompt)
+		references = getattr(shot, "references", None) or []
+		roles = {_role_of(reference) for reference in references}
+		if references and "product" not in roles and not (shot.get("products") or []):
+			prompt += (
+				"\n\nThis opening has no advertised product. Keep the working surface clear of "
+				"retail packs, branded boxes, bottles and merchandise unless the scene explicitly names them."
+			)
+		if references:
+			prompt += (
+				"\n\nPhysical staging: every rigid product, container and furniture item has its own visible "
+				"support. Keep props separate from actors' heads and bodies; only an explicitly authored "
+				"wearable accessory may touch the head. Keep the product at its stated opening location."
+			)
+		# A product-only packshot has no actor whose hands could legitimately be
+		# visible.  Generic contact language used to make Flux invent hands even
+		# when the authored opening explicitly said that the pack was untouched.
+		if "product" in roles and not roles.intersection({"character", "person", "people", "talent"}):
+			prompt += (
+				" This is a product-only composition: no person, human hand, fingers, arm, "
+				"character, paw or body part is present. The product is freestanding, untouched "
+				"and visibly supported by its surface."
+			)
+		# Most production shots use the normal reference-guided image route, not
+		# DRAW. Apply the same source-prop exclusion there as well, including when
+		# the prompt mentions that prop only as flat product-package artwork.
+		excluded_props = source_prop_exclusions(shot, project)
+		if excluded_props:
+			prompt += (
+				"\n\nDo not add these source-only held props to the live actor: "
+				+ ", ".join(excluded_props)
+				+ ". If a reference contains that shape as flat artwork, keep it flat; never turn it into a separate prop."
+			)
+		prompt += _keyframe_retry_direction(shot)
 
 	global_instructions = str(project.get("global_instructions") or "").strip()
 	if global_instructions and include_global_instructions:
@@ -377,10 +486,19 @@ def _grounded_cast_staging(shot, text):
 	roles = {str(_ref_field(r, "reference_role") or _ref_field(r, "input_role") or "").lower() for r in refs}
 	if roles & {"character", "person"}:
 		text += (
-			"\n\nPlace the character the way a real body could be: its whole body is supported "
-			"by one surface and stays in front of, beside or behind furniture, never passing "
-			"through it or cut by a tabletop, and it reaches the product at a plausible height."
+			"\n\nPhysical actor staging: preserve the opening pose and support specified by this scene. "
+			"The floor or seat visibly supports its weight; never invent a chair when the scene specifies "
+			"the floor. Keep the whole actor outside other solid furniture, with its torso, paws and feet "
+			"on one continuous side of any furniture edge. The actor never rests on a table, product or "
+			"small prop. Size each support to the actor and keep the authored action within reach. "
+			"Natural foreground occlusion is acceptable when physical support and depth remain clear."
 		)
+		opening = str(shot.get("start_state") or "")
+		if re.search(r"\b(hold|holding|held|grasp|grasping|carry|carrying)\b", opening, re.I):
+			text += (
+				" Keep a distinct actor hand or paw visibly touching and supporting any held product "
+				"throughout the action; the product must not hover in front of the body."
+			)
 	return text
 
 
@@ -416,6 +534,7 @@ def _identity_guard(shot, project, include_camera=True, include_style=True, conc
 		rules = keep_rules(shot, project)
 		return (
 			"Preserve the supplied subjects' identity, anatomy, proportions, colours and materials. "
+			"Each character has one head and one face in the same place as its identity reference; never add a second face or duplicate facial features. "
 			"No extra physical subjects; pictures printed on a surface remain flat artwork. "
 			"Preserve existing printed quantities, names and artwork; add no new markings. "
 			+ (f"Reference constraints: {rules}." if rules else "")
@@ -755,6 +874,105 @@ def first_frame_inventory(shot, project):
 	return ", ".join(parts)
 
 
+def source_prop_exclusions(shot, project):
+	"""Return objects visible only in an identity's older source view.
+
+	A qualified Character pose is deliberately prop-free.  Its source upload may
+	contain a heart, toy or other object which is useful to identify the mascot but
+	must not leak into a scene that has not authored that object.  Ask the existing
+	vision capability once per immutable source image and cache the observation;
+	this is evidence-driven rather than a list of brand-specific forbidden props.
+	"""
+
+	def field(row, key):
+		return row.get(key) if hasattr(row, "get") else getattr(row, key, None)
+
+	items = []
+	# The opening still may describe artwork printed on the product (for Shera,
+	# a cartoon bear holding a heart). That does not authorize the live mascot
+	# to hold the same separate prop. Only staged state and action grant it.
+	authored = " ".join(
+		str(shot.get(field) or "") for field in ("start_state", "generation_prompt")
+	).casefold()
+	for reference in getattr(shot, "references", None) or shot.get("generation_inputs") or []:
+		if _role_of(reference) != "character":
+			continue
+		analysis = (
+			frappe.parse_json(
+				frappe.db.get_value("Asset Version", field(reference, "asset_version"), "analysis_json")
+				or "{}"
+			)
+			or {}
+		)
+		source = analysis.get("source_asset_version")
+		if not source or source == field(reference, "asset_version"):
+			continue
+		cache_key = f"joymedia:source-held-props:v2:{source}"
+		observed = frappe.cache.get_value(cache_key)
+		if observed is None:
+			file_url = frappe.db.get_value("Asset Version", source, "file")
+			if not file_url:
+				continue
+			try:
+				from joymedia.services.review.consistency import ask
+
+				observed = (
+					ask(
+						file_url,
+						"List separate objects physically held against or between this character's arms or paws. "
+						"Do not list attached accessories such as a flower, bow, hat, or clothing. "
+						"Return JSON held_objects array of short lowercase object names.",
+						max_edge=768,
+					).get("held_objects")
+					or []
+				)
+			except Exception:
+				observed = []
+			# A textual intake caption is still useful when the visual observer is
+			# unavailable or cautious.  Extract objects through the configured
+			# planner instead of encoding brand-specific words such as "heart".
+			if not observed:
+				source_analysis = (
+					frappe.parse_json(frappe.db.get_value("Asset Version", source, "analysis_json") or "{}")
+					or {}
+				)
+				caption = str(source_analysis.get("description") or "")
+				if caption:
+					try:
+						from joymedia.services.planning.production import _ask_planner
+
+						observed = (
+							_ask_planner(
+								"Reference caption: "
+								+ caption
+								+ "\nList only separate physical objects held against or between the character's "
+								"arms or paws. Exclude worn accessories. Return JSON held_objects array of "
+								"short lowercase object names.",
+								system="You extract held-prop facts from a reference caption.",
+								capability="planner",
+								response_schema={
+									"type": "object",
+									"properties": {
+										"held_objects": {"type": "array", "items": {"type": "string"}}
+									},
+									"required": ["held_objects"],
+									"additionalProperties": False,
+								},
+							)
+							or {}
+						).get("held_objects") or []
+					except Exception:
+						observed = []
+			frappe.cache.set_value(cache_key, observed, expires_in_sec=30 * 24 * 3600)
+		for item in observed if isinstance(observed, list) else []:
+			name = " ".join(str(item or "").split()).lower()
+			# The scene may deliberately reintroduce a prop. Otherwise a prop
+			# seen only in the identity image is excluded from the opening.
+			if name and name not in items and name not in authored:
+				items.append(name)
+	return items
+
+
 def _role_of(reference):
 	"""A reference's role for naming and counting: a real person counts as a character in a scene."""
 	role = frappe.scrub(
@@ -1038,10 +1256,32 @@ def keep_rules(shot, project):
 		field(row, "asset_version"): row
 		for row in (project.get("references") or project.get("selected_media") or [])
 	}
+
+	# Older generated character views copied their source's keep rule.  A rule
+	# about a held object in the source then contradicted the required clean pose
+	# in every shot that used the view.  Ignore only that inherited duplicate;
+	# an independently authored rule on the generated view is still respected.
+	def inherited_pose_rule(row):
+		if not row or str(field(row, "reference_role") or "").casefold() != "character":
+			return False
+		try:
+			analysis = (
+				frappe.parse_json(
+					frappe.db.get_value("Asset Version", field(row, "asset_version"), "analysis_json") or "{}"
+				)
+				or {}
+			)
+		except Exception:
+			return False
+		source = rows.get(analysis.get("source_asset_version"))
+		return bool(
+			source and field(row, "keep_rule") and field(row, "keep_rule") == field(source, "keep_rule")
+		)
+
 	rules = []
 	for reference in getattr(shot, "references", None) or []:
 		row = rows.get(field(reference, "asset_version"))
-		rule = field(row, "keep_rule") if row else ""
+		rule = field(row, "keep_rule") if row and not inherited_pose_rule(row) else ""
 		rule = without_overlay_text(_english(rule, project)).strip(" .;,") if rule else ""
 		if rule:
 			role = _role_of(reference)
@@ -1064,6 +1304,28 @@ def keep_rules(shot, project):
 	return "; ".join(dict.fromkeys(rules))
 
 
+# Words that name how a picture is rendered (photo, 3D, drawing...). A sheet's own style that names one is kept.
+RENDER_MEDIUM = re.compile(
+	r"\b(?:2d|3d|cartoon\w*|animat\w*|anime|illustrat\w*|hand[- ]drawn|watercolou?r|paint\w*|sketch\w*|"
+	r"comic\w*|clay\w*|pixel\w*|cel[- ]shaded|cgi|render\w*|photo\w*|live[- ]action|realistic|stop[- ]motion)\b",
+	re.I,
+)
+MEDIUM_LOCK = (
+	"Rendering medium: match the supplied reference photographs. Characters and products keep their "
+	"photographed three-dimensional look, materials and proportions inside a photorealistic scene; never "
+	"redraw them, or the room, as a flat 2D illustration, cartoon, anime or painting."
+)
+
+
+def _ai_written(project):
+	name = project.get("media_project") or project.get("name")
+	source = frappe.db.get_value("Media Project", name, "storyboard_source_json") if name else None
+	try:
+		return (frappe.parse_json(source or "{}") or {}).get("generation_origin") == "ai_director"
+	except (TypeError, ValueError):
+		return False
+
+
 def _mood(project, avoid=True):
 	"""The sheet's Tone & Mood, visual style and what must not be shown: one line for the image and video models,
 	the same in every scene. `avoid=False` leaves out what must not be shown (see `_avoid`)."""
@@ -1075,9 +1337,13 @@ def _mood(project, avoid=True):
 		and " ".join(tone.split()).rstrip(" .").casefold() == " ".join(style.split()).rstrip(" .").casefold()
 	):
 		tone = ""
+	# Without a medium chosen in the client's own sheet, every scene is pinned to the
+	# reference photos: an unanchored style drifts between photo, 3D and 2D drawings.
+	lock = not (style and RENDER_MEDIUM.search(style)) or _ai_written(project)
 	return (
 		(f"Mood: {tone}. " if tone else "")
 		+ (f"Visual style: {style}. " if style else "")
+		+ (MEDIUM_LOCK + " " if lock else "")
 		+ (f"Never show: {brief['avoid']}. " if avoid and brief["avoid"] else "")
 	)
 
@@ -1225,15 +1491,39 @@ def _with_opening_staging(prompt, shot):
 	)
 	from joymedia.services.planning.shot_structure import framing_text, structure_for, visibility_instruction
 
+	value = (
+		json.loads(plan)
+		if isinstance(plan, str) and plan.strip()
+		else (plan if isinstance(plan, dict) else {})
+	)
 	structure = structure_for(shot)
 	if structure:
-		value = json.loads(plan) if isinstance(plan, str) else (plan or {})
 		prompt += (
 			"\n\nNew keyframe composition: "
 			+ framing_text(structure)
 			+ ". Keep the declared action area visible; do not perform later actions in the opening still. "
 		)
 		prompt += visibility_instruction(structure, value.get("scene_contract"))
+	pose_requirement = value.get("pose_requirement") if isinstance(value, dict) else None
+	if isinstance(pose_requirement, dict) and pose_requirement.get("constraints"):
+		opening_pose = pose_requirement.get("opening_pose")
+		pose_anchor = {
+			"upright_supported": "The character is standing upright on both feet at the start; no chair, sofa, stool, or table carries its body weight. ",
+			"seated_supported": "The character is seated at the start with its pelvis visibly supported by the authored seat or ground; do not show it already standing. ",
+		}.get(opening_pose, "")
+		prompt += (
+			"\n\nOpening-pose requirement: "
+			+ pose_anchor
+			+ "; ".join(str(item) for item in pose_requirement["constraints"])
+			+ ". This is a new generated opening keyframe conditioned on the supplied identity references; "
+			"do not depict an in-between stand-up transition."
+		)
+	opening = str(shot.get("start_state") or "")
+	if re.search(r"\b(hold|holding|held|grasp|grasping|carry|carrying)\b", opening, re.I):
+		prompt += (
+			"\n\nHeld-product contact: show the actor's distinct hand or paw physically touching "
+			"and supporting the held object, with a readable contact point; no object floating in front of the torso."
+		)
 	return prompt
 
 
@@ -1319,6 +1609,7 @@ def _draw_prompt(shot, project):
 			+ "Natural light, realistic composition."
 		)
 	product_note = _product_note(shot, project)
+	excluded_props = source_prop_exclusions(shot, project)
 	product_note = (
 		product_identity(
 			project, shows=any(_role_of(r) == "product" for r in getattr(shot, "references", None) or [])
@@ -1327,6 +1618,19 @@ def _draw_prompt(shot, project):
 	)
 	# The sheet's opening framing, so a close-up scene does not come out as a wide view of the room.
 	framing = opening_framing(shot)
+	from joymedia.services.planning.shot_structure import structure_for
+
+	structure = structure_for(shot)
+	move_margin = (
+		"For the planned moving wide/medium shot, reserve at least ten percent clear frame margin around the complete actor, product and their supports; keep the action area between them visible. "
+		if structure
+		and structure["framing"] in {"wide", "full", "medium", "medium_close_up"}
+		and (frappe.parse_json(shot.get("motion_plan_json") or "{}") or {})
+		.get("camera_intent", {})
+		.get("behavior")
+		not in {None, "locked"}
+		else ""
+	)
 	setting = usable_setting(getattr(shot, "setting_prompt", None)).rstrip(". ")
 	# The image stage receives cast, then non-pasted products, then the place.
 	# Counting only cast pointed "the room of picture 2" at the product photo
@@ -1347,9 +1651,15 @@ def _draw_prompt(shot, project):
 		+ "\n\n"
 		+ _no_outsiders(shot, project)
 		+ (f"Cast: {cast}. " if cast else "")
-		+ "Each character is exactly the subject of its picture: preserve its face, colours, markings, accessories, "
-		"body design and surface finish (a smooth surface stays smooth; never add fur, hair or texture it does not have). Each cast identity appears once, in the authored opening pose, not the pose or objects in their reference image. Characters printed on product packaging stay flat artwork, not additional cast. Do not perform later scene actions. "
+		+ "Each character is exactly the subject of its picture: preserve its face, colours, markings, worn accessories, "
+		"body design and surface finish (a smooth surface stays smooth; never add fur, hair or texture it does not have). A heart, toy, tool, package or other object held in the source image is a separate prop: include it only if this scene explicitly calls for it. Each character has one head and one face, with no duplicated eyes, nose or mouth elsewhere on its body. Each cast identity appears once, in the authored opening pose, not the pose or objects in their reference image. Characters printed on product packaging stay flat artwork, not additional cast. Do not perform later scene actions. "
+		+ (
+			f"Do not add these source-only held props to this opening: {', '.join(excluded_props)}. "
+			if excluded_props
+			else ""
+		)
 		+ size_rule
+		+ move_margin
 		+ product_note
 		+ f"The place: {setting}"
 		+ (

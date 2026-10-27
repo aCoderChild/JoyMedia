@@ -7,6 +7,30 @@ from joymedia.services.generation.runner import _stage_generation_inputs, submit
 
 
 class TestGenerationRunner(FrappeTestCase):
+	@patch("joymedia.services.generation.runner.submit_workflow")
+	@patch("joymedia.services.generation.runner.endpoint_for_workflow", return_value="http://worker:8188")
+	@patch("joymedia.services.generation.runner.resolve_attempt", return_value={})
+	@patch("joymedia.services.generation.runner._stage_generation_inputs", return_value={})
+	@patch("joymedia.services.generation.runner.frappe.get_doc")
+	def test_missing_comfy_upload_is_restaged_once(
+		self, get_doc, stage_inputs, resolve_attempt, get_base_url, submit_workflow
+	):
+		attempt = frappe._dict(name="ATT-00001", status="Pending", generation_task="TASK-00001")
+		attempt.reload = MagicMock()
+		attempt.save = MagicMock()
+		job = MagicMock(workflow="WF-00001", depends_on_task=None)
+		get_doc.side_effect = [attempt, job]
+		submit_workflow.side_effect = [
+			frappe.ValidationError("prompt_outputs_failed_validation: Invalid image file: vanished.png"),
+			{"prompt_id": "comfy-1"},
+		]
+
+		self.assertEqual({"prompt_id": "comfy-1"}, submit_attempt(attempt.name))
+		self.assertEqual(2, stage_inputs.call_count)
+		self.assertEqual(2, resolve_attempt.call_count)
+		self.assertEqual(2, submit_workflow.call_count)
+		self.assertEqual("Queued", attempt.status)
+
 	@patch("joymedia.services.generation.runner.find_prompt_by_client_id", return_value=None)
 	@patch(
 		"joymedia.services.generation.runner.submit_workflow",

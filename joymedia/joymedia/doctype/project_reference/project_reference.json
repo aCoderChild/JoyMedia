@@ -8,6 +8,7 @@
   "identity_key",
   "asset_version",
   "reference_role",
+  "product_view",
   "motion_reference_use",
   "label",
   "relative_size",
@@ -46,6 +47,15 @@
    "label": "Reference Role",
    "options": "Product\nCharacter\nPerson\nLogo\nEnvironment\nStyle\nComposition\nMotion\nAudio\nGeneral",
    "reqd": 1
+  },
+  {
+   "default": "source",
+   "depends_on": "eval:doc.reference_role==\"Product\"",
+   "description": "The real package faces visible in this uploaded photograph. Add separate Product rows with the same Identity Key for each supplied angle.",
+   "fieldname": "product_view",
+   "fieldtype": "Select",
+   "label": "Product View",
+   "options": "source\nfront\nfront_left\nfront_right\ntop_front\nthree_quarter\nleft\nright\nside\nback"
   },
   {
    "fieldname": "motion_reference_use",

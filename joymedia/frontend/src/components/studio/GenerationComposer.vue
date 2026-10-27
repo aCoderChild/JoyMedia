@@ -1,5 +1,5 @@
 <template>
-  <div class="generation-composer rounded-2xl bg-surface-card border border-outline-border p-3.5 sm:p-4 shadow-lg transition-all focus-within:border-indigo-500/80 focus-within:ring-2 focus-within:ring-indigo-500/20">
+  <div class="generation-composer rounded-2xl bg-surface-card border border-outline-border p-3.5 sm:p-4 shadow-lg transition-all focus-within:border-rio-500/80 focus-within:ring-2 focus-within:ring-rio-500/20">
     <!-- Top Row: Reference Ingredients Chips -->
     <div class="flex items-center gap-2 mb-2.5 overflow-x-auto pb-1 text-xs">
       <span class="text-[11px] font-bold text-ink-muted uppercase tracking-wider shrink-0 flex items-center gap-1">
@@ -21,7 +21,7 @@
             @click="insertReferenceTag(asset)"
           >
             <span class="text-xs">{{ getRoleIcon(asset.reference_role || asset.asset_category) }}</span>
-            <span class="text-[11px] text-indigo-400 font-bold">@</span>
+            <span class="text-[11px] text-rio-400 font-bold">@</span>
             <span class="font-semibold truncate max-w-[130px]">{{ asset.asset_name }}</span>
             <span class="text-[10px] text-ink-muted">· {{ roleLabel(asset.reference_role || asset.asset_category) }}</span>
           </button>
@@ -41,7 +41,7 @@
       <!-- Add Reference Button -->
       <button
         type="button"
-        class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer shrink-0"
+        class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-rio-400 bg-rio-500/10 hover:bg-rio-500/20 border border-rio-500/20 transition-colors cursor-pointer shrink-0"
         @click="$emit('openMediaPicker')"
       >
         <span>+</span>
@@ -69,7 +69,7 @@
         :placeholder="currentLang === 'vi'
           ? 'Mô tả video bạn muốn tạo... (Gõ @ để chèn tư liệu tham chiếu)'
           : 'Describe the video you want... (Type @ to mention reference ingredients)'"
-        class="w-full bg-surface-muted/60 hover:bg-surface-muted focus:bg-surface-base border border-outline-border rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 transition-all resize-none font-sans leading-relaxed"
+        class="w-full bg-surface-muted/60 hover:bg-surface-muted focus:bg-surface-base border border-outline-border rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-rio-500 transition-all resize-none font-sans leading-relaxed"
         :disabled="isGenerating"
         :readonly="fromSheet"
         @input="handleInput"
@@ -90,14 +90,14 @@
           :key="asset.name || asset.asset_name"
           type="button"
           class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between cursor-pointer transition-colors"
-          :class="mentionActiveIndex === idx ? 'bg-indigo-600 text-white font-bold' : 'hover:bg-surface-hover text-ink-primary'"
+          :class="mentionActiveIndex === idx ? 'bg-rio-600 text-white font-bold' : 'hover:bg-surface-hover text-ink-primary'"
           @click="selectMention(asset)"
         >
           <div class="flex items-center gap-2 min-w-0">
             <span class="text-xs">{{ getRoleIcon(asset.reference_role || asset.asset_category) }}</span>
             <span class="truncate">{{ asset.asset_name }}</span>
           </div>
-          <span class="text-[10px] font-mono px-1 py-0.2 rounded bg-surface-muted text-indigo-400 font-bold shrink-0">
+          <span class="text-[10px] font-mono px-1 py-0.2 rounded bg-surface-muted text-rio-400 font-bold shrink-0">
             @{{ getCleanKey(asset) }}
           </span>
         </button>
@@ -109,7 +109,7 @@
       <!-- Left: AI Contextual Assistant & Settings Shortcut -->
       <div class="flex flex-wrap items-center gap-2">
 		<label
-		  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-ink-primary hover:text-indigo-400 bg-surface-muted hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer"
+		  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-ink-primary hover:text-rio-400 bg-surface-muted hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer"
 		  :title="currentLang === 'vi' ? 'Nhập file kịch bản Excel' : 'Import storyboard workbook'"
 		>
 		  <span>⇧</span>
@@ -120,7 +120,7 @@
         <button
           v-if="!fromSheet"
           type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 transition-all cursor-pointer shadow-xs"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-rio-400 bg-rio-500/10 hover:bg-rio-500/20 border border-rio-500/30 transition-all cursor-pointer shadow-xs"
           :disabled="isImprovingPrompt || isGenerating || !modelPrompt?.trim()"
           :title="currentLang === 'vi' ? 'AI nâng tầm ý tưởng thành kịch bản điện ảnh' : 'Refine and enrich your idea with AI'"
           @click="improvePromptWithAi"
@@ -133,7 +133,7 @@
         <!-- Settings Quick Pill: 10s · Landscape ▾ -->
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-ink-primary hover:text-indigo-400 bg-surface-muted hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer shadow-xs"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-ink-primary hover:text-rio-400 bg-surface-muted hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer shadow-xs"
           :title="currentLang === 'vi' ? 'Cài đặt thời lượng & định dạng' : 'Video settings'"
           @click="$emit('openSettings')"
         >
@@ -152,7 +152,7 @@
 		</span>
         <button
           type="button"
-          class="jm-btn-primary !py-2 !px-4 text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/25 transition-all cursor-pointer"
+          class="jm-btn-primary !py-2 !px-4 text-xs font-bold flex items-center gap-2 shadow-lg shadow-rio-600/25 transition-all cursor-pointer"
           :class="{ 'animate-pulse': isGenerating }"
           :disabled="actionBusy || ['brief', 'loading', 'working'].includes(nextAction)"
           data-test="client-next-action"

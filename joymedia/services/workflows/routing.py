@@ -140,6 +140,49 @@ def _endpoint_pipeline(base_pipeline, references, motion_plan_json):
 	return frappe.get_doc("Generation Pipeline", name), workflow
 
 
+def _geometry_pipeline(base_pipeline, references):
+	"""Return an operator-promoted sibling that carries a real layout anchor.
+
+	This is intentionally capability- and contract-driven.  It does not know a
+	brand, product category, table type, or model name.  A depth-guided image
+	stage is useful only when the shot has both a product and an approved image of
+	the setting that will support it.  The same setting image is bound once as the
+	ordinary visual reference and once as the geometry control.
+	"""
+	roles = {normalize_reference_role(r.get("reference_role") or r.get("input_role")) for r in references}
+	if not {"product", "environment"} <= roles:
+		return None
+	routes = frappe.conf.get("joymedia_geometry_generation_pipelines") or {}
+	if not isinstance(routes, dict):
+		raise ValueError("joymedia_geometry_generation_pipelines must map base to geometry pipelines.")
+	name = routes.get(base_pipeline.name)
+	if not name:
+		return None
+	if not isinstance(name, str) or not frappe.db.exists("Generation Pipeline", name):
+		raise ValueError("The configured geometry pipeline is unavailable.")
+	from joymedia.services.workflows.capabilities import controls
+	from joymedia.services.workflows.pipeline import get_pipeline_steps
+	from joymedia.services.workflows.resolver import get_workflow_input_contract
+
+	base_steps, steps = get_pipeline_steps(base_pipeline.name), get_pipeline_steps(name)
+	if (
+		len(base_steps) != len(steps)
+		or len(steps) < 2
+		or [step.workflow for step in steps[1:]] != [step.workflow for step in base_steps[1:]]
+	):
+		raise ValueError("The geometry pipeline must replace only the base pipeline's image stage.")
+	image = frappe.get_doc("Generation Workflow", steps[0].workflow)
+	contract = {item["role"]: item for item in get_workflow_input_contract(image)}
+	if (
+		image.output_media_type != "Image"
+		or "depth_guided_reference" not in controls(image)
+		or "geometry_reference" not in contract
+		or not contract["geometry_reference"].get("required")
+	):
+		raise ValueError("The geometry image stage needs a required depth-guided geometry_reference input.")
+	return frappe.get_doc("Generation Pipeline", name), image
+
+
 def resolve_shot_render_route(
 	default_workflow, references, *, handoff_type="", motion_plan_json="", pipeline_name=None
 ):
@@ -177,12 +220,22 @@ def resolve_shot_render_route(
 	steps = get_pipeline_steps(pipeline.name)
 	if len(steps) < 2:
 		frappe.throw(frappe._("The active Generation Pipeline must contain at least two ordered stages."))
-	endpoint = _endpoint_pipeline(pipeline, references, motion_plan_json)
+	geometry = _geometry_pipeline(pipeline, references)
+	endpoint = None if geometry else _endpoint_pipeline(pipeline, references, motion_plan_json)
+	if geometry:
+		pipeline, workflow = geometry
+		steps = get_pipeline_steps(pipeline.name)
+		routing_reason = (
+			"Configured depth-guided layout pipeline with the approved environment as geometry anchor."
+		)
 	if endpoint:
 		pipeline, workflow = endpoint
 		steps = get_pipeline_steps(pipeline.name)
+		routing_reason = "Explicit last-frame image and moving camera; configured endpoint pipeline."
 	else:
-		workflow = frappe.get_doc("Generation Workflow", steps[-1].workflow)
+		if not geometry:
+			workflow = frappe.get_doc("Generation Workflow", steps[-1].workflow)
+			routing_reason = "Configured promoted production pipeline."
 	keyframe = frappe.get_doc("Generation Workflow", steps[0].workflow)
 	from joymedia.services.workflows.capabilities import controls
 
@@ -205,11 +258,7 @@ def resolve_shot_render_route(
 		"workflow": workflow.name,
 		"generation_pipeline": pipeline.name,
 		"references": normalized,
-		"reason": (
-			"Explicit last-frame image and moving camera; configured endpoint pipeline."
-			if endpoint
-			else "Configured promoted production pipeline."
-		),
+		"reason": routing_reason,
 		"requires_recomposition": new_scene,
 	}
 
@@ -221,6 +270,23 @@ def _map_pipeline_references(references, contract):
 	board = contract.get("reference_board") or contract.get("product_reference")
 	board_role = "reference_board" if "reference_board" in contract else "product_reference"
 	mapped = []
+	geometry_anchor = next(
+		(
+			r
+			for r in references
+			if normalize_reference_role(r.get("reference_role") or r.get("input_role")) == "environment"
+			and r.get("asset_version")
+		),
+		None,
+	)
+	if "geometry_reference" in contract:
+		if not geometry_anchor:
+			raise frappe.ValidationError(
+				"A depth-guided image stage needs an approved Environment reference for its geometry anchor."
+			)
+		# The control is a second semantic binding to the same immutable setting
+		# image, not a generated substitute or a guessed camera layout.
+		mapped.append({**geometry_anchor, "reference_role": "geometry_reference"})
 	for reference in references:
 		item = dict(reference)
 		declared = frappe.scrub(item.get("reference_role") or item.get("input_role") or "")

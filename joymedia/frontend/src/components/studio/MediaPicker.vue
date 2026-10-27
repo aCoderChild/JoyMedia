@@ -36,7 +36,7 @@
               :key="t"
               type="button"
               class="px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer"
-              :class="activeTypeFilter === t ? 'bg-indigo-600 text-white shadow-xs' : 'text-ink-secondary hover:text-ink-primary'"
+              :class="activeTypeFilter === t ? 'bg-rio-600 text-white shadow-xs' : 'text-ink-secondary hover:text-ink-primary'"
               @click="activeTypeFilter = t"
             >
               {{ t }}
@@ -48,7 +48,7 @@
             v-model="searchQuery"
             type="text"
             :placeholder="currentLang === 'vi' ? 'Tìm theo tên...' : 'Search by name...'"
-            class="px-3 py-1 rounded-lg bg-surface-card border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500"
+            class="px-3 py-1 rounded-lg bg-surface-card border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-rio-500"
           />
         </div>
 
@@ -89,10 +89,10 @@
               class="media-candidate-card w-full text-left p-2 rounded-xl border transition-all cursor-pointer relative group flex flex-col justify-between"
               :class="[
                 selectedCandidate?.name === asset.name
-                  ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/40 shadow-sm'
+                  ? 'border-rio-500 bg-rio-500/10 ring-2 ring-rio-500/40 shadow-sm'
                   : asset.selected && !isKeyframeTarget
                     ? 'border-emerald-500/50 bg-emerald-500/5 hover:border-emerald-500'
-                    : 'border-outline-border bg-surface-muted hover:border-indigo-400'
+                    : 'border-outline-border bg-surface-muted hover:border-rio-400'
               ]"
               @click="onCandidateClick(asset)"
               @dblclick="confirmAddReference"
@@ -110,7 +110,7 @@
                 <div class="flex items-center justify-between text-[10px] text-ink-muted mt-0.5">
                   <span class="capitalize">{{ asset.asset_category || asset.media_type }}</span>
                   <span v-if="asset.selected && !isKeyframeTarget" class="text-emerald-400 font-bold">✓ {{ currentLang === 'vi' ? 'Đã thêm' : 'In project' }}</span>
-                  <span v-else-if="selectedCandidate?.name === asset.name" class="text-indigo-400 font-medium">{{ suggestRole(asset) }}</span>
+                  <span v-else-if="selectedCandidate?.name === asset.name" class="text-rio-400 font-medium">{{ suggestRole(asset) }}</span>
                 </div>
               </div>
             </button>
@@ -186,7 +186,7 @@
             </span>
             <div class="flex items-center gap-1.5 text-[11px] mt-0.5">
               <span class="text-ink-muted">{{ currentLang === 'vi' ? 'Đề xuất:' : 'Suggested:' }}</span>
-              <span class="font-bold text-indigo-400 flex items-center gap-1">
+              <span class="font-bold text-rio-400 flex items-center gap-1">
                 <span>{{ getRoleIcon(selectedRole) }}</span>
                 <span>{{ roleOptions.find((role) => role.value === selectedRole)?.label || selectedRole }}</span>
               </span>
@@ -217,7 +217,7 @@
                 :key="role.value"
                 type="button"
                 class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between cursor-pointer transition-colors"
-                :class="selectedRole === role.value ? 'bg-indigo-600 text-white font-bold' : 'hover:bg-surface-hover text-ink-primary'"
+                :class="selectedRole === role.value ? 'bg-rio-600 text-white font-bold' : 'hover:bg-surface-hover text-ink-primary'"
                 @click="selectedRole = role.value; showRoleDropdown = false"
               >
                 <div class="flex items-center gap-2">

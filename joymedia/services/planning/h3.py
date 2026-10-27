@@ -45,7 +45,10 @@ def compile_h3(
 		_avoid,
 		_identity_guard,
 		_mood,
+		_no_outsiders,
 		first_frame_inventory,
+		owned_body_parts,
+		scene_actor,
 		temporal_timing_instruction,
 	)
 	from joymedia.services.project.context import scene_direction
@@ -96,6 +99,8 @@ def compile_h3(
 	timing = temporal_timing_instruction(shot, is_final=is_final, **window)
 	# A continuation gets only its window of the action plan, never the full beat again.
 	action = _without_camera(timing or scene_direction(text)["action"])
+	actor = scene_actor(shot, project)
+	action = owned_body_parts(action, actor)
 	physical = instruction(
 		shot.get("motion_plan_json"),
 		shot.get("duration_seconds"),
@@ -127,7 +132,7 @@ def compile_h3(
 			# appended after the five layers.
 			refs += " Use <Picture 2> only for the exact advertised product silhouette, proportions, colours and printed artwork; keep its artwork attached to its surface through perspective, motion and occlusion."
 		if workflow and roles & {"character", "person"}:
-			refs += " Use the separate character reference only for the original character's face, markings, accessories, body proportions, limb and hand shape, and colours. Retain the opening frame's pose and placement; do not add the reference image as a cutaway or duplicate actor."
+			refs += " Use the separate character reference only for the original character's face, markings, worn accessories, body proportions, limb and hand shape, and colours. A held heart or other object is a separate prop, never part of the character; include it only when the scene requests it. Retain the opening frame's pose and placement; do not add the reference image as a cutaway or duplicate actor."
 	if reference_only:
 		refs = _direct_reference_roles(shot, workflow)
 	opening = (
@@ -157,10 +162,20 @@ def compile_h3(
 			"Packaging illustrations are flat printed artwork, never separate actors. Every visible limb belongs to the declared actor and retains its anatomy; no unrequested human hands. "
 			"One coherent three-dimensional setting and shared light. Retain the referenced setting when supplied; ignore backgrounds in identity-only photos. No photo cards or split panels. Reference poses do not add props or actions."
 		)
+	else:
+		guard = " ".join(part for part in (guard, _no_outsiders(shot, project)) if part)
 	# Keep safety/continuity constraints, but one authoritative camera paragraph.
 	rules = "\n\n".join(
 		_without_camera(p) for p in text.split("\n\n")[1:] if not p.lstrip().startswith(("Audio:", "Camera:"))
 	)
+	rules = owned_body_parts(rules, actor)
+	if shot.get("consistency_status") == "Redoing":
+		note = str(shot.get("consistency_notes") or "").lower()
+		if "human hand" in note or "outside hand" in note or "human arm" in note:
+			rules += (
+				" Retry correction: the previous take added a real human limb. Show only the declared character's own "
+				"referenced paws; no bare human skin, human fingers, hand or arm may enter from any frame edge."
+			)
 	sfx_only = (project.get("soundtrack_mode") or "Sound effects only") != "Full soundtrack"
 	audio = _audio_line_last(text, sound_effects_only=sfx_only, duration=duration)
 	audio = next((p[6:].strip() for p in audio.split("\n\n") if p.startswith("Audio:")), "")

@@ -774,7 +774,13 @@ def _scenes(rows, header_index, columns):
 				"visual_camera": values.get("visual_camera", ""),
 				**{
 					k: _meaningful_text(values.get(k, ""))
-					for k in ("shot_framing", "shot_angle", "narrative_stage", "subject_motion", "camera_move")
+					for k in (
+						"shot_framing",
+						"shot_angle",
+						"narrative_stage",
+						"subject_motion",
+						"camera_move",
+					)
 				},
 				"action": values.get("action", ""),
 				"voice_over": values.get("voice_over", ""),

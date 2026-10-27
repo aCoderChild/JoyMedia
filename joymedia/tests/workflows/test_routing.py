@@ -16,6 +16,113 @@ def _reference(role, number):
 
 
 class TestWorkflowRouting(FrappeTestCase):
+	def test_geometry_route_requires_an_operator_mapping_and_binds_the_same_environment_as_geometry(self):
+		from joymedia.services.workflows.routing import _geometry_pipeline, _map_pipeline_references
+
+		base = SimpleNamespace(name="PIPE-BASE")
+		candidate = SimpleNamespace(name="PIPE-GEOMETRY")
+		image = SimpleNamespace(
+			name="WF-GEOMETRY",
+			output_media_type="Image",
+			execution_spec={"capabilities": ["depth_guided_reference"]},
+		)
+		steps = {
+			"PIPE-BASE": [SimpleNamespace(workflow="WF-IMAGE"), SimpleNamespace(workflow="WF-VIDEO")],
+			"PIPE-GEOMETRY": [SimpleNamespace(workflow="WF-GEOMETRY"), SimpleNamespace(workflow="WF-VIDEO")],
+		}
+		refs = [_reference("Product", 1), {**_reference("Environment", 2), "reference_key": "room"}]
+		with (
+			patch(
+				"joymedia.services.workflows.routing.frappe.conf",
+				{"joymedia_geometry_generation_pipelines": {"PIPE-BASE": "PIPE-GEOMETRY"}},
+			),
+			patch.object(frappe.db, "exists", return_value=True),
+			patch(
+				"joymedia.services.workflows.pipeline.get_pipeline_steps",
+				side_effect=lambda name: steps[name],
+			),
+			patch(
+				"joymedia.services.workflows.routing.frappe.get_doc",
+				side_effect=lambda _doctype, name: {"PIPE-GEOMETRY": candidate, "WF-GEOMETRY": image}[name],
+			),
+			patch(
+				"joymedia.services.workflows.resolver.get_workflow_input_contract",
+				return_value=[{"role": "geometry_reference", "required": True}],
+			),
+			patch(
+				"joymedia.services.workflows.capabilities.controls",
+				return_value=frozenset({"depth_guided_reference"}),
+			),
+		):
+			self.assertEqual((candidate, image), _geometry_pipeline(base, refs))
+		self.assertEqual(
+			["geometry_reference", "product", "environment"],
+			[
+				item["reference_role"]
+				for item in _map_pipeline_references(
+					refs, {"geometry_reference": {}, "product": {}, "environment": {}}
+				)
+			],
+		)
+
+	def test_geometry_route_is_not_selected_without_an_environment_anchor(self):
+		from joymedia.services.workflows.routing import _geometry_pipeline
+
+		self.assertIsNone(_geometry_pipeline(SimpleNamespace(name="PIPE-BASE"), [_reference("Product", 1)]))
+
+	def test_configured_geometry_pipeline_routes_a_product_scene_and_preserves_video_stage(self):
+		base = SimpleNamespace(name="PIPE-BASE")
+		candidate = SimpleNamespace(name="PIPE-GEOMETRY")
+		image = SimpleNamespace(
+			name="WF-GEOMETRY",
+			output_media_type="Image",
+			execution_spec={"capabilities": ["depth_guided_reference"]},
+		)
+		steps = {
+			"PIPE-BASE": [SimpleNamespace(workflow="WF-IMAGE"), SimpleNamespace(workflow="WF-VIDEO")],
+			"PIPE-GEOMETRY": [SimpleNamespace(workflow="WF-GEOMETRY"), SimpleNamespace(workflow="WF-VIDEO")],
+		}
+		contract = [
+			{"role": "geometry_reference", "required": True},
+			{"role": "product", "required": False},
+			{"role": "environment", "required": False},
+		]
+		refs = [_reference("Product", 1), _reference("Environment", 2)]
+		with (
+			patch(
+				"joymedia.services.workflows.routing.frappe.conf",
+				{"joymedia_geometry_generation_pipelines": {"PIPE-BASE": "PIPE-GEOMETRY"}},
+			),
+			patch.object(frappe.db, "exists", return_value=True),
+			patch(
+				"joymedia.services.workflows.pipeline.get_pipeline_steps",
+				side_effect=lambda name: steps[name],
+			),
+			patch(
+				"joymedia.services.workflows.routing.frappe.get_doc",
+				side_effect=lambda _doctype, name: {
+					"PIPE-BASE": base,
+					"PIPE-GEOMETRY": candidate,
+					"WF-GEOMETRY": image,
+				}[name],
+			),
+			patch("joymedia.services.workflows.resolver.get_workflow_input_contract", return_value=contract),
+			patch(
+				"joymedia.services.workflows.capabilities.controls",
+				return_value=frozenset({"depth_guided_reference"}),
+			),
+		):
+			route = resolve_shot_render_route(
+				SimpleNamespace(name="WF-VIDEO"), refs, pipeline_name="PIPE-BASE"
+			)
+		self.assertEqual("PIPE-GEOMETRY", route["generation_pipeline"])
+		self.assertEqual("WF-GEOMETRY", route["workflow"])
+		self.assertEqual(
+			["geometry_reference", "product", "environment"],
+			[row["reference_role"] for row in route["references"]],
+		)
+		self.assertIn("geometry anchor", route["reason"])
+
 	def test_endpoint_route_uses_explicit_last_frame_and_validated_sibling_pipeline(self):
 		from joymedia.services.workflows.routing import _endpoint_pipeline
 

@@ -54,6 +54,17 @@ def require_dimensions(snapshot):
 	return int(width), int(height)
 
 
+def preparation_dimensions(snapshot, ratio_hint=None, short_edge=576):
+	"""Size an image-reference preparation before delivery pixels are finalized."""
+	try:
+		return require_dimensions(snapshot)
+	except ValueError:
+		ratio = parse_ratio(ratio_hint or snapshot.get("delivery_preset"))
+		if not ratio:
+			raise
+		return delivery_dimensions(ratio, short_edge)
+
+
 def composition_instruction(project):
 	"""Describe the authored active picture, independently of a provider's grid."""
 	ratio = ratio_label(project.get("delivery_width"), project.get("delivery_height"))

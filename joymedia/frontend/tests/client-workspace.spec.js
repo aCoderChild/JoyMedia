@@ -22,7 +22,7 @@ test.describe('simplified client experience',()=>{
   await expect(page.getByRole('button',{name:'Needs attention',exact:true})).toHaveCount(0);
   await expect(card.locator('[data-test="card-history"]')).not.toBeVisible();
   await page.screenshot({path:`${output}/projects.png`,fullPage:true});
-  await card.getByRole('button',{name:/Open video/}).click();
+  await card.getByRole('button',{name:/Open video|See the videos/}).click();
   await page.waitForURL(`**/projects/${working}`);
   const client=page.locator('[data-test="client-workspace"]');await expect(client).toBeVisible();
   await expect(client.locator('[data-test="client-video"] video')).toBeVisible();
@@ -93,11 +93,20 @@ test.describe('simplified client experience',()=>{
   await page.setViewportSize({width:390,height:844});
   await page.goto(`/joymedia/projects/${working}`);
   await expect(page.locator('[data-test="client-video"] video')).toBeVisible();
-  await expect(page.getByRole('link',{name:'Download preview',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:/^Download (preview|video)$/})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
   await page.locator('[data-test="client-workspace"] header summary').click();
   await expect(page.getByRole('button',{name:'Video settings',exact:true})).toBeVisible();
   await page.screenshot({path:`${output}/mobile.png`,fullPage:true});
+ });
+
+ test('video settings opens from the client more menu',async({page})=>{
+  await page.goto(`/joymedia/projects/${working}`);
+  const menu=page.locator('[data-test="client-workspace"] header details');
+  await menu.locator('summary').click();
+  await page.locator('[data-test="open-video-settings"]').click();
+  await expect(page.locator('[data-test="video-settings-modal"]')).toBeVisible();
+  await expect(menu).not.toHaveAttribute('open','');
  });
 
  test('restore handles an archived family and its archived edit in order',async({page,context})=>{
@@ -126,7 +135,7 @@ test.describe('simplified client experience',()=>{
   const shot=before.storyboard.find(s=>s.selected_output_file || s.output_video);
   expect(shot).toBeTruthy();
   await page.goto(`/joymedia/projects/${working}`);
-  await page.locator('[data-test="client-version-history"]').click();
+  await page.locator('summary', {hasText:/More|Thêm/}).first().click();await page.locator('[data-test="open-project-history"]').click();
   const history=page.locator('[data-test="project-history"]');
   await expect(history.getByRole('button',{name:'Full videos',exact:true})).toBeVisible();
   await expect(history.getByRole('button',{name:'Scene versions',exact:true})).toBeVisible();

@@ -129,7 +129,7 @@ def keyframe_spec():
 	}
 
 
-def _register_keyframe(*, graph=GRAPH, spec=None, workflow_key=WORKFLOW_KEY):
+def _register_keyframe(*, graph=GRAPH, spec=None, workflow_key=WORKFLOW_KEY, extra_bindings=()):
 	"""The latest klein keyframe workflow whose graph and specification are exactly the shipped ones, else a new version."""
 	name = frappe.db.get_value(
 		"Generation Workflow", {"workflow_key": workflow_key}, "name", order_by="version_number desc"
@@ -178,5 +178,7 @@ def _register_keyframe(*, graph=GRAPH, spec=None, workflow_key=WORKFLOW_KEY):
 				"allow_multiple": 0,
 			},
 		)
+	for binding in extra_bindings:
+		doc.append("bindings", dict(binding))
 	doc.insert(ignore_permissions=True)
 	return doc.name

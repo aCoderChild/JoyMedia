@@ -31,6 +31,32 @@ from joymedia.services.project.formats import ratio_label
 ALLOWED_STATUSES = {"Draft", "Generating", "Completed", "Needs Attention", "Cancelled", "Archived"}
 
 
+def _active_pipeline_accepts_existing_shots(project, pipeline, workflow):
+	"""Check a promoted pipeline against saved references before changing the project."""
+	from joymedia.services.workflows.routing import resolve_shot_render_route
+
+	for shot_name in frappe.get_all(
+		"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"
+	):
+		shot = frappe.get_doc("Shot", shot_name)
+		references = [
+			{"reference_role": row.reference_role, "asset_version": row.asset_version}
+			for row in shot.generation_inputs or []
+			if row.reference_role and row.asset_version
+		]
+		try:
+			resolve_shot_render_route(
+				workflow,
+				references,
+				handoff_type=shot.handoff_type or "",
+				motion_plan_json=shot.motion_plan_json or "",
+				pipeline_name=pipeline.name,
+			)
+		except frappe.ValidationError:
+			return False
+	return True
+
+
 class MediaProject(Document):
 	def _require_read_access(self):
 		self._require_owner_access()
@@ -567,6 +593,15 @@ class MediaProject(Document):
 			pipeline = pipeline_for_final_workflow(workflow.name)
 		except frappe.ValidationError:
 			return  # nothing active to move to; the generation preflight reports what is missing
+		if (
+			pipeline
+			and self.generation_pipeline
+			and self.generation_pipeline != pipeline.name
+			and not _active_pipeline_accepts_existing_shots(self, pipeline, workflow)
+		):
+			# A site promotion cannot silently make an approved legacy storyboard
+			# unrunnable by replacing the reference contract under its saved shots.
+			return
 		pinned = {"workflow": workflow.name, "generation_pipeline": pipeline.name if pipeline else ""}
 		if any(self.get(key) != value for key, value in pinned.items()):
 			self.db_set(pinned, update_modified=False)

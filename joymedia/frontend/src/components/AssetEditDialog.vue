@@ -21,7 +21,7 @@
           v-model="name"
           type="text"
           maxlength="140"
-          class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
+          class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-rio-500"
         />
         <p class="text-[10.5px] text-ink-muted mt-1">
           {{ isVi

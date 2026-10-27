@@ -6,7 +6,7 @@
           <span>✂️</span>
           <span>{{ currentLang === 'vi' ? 'Dòng thời gian' : 'Timeline' }}</span>
         </span>
-        <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-indigo-400 border border-outline-border font-bold">
+        <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-rio-400 border border-outline-border font-bold">
           {{ activeVideoClips.length }} {{ currentLang === 'vi' ? 'đoạn' : 'clips' }} · {{ totalSeconds?.toFixed(1) || 0 }}s
         </span>
       </div>
@@ -78,7 +78,7 @@
         <div class="flex justify-end pt-1">
           <button
             type="button"
-            class="rounded-xl border border-dashed border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-400 hover:bg-indigo-500/20 cursor-pointer"
+            class="rounded-xl border border-dashed border-rio-500/50 bg-rio-500/10 px-3 py-2 text-xs font-semibold text-rio-400 hover:bg-rio-500/20 cursor-pointer"
             @click="$emit('addScene')"
           >
             + {{ currentLang === 'vi' ? 'Thêm cảnh' : 'Add Scene' }}

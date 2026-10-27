@@ -16,7 +16,7 @@
         <!-- Compact + Button in Header -->
         <button
           type="button"
-          class="p-1 rounded-lg text-ink-secondary hover:text-indigo-400 hover:bg-surface-hover cursor-pointer transition-colors"
+          class="p-1 rounded-lg text-ink-secondary hover:text-rio-400 hover:bg-surface-hover cursor-pointer transition-colors"
           :title="currentLang === 'vi' ? 'Thêm tư liệu' : 'Add reference'"
           @click="$emit('openMediaPicker')"
         >
@@ -43,8 +43,8 @@
           class="group relative flex items-center gap-2.5 p-1.5 rounded-xl border transition-all cursor-pointer"
           :class="[
             selectedAsset?.asset_version === asset.asset_version
-              ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500/30'
-              : 'border-outline-border bg-surface-muted/60 hover:bg-surface-hover hover:border-indigo-400/50'
+              ? 'border-rio-500 bg-rio-500/10 ring-1 ring-rio-500/30'
+              : 'border-outline-border bg-surface-muted/60 hover:bg-surface-hover hover:border-rio-400/50'
           ]"
           @click="$emit('selectAsset', asset)"
         >

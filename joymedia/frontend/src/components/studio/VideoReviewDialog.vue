@@ -16,15 +16,15 @@
           <div class="flex flex-wrap items-center gap-2 text-xs rounded-lg bg-surface-muted p-2" data-test="review-tools">
             <button class="border border-outline-border rounded px-2 py-2" :disabled="!ready||saving" :aria-label="t('Previous frame','Khung hình trước')" @click="step(-1)">←</button>
             <button class="border border-outline-border rounded px-2 py-2" :disabled="!ready||saving" :aria-label="t('Next frame','Khung hình tiếp')" @click="step(1)">→</button>
-            <label class="flex items-center gap-1">{{ t('Frame','Khung hình') }} <input type="number" :value="displayFrame" min="1" :max="data.total_frames" :disabled="!ready||saving" :aria-label="t('Go to frame','Đến khung hình')" class="w-20 border border-outline-border rounded bg-surface-card px-2 py-1" @change="jumpFrame($event.target)" /> / {{ data.total_frames }}</label>
-            <span class="tabular-nums">{{ clock(time) }}</span>
+            <label v-if="access.can_use_advanced_editor" class="flex items-center gap-1">{{ t('Frame','Khung hình') }} <input type="number" :value="displayFrame" min="1" :max="data.total_frames" :disabled="!ready||saving" :aria-label="t('Go to frame','Đến khung hình')" class="w-20 border border-outline-border rounded bg-surface-card px-2 py-1" @change="jumpFrame($event.target)" /> / {{ data.total_frames }}</label>
+            <span class="tabular-nums text-ink-secondary">{{ clock(time) }} / {{ clock(data.total_frames / data.fps) }}</span>
             <template v-if="data.allow_feedback!==false">
-              <button type="button" class="border border-outline-border rounded px-3 py-2" :class="{'border-indigo-500':drawing&&markTool==='point'}" :disabled="!ready||saving" data-test="review-point-tool" @click="chooseMark('point')">⌖ {{ t('Spot','Điểm lỗi') }}</button>
-              <button type="button" class="border border-outline-border rounded px-3 py-2" :class="{'border-indigo-500':drawing&&markTool==='box'}" :disabled="!ready||saving" data-test="review-box-tool" @click="chooseMark('box')">▢ {{ t('Box','Khoanh vùng') }}</button>
+              <button type="button" class="border border-outline-border rounded px-3 py-2" :class="{'border-rio-500':drawing&&markTool==='point'}" :disabled="!ready||saving" data-test="review-point-tool" @click="chooseMark('point')" :title="t('Click the exact spot on the picture','Bấm đúng chỗ lỗi trên hình')">⌖ {{ t('Mark a spot','Chấm vào lỗi') }}</button>
+              <button type="button" class="border border-outline-border rounded px-3 py-2" :class="{'border-rio-500':drawing&&markTool==='box'}" :disabled="!ready||saving" data-test="review-box-tool" @click="chooseMark('box')" :title="t('Drag a box around the problem','Kéo khung quanh chỗ lỗi')">▢ {{ t('Draw a box','Khoanh vùng lỗi') }}</button>
             </template>
           </div>
-          <p class="text-xs text-ink-muted">{{ t('Pause → choose Spot or Box → mark the problem → add your comment.','Dừng video → chọn Điểm lỗi hoặc Khoanh vùng → đánh dấu → viết góp ý.') }}</p>
-          <ReviewTimeline :src="data.file" :fps="data.fps" :total-frames="data.total_frames" :time="time" :segments="timing?.segments || []" :markers="timelineMarkers" :timing-source="timing?.timing_source" :ready="ready" :can-comment="data.allow_feedback!==false" :current-lang="currentLang" @seek="seek" @comment="capture" @marker="focus" />
+          <p class="text-xs text-ink-muted">{{ t('Pause where something should change, then press "Comment at this moment". You can also mark the spot on the picture.','Dừng video ở chỗ cần sửa, rồi bấm "Góp ý tại thời điểm này". Có thể chấm hoặc khoanh vùng lỗi trên hình.') }}</p>
+          <ReviewTimeline :src="data.file" :fps="data.fps" :total-frames="data.total_frames" :time="time" :segments="timing?.segments || []" :markers="timelineMarkers" :timing-source="timing?.timing_source" :ready="ready" :can-comment="false" :current-lang="currentLang" @seek="seek" @comment="capture" @marker="focus" />
           <button v-if="data.allow_feedback!==false" class="jm-btn-primary px-4 py-2 text-sm" :disabled="!ready||saving" data-test="review-comment-here" @click="capture">{{ t('Comment at this moment','Góp ý tại thời điểm này') }}</button>
 
         </div>
@@ -40,9 +40,8 @@
           </form>
           <label class="flex items-center gap-2 text-xs text-ink-muted"><input v-model="showClosed" type="checkbox" :disabled="loading||saving" @change="load()" />{{ t('Show closed comments','Hiện góp ý đã xử lý') }}</label>
           <p v-if="!items.length" class="text-sm text-ink-muted">{{ t('No feedback yet. Pause the video where you see a problem.','Chưa có góp ý. Dừng video tại chi tiết cần sửa.') }}</p>
-          <article v-for="item in shownItems" :key="item.name" :data-feedback="item.name" class="rounded-lg border border-outline-border p-3 text-sm space-y-2" :class="{'border-indigo-500':focused?.name===item.name}">
-            <div class="flex items-center justify-between gap-2"><button class="font-semibold text-indigo-500 underline" @click="focus(item)">{{ item.scope==='Video'?t('Whole video','Cả video'):clock(item.start_seconds) }}</button><span class="text-xs">{{ statusText(item.status) }}</span></div>
-            <p v-if="item.scope!=='Video'" class="text-xs text-ink-muted tabular-nums">{{ t('Frame','Khung hình') }} {{ item.start_frame+1 }}<template v-if="item.end_frame!==item.start_frame"> – {{ item.end_frame+1 }}</template> · {{ item.fps }} fps</p>
+          <article v-for="item in shownItems" :key="item.name" :data-feedback="item.name" class="rounded-lg border border-outline-border p-3 text-sm space-y-2" :class="{'border-rio-500':focused?.name===item.name}">
+            <div class="flex items-center justify-between gap-2"><button class="font-semibold text-rio-500 underline" @click="focus(item)">{{ item.scope==='Video'?t('Whole video','Cả video'):clock(item.start_seconds) }}</button><span class="text-xs">{{ statusText(item.status) }}</span></div>
             <p class="whitespace-pre-wrap break-words">{{ item.feedback }}</p>
             <p class="text-xs text-ink-muted">{{ item.author_name }} · {{ date(item.creation) }} · {{ categoryText(item.category) }}</p>
             <p v-if="item.annotation" class="text-xs text-ink-muted">{{ t('Includes a marked area. Click the timestamp to view it.','Có vùng đánh dấu. Bấm thời điểm để xem.') }}</p>
@@ -63,7 +62,9 @@ import { errorMessage } from '../../utils/errors';
 import {useDialogFocus} from '../../composables/useDialogFocus';
 import {usePreviewPlayback} from '../../composables/usePreviewPlayback';
 import { useI18n } from '../../stores/i18n';
+import { useSession } from '../../stores/session';
 const props=defineProps({project:{type:String,required:true},assetVersion:{type:String,required:true},focusedName:{type:String,default:''},initialFrame:{type:Number,default:null},embedded:Boolean});
+const {access}=useSession();
 const emit=defineEmits(['close','saved']);
 const {currentLang}=useI18n();
 const playback=usePreviewPlayback();
@@ -83,13 +84,15 @@ const statusText=value=>({Open:t('Open','Chưa xử lý'),Investigating:t('Inves
 const videoStyle=computed(()=>({width:`min(100%, ${58*ratio.value}vh)`,aspectRatio:String(ratio.value)}));
 const currentTime=()=>Number(video.value?.currentTime||0);
 const frame=()=>videoFrameIndex(currentTime(),data.value.fps,data.value.total_frames);
+// Exact frame numbers are a production tool; reviewers work with time and the picture.
 const displayFrame=computed(()=>data.value?videoFrameIndex(time.value,data.value.fps,data.value.total_frames)+1:1);
+function jumpFrame(input){const at=Number(input.value);if(Number.isInteger(at)&&at>=1&&at<=data.value.total_frames)seek((at-1)/data.value.fps);input.value=displayFrame.value;}
 const visibleBox=computed(()=>{
  if(composing.value && box.value && Math.abs(time.value*data.value.fps-start.value)<1.1)return box.value;
  if(!composing.value && focused.value?.annotation && time.value*data.value.fps>=focused.value.start_frame-.1 && time.value*data.value.fps<=focused.value.end_frame+1)return focused.value.annotation;
  return null;
 });
-function clock(value){const s=Math.max(0,Number(value||0));return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toFixed(2).padStart(5,'0')}`;}
+function clock(value){const s=Math.max(0,Number(value||0));return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;}
 function date(value){const d=new Date(String(value).replace(' ','T'));return Number.isNaN(d.getTime())?value:d.toLocaleString(currentLang.value==='vi'?'vi-VN':'en-GB');}
 async function load(more=false){const token=++serial;loading.value=true;error.value='';try{
  const result=await call('joymedia.services.review.feedback.get_feedback',{project_name:props.project,asset_version:props.assetVersion,start:more?loadedCount:0,include_closed:showClosed.value,focused_name:props.focusedName||null});
@@ -115,7 +118,6 @@ function step(direction){if(!ready.value||saving.value)return;drawing.value=fals
 function capture(){if(!ready.value||saving.value||!video.value)return;video.value.pause();time.value=currentTime();start.value=end.value=frame();whole.value=false;box.value=null;focused.value=null;composing.value=true;drawing.value=false;requestId=crypto.randomUUID();}
 function changeScope(){box.value=null;drawing.value=false;if(!whole.value){video.value.pause();start.value=end.value=frame();}}
 function markEnd(){video.value.pause();end.value=Math.max(start.value,frame());}
-function jumpFrame(input){const at=Number(input.value);if(Number.isInteger(at)&&at>=1&&at<=data.value.total_frames)seek((at-1)/data.value.fps);input.value=displayFrame.value;}
 function chooseMark(tool){if(!ready.value||saving.value)return;if(!composing.value||whole.value)capture();else if(start.value===end.value){start.value=end.value=frame();box.value=null;}markTool.value=tool;markArea();}
 function markArea(){video.value.pause();if(Math.abs(video.value.currentTime-start.value/data.value.fps)>.00001)video.value.currentTime=start.value/data.value.fps;time.value=video.value.currentTime;drawing.value=true;nextTick(()=>video.value?.scrollIntoView({block:'center'}));}
 function point(event){const rect=event.currentTarget.getBoundingClientRect();return {x:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};}

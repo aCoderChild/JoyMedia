@@ -32,7 +32,7 @@
               <span>🎵</span>
               <span class="truncate max-w-[140px]">{{ selectedClip.source_asset_name || 'Music / Audio' }}</span>
             </span>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-indigo-400 font-bold">
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-rio-400 font-bold">
               {{ selectedClip.duration_seconds?.toFixed(1) }}s
             </span>
           </div>
@@ -51,7 +51,7 @@
             </div>
             <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
               <span class="block text-[10px] text-ink-muted font-semibold">{{ currentLang === 'vi' ? 'THỜI LƯỢNG' : 'DURATION' }}</span>
-              <span class="font-mono font-bold text-indigo-400 text-xs">{{ ((selectedClip.timeline_end_frame - selectedClip.timeline_start_frame) / (fps || 24)).toFixed(1) }}s</span>
+              <span class="font-mono font-bold text-rio-400 text-xs">{{ ((selectedClip.timeline_end_frame - selectedClip.timeline_start_frame) / (fps || 24)).toFixed(1) }}s</span>
               <span class="block text-[9px] text-ink-muted font-mono">{{ selectedClip.timeline_end_frame - selectedClip.timeline_start_frame }}f</span>
             </div>
           </div>
@@ -63,14 +63,14 @@
             </div>
             <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
               <span class="block text-[10px] text-ink-muted font-semibold">{{ currentLang === 'vi' ? 'ĐANG DÙNG' : 'USED' }}</span>
-              <span class="font-mono font-bold text-indigo-400 text-xs">{{ ((selectedClip.source_out_frame - selectedClip.source_in_frame) / (fps || 24)).toFixed(1) }}s</span>
+              <span class="font-mono font-bold text-rio-400 text-xs">{{ ((selectedClip.source_out_frame - selectedClip.source_in_frame) / (fps || 24)).toFixed(1) }}s</span>
             </div>
           </div>
 
           <button
             v-if="selectedClip.audio_role !== 'Source'"
             type="button"
-            class="w-full py-1.5 px-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 text-xs font-semibold cursor-pointer"
+            class="w-full py-1.5 px-2 rounded-xl bg-rio-500/10 hover:bg-rio-500/20 text-rio-400 border border-rio-500/20 text-xs font-semibold cursor-pointer"
             :disabled="timelineBusy"
             @click="$emit(selectedClip.audio_role === 'BGM' ? 'fitAudioClipToFullVideo' : 'fitAudioClipToVideo', selectedClip)"
           >
@@ -109,7 +109,7 @@
           <div class="space-y-1.5 pt-1">
             <div class="flex items-center justify-between text-[11px] font-semibold text-ink-secondary">
               <span>{{ currentLang === 'vi' ? 'Âm lượng (Gain):' : 'Volume Gain:' }}</span>
-              <span class="font-mono font-bold text-indigo-400">
+              <span class="font-mono font-bold text-rio-400">
                 {{ selectedClip.gain_db > 0 ? '+' : '' }}{{ selectedClip.gain_db || 0 }} dB
               </span>
             </div>
@@ -119,7 +119,7 @@
               max="12"
               step="0.5"
               :value="selectedClip.gain_db || 0"
-              class="w-full accent-indigo-600 cursor-pointer"
+              class="w-full accent-rio-600 cursor-pointer"
               :disabled="timelineBusy"
               @change="$emit('updateAudioClip', selectedClip, { gain_db: Number($event.target.value) })"
             />
@@ -130,7 +130,7 @@
             <input
               type="checkbox"
               :checked="Boolean(selectedClip.duck_others)"
-              class="rounded text-indigo-600 focus:ring-indigo-500"
+              class="rounded text-rio-600 focus:ring-rio-500"
               :disabled="timelineBusy"
               @change="$emit('updateAudioClip', selectedClip, { duck_others: $event.target.checked })"
             />
@@ -180,7 +180,7 @@
               <span>✂️</span>
               <span>{{ `Clip ${selectedClip.clip_order || 1}` }}</span>
             </span>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-indigo-400 font-bold">
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-rio-400 font-bold">
               {{ selectedClip.duration_seconds?.toFixed(2) }}s
             </span>
           </div>
@@ -199,7 +199,7 @@
             </div>
             <div class="p-2 rounded-xl bg-surface-card border border-outline-border">
               <span class="block text-[10px] text-ink-muted font-semibold">{{ currentLang === 'vi' ? 'THỜI LƯỢNG' : 'DURATION' }}</span>
-              <span class="font-mono font-bold text-indigo-400 text-xs">{{ ((selectedClip.source_out_frame - selectedClip.source_in_frame) / (fps || 24)).toFixed(1) }}s</span>
+              <span class="font-mono font-bold text-rio-400 text-xs">{{ ((selectedClip.source_out_frame - selectedClip.source_in_frame) / (fps || 24)).toFixed(1) }}s</span>
               <span class="block text-[9px] text-ink-muted font-mono">{{ selectedClip.source_out_frame - selectedClip.source_in_frame }}f</span>
             </div>
           </div>
@@ -240,7 +240,7 @@
         <div v-if="selectedClipSourceShot" class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-2.5 text-xs">
           <div class="flex items-center justify-between">
             <span class="font-bold text-ink-primary">🎯 {{ currentLang === 'vi' ? 'Cảnh gốc' : 'Source Shot' }}</span>
-            <span class="text-[10px] font-bold text-indigo-400 bg-surface-card px-2 py-0.5 rounded border border-outline-border">
+            <span class="text-[10px] font-bold text-rio-400 bg-surface-card px-2 py-0.5 rounded border border-outline-border">
               Cảnh {{ selectedClipSourceShot.shot_number }}
             </span>
           </div>
@@ -262,7 +262,7 @@
           </button>
           <button
             type="button"
-            class="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+            class="w-full py-2 px-3 rounded-xl bg-rio-600 hover:bg-rio-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
             :disabled="timelineBusy || regeneratingSource"
             @click="$emit('regenerateSourceForSelectedClip')"
           >
@@ -278,7 +278,7 @@
         <div class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-3">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-ink-primary">📦 {{ currentLang === 'vi' ? 'Chi tiết tư liệu' : 'Asset Details' }}</span>
-            <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface-card text-indigo-400 border border-outline-border">
+            <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface-card text-rio-400 border border-outline-border">
               {{ selectedAsset.media_type }}
             </span>
           </div>
@@ -308,7 +308,7 @@
             </label>
             <select
               :value="selectedAsset.reference_role || 'Product'"
-              class="w-full px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary cursor-pointer focus:outline-none focus:border-indigo-500"
+              class="w-full px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary cursor-pointer focus:outline-none focus:border-rio-500"
               @change="$emit('updateAssetRole', selectedAsset, $event.target.value)"
             >
               <option value="Product">{{ currentLang === 'vi' ? 'Sản phẩm' : 'Product' }}</option>
@@ -344,7 +344,7 @@
             <input
               :value="selectedAsset.identity_key || selectedAsset.reference_key || ''"
               pattern="[a-z0-9][a-z0-9_]*"
-              class="w-full px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
+              class="w-full px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-rio-500"
               @change="$emit('updateAssetIdentity', selectedAsset, $event.target.value)"
             />
           </div>
@@ -358,7 +358,7 @@
               type="number" min="0.1" max="2" step="0.05"
               :value="selectedAsset.relative_size ?? 1"
               data-test="relative-size"
-              class="w-24 px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-indigo-500"
+              class="w-24 px-2.5 py-1.5 rounded-xl bg-surface-card border border-outline-border text-xs text-ink-primary focus:outline-none focus:border-rio-500"
               @change="$emit('updateAssetSize', selectedAsset, Number($event.target.value))"
             />
           </div>
@@ -389,10 +389,10 @@
         <div class="p-3 rounded-2xl bg-surface-muted border border-outline-border space-y-3">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-ink-primary flex items-center gap-1.5">
-              <span class="text-indigo-400">◆</span>
+              <span class="text-rio-400">◆</span>
               <span>{{ selectedTarget === 'keyframe-start' ? (currentLang === 'vi' ? 'Ảnh bắt đầu' : 'Start Image') : (generationMode === 'Continuous' ? (currentLang === 'vi' ? 'Khung nối tiếp' : 'Continuity Frame') : (currentLang === 'vi' ? 'Ảnh kết thúc' : 'End Image')) }}</span>
             </span>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-indigo-400 font-bold">
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-card border border-outline-border text-rio-400 font-bold">
               {{ selectedTarget === 'keyframe-start' ? formatShotKeyframeTime(selectedShotIndex, 0) : formatShotKeyframeTime(selectedShotIndex, 1) }}
             </span>
           </div>
@@ -427,7 +427,7 @@
               v-if="selectedTarget === 'keyframe-end'"
               type="button"
               class="w-full py-1.5 px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              :class="generationMode === 'Continuous' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-outline-border bg-surface-card hover:border-indigo-400 text-ink-secondary'"
+              :class="generationMode === 'Continuous' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-outline-border bg-surface-card hover:border-rio-400 text-ink-secondary'"
               @click="$emit('toggleGenerationMode')"
             >
               <span>🔗</span>
@@ -523,7 +523,7 @@
           <div class="grid grid-cols-2 gap-2 text-xs">
             <button
               type="button"
-              class="p-2 rounded-xl border border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary text-center cursor-pointer"
+              class="p-2 rounded-xl border border-outline-border bg-surface-muted hover:border-rio-400 text-ink-secondary text-center cursor-pointer"
               @click="$emit('selectKeyframeTarget', activeSelectedShot, selectedShotIndex, 'start')"
             >
               <span class="block text-[11px] font-semibold">{{ currentLang === 'vi' ? 'Ảnh đầu' : 'Start image' }}</span>
@@ -555,7 +555,7 @@
             :disabled="isProductionActive || savingSceneDescription"
             :placeholder="currentLang === 'vi' ? 'Nhập mô tả cảnh…' : 'Describe this scene…'"
             rows="6"
-            class="w-full min-h-32 px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary leading-relaxed focus:outline-none focus:border-indigo-500 disabled:opacity-60 resize-y"
+            class="w-full min-h-32 px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary leading-relaxed focus:outline-none focus:border-rio-500 disabled:opacity-60 resize-y"
             @keydown.ctrl.enter.prevent="saveSceneDescription"
             @keydown.meta.enter.prevent="saveSceneDescription"
           />
@@ -565,7 +565,7 @@
             </span>
             <button
               type="button"
-              class="shrink-0 px-2.5 py-1 rounded-lg bg-surface-card border border-outline-border text-[10px] font-semibold text-ink-secondary hover:text-ink-primary hover:border-indigo-400 cursor-pointer disabled:opacity-50"
+              class="shrink-0 px-2.5 py-1 rounded-lg bg-surface-card border border-outline-border text-[10px] font-semibold text-ink-secondary hover:text-ink-primary hover:border-rio-400 cursor-pointer disabled:opacity-50"
               :disabled="isProductionActive || savingSceneDescription || !sceneDescriptionChanged"
               @click="saveSceneDescription"
             >
@@ -725,7 +725,7 @@ const shotStatus = computed(() => {
     return { label: props.currentLang === "vi" ? "Đã tạo" : "Ready", class: "bg-emerald-500/90 text-white" };
   }
   if (props.isProductionActive) {
-    return { label: props.currentLang === "vi" ? "Đang tạo…" : "Generating…", class: "bg-indigo-500/90 text-white" };
+    return { label: props.currentLang === "vi" ? "Đang tạo…" : "Generating…", class: "bg-rio-500/90 text-white" };
   }
   return { label: props.currentLang === "vi" ? "Chưa tạo" : "Not generated", class: "bg-black/60 text-white" };
 });

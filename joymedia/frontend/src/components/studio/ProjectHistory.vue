@@ -6,7 +6,7 @@
         <button type="button" class="p-2 rounded hover:bg-surface-hover" :aria-label="t('Close history','Đóng lịch sử')" @click="emit('close')">✕</button>
       </header>
       <nav class="flex gap-2 px-4 pt-3 overflow-x-auto shrink-0" :aria-label="t('History category','Loại lịch sử')">
-        <button v-for="tab in tabs" :key="tab.key" type="button" class="px-3 py-2 rounded-lg text-xs font-semibold" :class="kind===tab.key?'bg-indigo-600 text-white':'bg-surface-muted text-ink-secondary'" @click="kind=tab.key">{{ tab.label }}</button>
+        <button v-for="tab in tabs" :key="tab.key" type="button" class="px-3 py-2 rounded-lg text-xs font-semibold" :class="kind===tab.key?'bg-rio-600 text-white':'bg-surface-muted text-ink-secondary'" @click="kind=tab.key">{{ tab.label }}</button>
       </nav>
       <div class="px-4 py-3 text-xs text-ink-muted">{{ kind==='edits' ? t('Each edit keeps its own scenes and timeline. Switching does not change approvals.','Mỗi bản dựng giữ riêng cảnh và dòng thời gian. Đổi bản không thay đổi phê duyệt.') : kind==='exports' ? t('Saved video files. The source edit may have changed since export.','Các tệp video đã xuất. Bản dựng nguồn có thể đã thay đổi sau khi xuất.') : t('All scene takes, including earlier and experimental results.','Mọi lần dựng cảnh, bao gồm các kết quả cũ và thử nghiệm.') }}</div>
       <label v-if="kind==='takes'" class="px-4 pb-3 text-xs flex flex-col gap-2">
@@ -18,7 +18,7 @@
       </label>
       <div v-if="kind==='edits'" class="px-4 pb-3 flex gap-2">
         <input v-model="newLabel" maxlength="100" class="flex-1 min-w-0 text-xs rounded-lg bg-surface-muted border border-outline-border px-3 py-2" :placeholder="t('Name a new edit','Tên bản dựng mới')" :aria-label="t('New edit name','Tên bản dựng mới')" />
-        <button type="button" class="rounded-lg bg-indigo-600 text-white text-xs px-3 disabled:opacity-50" :disabled="busy||!newLabel.trim()||data?.family?.archived" @click="create">{{ t('New edit','Bản dựng mới') }}</button>
+        <button type="button" class="rounded-lg bg-rio-600 text-white text-xs px-3 disabled:opacity-50" :disabled="busy||!newLabel.trim()||data?.family?.archived" @click="create">{{ t('New edit','Bản dựng mới') }}</button>
       </div>
       <p v-if="error" role="alert" class="m-4 text-sm text-rose-400">{{ error }}</p>
       <div class="overflow-y-auto flex-1 p-4 space-y-3">
@@ -30,7 +30,7 @@
               <h3 class="text-sm font-semibold break-words">{{ kind==='edits'?item.label:kind==='activity'?t('Generation','Lần tạo'):kind==='exports'?`${t('Video','Video')} ${item.version_number}`:`${t('Scene','Cảnh')} ${item.shot_number || ''} · ${t('Take','Lần dựng')} ${item.version_number}` }}</h3>
               <p class="text-[11px] text-ink-muted mt-1">{{ date(item.creation) }} <span v-if="item.version_label"> · {{ item.version_label }}</span></p>
             </div>
-            <span v-if="item.is_working_edit" class="shrink-0 px-2 py-1 rounded bg-indigo-500/15 text-indigo-400 text-[10px]">{{ t('Working edit','Bản đang dùng') }}</span>
+            <span v-if="item.is_working_edit" class="shrink-0 px-2 py-1 rounded bg-rio-500/15 text-rio-400 text-[10px]">{{ t('Working edit','Bản đang dùng') }}</span>
             <span v-else-if="item.version_kind==='Experiment'" class="shrink-0 px-2 py-1 rounded bg-amber-500/10 text-amber-500 text-[10px]">{{ t('Experiment','Thử nghiệm') }}</span>
           </div>
           <template v-if="kind==='edits'">
@@ -48,7 +48,7 @@
             <button type="button" class="history-action mt-3" @click="open(item.media_project)">{{ t('Open source edit','Mở bản dựng nguồn') }}</button>
           </template>
           <template v-else>
-            <p v-if="item.is_selected" class="text-xs text-indigo-400 mt-2">{{ t('Selected in source edit · approval is separate','Đang được chọn trong bản dựng nguồn · cần duyệt riêng') }}</p>
+            <p v-if="item.is_selected" class="text-xs text-rio-400 mt-2">{{ t('Selected in source edit · approval is separate','Đang được chọn trong bản dựng nguồn · cần duyệt riêng') }}</p>
             <p v-if="item.source==='Derived'" class="text-xs text-ink-muted mt-1">{{ t('Reused source media','Tái sử dụng tư liệu nguồn') }}</p>
             <p class="text-xs text-ink-muted mt-2">{{ Number(item.duration_seconds||0).toFixed(1) }}s · {{ item.width }}×{{ item.height }} · {{ item.purpose==='release'?t('Release export','Bản xuất phát hành'):t('Review only','Chỉ để duyệt') }}</p>
             <p v-if="!simple&&kind==='exports'&&!item.has_edit_snapshot" class="text-[11px] text-ink-muted mt-1">{{ t('Older export · edit snapshot unavailable','Bản xuất cũ · không có bản chụp dữ liệu dựng') }}</p>
@@ -94,5 +94,5 @@ function date(value){const parsed=new Date(String(value).replace(' ','T'));retur
 watch([()=>props.project,kind,selectedShot],()=>{items.value=[];preview.value='';load();},{immediate:true});
 </script>
 <style scoped>
-.history-action{display:inline-flex;align-items:center;border:1px solid var(--outline-border,#64748b55);border-radius:.5rem;padding:.35rem .65rem;font-size:.75rem;cursor:pointer}.history-action:hover{background:#6366f122}.history-action:disabled{opacity:.5;cursor:default}
+.history-action{display:inline-flex;align-items:center;border:1px solid var(--outline-border,#64748b55);border-radius:.5rem;padding:.35rem .65rem;font-size:.75rem;cursor:pointer}.history-action:hover{background:#0e749022}.history-action:disabled{opacity:.5;cursor:default}
 </style>

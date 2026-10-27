@@ -173,6 +173,37 @@ def identity_groups(items):
 	return [re.sub(r"\W+", "_", names[g]).strip("_")[:60] or f"subject_{g + 1}" for g in groups]
 
 
+def coalesce_existing_named_views(project):
+	"""Repair legacy auto-assigned identities for clearly named views of one subject.
+
+	Only keys derived from each row's own reference key can be merged. Explicit
+	identity assignments are authoritative, and distinct filename stems remain
+	separate products or characters. Keep every image as a selectable view.
+	"""
+	from joymedia.services.scene.references import identity_key
+
+	canonical, changed = {}, False
+	for row in project.selected_media or []:
+		if row.reference_role not in {"Product", "Character", "Person"}:
+			continue
+		if identity_key(row) not in {row.reference_key, str(row.reference_key or "")[:60]}:
+			continue
+		asset = frappe.get_doc("Asset Version", row.asset_version)
+		file_name = frappe.get_doc("File", {"file_url": asset.file}).file_name
+		stem = _label_stem(str(file_name).rsplit(".", 1)[0])
+		if not stem:
+			continue
+		key = (row.reference_role, stem)
+		if key not in canonical:
+			canonical[key] = identity_key(row)
+		elif row.identity_key != canonical[key]:
+			row.identity_key = canonical[key]
+			changed = True
+	if changed:
+		project.save(ignore_permissions=True)
+	return changed
+
+
 def infer_reference_role(name):
 	"""Best guess of a reference's role from its name; General when nothing matches."""
 	text = str(name or "").casefold()

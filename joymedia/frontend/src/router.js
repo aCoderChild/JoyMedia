@@ -28,8 +28,9 @@ router.beforeEach(async (to) => {
   const access=await refreshAccess(to.params.name || null);
   if(access.role==='unassigned' && to.path!=='/projects') return '/projects';
   if(to.path==='/library' && !access.can_use_library) return '/projects';
-  if(to.query.editor && !access.can_use_advanced_editor) { const query={...to.query};delete query.editor;return {path:to.path,query}; }
-  if(access.reviewer && (to.path==='/library' || to.query.editor || (to.params.name && !access.can_open_project))) return '/projects';
+  if(to.query.editor && !['simple','advanced'].includes(to.query.editor)) { const query={...to.query};delete query.editor;return {path:to.path,query}; }
+  if(to.query.editor==='advanced' && !access.can_use_advanced_editor) { const query={...to.query};delete query.editor;return {path:to.path,query}; }
+  if(access.reviewer && (to.path==='/library' || (to.params.name && !access.can_open_project))) return '/projects';
 });
 
 export default router;

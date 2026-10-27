@@ -28,6 +28,7 @@ def implementation_hash():
 			(root / name).read_bytes()
 			for name in (
 				"review/admission.py",
+				"review/physical_audit.py",
 				"review/recheck.py",
 				"review/canvas.py",
 				"review/consistency.py",
@@ -355,6 +356,43 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 				)
 			)
 			report["required_claim_ids"].append(identifier)
+		# The broad identity question can approve a recognisable face while
+		# missing an invented or stretched limb. A separate source-paired
+		# topology observation must pass before this frame can be promoted.
+		from joymedia.services.review.physical_audit import LIMB_TOPOLOGY_PROMPT
+
+		limb_observations = []
+		for i in witnesses:
+			answer = ask(
+				[reference, pictures[i]],
+				LIMB_TOPOLOGY_PROMPT,
+				configured=frappe._dict(policy["judge"]),
+			)
+			value = answer.get("distortion") if isinstance(answer, dict) else None
+			limb_observations.append(
+				dict(
+					frame=i,
+					distortion=value if type(value) is bool else None,
+					evidence=str(answer.get("evidence") or "")[:500] if isinstance(answer, dict) else "",
+				)
+			)
+		if limb_observations:
+			violations = [r for r in limb_observations if r["distortion"] is True]
+			unknowns = [r for r in limb_observations if r["distortion"] is None]
+			report["results"].append(
+				dict(
+					id="limb_topology." + asset.name,
+					dimension="identity",
+					claim="Visible limbs retain the selected reference's topology and relative proportions",
+					verdict="violated" if violations else "uncertain" if unknowns else "supported",
+					frames=[r["frame"] for r in (violations or unknowns or limb_observations)],
+					reason="; ".join(r["evidence"] for r in (violations or unknowns or limb_observations))[
+						:1000
+					],
+					observations=limb_observations,
+				)
+			)
+			report["required_claim_ids"].append("limb_topology." + asset.name)
 	if no_human:
 		from joymedia.services.review.consistency import OUTSIDER, ask
 

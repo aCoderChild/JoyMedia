@@ -36,6 +36,21 @@ def timeline_from_manifest(manifest, fps, total_frames):
 		return []
 
 
+def _viewer_scene_names(project_name, segments):
+	"""Name each scene as the viewer reads it: the AI script's localized scene title, when it has one."""
+	for name in frappe.get_all(
+		"Creative Batch", filters={"variants_json": ["like", f"%{project_name}%"]}, pluck="name", limit=5
+	):
+		for variant in frappe.parse_json(
+			frappe.db.get_value("Creative Batch", name, "variants_json") or "[]"
+		):
+			scenes = (variant.get("script") or {}).get("scenes") or []
+			if variant.get("project") == project_name and len(scenes) == len(segments):
+				for segment, scene in zip(segments, scenes, strict=True):
+					segment["title"] = str(scene.get("display_name") or segment["title"])[:180]
+				return
+
+
 @frappe.whitelist()
 def get_review_timeline(project_name, asset_version):
 	from joymedia.services.review.feedback import target
@@ -47,6 +62,7 @@ def get_review_timeline(project_name, asset_version):
 	else:
 		segments = timeline_from_manifest(version.edit_manifest_json, fps, total)
 		source = "export" if segments else "unavailable"
+		_viewer_scene_names(project_name, segments)
 	from joymedia.services.partners import is_reviewer
 
 	reviewer = is_reviewer()

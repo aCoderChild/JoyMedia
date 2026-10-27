@@ -42,6 +42,44 @@ class TestReferenceCameraGrammar(TestCase):
 		structure = {"stage": "establish", "framing": "wide", "subject_motion": "stationary"}
 		self.assertEqual("push_in", infer_cinematic_intent(structure, opening=True)["behavior"])
 
+	def test_stationary_approach_insert_gets_an_axial_move(self):
+		structure = {"stage": "approach", "framing": "close_up", "subject_motion": "stationary"}
+		self.assertEqual("push_in", infer_cinematic_intent(structure)["behavior"])
+		structure.update(stage="extract", subject_motion="manipulation")
+		self.assertEqual("locked", infer_cinematic_intent(structure)["behavior"])
+
+	def test_product_only_close_insert_can_push_without_a_last_frame(self):
+		from joymedia.services.planning.camera import camera_plan
+
+		shot = {
+			"name": "shot",
+			"shot_number": 2,
+			"duration_seconds": 5,
+			"references": [
+				{"reference_role": "Product"},
+				{"reference_role": "first_frame"},
+			],
+			"motion_plan_json": {
+				"shot_structure": {
+					"stage": "present",
+					"framing": "close_up",
+					"angle": "eye_level",
+					"subject_motion": "stationary",
+					"keep_visible": ["product"],
+				},
+				"camera_intent": {
+					"behavior": "push_in",
+					"allow_reframe": False,
+					"purpose": "reveal",
+					"energy": "measured",
+				},
+				"scene_contract": {"entities": [{"id": "product", "label": "the product"}]},
+			},
+		}
+		plan = camera_plan(shot, {"shots": [{"shot": "one"}, {"shot": "shot"}, {"shot": "three"}]})
+		self.assertEqual("push_in", plan["behavior"])
+		self.assertIn("at most 6 percent", plan["direction"])
+
 	def test_tracking_preserves_reference_energy_without_replacing_subject_motion(self):
 		grammar = normalize_camera_grammar(self.grammar())
 		grammar["moves"]["establish"]["energy"] = "brisk"
@@ -135,7 +173,7 @@ class TestReferenceCameraGrammar(TestCase):
 		self.assertIn("supplied position", fixed["direction"])
 		self.assertNotIn("supplied position", generated["direction"])
 		self.assertIn("high-angle close-up starting position", generated["direction"])
-		self.assertIn("only the actor parts needed", generated["direction"])
+		self.assertIn("only the parts needed for the action", generated["direction"])
 		self.assertIn("the product, the actor", generated["direction"])
 
 	def test_invalid_profiles_are_rejected_instead_of_silently_falling_back(self):

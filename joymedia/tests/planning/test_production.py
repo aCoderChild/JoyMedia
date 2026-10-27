@@ -399,6 +399,54 @@ class TestGrounding(FrappeTestCase):
 			(["pack"], []), planner.ground_reference_keys(self.PROJECT, beat, ["pack"], self.REFS)
 		)
 
+	def test_resolved_pack_prompt_binds_product_even_when_the_beat_omitted_it(self):
+		plan = {
+			"image_prompt": "A mascot holds the branded tissue pack at a kitchen table.",
+			"video_prompt": "The mascot pulls one sheet from the pack.",
+			"start_state": "The pack is held in both paws.",
+			"end_state": "One tissue sheet is visible.",
+		}
+		keys, notes = planner.ground_visible_product_keys(self.PROJECT, plan, ["mascot"], self.REFS)
+		self.assertEqual(["mascot", "pack"], keys)
+		self.assertTrue(notes)
+
+	def test_plain_tissue_sheet_does_not_bind_a_pack_that_is_not_visible(self):
+		plan = {
+			"image_prompt": "Macro view of one white tissue sheet on a wooden surface.",
+			"video_prompt": "Water beads absorb into the tissue sheet.",
+			"start_state": "The sheet lies flat.",
+			"end_state": "The sheet remains intact.",
+		}
+		self.assertEqual(
+			(["mascot"], []), planner.ground_visible_product_keys(self.PROJECT, plan, ["mascot"], self.REFS)
+		)
+
+	def test_product_lock_boilerplate_cannot_add_pack_to_tissue_only_scene(self):
+		plan = {
+			"image_prompt": "Mascot holds one tissue. Product orientation is locked to the selected source view. "
+			"The package must contact its support.",
+			"start_state": "The pack remains open outside the close-up.",
+		}
+		beat = {
+			"products": [],
+			"camera": "Close-up of a mascot holding one tissue",
+			"action": "The tissue touches a wet surface",
+			"raw": "",
+		}
+		self.assertEqual(
+			(["mascot"], []),
+			planner.ground_visible_product_keys(self.PROJECT, plan, ["mascot"], self.REFS, beat=beat),
+		)
+		self.assertEqual(
+			(["mascot"], []),
+			planner.ground_visible_product_keys(self.PROJECT, plan, ["mascot", "pack"], self.REFS, beat=beat),
+		)
+		beat["camera"] = "Close-up of the mascot holding the branded pack"
+		self.assertEqual(
+			["mascot", "pack"],
+			planner.ground_visible_product_keys(self.PROJECT, plan, ["mascot"], self.REFS, beat=beat)[0],
+		)
+
 	def test_a_character_is_added_when_the_beat_uses_a_distinctive_word_of_its_label(self):
 		beat = {"raw": "Gấu con hoảng hốt", "camera": "", "action": "The bear cub panics"}
 		keys, notes = planner.ground_reference_keys(self.PROJECT, beat, ["pack"], self.REFS)

@@ -215,3 +215,8 @@ class TestRoleContract(TestCase):
 			self.assertEqual(role_for("test", ["JoyMedia Reviewer", role]), "unassigned")
 		self.assertEqual(role_for("Guest", ["System Manager"]), "unassigned")
 		self.assertEqual(role_for("Administrator", []), "administrator")
+		# Frappe gives the built-in Administrator every role, the reviewer role included.
+		self.assertEqual(
+			role_for("Administrator", ["JoyMedia Reviewer", "System Manager", "JoyMedia User"]),
+			"administrator",
+		)

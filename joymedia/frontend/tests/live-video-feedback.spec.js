@@ -107,7 +107,7 @@ test.describe('real version-bound video feedback',()=>{
   expect([403,417]).toContain(triage.status());
  });
  test('historical versions offer review without selecting them for production',async({page,context})=>{
-  await page.locator('[data-test="client-version-history"]').click();
+  await page.locator('summary', {hasText:/More|Thêm/}).first().click();await page.locator('[data-test="open-project-history"]').click();
   const history=page.locator('[data-test="project-history"]');
   await history.locator('[data-test="history-review"]').last().click();
   const dialog=page.locator('[data-test="video-review-dialog"]');await expect(dialog).toBeVisible();

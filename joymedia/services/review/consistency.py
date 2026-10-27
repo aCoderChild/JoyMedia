@@ -32,6 +32,32 @@ TAKE_SAMPLES = 4
 IMAGE_EDGE = 448  # bounded request size keeps vision checks repeatable across providers
 
 
+def _automatic_preview_in_progress(project_name):
+	"""A batch-owned preview keeps qualified takes available for whole-film review."""
+	from joymedia.services.generation.automation import is_automatic
+
+	try:
+		batches = frappe.get_all(
+			"Creative Batch",
+			filters={"status": ["in", ["Queued", "Planning", "Rendering", "Finishing"]]},
+			fields=["request_json", "variants_json"],
+		)
+	except Exception:
+		# Visual review also runs during migrations and isolated repairs, where
+		# the optional batch doctype may not be available.  Such a scene is not
+		# owned by an automatic preview.
+		return False
+	for batch in batches:
+		if not is_automatic(frappe.parse_json(batch.request_json or "{}")):
+			continue
+		if any(
+			variant.get("project") == project_name
+			for variant in frappe.parse_json(batch.variants_json or "[]")
+		):
+			return True
+	return False
+
+
 def queue_check(shot_name, kind):
 	"""Check the scene's new first frame (`kind` "frame") or take ("take") in the background."""
 	if not is_configured("vision"):
@@ -104,11 +130,57 @@ def check_scene(shot_name, kind, user, subject=None):
 	try:
 		checks = (frame_checks if kind == "frame" else take_checks)(shot)
 		if not checks:
+			if kind == "frame" and report and report.get("review_only"):
+				return _record(
+					shot,
+					"Needs Review",
+					"Geometry qualification remains uncertain; no visual evidence was available to clear it.",
+				)
 			return _record(shot, "Not Checked", "No visual evidence was available for this check.")
 		failures = run_checks(checks)
 	except Exception as exc:
 		frappe.logger("joymedia.consistency").warning("Consistency check of %s failed: %s", shot_name, exc)
 		return _record(shot, "Not Checked", f"The automatic check could not run: {str(exc)[:200]}")
+	if kind == "frame":
+		from joymedia.services.review.physical_audit import frame_findings
+
+		frame = (
+			frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "frappe_file")
+			if shot.keyframe_artifact
+			else None
+		)
+		if not frame:
+			if not failures:
+				if report and report.get("review_only"):
+					return _record(
+						shot,
+						"Needs Review",
+						"Geometry qualification remains uncertain; the first-frame image is unavailable for physical review.",
+					)
+				return _record(
+					shot, "Not Checked", "The first-frame image is unavailable for physical review."
+				)
+		else:
+			try:
+				failures.extend(
+					frame_findings(frappe.get_doc("Media Project", shot.media_project), shot, frame)
+				)
+			except Exception as exc:
+				frappe.logger("joymedia.consistency").warning(
+					"Physical audit of %s failed: %s", shot_name, exc
+				)
+				if not failures:
+					if report and report.get("review_only"):
+						return _record(
+							shot,
+							"Needs Review",
+							"Geometry qualification remains uncertain; the physical review could not run.",
+						)
+					return _record(
+						shot,
+						"Not Checked",
+						"The physical review could not run; support and placement remain unverified.",
+					)
 	if not failures:
 		if kind == "frame" and report and report.get("review_only"):
 			return _record(
@@ -124,9 +196,14 @@ def check_scene(shot_name, kind, user, subject=None):
 		reason.startswith(("Critical geometry:", "Critical framing:", "Critical prop:"))
 		for reason in failures
 	)
-	if not critical_geometry and (read_contract(shot.get("motion_plan_json"), shot.get("duration_seconds")) or any(
-		reason.startswith("Physical staging review:") for reason in failures
-	)):
+	if kind == "take" and _automatic_preview_in_progress(shot.media_project) and not critical_geometry:
+		# Keep subjective findings visible on the assembled draft. Clear physical
+		# support failures still receive the normal bounded automatic retry.
+		return _record(shot, "Needs Review", notes)
+	if not critical_geometry and (
+		read_contract(shot.get("motion_plan_json"), shot.get("duration_seconds"))
+		or any(reason.startswith("Physical staging review:") for reason in failures)
+	):
 		# These new relational/order questions are advisory until calibrated for
 		# the configured judge. Never spend GPU retries on an uncalibrated verdict.
 		return _record(shot, "Needs Review", notes)
@@ -180,6 +257,38 @@ def redo_waiting(project_name):
 			)
 			if not names:
 				continue
+			# Admission can reject a replacement before it produces an artifact,
+			# so consistency_retries never advances. Bound consecutive failed native
+			# tasks as well, otherwise the same bad input can occupy the GPU forever.
+			limit = MAX_FRAME_REDOS if kind == "frame" else MAX_TAKE_REDOS
+			eligible = []
+			for name in names:
+				recent = frappe.get_all(
+					"Generation Task",
+					filters={"shot": name},
+					fields=["status"],
+					order_by="creation desc",
+					limit_page_length=limit,
+				)
+				if len(recent) >= limit and all(row.status == "Failed" for row in recent):
+					frappe.db.set_value(
+						"Shot",
+						name,
+						{
+							"consistency_status": "Needs Review",
+							"consistency_notes": (
+								(frappe.db.get_value("Shot", name, "consistency_notes") or "")
+								+ "; automatic replacement stopped after repeated admission failures; revise the source frame or scene"
+							)[:1000],
+						},
+						update_modified=False,
+					)
+				else:
+					eligible.append(name)
+			if not eligible:
+				frappe.db.commit()
+				continue
+			names = eligible
 			try:
 				if kind == "frame":
 					generate_keyframes(project_name, names, automatic=True)
@@ -297,7 +406,29 @@ UNSUPPORTED_CAST = (
 	"Does the physical character clearly stand or sit ON TOP OF the advertised product package "
 	"itself, instead of being supported by the floor or a proper seat? Answer true only for a "
 	"clearly visible violation. If support is cropped, hidden or uncertain, answer false. "
-	'Return JSON with answer boolean and reason.'
+	"Return JSON with answer boolean and reason."
+)
+ACTOR_SUPPORT = (
+	"The required opening is: {opening}. Is the actor visibly and plausibly supported by the "
+	"authored seat or floor, at a height that permits the stated interaction? Answer true when the "
+	"visible contact and furniture relationship are physically coherent, false only for a clear "
+	"contradiction such as floating, intersecting furniture, or sitting on the work surface instead "
+	"of the seat. Answer null if the support is cropped or unclear. Return JSON with answer and "
+	"a reason describing the contact and support."
+)
+ACTOR_ON_TABLETOP = (
+	"Is any part of the physical actor visibly standing, sitting, or bearing weight directly on "
+	"the TOP SURFACE of a table, desk, counter or other work surface instead of the authored floor "
+	"or seat? Identify visible foot or body contact points. Answer true only for clear contact, "
+	"false when the actor is behind or beside the furniture, or null if contact is hidden. "
+	"Return a JSON object with answer set to true, false, or null and a reason."
+)
+PRODUCT_TABLE_SCALE = (
+	"Is the advertised handheld retail pack implausibly large relative to the table supporting it, "
+	"occupying about half or more of the visible tabletop width at the same depth? "
+	"Answer true only when both widths can be compared and the scale is clearly implausible; "
+	"false when proportionate, or null when the table is cropped or perspective prevents comparison. "
+	"Return a JSON object with answer set to true, false, or null and a reason with estimated ratio."
 )
 FULL_BODY_IN_DETAIL = (
 	"Does this image clearly show the entire or nearly entire character body including both feet? "
@@ -305,11 +436,29 @@ FULL_BODY_IN_DETAIL = (
 	"and reason explaining visible evidence."
 )
 PRODUCT_SUPPORT = (
-	"Does the advertised product clearly occupy the physical support and location specified in "
-	"this opening direction: {opening}? Judge product support only. For example, a product on the "
-	"floor does not satisfy a direction placing it on a table. If the direction does not specify "
-	"the product's support or location, answer true. Return JSON with answer true, false, or "
+	"Judge ONLY the advertised retail product package, not the actor. Does that package have a physically credible "
+	"visible support consistent with this opening direction: {opening}? Its base should contact a table or floor "
+	"over a stable area, or a visible paw/hand should clearly grip and bear its weight. "
+	"A package projecting past an edge without a clear load-bearing grip is unsupported. A product on the "
+	"floor does not satisfy a direction placing it on a table. If the retail package clearly rests on a table, answer true "
+	"even when the actor does not touch it. Never use the actor's posture as evidence about package support. "
+	"Return JSON with answer true, false, or "
 	"null for uncertainty, and reason explaining visible evidence."
+)
+PRODUCT_PERSPECTIVE = (
+	"Judge only the advertised retail package and the surface that physically supports it. "
+	"Do its visible base, side edges and contact shadow agree with the supporting table or floor plane "
+	"and the scene camera perspective? If a paw carries it, judge whether the package orientation and "
+	"load-bearing paw contact agree instead. Answer false for a clear pasted-on, skewed or floating "
+	"package whose perspective contradicts its support. Answer null if the relevant edges or support "
+	"are cropped or hidden. Return JSON with answer and a reason naming visible evidence."
+)
+HELD_PRODUCT_CONTACT = (
+	"The authored opening says the actor holds the advertised product: {opening}. "
+	"Does the product have visible, credible contact with the actor's paw or another physical support? "
+	"Answer false when the product clearly floats in front of the actor without contact; "
+	"answer null when the contact is cropped or hidden. Return JSON with answer true, false, or null "
+	"and a reason describing the contact."
 )
 UNDECLARED_HELD_PACKAGE = (
 	"Does the actor clearly hold a rigid printed retail package or product container that is "
@@ -318,12 +467,51 @@ UNDECLARED_HELD_PACKAGE = (
 	"or artwork printed in the setting does not count. Return JSON with answer true, false, or "
 	"null for uncertainty, and reason explaining visible evidence."
 )
+SOURCE_ONLY_PROP = (
+	"Does this picture visibly include any of these source-only held props: {props}? "
+	"They are not part of the authored opening composition. Do not count worn accessories or "
+	"objects explicitly required by the opening. Return JSON answer true only if one of the named "
+	"separate props is clearly present, false if absent, or null if uncertain, with a reason."
+)
+PAPER_MATERIAL = (
+	"The authored subject is a paper or tissue sheet. Does the visible sheet look like flexible, matte, "
+	"fibrous paper rather than shiny metal foil, plastic film, glass, or a rigid slab? Judge only a clearly "
+	"visible sheet; answer null if its surface is too small or obscured to assess. Return JSON with answer "
+	"true, false, or null and a reason naming the visible material cues."
+)
+ABSORPTION_PROGRESS = (
+	"Read these video frames in time order. Does the authored absorbent surface visibly take the liquid into its material, "
+	"with free-standing drops or a puddle decreasing while the surface darkens or wicks? Answer false if the liquid "
+	"mainly grows into or remains a reflective puddle on top. Answer null if the surface or liquid is not visible enough "
+	"to decide. Return JSON with answer true, false, or null and a reason describing the observed change."
+)
+
+
+def _paper_sheet_detail(shot):
+	"""Material checks belong on authored paper-sheet inserts, not every retail package."""
+	from joymedia.services.planning.shot_structure import structure_for
+
+	structure = structure_for(shot)
+	if not structure or structure["framing"] not in {"close_up", "extreme_close_up"}:
+		return False
+	direction = " ".join(
+		str(shot.get(field) or "") for field in ("start_state", "image_prompt", "generation_prompt")
+	)
+	return bool(
+		re.search(
+			r"\b(?:paper|tissue|napkin)\s+(?:sheet|surface|texture|fibers?)\b|\b(?:sheet|surface|texture)\s+of\s+(?:paper|tissue)\b",
+			direction,
+			re.I,
+		)
+	)
 
 
 def _illustrated_cast(shot):
-	"""Whether the scene's cast is only illustrated characters (no real person's photo)."""
+	"""Whether a frame has no authorized real person, including product-only inserts."""
 	roles = [frappe.scrub(row.reference_role or "") for row in shot.generation_inputs or []]
-	return "character" in roles and not any(role in ("person", "people", "talent") for role in roles)
+	return any(role in ("character", "product") for role in roles) and not any(
+		role in ("person", "people", "talent") for role in roles
+	)
 
 
 def shows(action, sequence=False):
@@ -374,7 +562,12 @@ def frame_checks(shot):
 		cast = _cast_size(shot)
 		if cast:
 			checks.append(
-				(file_url, COUNT, cast, f"the frame does not show exactly the scene's {cast} character(s)")
+				(
+					file_url,
+					COUNT,
+					cast,
+					f"Critical geometry: the frame does not show exactly the scene's {cast} character(s)",
+				)
 			)
 		action = shot.get("start_state") or shot.get("image_prompt") or _opening_action(shot)
 		if action:
@@ -388,18 +581,94 @@ def frame_checks(shot):
 			)
 	if _illustrated_cast(shot):
 		checks.append(
-			(file_url, OUTSIDER, False, "a human hand, arm or person appears; only the cast may act")
+			(
+				file_url,
+				OUTSIDER,
+				False,
+				"Critical prop: a human hand, arm or person appears; only the cast may act",
+			)
 		)
+	if cast:
+		from joymedia.services.planning.prompts import source_prop_exclusions
+
+		excluded_props = source_prop_exclusions(shot, frappe.get_doc("Media Project", shot.media_project))
+		if excluded_props:
+			checks.append(
+				(
+					file_url,
+					SOURCE_ONLY_PROP.format(props=", ".join(excluded_props)),
+					False,
+					"Critical prop: a source-only held prop was added to the authored opening",
+				)
+			)
+		from joymedia.services.planning.shot_structure import structure_for
+
+		actor_structure = structure_for(shot)
+		if actor_structure and actor_structure["framing"] not in {"close_up", "extreme_close_up"}:
+			checks.append(
+				(
+					file_url,
+					ACTOR_SUPPORT.format(
+						opening=(shot.get("start_state") or shot.get("image_prompt") or "")[:280]
+					),
+					True,
+					"Critical geometry: actor's seat or floor contact contradicts the authored scene",
+				)
+			)
+			if re.search(
+				r"\b(?:table|desk|counter)\b",
+				" ".join(str(shot.get(field) or "") for field in ("start_state", "image_prompt")),
+				re.I,
+			):
+				checks.append(
+					(
+						file_url,
+						ACTOR_ON_TABLETOP,
+						False,
+						"Critical geometry: actor bears weight on a tabletop instead of the floor or seat",
+					)
+				)
 	from joymedia.services.planning.shot_structure import structure_for
 
 	structure = structure_for(shot)
+	if _paper_sheet_detail(shot):
+		checks.append(
+			(
+				file_url,
+				PAPER_MATERIAL,
+				True,
+				"Critical prop: paper or tissue sheet has an implausible material",
+			)
+		)
 	has_product = any(
 		frappe.scrub(row.reference_role or "") == "product" for row in shot.generation_inputs or []
 	)
 	if has_product:
+		if re.search(
+			r"\b(?:pack|package|box)\b",
+			" ".join(str(shot.get(field) or "") for field in ("start_state", "image_prompt")),
+			re.I,
+		) and re.search(
+			r"\b(?:table|desk|counter)\b",
+			" ".join(str(shot.get(field) or "") for field in ("start_state", "image_prompt")),
+			re.I,
+		):
+			checks.append(
+				(
+					file_url,
+					PRODUCT_TABLE_SCALE,
+					False,
+					"Critical geometry: handheld product scale is implausible relative to its table",
+				)
+			)
 		if _cast_size(shot):
 			checks.append(
-				(file_url, UNSUPPORTED_CAST, False, "Critical geometry: character stands on the advertised product")
+				(
+					file_url,
+					UNSUPPORTED_CAST,
+					False,
+					"Critical geometry: character stands on the advertised product",
+				)
 			)
 		opening = shot.get("start_state") or shot.get("image_prompt") or ""
 		if opening:
@@ -411,6 +680,23 @@ def frame_checks(shot):
 					"Critical geometry: advertised product is not on its authored support",
 				)
 			)
+			checks.append(
+				(
+					file_url,
+					PRODUCT_PERSPECTIVE,
+					True,
+					"Physical staging review: advertised product perspective may not align with its physical support",
+				)
+			)
+			if re.search(r"\b(hold|holding|held|grasp|grasping|carry|carrying)\b", opening, re.I):
+				checks.append(
+					(
+						file_url,
+						HELD_PRODUCT_CONTACT.format(opening=opening[:280]),
+						True,
+						"Critical geometry: held product lacks visible paw or surface contact",
+					)
+				)
 	elif (
 		_cast_size(shot)
 		and (shot.get("image_prompt") or shot.get("start_state"))
@@ -419,7 +705,9 @@ def frame_checks(shot):
 		checks.append(
 			(
 				file_url,
-				UNDECLARED_HELD_PACKAGE.format(opening=(shot.get("image_prompt") or shot.get("start_state"))[:280]),
+				UNDECLARED_HELD_PACKAGE.format(
+					opening=(shot.get("image_prompt") or shot.get("start_state"))[:280]
+				),
 				False,
 				"Critical prop: actor holds an undeclared retail package instead of the authored object",
 			)
@@ -454,10 +742,13 @@ def take_checks(shot):
 		return []
 	from joymedia.services.scene.contract import read_contract
 
-	if read_contract(shot.get("motion_plan_json"), shot.get("duration_seconds")):
-		return [temporal_check(shot, file_url)]
+	contract = read_contract(shot.get("motion_plan_json"), shot.get("duration_seconds"))
 	frames = sample_frames(frappe.get_doc("File", {"file_url": file_url}).get_full_path(), TAKE_SAMPLES)
 	checks = []
+	# Contract review is additive. Returning here used to bypass cast and outsider
+	# checks precisely on the structured scenes that need them most.
+	if contract:
+		checks.append(temporal_check(shot, file_url))
 	cast = 0 if shot_views(shot) else _cast_size(shot)
 	for number, frame in enumerate(frames, 1):
 		if cast:
@@ -470,7 +761,39 @@ def take_checks(shot):
 					f"frame {number} of {len(frames)} shows more than the scene's {cast} character(s)",
 				)
 			)
+	from joymedia.services.planning.shot_structure import structure_for
+
+	structure = structure_for(shot)
+	if _paper_sheet_detail(shot):
+		checks.append(
+			(
+				contact_sheet(frames),
+				PAPER_MATERIAL,
+				True,
+				"Critical prop: moving paper or tissue sheet has an implausible material",
+			)
+		)
+	if cast and structure and structure["framing"] not in {"close_up", "extreme_close_up"}:
+		opening = (shot.get("start_state") or shot.get("image_prompt") or "")[:280]
+		for number in (0, len(frames) - 1):
+			checks.append(
+				(
+					frames[number],
+					ACTOR_SUPPORT.format(opening=opening),
+					True,
+					f"frame {number + 1} has implausible actor support or seat contact",
+				)
+			)
 	action = scene_action(shot)
+	if re.search(r"\babsorb(?:s|ed|ing|ent|ency|tion)?\b", action or "", re.I):
+		checks.append(
+			(
+				contact_sheet(frames),
+				ABSORPTION_PROGRESS,
+				True,
+				"Critical prop: liquid pools instead of visibly absorbing",
+			)
+		)
 	if action and not shot_views(shot):
 		checks.append(
 			(
@@ -486,7 +809,7 @@ def take_checks(shot):
 				contact_sheet(frames),
 				OUTSIDER,
 				False,
-				"a human hand, arm or person appears in the clip; only the cast may act",
+				"Critical prop: a human hand, arm or person appears in the clip; only the cast may act",
 			)
 		)
 	from joymedia.services.scene.contract import review_questions
@@ -670,7 +993,7 @@ def _post_visual_request(*args, **kwargs):
 			time.sleep(5 * (attempt + 1))
 
 
-def ask(picture, question, configured=None):
+def ask(picture, question, configured=None, *, max_edge=IMAGE_EDGE):
 	"""One picture, one question, a JSON answer."""
 	configured = configured or endpoint("vision")
 	pictures = picture if isinstance(picture, (list, tuple)) else [picture]
@@ -685,7 +1008,7 @@ def ask(picture, question, configured=None):
 					"role": "user",
 					"content": [
 						*(
-							{"type": "image_url", "image_url": {"url": _data_url(image)}}
+							{"type": "image_url", "image_url": {"url": _data_url(image, max_edge=max_edge)}}
 							for image in pictures
 						),
 						{"type": "text", "text": question},
@@ -702,8 +1025,14 @@ def ask(picture, question, configured=None):
 	return answer if isinstance(answer, dict) else {}
 
 
-def _data_url(image):
-	"""A JPEG data URL from a Frappe file URL or PNG bytes, at most IMAGE_EDGE pixels on its long side."""
+def _data_url(image, *, max_edge=IMAGE_EDGE):
+	"""A bounded JPEG from a Frappe file URL or PNG bytes.
+
+	Geometry review needs more detail than quick semantic checks. Keep the default
+	request small and let that review request a larger, still bounded picture.
+	"""
+	if type(max_edge) is not int or not IMAGE_EDGE <= max_edge <= 1024:
+		raise ValueError("Vision image edge must be between 448 and 1024 pixels.")
 	from PIL import Image
 
 	source = (
@@ -713,7 +1042,7 @@ def _data_url(image):
 	)
 	with Image.open(source) as picture:
 		picture = picture.convert("RGB")
-		picture.thumbnail((IMAGE_EDGE, IMAGE_EDGE))
+		picture.thumbnail((max_edge, max_edge))
 		buffer = io.BytesIO()
 		picture.save(buffer, format="JPEG", quality=85)
 	return "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")

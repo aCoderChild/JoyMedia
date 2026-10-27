@@ -7,8 +7,9 @@ Wants=network-online.target joymedia-planner.service
 Type=simple
 User=ubuntu
 # Reserve the planner's declared resources before loading this profile.
-ExecStartPre=/usr/local/lib/joymedia/run-profile.py --wait planner
+ExecStartPre=/usr/local/lib/joymedia/run-profile.py --timeout 600 --wait planner
 ExecStart=/usr/local/lib/joymedia/run-profile.py vision
+TimeoutStartSec=660
 Restart=always
 RestartSec=5
 

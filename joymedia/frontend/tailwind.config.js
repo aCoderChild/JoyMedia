@@ -12,7 +12,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        indigo: colors.indigo,
+        rio: {
+          50: '#ecfeff',
+          100: '#cffafe',
+          200: '#a5f3fc',
+          300: '#67e8f9',
+          400: '#22d3ee',
+          500: '#0e7490',
+          600: '#155e75',
+          700: '#164e63',
+          800: '#083344',
+          900: '#082f49',
+          950: '#061b2b',
+        },
         emerald: colors.emerald,
         zinc: colors.zinc,
         slate: colors.slate,

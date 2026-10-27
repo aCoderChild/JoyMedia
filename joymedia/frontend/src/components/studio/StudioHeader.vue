@@ -22,7 +22,7 @@
           v-model="nameDraft"
           type="text"
           maxlength="140"
-          class="bg-surface-muted border border-indigo-500 rounded px-2 py-0.5 text-xs sm:text-sm font-bold text-ink-primary focus:outline-none"
+          class="bg-surface-muted border border-rio-500 rounded px-2 py-0.5 text-xs sm:text-sm font-bold text-ink-primary focus:outline-none"
           @keydown.enter="saveName"
           @keydown.esc="cancelName"
           @blur="saveName"
@@ -30,7 +30,7 @@
         <button
           v-else
           type="button"
-          class="text-xs sm:text-sm font-bold text-ink-primary truncate cursor-text hover:text-indigo-400 transition-colors text-left max-w-[160px] sm:max-w-xs"
+          class="text-xs sm:text-sm font-bold text-ink-primary truncate cursor-text hover:text-rio-400 transition-colors text-left max-w-[160px] sm:max-w-xs"
           :title="currentLang === 'vi' ? 'Bấm để đổi tên dự án' : 'Click to rename'"
           @click="startNameEdit"
         >
@@ -50,7 +50,7 @@
         <!-- Plain-language progress, visible without opening Activity -->
         <span
           v-if="progressLabel"
-          class="text-[10.5px] px-2 py-0.5 rounded-md border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 font-semibold shrink-0 hidden md:flex items-center gap-1.5"
+          class="text-[10.5px] px-2 py-0.5 rounded-md border border-rio-500/30 bg-rio-500/10 text-rio-400 font-semibold shrink-0 hidden md:flex items-center gap-1.5"
         >
           <span class="lucide-refresh-cw size-3 animate-spin" />
           {{ progressLabel }}
@@ -65,7 +65,7 @@
       <button
         type="button"
         class="text-xs text-ink-muted hover:text-ink-primary px-2.5 py-1 rounded-xl hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer flex items-center gap-1.5 font-medium bg-surface-muted"
-        :class="{ '!border-indigo-500 !text-indigo-400': mediaDrawerOpen }"
+        :class="{ '!border-rio-500 !text-rio-400': mediaDrawerOpen }"
         :title="currentLang === 'vi' ? 'Xem tư liệu dự án' : 'Project Media'"
         @click="$emit('toggleMediaDrawer')"
       >
@@ -73,7 +73,7 @@
         <span class="hidden sm:inline">{{ currentLang === 'vi' ? 'Tư liệu' : 'Media' }}</span>
         <span
           v-if="projectAssetsCount"
-          class="size-4 rounded-full bg-indigo-600 text-white text-[9px] font-mono font-bold flex items-center justify-center"
+          class="size-4 rounded-full bg-rio-600 text-white text-[9px] font-mono font-bold flex items-center justify-center"
         >
           {{ projectAssetsCount }}
         </span>
@@ -84,7 +84,7 @@
         <button
           type="button"
           class="text-xs text-ink-muted hover:text-ink-primary px-2.5 py-1 rounded-xl hover:bg-surface-hover border border-outline-border transition-colors cursor-pointer flex items-center gap-1.5 font-medium bg-surface-muted"
-          :class="{ '!border-indigo-500 !text-indigo-400': activityOpen }"
+          :class="{ '!border-rio-500 !text-rio-400': activityOpen }"
           :aria-expanded="activityOpen"
           :title="currentLang === 'vi' ? 'Trạng thái tác vụ' : 'Generation activity'"
           @click="activityOpen = !activityOpen"
@@ -93,7 +93,7 @@
           <span class="hidden sm:inline">{{ currentLang === 'vi' ? 'Tiến trình' : 'Progress' }}</span>
           <span
             v-if="activeJobCount"
-            class="size-4 rounded-full bg-indigo-600 text-white text-[9px] font-mono font-bold flex items-center justify-center"
+            class="size-4 rounded-full bg-rio-600 text-white text-[9px] font-mono font-bold flex items-center justify-center"
           >
             {{ activeJobCount }}
           </span>
@@ -119,14 +119,14 @@
           </div>
 
           <div class="h-1.5 rounded-full bg-surface-muted overflow-hidden mb-3">
-            <div class="h-full rounded-full bg-indigo-500 transition-all" :style="{ width: `${Number(production.progress || 0)}%` }" />
+            <div class="h-full rounded-full bg-rio-500 transition-all" :style="{ width: `${Number(production.progress || 0)}%` }" />
           </div>
 
           <div v-if="production.shots?.length" class="space-y-1.5 max-h-56 overflow-y-auto">
             <template v-for="shot in production.shots" :key="shot.shot">
               <button
                 type="button"
-                class="w-full text-left flex items-center gap-2 rounded-lg px-2 py-1.5 bg-surface-muted/50 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
+                class="w-full text-left flex items-center gap-2 rounded-lg px-2 py-1.5 bg-surface-muted/50 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rio-500 cursor-pointer"
                 :aria-label="`${shot.shot_name || `Scene ${shot.shot_number || ''}`} — ${shotStatusLabel(shot.status)}`"
                 @click="emit('selectShot', shot.shot_number); activityOpen = false"
               >
@@ -235,7 +235,7 @@
 
       <!-- User Avatar -->
       <div
-        class="size-7 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center text-xs font-bold shadow-xs select-none"
+        class="size-7 rounded-full bg-gradient-to-tr from-rio-600 to-purple-600 text-white flex items-center justify-center text-xs font-bold shadow-xs select-none"
         :title="user || 'Creator'"
       >
         {{ (user || 'C').charAt(0).toUpperCase() }}
@@ -327,7 +327,7 @@ const formattedStatus = computed(() => {
 
 const statusBadgeClass = computed(() => {
   const s = props.projectStatus;
-  if (s === "Generating") return "bg-indigo-500/10 text-indigo-400 border-indigo-500/30 animate-pulse";
+  if (s === "Generating") return "bg-rio-500/10 text-rio-400 border-rio-500/30 animate-pulse";
   if (s === "Completed") return "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
   if (s === "Needs Attention") return "bg-rose-500/10 text-rose-400 border-rose-500/30";
   return "bg-surface-muted text-ink-muted border-outline-border";
@@ -347,7 +347,7 @@ const activityStatusClass = computed(() => {
   if (props.production?.status === "Completed") return "text-emerald-400";
   if (props.production?.status === "Failed") return "text-rose-400";
   if ((props.production?.shots || []).some((shot) => shot.status === "Failed")) return "text-rose-400";
-  if (["Queued", "Running"].includes(props.production?.status)) return "text-indigo-400";
+  if (["Queued", "Running"].includes(props.production?.status)) return "text-rio-400";
   return "text-ink-muted";
 });
 
@@ -427,8 +427,8 @@ function shotStatusGlyph(status) {
 function shotStatusClass(status) {
   if (status === "Completed") return "bg-emerald-500/15 text-emerald-400";
   if (status === "Failed") return "bg-rose-500/15 text-rose-400";
-  if (status === "Running") return "bg-indigo-500/15 text-indigo-400 animate-pulse";
-  if (status === "Queued") return "bg-indigo-500/10 text-indigo-400";
+  if (status === "Running") return "bg-rio-500/15 text-rio-400 animate-pulse";
+  if (status === "Queued") return "bg-rio-500/10 text-rio-400";
   return "bg-surface-muted text-ink-muted";
 }
 

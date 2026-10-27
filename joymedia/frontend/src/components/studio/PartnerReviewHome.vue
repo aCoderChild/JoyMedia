@@ -18,7 +18,7 @@
       <section v-if="access.allow_generation" class="jm-sandbox" data-test="partner-generation">
         <h2 class="text-lg font-bold">{{ t('Try creating a video','Thử tạo video') }}</h2><p class="text-sm text-ink-secondary">{{ t('Test with your own images and brief. Shared administrator videos stay unchanged.','Thử với hình ảnh và ý tưởng của bạn. Video do quản trị viên chia sẻ được giữ nguyên.') }}</p>
         <button class="jm-button-secondary self-start" @click="creating=true">+ {{ t('Create test video','Tạo video thử nghiệm') }}</button>
-        <div v-for="item in projects.data?.items || []" :key="item.name" class="text-sm"><button class="underline text-indigo-500" @click="router.push(`/projects/${item.open_project || item.name}`)">{{ item.project_name }} →</button></div>
+        <div v-for="item in projects.data?.items || []" :key="item.name" class="text-sm"><button class="underline text-rio-500" @click="router.push(`/projects/${item.open_project || item.name}`)">{{ item.project_name }} →</button></div>
       </section>
     </template>
     <NewProjectDialog v-if="access.allow_generation" v-model="creating" @created="name=>router.push(`/projects/${name}`)" />

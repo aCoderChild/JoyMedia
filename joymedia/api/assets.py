@@ -7,10 +7,94 @@
 import frappe
 from frappe import _
 
-from joymedia.services.project.context import (
-	SUPPORTED_PROJECT_MEDIA_TYPES,
-	_get_asset_file_url,
-)
+from joymedia.services.project.context import SUPPORTED_PROJECT_MEDIA_TYPES, _get_asset_file_url
+
+REFERENCE_ROLES = {
+	"Product",
+	"Character",
+	"Person",
+	"Logo",
+	"Environment",
+	"Style",
+	"Composition",
+	"Motion",
+	"Audio",
+	"General",
+}
+
+
+def _ensure_references_idle(project):
+	if frappe.db.exists(
+		"Generation Run", {"media_project": project.name, "status": ["in", ["Queued", "Running"]]}
+	):
+		frappe.throw(_("Project references cannot change while generation is active."))
+
+
+def _sync_scene_reference(project, asset_version, role=None):
+	"""Keep saved shot inputs consistent with a changed or removed project reference."""
+	for shot_name in frappe.get_all(
+		"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"
+	):
+		shot = frappe.get_doc("Shot", shot_name)
+		rows = list(shot.generation_inputs or [])
+		if role is None:
+			kept = [row for row in rows if row.asset_version != asset_version]
+			if len(kept) == len(rows):
+				continue
+			shot.set("generation_inputs", kept)
+		else:
+			matched = [row for row in rows if row.asset_version == asset_version]
+			if not matched or all(row.reference_role == role for row in matched):
+				continue
+			for row in matched:
+				row.reference_role = role
+		shot.save(ignore_permissions=True)
+
+
+@frappe.whitelist(methods=["POST"])
+def update_project_reference_metadata(media_project, asset_version, label=None, reference_role=None):
+	"""Edit the studio label and role while preserving the source Media Asset."""
+	project = frappe.get_doc("Media Project", media_project)
+	project._require_write_access()
+	row = next((item for item in project.selected_media or [] if item.asset_version == asset_version), None)
+	if not row:
+		frappe.throw(_("This asset is not selected for the project."))
+	if label is None and reference_role is None:
+		frappe.throw(_("Choose a name or category to update."))
+	_ensure_references_idle(project)
+	if label is not None:
+		label = str(label).strip()
+		if not label or len(label) > 140:
+			frappe.throw(_("Asset name must be between 1 and 140 characters."))
+		row.label = label
+	if reference_role is not None:
+		reference_role = str(reference_role).strip()
+		if reference_role not in REFERENCE_ROLES:
+			frappe.throw(_("Choose a valid reference category."))
+		media_asset = frappe.db.get_value("Asset Version", asset_version, "media_asset")
+		media_type = frappe.db.get_value("Media Asset", media_asset, "media_type") if media_asset else None
+		if reference_role == "Audio" and media_type != "Audio":
+			frappe.throw(_("Only audio assets can use the Audio category."))
+		if reference_role == "Motion" and media_type != "Video":
+			frappe.throw(_("Only videos can use the Motion category."))
+		if media_type == "Audio" and reference_role != "Audio":
+			frappe.throw(_("Audio assets must stay in the Audio category."))
+		if row.reference_role != reference_role:
+			other_roles = {
+				item.reference_role
+				for item in project.selected_media or []
+				if item.name != row.name and item.identity_key == row.identity_key
+			}
+			if other_roles and other_roles != {reference_role}:
+				frappe.throw(_("All views of one identity must use the same category."))
+			row.reference_role = reference_role
+	project.save(ignore_permissions=True)
+	if reference_role is not None:
+		_sync_scene_reference(project, asset_version, reference_role)
+	from joymedia.api.storyboard import _mark_storyboard_needs_review
+
+	_mark_storyboard_needs_review(project)
+	return {"asset_version": asset_version, "label": row.label, "reference_role": row.reference_role}
 
 
 @frappe.whitelist()
@@ -174,12 +258,17 @@ def select_project_asset(
 def remove_project_asset(media_project, asset_version):
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_write_access()
+	_ensure_references_idle(project)
 	if not any(row.asset_version == asset_version for row in project.selected_media or []):
 		frappe.throw(_("That asset version is not selected for this project."))
 	project.set(
 		"selected_media", [row for row in project.selected_media or [] if row.asset_version != asset_version]
 	)
 	project.save(ignore_permissions=True)
+	_sync_scene_reference(project, asset_version)
+	from joymedia.api.storyboard import _mark_storyboard_needs_review
+
+	_mark_storyboard_needs_review(project)
 	return {"removed": True}
 
 

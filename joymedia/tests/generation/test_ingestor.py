@@ -191,6 +191,39 @@ class IntegrationTestResultIngestor(IntegrationTestCase):
 		self.assertEqual({"status": "Failed"}, result)
 		self.assertEqual("bad video", attempt.error_details)
 
+	def test_failed_render_records_execution_time_for_throughput(self):
+		attempt = self._attempt()
+		history = {
+			"status": {
+				"messages": [["execution_start", {"timestamp": 1792700000000}]],
+			}
+		}
+		with (
+			patch.object(result_ingestor.frappe.db, "count", return_value=0),
+			patch.object(result_ingestor, "_refresh_parent_execution_state"),
+		):
+			result_ingestor._fail_attempt(attempt, "render failed", "render failed", "Input", history=history)
+		self.assertEqual("Failed", attempt.status)
+		self.assertIsNotNone(attempt.started_at)
+		self.assertIsNotNone(attempt.completed_at)
+		self.assertGreater(float(attempt.runtime_seconds), 0)
+
+	def test_admission_reload_keeps_provider_and_ingestion_timings(self):
+		attempt = self._attempt()
+		attempt.timing_json = '{"comfy_execution_seconds":21.5,"output_ingestion_seconds":3.2}'
+		attempt.reload = lambda: setattr(attempt, "timing_json", "{}")
+		with (
+			patch(
+				"joymedia.services.review.admission.gate_attempt",
+				side_effect=lambda *args: (attempt.reload(), {"status": "Passed"})[1],
+			),
+			patch.object(result_ingestor, "_refresh_parent_execution_state"),
+		):
+			result_ingestor._complete_attempt(attempt, {}, frappe._dict(name="ART-1"), None)
+		timing = frappe.parse_json(attempt.timing_json)
+		self.assertEqual(21.5, timing["comfy_execution_seconds"])
+		self.assertEqual(3.2, timing["output_ingestion_seconds"])
+
 
 class IntegrationTestFailureCascade(IntegrationTestCase):
 	def _fail(self, failure_class, prior_retries):

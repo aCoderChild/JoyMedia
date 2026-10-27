@@ -7,7 +7,7 @@
         <p class="subtitle">{{ t('assets_subtitle') }}</p>
       </div>
       <div class="flex items-center gap-2">
-        <Button variant="solid" class="!bg-indigo-600 hover:!bg-indigo-500 !text-white" @click="showUploadModal = true">
+        <Button variant="solid" class="!bg-rio-600 hover:!bg-rio-500 !text-white" @click="showUploadModal = true">
           <template #prefix>
             <span class="lucide-plus size-4" />
           </template>
@@ -33,7 +33,7 @@
             type="button"
             class="px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer"
             :class="activeType === opt.value
-              ? 'bg-indigo-600 text-white shadow-xs'
+              ? 'bg-rio-600 text-white shadow-xs'
               : 'text-ink-secondary hover:text-ink-primary'"
             @click="activeType = opt.value"
           >
@@ -45,15 +45,10 @@
         <div class="relative">
           <select
             v-model="activeCategory"
-            class="text-xs font-semibold px-3 py-1.5 rounded-xl bg-surface-muted border border-outline-border text-ink-secondary hover:text-ink-primary cursor-pointer focus:outline-none focus:border-indigo-500"
+            class="text-xs font-semibold px-3 py-1.5 rounded-xl bg-surface-muted border border-outline-border text-ink-secondary hover:text-ink-primary cursor-pointer focus:outline-none focus:border-rio-500"
           >
             <option value="All">{{ currentLang === 'vi' ? 'Mọi danh mục ▾' : 'All Categories ▾' }}</option>
-            <option value="Product">👟 Product</option>
-            <option value="Character">👤 Character</option>
-            <option value="Background">🏞️ Environment</option>
-            <option value="Brand">🏷️ Brand</option>
-            <option value="Style">🎨 Style</option>
-            <option value="Reference">📎 Reference</option>
+            <option v-for="value in ['Product', 'Character', 'Background', 'Brand', 'Style', 'Reference']" :key="value" :value="value">{{ categoryLabel(value) }}</option>
           </select>
         </div>
       </div>
@@ -88,7 +83,7 @@
       <article
         v-for="asset in filteredAssets"
         :key="asset.name"
-        class="group relative p-2 rounded-2xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-indigo-500/50 shadow-xs hover:shadow-md transition-all cursor-pointer select-none flex flex-col gap-2"
+        class="group relative p-2 rounded-2xl bg-surface-card hover:bg-surface-hover border border-outline-border hover:border-rio-500/50 shadow-xs hover:shadow-md transition-all cursor-pointer select-none flex flex-col gap-2"
         @click="openAssetModal(asset)"
       >
         <button
@@ -116,14 +111,14 @@
             class="w-full text-left px-2.5 py-2 rounded-lg text-xs text-rose-400 hover:bg-rose-500/10 cursor-pointer"
             @click="archiveAsset(asset)"
           >
-            Archive from library
+            {{ vi('Archive from library', 'Lưu trữ khỏi thư viện') }}
           </button>
         </div>
         <MediaThumbnail
           :src="asset.file"
           :media-type="asset.media_type"
           :alt="asset.asset_name"
-          :badge="asset.asset_category || 'Reference'"
+          :badge="categoryLabel(asset.asset_category)"
           :duration="asset.duration_seconds"
           aspect="aspect-square"
         />
@@ -142,7 +137,7 @@
       </div>
       <h2>{{ t('assets_empty_title') }}</h2>
       <p>{{ t('assets_empty_desc') }}</p>
-      <Button variant="solid" class="!bg-indigo-600 hover:!bg-indigo-500 !text-white" @click="resetFilters">
+      <Button variant="solid" class="!bg-rio-600 hover:!bg-rio-500 !text-white" @click="resetFilters">
         {{ t('asset_reset_filters') }}
       </Button>
     </div>
@@ -160,9 +155,9 @@
           <div class="min-w-0">
             <div class="flex items-center gap-2 mb-1">
               <span
-                class="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider bg-indigo-600 text-white"
+                class="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider bg-rio-600 text-white"
               >
-                {{ selectedAsset.asset_category || 'Reference' }}
+                {{ categoryLabel(selectedAsset.asset_category) }}
               </span>
             </div>
             <h2 class="text-base font-bold text-ink-primary truncate" :title="selectedAsset.asset_name">
@@ -249,7 +244,7 @@
               v-if="selectedAsset.file"
               :href="selectedAsset.file"
               download
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rio-600 hover:bg-rio-700 text-white shadow-xs transition-colors"
             >
               <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -331,7 +326,11 @@ import { useI18n } from "../stores/i18n";
 import MediaThumbnail from "../components/MediaThumbnail.vue";
 import AssetEditDialog from "../components/AssetEditDialog.vue";
 
-const { t } = useI18n();
+const { t, currentLang } = useI18n();
+const vi = (en, viText) => (currentLang.value === 'vi' ? viText : en);
+// The asset categories in the reviewer's language.
+const CATEGORY = { Product: ['Product', 'Sản phẩm'], Character: ['Character', 'Nhân vật'], Background: ['Setting', 'Bối cảnh'], Brand: ['Brand', 'Thương hiệu'], Style: ['Style', 'Phong cách'], Reference: ['Reference', 'Tham khảo'], Audio: ['Audio', 'Âm thanh'] };
+const categoryLabel = (value) => vi(...(CATEGORY[value || 'Reference'] || [value, value]));
 const route = useRoute();
 const search = ref("");
 const activeType = ref("All");
@@ -432,7 +431,7 @@ async function archiveAsset(asset) {
         detach_projects: 1,
       });
     }
-    notify({ title: "Asset archived", text: currentLang.value === "vi" ? `Đã xoá ${asset.asset_name} khỏi thư viện.` : `${asset.asset_name} was removed from the library.`, type: "success" });
+    notify({ title: vi("Asset archived", "Đã lưu trữ"), text: currentLang.value === "vi" ? `Đã xoá ${asset.asset_name} khỏi thư viện.` : `${asset.asset_name} was removed from the library.`, type: "success" });
     if (selectedAsset.value?.name === asset.name) selectedAsset.value = null;
     await assetsResource.reload();
   } catch (err) {

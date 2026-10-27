@@ -18,6 +18,18 @@ from joymedia.services.editing.export import (
 
 
 class TestTimelineComposer(FrappeTestCase):
+	def test_cut_only_sequence_joins_six_normalized_clips_without_filter_graph(self):
+		with tempfile.TemporaryDirectory(prefix="joymedia-timeline-cuts-") as temp_dir:
+			root = Path(temp_dir)
+			paths = [root / f"clip-{index}.mp4" for index in range(6)]
+			for path in paths:
+				_make_video(path, 1)
+			output = root / "master.mp4"
+			clips = [frappe._dict(name=str(index), transition_to_next="Cut") for index in range(6)]
+			profile = {"width": 320, "height": 240, "fps": 24.0}
+			_render_sequence(paths, clips, [24] * 6, [0] * 6, output, profile)
+			_validate_normalized_video(output, profile, expected_frames=144)
+
 	def test_changed_timeline_is_not_promoted_by_an_old_export(self):
 		with patch("joymedia.services.editing.post_production.timeline_signature", return_value="newer-edit"):
 			with self.assertRaises(frappe.ValidationError):

@@ -7,6 +7,8 @@ export function useProjectWorkspace(projectName) {
   const workspace = ref(null);
   const loading = ref(false);
   const error = ref(null);
+  // A deleted project, a mistyped link or someone else's project: retrying cannot help.
+  const missing = ref(false);
   const studioMode = ref("scene"); // "scene" | "edit"
   const selectedTarget = ref("scene"); // "scene" | "asset" | "keyframe-start" | "keyframe-end"
   const selectedAsset = ref(null);
@@ -23,6 +25,7 @@ export function useProjectWorkspace(projectName) {
     if (!project()) return null;
     loading.value = true;
     error.value = null;
+    missing.value = false;
     try {
       const data = await call("joymedia.api.projects.get_project_workspace", {
         name: project(),
@@ -31,6 +34,7 @@ export function useProjectWorkspace(projectName) {
       return data;
     } catch (err) {
       error.value = errorMessage(err, "Failed to load project workspace");
+      missing.value = ["DoesNotExistError", "PermissionError"].includes(err?.exc_type);
       return null;
     } finally {
       loading.value = false;
@@ -124,6 +128,7 @@ export function useProjectWorkspace(projectName) {
     workspace,
     loading,
     error,
+    missing,
     studioMode,
     selectedTarget,
     selectedAsset,

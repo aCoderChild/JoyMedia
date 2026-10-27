@@ -30,6 +30,40 @@ def _shot(name, setting, environment=None, camera="Wide shot."):
 
 
 class TestLocationPlates(FrappeTestCase):
+	def test_location_plate_rejects_any_embedded_cast_or_product(self):
+		with patch("joymedia.services.review.consistency.ask", return_value={"answer": True}) as observer:
+			self.assertFalse(locations._location_supports_staging(b"image", "living room", "table"))
+			self.assertEqual(1, observer.call_count)
+
+	def test_location_staging_uses_architecture_before_actor_action(self):
+		shot = frappe._dict(
+			image_prompt="A wide shot of a lived-in room with a table and chair. The mascot holds a branded pack."
+		)
+		self.assertEqual(
+			"reachable working table, physically usable seat",
+			locations._location_staging(shot),
+		)
+		self.assertNotIn(
+			"cup", locations._location_staging(frappe._dict(image_prompt="A cup spills onto a table."))
+		)
+
+	def test_mixed_setting_drops_actor_and_product_clause_but_keeps_room(self):
+		self.assertEqual(
+			"Cozy living room with a table",
+			locations._architectural_setting("Cozy living room with a table and the mascot seated."),
+		)
+
+	def test_location_plate_rejects_missing_action_support(self):
+		with patch(
+			"joymedia.services.review.consistency.ask",
+			side_effect=[{"answer": False}, {"answer": False}, {"answer": False}],
+		):
+			self.assertFalse(
+				locations._location_supports_staging(
+					b"image", "lived-in room", "Bear sits by a reachable table and chair."
+				)
+			)
+
 	def test_environment_render_uses_the_same_pinned_pipeline_as_its_project(self):
 		with (
 			patch(
@@ -56,6 +90,14 @@ class TestLocationPlates(FrappeTestCase):
 		self.assertNotEqual(key("Warm, cozy family dining room."), key("A bright bathroom."))
 		# A scene that names no place uses the default setting, and all such scenes share it.
 		self.assertEqual(key(""), key(None))
+
+	def test_synonymous_settings_in_one_batch_need_only_one_plate(self):
+		project = frappe._dict(selected_media=[])
+		shots = [
+			_shot("S1", "Lived-in room with a table and chair."),
+			_shot("S2", "Same lived-in room."),
+		]
+		self.assertEqual(1, len(locations.missing_places(project, shots)))
 
 	def test_each_missing_place_is_drawn_once_and_a_scene_with_its_own_environment_is_left_alone(self):
 		project = frappe._dict(

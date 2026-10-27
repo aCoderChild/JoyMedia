@@ -38,7 +38,7 @@ test.describe('focused media workspace',()=>{
   await expect(page.locator('[data-test="video-review-dialog"]')).toHaveCount(0);
   await page.getByRole('button',{name:'Back to full video',exact:true}).click();
   await expect(page.locator('[data-media-key="master"]')).toHaveAttribute('aria-pressed','true');
-  const historyButton=page.locator('[data-test="client-version-history"]');await historyButton.click();
+  await page.locator('summary', {hasText:/More|Thêm/}).first().click();const historyButton=page.locator('[data-test="open-project-history"]');await historyButton.click();
   const history=page.locator('[data-test="project-history"]');await expect(history).toBeFocused();
   await page.keyboard.press('Tab');await expect(history.getByRole('button',{name:'Close history',exact:true})).toBeFocused();
   await page.keyboard.press('Shift+Tab');expect(await history.evaluate(el=>el.contains(document.activeElement))).toBeTruthy();

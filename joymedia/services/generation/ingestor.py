@@ -4,6 +4,7 @@ moves the attempt to Completed or Failed. Also the cron that syncs every active 
 
 import subprocess
 import tempfile
+import time
 from datetime import UTC, datetime, timezone
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, time
 from frappe.utils.synchronization import filelock
 
 from joymedia.services.generation.artifacts import get_attempt_artifact
+from joymedia.services.generation.timing import record as record_timing
+from joymedia.services.generation.timing import record_comfy_execution
 from joymedia.services.workflows.comfyui import download_output, get_history, get_queue_state, probe_output
 
 # ComfyUI may not list a just-submitted prompt in /queue or /history yet.
@@ -76,10 +79,13 @@ def _sync_attempt_result(attempt_name, *, history=None):
 
 	status = history.get("status", {})
 	status_string = status.get("status_str")
+	record_comfy_execution(attempt, history)
 
 	if status_string in ("error", "failed"):
 		messages = status.get("messages") or []
-		return _fail_attempt(attempt, _("ComfyUI execution failed."), str(messages), "Generation")
+		return _fail_attempt(
+			attempt, _("ComfyUI execution failed."), str(messages), "Generation", history=history
+		)
 
 	if not status.get("completed"):
 		if status_string == "executing":
@@ -105,22 +111,36 @@ def _sync_attempt_result(attempt_name, *, history=None):
 			_("ComfyUI completed but returned no usable {0}.").format(output_label),
 			None,
 			"Generation",
+			history=history,
 		)
 
 	from joymedia.services.consistency.retention import RetentionRejected
 
+	ingest_start = time.monotonic()
 	try:
 		artifact, last_frame_artifact = _ingest_completed_output(attempt, history, output)
 	except RetentionRejected as exc:
+		record_timing(attempt, "output_ingestion_seconds", time.monotonic() - ingest_start)
 		return _fail_attempt(
-			attempt, "The product reference needs attention before this scene can be used.", str(exc), "Input"
+			attempt,
+			"The product reference needs attention before this scene can be used.",
+			str(exc),
+			"Input",
+			history=history,
 		)
 	except ValueError as exc:
-		return _fail_attempt(attempt, "Visual admission rejected", str(exc), "Input")
+		record_timing(attempt, "output_ingestion_seconds", time.monotonic() - ingest_start)
+		return _fail_attempt(attempt, "Visual admission rejected", str(exc), "Input", history=history)
 	except UnusableComfyUIOutput as exc:
+		record_timing(attempt, "output_ingestion_seconds", time.monotonic() - ingest_start)
 		return _fail_attempt(
-			attempt, _("ComfyUI completed but its output could not be processed."), str(exc), "Generation"
+			attempt,
+			_("ComfyUI completed but its output could not be processed."),
+			str(exc),
+			"Generation",
+			history=history,
 		)
+	record_timing(attempt, "output_ingestion_seconds", time.monotonic() - ingest_start)
 	return _complete_attempt(attempt, history, artifact, last_frame_artifact)
 
 
@@ -200,7 +220,7 @@ def _will_retry_automatically(attempt):
 	return retries < MAX_AUTOMATIC_RETRIES
 
 
-def _fail_attempt(attempt, error_summary, error_details, failure_class):
+def _fail_attempt(attempt, error_summary, error_details, failure_class, *, history=None):
 	from joymedia.services.generation.failures import classify_failure, friendly_failure, technical_message
 
 	# ComfyUI often reports an authentication or node setup error as a generic
@@ -216,6 +236,17 @@ def _fail_attempt(attempt, error_summary, error_details, failure_class):
 	attempt.error_summary = friendly_failure(failure_class, error_details or error_summary)
 	attempt.error_details = technical_message(error_details or error_summary)
 	attempt.failure_class = failure_class
+	started_at = attempt.get("started_at")
+	if not isinstance(started_at, (str, datetime)):
+		started_at = None
+	if not started_at and history:
+		started_at = _execution_timestamp(history, "execution_start")
+		attempt.started_at = started_at
+	attempt.completed_at = now()
+	if started_at:
+		attempt.runtime_seconds = max(
+			0, (get_datetime(attempt.completed_at) - get_datetime(started_at)).total_seconds()
+		)
 	attempt.save(ignore_permissions=True)
 	if _will_retry_automatically(attempt):
 		# Dependents wait for the retry; cancelling them now would strand the chain
@@ -271,16 +302,35 @@ def _ingest_completed_output(attempt, history, output):
 def _complete_attempt(attempt, history, artifact, last_frame_artifact):
 	from joymedia.services.review.admission import REJECTED, gate_attempt
 
+	# Admission may reload the Attempt after committing its review evidence.
+	# Preserve timings collected during Comfy execution and output ingestion.
+	try:
+		pre_review_timing = frappe.parse_json(attempt.get("timing_json") or "{}") or {}
+	except (TypeError, ValueError):
+		pre_review_timing = {}
+	if not isinstance(pre_review_timing, dict):
+		pre_review_timing = {}
+	review_start = time.monotonic()
 	try:
 		review = gate_attempt(attempt, artifact, history, last_frame_artifact)
 	except ValueError as exc:
-		return _fail_attempt(attempt, REJECTED, REJECTED + ": " + str(exc), "Input")
+		for stage, seconds in pre_review_timing.items():
+			record_timing(attempt, stage, seconds)
+		record_timing(attempt, "visual_admission_seconds", time.monotonic() - review_start)
+		return _fail_attempt(attempt, REJECTED, REJECTED + ": " + str(exc), "Input", history=history)
+	for stage, seconds in pre_review_timing.items():
+		record_timing(attempt, stage, seconds)
 	if review and review.get("status") == "Checking":
+		if hasattr(attempt, "db_set") and attempt.get("timing_json"):
+			attempt.db_set("timing_json", attempt.timing_json, update_modified=False)
 		return {"status": "Running", "visual_admission": "Checking"}
+	record_timing(attempt, "visual_admission_seconds", time.monotonic() - review_start)
 	if review and review.get("status") != "Passed" and not review.get("review_only"):
 		from joymedia.services.review.admission import quality_retry
 
-		return _fail_attempt(attempt, REJECTED, REJECTED, "Generation" if quality_retry(attempt) else "Input")
+		return _fail_attempt(
+			attempt, REJECTED, REJECTED, "Generation" if quality_retry(attempt) else "Input", history=history
+		)
 	attempt.status = "Completed"
 	if not attempt.started_at:
 		attempt.started_at = _execution_timestamp(history, "execution_start") or now()

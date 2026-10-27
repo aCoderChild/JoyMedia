@@ -10,7 +10,7 @@
         <span v-if="syncError" class="text-rose-400 truncate">
           {{ syncError }}
         </span>
-        <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-indigo-400 border border-outline-border font-bold">
+        <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-rio-400 border border-outline-border font-bold">
           {{ totalDurationSeconds }}s
         </span>
         <!-- First frames: every scene's opening picture is drawn and approved before its video is made -->
@@ -22,6 +22,7 @@
               : tr(`${frames.approvedCount.value}/${frames.needed.value.length} first frames approved`, `Đã duyệt ${frames.approvedCount.value}/${frames.needed.value.length} khung hình đầu`)"
           />
           <Button
+            v-if="frames.drawable.value.length"
             size="sm" variant="subtle" :loading="frames.drawingAll.value" :disabled="!storyboardApproved" data-test="draw-all-frames"
             @click="frames.draw()"
           >
@@ -40,19 +41,19 @@
       <div v-else-if="hasStoryboard" class="flex flex-col items-end gap-1">
         <form class="flex items-center gap-1.5" @submit.prevent="submitAiRevision">
           <div class="relative flex items-center">
-            <span class="absolute left-2.5 text-xs text-indigo-400">✨</span>
+            <span class="absolute left-2.5 text-xs text-rio-400">✨</span>
             <input
               v-model="aiRevisionInput"
               type="text"
               :placeholder="currentLang === 'vi' ? 'Nhờ AI sửa kịch bản... (vd: thêm một cảnh cận sản phẩm)' : 'Ask the AI to change the storyboard... (e.g. add a product close-up)'"
               :aria-label="currentLang === 'vi' ? 'Yêu cầu AI chỉnh sửa storyboard' : 'Ask AI to revise the storyboard'"
-              class="bg-surface-muted border border-outline-border focus:border-indigo-500 rounded-xl pl-7 pr-3 py-1 text-xs text-ink-primary placeholder:text-ink-muted w-48 sm:w-72 focus:outline-none transition-all"
+              class="bg-surface-muted border border-outline-border focus:border-rio-500 rounded-xl pl-7 pr-3 py-1 text-xs text-ink-primary placeholder:text-ink-muted w-48 sm:w-72 focus:outline-none transition-all"
               :disabled="isRevising || isGenerating"
             />
           </div>
           <button
             type="submit"
-            class="px-3 py-1 rounded-xl text-xs font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+            class="px-3 py-1 rounded-xl text-xs font-semibold text-rio-400 bg-rio-500/10 hover:bg-rio-500/20 border border-rio-500/30 transition-all cursor-pointer shadow-xs disabled:opacity-50"
             :disabled="isRevising || isGenerating || !aiRevisionInput.trim()"
           >
             <span v-if="isRevising" class="lucide-refresh-cw size-3 animate-spin inline-block" />
@@ -73,17 +74,17 @@
     <!-- Active Clean Generation Progress (Only when generating - Shots oriented) -->
     <div
       v-if="isGenerating"
-      class="mb-3 p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-between gap-3 text-xs"
+      class="mb-3 p-2.5 rounded-xl bg-rio-500/10 border border-rio-500/30 flex items-center justify-between gap-3 text-xs"
     >
       <div class="flex items-center gap-2 min-w-0">
-        <span class="lucide-refresh-cw size-3.5 text-indigo-400 animate-spin shrink-0" />
+        <span class="lucide-refresh-cw size-3.5 text-rio-400 animate-spin shrink-0" />
         <span class="font-bold text-ink-primary">
           {{ currentLang === 'vi' ? 'Đang tạo video:' : 'Generating video:' }}
         </span>
-        <span v-if="shots.length || expectedShotCount" class="text-indigo-400 font-mono font-semibold">
+        <span v-if="shots.length || expectedShotCount" class="text-rio-400 font-mono font-semibold">
           {{ completedShotsCount }} / {{ shots.length || expectedShotCount }} {{ currentLang === 'vi' ? 'cảnh hoàn thành' : 'scenes ready' }}
         </span>
-        <span v-else class="text-indigo-400 font-mono font-semibold">
+        <span v-else class="text-rio-400 font-mono font-semibold">
           {{ currentLang === 'vi' ? 'Đang lập storyboard…' : 'Planning storyboard…' }}
         </span>
       </div>
@@ -109,8 +110,8 @@
           class="relative rounded-2xl border p-2 transition-all cursor-pointer bg-surface-muted select-none flex flex-col"
           :class="[
             selectedShotIndex === index && selectedTarget !== 'asset'
-              ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/30'
-              : 'border-outline-border hover:border-indigo-400'
+              ? 'border-rio-500 bg-rio-500/10 ring-2 ring-rio-500/30'
+              : 'border-outline-border hover:border-rio-400'
           ]"
           draggable="true"
           data-test="storyboard-panel"
@@ -136,7 +137,7 @@
                 :aria-label="tr(`Play scene ${shot.shot_number}`, `Phát cảnh ${shot.shot_number}`)"
                 @click.stop="playing = shot.name"
               >
-                <span class="size-10 rounded-full bg-white/90 flex items-center justify-center text-indigo-600 shadow-md hover:scale-110 transition-transform">
+                <span class="size-10 rounded-full bg-white/90 flex items-center justify-center text-rio-600 shadow-md hover:scale-110 transition-transform">
                   <svg class="size-4 fill-current ml-0.5" viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3" /></svg>
                 </span>
               </button>
@@ -150,8 +151,8 @@
               <span class="text-xs text-white font-bold animate-pulse">↻ {{ tr('Regenerating…', 'Đang tạo lại…') }}</span>
             </div>
             <div v-else-if="isGenerating && getShotState(shot) !== 'Ready'" class="absolute inset-x-0 bottom-0 z-10 bg-black/65 py-1 text-center">
-              <span v-if="getShotState(shot) === 'Generating'" class="text-[10px] text-indigo-300 font-bold animate-pulse">● {{ tr('Generating', 'Đang tạo') }}</span>
-              <span v-else-if="getShotState(shot) === 'Queued'" class="text-[10px] text-indigo-300 font-mono">○ {{ tr('Queued', 'Trong hàng đợi') }}</span>
+              <span v-if="getShotState(shot) === 'Generating'" class="text-[10px] text-rio-300 font-bold animate-pulse">● {{ tr('Generating', 'Đang tạo') }}</span>
+              <span v-else-if="getShotState(shot) === 'Queued'" class="text-[10px] text-rio-300 font-mono">○ {{ tr('Queued', 'Trong hàng đợi') }}</span>
               <span v-else-if="getShotState(shot) === 'Failed'" class="text-[10px] text-rose-300 font-semibold" :title="getShotMessage(shot)">! {{ tr('Needs attention', 'Cần xử lý') }}</span>
               <span v-else-if="getShotState(shot) === 'Cancelled'" class="text-[10px] text-zinc-300 font-mono">× {{ tr('Stopped', 'Đã dừng') }}</span>
               <span v-else class="text-[10px] text-zinc-300 font-mono">○ {{ tr('Waiting for first frame', 'Chờ khung hình đầu') }}</span>
@@ -166,12 +167,13 @@
                 : frame(shot).status === 'Approved' ? tr('Frame approved', 'Khung hình đã duyệt') : tr('Frame to review', 'Khung hình chờ duyệt')"
             />
             <button
-              v-if="frame(shot).url && !frame(shot).stale" type="button" class="whitespace-nowrap text-[10px] font-semibold text-indigo-400 hover:underline"
+              v-if="frame(shot).url && !frame(shot).stale" type="button" class="whitespace-nowrap text-[10px] font-semibold text-rio-400 hover:underline"
+              :disabled="frame(shot).status !== 'Approved' && (frame(shot).review_status === 'Checking' || String(frame(shot).review_notes || '').includes('Critical '))"
               @click="frames.approve(shot.name, frame(shot).status !== 'Approved')"
             >
               {{ frame(shot).status === 'Approved' ? tr('Undo', 'Hoàn tác') : tr('Approve', 'Duyệt') }}
             </button>
-            <button type="button" class="whitespace-nowrap text-[10px] text-ink-muted hover:text-ink-primary" :disabled="frames.drawingShot.value === shot.name" @click="frames.draw([shot.name])">
+            <button v-if="!frame(shot).authored_frame" type="button" class="whitespace-nowrap text-[10px] text-ink-muted hover:text-ink-primary" :disabled="frames.drawingShot.value === shot.name" @click="frames.draw([shot.name])">
               {{ frame(shot).url ? tr('Redraw', 'Vẽ lại') : tr('Draw', 'Vẽ') }}
             </button>
           </div>
@@ -252,7 +254,7 @@
           <div v-if="shot.illustration" class="mb-1.5 flex flex-wrap items-center gap-1.5 text-[10px]" data-test="sheet-illustration" @click.stop>
             <span class="font-semibold text-ink-secondary">{{ tr('Sheet illustration:', 'Minh hoạ trong kịch bản:') }}</span>
             <template v-for="item in shot.illustration.split('\n').filter(Boolean)" :key="item">
-              <a v-if="item.startsWith('http')" :href="item" target="_blank" rel="noopener" class="text-indigo-400 hover:underline truncate max-w-[140px]">{{ item }}</a>
+              <a v-if="item.startsWith('http')" :href="item" target="_blank" rel="noopener" class="text-rio-400 hover:underline truncate max-w-[140px]">{{ item }}</a>
               <a v-else :href="item" target="_blank" rel="noopener"><img :src="item" alt="" class="h-10 rounded border border-outline-border object-cover" loading="lazy" /></a>
             </template>
           </div>
@@ -262,7 +264,7 @@
             :value="shot.caption || ''"
             type="text"
             maxlength="120"
-            class="w-full mb-2 px-2 py-1 rounded-lg bg-surface-card border border-outline-border/60 text-[11px] italic text-ink-primary placeholder:text-ink-muted placeholder:not-italic focus:outline-none focus:border-indigo-500"
+            class="w-full mb-2 px-2 py-1 rounded-lg bg-surface-card border border-outline-border/60 text-[11px] italic text-ink-primary placeholder:text-ink-muted placeholder:not-italic focus:outline-none focus:border-rio-500"
             :placeholder="currentLang === 'vi' ? 'Chữ trên màn hình (không bắt buộc)' : 'On-screen text (optional)'"
             :title="currentLang === 'vi' ? 'Hiện ở cuối khung hình trong cảnh này' : 'Shown at the bottom of the frame during this scene'"
             @click.stop
@@ -279,7 +281,7 @@
             </span>
             <span
               v-if="shot.reference_image_reference_key"
-              class="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-1.5 py-0.5 text-indigo-400 truncate"
+              class="rounded-full bg-rio-500/10 border border-rio-500/30 px-1.5 py-0.5 text-rio-400 truncate"
             >
               @{{ shot.reference_image_reference_key }}
             </span>
@@ -316,7 +318,7 @@
               <button
                 v-if="getShotVideoFile(shot)"
                 type="button"
-                class="px-2 py-0.5 rounded-lg text-[11px] font-semibold text-indigo-400 hover:bg-indigo-500/10 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                class="px-2 py-0.5 rounded-lg text-[11px] font-semibold text-rio-400 hover:bg-rio-500/10 cursor-pointer disabled:opacity-40 disabled:cursor-default"
                 :disabled="isRegenerating(shot) || Boolean(production?.planning)"
                 :title="currentLang === 'vi'
                   ? 'Dựng lại cảnh này với mô tả hiện tại. Bản cũ vẫn được giữ.'
@@ -336,7 +338,7 @@
               </button>
               <button
                 type="button"
-                class="px-2 py-0.5 rounded-lg text-sm font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-surface-hover cursor-pointer transition-colors"
+                class="px-2 py-0.5 rounded-lg text-sm font-semibold text-rio-400 hover:text-rio-300 hover:bg-surface-hover cursor-pointer transition-colors"
                 :title="currentLang === 'vi' ? 'Tùy chọn cảnh' : 'Scene options'"
                 :aria-expanded="menuOpenIndex === index"
                 @click.stop="toggleSceneMenu(index)"
@@ -383,7 +385,7 @@
                 <button
                   v-if="cuesFor(shot).some(cue => cue.role === 'Voiceover' && !cue.scheduled) && getShotVideoFile(shot)"
                   type="button"
-                  class="w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-indigo-400 hover:bg-surface-hover disabled:opacity-50"
+                  class="w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] text-rio-400 hover:bg-surface-hover disabled:opacity-50"
                   :disabled="Boolean(narrationBusyShot)"
                   data-test="generate-voiceover"
                   @click="emit('generateVoiceover', shot); menuOpenIndex = null"
@@ -401,7 +403,7 @@
                   >
                     <input
                       type="checkbox"
-                      class="accent-indigo-600"
+                      class="accent-rio-600"
                       :checked="shotUsesReference(shot, reference)"
                       :disabled="isGenerating"
                       @change="toggleReference(shot, reference)"
@@ -428,7 +430,7 @@
     <div v-if="shots.length" class="relative flex justify-end pt-1">
       <button
         type="button"
-        class="rounded-xl border border-dashed border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-400 hover:bg-indigo-500/20 cursor-pointer"
+        class="rounded-xl border border-dashed border-rio-500/50 bg-rio-500/10 px-3 py-2 text-xs font-semibold text-rio-400 hover:bg-rio-500/20 cursor-pointer"
         @click="$emit('addScene', shots[shots.length - 1])"
       >
         + {{ currentLang === 'vi' ? 'Thêm cảnh' : 'Add Scene' }}
@@ -624,9 +626,9 @@ function getShotBadgeClass(shot, idx) {
   if (state === "Ready") return "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
   if (state === "Failed") return "bg-rose-500/20 text-rose-400 border border-rose-500/30";
   if (state === "Generating") {
-    return "bg-indigo-500/20 text-indigo-400 border border-indigo-500/40 animate-pulse";
+    return "bg-rio-500/20 text-rio-400 border border-rio-500/40 animate-pulse";
   }
-  if (state === "Queued") return "bg-indigo-500/10 text-indigo-400 border border-indigo-500/30";
+  if (state === "Queued") return "bg-rio-500/10 text-rio-400 border border-rio-500/30";
   return "bg-surface-muted text-ink-muted border border-outline-border";
 }
 

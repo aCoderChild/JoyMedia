@@ -149,12 +149,27 @@ def infer_cinematic_intent(structure, *, opening=False, closing=False, grammar=N
 		behavior, purpose, energy = "tracking", "follow", "measured"
 		if grammar:
 			energy = grammar["moves"].get(stage, {}).get("energy", energy)
-	elif precision:
-		behavior, purpose, energy = "locked", "demonstrate", "measured"
-	elif grammar and stage in grammar["moves"]:
+	# A supplied reference video's camera style is the client's own direction, so it
+	# outranks the defaults below, the opening hook included. Precision details stay
+	# locked whatever the reference does, so the product stays legible.
+	elif grammar and stage in grammar["moves"] and not precision:
 		return dict(grammar["moves"][stage])
+	# A broad opening action benefits from a restrained axial move: it creates a
+	# visual hook while retaining the actor, product and their support in one
+	# readable plane. Contact close-ups remain locked below; the exception is
+	# deliberately limited to the first wide/medium composition.
 	elif opening and framing in {"wide", "full", "medium", "medium_close_up"}:
 		behavior, purpose, energy = "push_in", "hook", "brisk"
+	elif precision:
+		behavior, purpose, energy = "locked", "demonstrate", "measured"
+	elif (
+		stage in {"establish", "approach", "present", "hero"}
+		and motion == "stationary"
+		and framing in {"medium", "medium_close_up", "close_up"}
+	):
+		# A stationary presentation beat can reveal the subject through one axial
+		# move. Contact/manipulation details remain protected by ``precision``.
+		behavior, purpose, energy = "push_in", "reveal", "measured"
 	elif (stage == "feel" and framing in {"wide", "full", "medium", "medium_close_up"}) or closing:
 		behavior, purpose, energy = "push_in", "resolve", "measured"
 	else:
@@ -193,7 +208,13 @@ def executable_inferred_intent(intent, structure, roles, *, generated_compositio
 def camera_intent(value):
 	if value is None:
 		return None
-	if not isinstance(value, dict) or set(value) - {"behavior", "allow_reframe", "purpose", "energy", "source"}:
+	if not isinstance(value, dict) or set(value) - {
+		"behavior",
+		"allow_reframe",
+		"purpose",
+		"energy",
+		"source",
+	}:
 		raise ValueError("Camera intent requires one behavior and optional allow_reframe.")
 	if value.get("source", "authored") not in {"authored", "inferred"}:
 		raise ValueError("Unsupported camera intent source.")
@@ -265,6 +286,14 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 	roles = {str(r.get("reference_role") or r.get("input_role") or "").lower() for r in refs}
 	product = "product" in roles
 	actor = bool(roles & {"character", "person", "people", "talent"})
+	product_insert = bool(
+		structure
+		and product
+		and not actor
+		and structure["stage"] in {"establish", "approach", "present", "hero"}
+		and structure["framing"] == "close_up"
+		and structure["subject_motion"] == "stationary"
+	)
 	shots = project.get("shots") or []
 	position = next(
 		(i for i, s in enumerate(shots) if (s.get("shot") or s.get("name")) == shot.get("name")),
@@ -293,10 +322,11 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 		structure
 		and intent
 		and intent.get("purpose") in {"hook", "reveal", "resolve"}
-		and structure["stage"] in {"establish", "present", "feel", "hero"}
+		and structure["stage"] in {"establish", "approach", "present", "feel", "hero"}
 		and (
 			structure["framing"] in {"wide", "full", "medium", "medium_close_up"}
 			or (closing and structure["framing"] == "close_up")
+			or product_insert
 		)
 	)
 	interaction = bool(
@@ -374,6 +404,7 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 			or intent["allow_reframe"]
 			or anchored_push
 			or allows_push(framing_safety)
+			or (product_insert and behavior == "push_in")
 			or (generated_composition and broad_presentation and behavior == "push_in")
 		):
 			directions = {

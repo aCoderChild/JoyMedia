@@ -359,6 +359,16 @@ class TestTimelineEditor(FrappeTestCase):
 		self.assertEqual(added["source_out_frame"], 144)
 		self.assertEqual(result["total_frames"], 96)
 		self.assertEqual(result["canvas_total_frames"], 144)
+		sequential = add_timeline_audio_clip(self.project.name, audio_version.name, timeline_start_frame=144)
+		sequential_clip = next(
+			clip for clip in sequential["clips"] if clip["name"] == sequential["selected_clip"]
+		)
+		self.assertEqual(sequential_clip["track_index"], added["track_index"])
+		overlapping = add_timeline_audio_clip(self.project.name, audio_version.name, timeline_start_frame=72)
+		overlapping_clip = next(
+			clip for clip in overlapping["clips"] if clip["name"] == overlapping["selected_clip"]
+		)
+		self.assertNotEqual(overlapping_clip["track_index"], added["track_index"])
 
 	def test_source_audio_can_be_disabled_without_deleting_video(self):
 		source_audio = frappe.get_doc(

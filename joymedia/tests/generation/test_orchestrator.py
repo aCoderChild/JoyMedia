@@ -41,6 +41,45 @@ class TestGenerationOrchestrator(FrappeTestCase):
 
 		self.assertEqual("RUN-NEW", generation_orchestrator._next_fair_run_name())
 
+	@patch("joymedia.services.generation.orchestrator._get_run_job_names")
+	@patch("joymedia.services.generation.orchestrator._has_submittable_work", return_value=True)
+	@patch("joymedia.services.generation.orchestrator.frappe.db.get_value")
+	@patch("joymedia.services.generation.orchestrator.frappe.get_all")
+	def test_workflow_affinity_is_bounded_by_two_dispatches(
+		self, get_all, get_value, has_submittable_work, get_run_job_names
+	):
+		runs = [
+			frappe._dict(name="RUN-OLDER", creation=datetime(2026, 10, 10, 9, 0)),
+			frappe._dict(name="RUN-NEWER", creation=datetime(2026, 10, 10, 9, 1)),
+		]
+		recent = [frappe._dict(generation_task="TASK-NEWER")]
+		get_all.side_effect = lambda doctype, **kwargs: runs if doctype == "Generation Run" else recent
+		get_run_job_names.side_effect = lambda run: ["TASK-OLDER"] if run == "RUN-OLDER" else ["TASK-NEWER"]
+
+		def value(doctype, key, field, **kwargs):
+			if doctype == "Generation Attempt":
+				return datetime(2026, 10, 10, 9, 30 if key["generation_task"] == ["TASK-OLDER"] else 31)
+			if isinstance(key, dict):
+				return "IMAGE" if key["generation_run"] == "RUN-OLDER" else "VIDEO"
+			return "VIDEO"
+
+		get_value.side_effect = value
+		self.assertEqual("RUN-NEWER", generation_orchestrator._next_fair_run_name())
+		recent.append(frappe._dict(generation_task="TASK-NEWER"))
+		self.assertEqual("RUN-OLDER", generation_orchestrator._next_fair_run_name())
+
+	@patch("joymedia.services.generation.orchestrator._enqueue_submit_run")
+	@patch("joymedia.services.generation.orchestrator._has_global_submission_capacity", return_value=True)
+	@patch("joymedia.services.generation.orchestrator._next_fair_run_name", return_value="RUN-SELECTED")
+	@patch("joymedia.services.generation.orchestrator.frappe.get_doc")
+	def test_mismatched_submit_wakes_selected_run_without_scheduler_delay(
+		self, get_doc, next_run, capacity, enqueue
+	):
+		get_doc.return_value = frappe._dict(name="RUN-CALLER", status="Running", total_tasks=1)
+		with patch("joymedia.services.generation.orchestrator.filelock", return_value=nullcontext()):
+			generation_orchestrator._submit_run_with_global_capacity("RUN-CALLER")
+		enqueue.assert_called_once_with("RUN-SELECTED")
+
 	def test_continuous_pipeline_uses_previous_video_last_frame_for_next_shot(self):
 		steps = [
 			frappe._dict(step_key="keyframe", consumes_artifact_role=None),
@@ -721,7 +760,9 @@ class TestResultTransactionBoundary(FrappeTestCase):
 class TestSceneFinalizationIsolation(FrappeTestCase):
 	def test_one_held_composition_does_not_abandon_the_other_scenes(self):
 		orchestrator = generation_orchestrator
-		run = frappe._dict(name="RUN", execution_scope_json="{}", project_snapshot_json="{}", media_project="P")
+		run = frappe._dict(
+			name="RUN", execution_scope_json="{}", project_snapshot_json="{}", media_project="P"
+		)
 		completed = [frappe._dict(status="Completed")]
 		with (
 			patch.object(orchestrator, "_is_keyframe_run", return_value=False),
@@ -750,5 +791,8 @@ class TestHeldComposition(FrappeTestCase):
 		):
 			orchestrator._hold_composition("RUN", "SHOT", ValueError("tracking ambiguous"))
 		doctype, name, values = set_value.call_args.args[:3]
-		self.assertEqual(("Generation Attempt", "ATT", "Failed", "Input"), (doctype, name, values["status"], values["failure_class"]))
+		self.assertEqual(
+			("Generation Attempt", "ATT", "Failed", "Input"),
+			(doctype, name, values["status"], values["failure_class"]),
+		)
 		summary.assert_called_once()

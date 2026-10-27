@@ -77,7 +77,11 @@ class TestSpeechProviderBoundary(TestCase):
 			configuration = provider("vi-VN-HoaiMyNeural")
 			synthesize("Exact dialogue.", configuration, Path(directory) / "voice.mp3", 3)
 			communicate.assert_called_once_with(
-				"Exact dialogue.", "vi-VN-HoaiMyNeural", proxy="http://127.0.0.1:12345"
+				"Exact dialogue.",
+				"vi-VN-HoaiMyNeural",
+				rate="+0%",
+				pitch="+0Hz",
+				proxy="http://127.0.0.1:12345",
 			)
 			client.save.assert_awaited_once()
 

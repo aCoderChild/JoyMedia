@@ -74,3 +74,6 @@ jspm_packages/
 
 # Also excludes dependency symlinks used by isolated worktrees.
 node_modules
+
+# Local research clones are not application dependencies.
+upstream/

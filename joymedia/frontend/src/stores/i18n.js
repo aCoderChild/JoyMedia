@@ -162,9 +162,9 @@ export const messages = {
     // Asset Library
     assets_eyebrow: "THƯ VIỆN",
     assets_title: "Thư viện Media",
-    assets_subtitle: "Quản lý tư liệu sản phẩm, media chiến dịch và video đã tạo.",
+    assets_subtitle: "Ảnh sản phẩm, nhân vật, logo và âm thanh bạn đã tải lên, dùng lại cho mọi dự án.",
     btn_add_media: "Thêm media",
-    btn_view_campaigns: "Xem chiến dịch",
+    btn_view_campaigns: "Xem dự án",
     all_categories: "Tất cả danh mục",
     asset_edit: "Đổi tên / phân loại",
     cat_product: "Sản phẩm (Product)",
@@ -353,9 +353,9 @@ export const messages = {
     // Asset Library
     assets_eyebrow: "LIBRARY",
     assets_title: "Media Library",
-    assets_subtitle: "Manage product references, campaign media, and generated video outputs.",
+    assets_subtitle: "The product, character, logo and audio files you uploaded, reusable in every project.",
     btn_add_media: "Add Media",
-    btn_view_campaigns: "View Campaigns",
+    btn_view_campaigns: "View projects",
     all_categories: "All Categories",
     asset_edit: "Rename / category",
     cat_product: "Product",

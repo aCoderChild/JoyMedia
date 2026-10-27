@@ -56,10 +56,12 @@ class TestProjectCancellation(FrappeTestCase):
 				side_effect=lambda *a, **k: events.append("network"),
 			),
 			patch.object(orchestrator, "_refresh_run_counters") as refresh_counters,
+			patch.object(orchestrator, "sync_media_project_status_for_run") as sync_project,
 			patch.object(orchestrator, "_run_summary", return_value={"status": "Cancelled"}),
 		):
 			orchestrator.cancel_run("RUN-A")
 			refresh_counters.assert_called_once_with(run)
+			sync_project.assert_called_once_with("RUN-A")
 			self.assertLess(events.index("Generation Run"), events.index("network"))
 			self.assertIn("commit", events[events.index("Generation Run") + 1 : events.index("network")])
 			for call in updates.call_args_list[1:]:

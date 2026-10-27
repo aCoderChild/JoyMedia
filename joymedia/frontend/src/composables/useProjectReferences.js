@@ -61,11 +61,11 @@ export function useProjectReferences(projectName, onRefresh) {
   }
 
   async function updateReferenceRole(asset, newRole) {
-    if (!asset?.name) return;
+    if (!asset?.asset_version) return;
     try {
-      await call("joymedia.api.assets.select_project_reference", {
+      await call("joymedia.api.assets.update_project_reference_metadata", {
         media_project: project(),
-        asset_name: asset.name || asset.media_asset,
+        asset_version: asset.asset_version,
         reference_role: newRole,
       });
       if (onRefresh) await onRefresh();
@@ -133,8 +133,10 @@ export function useProjectReferences(projectName, onRefresh) {
       });
       if (onRefresh) await onRefresh();
       notify({ title: "Removed", text: "Reference removed from project.", type: "success" });
+      return true;
     } catch (err) {
       notify({ title: "Error", text: errorMessage(err, "Failed to remove reference."), type: "error" });
+      return false;
     }
   }
 

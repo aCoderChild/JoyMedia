@@ -13,7 +13,7 @@
 
       <!-- Floating Scene / Target HUD Chip -->
       <div class="viewport-hud-chip">
-        <span class="size-2 rounded-full bg-indigo-500 animate-pulse" />
+        <span class="size-2 rounded-full bg-rio-500 animate-pulse" />
         <span v-if="studioMode === 'edit' && selectedClip">
           ✂️ {{ selectedClip.shot_number ? t('shot_n', { n: selectedClip.shot_number }) : selectedClip.track_type === 'Audio' ? (currentLang === 'vi' ? 'Nhạc nền' : 'Music') : !selectedClip.shot ? (currentLang === 'vi' ? 'Chuyển cảnh' : 'Transition') : `Clip ${selectedClip.clip_order || 1}` }} · {{ selectedClip.duration_seconds?.toFixed(2) }}s ({{ selectedClip.source_in_frame }}f–{{ selectedClip.source_out_frame }}f)
         </span>
@@ -50,7 +50,7 @@
         <p class="text-xs text-rose-300 max-w-lg break-words whitespace-pre-wrap">{{ productionError }}</p>
         <p v-if="productionStatus" class="text-[11px] text-ink-muted">{{ currentLang === 'vi' ? 'Trạng thái' : 'Status' }}: {{ productionStatus }}</p>
         <div class="flex items-center gap-2 pt-2">
-          <button type="button" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs cursor-pointer" @click="$emit('retryFailedScenes')">
+          <button type="button" class="px-3.5 py-1.5 rounded-xl bg-rio-600 hover:bg-rio-500 text-white text-xs font-semibold shadow-xs cursor-pointer" @click="$emit('retryFailedScenes')">
             {{ currentLang === 'vi' ? 'Thử lại' : 'Retry' }}
           </button>
           <button type="button" class="px-3.5 py-1.5 rounded-xl bg-surface-card hover:bg-surface-hover text-ink-primary border border-outline-border text-xs font-semibold shadow-xs cursor-pointer" @click="$emit('refresh')">
@@ -97,7 +97,7 @@
       <!-- Live Generating Radar Overlay -->
       <div v-else-if="isProductionActive" class="flex flex-col items-center justify-center text-center p-6">
         <div class="relative size-14 mb-3 flex items-center justify-center">
-          <span class="lucide-refresh-cw size-9 animate-spin text-indigo-400" />
+          <span class="lucide-refresh-cw size-9 animate-spin text-rio-400" />
           <span class="absolute text-[11px] font-bold font-mono text-ink-primary">{{ production?.progress || 0 }}%</span>
         </div>
         <h3 class="text-sm font-semibold text-ink-primary">

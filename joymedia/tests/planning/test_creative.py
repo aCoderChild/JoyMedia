@@ -63,6 +63,155 @@ def sample_script():
 
 
 class TestOpeningTextCrossCheck(TestCase):
+	def test_cinematic_opening_keeps_a_broad_product_action_moving(self):
+		from joymedia.services.planning.camera import infer_cinematic_intent
+
+		intent = infer_cinematic_intent(
+			{"stage": "grip", "framing": "wide", "subject_motion": "manipulation"}, opening=True
+		)
+		self.assertEqual(
+			{"behavior": "push_in", "purpose": "hook", "energy": "brisk", "allow_reframe": False}, intent
+		)
+
+	def test_automatic_delivery_keeps_deferred_director_notes_without_stopping(self):
+		from joymedia.services.generation.creative_batch import (
+			_automatic_script_defects,
+			_blocking_script_defects,
+		)
+
+		self.assertEqual(
+			[],
+			_automatic_script_defects(
+				{
+					"director_notes": ["Scene 1: Acquire the product before use."],
+					"writer_fallback": {"quality_review": "deferred"},
+				}
+			),
+		)
+		self.assertEqual(
+			["Scene 1: Acquire the product before use."],
+			_automatic_script_defects({"director_notes": ["Scene 1: Acquire the product before use."]}),
+		)
+		self.assertEqual(
+			[],
+			_blocking_script_defects(
+				{
+					"writer_fallback": {"quality_review": "deferred"},
+					"action_review": {
+						"issues": [
+							{
+								"category": "missing_prerequisite",
+								"instruction": "Show the spill first.",
+							}
+						]
+					},
+				}
+			),
+		)
+
+	def test_multiple_unresolved_critical_frames_request_new_concept(self):
+		from joymedia.services.generation.creative_batch import _critical_frame_defects
+
+		shots = [
+			frappe._dict(
+				shot_number=1,
+				consistency_status="Needs Review",
+				consistency_notes="Critical geometry: duplicate actor",
+			),
+			frappe._dict(
+				shot_number=2,
+				consistency_status="Needs Review",
+				consistency_notes="Physical staging review: uncertain",
+			),
+			frappe._dict(
+				shot_number=3,
+				consistency_status="Needs Review",
+				consistency_notes="Critical prop: extra package",
+			),
+		]
+		self.assertEqual(2, len(_critical_frame_defects(shots)))
+		self.assertEqual([], _critical_frame_defects(shots[:2]))
+		self.assertEqual(
+			1,
+			len(
+				_critical_frame_defects(
+					[
+						frappe._dict(
+							shot_number=4,
+							consistency_status="Needs Review",
+							consistency_notes="Critical prop: paper or tissue sheet has an implausible material",
+						)
+					]
+				)
+			),
+		)
+
+	def test_identity_drift_is_a_frame_correction(self):
+		from joymedia.services.generation.creative_batch import _frame_corrections, _scene_repair_notes
+
+		shot = frappe._dict(
+			name="SHOT-IDENTITY",
+			consistency_status="Needs Review",
+			consistency_notes="Critical identity: character eye design changed from the original reference",
+		)
+		self.assertEqual({shot.name: [shot.consistency_notes]}, _frame_corrections([shot]))
+		shot.shot_number = 1
+		shot.consistency_notes = (
+			"Critical identity: selected generated character view has stale or missing pose qualification"
+		)
+		self.assertEqual({}, _frame_corrections([shot]))
+		self.assertIn("Never reuse an unqualified pose", _scene_repair_notes([shot])[0]["text"])
+
+	def test_automatic_delivery_restarts_with_the_rejected_script_as_history(self):
+		from joymedia.services.generation.creative_batch import _restart_automatic_script_variant
+
+		variant = {
+			"project": "PRJ-OLD",
+			"workbook": "/private/old.xlsx",
+			"script": sample_script(),
+			"title": "Old concept",
+			"plans": [{"shot": "SHOT-1"}],
+			"keyframe_request": {"run": "RUN-1"},
+			"status": "Planning",
+			"nonce": "old",
+		}
+		self.assertTrue(
+			_restart_automatic_script_variant(
+				variant,
+				sample_script(),
+				["Scene 1: Replace the unsupported spill."],
+			)
+		)
+		self.assertEqual("Queued", variant["status"])
+		self.assertEqual(1, variant["automatic_script_redraws"])
+		self.assertNotIn("project", variant)
+		self.assertEqual("PRJ-OLD", variant["history"][0]["project"])
+		self.assertEqual(sample_script(), variant["history"][0]["script"])
+		self.assertIn("unsupported spill", str(variant["revision"]["notes"]))
+		empty_child = {"project": "PRJ-TEXT-ONLY", "status": "Planning", "nonce": "first"}
+		self.assertTrue(
+			_restart_automatic_script_variant(empty_child, sample_script(), ["Scene 2 needs a new action."])
+		)
+		self.assertEqual("PRJ-TEXT-ONLY", empty_child["project"])
+
+	def test_ambiguous_generated_product_can_redraw_with_a_new_seed(self):
+		from joymedia.services.generation.creative_batch import _nonretryable_scene_failure
+
+		attempt = frappe._dict(
+			status="Failed",
+			failure_class="Input",
+			error_summary="One of the selected media inputs is not usable for this scene.",
+			error_details="Reference preparation was rejected. Expected one unambiguous product; detected 2.",
+		)
+		with patch("frappe.get_all", side_effect=[[frappe._dict(name="TASK-1", shot="SHOT-1")], [attempt]]):
+			self.assertIsNone(_nonretryable_scene_failure("RUN-1", ["SHOT-1"]))
+		attempt.error_details = "Product view is incompatible with the supplied source photograph."
+		with patch("frappe.get_all", side_effect=[[frappe._dict(name="TASK-1", shot="SHOT-1")], [attempt]]):
+			self.assertIsNone(_nonretryable_scene_failure("RUN-1", ["SHOT-1"]))
+		attempt.error_details = "The immutable reference file changed."
+		with patch("frappe.get_all", side_effect=[[frappe._dict(name="TASK-1", shot="SHOT-1")], [attempt]]):
+			self.assertEqual("SHOT-1", _nonretryable_scene_failure("RUN-1", ["SHOT-1"])["shot"])
+
 	def test_camera_review_requires_quoted_camera_direction_in_action(self):
 		from joymedia.services.planning.script_review import _filter_unsubstantiated_camera_issues
 
@@ -85,10 +234,7 @@ class TestOpeningTextCrossCheck(TestCase):
 		script["scenes"][0]["action"] += " The camera pushes in."
 		self.assertEqual(
 			["The camera pushes in."],
-			[
-				row["quote"]
-				for row in _filter_unsubstantiated_camera_issues(findings, script)["issues"]
-			],
+			[row["quote"] for row in _filter_unsubstantiated_camera_issues(findings, script)["issues"]],
 		)
 
 	def test_unproven_opening_conflict_does_not_block_the_script(self):
@@ -138,6 +284,45 @@ class TestOpeningTextCrossCheck(TestCase):
 
 
 class TestGeneratedScriptValidation(TestCase):
+	def test_explicit_shot_count_is_enforced_before_advisory_fallback(self):
+		with self.assertRaisesRegex(ValueError, "requests 5 shots"):
+			validate_script(
+				{"scenes": [{}, {}, {}, {}, {}, {}, {}]},
+				[],
+				{"creative_direction": "Make five shots with distinct opening poses."},
+				[],
+			)
+
+	def test_hyphenated_shot_count_in_brief_is_enforced(self):
+		with self.assertRaisesRegex(ValueError, "requests 5 shots"):
+			validate_script(
+				{"scenes": [{}, {}, {}, {}, {}, {}, {}]},
+				[],
+				{
+					"creative_direction": "Automatically write a coherent five-shot screenplay in the standard template."
+				},
+				[],
+			)
+
+	def test_carried_pack_cannot_teleport_back_to_table(self):
+		from joymedia.services.planning.creative import _validate_product_support_continuity
+
+		scenes = [
+			{
+				"visual_camera": "The pack starts on the coffee table.",
+				"action": "[0-2s] Bear picks up the tissue pack.",
+			},
+			{"visual_camera": "Bear holds the pack.", "action": "[0-2s] Bear opens the pack."},
+			{
+				"visual_camera": "The pack rests on the coffee table.",
+				"action": "[0-2s] The pack remains still.",
+			},
+		]
+		with self.assertRaisesRegex(ValueError, "without a visible placement"):
+			_validate_product_support_continuity(scenes)
+		scenes[1]["action"] += "\n[2-3s] Bear places the pack on the coffee table."
+		_validate_product_support_continuity(scenes)
+
 	def test_later_extraction_cannot_follow_use_of_the_same_item(self):
 		from joymedia.services.planning.creative import _later_acquisition_conflict
 
@@ -186,15 +371,63 @@ class TestGeneratedScriptValidation(TestCase):
 			self.inventory,
 			{"duration_seconds": 30, "aspect_ratio": "9:16", "fps": 24, "max_scene_frames": 124},
 		)
-		self.assertEqual(6, schema["properties"]["scenes"]["minItems"])
+		# 30 s needs 6 full shots; planning at 85% of a shot leaves room for rhythm: 7 scenes.
+		self.assertEqual(7, schema["properties"]["scenes"]["minItems"])
 		action_rule = schema["properties"]["scenes"]["items"]["properties"]["action"]["description"]
 		self.assertIn("Combine approach/reach with acquisition", action_rule)
+
+	def test_automatic_duration_freezes_scene_contract_after_first_proposal(self):
+		from joymedia.services.planning.creative import _freeze_proposed_duration, script_schema
+
+		constraints = {"duration_seconds": None, "aspect_ratio": "16:9", "fps": 24, "max_scene_frames": 124}
+		schema = script_schema(self.inventory, constraints)
+		self.assertEqual(2, schema["properties"]["scenes"]["minItems"])
+		_freeze_proposed_duration(constraints, schema, {"duration_seconds": 35})
+		self.assertEqual(35, constraints["duration_seconds"])
+		self.assertEqual({"const": 35}, schema["properties"]["duration_seconds"])
+		self.assertEqual(8, schema["properties"]["scenes"]["minItems"])
+		_freeze_proposed_duration(constraints, schema, {"duration_seconds": 10})
+		self.assertEqual(35, constraints["duration_seconds"])
+		short = {"duration_seconds": None, "aspect_ratio": "16:9", "fps": 24, "max_scene_frames": 124}
+		short_schema = script_schema(self.inventory, short)
+		_freeze_proposed_duration(short, short_schema, {"duration_seconds": 30, "scenes": [{}, {}, {}, {}]})
+		self.assertEqual(int(4 * 124 * 0.85) / 24, short["duration_seconds"])
+		self.assertEqual(4, short_schema["properties"]["scenes"]["minItems"])
+
+	def test_frame_capacity_error_names_required_and_supplied_scene_counts(self):
+		from joymedia.services.planning.creative import fit_generated_timing
+
+		script = sample_script()
+		with self.assertRaisesRegex(ValueError, "needs at least 7 scenes.*received 2"):
+			fit_generated_timing(script, 35, 24, max_scene_frames=124)
 
 	def test_passive_opening_requires_an_object_action(self):
 		script = sample_script()
 		script["scenes"][0]["action"] = "[0-6s] The mascot sits and looks at the product."
 		with self.assertRaisesRegex(ValueError, "opening cannot consist only"):
 			validate_script(script, self.inventory, self.constraints)
+
+	def test_adjacent_shots_cannot_pick_up_the_same_held_object_twice(self):
+		from joymedia.services.planning.creative import _validate_action_progress
+
+		scenes = [
+			{"action": "[0-5s] The mascot picks up the pack and presses it.", "duration_seconds": 5},
+			{"action": "[0-5s] The mascot picks up the pack and rotates it.", "duration_seconds": 5},
+			{"action": "[0-5s] The product rests on the table.", "duration_seconds": 5},
+		]
+		with self.assertRaisesRegex(ValueError, "acquires the same object again"):
+			_validate_action_progress(scenes)
+
+	def test_visible_liquid_cause_counts_as_material_action(self):
+		from joymedia.services.planning.creative import _validate_action_progress
+
+		_validate_action_progress(
+			[
+				{"action": "[0-3s] A cup tips over and spills water onto the table.", "duration_seconds": 3},
+				{"action": "[0-3s] The tissue contacts and blots the water.", "duration_seconds": 3},
+				{"action": "[0-3s] The pack is presented.", "duration_seconds": 3},
+			]
+		)
 
 	def test_preparatory_reach_cannot_consume_an_entire_action_shot(self):
 		script = sample_script()
@@ -211,6 +444,8 @@ class TestGeneratedScriptValidation(TestCase):
 		script["scenes"][0]["action"] = (
 			"[0-1s] The mascot reaches toward the product.\n[1-6s] The mascot grips and lifts the product."
 		)
+		self.assertEqual(script, validate_script(script, self.inventory, self.constraints))
+		script["scenes"][0]["action"] = "[0-6s] The mascot grasps the product with both paws."
 		self.assertEqual(script, validate_script(script, self.inventory, self.constraints))
 
 	def test_middle_reaction_shot_requires_product_progress(self):
@@ -233,6 +468,24 @@ class TestGeneratedScriptValidation(TestCase):
 		script["scenes"][-1]["subject_motion"] = "stationary"
 		self.assertEqual(script, validate_script(script, self.inventory, self.constraints))
 
+	def test_opening_rule_cannot_preacquire_its_action_target(self):
+		script = sample_script()
+		script["scenes"][0]["continuity_rules"] = (
+			"The mascot starts beside the table, holding the tissue pack."
+		)
+		script["scenes"][0]["action"] = "[0-6s] The mascot reaches for the tissue pack and grasps it."
+		with self.assertRaisesRegex(ValueError, "holding tissue pack"):
+			validate_script(script, self.inventory, self.constraints)
+
+	def test_camera_opening_cannot_preacquire_the_same_product_with_brand_modifier(self):
+		script = sample_script()
+		script["scenes"][0]["visual_camera"] = (
+			"The actor is seated beside the table, holding a Shera tissue pack."
+		)
+		script["scenes"][0]["action"] = "[0-6s] The actor reaches for the tissue pack and grasps it."
+		with self.assertRaisesRegex(ValueError, "opens holding Shera tissue pack"):
+			validate_script(script, self.inventory, self.constraints)
+
 	def test_camera_only_phase_cannot_replace_product_action(self):
 		script = sample_script()
 		script["scenes"][0]["action"] = "[0-6s] The camera pans over the product."
@@ -242,8 +495,7 @@ class TestGeneratedScriptValidation(TestCase):
 	def test_camera_sentence_is_removed_when_a_real_timed_action_remains(self):
 		script = sample_script()
 		script["scenes"][0]["action"] = (
-			"[0-1s] The camera pushes in. Grip the product.\n"
-			"[1-6s] Move it along the table."
+			"[0-1s] The camera pushes in. Grip the product.\n[1-6s] Move it along the table."
 		)
 		validated = validate_script(script, self.inventory, self.constraints)
 		self.assertEqual(
@@ -271,6 +523,20 @@ class TestGeneratedScriptValidation(TestCase):
 				{**self.constraints, "action_reference_observations": ["observed spill contact"]},
 			),
 		)
+		# The writer already permits a physical effect explicitly requested in
+		# creative direction; validation must use that same authorization source.
+		self.assertEqual(
+			script,
+			validate_script(
+				script,
+				self.inventory,
+				{
+					**self.constraints,
+					"action_reference_observations": [],
+					"creative_direction": "Show Shera tissue absorption of a small spill",
+				},
+			),
+		)
 
 	def test_unanchored_cleaning_and_anonymous_actor_are_rejected(self):
 		script = sample_script()
@@ -280,6 +546,66 @@ class TestGeneratedScriptValidation(TestCase):
 		script["scenes"][0]["action"] = "[0-6s] An off-screen hand places the product on the table."
 		with self.assertRaisesRegex(ValueError, "anonymous human"):
 			validate_script(script, self.inventory, self.constraints)
+
+	def test_automatic_review_cannot_defer_unsupported_water_action(self):
+		script = sample_script()
+		script["scenes"][0]["action"] = "[0-6s] The mascot wipes water from the table with the tissue."
+		with self.assertRaisesRegex(ValueError, "supplied action reference"):
+			validate_script(
+				script,
+				self.inventory,
+				{**self.constraints, "action_reference_observations": []},
+				[],
+			)
+
+	def test_wet_surface_requires_an_earlier_visible_cause(self):
+		script = sample_script()
+		script["scenes"][0]["action"] = "[0-6s] The mascot wipes a wet surface with the tissue."
+		with self.assertRaisesRegex(ValueError, "never became wet on camera"):
+			validate_script(
+				script,
+				self.inventory,
+				{**self.constraints, "action_reference_observations": ["observed water contact"]},
+				[],
+			)
+
+	def test_dropping_a_dry_prop_does_not_establish_a_water_spill(self):
+		script = sample_script()
+		script["scenes"][0]["action"] = (
+			"[0-3s] The mascot drops a cookie.\n[3-6s] The mascot wipes a wet surface with the tissue."
+		)
+		with self.assertRaisesRegex(ValueError, "never became wet on camera"):
+			validate_script(
+				script,
+				self.inventory,
+				{**self.constraints, "action_reference_observations": ["observed water contact"]},
+				[],
+			)
+
+	def test_visible_water_droplets_falling_count_as_a_wet_cause(self):
+		from joymedia.services.planning.creative import WET_EVENT
+
+		self.assertIsNotNone(WET_EVENT.search("Water droplets fall onto the tissue."))
+		self.assertIsNone(WET_EVENT.search("The mascot drops a dry cookie."))
+
+	def test_saying_a_spill_remains_does_not_show_its_cause(self):
+		script = sample_script()
+		script["scenes"][0]["action"] = (
+			"[0-3s] A spill remains visible.\n[3-6s] The mascot wipes a wet surface with the tissue."
+		)
+		with self.assertRaisesRegex(ValueError, "never happened on camera"):
+			validate_script(
+				script,
+				self.inventory,
+				{**self.constraints, "action_reference_observations": ["observed water contact"]},
+				[],
+			)
+
+	def test_discard_requires_a_visible_supported_destination(self):
+		script = sample_script()
+		script["scenes"][0]["action"] = "[0-6s] The mascot discards the used tissue away from the pack."
+		with self.assertRaisesRegex(ValueError, "without a visible destination"):
+			validate_script(script, self.inventory, self.constraints, [])
 
 	def test_schema_descriptions_reach_model_context_as_well_as_the_decoder(self):
 		from joymedia.services.planning.production import _request_planner
@@ -304,6 +630,51 @@ class TestGeneratedScriptValidation(TestCase):
 		payload = post.call_args.kwargs["json"]
 		self.assertIn("A semantic field instruction.", payload["messages"][0]["content"])
 		self.assertEqual(schema, payload["response_format"]["json_schema"]["schema"])
+
+	def test_unreachable_planner_is_reported_as_service_outage(self):
+		import requests
+
+		from joymedia.services.planning.production import PlannerUnavailableError, _request_planner
+
+		with (
+			patch(
+				"joymedia.services.runtime.endpoints.endpoint",
+				return_value=frappe._dict(base_url="http://planner/v1", model="configured", timeout=30),
+			),
+			patch(
+				"joymedia.services.planning.production.requests.post",
+				side_effect=requests.ConnectionError("offline"),
+			),
+		):
+			with self.assertRaises(PlannerUnavailableError):
+				_request_planner("Write the object.", system="JSON only.", max_tokens=100)
+
+	def test_malformed_planner_json_gets_one_new_seed(self):
+		from joymedia.services.planning.production import _request_planner
+
+		bad = Mock(ok=True)
+		bad.json.return_value = {"choices": [{"message": {"content": "no json"}}]}
+		good = Mock(ok=True)
+		good.json.return_value = {"choices": [{"message": {"content": '{"value":"done"}'}}]}
+		seeds = []
+
+		def reply(*args, **kwargs):
+			seeds.append(kwargs["json"]["seed"])
+			return [bad, good][len(seeds) - 1]
+
+		with (
+			patch(
+				"joymedia.services.runtime.endpoints.endpoint",
+				return_value=frappe._dict(base_url="http://planner/v1", model="configured", timeout=30),
+			),
+			patch("joymedia.services.planning.plan_parsing._completion_budget", return_value=100),
+			patch("joymedia.services.planning.production.requests.post", side_effect=reply),
+		):
+			self.assertEqual(
+				{"value": "done"}, _request_planner("Write the object.", system="JSON only.", max_tokens=100)
+			)
+		self.assertEqual(2, len(seeds))
+		self.assertNotEqual(*seeds)
 
 	def test_frame_review_resume_requires_current_native_approval_without_erasing_findings(self):
 		from joymedia.services.generation.creative_batch import _keyframe_ready
@@ -350,6 +721,27 @@ class TestGeneratedScriptValidation(TestCase):
 					)
 					if quote:
 						self.assertFalse(finding["text_cross_check"]["physical_qualification"])
+
+	def test_staged_opening_can_establish_reach_before_first_action(self):
+		from joymedia.services.planning.script_review import _cross_check_missing_actions
+
+		script = sample_script()
+		script["scenes"][0]["visual_camera"] = (
+			"The actor is beside the table, with the product within easy reach."
+		)
+		issue = {
+			"scene": 1,
+			"category": "missing_prerequisite",
+			"quote": "Grip the product.",
+			"instruction": "Place the actor within easy reach before gripping.",
+		}
+		with patch(
+			"joymedia.services.planning.production._ask_planner",
+			return_value={"already_written": "the product within easy reach"},
+		):
+			finding = _cross_check_missing_actions({"issues": [issue]}, script)["issues"][0]
+		self.assertEqual("production_detail", finding["category"])
+		self.assertFalse(finding["text_cross_check"]["physical_qualification"])
 
 	def test_idle_retraction_requires_progress_in_the_same_scene(self):
 		from joymedia.services.planning.script_review import _cross_check_missing_actions
@@ -418,7 +810,24 @@ class TestGeneratedScriptValidation(TestCase):
 						[{"nonce": "old", "error": "Rejected draft"}], retried["script_attempts"]
 					)
 
-	def test_gallery_views_remain_one_identity_and_can_be_selected_by_scene(self):
+	def test_final_automatic_script_retry_uses_advisory_fallback_once(self):
+		from joymedia.services.generation.creative_batch import (
+			AUTOMATIC_SCRIPT_REDRAWS,
+			_redraw_invalid_automatic_script,
+		)
+
+		variant = {
+			"status": "Planning",
+			"nonce": "last-clean-attempt",
+			"automatic_script_redraws": AUTOMATIC_SCRIPT_REDRAWS,
+		}
+		error = ValueError("Automatic screenplay quality retries exhausted: two advisory notes conflict.")
+		self.assertTrue(_redraw_invalid_automatic_script(variant, error))
+		self.assertTrue(variant["accept_advisory_fallback"])
+		self.assertEqual("Queued", variant["status"])
+		self.assertFalse(_redraw_invalid_automatic_script(variant, error))
+
+	def test_gallery_views_do_not_choose_the_script_product_identity(self):
 		inventory = [
 			{
 				"key": "front",
@@ -429,12 +838,15 @@ class TestGeneratedScriptValidation(TestCase):
 		]
 		script = sample_script()
 		for scene in script["scenes"]:
-			scene["products"] = ["back"]
+			scene["products"] = ["front"]
 		self.assertEqual(
-			["back"], validate_script(script, inventory, self.constraints)["scenes"][0]["products"]
+			["front"], validate_script(script, inventory, self.constraints)["scenes"][0]["products"]
 		)
+		script["scenes"][0]["products"] = ["back"]
+		with self.assertRaisesRegex(ValueError, "supplied identities only"):
+			validate_script(script, inventory, self.constraints)
 		script["scenes"][0]["products"] = ["front", "back"]
-		with self.assertRaisesRegex(ValueError, "one view per identity"):
+		with self.assertRaisesRegex(ValueError, "supplied identities only"):
 			validate_script(script, inventory, self.constraints)
 
 	def test_generated_timing_reuses_frame_allocation_without_dropping_or_inventing_actions(self):
@@ -524,6 +936,37 @@ class TestGeneratedScriptValidation(TestCase):
 			with self.assertRaisesRegex(ValueError, "grounded"):
 				review_script_actions(sample_script())
 
+	def test_static_closing_packshot_is_not_misclassified_as_idle(self):
+		from joymedia.services.planning.script_review import _filter_allowed_product_presentation
+
+		script = sample_script()
+		issues = [
+			{"scene": 1, "category": "idle_pacing", "quote": "Grip the product."},
+			{"scene": 2, "category": "idle_pacing", "quote": "Turn the product to face forward."},
+		]
+		result = _filter_allowed_product_presentation({"issues": issues}, script)
+		self.assertEqual([issues[0]], result["issues"])
+		script["scenes"][-1]["cast"] = ["mascot"]
+		result = _filter_allowed_product_presentation({"issues": copy.deepcopy(issues)}, script)
+		self.assertEqual(2, len(result["issues"]))
+
+	def test_inactive_actor_is_removed_from_static_final_packshot(self):
+		from joymedia.services.planning.creative import normalize_static_final_packshot
+
+		script = sample_script()
+		last = script["scenes"][-1]
+		last.update(
+			cast=["mascot"],
+			action="[0-4s] The mascot stands beside the product.",
+			continuity_rules="The mascot remains beside the product.",
+		)
+		self.assertTrue(normalize_static_final_packshot(script))
+		self.assertEqual([], last["cast"])
+		self.assertNotIn("mascot", last["action"] + last["visual_camera"] + last["continuity_rules"])
+		self.assertIn("established physical support", last["continuity_rules"])
+		last.update(cast=["mascot"], action="[0-4s] The mascot turns the product to camera.")
+		self.assertEqual([], normalize_static_final_packshot(script))
+
 	def test_action_sources_share_bounded_context_in_chronological_order(self):
 		from joymedia.services.intake.action_reference import action_observations
 
@@ -603,10 +1046,38 @@ class TestGeneratedScriptValidation(TestCase):
 		self.assertIn("Keep the original connected proportions.", last.args[0])
 		self.assertNotIn("Prior version observation.", last.args[0])
 		self.assertIn("PRIMARY USER DIRECTION:", last.kwargs["system"])
-		self.assertIn("concrete supplied view key", last.kwargs["system"])
+		self.assertIn("canonical character identities", last.kwargs["system"])
+		self.assertNotIn("concrete supplied view key", last.kwargs["system"])
 		self.assertIn("multi-scene", last.kwargs["system"])
 		self.assertEqual("writer", last.kwargs["capability"])
 		self.assertIn("scenes", last.kwargs["response_schema"]["properties"])
+
+	def test_director_reference_choices_hide_alternate_pose_views(self):
+		from joymedia.services.planning.creative import reference_choices, script_schema
+
+		inventory = [
+			{
+				"key": "mascot",
+				"role": "Character",
+				"identity": "shera",
+				"views": [
+					{"key": "mascot", "description": "Original identity photograph."},
+					{"key": "pose_standing", "description": "Qualified standing pose."},
+					{"key": "pose_side", "description": "Qualified side pose."},
+				],
+			},
+			{"key": "product", "role": "Product", "identity": "shera_pack", "views": [{"key": "product"}]},
+		]
+		self.assertEqual(
+			{
+				"mascot": {"role": "Character", "identity": "shera"},
+				"product": {"role": "Product", "identity": "shera_pack"},
+			},
+			reference_choices(inventory),
+		)
+		schema = script_schema(inventory, {"duration_seconds": None, "fps": 24, "max_scene_frames": None})
+		cast = schema["properties"]["scenes"]["items"]["properties"]["cast"]["items"]["enum"]
+		self.assertEqual(["mascot"], cast)
 
 	def test_production_detail_reaches_planning_and_unresolved_finding_reaches_reviewer(self):
 		from joymedia.services.planning.creative import draft_script
@@ -665,7 +1136,7 @@ class TestGeneratedScriptValidation(TestCase):
 					self.assertIn(sample_script()["scenes"][0]["visual_camera"], writer.call_args.args[0])
 					self.assertEqual("creative_script_repair", writer.call_args.kwargs["sampling_profile"])
 
-	def test_automatic_writer_never_renders_a_draft_with_unresolved_findings(self):
+	def test_automatic_writer_continues_with_review_notes_after_bounded_repair(self):
 		from joymedia.services.planning.creative import draft_script
 
 		project = frappe._dict(total_duration_seconds=10, delivery_width=1280, delivery_height=720)
@@ -697,11 +1168,71 @@ class TestGeneratedScriptValidation(TestCase):
 				return_value={"coverage": [], "issues": [issue]},
 			),
 			patch("joymedia.services.planning.creative._save_rejected_drafts") as evidence,
-			self.assertRaisesRegex(ValueError, "unresolved causal"),
 		):
-			draft_script(project, nonce="strict", require_clean=True)
+			script = draft_script(project, nonce="strict", require_clean=True)
 		self.assertEqual(6, writer.call_count)
 		evidence.assert_called_once()
+		self.assertEqual(["Scene 1: Acquire the item before use."], script["director_notes"])
+		self.assertEqual("deferred", script["writer_fallback"]["quality_review"])
+
+	def test_reviewer_protocol_failure_does_not_reject_a_structurally_valid_automatic_script(self):
+		from joymedia.services.planning.creative import draft_script
+
+		project = frappe._dict(total_duration_seconds=10, delivery_width=1280, delivery_height=720)
+		inventory = [
+			{
+				"key": "product",
+				"role": "Product",
+				"identity": "product",
+				"label": "Product",
+				"views": [{"description": "Blue product"}],
+			}
+		]
+		with (
+			patch("joymedia.services.planning.creative.reference_inventory", return_value=inventory),
+			patch("joymedia.services.intake.action_reference.action_observations", return_value=[]),
+			patch("joymedia.services.intake.references.brand", return_value={}),
+			patch("joymedia.services.planning.production._ask_planner", return_value=sample_script()),
+			patch(
+				"joymedia.services.planning.creative.review_script_actions",
+				side_effect=ValueError("bad quote"),
+			),
+			patch("frappe.logger") as logger,
+		):
+			script = draft_script(project, nonce="review-outage", require_clean=True)
+		self.assertEqual("bad quote", script["review_unavailable"])
+		self.assertEqual([], script["director_notes"])
+		logger.return_value.warning.assert_called_once()
+
+	def test_invalid_writer_json_retries_before_stopping_automatic_batch(self):
+		from joymedia.services.planning.creative import draft_script
+
+		project = frappe._dict(total_duration_seconds=10, delivery_width=1280, delivery_height=720)
+		inventory = [
+			{
+				"key": "product",
+				"role": "Product",
+				"identity": "product",
+				"label": "Product",
+				"views": [{"description": "Blue product"}],
+			}
+		]
+		with (
+			patch("joymedia.services.planning.creative.reference_inventory", return_value=inventory),
+			patch("joymedia.services.intake.action_reference.action_observations", return_value=[]),
+			patch("joymedia.services.intake.references.brand", return_value={}),
+			patch(
+				"joymedia.services.planning.production._ask_planner",
+				side_effect=[ValueError("No valid JSON object"), sample_script()],
+			) as writer,
+			patch(
+				"joymedia.services.planning.creative.review_script_actions",
+				return_value={"coverage": [], "issues": []},
+			),
+		):
+			script = draft_script(project, nonce="retry-json", require_clean=True)
+		self.assertEqual(2, writer.call_count)
+		self.assertEqual("A moving product", script["title"])
 
 	def test_authored_geometry_timing_and_cast_remain_authoritative(self):
 		self.assertEqual(sample_script(), validate_script(sample_script(), self.inventory, self.constraints))
@@ -718,6 +1249,28 @@ class TestGeneratedScriptValidation(TestCase):
 			mutate(script)
 			with self.subTest(script=script), self.assertRaises(ValueError):
 				validate_script(script, self.inventory, self.constraints)
+
+	def test_selected_seated_reference_can_plan_a_supported_pose_bridge(self):
+		inventory = [
+			*self.inventory,
+			{
+				"key": "bear",
+				"role": "Character",
+				"identity": "bear",
+				"views": [
+					{
+						"key": "bear",
+						"pose_and_support": "Seated on a flat ground plane; no walking pose visible.",
+					}
+				],
+			},
+		]
+		script = sample_script()
+		script["scenes"][0]["cast"] = ["bear"]
+		script["scenes"][0]["action"] = (
+			"[0-1s] The bear stands up.\n[1-6s] The bear walks toward the product."
+		)
+		self.assertEqual(script, validate_script(script, inventory, self.constraints, []))
 
 	def test_optional_rewrite_failure_preserves_a_valid_draft_and_pose_choices(self):
 		from joymedia.services.planning.creative import draft_script
@@ -767,7 +1320,7 @@ class TestGeneratedScriptValidation(TestCase):
 		choices = writer.call_args.kwargs["response_schema"]["properties"]["scenes"]["items"]["properties"][
 			"products"
 		]["items"]["enum"]
-		self.assertEqual(["product", "product_side"], choices)
+		self.assertEqual(["product"], choices)
 		evidence.assert_called_once()
 
 	def test_physical_props_require_exact_authored_evidence_and_cannot_replace_actors(self):
@@ -933,6 +1486,24 @@ class TestCreativeWorkflow(FrappeTestCase):
 			with self.subTest(count=count), self.assertRaises(ValueError):
 				self.batch(count)
 
+	def test_batch_keeps_general_action_and_endpoint_references(self):
+		from joymedia.api.creative import create_product_batch
+
+		self.project.append(
+			"selected_media",
+			{
+				"reference_key": "extraction_endpoint",
+				"reference_role": "General",
+				"asset_version": self.version,
+				"label": "Observed tissue extraction endpoint",
+			},
+		)
+		self.project.save(ignore_permissions=True)
+		with patch("frappe.enqueue"):
+			result = create_product_batch(self.project.name, auto_render=False)
+		request = frappe.parse_json(frappe.get_doc("Creative Batch", result["batch"]).request_json)
+		self.assertIn("extraction_endpoint", [row["reference_key"] for row in request["references"]])
+
 	def test_heroes_rotate_and_each_video_copies_only_its_product(self):
 		from joymedia.api.creative import create_product_batch
 		from joymedia.services.generation.creative_batch import _create_variant
@@ -963,6 +1534,135 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.assertEqual(["other_product"], [r.identity_key for r in variant.selected_media])
 		with self.assertRaises(ValueError), patch("frappe.enqueue"):
 			create_product_batch(self.project.name, hero_products=["not_selected"])
+
+	def test_variant_reuses_qualified_pose_of_selected_character(self):
+		from joymedia.api.creative import create_product_batch
+		from joymedia.services.generation.creative_batch import _create_variant
+
+		original = frappe.copy_doc(frappe.get_doc("Asset Version", self.version)).insert(
+			ignore_permissions=True
+		)
+		pose = frappe.copy_doc(frappe.get_doc("Asset Version", self.version)).insert(ignore_permissions=True)
+		frappe.db.set_value(
+			"Asset Version",
+			pose.name,
+			{
+				"analysis_status": "Ready",
+				"analysis_json": frappe.as_json(
+					{
+						"source_asset_version": original.name,
+						"pose_qualification_version": 2,
+						"qualified_pose_and_support": "standing on two visible feet",
+						"qualified_pose_view": "front",
+					}
+				),
+			},
+		)
+		self.project.append(
+			"selected_media",
+			{
+				"reference_key": "mascot_front",
+				"identity_key": "mascot",
+				"reference_role": "Character",
+				"asset_version": original.name,
+			},
+		)
+		self.project.save(ignore_permissions=True)
+		# A new batch starts from the root input project.  The qualified pose was
+		# promoted by an earlier video, so it must be discovered across the family
+		# rather than only from the root's selected-media rows.
+		prior = frappe.get_doc(
+			{
+				"doctype": "Media Project",
+				"project_name": "Earlier pose study",
+				"product_name": self.project.product_name,
+				"version_of": self.project.name,
+				"owner": self.project.owner,
+			}
+		).insert(ignore_permissions=True)
+		prior.append(
+			"selected_media",
+			{
+				"reference_key": "mascot_standing",
+				"identity_key": "mascot",
+				"reference_role": "Character",
+				"asset_version": pose.name,
+			},
+		)
+		prior.save(ignore_permissions=True)
+		with patch("frappe.enqueue"):
+			result = create_product_batch(
+				self.project.name,
+				auto_render=False,
+				reference_keys=["product", "mascot_front"],
+			)
+		batch = frappe.get_doc("Creative Batch", result["batch"])
+		with patch("joymedia.services.generation.creative_batch.persist_execution_pin"):
+			variant = _create_variant(batch, frappe.parse_json(batch.request_json), 0)
+		self.assertEqual(
+			{"product", "mascot_front", "mascot_standing"},
+			{row.reference_key for row in variant.selected_media},
+		)
+		front = next(row for row in variant.selected_media if row.reference_key == "mascot_front")
+		standing = next(row for row in variant.selected_media if row.reference_key == "mascot_standing")
+		self.assertEqual(
+			front.asset_version,
+			frappe.parse_json(frappe.db.get_value("Asset Version", standing.asset_version, "analysis_json"))[
+				"source_asset_version"
+			],
+		)
+
+	def test_variant_does_not_reuse_unqualified_legacy_pose(self):
+		from joymedia.api.creative import create_product_batch
+		from joymedia.services.generation.creative_batch import _create_variant
+
+		original = frappe.copy_doc(frappe.get_doc("Asset Version", self.version)).insert(
+			ignore_permissions=True
+		)
+		pose = frappe.copy_doc(frappe.get_doc("Asset Version", self.version)).insert(ignore_permissions=True)
+		frappe.db.set_value(
+			"Asset Version",
+			pose.name,
+			{
+				"analysis_status": "Ready",
+				"analysis_json": frappe.as_json(
+					{
+						"source_asset_version": original.name,
+						"pose_and_support": "standing on two visible feet",
+						"view": "front",
+					}
+				),
+			},
+		)
+		self.project.append(
+			"selected_media",
+			{
+				"reference_key": "mascot_front",
+				"identity_key": "mascot",
+				"reference_role": "Character",
+				"asset_version": original.name,
+			},
+		)
+		self.project.append(
+			"selected_media",
+			{
+				"reference_key": "old_pose",
+				"identity_key": "mascot",
+				"reference_role": "Character",
+				"asset_version": pose.name,
+			},
+		)
+		self.project.save(ignore_permissions=True)
+		with patch("frappe.enqueue"):
+			result = create_product_batch(
+				self.project.name,
+				auto_render=False,
+				reference_keys=["product", "mascot_front"],
+			)
+		batch = frappe.get_doc("Creative Batch", result["batch"])
+		with patch("joymedia.services.generation.creative_batch.persist_execution_pin"):
+			variant = _create_variant(batch, frappe.parse_json(batch.request_json), 0)
+		self.assertNotIn("old_pose", {row.reference_key for row in variant.selected_media})
 
 	def test_reviewer_notes_rewrite_only_unrendered_scripts_and_keep_history(self):
 		from joymedia.services.generation.creative_batch import revise_variant, start_variant_render
@@ -1083,6 +1783,25 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.assertIn(sample_script()["scenes"][0]["visible_change"], demo["scenes"][0]["continuity"])
 		self.assertEqual([], demo["timing_warnings"])
 
+	def test_ai_scene_names_remain_unique_through_the_workbook(self):
+		from joymedia.services.planning.creative import unique_scene_names
+		from joymedia.services.planning.workbook import read_workbook
+
+		script = sample_script()
+		script["scenes"][0]["beat_name"] = "Product Use"
+		script["scenes"][1]["beat_name"] = " product   use "
+		original_actions = [scene["action"] for scene in script["scenes"]]
+		unique_scene_names(script)
+		with tempfile.TemporaryDirectory() as directory:
+			path = Path(directory) / "unique-scenes.xlsx"
+			path.write_bytes(script_workbook(script, self.project))
+			parsed = read_workbook(path)
+		self.assertEqual(
+			["Product Use", "product use (2)"],
+			[scene["beat_name"] for scene in parsed["demos"][0]["scenes"]],
+		)
+		self.assertEqual(original_actions, [scene["action"] for scene in parsed["demos"][0]["scenes"]])
+
 	def test_subject_travel_survives_template_import_for_shared_camera_policy(self):
 		from joymedia.services.planning.camera import infer_cinematic_intent
 		from joymedia.services.planning.shot_structure import authored_coverage
@@ -1138,6 +1857,106 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.assertFalse(_write(batch.name, first, "Planning", changed_index=0))
 		self.assertEqual("Cancelled", batch.reload().status)
 
+	def test_two_variants_can_progress_while_a_third_waits_for_a_slot(self):
+		from joymedia.services.generation.creative_batch import _queue_prepare
+
+		batch = self.batch(3)
+		variants = frappe.parse_json(batch.variants_json)
+		variants[0]["status"] = "Rendering"
+		variants[1]["status"] = "Keyframes"
+		batch.db_set("variants_json", frappe.as_json(variants))
+		with (
+			patch("joymedia.services.generation.creative_batch.is_render_alive", return_value=False),
+			patch(
+				"joymedia.services.generation.creative_batch._planning_queue",
+				return_value="joymedia_planning",
+			),
+			patch("frappe.enqueue") as enqueue,
+		):
+			_queue_prepare(batch.name, variants)
+			enqueue.assert_not_called()
+			variants[0]["status"] = "Completed"
+			batch.db_set("variants_json", frappe.as_json(variants))
+			_queue_prepare(batch.name, variants)
+			enqueue.assert_called_once()
+			self.assertEqual("joymedia_planning", enqueue.call_args.kwargs["queue"])
+			self.assertEqual(f"joymedia-creative-prepare:{batch.name}:2", enqueue.call_args.kwargs["job_id"])
+
+	def test_planning_falls_back_to_long_queue_when_no_planning_worker_is_online(self):
+		from joymedia.services.generation.creative_batch import _planning_queue
+
+		with (
+			patch(
+				"joymedia.services.generation.creative_batch.get_queues_timeout",
+				return_value={"joymedia_planning": 3600},
+			),
+			patch("joymedia.services.generation.creative_batch.get_queue", return_value="planning"),
+			patch("joymedia.services.generation.creative_batch.get_workers", return_value=[]),
+		):
+			self.assertEqual("long", _planning_queue())
+
+	def test_planner_outage_waits_for_recovery_without_spending_creative_retry(self):
+		from joymedia.services.generation.creative_batch import _defer_planner_outage, _next_prepare_index
+		from joymedia.services.planning.production import PlannerUnavailableError
+
+		variants = [{"status": "Planning", "nonce": "same-concept", "automatic_script_redraws": 0}]
+		with patch("joymedia.services.generation.creative_batch.time.time", return_value=1000):
+			self.assertTrue(_defer_planner_outage(variants[0], PlannerUnavailableError("connection refused")))
+			self.assertEqual("Queued", variants[0]["status"])
+			self.assertEqual(1060, variants[0]["retry_after"])
+			self.assertIsNone(_next_prepare_index(variants))
+		with patch("joymedia.services.generation.creative_batch.time.time", return_value=1061):
+			self.assertEqual(0, _next_prepare_index(variants))
+		self.assertEqual("same-concept", variants[0]["nonce"])
+		self.assertEqual(0, variants[0]["automatic_script_redraws"])
+
+	def test_invalid_automatic_script_gets_new_concept_with_failure_history(self):
+		from joymedia.services.generation.creative_batch import _redraw_invalid_automatic_script
+
+		variant = {"status": "Planning", "nonce": "rejected-concept"}
+		failure = ValueError(
+			"Automatic script remained invalid after bounded repair: "
+			"Scene 1 cleans a mess that never happened on camera."
+		)
+		self.assertTrue(_redraw_invalid_automatic_script(variant, failure))
+		self.assertEqual("Queued", variant["status"])
+		self.assertNotEqual("rejected-concept", variant["nonce"])
+		self.assertIn("Scene 1 cleans", variant["script_attempts"][0]["error"])
+		self.assertFalse(_redraw_invalid_automatic_script(variant, ValueError("Missing product reference")))
+		self.assertTrue(
+			_redraw_invalid_automatic_script(
+				variant, ValueError("The planner returned invalid JSON after retry: no object")
+			)
+		)
+
+	def test_interrupted_planning_resumes_even_when_both_slots_are_occupied(self):
+		from joymedia.services.generation.creative_batch import (
+			_next_prepare_index,
+			_prepare_position,
+			_queue_prepare,
+		)
+
+		batch = self.batch(3)
+		variants = frappe.parse_json(batch.variants_json)
+		variants[0]["status"] = "Queued"
+		variants[1]["status"] = "Planning"
+		variants[2]["status"] = "Rendering"
+		batch.db_set("variants_json", frappe.as_json(variants))
+		self.assertEqual(1, _next_prepare_index(variants))
+		self.assertEqual(1, _prepare_position(variants, 1))
+		self.assertIsNone(_prepare_position(variants, 0))
+		with (
+			patch("joymedia.services.generation.creative_batch.is_render_alive", return_value=False),
+			patch(
+				"joymedia.services.generation.creative_batch._planning_queue",
+				return_value="joymedia_planning",
+			),
+			patch("frappe.enqueue") as enqueue,
+		):
+			_queue_prepare(batch.name, variants)
+			self.assertEqual(f"joymedia-creative-prepare:{batch.name}:1", enqueue.call_args.kwargs["job_id"])
+			self.assertEqual(1, enqueue.call_args.kwargs["position"])
+
 	def test_automatic_render_does_not_override_failed_keyframe_review(self):
 		from joymedia.services.generation.creative_batch import advance_batch
 		from joymedia.tests.editing.test_timeline import _create_workflow
@@ -1145,6 +1964,10 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.project.db_set("workflow", _create_workflow())
 
 		batch = self.batch()
+		request = frappe.parse_json(batch.request_json)
+		request["delivery_mode"] = "assisted"
+		request["auto_first_frames"] = False  # Explicit legacy assisted review path.
+		batch.db_set("request_json", frappe.as_json(request))
 		variant = frappe.parse_json(batch.variants_json)[0]
 		variant.update(project=self.project.name, status="Keyframes")
 		batch.db_set({"status": "Rendering", "variants_json": frappe.as_json([variant])})
@@ -1166,7 +1989,12 @@ class TestCreativeWorkflow(FrappeTestCase):
 				"consistency_notes": "Unsupported seated geometry",
 			},
 		)
+		self.project.db_set("storyboard_approval_status", "Approved")
 		with (
+			patch(
+				"joymedia.services.generation.creative_batch.partner_batch_waits_for_gpu", return_value=False
+			),
+			patch("joymedia.services.generation.creative_batch._stale_keyframe", return_value=False),
 			patch("joymedia.services.keyframes.stage.set_keyframe_approval") as approve,
 			patch.object(frappe.db, "rollback"),
 		):
@@ -1178,10 +2006,48 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.assertEqual("Pictures Ready", variant["status"])
 		self.assertEqual({shot.name: "Unsupported seated geometry"}, variant["picture_notes"])
 
-	def test_explicit_automatic_delivery_continues_after_first_frames(self):
-		from contextlib import nullcontext
+	def test_assisted_batch_automatically_repairs_first_frames_when_requested(self):
+		from joymedia.services.generation.creative_batch import advance_batch
+		from joymedia.tests.editing.test_timeline import _create_workflow
 
-		from joymedia.services.generation.automation import current_delivery
+		self.project.db_set("workflow", _create_workflow())
+		batch = self.batch()
+		request = frappe.parse_json(batch.request_json)
+		request.update(delivery_mode="assisted", auto_first_frames=True)
+		variant = frappe.parse_json(batch.variants_json)[0]
+		variant.update(project=self.project.name, status="Keyframes")
+		batch.db_set(
+			{
+				"status": "Rendering",
+				"request_json": frappe.as_json(request),
+				"variants_json": frappe.as_json([variant]),
+			}
+		)
+		shot = frappe.get_doc(
+			{
+				"doctype": "Shot",
+				"media_project": self.project.name,
+				"shot_number": 1,
+				"duration_seconds": 10,
+				"generation_prompt": "Act.",
+			}
+		).insert(ignore_permissions=True)
+		with (
+			patch("joymedia.services.review.physical_audit.audit_frames"),
+			patch("joymedia.services.generation.creative_batch._audit_rejected_first_frames") as rejected,
+			patch(
+				"joymedia.services.generation.creative_batch._frame_corrections",
+				return_value={shot.name: ["Critical geometry: unsupported body"]},
+			),
+			patch(
+				"joymedia.services.generation.creative_batch._start_frame_corrections", return_value=True
+			) as repair,
+		):
+			advance_batch(batch.name)
+		rejected.assert_called_once()
+		repair.assert_called_once()
+
+	def test_explicit_automatic_delivery_stops_on_unqualified_first_frames(self):
 		from joymedia.services.generation.creative_batch import advance_batch
 		from joymedia.tests.editing.test_timeline import _create_workflow
 
@@ -1190,7 +2056,14 @@ class TestCreativeWorkflow(FrappeTestCase):
 		request = frappe.parse_json(batch.request_json)
 		request.update(auto_render=True, delivery_mode="automatic")
 		variant = frappe.parse_json(batch.variants_json)[0]
-		variant.update(project=self.project.name, status="Keyframes")
+		from joymedia.services.generation import creative_batch
+
+		# Scene repairs are spent: a remaining critical frame cannot be animated.
+		variant.update(
+			project=self.project.name,
+			status="Keyframes",
+			automatic_scene_rewrites=creative_batch.AUTOMATIC_SCENE_REWRITES,
+		)
 		batch.db_set(
 			{
 				"status": "Rendering",
@@ -1211,34 +2084,33 @@ class TestCreativeWorkflow(FrappeTestCase):
 			"Shot", shot.name, {"keyframe_artifact": "generated-frame", "consistency_status": "Checking"}
 		)
 
-		def render(project):
-			self.assertEqual("automatic", current_delivery()["mode"])
-			return {"run": "automatic-run", "status": "Queued"}
-
 		with (
 			patch("joymedia.services.generation.creative_batch._storyboard_with_frames") as workbook,
-			patch(
-				"joymedia.services.generation.creative_batch._keyframe_ready",
-				side_effect=AssertionError("No manual gate"),
-			),
-			patch(
-				"joymedia.services.generation.creative_batch.pinned_execution",
-				side_effect=lambda *a: nullcontext(),
-			),
+			patch("joymedia.services.generation.creative_batch._keyframe_ready", return_value=False),
+			patch("joymedia.services.generation.creative_batch._stale_keyframe", return_value=False),
 			patch("joymedia.services.keyframes.stage.set_keyframe_approval") as authorize,
-			patch.object(type(self.project), "generate_video", autospec=True, side_effect=render),
+			patch.object(type(self.project), "generate_video", autospec=True) as render,
+			# Frame redraws are spent too: the finding is retained in the stop reason.
+			patch.object(creative_batch, "AUTOMATIC_FRAME_CORRECTIONS", 0),
 		):
 			advance_batch(batch.name)
 			workbook.assert_not_called()
 			authorize.assert_not_called()
-			frappe.db.set_value("Shot", shot.name, "consistency_status", "Passed")
+			frappe.db.set_value(
+				"Shot",
+				shot.name,
+				{
+					"consistency_status": "Needs Review",
+					"consistency_notes": "Critical geometry: character pose differs from the reference.",
+				},
+			)
 			advance_batch(batch.name)
 			workbook.assert_called_once()
-			authorize.assert_called_once()
+			authorize.assert_not_called()
+			render.assert_not_called()
 		result = frappe.parse_json(batch.reload().variants_json)[0]
-		self.assertEqual("Rendering", result["status"])
-		self.assertEqual("deferred", result["frame_authorization"]["quality_review"])
-		self.assertIsNone(current_delivery())
+		self.assertEqual("Needs Attention", result["status"])
+		self.assertIn("Critical geometry", result["picture_notes"][shot.name])
 
 	def test_delivery_policy_is_frozen_without_changing_site_or_other_requests(self):
 		from joymedia.services.generation.automation import delivery_context
@@ -1275,7 +2147,12 @@ class TestCreativeWorkflow(FrappeTestCase):
 				self.assertEqual("Rendering", frappe.parse_json(batch.reload().variants_json)[0]["status"])
 		from joymedia.services.generation.creative_batch import _transient
 
-		self.assertTrue(_transient(RuntimeError("(1020, \"Record has changed since last read in table 'tabSeries'\")")))
+		self.assertTrue(
+			_transient(RuntimeError("(1020, \"Record has changed since last read in table 'tabSeries'\")"))
+		)
+		self.assertTrue(
+			_transient(ValueError("This scene is still being rendered. Please wait until it is ready."))
+		)
 
 	def test_retry_after_failed_render_rerenders_only_scenes_without_a_take(self):
 		from joymedia.services.generation.creative_batch import rerender_failed_scenes
@@ -1406,6 +2283,57 @@ class TestCreativeWorkflow(FrappeTestCase):
 		approve.assert_called_once_with(self.project.name, shot.name)
 		self.assertEqual("Rendering", frappe.parse_json(batch.reload().variants_json)[0]["status"])
 
+	def test_scene_prompt_retry_replaces_only_the_selected_scene_and_resumes_automatic_cut(self):
+		from joymedia.services.generation.creative_batch import retry_variant_scene_with_prompt
+		from joymedia.tests.editing.test_timeline import _create_workflow
+
+		self.project.db_set("workflow", _create_workflow())
+		batch = self.batch()
+		variant = frappe.parse_json(batch.variants_json)[0]
+		variant.update(project=self.project.name, status="Completed")
+		batch.db_set({"status": "Completed", "variants_json": frappe.as_json([variant])})
+		shot = frappe.get_doc(
+			{
+				"doctype": "Shot",
+				"media_project": self.project.name,
+				"shot_number": 1,
+				"duration_seconds": 10,
+				"generation_prompt": "The mascot holds the exact pack.",
+				"image_prompt": "Keep the approved pack frame.",
+			}
+		).insert(ignore_permissions=True)
+		self.project.db_set("storyboard_approval_status", "Approved")
+		with (
+			patch("joymedia.services.generation.takes._ensure_scene_free"),
+			patch(
+				"joymedia.services.planning.llm.generate_shot_revision",
+				return_value={
+					"summary": "Use a brisk dolly-in while the mascot pulls one tissue.",
+					"generation_prompt": "A brisk dolly-in as the mascot pulls one tissue.",
+					"image_prompt": "must not be used for a video-only retry",
+				},
+			),
+			patch("joymedia.services.planning.signature.compute_plan_signature", return_value="sealed"),
+			patch("joymedia.services.generation.creative_batch.pinned_execution"),
+			patch("joymedia.services.generation.creative_batch.delivery_context"),
+			patch(
+				"joymedia.services.generation.takes.regenerate_scene", return_value={"run": "RETRY-1"}
+			) as render,
+		):
+			result = retry_variant_scene_with_prompt(
+				batch.name, 0, shot.name, "Make the pull quick and add a cinematic dolly-in."
+			)
+		self.assertEqual("Rendering", result["status"])
+		render.assert_called_once_with(self.project.name, shot.name, automatic=True)
+		updated = frappe.get_doc("Shot", shot.name)
+		self.assertEqual("A brisk dolly-in as the mascot pulls one tissue.", updated.generation_prompt)
+		self.assertEqual("Keep the approved pack frame.", updated.image_prompt)
+		self.assertIsNone(updated.selected_output_asset_version)
+		state = frappe.parse_json(batch.reload().variants_json)[0]
+		self.assertEqual("Rendering", state["status"])
+		self.assertEqual("RETRY-1", state["generation_request"]["run"])
+		self.assertEqual(shot.name, state["scene_prompt_revisions"][-1]["shot"])
+
 	def test_retry_resumes_failed_stage_without_erasing_evidence_or_cancel_state(self):
 		from joymedia.api.creative import retry_product_variant
 
@@ -1457,6 +2385,32 @@ class TestCreativeWorkflow(FrappeTestCase):
 			export.assert_called_once_with(self.project.name, purpose="review")
 		self.assertEqual("Exporting", frappe.parse_json(batch.reload().variants_json)[0]["status"])
 
+	def test_automatic_narration_waits_for_the_finished_timeline(self):
+		from joymedia.services.generation.creative_batch import advance_batch
+
+		batch = self.batch()
+		request = frappe.parse_json(batch.request_json)
+		request.update(auto_render=True, delivery_mode="automatic")
+		variant = frappe.parse_json(batch.variants_json)[0]
+		variant.update(project=self.project.name, status="Finishing")
+		batch.db_set(
+			{
+				"status": "Finishing",
+				"request_json": frappe.as_json(request),
+				"variants_json": frappe.as_json([variant]),
+			}
+		)
+		self.project.db_set("post_production_status", "Completed")
+		cue = {"role": "Voiceover", "scheduled": False, "shot": "SHOT-VOICE"}
+		with (
+			patch("joymedia.services.audio.plan.build_audio_plan", return_value=[cue]),
+			patch("joymedia.services.audio.speech.generate_voiceover") as voice,
+			patch("joymedia.services.editing.export_jobs.queue_project_timeline_export") as export,
+		):
+			advance_batch(batch.name)
+		voice.assert_called_once_with(self.project.name, "SHOT-VOICE")
+		export.assert_called_once_with(self.project.name, purpose="review")
+
 	def test_failed_render_resumes_only_after_complete_native_selection_and_not_cancellation(self):
 		from joymedia.services.generation.creative_batch import advance_batch
 
@@ -1495,12 +2449,64 @@ class TestCreativeWorkflow(FrappeTestCase):
 				self.assertEqual(should_finish, finishing.called)
 
 
+class TestRejectedFirstFrameAudit(TestCase):
+	def test_rejected_candidate_supplies_scene_repair_evidence_once(self):
+		from joymedia.services.generation.creative_batch import _audit_rejected_first_frames
+
+		shot = frappe._dict(
+			name="SHOT-test", keyframe_artifact=None, consistency_status="", consistency_notes=""
+		)
+		candidate = frappe._dict(name="GART-rejected", frappe_file="/private/files/rejected.png")
+		audited = {}
+		with (
+			patch.object(frappe.db, "sql", return_value=[candidate]) as query,
+			patch("frappe.get_doc", return_value=shot),
+			patch(
+				"joymedia.services.review.physical_audit.frame_findings",
+				return_value=["Critical geometry: actor passes through the table"],
+			) as review,
+			patch.object(frappe.db, "set_value") as save,
+		):
+			self.assertEqual(
+				[shot.name], _audit_rejected_first_frames("project", [shot], "RUN-test", audited)
+			)
+			self.assertEqual([], _audit_rejected_first_frames("project", [shot], "RUN-test", audited))
+		self.assertEqual("GART-rejected", audited[shot.name])
+		self.assertEqual("Needs Review", shot.consistency_status)
+		self.assertIn("passes through", shot.consistency_notes)
+		self.assertEqual(2, query.call_count)
+		review.assert_called_once()
+		save.assert_called_once()
+
+
 class TestUnprotectedPicture(TestCase):
 	def test_selected_first_frame_supersedes_stale_generated_frame(self):
 		from joymedia.services.generation import creative_batch
 
-		shot = frappe._dict(name="S", keyframe_artifact="old", consistency_status="Needs Review")
-		with patch("joymedia.services.generation.creative_batch._explicit_first_frame", return_value="source"):
+		shot = frappe._dict(
+			name="S",
+			media_project="P",
+			keyframe_artifact="old",
+			consistency_status="Needs Review",
+			generation_inputs=[
+				frappe._dict(reference_role="Product", asset_version="PACK"),
+				frappe._dict(reference_role="first_frame", asset_version="FRAME"),
+			],
+		)
+		with (
+			patch("joymedia.services.generation.creative_batch._explicit_first_frame", return_value="FRAME"),
+			patch("frappe.get_doc", return_value=frappe._dict(name="P")),
+			patch(
+				"joymedia.services.keyframes.product_review.assert_product_frame_ready",
+				side_effect=ValueError("review"),
+			),
+		):
+			self.assertFalse(creative_batch._keyframe_ready(shot))
+		with (
+			patch("joymedia.services.generation.creative_batch._explicit_first_frame", return_value="FRAME"),
+			patch("frappe.get_doc", return_value=frappe._dict(name="P")),
+			patch("joymedia.services.keyframes.product_review.assert_product_frame_ready"),
+		):
 			self.assertTrue(creative_batch._keyframe_ready(shot))
 
 	def test_an_unlocked_label_is_never_ready_automatically(self):
@@ -1509,7 +2515,9 @@ class TestUnprotectedPicture(TestCase):
 		shot = frappe._dict(name="S", keyframe_artifact="A", consistency_status="Passed", keyframe_status="")
 		with (
 			patch("joymedia.services.generation.creative_batch._explicit_first_frame", return_value=None),
-			patch("frappe.db.get_value", return_value=json.dumps({"items": [], "unprotected": "paw over pack"})),
+			patch(
+				"frappe.db.get_value", return_value=json.dumps({"items": [], "unprotected": "paw over pack"})
+			),
 		):
 			self.assertTrue(creative_batch._unprotected(shot))
 			self.assertFalse(creative_batch._keyframe_ready(shot))
@@ -1562,6 +2570,16 @@ class TestSelectedReviewOutputs(TestCase):
 class TestAutomaticScriptContracts(TestCase):
 	inventory: ClassVar = [{"key": "product", "role": "Product"}]
 	constraints: ClassVar = {"duration_seconds": 10, "aspect_ratio": "16:9"}
+
+	def test_unambiguous_actor_action_recovers_omitted_closing_cast(self):
+		script = sample_script()
+		script["scenes"][-1]["action"] = (
+			"[0-2s] The bear places the product on the table.\n[2-4s] The bear turns it forward."
+		)
+		validated = validate_script(
+			script, [*self.inventory, {"key": "bear", "role": "Character"}], self.constraints
+		)
+		self.assertEqual(["bear"], validated["scenes"][-1]["cast"])
 
 	def test_static_product_packshot_does_not_add_idle_actor(self):
 		script = sample_script()
@@ -1632,6 +2650,21 @@ class TestAutomaticScriptContracts(TestCase):
 		script["scenes"][0]["continuity_rules"] = "The product remains on the table."
 		self.assertTrue(validate_script(script, self.inventory, self.constraints))
 
+	def test_display_names_use_the_clients_product_name_and_never_block(self):
+		from joymedia.services.planning import creative
+
+		script = sample_script()
+		titles = {"lines": ["Quảng cáo Giấy lụa Shera"] + [f"Cảnh {i}" for i in range(len(script["scenes"]))]}
+		with patch("joymedia.services.planning.production._ask_planner", return_value=titles) as ask:
+			creative.display_names(script, "Vietnamese", "Giấy lụa Shera")
+		self.assertIn('"Giấy lụa Shera"', ask.call_args.args[0])
+		self.assertEqual("Quảng cáo Giấy lụa Shera", script["display_title"])
+		self.assertEqual("Cảnh 0", script["scenes"][0]["display_name"])
+		failing = sample_script()
+		with patch("joymedia.services.planning.production._ask_planner", side_effect=RuntimeError("down")):
+			creative.display_names(failing, "Vietnamese")
+		self.assertNotIn("display_title", failing)
+
 	def test_the_format_comes_from_the_input_never_an_assumed_reel(self):
 		from joymedia.services.planning.creative import _ratio_text
 
@@ -1647,6 +2680,10 @@ class TestAutomaticScriptContracts(TestCase):
 			validate_script(script, self.inventory, self.constraints)
 		script["scenes"][0]["action"] = (
 			"[0-1s] A cup tips over, spilling juice.\n[1-6s] Wipe the spill with the product."
+		)
+		self.assertTrue(validate_script(script, self.inventory, self.constraints))
+		script["scenes"][0]["action"] = (
+			"[0-1s] Crumbs fall onto the table.\n[1-6s] Wipe the crumbs with the product."
 		)
 		self.assertTrue(validate_script(script, self.inventory, self.constraints))
 
@@ -1679,6 +2716,20 @@ class TestAutomaticScriptContracts(TestCase):
 			validate_script(
 				sample_script(), [*self.inventory, {"key": "mascot", "role": "Character"}], self.constraints
 			)
+		with_character = sample_script()
+		with_character["scenes"][0]["cast"] = ["mascot"]
+		self.assertEqual(
+			with_character,
+			validate_script(
+				with_character,
+				[
+					*self.inventory,
+					{"key": "mascot", "role": "Character"},
+					{"key": "optional_view", "role": "Character"},
+				],
+				self.constraints,
+			),
+		)
 
 	def test_body_parts_need_a_cast_actor_and_scripts_stay_english(self):
 		script = sample_script()
@@ -1757,6 +2808,17 @@ class TestAutomaticScriptContracts(TestCase):
 		self.assertEqual(
 			[], normalize_product_wording(sample_script(), [{"key": "p", "role": "Product", "views": []}])
 		)
+		uncertain = [
+			{
+				"key": "product",
+				"role": "Product",
+				"views": [{"description": "A rectangular package with uncertain construction."}],
+			}
+		]
+		script = sample_script()
+		script["scenes"][0]["action"] = "[0-6s] Lift the tissue box."
+		normalize_product_wording(script, uncertain)
+		self.assertEqual("[0-6s] Lift the pack.", script["scenes"][0]["action"])
 
 	def test_style_subjects_are_removed_without_a_rewrite(self):
 		from joymedia.services.planning.creative import normalize_product_wording
@@ -1880,7 +2942,7 @@ class TestAutomaticScriptContracts(TestCase):
 						{
 							"beat_name": "Hook",
 							"duration_seconds": 3,
-							"visual_camera": "Close-up",
+							"visual_camera": "Close-up of secret spill",
 							"action": "A secret story action",
 							"voice_over": "A memorable example line here",
 						}
@@ -1894,8 +2956,127 @@ class TestAutomaticScriptContracts(TestCase):
 		):
 			result = script_exemplars(["file"], 0)
 		self.assertNotIn("secret story action", json.dumps(result))
+		self.assertNotIn("secret spill", json.dumps(result["examples"]))
+		self.assertNotIn("memorable example", json.dumps(result["examples"]))
+		self.assertEqual(["close_up"], result["examples"][0]["scenes"][0]["shot_sizes"])
+		self.assertEqual(["action_hook"], result["examples"][0]["marketing_rhythm"])
+		self.assertEqual(1, result["examples"][0]["scenes"][0]["duration_share"])
+		self.assertNotIn("duration", result["examples"][0])
 		self.assertEqual(["Gentle", "Fresh"], result["claims"])
 		self.assertEqual(["a memorable example line here"], result["voice_lines"])
+
+	def test_commercial_rhythm_requires_progression_not_repeated_handling(self):
+		from joymedia.services.planning.creative import commercial_action_findings
+
+		flat = [
+			{"action": "[0-5s] The mascot grips the pack.", "duration_seconds": 5, "narrative_stage": "grip"},
+			{
+				"action": "[0-5s] The mascot grips the pack again.",
+				"duration_seconds": 5,
+				"narrative_stage": "grip",
+			},
+			{
+				"action": "[0-5s] The mascot grips the pack once more.",
+				"duration_seconds": 5,
+				"narrative_stage": "grip",
+			},
+			{"action": "[0-5s] The mascot grips the pack.", "duration_seconds": 5, "narrative_stage": "grip"},
+			{
+				"action": "[0-5s] The product remains heroically displayed.",
+				"duration_seconds": 5,
+				"narrative_stage": "hero",
+			},
+		]
+		self.assertGreaterEqual(len(commercial_action_findings(flat, 25)), 3)
+		progressive = [
+			{
+				"action": "[0-2s] The mascot opens the pack.\n[2-5s] It extracts one sheet.",
+				"duration_seconds": 5,
+				"narrative_stage": "extract",
+			},
+			{
+				"action": "[0-5s] The mascot unfolds the sheet.",
+				"duration_seconds": 5,
+				"narrative_stage": "unfold",
+			},
+			{
+				"action": "[0-5s] The mascot presses the sheet against the visible surface.",
+				"duration_seconds": 5,
+				"narrative_stage": "detail",
+			},
+			{
+				"action": "[0-5s] The mascot smiles at the finished result.",
+				"duration_seconds": 5,
+				"narrative_stage": "feel",
+			},
+			{
+				"action": "[0-5s] The pack holds a stable hero view.",
+				"duration_seconds": 5,
+				"narrative_stage": "hero",
+			},
+		]
+		self.assertEqual([], commercial_action_findings(progressive, 25))
+		repeated = [
+			{
+				"action": "[0-5s] The mascot rubs the sheet.",
+				"duration_seconds": 5,
+				"narrative_stage": stage,
+				"camera_move": "static",
+			}
+			for stage in ("extract", "detail", "feel", "inspect", "present")
+		] + [
+			{
+				"action": "[0-5s] The product is shown.",
+				"duration_seconds": 5,
+				"narrative_stage": "hero",
+				"camera_move": "static",
+			}
+		]
+		findings = commercial_action_findings(repeated, 30)
+		self.assertTrue(any("repeat the same" in finding for finding in findings))
+		adjacent = [
+			{"action": "[0-5s] The actor unfolds the sheet.", "duration_seconds": 5, "narrative_stage": stage}
+			for stage in ("unfold", "detail", "feel", "present")
+		] + [{"action": "[0-5s] The product is shown.", "duration_seconds": 5, "narrative_stage": "hero"}]
+		self.assertTrue(
+			any("repeat the same" in finding for finding in commercial_action_findings(adjacent, 25))
+		)
+		static_tail = [
+			*progressive[:-1],
+			{
+				"action": "[0-5s] The pack remains on the table.",
+				"duration_seconds": 5,
+				"narrative_stage": "present",
+				"cast": [],
+			},
+			{
+				"action": "[0-5s] The pack remains on the table.",
+				"duration_seconds": 5,
+				"narrative_stage": "hero",
+				"cast": [],
+			},
+		]
+		self.assertTrue(
+			any(
+				"last two scenes repeat" in finding for finding in commercial_action_findings(static_tail, 30)
+			)
+		)
+
+	def test_example_marketing_rhythm_classifies_vietnamese_without_exposing_it(self):
+		from joymedia.services.planning.creative import marketing_job
+
+		self.assertEqual(
+			"product_response",
+			marketing_job({"action": "Mascot rút một tờ giấy từ hộp."}, 1, 6),
+		)
+		self.assertEqual(
+			"tactile_proof",
+			marketing_job({"action": "Giấy thấm nhanh và lau sạch bề mặt."}, 2, 6),
+		)
+		self.assertEqual(
+			"payoff",
+			marketing_job({"action": "Nhân vật mỉm cười, nhẹ nhõm."}, 3, 6),
+		)
 
 
 class TestReviewerRevision(TestCase):
@@ -1937,6 +3118,38 @@ class TestIdentityGroups(TestCase):
 		self.assertNotEqual(keys[0], keys[1])  # a colour variant is another product
 		self.assertEqual(keys[4], keys[5])
 		self.assertEqual("pack_400_blue", keys[0])
+
+	def test_legacy_named_views_merge_without_overriding_explicit_identity(self):
+		from unittest.mock import Mock
+
+		from joymedia.services.intake import project as intake
+
+		rows = [
+			frappe._dict(
+				reference_role="Character", reference_key="front", identity_key="front", asset_version="a"
+			),
+			frappe._dict(
+				reference_role="Character", reference_key="side", identity_key="side", asset_version="b"
+			),
+			frappe._dict(
+				reference_role="Character",
+				reference_key="other",
+				identity_key="another_actor",
+				asset_version="c",
+			),
+		]
+		project = Mock(selected_media=rows)
+		files = {"a": "mascot_front.jpg", "b": "mascot.jpg", "c": "mascot_side.jpg"}
+
+		def get_doc(doctype, name):
+			if doctype == "Asset Version":
+				return frappe._dict(file=name)
+			return frappe._dict(file_name=files[name["file_url"]])
+
+		with patch.object(intake.frappe, "get_doc", side_effect=get_doc):
+			self.assertTrue(intake.coalesce_existing_named_views(project))
+		self.assertEqual(["front", "front", "another_actor"], [r.identity_key for r in rows])
+		project.save.assert_called_once_with(ignore_permissions=True)
 
 
 class TestCameraDirection(TestCase):
@@ -1998,6 +3211,26 @@ class TestCameraDirection(TestCase):
 
 		self.assertEqual([], vary_against_neighbours(scenes, 1))
 
+	def test_long_contact_commercial_gets_broad_and_hero_camera_travel(self):
+		from joymedia.services.planning.creative import direct_camera
+
+		scenes = self.scenes(*(["static"] * 6))
+		for index, scene in enumerate(scenes):
+			scene.update(
+				cast=["bear"] if index < 5 else [],
+				products=["pack"],
+				narrative_stage="establish" if index == 0 else "hero" if index == 5 else "detail",
+				shot_framing="wide" if index == 0 else "close_up",
+				action="[0-4s] The bear pulls a sheet."
+				if index < 5
+				else "[0-4s] The pack remains on the table.",
+			)
+		direct_camera(scenes)
+		# The hook moves around the cast (an arc); the finale pulls back; precise contact holds still.
+		self.assertEqual("arc", scenes[0]["camera_move"])
+		self.assertEqual("dolly_out", scenes[-1]["camera_move"])
+		self.assertTrue(all(scene["camera_move"] == "static" for scene in scenes[1:-1]))
+
 	def test_structured_travel_controls_camera_without_a_verb_keyword_match(self):
 		from joymedia.services.planning.creative import direct_camera
 
@@ -2034,6 +3267,15 @@ class TestCameraDirection(TestCase):
 		self.assertEqual([], direct_camera(scenes))
 
 	def test_viewer_text_follows_the_input_language(self):
+		actorless = sample_script()
+		actorless["scenes"][-1]["cast"] = []
+		actorless["scenes"][-1]["action"] = "[0-4s] The mascot places the pack on the table."
+		with self.assertRaisesRegex(ValueError, "describes an actor action but declares no cast"):
+			validate_script(
+				actorless,
+				[{"key": "product", "role": "Product"}],
+				{"duration_seconds": 10, "aspect_ratio": "16:9", "language": "Vietnamese"},
+			)
 		script = sample_script()
 		script["scenes"][-1]["on_screen_text"] = "Mua ngay hôm nay"
 		vi = {"duration_seconds": 10, "aspect_ratio": "16:9", "language": "Vietnamese"}
@@ -2116,7 +3358,7 @@ class TestAuthoredMoveReachesThePlan(TestCase):
 		self.assertEqual("establish", plan["motion_plan"]["shot_structure"]["stage"])
 		self.assertEqual("push_in", plan["motion_plan"]["camera_intent"]["behavior"])
 
-	def test_generated_workbook_move_is_not_treated_as_client_authored(self):
+	def test_generated_workbook_move_is_a_proposal_for_shared_camera_policy(self):
 		from joymedia.services.planning import production
 
 		project = frappe._dict(
@@ -2207,6 +3449,19 @@ class TestViewerTranslation(TestCase):
 		with patch(
 			"joymedia.services.planning.production._ask_planner",
 			return_value={"lines": ["Logo Shera. Chọn ngay!"]},
+		):
+			localize_viewer_text(script, "Vietnamese")
+		self.assertFalse(script.get("director_notes"))
+
+	def test_multiword_product_name_inside_vietnamese_line_is_not_flagged_as_untranslated(self):
+		from joymedia.services.planning.creative import localize_viewer_text
+
+		script = sample_script()
+		script["scenes"][0]["voice_over"] = "Try Shera Premium Tissues today."
+		script["scenes"][-1]["on_screen_text"] = ""
+		with patch(
+			"joymedia.services.planning.production._ask_planner",
+			return_value={"lines": ["Thử Shera Premium Tissues hôm nay."]},
 		):
 			localize_viewer_text(script, "Vietnamese")
 		self.assertFalse(script.get("director_notes"))

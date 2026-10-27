@@ -19,6 +19,7 @@ from joymedia.services.editing.access import (
 	_require_project_read,
 	_require_project_write,
 )
+from joymedia.services.editing.audio_lanes import choose_audio_track
 from joymedia.services.editing.composer import _get_asset_version_path, _has_audio_stream
 from joymedia.services.editing.export_jobs import (
 	_export_job_id,
@@ -1101,12 +1102,13 @@ def add_timeline_audio_clip(
 		frappe.throw(_("Unable to determine the audio asset duration."))
 	source_out = source_total_frames
 
-	existing_audio_indexes = frappe.get_all(
+	existing_audio_clips = frappe.get_all(
 		"Timeline Clip",
 		filters={"media_project": project.name, "track_type": "Audio"},
-		pluck="track_index",
+		fields=["track_index", "timeline_start_frame", "source_in_frame", "source_out_frame", "audio_role"],
 	)
-	next_audio_track_index = max([int(index or 0) for index in existing_audio_indexes] or [0]) + 1
+	role = audio_role or "BGM"
+	track_index = choose_audio_track(existing_audio_clips, role, start_frame, source_out)
 	order = (frappe.db.count("Timeline Clip", {"media_project": project.name}) or 0) + 1
 	new_clip = frappe.get_doc(
 		{
@@ -1114,7 +1116,7 @@ def add_timeline_audio_clip(
 			"media_project": project.name,
 			"clip_order": order,
 			"track_type": "Audio",
-			"track_index": next_audio_track_index,
+			"track_index": track_index,
 			"timeline_start_frame": start_frame,
 			"initial_timeline_start_frame": start_frame,
 			"enabled": 1,
@@ -1123,7 +1125,7 @@ def add_timeline_audio_clip(
 			"source_out_frame": source_out,
 			"initial_source_in_frame": 0,
 			"initial_source_out_frame": source_out,
-			"audio_role": audio_role or "BGM",
+			"audio_role": role,
 			"gain_db": 0.0,
 			"fade_in_frames": 0,
 			"fade_out_frames": 0,

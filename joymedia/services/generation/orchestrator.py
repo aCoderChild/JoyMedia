@@ -133,7 +133,12 @@ def _submit_run_with_global_capacity(run_name: str):
 			return _run_summary(run)
 		if run.status not in ACTIVE_RUN_STATUSES:
 			return _run_summary(run)
-		if _next_fair_run_name() != run.name:
+		selected_run = _next_fair_run_name()
+		if selected_run != run.name:
+			# The caller can be a different run's completion callback. Wake the
+			# selected run now, rather than waiting for the minute scheduler tick.
+			if selected_run and _has_global_submission_capacity():
+				_enqueue_submit_run(selected_run)
 			return _run_summary(run)
 
 		run.status = "Running"
@@ -421,6 +426,7 @@ def cancel_run(run_name: str):
 
 	run = frappe.get_doc("Generation Run", run_name)
 	if run.status in ("Completed", "Failed"):
+		sync_media_project_status_for_run(run.name)
 		return _run_summary(run)
 	run.status = "Cancelled"
 	run.completed_at = run.completed_at or now()
@@ -474,6 +480,7 @@ def cancel_run(run_name: str):
 		)
 	# Report the post-cancellation state, not the counters read before Stop.
 	_refresh_run_counters(run)
+	sync_media_project_status_for_run(run.name)
 	return _run_summary(run)
 
 
@@ -988,9 +995,9 @@ def _has_global_submission_capacity():
 def _next_fair_run_name():
 	"""Choose the ready run that has waited longest since its last dispatch.
 
-	The policy is intentionally independent of workflow/model names. It alternates
-	between campaigns when capacity is one, and remains deterministic under the
-	global dispatch lock.
+	Prefer the current workflow among the two oldest eligible runs for at most
+	two consecutive dispatches. This saves one model reload when possible while
+	ensuring an unserved run and then the oldest waiting run get their turn.
 	"""
 	candidates = []
 	for run in frappe.get_all(
@@ -1014,7 +1021,39 @@ def _next_fair_run_name():
 		candidates.append(
 			(0 if last_dispatch is None else 1, last_dispatch or run.creation, run.creation, run.name)
 		)
-	return min(candidates)[3] if candidates else None
+	if not candidates:
+		return None
+	candidates.sort()
+	oldest = candidates[0]
+	if oldest[0] == 0 or len(candidates) == 1:
+		return oldest[3]
+	# Only a bounded two-job burst may favor model affinity over FIFO. A third
+	# dispatch returns to the longest-waiting run even if its model differs.
+	recent = frappe.get_all(
+		"Generation Attempt",
+		filters={"queued_at": ["is", "set"]},
+		fields=["generation_task"],
+		order_by="queued_at desc",
+		limit_page_length=2,
+	)
+	if not recent:
+		return oldest[3]
+	last_workflow = frappe.db.get_value("Generation Task", recent[0].generation_task, "workflow")
+	if not last_workflow or (
+		len(recent) == 2
+		and frappe.db.get_value("Generation Task", recent[1].generation_task, "workflow") == last_workflow
+	):
+		return oldest[3]
+	for candidate in candidates[:2]:
+		workflow = frappe.db.get_value(
+			"Generation Task",
+			{"generation_run": candidate[3], "status": ["in", ["Ready", "Queued"]]},
+			"workflow",
+			order_by="creation asc",
+		)
+		if workflow == last_workflow:
+			return candidate[3]
+	return oldest[3]
 
 
 def _initial_seed(job):

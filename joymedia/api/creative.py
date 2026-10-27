@@ -84,6 +84,11 @@ def create_product_batch(
 
 	project = frappe.get_doc("Media Project", source_project)
 	project._require_write_access()
+	from joymedia.services.intake.view_sheet import split_project_view_sheets
+
+	# A character turnaround sheet would be drawn as several characters: use its separate views.
+	if split_project_view_sheets(project.name):
+		project.reload()
 	from joymedia.services.partners import is_reviewer, require_generation
 
 	if is_reviewer():
@@ -100,7 +105,24 @@ def create_product_batch(
 	keys = frappe.parse_json(reference_keys) if isinstance(reference_keys, str) else reference_keys
 	if keys is not None and (not isinstance(keys, list) or any(not isinstance(k, str) for k in keys)):
 		raise ValueError("Reference keys must be a list.")
-	allowed = {"Product", "Character", "Person", "Logo", "Environment", "Motion", "Style"}
+	# A reference is deliberately allowed to be role ``General`` when its
+	# analysis has not promoted it to a product/character/environment.  Action
+	# endpoints, supported poses and source-art macro controls are commonly
+	# stored that way; dropping them here made a references-only batch lose the
+	# very evidence the Director needed for a physical action.  The downstream
+	# reference planner decides how each role is used per scene.
+	allowed = {
+		"Product",
+		"Character",
+		"Person",
+		"Logo",
+		"Environment",
+		"Motion",
+		"Style",
+		"Composition",
+		"Audio",
+		"General",
+	}
 	references = [
 		{
 			key: row.get(key)
@@ -197,6 +219,9 @@ def create_product_batch(
 		"count": count,
 		"auto_render": auto_render,
 		"delivery_mode": delivery_mode,
+		# First-frame repair is autonomous in both delivery modes. Assisted
+		# delivery still keeps the final review/release gates.
+		"auto_first_frames": True,
 		"direction": direction or "",
 		"duration_seconds": duration or None,
 		"width": width,
@@ -244,16 +269,62 @@ def create_product_batch(
 			"variants_json": frappe.as_json(variants),
 		}
 	).insert(ignore_permissions=True)
-	frappe.enqueue(
-		"joymedia.services.generation.creative_batch.prepare_batch",
-		queue="long",
-		timeout=3600,
-		batch_name=batch.name,
-		job_id=f"joymedia-creative-prepare:{batch.name}:0",
-		deduplicate=True,
-		enqueue_after_commit=True,
-	)
-	return {"batch": batch.name, "status": "Queued", "count": count}
+	from joymedia.services.generation.availability import partner_batch_waits_for_gpu
+	from joymedia.services.generation.creative_batch import _planning_queue
+
+	waiting_for_gpu = partner_batch_waits_for_gpu(batch.owner)
+	if not waiting_for_gpu:
+		frappe.enqueue(
+			"joymedia.services.generation.creative_batch.prepare_batch",
+			queue=_planning_queue(),
+			timeout=3600,
+			batch_name=batch.name,
+			position=0,
+			job_id=f"joymedia-creative-prepare:{batch.name}:0",
+			deduplicate=True,
+			enqueue_after_commit=True,
+		)
+	return {"batch": batch.name, "status": "Queued", "count": count, "waiting_for_gpu": waiting_for_gpu}
+
+
+def _prepared_assets(variant):
+	"""Expose the scene-led view candidates as reviewable batch intermediates."""
+	project_name = variant.get("project")
+	if not project_name or not frappe.db.exists("Media Project", project_name):
+		return []
+	project = frappe.get_doc("Media Project", project_name)
+	selected = {row.get("reference_key"): row for row in project.get("selected_media") or []}
+	items = []
+	seen = {}
+	for kind, rows in (
+		("Character", variant.get("pose_views") or []),
+		("Product", variant.get("product_views") or []),
+		("Product cutout", variant.get("product_cutouts") or []),
+	):
+		for row in rows:
+			key = (
+				row.get("view")
+				if kind == "Character" and row.get("status") == "ready"
+				else (row.get("candidate") if kind == "Product" else row.get("cutout"))
+			)
+			media = selected.get(key)
+			url = frappe.db.get_value("Asset Version", media.asset_version, "file") if media else None
+			identity = (kind, key or row.get("source"), row.get("pose") or row.get("view"), row.get("status"))
+			if identity in seen:
+				if row.get("scene") and row["scene"] not in seen[identity]["scenes"]:
+					seen[identity]["scenes"].append(row["scene"])
+				continue
+			item = {
+				"kind": kind,
+				"scenes": [row["scene"]] if row.get("scene") else [],
+				"description": row.get("pose") if kind == "Character" else row.get("view"),
+				"status": row.get("status"),
+				"reference_key": key if media else None,
+				"url": url if row.get("status") == "ready" else None,
+			}
+			seen[identity] = item
+			items.append(item)
+	return items
 
 
 @frappe.whitelist()
@@ -263,12 +334,13 @@ def get_product_batch(batch_name):
 	variants = frappe.parse_json(batch.variants_json or "[]")
 	request = frappe.parse_json(batch.request_json or "{}")
 	for variant in variants:
-		# The name read from the package, not the internal reference key.
-		variant["product"] = (variant.get("script") or {}).get("product_name") or (
+		variant["prepared_assets"] = _prepared_assets(variant)
+		# The name read from the package as the project shows it; the script's is the English production name.
+		variant["product"] = (
 			frappe.db.get_value("Media Project", variant["project"], "product_name")
 			if variant.get("project")
 			else None
-		)
+		) or (variant.get("script") or {}).get("product_name")
 		if (
 			variant.get("status") == "Needs Attention"
 			and variant.get("resume_stage") == "Rendering"
@@ -285,7 +357,12 @@ def get_product_batch(batch_name):
 			variant["pictures"] = [
 				{
 					**row,
-					"note": notes.get(row["shot"], "")
+					"note": (
+						row.get("review_notes")
+						if row.get("review_status") in {"Needs Review", "Redrawing", "Checking"}
+						and str(row.get("review_notes") or "").startswith("Critical ")
+						else notes.get(row["shot"], "")
+					)
 					if row.get("url")
 					else (
 						_missing_picture_reason(row["shot"])
@@ -295,6 +372,57 @@ def get_product_batch(batch_name):
 					"label_unlocked": _unprotected(frappe.get_doc("Shot", row["shot"])),
 				}
 				for row in get_project_keyframes(variant["project"])
+			]
+		if variant.get("project"):
+			# A progressive rough cut is meaningful only when its scene list makes
+			# clear which parts are live clips and which are storyboard holds.
+			clips = dict(
+				frappe.get_all(
+					"Asset Version",
+					filters={
+						"name": [
+							"in",
+							frappe.get_all(
+								"Shot",
+								filters={"media_project": variant["project"], "is_removed": 0},
+								pluck="selected_output_asset_version",
+							),
+						]
+					},
+					fields=["name", "file"],
+					as_list=True,
+				)
+			)
+			# Each scene's own clip, so a reviewer can judge and remake scenes one by one.
+			variant["preview_scenes"] = [
+				{
+					"shot": row.name,
+					"shot_name": row.shot_name,
+					"shot_number": row.shot_number,
+					"ready": bool(row.selected_output_asset_version),
+					"clip": clips.get(row.selected_output_asset_version),
+					# Repairs ran out: the scene is delivered, but never presented as verified.
+					"unresolved": [
+						part.strip()
+						for part in (row.consistency_notes or "").split("; ")
+						if part.strip().startswith("Critical")
+					][:2]
+					if row.consistency_status == "Needs Review"
+					else [],
+				}
+				for row in frappe.get_all(
+					"Shot",
+					filters={"media_project": variant["project"], "is_removed": 0},
+					fields=[
+						"name",
+						"shot_name",
+						"shot_number",
+						"selected_output_asset_version",
+						"consistency_status",
+						"consistency_notes",
+					],
+					order_by="shot_number asc, name asc",
+				)
 			]
 	return {
 		"name": batch.name,
@@ -333,6 +461,41 @@ def _missing_picture_reason(shot_name):
 		f"Not drawn after {len(failed)} tries. The check could not confirm: {reason[:300].rstrip('. ')}. "
 		"Draw again, or add a note to rewrite this scene."
 	)
+
+
+@frappe.whitelist()
+def get_attention():
+	"""The user's AI videos that wait for them or are finished, for in-app alerts.
+
+	Light enough to poll: batch rows only, no per-scene work.
+	"""
+	waiting = {"Pictures Ready", "Script Ready", "Needs Attention"}
+	rows, seen = [], set()
+	for batch in frappe.get_list(
+		"Creative Batch",
+		filters={"owner": frappe.session.user, "status": ["!=", "Cancelled"]},
+		fields=["variants_json"],
+		order_by="modified desc",
+		limit_page_length=40,
+	):
+		for variant in frappe.parse_json(batch.variants_json or "[]"):
+			project = variant.get("project")
+			if not project or project in seen or variant.get("status") not in waiting | {"Completed"}:
+				continue
+			seen.add(project)
+			if frappe.db.get_value("Media Project", project, "status") == "Archived":
+				continue
+			rows.append(
+				{
+					"project": project,
+					"title": (variant.get("script") or {}).get("display_title")
+					or variant.get("title")
+					or (variant.get("script") or {}).get("title")
+					or "",
+					"state": "ready" if variant["status"] == "Completed" else "waiting",
+				}
+			)
+	return rows
 
 
 @frappe.whitelist()
@@ -401,6 +564,34 @@ def retry_product_variant(batch_name, index):
 			# Planning is already persisted; the normal preparer reuses the script
 			# and workbook, then queues only the missing shared-setting work.
 			stage = "Planning"
+		if stage == "Keyframes" and variant.get("project"):
+			# This is a fresh recovery request, often after the prompt/compiler or a
+			# workflow configuration has been corrected.  Do not let the old bounded
+			# stochastic attempts immediately re-raise the same exhausted-retries
+			# error.  Keep all recorded attempt evidence, but give only the currently
+			# missing frames a new bounded retry budget.
+			missing = set(
+				frappe.get_all(
+					"Shot",
+					filters={
+						"media_project": variant["project"],
+						"is_removed": 0,
+						"keyframe_artifact": ["is", "not set"],
+					},
+					pluck="name",
+				)
+			)
+			if missing:
+				variant["auto_redraws"] = [
+					name for name in (variant.get("auto_redraws") or []) if name not in missing
+				]
+				variant.setdefault("recovery_events", []).append(
+					{
+						"stage": "Keyframes",
+						"shots": sorted(missing),
+						"reason": "Explicit recovery starts a fresh bounded first-frame retry budget.",
+					}
+				)
 		if stage == "Rendering" and variant.get("project"):
 			from joymedia.services.generation.creative_batch import rerender_failed_scenes
 
@@ -429,13 +620,16 @@ def retry_product_variant(batch_name, index):
 				else "Finishing",
 			},
 		)
+		from joymedia.services.generation.creative_batch import _planning_queue
+
 		frappe.enqueue(
 			"joymedia.services.generation.creative_batch.prepare_batch"
 			if stage == "Planning"
 			else "joymedia.services.generation.creative_batch.advance_batch",
-			queue="long",
+			queue="long" if stage != "Planning" or variant.get("script") else _planning_queue(),
 			timeout=3600,
 			batch_name=batch.name,
+			**({"position": position} if stage == "Planning" else {}),
 			job_id=(
 				f"joymedia-creative-prepare:{batch.name}:{position}"
 				if stage == "Planning"
@@ -517,6 +711,22 @@ def redraw_variant_picture(batch_name, index, shot_name):
 	from joymedia.services.generation.creative_batch import redraw_variant_picture as redraw
 
 	return redraw(*_variant_position(batch_name, index), shot_name)
+
+
+@frappe.whitelist(methods=["POST"])
+def retry_variant_scene_with_prompt(batch_name, index, shot_name, instruction=""):
+	"""Regenerate one completed scene with an optional, human-directed prompt change.
+
+	This is deliberately a scene operation: all other selected takes remain in the
+	working cut.  The batch scheduler then replaces only this take and rebuilds
+	the progressive preview and final export without asking for a second approval.
+	"""
+	from joymedia.services.generation.creative_batch import retry_variant_scene_with_prompt as retry
+
+	instruction = str(instruction or "").strip()
+	if len(instruction) > 2000:
+		raise ValueError("Keep a scene instruction under 2000 characters.")
+	return retry(*_variant_position(batch_name, index), shot_name, instruction)
 
 
 @frappe.whitelist(methods=["POST"])

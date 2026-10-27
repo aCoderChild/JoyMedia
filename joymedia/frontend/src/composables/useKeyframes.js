@@ -13,11 +13,14 @@ export function useKeyframes(projectName) {
   const resource = createResource({
     url: "joymedia.services.keyframes.stage.get_project_keyframes",
     params: { project_name: projectName },
-    auto: true,
+    // frappe-ui rethrows a failed automatic load; the page already explains a project that cannot be opened.
+    onError: () => {},
   });
+  resource.fetch().catch(() => {});
   const rows = computed(() => resource.data || []);
   const byShot = computed(() => Object.fromEntries(rows.value.map((row) => [row.shot, row])));
   const needed = computed(() => rows.value.filter((row) => row.needs_keyframe));
+  const drawable = computed(() => needed.value.filter((row) => !row.authored_frame));
   const approvedCount = computed(() => needed.value.filter((row) => row.status === "Approved" && !row.stale).length);
   const allApproved = computed(() => rows.value.length > 0 && approvedCount.value === needed.value.length);
 
@@ -26,17 +29,19 @@ export function useKeyframes(projectName) {
   useProjectRealtime(projectName, {
     joymedia_project_updated: () => {
       clearTimeout(reloadTimer);
-      reloadTimer = setTimeout(() => resource.reload(), 400);
+      reloadTimer = setTimeout(() => resource.reload().catch(() => {}), 400);
     },
   });
 
   const drawingAll = ref(false);
   const drawingShot = ref("");
   async function draw(shots) {
+    const selectedShots = shots || drawable.value.map((row) => row.shot);
+    if (!selectedShots.length) return;
     drawingAll.value = !shots;
     drawingShot.value = shots?.[0] || "";
     try {
-      const result = await call("joymedia.services.keyframes.stage.generate_keyframes", { project_name: projectName, shot_names: shots || null });
+      const result = await call("joymedia.services.keyframes.stage.generate_keyframes", { project_name: projectName, shot_names: selectedShots });
       notify({
         title: tr("Frames", "Khung hình"),
         text: result?.status === "Drawing places"
@@ -61,5 +66,5 @@ export function useKeyframes(projectName) {
     }
   }
 
-  return { rows, byShot, needed, approvedCount, allApproved, draw, approve, drawingAll, drawingShot, error: computed(() => resource.error), reload: () => resource.reload() };
+  return { rows, byShot, needed, drawable, approvedCount, allApproved, draw, approve, drawingAll, drawingShot, error: computed(() => resource.error), reload: () => resource.reload() };
 }

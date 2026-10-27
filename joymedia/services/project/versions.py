@@ -141,6 +141,7 @@ def get_videos(project_name):
 	)
 	# The batch knows where an AI-written video stands; its project status alone does not.
 	stages = {}
+	stage_errors = {}
 	for batch in frappe.get_all(
 		"Creative Batch",
 		filters={"source_project": ["in", [row.name for row in rows]]},
@@ -151,23 +152,50 @@ def get_videos(project_name):
 			if variant.get("project"):
 				stopped = batch.status == "Cancelled" and variant.get("status") != "Completed"
 				stages[variant["project"]] = "Cancelled" if stopped else variant.get("status")
-	writing = {"Queued", "Planning", "Rewriting"}
+				stage_errors[variant["project"]] = (
+					str(variant.get("error") or "")[:300]
+					if variant.get("status") == "Needs Attention" and not stopped
+					else ""
+				)
+	# A picture for every card: the first scene's drawn frame until a film exists.
+	posters = {}
+	for shot in frappe.get_all(
+		"Shot",
+		filters={
+			"media_project": ["in", [row.name for row in rows]],
+			"is_removed": 0,
+			"keyframe_artifact": ["is", "set"],
+		},
+		fields=["media_project", "keyframe_artifact"],
+		order_by="shot_number asc",
+	):
+		posters.setdefault(shot.media_project, shot.keyframe_artifact)
+	poster_files = dict(
+		frappe.get_all(
+			"Generation Artifact",
+			filters={"name": ["in", list(posters.values())]},
+			fields=["name", "frappe_file"],
+			as_list=True,
+		)
+	)
 	videos = [
 		{
 			"name": row.name,
 			"label": row.version_label or ("Original" if row.name == root.name else row.project_name),
 			"status": row.status,
 			"stage": stages.get(row.name),
+			"stage_error": stage_errors.get(row.name) or "",
 			"video": files.get(row.current_output_asset_version),
+			"poster": poster_files.get(posters.get(row.name)),
 			"is_working_edit": row.name == working,
 			"is_open": row.name == project.name,
 		}
 		for row in rows
-		# Like a version stack, only real videos: a storyboard, a film, or a script being written now.
-		# A script that failed or was stopped stays with its batch, where it can be tried again.
+		# The shelf is how a video is opened, so every live AI video is listed, whatever
+		# its stage; a stopped one without a storyboard never became a video.
 		if row.name in with_shots
 		or row.current_output_asset_version
-		or (row.name != root.name and stages.get(row.name) in writing)
+		or (row.name != root.name and stages.get(row.name) not in (None, "Cancelled"))
 	]
 	return {"root": root.name, "project_name": root.project_name, "working_edit": working, "videos": videos}
 
@@ -387,6 +415,10 @@ def create_edit(project_name, label, kind="Creative", expected_current=None, mak
 			frappe.throw(_("The working edit changed. Refresh history first."))
 		assert_idle([source.name])
 		copy = frappe.copy_doc(source)
+		# ``copy_doc`` adopts the executing session's owner.  Edit membership is
+		# deliberately restricted to the source family owner, including when a
+		# worker or administrator creates the branch on that user's behalf.
+		copy.owner = source.owner
 		copy.version_of, copy.version_label, copy.version_kind, copy.current_edit = (
 			root.name,
 			label,
@@ -409,7 +441,15 @@ def create_edit(project_name, label, kind="Creative", expected_current=None, mak
 			copy.set(field, None)
 		copy.storyboard_approval_status = "Draft"
 		copy.export_status = copy.post_production_status = copy.planning_status = "Idle"
-		copy.insert(ignore_permissions=True)
+		# Frappe assigns ``owner`` from the active session during insert.  Preserve
+		# the customer owner while a privileged worker creates the edit, then
+		# immediately restore the worker session for the remaining work.
+		active_user = frappe.session.user
+		frappe.set_user(source.owner)
+		try:
+			copy.insert(ignore_permissions=True)
+		finally:
+			frappe.set_user(active_user)
 		shot_map, take_map, timings, reference_map = {}, {}, [], {}
 		for reference in copy.selected_media or []:
 			reference.asset_version = copy_control_reference(

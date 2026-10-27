@@ -362,6 +362,57 @@ class TestVisualAdmission(unittest.TestCase):
 			needs_candidate_review(dict(self.scene(["Character"]), visual_admission_required=True))
 		)
 
+	def test_stretched_limb_is_rejected_before_keyframe_selection(self):
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+
+		from joymedia.services.review.physical_audit import LIMB_TOPOLOGY_PROMPT
+
+		with TemporaryDirectory() as folder:
+			candidate = Path(folder) / "candidate.png"
+			reference = Path(folder) / "reference.png"
+			candidate.write_bytes(b"candidate image")
+			reference.write_bytes(b"selected pose")
+			asset = SimpleNamespace(
+				name="AV", file="/reference.png", content_hash=a.digest(reference.read_bytes())
+			)
+			scene = self.scene(["Character"])
+			scene["references"][0]["asset_version"] = "AV"
+
+			def observe(_pictures, question, **_kwargs):
+				if question == LIMB_TOPOLOGY_PROMPT:
+					return {"distortion": True, "evidence": "Arm stretches beyond the selected pose."}
+				if "Count" in question:
+					return {"count": 1, "reason": "One mascot."}
+				if "Image 1 is the approved reference" in question:
+					return {"answer": True, "reason": "Same mascot."}
+				return {"answer": False, "reason": "No human."}
+
+			with (
+				patch(
+					"joymedia.services.review.consistency.run_temporal_check",
+					return_value={
+						"results": [],
+						"required_claim_ids": [],
+					},
+				),
+				patch("joymedia.services.review.consistency.ask", side_effect=observe),
+				patch.object(
+					a.frappe,
+					"get_doc",
+					side_effect=lambda doctype, *_args: (
+						asset
+						if doctype == "Asset Version"
+						else SimpleNamespace(get_full_path=lambda: str(reference))
+					),
+				),
+			):
+				report = a.inspect_file(candidate, "Image", scene, {"judge": {}}, "artifact")
+		self.assertEqual(
+			"violated", next(r for r in report["results"] if r["id"] == "limb_topology.AV")["verdict"]
+		)
+		self.assertFalse(report["review_only"])
+
 	def test_changed_implementation_fails_closed_instead_of_staying_running(self):
 		from joymedia.services.generation.ingestor import _complete_attempt
 

@@ -39,7 +39,22 @@ def generate_voiceover(project_name, shot_name, voice=None, place=True):
 	text = spoken_text(shot.voice_over)
 	if not text:
 		frappe.throw(_("This scene has no spoken dialogue."))
+	from joymedia.services.audio.direction import narration_delivery
 	from joymedia.services.audio.synthesis import provider, synthesize
+
+	spoken_shots = [
+		row.name
+		for row in frappe.get_all(
+			"Shot",
+			filters={"media_project": project.name, "is_removed": 0},
+			fields=["name", "voice_over"],
+			order_by="shot_number asc, name asc",
+		)
+		if spoken_text(row.voice_over)
+	]
+	delivery = narration_delivery(
+		spoken_shots.index(shot.name) if shot.name in spoken_shots else 0, len(spoken_shots)
+	)
 
 	configuration = provider(voice, text=text)
 	voice = configuration["voice"]
@@ -59,13 +74,15 @@ def generate_voiceover(project_name, shot_name, voice=None, place=True):
 		if existing:
 			return {"clip": existing["clip"], "already_placed": True}
 	seconds = (end - start) / 24 if start is not None else float(shot.duration_seconds or 0)
-	key = hashlib.sha256(f"v2|{configuration['key']}|{voice}|{text}|{seconds}".encode()).hexdigest()[:16]
+	key = hashlib.sha256(
+		f"v3|{configuration['key']}|{voice}|{text}|{seconds}|{delivery['rate']}|{delivery['pitch']}".encode()
+	).hexdigest()[:16]
 	asset_name = f"{shot.name} narration {key}"
 	version = _latest_version_of(project.name, asset_name)
 	if not version:
 		with tempfile.TemporaryDirectory(prefix="joymedia-voice-") as temp_dir:
 			raw, fitted = Path(temp_dir) / "raw.audio", Path(temp_dir) / "voice.mp3"
-			synthesize(text, configuration, raw, seconds)
+			synthesize(text, configuration, raw, seconds, delivery=delivery)
 			duration = float(
 				subprocess.run(
 					[
@@ -115,8 +132,35 @@ def generate_voiceover(project_name, shot_name, voice=None, place=True):
 			version = _save_output(
 				project.name, asset_name, "Audio", f"{shot.name}-voice-{key}.mp3", fitted.read_bytes()
 			)
-	result = {"asset_version": version, "text": text, "voice": voice}
+	result = {"asset_version": version, "text": text, "voice": voice, "delivery": delivery}
 	if place:
 		result.update(place_cue_audio(project.name, shot.name, "Voiceover", version))
 	frappe.db.commit()
 	return result
+
+
+def refresh_project_voiceovers(project_name: str):
+	"""Replace the placed narration with the current delivery policy.
+
+	This is deliberately separate from ordinary generation: a completed film keeps
+	its approved narration until a new version explicitly asks for a refresh.
+	"""
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access()
+	for clip in frappe.get_all(
+		"Timeline Clip",
+		filters={"media_project": project.name, "track_type": "Audio", "audio_role": "Voiceover"},
+		pluck="name",
+	):
+		frappe.delete_doc("Timeline Clip", clip, ignore_permissions=True, force=True)
+	frappe.db.commit()
+	results = []
+	for shot in frappe.get_all(
+		"Shot",
+		filters={"media_project": project.name, "is_removed": 0},
+		fields=["name", "voice_over"],
+		order_by="shot_number asc, name asc",
+	):
+		if spoken_text(shot.voice_over):
+			results.append(generate_voiceover(project.name, shot.name, place=True))
+	return results

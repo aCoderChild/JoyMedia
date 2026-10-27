@@ -77,16 +77,32 @@ class TestComposedOutputPersistence(FrappeTestCase):
 			patch("joymedia.services.editing.composer.frappe.get_doc", side_effect=[file, version]),
 		):
 			result = _persist_composed_output(
-				"RUN", "SHOT", "ASSET", frappe._dict(generation_attempt="ATT", name="ART"),
-				b"review bytes", 4, 24, select_output=False, can_select=False,
-				review_manifest={"original_attempt": "ATT"}, retained_review=True,
+				"RUN",
+				"SHOT",
+				"ASSET",
+				frappe._dict(generation_attempt="ATT", name="ART"),
+				b"review bytes",
+				4,
+				24,
+				select_output=False,
+				can_select=False,
+				review_manifest={"original_attempt": "ATT"},
+				retained_review=True,
 			)
 		self.assertEqual("AV-REVIEW", result)
 
 		with self.assertRaisesRegex(ValueError, "unselected"):
 			_persist_composed_output(
-				"RUN", "SHOT", "ASSET", frappe._dict(), b"bytes", 4, 24,
-				select_output=True, can_select=False, review_manifest={"original_attempt": "ATT"},
+				"RUN",
+				"SHOT",
+				"ASSET",
+				frappe._dict(),
+				b"bytes",
+				4,
+				24,
+				select_output=True,
+				can_select=False,
+				review_manifest={"original_attempt": "ATT"},
 				retained_review=True,
 			)
 

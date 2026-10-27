@@ -62,9 +62,16 @@ def _route_and_validate_plan_shot(shot, project_references, default_workflow):
 		handoff_type=shot.get("handoff_type") or "",
 		motion_plan_json=frappe.as_json(shot.get("motion_plan") or {}),
 	)
+	routed_references = route["references"]
+	# ``geometry_reference`` is a runtime binding of the approved Environment
+	# image.  Do not persist it as a user-selected storyboard ingredient: a later
+	# replan must be able to use the normal pipeline when the operator withdraws
+	# the geometry profile.  Routing recreates the binding from Environment each
+	# time an eligible, configured depth route is selected.
 	shot["references"] = [
 		{"reference_key": item["reference_key"], "usage_role": item["reference_role"]}
-		for item in route["references"]
+		for item in routed_references
+		if item["reference_role"] != "geometry_reference"
 	]
 	shot["render_strategy"] = route["strategy"]
 	shot["workflow"] = route["workflow"]
@@ -79,8 +86,8 @@ def _route_and_validate_plan_shot(shot, project_references, default_workflow):
 		)
 	contract = {item["role"]: item for item in get_workflow_input_contract(input_workflow)}
 	counts = {}
-	for reference in shot["references"]:
-		role = frappe.scrub(reference["usage_role"])
+	for reference in routed_references:
+		role = frappe.scrub(reference["reference_role"])
 		if role not in contract:
 			frappe.throw(_("Automatic route does not support Shot Reference role '{0}'.").format(role))
 		counts[role] = counts.get(role, 0) + 1

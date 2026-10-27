@@ -1,0 +1,54 @@
+name: Deploy GPU host
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: joymedia-gpu-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: gpu-production
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Confirm this commit passed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run list --workflow ci.yml --commit "$GITHUB_SHA" \
+            --json conclusion,status,event,headBranch --limit 20 \
+            | jq -e 'any(.[]; .status == "completed" and .conclusion == "success" and .event == "push" and .headBranch == "main")' >/dev/null
+
+      - name: Check deployment script
+        run: bash -n deploy/gpu-release.sh
+
+      - name: Deploy the verified commit
+        env:
+          GPU_DEPLOY_TARGET: ${{ secrets.GPU_DEPLOY_TARGET }}
+          GPU_DEPLOY_SSH_KEY: ${{ secrets.GPU_DEPLOY_SSH_KEY }}
+          GPU_SSH_KNOWN_HOSTS: ${{ secrets.GPU_SSH_KNOWN_HOSTS }}
+          GPU_DEPLOY_PORT: ${{ vars.GPU_DEPLOY_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          test -n "$GPU_DEPLOY_TARGET"
+          test -n "$GPU_DEPLOY_SSH_KEY"
+          test -n "$GPU_SSH_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$GPU_DEPLOY_SSH_KEY" > "$HOME/.ssh/joymedia_deploy"
+          printf '%s\n' "$GPU_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/joymedia_deploy" "$HOME/.ssh/known_hosts"
+          ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            -i "$HOME/.ssh/joymedia_deploy" -p "$GPU_DEPLOY_PORT" \
+            "$GPU_DEPLOY_TARGET" "bash -s -- '$GITHUB_SHA'" < deploy/gpu-release.sh

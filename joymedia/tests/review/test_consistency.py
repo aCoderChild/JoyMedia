@@ -71,7 +71,11 @@ class TestChecks(FrappeTestCase):
 				frappe._dict(reference_role="Product"),
 			],
 		)
-		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/f.png"),
+			patch.object(frappe, "get_doc", return_value=frappe._dict(name="PRJ-X")),
+			patch("joymedia.services.planning.prompts.source_prop_exclusions", return_value=[]),
+		):
 			checks = consistency.frame_checks(shot)
 		self.assertEqual(
 			[1, True, False, False], [expected for _p, _q, expected, _m in checks]
@@ -79,6 +83,52 @@ class TestChecks(FrappeTestCase):
 		self.assertIn('"The kid spills juice."', checks[1][1])
 		self.assertNotIn("Camera", checks[1][1])
 		self.assertIn("ON TOP OF the advertised product", checks[3][1])
+
+	def test_held_product_frame_requires_visible_contact(self):
+		shot = frappe._dict(
+			keyframe_artifact="GART-1",
+			media_project="PRJ-X",
+			start_state="The actor is holding the product package in its paw.",
+			generation_inputs=[frappe._dict(reference_role="Product")],
+		)
+		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
+			checks = consistency.frame_checks(shot)
+		self.assertTrue(any("visible, credible contact" in question for _p, question, _e, _m in checks))
+
+	def test_close_paper_insert_checks_visible_material(self):
+		shot = frappe._dict(
+			keyframe_artifact="GART-1",
+			media_project="PRJ-X",
+			start_state="A close view of the tissue sheet texture on the table.",
+			generation_inputs=[],
+			camera_framing="close_up",
+		)
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/f.png"),
+			patch(
+				"joymedia.services.planning.shot_structure.structure_for",
+				return_value={"framing": "close_up"},
+			),
+		):
+			checks = consistency.frame_checks(shot)
+		self.assertTrue(any("rather than shiny metal foil" in question for _p, question, _e, _m in checks))
+
+	def test_pooling_does_not_count_as_absorption(self):
+		with patch.object(
+			consistency, "ask", return_value={"answer": False, "reason": "A reflective puddle grows on top"}
+		):
+			failures = consistency.run_checks(
+				[
+					(
+						"frames",
+						consistency.ABSORPTION_PROGRESS,
+						True,
+						"Critical prop: liquid pools instead of visibly absorbing",
+					)
+				]
+			)
+		self.assertEqual(1, len(failures))
+		self.assertIn("reflective puddle", failures[0])
 
 	def test_a_split_screen_frame_is_checked_for_its_panels(self):
 		shot = frappe._dict(
@@ -109,7 +159,11 @@ class TestChecks(FrappeTestCase):
 				},
 			},
 		)
-		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/f.png"),
+			patch.object(frappe, "get_doc", return_value=frappe._dict(name="PRJ-X")),
+			patch("joymedia.services.planning.prompts.source_prop_exclusions", return_value=[]),
+		):
 			checks = consistency.frame_checks(shot)
 		self.assertTrue(any("Critical framing:" in meaning for *_rest, meaning in checks))
 
@@ -121,7 +175,11 @@ class TestChecks(FrappeTestCase):
 			image_prompt="A mascot holding a loose cloth.",
 			generation_inputs=[frappe._dict(reference_role="Character")],
 		)
-		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/f.png"),
+			patch.object(frappe, "get_doc", return_value=frappe._dict(name="PRJ-X")),
+			patch("joymedia.services.planning.prompts.source_prop_exclusions", return_value=[]),
+		):
 			checks = consistency.frame_checks(shot)
 		self.assertTrue(any("Critical prop:" in meaning for *_rest, meaning in checks))
 
@@ -136,6 +194,84 @@ class TestChecks(FrappeTestCase):
 		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
 			checks = consistency.frame_checks(shot)
 		self.assertTrue(any("Critical geometry: advertised product" in meaning for *_rest, meaning in checks))
+
+	def test_product_scene_checks_perspective_against_support_plane(self):
+		shot = frappe._dict(
+			keyframe_artifact="GART-1",
+			media_project="PRJ-X",
+			start_state="The product pack rests on a coffee table.",
+			generation_inputs=[frappe._dict(reference_role="Product")],
+		)
+		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
+			checks = consistency.frame_checks(shot)
+		self.assertTrue(
+			any(
+				question == consistency.PRODUCT_PERSPECTIVE for _path, question, _expected, _meaning in checks
+			)
+		)
+		with patch.object(
+			consistency,
+			"ask",
+			return_value={"answer": False, "reason": "Base edge tilts across the tabletop"},
+		):
+			failures = consistency.run_checks(
+				[check for check in checks if check[1] == consistency.PRODUCT_PERSPECTIVE]
+			)
+		self.assertIn("Base edge tilts", failures[0])
+
+	def test_table_scene_checks_actor_support_and_handheld_pack_scale_separately(self):
+		shot = frappe._dict(
+			keyframe_artifact="GART-1",
+			media_project="PRJ-X",
+			views_json="",
+			start_state="The mascot stands beside the coffee table. A tissue pack rests on the table.",
+			generation_inputs=[
+				frappe._dict(reference_role="Character"),
+				frappe._dict(reference_role="Product"),
+			],
+			motion_plan_json={
+				"shot_structure": {
+					"stage": "establish",
+					"framing": "wide",
+					"angle": "eye_level",
+					"subject_motion": "manipulation",
+					"keep_visible": [],
+				}
+			},
+		)
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/f.png"),
+			patch("joymedia.services.planning.prompts.source_prop_exclusions", return_value=[]),
+			patch.object(frappe, "get_doc", return_value=frappe._dict(selected_media=[])),
+		):
+			checks = consistency.frame_checks(shot)
+		self.assertIn(consistency.ACTOR_ON_TABLETOP, [question for _, question, _, _ in checks])
+		self.assertIn(consistency.PRODUCT_TABLE_SCALE, [question for _, question, _, _ in checks])
+
+	def test_wide_mascot_frame_checks_seat_or_floor_support(self):
+		shot = frappe._dict(
+			keyframe_artifact="GART-1",
+			media_project="PRJ-X",
+			views_json="",
+			start_state="The mascot sits at the dining table on a chair.",
+			generation_inputs=[frappe._dict(reference_role="Character")],
+			motion_plan_json={
+				"shot_structure": {
+					"stage": "establish",
+					"framing": "wide",
+					"angle": "eye_level",
+					"subject_motion": "manipulation",
+					"keep_visible": [],
+				}
+			},
+		)
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/f.png"),
+			patch.object(frappe, "get_doc", return_value=frappe._dict(name="PRJ-X")),
+			patch("joymedia.services.planning.prompts.source_prop_exclusions", return_value=[]),
+		):
+			checks = consistency.frame_checks(shot)
+		self.assertTrue(any("actor's seat or floor contact" in meaning for *_rest, meaning in checks))
 
 	def test_still_review_uses_the_starting_frame_instead_of_future_actions(self):
 		shot = frappe._dict(
@@ -166,8 +302,40 @@ class TestChecks(FrappeTestCase):
 			[(255, 0, 0), (0, 128, 0), (0, 0, 255)], [sheet.getpixel(p) for p in ((5, 5), (15, 5), (5, 25))]
 		)
 
+	def test_take_with_contract_still_checks_for_an_outside_human_hand(self):
+		shot = frappe._dict(
+			selected_output_asset_version="TAKE-1",
+			generation_inputs=[frappe._dict(reference_role="Character")],
+			motion_plan_json={
+				"scene_contract": {"version": 1, "entities": [], "relations": [], "events": [], "checks": []}
+			},
+			duration_seconds=5,
+		)
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/take.mp4"),
+			patch.object(frappe, "get_doc", return_value=frappe._dict(get_full_path=lambda: "/tmp/take.mp4")),
+			patch.object(consistency, "sample_frames", return_value=[b"a", b"b"]),
+			patch.object(consistency, "contact_sheet", return_value=b"sheet"),
+			patch.object(consistency, "temporal_check", return_value="temporal"),
+		):
+			checks = consistency.take_checks(shot)
+		self.assertIn("temporal", checks)
+		self.assertTrue(any("human hand" in meaning for *_rest, meaning in checks))
+
 
 class TestConsistencyLoop(FrappeTestCase):
+	def test_only_an_active_automatic_batch_uses_preview_first_review(self):
+		row = frappe._dict(
+			request_json=json.dumps({"delivery_mode": "automatic"}),
+			variants_json=json.dumps([{"project": "PRJ-X"}]),
+		)
+		with patch.object(frappe, "get_all", return_value=[row]):
+			self.assertTrue(consistency._automatic_preview_in_progress("PRJ-X"))
+			self.assertFalse(consistency._automatic_preview_in_progress("PRJ-OTHER"))
+		row.request_json = json.dumps({"delivery_mode": "assisted"})
+		with patch.object(frappe, "get_all", return_value=[row]):
+			self.assertFalse(consistency._automatic_preview_in_progress("PRJ-X"))
+
 	def test_late_review_cannot_write_over_replacement_evidence(self):
 		shot = self._shot()
 		shot._consistency_evidence = {"selected_output_asset_version": "OLD"}
@@ -184,6 +352,18 @@ class TestConsistencyLoop(FrappeTestCase):
 		recorded, redo = self._run(self._shot(), ["Physical staging review: missing contact"], kind="take")
 		self.assertEqual(recorded, [("Needs Review", "Physical staging review: missing contact")])
 		redo.assert_not_called()
+
+	def test_automatic_preview_keeps_subjective_take_findings_visible(self):
+		with patch.object(consistency, "_automatic_preview_in_progress", return_value=True):
+			recorded, redo = self._run(self._shot(), ["the action is not clear"], kind="take")
+		self.assertEqual(recorded, [("Needs Review", "the action is not clear")])
+		redo.assert_not_called()
+
+	def test_automatic_preview_retries_clear_support_violation_once(self):
+		with patch.object(consistency, "_automatic_preview_in_progress", return_value=True):
+			recorded, redo = self._run(self._shot(), ["Critical geometry: unsupported prop"], kind="take")
+		self.assertEqual(recorded, [("Redoing", "Critical geometry: unsupported prop")])
+		redo.assert_called_once()
 
 	def test_clear_character_on_product_uses_bounded_frame_redraw(self):
 		recorded, redo = self._run(
@@ -240,10 +420,57 @@ class TestConsistencyLoop(FrappeTestCase):
 			consistency.check_scene(shot.name, kind, "user@example.com")
 		return recorded, redo
 
-	def test_a_consistent_frame_passes(self):
+	def test_a_consistent_frame_without_physical_evidence_is_not_checked(self):
 		recorded, redo = self._run(self._shot(), [])
-		self.assertEqual([("Passed", "")], recorded)
+		self.assertEqual("Not Checked", recorded[0][0])
 		redo.assert_not_called()
+
+	def test_a_consistent_frame_requires_physical_review_before_passing(self):
+		from joymedia.services.review import admission, physical_audit
+
+		shot = self._shot()
+		shot.keyframe_artifact = "GART-TEST"
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/frame.png"),
+			patch.object(admission, "report_for", return_value=None),
+			patch.object(physical_audit, "frame_findings", return_value=[]),
+		):
+			recorded, _ = self._run(shot, [])
+		self.assertEqual([("Passed", "")], recorded)
+		shot.consistency_retries = consistency.MAX_FRAME_REDOS
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/frame.png"),
+			patch.object(admission, "report_for", return_value=None),
+			patch.object(
+				physical_audit,
+				"frame_findings",
+				return_value=["Critical geometry: advertised product floats above its visible support"],
+			),
+		):
+			recorded, _ = self._run(shot, [])
+		self.assertEqual("Needs Review", recorded[0][0])
+
+	def test_physical_pose_audit_still_runs_when_an_earlier_question_fails(self):
+		from joymedia.services.review import admission, physical_audit
+
+		shot = self._shot()
+		shot.keyframe_artifact = "GART-TEST"
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/frame.png"),
+			patch.object(admission, "report_for", return_value=None),
+			patch.object(
+				physical_audit,
+				"frame_findings",
+				return_value=[
+					"Critical geometry: bear is seated although the scripted opening requires standing"
+				],
+			) as audit,
+		):
+			recorded, redo = self._run(shot, ["the opening is unclear"])
+		self.assertEqual("Redrawing", recorded[0][0])
+		self.assertIn("requires standing", recorded[0][1])
+		audit.assert_called_once()
+		redo.assert_called_once_with("PRJ-X")
 
 	def test_an_action_judge_cannot_discard_authored_source_art_restoration(self):
 		shot = self._shot()
@@ -289,7 +516,9 @@ class TestConsistencyLoop(FrappeTestCase):
 			patch.object(
 				frappe,
 				"get_all",
-				side_effect=lambda doctype, filters, **kw: names[filters["consistency_status"]],
+				side_effect=lambda doctype, filters, **kw: (
+					[] if doctype == "Generation Task" else names[filters["consistency_status"]]
+				),
 			),
 			patch("joymedia.services.keyframes.stage.generate_keyframes") as redraw,
 		):
@@ -374,12 +603,28 @@ class TestOutsiders(FrappeTestCase):
 			generation_inputs=[frappe._dict(reference_role="Character")],
 		)
 		person = frappe._dict(mascot, generation_inputs=[frappe._dict(reference_role="Person")])
-		with patch.object(frappe.db, "get_value", return_value="/private/files/f.png"):
+		product_only = frappe._dict(mascot, generation_inputs=[frappe._dict(reference_role="Product")])
+		with (
+			patch.object(frappe.db, "get_value", return_value="/private/files/f.png"),
+			patch.object(frappe, "get_doc", return_value=frappe._dict(name="PRJ-X")),
+			patch("joymedia.services.planning.prompts.source_prop_exclusions", return_value=[]),
+		):
 			self.assertIn(
 				consistency.OUTSIDER, [question for _p, question, _e, _m in consistency.frame_checks(mascot)]
 			)
 			self.assertNotIn(
 				consistency.OUTSIDER, [question for _p, question, _e, _m in consistency.frame_checks(person)]
+			)
+			self.assertIn(
+				consistency.OUTSIDER,
+				[question for _p, question, _e, _m in consistency.frame_checks(product_only)],
+			)
+			self.assertTrue(
+				any(
+					meaning.startswith("Critical prop:")
+					for _path, question, _expected, meaning in consistency.frame_checks(product_only)
+					if question == consistency.OUTSIDER
+				)
 			)
 
 

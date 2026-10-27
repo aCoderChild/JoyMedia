@@ -35,7 +35,7 @@ def compose_source_motion_take(project_name, shot_name, image_version, expected_
 	if (
 		not structure
 		or structure["subject_motion"] != "stationary"
-		or structure["stage"] not in {"detail", "inspect", "present", "hero"}
+		or structure["stage"] not in {"establish", "detail", "inspect", "present", "hero"}
 	):
 		frappe.throw(_("Source camera motion requires an authored stationary product or identity insert."))
 	if image_version not in {row.asset_version for row in shot.generation_inputs or []}:
@@ -79,9 +79,12 @@ def compose_source_motion_take(project_name, shot_name, image_version, expected_
 	# FFmpeg's standard zoompan preserves every source pixel's design/text while
 	# applying only the movement requested by the scene's camera contract.
 	progress = f"on/{max(1, frames - 1)}"
+	# Match the safe axial travel used by the shared camera prompt. A larger
+	# zoom can crop package edges even though the source artwork stays exact.
+	travel = 0.06
 	zoom = {
-		"push_in": f"1+0.16*{progress}",
-		"pull_back": f"1.16-0.16*{progress}",
+		"push_in": f"1+{travel}*{progress}",
+		"pull_back": f"{1 + travel}-{travel}*{progress}",
 		"locked": "1",
 	}[behavior]
 	filter_graph = (
@@ -141,6 +144,7 @@ def compose_source_motion_take(project_name, shot_name, image_version, expected_
 		"source_sha256": version.content_hash,
 		"output_sha256": digest(content),
 		"behavior": behavior,
+		"zoom_fraction": travel if behavior != "locked" else 0,
 		"crop": crop,
 		"frames": frames,
 		"fps": fps,

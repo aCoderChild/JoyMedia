@@ -187,6 +187,7 @@ scheduler_events = {
 			"joymedia.services.generation.creative_batch.advance_batches",
 		],
 	},
+	"daily": ["joymedia.services.project.trash.purge_expired_trash"],
 }
 
 # Testing
@@ -283,9 +284,11 @@ has_permission = {
 	"Media Project": "joymedia.services.partners.document_permission",
 	"Media Asset": "joymedia.services.partners.document_permission",
 	"Asset Version": "joymedia.services.partners.document_permission",
+	"Generation Artifact": "joymedia.services.access.artifact_permission",
 }
 permission_query_conditions = {
 	"Media Project": "joymedia.services.partners.project_query",
 	"Media Asset": "joymedia.services.partners.asset_query",
 	"Asset Version": "joymedia.services.partners.version_query",
+	"Generation Artifact": "joymedia.services.access.artifact_query",
 }

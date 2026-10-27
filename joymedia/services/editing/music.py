@@ -13,7 +13,9 @@ from joymedia.services.editing.queries import _latest_version_of, _shot_video_cl
 from joymedia.services.editing.rendering import _extract_frame, _render_video, _save_output, _video_workflow
 from joymedia.services.editing.view import _project_fps
 
-SOUNDTRACK_VERSION = 5
+# Bump when score-direction logic changes so a completed project never silently
+# reuses an asset rendered with an older prompt contract.
+SOUNDTRACK_VERSION = 6
 
 
 MUSIC_ENDING_SEARCH_SECONDS = 3
@@ -200,9 +202,11 @@ def _render_music_bed(project_name, asset_name, first_clip, music, total_frames)
 	if music_workflow:
 		return _render_workflow_music_bed(project_name, asset_name, music_workflow, music, total_frames)
 
+	from joymedia.services.audio.direction import score_direction
+
 	prompt = (
 		"A still, calm shot; nothing moves. "
-		f"Audio: {music}. Instrumental music only, steady and loopable; no speech, no singing, no sound effects."
+		f"Audio: {score_direction(music, total_frames / _project_fps(project_name))}"
 	)
 	with tempfile.TemporaryDirectory(prefix="joymedia-music-") as temp_dir:
 		temp_path = Path(temp_dir)
@@ -237,15 +241,17 @@ def _render_workflow_music_bed(project_name, asset_name, workflow_name, music, t
 	duration = total_frames / _project_fps(project_name)
 	frames = min(math.ceil((duration + 1) * provider_fps), capacity(version))
 	continuous = frames / provider_fps >= duration
+	from joymedia.services.audio.direction import score_direction
+
 	direction = (
 		f"A continuous {frames / provider_fps:g}-second instrumental cue, developing naturally and resolving at the end. "
 		if continuous
-		else "A steady, loopable instrumental phrase. "
+		else "A loopable instrumental phrase that preserves the described hook, lift and resolve. "
 	)
 	seed = int(hashlib.sha256(f"{project_name}|{music}".encode()).hexdigest()[:12], 16)
 	workflow = build_execution_workflow(
 		version,
-		inputs={"generation_prompt": direction + music + ". Instrumental only; no speech or singing."},
+		inputs={"generation_prompt": direction + score_direction(music, duration)},
 		seed=seed,
 		width=width,
 		height=height,

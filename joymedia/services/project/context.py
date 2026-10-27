@@ -353,6 +353,8 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 				if row.reference_role and row.asset_version
 			],
 		}
+		if keyframe_stage and shot_doc.get("consistency_status") == "Redrawing":
+			shot_snapshot["keyframe_retry_note"] = str(shot_doc.get("consistency_notes") or "")[:500]
 		if default_workflow:
 			from joymedia.services.workflows.routing import resolve_shot_render_route
 
@@ -516,6 +518,7 @@ def _get_project_selected_assets(project):
 				or getattr(selection, "reference_key", None)
 				or "",
 				reference_role=selection.reference_role or "General",
+				product_view=getattr(selection, "product_view", None) or "source",
 				motion_reference_use=getattr(selection, "motion_reference_use", None) or "Camera and actions",
 				label=selection.label or "",
 				relative_size=float(getattr(selection, "relative_size", None) or 1),
@@ -678,7 +681,14 @@ def _storyboard_payload(specification):
 			shot["continuity_checks"] = []
 		shot.pop("motion_plan_json", None)
 		shot.pop("image_prompt", None)
-		shot.pop("keyframe_artifact", None)
+		# A generated keyframe is the current first frame until a user selects an
+		# explicit first-frame reference.  Previously this was discarded here,
+		# leaving valid generated images with a broken storyboard thumbnail.
+		keyframe_artifact = shot.pop("keyframe_artifact", None)
+		if keyframe_artifact:
+			shot["first_frame_image"] = (
+				frappe.db.get_value("Generation Artifact", keyframe_artifact, "frappe_file") or ""
+			)
 		scene = sheet.get((shot.storyboard_beat or "", shot.source_timing or ""))
 		shot["sheet_direction"] = (
 			{"action": scene.get("action") or "", "camera": scene.get("visual_camera") or ""}

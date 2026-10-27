@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs" @click.self="$emit('close')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs" data-test="video-settings-modal" @click.self="$emit('close')">
     <div class="w-full max-w-lg bg-surface-card border border-outline-border rounded-2xl p-6 shadow-2xl space-y-4 text-xs">
       <!-- Modal Header -->
       <div class="flex items-center justify-between pb-3 border-b border-outline-border">
@@ -35,8 +35,8 @@
               type="button"
               class="p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1"
               :class="form.delivery_preset === preset.value
-                ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 font-bold shadow-xs'
-                : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
+                ? 'border-rio-500 bg-rio-500/10 text-rio-400 font-bold shadow-xs'
+                : 'border-outline-border bg-surface-muted hover:border-rio-400 text-ink-secondary'"
               @click="form.delivery_preset = preset.value; form.aspect_ratio = preset.ratio"
             >
               <span class="text-base">{{ preset.icon }}</span>
@@ -54,7 +54,7 @@
             <label class="font-bold text-ink-primary">
               {{ currentLang === 'vi' ? 'Độ dài video:' : 'Video length:' }}
             </label>
-            <span class="font-mono font-bold text-indigo-400 text-xs">{{ form.total_duration_seconds }}s</span>
+            <span class="font-mono font-bold text-rio-400 text-xs">{{ form.total_duration_seconds }}s</span>
           </div>
           <div class="flex items-center gap-3">
             <input
@@ -63,7 +63,7 @@
               min="5"
               max="60"
               step="1"
-              class="flex-1 accent-indigo-600 cursor-pointer"
+              class="flex-1 accent-rio-600 cursor-pointer"
             />
             <div class="flex items-center gap-1">
               <button
@@ -71,7 +71,7 @@
                 :key="d"
                 type="button"
                 class="px-2 py-0.5 rounded text-[11px] font-mono border transition-colors cursor-pointer"
-                :class="form.total_duration_seconds === d ? 'border-indigo-500 bg-indigo-500/20 text-indigo-400 font-bold' : 'border-outline-border bg-surface-muted text-ink-muted'"
+                :class="form.total_duration_seconds === d ? 'border-rio-500 bg-rio-500/20 text-rio-400 font-bold' : 'border-outline-border bg-surface-muted text-ink-muted'"
                 @click="form.total_duration_seconds = d"
               >
                 {{ d }}s
@@ -92,8 +92,8 @@
               type="button"
               class="px-2.5 py-1 rounded-full border text-[11px] cursor-pointer transition-colors"
               :class="form.soundtrack_prompt === mood.prompt
-                ? 'border-indigo-500 bg-indigo-500/20 text-indigo-400 font-bold'
-                : 'border-outline-border bg-surface-muted text-ink-secondary hover:border-indigo-400'"
+                ? 'border-rio-500 bg-rio-500/20 text-rio-400 font-bold'
+                : 'border-outline-border bg-surface-muted text-ink-secondary hover:border-rio-400'"
               @click="form.soundtrack_prompt = mood.prompt; customMusic = false"
             >
               {{ currentLang === 'vi' ? mood.vi : mood.en }}
@@ -102,8 +102,8 @@
               type="button"
               class="px-2.5 py-1 rounded-full border text-[11px] cursor-pointer transition-colors"
               :class="showCustomMusic
-                ? 'border-indigo-500 bg-indigo-500/20 text-indigo-400 font-bold'
-                : 'border-dashed border-outline-border text-ink-muted hover:border-indigo-400'"
+                ? 'border-rio-500 bg-rio-500/20 text-rio-400 font-bold'
+                : 'border-dashed border-outline-border text-ink-muted hover:border-rio-400'"
               @click="customMusic = true"
             >
               {{ currentLang === 'vi' ? 'Tự mô tả…' : 'Describe my own…' }}
@@ -116,7 +116,7 @@
             :placeholder="currentLang === 'vi'
               ? 'Viết bằng tiếng Việt hoặc tiếng Anh, vd: guitar mộc vui tươi, trống nhẹ'
               : 'Any language, e.g. uplifting acoustic guitar and soft drums'"
-            class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-indigo-500 resize-none"
+            class="w-full px-3 py-2 rounded-xl bg-surface-muted border border-outline-border text-xs text-ink-primary placeholder:text-ink-muted focus:outline-none focus:border-rio-500 resize-none"
           />
         </div>
 
@@ -130,8 +130,8 @@
               type="button"
               class="text-left px-3 py-2 rounded-xl border text-xs cursor-pointer"
               :class="form[choice.key] === option.value
-                ? 'border-indigo-500 bg-indigo-500/20 text-ink-primary'
-                : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
+                ? 'border-rio-500 bg-rio-500/20 text-ink-primary'
+                : 'border-outline-border bg-surface-muted hover:border-rio-400 text-ink-secondary'"
               :data-test="`${choice.key}-${option.value}`"
               @click="form[choice.key] = option.value"
             >
@@ -153,8 +153,8 @@
               type="button"
               class="text-left px-3 py-2 rounded-xl border text-xs cursor-pointer"
               :class="form.export_quality === option.value
-                ? 'border-indigo-500 bg-indigo-500/20 text-ink-primary'
-                : 'border-outline-border bg-surface-muted hover:border-indigo-400 text-ink-secondary'"
+                ? 'border-rio-500 bg-rio-500/20 text-ink-primary'
+                : 'border-outline-border bg-surface-muted hover:border-rio-400 text-ink-secondary'"
               @click="form.export_quality = option.value"
             >
               <span class="block font-semibold">{{ currentLang === 'vi' ? option.vi : option.en }}</span>
@@ -237,28 +237,28 @@ const form = reactive({
 const modeChoices = computed(() => [
   {
     key: "planning_mode",
-    label: currentLang.value === "vi" ? "Lập kế hoạch cảnh:" : "Scene planning:",
+    label: props.currentLang === "vi" ? "Lập kế hoạch cảnh:" : "Scene planning:",
     options: [
-      { value: "Follow the sheet", label: currentLang.value === "vi" ? "Theo đúng kịch bản" : "Follow the sheet", hint: currentLang.value === "vi" ? "Giữ nguyên cảnh, nhân vật, âm thanh trong kịch bản; chỉ dịch." : "Keep the sheet's scenes, characters and sounds; only translate." },
-      { value: "Creative", label: currentLang.value === "vi" ? "Sáng tạo (AI)" : "Creative (AI)", hint: currentLang.value === "vi" ? "AI viết cảnh từ ý tưởng." : "The AI writes scenes from the idea." },
+      { value: "Follow the sheet", label: props.currentLang === "vi" ? "Theo đúng kịch bản" : "Follow the sheet", hint: props.currentLang === "vi" ? "Giữ nguyên cảnh, nhân vật, âm thanh trong kịch bản; chỉ dịch." : "Keep the sheet's scenes, characters and sounds; only translate." },
+      { value: "Creative", label: props.currentLang === "vi" ? "Sáng tạo (AI)" : "Creative (AI)", hint: props.currentLang === "vi" ? "AI viết cảnh từ ý tưởng." : "The AI writes scenes from the idea." },
     ],
   },
   {
     key: "character_mode",
-    label: currentLang.value === "vi" ? "Nhân vật:" : "Characters:",
+    label: props.currentLang === "vi" ? "Nhân vật:" : "Characters:",
     options: [
-      { value: "Draw in scene", label: currentLang.value === "vi" ? "Vẽ trong cảnh" : "Draw in scene", hint: currentLang.value === "vi" ? "Nhân vật hành động tự nhiên như người thật." : "Characters act naturally, like people." },
-      { value: "Paste exact art", label: currentLang.value === "vi" ? "Dán đúng ảnh gốc" : "Paste exact art", hint: currentLang.value === "vi" ? "Giữ nguyên tuyệt đối ảnh mascot, tư thế cố định." : "The mascot picture is placed unchanged, in its own pose." },
+      { value: "Draw in scene", label: props.currentLang === "vi" ? "Vẽ trong cảnh" : "Draw in scene", hint: props.currentLang === "vi" ? "Nhân vật hành động tự nhiên như người thật." : "Characters act naturally, like people." },
+      { value: "Paste exact art", label: props.currentLang === "vi" ? "Dán đúng ảnh gốc" : "Paste exact art", hint: props.currentLang === "vi" ? "Giữ nguyên tuyệt đối ảnh mascot, tư thế cố định." : "The mascot picture is placed unchanged, in its own pose." },
     ],
   },
   {
     key: "soundtrack_mode",
-    label: currentLang.value === "vi" ? "Âm thanh:" : "Sound:",
+    label: props.currentLang === "vi" ? "Âm thanh:" : "Sound:",
     options: [
-      { value: "Full soundtrack", label: currentLang.value === "vi" ? "Đầy đủ" : "Full", hint: currentLang.value === "vi" ? "Giọng, hiệu ứng và nhạc do mô hình tạo." : "Voice, effects and music from the video model." },
-      { value: "Sound effects only", label: currentLang.value === "vi" ? "Chỉ hiệu ứng" : "Effects only", hint: currentLang.value === "vi" ? "Yêu cầu chỉ có hiệu ứng, không giọng, không nhạc nền." : "Asks for effects only: no voice, no background music." },
-      { value: "Effects + music", label: currentLang.value === "vi" ? "Hiệu ứng + nhạc nền" : "Effects + music", hint: currentLang.value === "vi" ? "Giữ hiệu ứng từng cảnh, thêm một bản nhạc nền cho cả video (nhỏ hơn, tự hạ khi có hiệu ứng)." : "Keeps each scene's effects and adds one music bed under the whole film (quieter, dips under the effects)." },
-      { value: "Separate effects layer", label: currentLang.value === "vi" ? "Lớp hiệu ứng riêng" : "Separate effects layer", hint: currentLang.value === "vi" ? "Thay âm thanh của mô hình bằng lớp hiệu ứng tạo riêng." : "Replaces the model's audio with a generated effects layer." },
+      { value: "Full soundtrack", label: props.currentLang === "vi" ? "Đầy đủ" : "Full", hint: props.currentLang === "vi" ? "Giọng, hiệu ứng và nhạc do mô hình tạo." : "Voice, effects and music from the video model." },
+      { value: "Sound effects only", label: props.currentLang === "vi" ? "Chỉ hiệu ứng" : "Effects only", hint: props.currentLang === "vi" ? "Yêu cầu chỉ có hiệu ứng, không giọng, không nhạc nền." : "Asks for effects only: no voice, no background music." },
+      { value: "Effects + music", label: props.currentLang === "vi" ? "Hiệu ứng + nhạc nền" : "Effects + music", hint: props.currentLang === "vi" ? "Giữ hiệu ứng từng cảnh, thêm một bản nhạc nền cho cả video (nhỏ hơn, tự hạ khi có hiệu ứng)." : "Keeps each scene's effects and adds one music bed under the whole film (quieter, dips under the effects)." },
+      { value: "Separate effects layer", label: props.currentLang === "vi" ? "Lớp hiệu ứng riêng" : "Separate effects layer", hint: props.currentLang === "vi" ? "Thay âm thanh của mô hình bằng lớp hiệu ứng tạo riêng." : "Replaces the model's audio with a generated effects layer." },
     ],
   },
 ]);

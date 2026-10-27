@@ -233,11 +233,24 @@ def set_keyframe_approval(project_name, shot_name, approved=True):
 	if shot.media_project != project.name:
 		frappe.throw(_("Shot does not belong to this project."), frappe.PermissionError)
 	approved = str(approved).lower() in {"1", "true", "yes", "on"}
+	from joymedia.services.keyframes.product_review import (
+		assert_candidate_current,
+		explicit_first_frame,
+		has_product,
+	)
+
+	explicit_product = explicit_first_frame(shot) if has_product(shot) else None
 	if approved:
-		if not shot.keyframe_artifact:
+		if not shot.keyframe_artifact and not explicit_product:
 			frappe.throw(_("Render this scene's keyframe before approving it."))
 		if shot.keyframe_signature != keyframe_signature(shot):
 			frappe.throw(_("This scene changed after its keyframe was drawn. Render the keyframe again."))
+		if explicit_product:
+			assert_candidate_current(project, shot, explicit_product)
+			if shot.consistency_status == "Checking":
+				frappe.throw(_("Wait for the product opening review to finish."))
+			if "Critical " in str(shot.consistency_notes or ""):
+				frappe.throw(_("Resolve the product opening's critical visual findings before approval."))
 	frappe.db.set_value(
 		"Shot", shot.name, "keyframe_status", APPROVED if approved else PENDING, update_modified=False
 	)
@@ -264,6 +277,7 @@ def get_project_keyframes(project_name):
 	"""Each scene's keyframe for the storyboard review: image, status, and whether it is out of date."""
 	project = frappe.get_doc("Media Project", project_name)
 	project._require_read_access()
+	from joymedia.services.keyframes.product_review import has_product
 	from joymedia.services.workflows.capabilities import controls
 
 	reference_only = bool(
@@ -298,6 +312,7 @@ def get_project_keyframes(project_name):
 		]
 		if len(explicit) > 1:
 			frappe.throw(_("Choose exactly one authored first frame."))
+		explicit_product = bool(explicit and has_product(shot))
 		url = (
 			frappe.db.get_value("Asset Version", explicit[0], "file")
 			if len(explicit) == 1
@@ -310,10 +325,17 @@ def get_project_keyframes(project_name):
 				"shot": shot.name,
 				"shot_name": shot.shot_name,
 				"shot_number": shot.shot_number,
-				"needs_keyframe": starts_scene(shot) and not explicit,
+				"needs_keyframe": starts_scene(shot) and (not explicit or explicit_product),
+				"authored_frame": bool(explicit),
 				"url": url,
-				"status": APPROVED if explicit else shot.keyframe_status or "",
-				"stale": not explicit and bool(url) and shot.keyframe_signature != keyframe_signature(shot),
+				"status": (shot.keyframe_status or PENDING)
+				if explicit_product
+				else (APPROVED if explicit else shot.keyframe_status or ""),
+				"stale": bool(url)
+				and (explicit_product or not explicit)
+				and shot.keyframe_signature != keyframe_signature(shot),
+				"review_status": shot.consistency_status or "",
+				"review_notes": shot.consistency_notes or "",
 			}
 		)
 	return rows

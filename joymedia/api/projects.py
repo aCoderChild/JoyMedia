@@ -28,9 +28,14 @@ from joymedia.services.project.context import (
 
 @frappe.whitelist()
 def get_project_cards(search=None, status=None, start=0, page_length=24):
+	from joymedia.services.generation.creative_batch import untitled_names
 	from joymedia.services.project.versions import card_rows, get_videos
 
-	result = card_rows(search, status, start, page_length)
+	result = (
+		_trash_rows(search, start, page_length)
+		if status == "Archived"
+		else card_rows(search, status, start, page_length)
+	)
 	for project in result["items"]:
 		assets = _get_project_selected_assets(frappe.get_doc("Media Project", project["open_project"]))
 		cover = next(
@@ -43,9 +48,136 @@ def get_project_cards(search=None, status=None, start=0, page_length=24):
 			asset_count=len(assets),
 			cover_image=cover,
 			asset_categories=sorted({a.asset_category for a in assets if a.asset_category}),
-			video_count=len(get_videos(project["name"])["videos"]),
 		)
+		if project.get("in_project"):
+			project.update(video_count=1)
+			continue
+		videos = get_videos(project["name"])["videos"]
+		waiting = {"Pictures Ready", "Script Ready", "Needs Attention"}
+		project.update(
+			video_count=len(videos),
+			# What each video waits on, so the card says what to do without opening it.
+			videos_ready=sum(bool(v["video"]) for v in videos),
+			videos_waiting=sum(not v["video"] and (v["stage"] or v["status"]) in waiting for v in videos),
+			videos_working=sum(
+				not v["video"] and (v["stage"] or v["status"]) not in waiting | {"Cancelled", "Draft"}
+				for v in videos
+			),
+		)
+		# Open where the user is needed: a waiting video, else the main one, else the newest.
+		if (
+			project["open_project"] == project["name"]
+			and videos
+			and project["name"] not in [v["name"] for v in videos]
+		):
+			chosen = (
+				next(
+					(
+						v
+						for v in reversed(videos)
+						if not v["video"] and (v["stage"] or v["status"]) in waiting
+					),
+					None,
+				)
+				or next((v for v in videos if v["is_working_edit"]), None)
+				or videos[-1]
+			)
+			project["open_project"] = chosen["name"]
+		if project["project_name"] in untitled_names() and project.get("product_name"):
+			project["project_name"] = project["campaign_name"] = project["product_name"]
 	return result
+
+
+@frappe.whitelist()
+def get_project_videos(project_name):
+	"""The project's video shelf with each video's creation time, newest first."""
+	from joymedia.services.project.versions import get_videos
+
+	result = get_videos(project_name)
+	created = dict(
+		frappe.get_all(
+			"Media Project",
+			filters={"name": ["in", [video["name"] for video in result["videos"]]]},
+			fields=["name", "creation"],
+			as_list=True,
+		)
+	)
+	# Numbered in creation order, so "Video 3" keeps its number however the shelf is sorted.
+	for number, video in enumerate(result["videos"], start=1):
+		video.update(number=number, created_at=str(created.get(video["name"]) or ""))
+	result["videos"].sort(key=lambda video: (video["created_at"], video["name"]), reverse=True)
+	return result
+
+
+def _trash_rows(search, start, page_length):
+	"""Archived projects and archived videos of live projects, most recently removed first."""
+	import re
+
+	from joymedia.services.project.trash import days_left
+	from joymedia.services.project.versions import card_rows
+
+	start, page_length = max(0, int(start or 0)), min(100, max(1, int(page_length or 24)))
+	rows, first = [], 0
+	while True:
+		page = card_rows(search, "Archived", first, 100)
+		rows += page["items"]
+		first += 100
+		if first >= page["total"]:
+			break
+	filters = {"status": "Archived", "version_of": ["is", "set"]}
+	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles():
+		filters["owner"] = frappe.session.user
+	term = str(search or "").strip().casefold()
+	for video in frappe.get_list(
+		"Media Project",
+		filters=filters,
+		fields=[
+			"name",
+			"owner",
+			"project_name",
+			"product_name",
+			"version_of",
+			"version_label",
+			"current_output_asset_version",
+			"modified",
+		],
+		limit_page_length=0,
+	):
+		root = frappe.db.get_value(
+			"Media Project", video.version_of, ["project_name", "status"], as_dict=True
+		)
+		if not root or root.status == "Archived":
+			continue
+		if term and not any(
+			term in str(value or "").casefold()
+			for value in (video.version_label, video.product_name, root.project_name)
+		):
+			continue
+		# "Video 3 · Title" or an internal batch label: keep only the title.
+		title = re.sub(r"^(AI CRB-\d+.*|Original|Video \d+\s*·?\s*)", "", video.version_label or "")
+		rows.append(
+			{
+				**video,
+				"project_name": title,
+				"in_project": root.project_name,
+				"status": "Archived",
+				"open_project": video.name,
+				"has_video": bool(video.current_output_asset_version),
+			}
+		)
+	archived = dict(
+		frappe.get_all(
+			"Media Project",
+			filters={"name": ["in", [row["name"] for row in rows]]},
+			fields=["name", "archived_on"],
+			as_list=True,
+		)
+	)
+	for row in rows:
+		row["archived_on"] = archived.get(row["name"])
+		row["days_left"] = days_left(row["archived_on"])
+	rows.sort(key=lambda row: (str(row["archived_on"] or ""), row["name"]), reverse=True)
+	return {"items": rows[start : start + page_length], "total": len(rows)}
 
 
 @frappe.whitelist()
@@ -67,7 +199,8 @@ def get_sidebar_counts():
 		project_filters["owner"] = frappe.session.user
 	return {
 		"projects": frappe.db.count("Media Project", filters=project_filters),
-		"assets": frappe.db.count("Media Asset", filters={"status": "Active"}),
+		# The same items the Library shows: what people supplied, not generated outputs.
+		"assets": len(get_library_assets()),
 	}
 
 
@@ -85,7 +218,7 @@ def archive_project(project_name):
 		return {"archived": True, "already_archived": True, "project": project.name}
 	# Archiving changes only the lifecycle state. Use a targeted update so an
 	# older project with a now-removed Select value can still be archived.
-	project.db_set("status", "Archived", update_modified=True)
+	project.db_set({"status": "Archived", "archived_on": frappe.utils.now_datetime()}, update_modified=True)
 	return {"archived": True, "project": project.name}
 
 
@@ -99,8 +232,17 @@ def restore_project(project_name):
 	if root.name != project.name and root.status == "Archived":
 		frappe.throw(_("Restore the parent project first."))
 	if project.status == "Archived":
-		project.db_set("status", "Draft")
+		project.db_set({"status": "Draft", "archived_on": None})
 	return {"project": project.name, "restored": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_project_forever(project_name):
+	project = frappe.get_doc("Media Project", project_name)
+	project._require_write_access(allow_archived=True)
+	from joymedia.services.project.trash import delete_forever
+
+	return {"deleted": delete_forever(project)}
 
 
 @frappe.whitelist()
@@ -197,6 +339,15 @@ def get_project_workspace(name):
 			"storyboard_approval_status": project.storyboard_approval_status or "Draft",
 			"follows_sheet": project.follows_sheet(),
 			"storyboard_timing_warnings": frappe.parse_json(project.storyboard_timing_warnings or "[]"),
+			# The storyboard grid is also the client-facing script review.  Expose
+			# its actual workbook here so a customer can download the same source
+			# used to create these shots, rather than having to find a hidden
+			# batch-level link or reconstruct it from the scene cards.
+			"storyboard_download_url": (
+				frappe.db.get_value("File", project.storyboard_source_file, "file_url")
+				if project.storyboard_source_file
+				else ""
+			),
 		},
 		"assets": _get_project_selected_assets(project),
 		"video_settings": (
@@ -288,7 +439,7 @@ def get_library_assets(scope=None, asset_type=None, media_type=None):
 			"media_project",
 		],
 		order_by="modified desc",
-		limit_page_length=200,
+		limit_page_length=0,
 	)
 	filtered_assets = []
 	for asset in assets:

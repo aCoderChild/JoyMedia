@@ -44,7 +44,7 @@ def provider(voice=None, text=None):
 	}
 
 
-def synthesize(text, configuration, output, seconds):
+def synthesize(text, configuration, output, seconds, delivery=None):
 	if configuration["workflow"]:
 		from joymedia.services.workflows.comfyui import run_workflow_to_bytes
 		from joymedia.services.workflows.resolver import build_execution_workflow
@@ -73,9 +73,17 @@ def synthesize(text, configuration, output, seconds):
 	except ImportError as exc:
 		raise ValueError("Install the narration extra or configure a speech workflow.") from exc
 
+	delivery = delivery or {}
+
 	async def run(proxy):
 		await asyncio.wait_for(
-			edge_tts.Communicate(text, configuration["voice"], proxy=proxy).save(str(output)),
+			edge_tts.Communicate(
+				text,
+				configuration["voice"],
+				rate=str(delivery.get("rate") or "+0%"),
+				pitch=str(delivery.get("pitch") or "+0Hz"),
+				proxy=proxy,
+			).save(str(output)),
 			timeout=90,
 		)
 
@@ -87,5 +95,7 @@ def synthesize(text, configuration, output, seconds):
 		# without audio raises a non-OSError and still fails as before.
 		if not configuration.get("proxy"):
 			raise
-		frappe.logger("joymedia.audio").warning("Narration proxy unreachable (%s); trying the direct route.", exc)
+		frappe.logger("joymedia.audio").warning(
+			"Narration proxy unreachable (%s); trying the direct route.", exc
+		)
 		asyncio.run(run(None))

@@ -13,6 +13,9 @@ from frappe.utils.synchronization import filelock
 
 # The shared GPU server can take over a minute to answer while it is under load.
 DEFAULT_TIMEOUT = 180
+# History and queue are tiny control responses polled by the scheduler. A
+# stalled tunnel must not occupy the default Frappe worker for minutes.
+CONTROL_POLL_TIMEOUT = (5, 20)
 # Consecutive failed history polls (5 s apart) tolerated while a job runs.
 MAX_POLL_FAILURES = 24
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
@@ -88,7 +91,15 @@ def _transfer_urls(base_url, config_key):
 	if target is None:
 		return [logical]
 	url = urlsplit(target) if isinstance(target, str) else None
-	if not url or url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password or url.query or url.fragment:
+	if (
+		not url
+		or url.scheme not in {"http", "https"}
+		or not url.hostname
+		or url.username
+		or url.password
+		or url.query
+		or url.fragment
+	):
 		raise ValueError("A ComfyUI transfer fallback must be an HTTP(S) transport URL without credentials.")
 	target = target.rstrip("/")
 	return [logical, target] if target != logical else [logical]
@@ -96,6 +107,7 @@ def _transfer_urls(base_url, config_key):
 
 def get_upload_urls(base_url=None):
 	return _transfer_urls(base_url, "comfyui_upload_fallback_routes")
+
 
 def upload_frappe_file(file_url: str, *, base_url: str | None = None, input_dir: str | None = None) -> dict:
 	if not file_url:
@@ -214,9 +226,9 @@ def get_history(prompt_id: str, *, base_url: str | None = None) -> dict:
 		response = requests.get(
 			f"{get_control_url(base_url)}/history/{prompt_id}",
 			auth=get_request_auth(),
-			timeout=DEFAULT_TIMEOUT,
+			timeout=CONTROL_POLL_TIMEOUT,
 		)
-	except requests.ConnectionError as exc:
+	except (requests.ConnectionError, requests.Timeout) as exc:
 		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
 	_raise_for_comfyui_error(response)
 	return response.json()
@@ -227,9 +239,9 @@ def get_queue(*, base_url: str | None = None) -> dict:
 		response = requests.get(
 			f"{get_control_url(base_url)}/queue",
 			auth=get_request_auth(),
-			timeout=DEFAULT_TIMEOUT,
+			timeout=CONTROL_POLL_TIMEOUT,
 		)
-	except requests.ConnectionError as exc:
+	except (requests.ConnectionError, requests.Timeout) as exc:
 		frappe.throw(_("Unable to connect to ComfyUI: {0}").format(str(exc)))
 	_raise_for_comfyui_error(response)
 	return response.json()

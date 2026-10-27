@@ -69,3 +69,5 @@ joymedia.patches.index_generation_task_identity
 joymedia.patches.backfill_product_lock_patch_versions
 joymedia.patches.register_h3_standard_pipeline
 joymedia.patches.register_h3_ref2va_standard_pipeline
+joymedia.patches.mark_drawn_places_generated
+joymedia.patches.date_archived_projects

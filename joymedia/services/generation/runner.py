@@ -4,6 +4,7 @@ an explicitly selected endpoint frame), submit an attempt and reconcile a submis
 
 import hashlib
 import json
+import time
 
 import frappe
 from frappe import _
@@ -13,6 +14,7 @@ from frappe.utils.synchronization import filelock
 
 from joymedia.joymedia.doctype.generation_attempt.generation_attempt import get_effective_attempt
 from joymedia.services.generation.artifacts import get_attempt_artifact
+from joymedia.services.generation.timing import record as record_timing
 from joymedia.services.keyframes.reference_board import compose_reference_board
 from joymedia.services.planning.prompts import compile_prompt
 from joymedia.services.workflows.comfyui import (
@@ -174,13 +176,35 @@ def submit_attempt(attempt_name: str):
 		attempt.save(ignore_permissions=True)
 		frappe.db.commit()
 
+		stage_timings = {}
+		stage = "input_staging_seconds"
 		try:
+			stage_start = time.monotonic()
 			staged_inputs = _stage_generation_inputs(job, attempt)
+			stage_timings[stage] = time.monotonic() - stage_start
+			stage = "workflow_resolution_seconds"
+			stage_start = time.monotonic()
 			workflow = resolve_attempt(attempt.name, staged_inputs=staged_inputs)
+			stage_timings[stage] = time.monotonic() - stage_start
 			attempt.reload()
 			endpoint_url = attempt.comfyui_endpoint_url
-			result = submit_workflow(workflow, base_url=endpoint_url, client_id=attempt.submission_token)
+			stage = "prompt_submission_seconds"
+			stage_start = time.monotonic()
+			try:
+				result = submit_workflow(workflow, base_url=endpoint_url, client_id=attempt.submission_token)
+			except Exception as submission_error:
+				# ComfyUI may restart after input staging. Its upload endpoint then
+				# forgets the temporary image while the durable Frappe input still
+				# exists. A validation 400 has not queued a render, so restage once.
+				message = str(submission_error)
+				if not ("prompt_outputs_failed_validation" in message and "Invalid image file" in message):
+					raise
+				staged_inputs = _stage_generation_inputs(job, attempt)
+				workflow = resolve_attempt(attempt.name, staged_inputs=staged_inputs)
+				result = submit_workflow(workflow, base_url=endpoint_url, client_id=attempt.submission_token)
+			stage_timings[stage] = time.monotonic() - stage_start
 		except Exception as exc:
+			stage_timings.setdefault(stage, time.monotonic() - stage_start)
 			# A response validation error means ComfyUI did not accept this prompt.
 			# Check the durable client identity first so an interrupted response never
 			# creates a duplicate render, then surface a retryable failed attempt.
@@ -188,6 +212,9 @@ def submit_attempt(attempt_name: str):
 				attempt.submission_token, base_url=attempt.comfyui_endpoint_url
 			)
 			if prompt_id:
+				attempt.reload()
+				for stage_name, seconds in stage_timings.items():
+					record_timing(attempt, stage_name, seconds)
 				attempt.external_job_id = prompt_id
 				attempt.submission_state = "Submitted"
 				attempt.status = "Queued"
@@ -206,6 +233,8 @@ def submit_attempt(attempt_name: str):
 			# the real error on a fresh copy, never a save conflict from a stale one that hides it.
 			frappe.logger("joymedia.generation").exception("Submitting %s failed", attempt.name)
 			attempt.reload()
+			for stage_name, seconds in stage_timings.items():
+				record_timing(attempt, stage_name, seconds)
 			attempt.status = "Failed"
 			attempt.submission_state = "Rejected"
 			attempt.failure_class = failure_class
@@ -215,6 +244,8 @@ def submit_attempt(attempt_name: str):
 			attempt.save(ignore_permissions=True)
 			raise
 
+		for stage_name, seconds in stage_timings.items():
+			record_timing(attempt, stage_name, seconds)
 		attempt.external_job_id = result["prompt_id"]
 		attempt.submission_state = "Submitted"
 		attempt.status = "Queued"

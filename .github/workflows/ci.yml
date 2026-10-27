@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - 'refactor/**'
+      - 'fix/**'
   pull_request:
 
 concurrency:
@@ -78,6 +79,7 @@ jobs:
         run: |
           pip install ruff==0.14.10
           python scripts/verify_app_layout.py
+          bash -n deploy/gpu-release.sh
           ruff check joymedia scripts deploy
           ruff format --check joymedia scripts deploy
 
@@ -112,4 +114,5 @@ jobs:
         working-directory: /home/runner/frappe-bench/apps/joymedia/joymedia/frontend
         run: |
           npm ci
+          node --test tests/*.test.mjs
           npm run build

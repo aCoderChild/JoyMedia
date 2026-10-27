@@ -15,11 +15,12 @@ own (a client's photo of the location) keeps it.
 import hashlib
 import json
 import re
+from pathlib import Path
 
 import frappe
 from frappe import _
 
-from joymedia.services.keyframes.overlay import EMPTY_SETTING, usable_setting
+from joymedia.services.keyframes.overlay import usable_setting
 from joymedia.services.project.realtime import PROJECT_UPDATED, publish_project_event
 
 CLOSE_FRAMING = re.compile(r"close|top[- ]?down|overhead|bird'?s[- ]eye|insert|detail", re.I)
@@ -174,7 +175,12 @@ def missing_places(project, shots):
 	for shot in shots:
 		key = place_key(project, shot.setting_prompt)
 		if not provided and not _own_environment(shot, places) and key not in have:
-			missing.setdefault(key, usable_setting(shot.setting_prompt))
+			setting = usable_setting(shot.setting_prompt)
+			# Match synonymous settings within this pending batch as well as places
+			# already attached to the project. Otherwise "Same living room" gets
+			# drawn as a second, inconsistent room before either plate is stored.
+			if not any(same_place(setting, prior) for prior in missing.values()):
+				missing.setdefault(key, setting)
 	return missing
 
 
@@ -298,8 +304,35 @@ VIEW_SETTING = (
 	"realistic, warm and soft."
 )
 
+LOCATION_PLATE = (
+	"Establish one complete furnished location in coherent perspective. Keep its architecture, floor, fixed "
+	"furnishings and practical light consistent. Give the room foreground, middle-ground and background depth "
+	"through its existing materials and lighting. When no illustrated medium is requested, render as naturalistic "
+	"live-action commercial photography with believable textures, lens depth and motivated practical light; "
+	"avoid drawn outlines or flat cartoon shading. Use setting-appropriate lived-in furnishings, subtle color accents "
+	"and balanced daylight with practical light; avoid an empty shell or a single-color cast. "
+	"Leave the main working area open and its surface bare. "
+	"The frame is an unoccupied architectural plate, with no inset panels or foreground props."
+)
 
-def render_place(project, setting, view=False):
+
+def _architectural_setting(setting):
+	"""Keep the place clause while dropping cast/product directions from a mixed setting field."""
+	text = str(setting or "").strip()
+	match = re.search(
+		r"\b(?:mascot|character|actor|person|people|product|package|pack|tissue|box)\b", text, re.I
+	)
+	if match and match.start() >= 12:
+		text = re.sub(
+			r"\s*(?:(?:,|and|with|where|while|featuring)\s+)?(?:the|a|an)?\s*$",
+			"",
+			text[: match.start()],
+			flags=re.I,
+		)
+	return text.rstrip(" ,.;") or "A furnished room"
+
+
+def render_place(project, setting, view=False, staging=""):
 	"""PNG bytes of the empty place (or, `view`, the close view of a split-screen panel's place), drawn by the keyframe
 	workflow from its text alone (no reference images)."""
 	from joymedia.services.project.context import _project_settings
@@ -312,31 +345,135 @@ def render_place(project, setting, view=False):
 	from joymedia.services.planning.prompts import _mood
 
 	# The film's own style and mood (the Brand sheet, Tone & Mood): the place is drawn as the frames will be drawn.
+	table_guidance = (
+		"If a working table is requested, use one ordinary rigid four-legged table with all four legs "
+		"structurally joined to the same tabletop and resting on the floor. "
+		if "working table" in staging
+		else ""
+	)
 	prompt = (
-		f"{setting}\n\n{VIEW_SETTING if view else EMPTY_SETTING} No people, animals, characters, products, packaging, text or "
-		f"logos. {_mood(project)}"
+		f"{_architectural_setting(setting)}\n\n{VIEW_SETTING if view else LOCATION_PLATE} "
+		f"Furnish the location for these upcoming shot compositions and support surfaces: {staging}. "
+		f"{table_guidance}"
+		"Make the named action furniture prominent and reachable in the foreground; do not make an unmentioned "
+		"piece of furniture the room's dominant feature. Keep the actor's planned floor or seat position open. "
+		"An unoccupied environmental establishing plate: architecture and furnishings only. The main action "
+		f"surface is completely bare and the foreground is clear. {_mood(project)}"
 	).strip()
 	from joymedia.services.project.formats import require_dimensions
 
 	width, height = require_dimensions(settings)
-	workflow = build_execution_workflow(
-		workflow_version,
-		inputs={"generation_prompt": prompt},
-		seed=int(hashlib.sha256(prompt.encode()).hexdigest()[:12], 16),
-		width=width,
-		height=height,
-		fps=float(workflow_version.output_fps or 24),
-		frame_count=1,
-		output_prefix=f"joymedia/places/{frappe.generate_hash(length=10)}",
-	)
+	cache_key = hashlib.sha256(
+		f"{workflow_version.workflow_hash}:{width}x{height}:{prompt}".encode()
+	).hexdigest()
+	cache = Path(frappe.get_site_path("private", "joymedia-location-cache", cache_key + ".png"))
+	if cache.exists():
+		return cache.read_bytes()
 	# The output node is read from the stored graph: the unused reference branches are already pruned from `workflow`.
 	stored = json.loads(workflow_version.workflow_json)
 	output_node = get_workflow_adapter(workflow_version).extract_execution_metadata(stored)[
 		"primary_output_node_key"
 	]
-	content = run_workflow_to_bytes(workflow, output_node, forget=True)
-	frappe.db.commit()  # the render took a while; start a fresh snapshot before writing
-	return content
+	for attempt in range(3):
+		workflow = build_execution_workflow(
+			workflow_version,
+			inputs={"generation_prompt": prompt},
+			seed=int(hashlib.sha256(f"{prompt}:{attempt}".encode()).hexdigest()[:12], 16),
+			width=width,
+			height=height,
+			fps=float(workflow_version.output_fps or 24),
+			frame_count=1,
+			output_prefix=f"joymedia/places/{frappe.generate_hash(length=10)}",
+		)
+		content = run_workflow_to_bytes(workflow, output_node, forget=True)
+		frappe.db.commit()  # the render took a while; start a fresh snapshot before writing
+		if _location_supports_staging(content, setting, staging):
+			cache.parent.mkdir(parents=True, exist_ok=True)
+			cache.write_bytes(content)
+			return content
+		evidence = Path(frappe.get_site_path("private", "joymedia-location-rejections"))
+		evidence.mkdir(parents=True, exist_ok=True)
+		(evidence / f"{hashlib.sha256(prompt.encode()).hexdigest()[:16]}-{attempt}.png").write_bytes(content)
+	raise ValueError("The generated place does not support the authored shot staging.")
+
+
+def _location_supports_staging(content, setting, staging):
+	"""Use the existing vision observer to reject a room with the wrong furniture or support geometry."""
+	from joymedia.services.review.consistency import ask
+
+	try:
+		actor = ask(
+			content,
+			"Is any person, animal, mascot, illustrated character or split-screen panel visible? "
+			"Return JSON answer=true if one is visible, false if this is one empty physical location, with reason.",
+		)
+		if actor.get("answer") is not False:
+			return False
+		foreground = ask(
+			content,
+			"Is the main working surface occupied by ANY loose object or transient action state, including a cup, "
+			"liquid, spill, stain, tissue, retail package, printed container, branded box, dispenser, logo or text-bearing product? "
+			"Ignore built-in furniture and fixed lighting. The work surface must be bare before the first action. "
+			"Return JSON answer=true if any listed object or liquid is visible, false "
+			"otherwise, with reason.",
+		)
+		if foreground.get("answer") is not False:
+			return False
+		if "working table" in staging:
+			table = ask(
+				content,
+				"Inspect only the main foreground working table. If its entire tabletop and base are visible, "
+				"does it have exactly four distinct legs attached to that one tabletop, each meeting the floor, "
+				"without a duplicated, fused or floating leg? Return JSON answer=true if visibly correct, "
+				"false if visibly incorrect, null if the base is occluded; include reason. "
+				"Do not infer hidden legs.",
+			)
+			if table.get("answer") is False:
+				return False
+		if re.search(r"\bliving room\b|\blounge\b", setting, re.I):
+			living_room = ask(
+				content,
+				"Does this setting clearly contain a living-room seating area such as a sofa, couch or lounge armchair, "
+				"with visual depth beyond a dining table? Answer false for an empty room or a kitchen/dining room "
+				"with only upright dining chairs. Return JSON answer=true or false with visible evidence.",
+			)
+			if living_room.get("answer") is not True:
+				return False
+		if not staging:
+			return True
+		result = ask(
+			content,
+			"This is an EMPTY location plate; actors and advertised products should be absent. "
+			f"Requested setting: {setting[:250]}. Upcoming shot staging: {staging[:620]}. "
+			"In the center or foreground, is the exact immediate support or action space required by the "
+			"stated pose and interaction visibly available at reachable height and depth? For actions involving a "
+			"working surface, it must be directly beside the planned actor position. Do not count furniture at a far wall, "
+			"a bed, or a distant desk unless the shot names that object as its working support. Also reject a "
+			"different kind of room that merely contains incidental furniture. Judge only the empty location, "
+			"not the missing actor or product. Answer JSON with answer=true only if visibly suitable, "
+			"false if contradicted, or null if uncertain, plus a short reason.",
+		)
+	except Exception:
+		# An unavailable observer must not prevent the established image workflow
+		# from furnishing a location; later frame review still runs.
+		frappe.log_error(title="Location staging observation unavailable")
+		return True
+	return result.get("answer") is not False
+
+
+def _location_staging(shot):
+	"""Request only support furniture; never copy transient shot props into a shared plate."""
+	text = " ".join((shot.setting_prompt or "", shot.image_prompt or ""))
+	supports = [
+		label
+		for label, pattern in (
+			("reachable working table", r"\b(?:table|desk|counter|worktop)\b"),
+			("physically usable seat", r"\b(?:chair|seat|sofa|couch|bench)\b"),
+			("clear floor beside the work area", r"\b(?:floor|standing|walk|step)\b"),
+		)
+		if re.search(pattern, text, re.I)
+	]
+	return ", ".join(supports)
 
 
 def add_place(project, key, setting, content):
@@ -364,7 +501,9 @@ def _store_place(project, key, label, content):
 			"is_private": 1,
 		}
 	).insert(ignore_permissions=True)
-	asset = create_media_asset(label, "Background", file_url=image.file_url, file_name=image.name)
+	asset = create_media_asset(
+		label, "Background", file_url=image.file_url, file_name=image.name, source="Generated"
+	)
 	select_project_asset(project.name, asset["media_asset"], "Environment", label, reference_key=key)
 
 
@@ -380,20 +519,33 @@ def draw_project_places(project_name, shot_names, user):
 	"""Reuse native shared-setting generation without requiring an image-guided video workflow."""
 	frappe.set_user(user)
 	project = frappe.get_doc("Media Project", project_name)
-	shots = [frappe.get_doc("Shot", name) for name in shot_names]
+	shots = sorted(
+		(frappe.get_doc("Shot", name) for name in shot_names),
+		key=lambda shot: int(shot.shot_number or 0),
+	)
 	wanted = [(key, setting, False) for key, setting in missing_places(project, shots).items()]
 	wanted += [(key, view, True) for key, view in missing_views(project, shots).items()]
+	# The screenplay may call a place merely "cozy room" while its shots need
+	# a reachable table, chair or floor. Give the environment renderer the
+	# actual opening compositions so it cannot silently substitute a bedroom.
+	staging_by_key = {}
+	for shot in shots:
+		key = place_key(project, shot.setting_prompt)
+		opening = _location_staging(shot)
+		if opening and key not in staging_by_key:
+			staging_by_key[key] = opening
 	for key, setting, view in wanted:
 		try:
+			staging = staging_by_key.get(key, "")
 			if view:
 				_store_place(
 					project,
 					key,
 					f"Split-screen view: {setting[:80]}",
-					render_place(project, setting, view=True),
+					render_place(project, setting, view=True, staging=staging),
 				)
 			else:
-				add_place(project, key, setting, render_place(project, setting))
+				add_place(project, key, setting, render_place(project, setting, staging=staging))
 		except Exception:
 			# Without the picture the frames are still drawn, each from the setting text alone.
 			frappe.log_error(title=f"Could not draw the place for {project_name}")

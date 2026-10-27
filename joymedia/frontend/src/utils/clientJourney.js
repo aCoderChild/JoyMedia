@@ -8,7 +8,7 @@ export function clientJourney({ hasStory, shots = [], approved, frames = null, f
   // Missing or incomplete responses must never imply preview approval.
   if (!frames || shots.some(shot => !frames.some(row => row.shot === shot.name))) return "loading";
   const needed = frames.filter(row => row.needs_keyframe);
-  if (needed.some(row => !row.url || row.stale)) return "previews";
+  if (needed.some(row => !row.authored_frame && (!row.url || row.stale))) return "previews";
   if (needed.some(row => row.status !== "Approved")) return "review";
   return "render";
 }

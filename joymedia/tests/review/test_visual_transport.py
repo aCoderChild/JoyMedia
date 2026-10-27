@@ -139,7 +139,6 @@ class TestVisualTransport(TestCase):
 		self.assertEqual("supported", report["results"][0]["verdict"])
 
 
-
 class TestEvidenceReuse(TestCase):
 	def test_identical_recheck_evidence_reuses_the_stored_file(self):
 		import frappe
@@ -147,7 +146,9 @@ class TestEvidenceReuse(TestCase):
 		from joymedia.services.review.consistency import run_temporal_check
 		from joymedia.services.scene.evidence import SequenceCheck
 
-		check = SequenceCheck([], [], [], {"evidence_doctype": "Generation Artifact", "evidence_name": "GART"})
+		check = SequenceCheck(
+			[], [], [], {"evidence_doctype": "Generation Artifact", "evidence_name": "GART"}
+		)
 		with (
 			patch("joymedia.services.scene.evidence.batches", return_value=[]),
 			patch("frappe.db.get_value", return_value="/private/files/existing.json"),

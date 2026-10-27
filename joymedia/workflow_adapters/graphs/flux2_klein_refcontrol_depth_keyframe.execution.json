@@ -1,0 +1,242 @@
+{
+  "capabilities": [
+    "reference_image",
+    "multi_reference",
+    "free_composition",
+    "depth_guided_reference"
+  ],
+  "parameters": [
+    {
+      "semantic": "seed",
+      "node_key": "noise",
+      "input_name": "noise_seed"
+    },
+    {
+      "semantic": "width",
+      "node_key": "latent",
+      "input_name": "width",
+      "transform": "round_to_multiple",
+      "multiple": 16
+    },
+    {
+      "semantic": "height",
+      "node_key": "latent",
+      "input_name": "height",
+      "transform": "round_to_multiple",
+      "multiple": 16
+    },
+    {
+      "semantic": "width",
+      "node_key": "sigmas",
+      "input_name": "width",
+      "transform": "round_to_multiple",
+      "multiple": 16
+    },
+    {
+      "semantic": "height",
+      "node_key": "sigmas",
+      "input_name": "height",
+      "transform": "round_to_multiple",
+      "multiple": 16
+    },
+    {
+      "semantic": "output_prefix",
+      "node_key": "save",
+      "input_name": "filename_prefix"
+    }
+  ],
+  "outputs": {
+    "primary": {
+      "node_key": "save",
+      "media_type": "Image"
+    }
+  },
+  "metadata": {
+    "frame_count": 1,
+    "produces_video": 0,
+    "produces_audio": 0
+  },
+  "input_preprocessing": {
+    "optional_input_chains": [
+      {
+        "target": {
+          "node_key": "guider",
+          "input_name": "positive"
+        },
+        "base": [
+          "geometry_positive_ref",
+          0
+        ],
+        "links": [
+          {
+            "role": "character",
+            "slot": 0,
+            "nodes": [
+              "character1_image",
+              "character1_scale",
+              "character1_encode",
+              "character1_ref"
+            ],
+            "node": "character1_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "character",
+            "slot": 1,
+            "nodes": [
+              "character2_image",
+              "character2_scale",
+              "character2_encode",
+              "character2_ref"
+            ],
+            "node": "character2_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "character",
+            "slot": 2,
+            "nodes": [
+              "character3_image",
+              "character3_scale",
+              "character3_encode",
+              "character3_ref"
+            ],
+            "node": "character3_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "person",
+            "slot": 0,
+            "nodes": [
+              "person_image",
+              "person_scale",
+              "person_encode",
+              "person_ref"
+            ],
+            "node": "person_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "product",
+            "slot": 0,
+            "nodes": [
+              "product_image",
+              "product_scale",
+              "product_encode",
+              "product_ref"
+            ],
+            "node": "product_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "environment",
+            "slot": 0,
+            "nodes": [
+              "environment_image",
+              "environment_scale",
+              "environment_encode",
+              "environment_ref"
+            ],
+            "node": "environment_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "general",
+            "slot": 0,
+            "nodes": [
+              "general_image",
+              "general_scale",
+              "general_encode",
+              "general_ref"
+            ],
+            "node": "general_ref",
+            "input": "conditioning"
+          }
+        ]
+      },
+      {
+        "target": {
+          "node_key": "guider",
+          "input_name": "negative"
+        },
+        "base": [
+          "geometry_negative_ref",
+          0
+        ],
+        "links": [
+          {
+            "role": "character",
+            "slot": 0,
+            "nodes": [
+              "character1_negative_ref"
+            ],
+            "node": "character1_negative_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "character",
+            "slot": 1,
+            "nodes": [
+              "character2_negative_ref"
+            ],
+            "node": "character2_negative_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "character",
+            "slot": 2,
+            "nodes": [
+              "character3_negative_ref"
+            ],
+            "node": "character3_negative_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "person",
+            "slot": 0,
+            "nodes": [
+              "person_negative_ref"
+            ],
+            "node": "person_negative_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "product",
+            "slot": 0,
+            "nodes": [
+              "product_negative_ref"
+            ],
+            "node": "product_negative_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "environment",
+            "slot": 0,
+            "nodes": [
+              "environment_negative_ref"
+            ],
+            "node": "environment_negative_ref",
+            "input": "conditioning"
+          },
+          {
+            "role": "general",
+            "slot": 0,
+            "nodes": [
+              "general_negative_ref"
+            ],
+            "node": "general_negative_ref",
+            "input": "conditioning"
+          }
+        ]
+      }
+    ],
+    "geometry_role": "geometry_reference"
+  },
+  "prompt_transforms": [
+    {
+      "node_key": "text",
+      "input_name": "text",
+      "append_text": "refcontrol"
+    }
+  ]
+}

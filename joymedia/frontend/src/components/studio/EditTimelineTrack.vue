@@ -59,7 +59,7 @@
       <button
         v-for="marker in markers" :key="marker.key" type="button" data-test="timeline-comment-marker"
         class="absolute bottom-0 z-20 h-2 min-w-[4px] rounded-sm cursor-pointer"
-        :class="marker.kind === 'pending' ? 'bg-indigo-400/60 ring-1 ring-indigo-300' : marker.status === 'Open' ? 'bg-amber-400' : 'bg-emerald-400/60'"
+        :class="marker.kind === 'pending' ? 'bg-rio-400/60 ring-1 ring-rio-300' : marker.status === 'Open' ? 'bg-amber-400' : 'bg-emerald-400/60'"
         :style="{ left: `${marker.start * pixelsPerFrame}px`, width: `${Math.max(4, (marker.end - marker.start + 1) * pixelsPerFrame)}px` }"
         :title="marker.text"
         @pointerdown.stop
@@ -453,7 +453,7 @@ onBeforeUnmount(() => {
 }
 .timeline-meta {
   font: 700 10px ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #6366f1;
+  color: #0e7490;
   background: var(--surface-muted, #f2f4f7);
   border: 1px solid var(--outline-border, #e4e7ec);
   border-radius: 999px;
@@ -471,8 +471,8 @@ onBeforeUnmount(() => {
   transition: all .15s;
 }
 .tool-btn:hover:not(:disabled), .tool-btn.active {
-  border-color: #818cf8;
-  color: #4f46e5;
+  border-color: #22d3ee;
+  color: #155e75;
   background: #eef2ff;
 }
 .tool-btn.danger:hover:not(:disabled) {
@@ -496,7 +496,7 @@ onBeforeUnmount(() => {
 }
 .zoom-control input {
   width: 58px;
-  accent-color: #6366f1;
+  accent-color: #0e7490;
 }
 .timeline-ruler {
   position: relative;
@@ -548,7 +548,7 @@ onBeforeUnmount(() => {
   border-color: #a5b4fc;
 }
 .timeline-clip.selected {
-  border-color: #6366f1;
+  border-color: #0e7490;
   box-shadow: 0 0 0 2px rgb(99 102 241 / 15%);
   background: rgb(99 102 241 / 4%);
 }
@@ -617,13 +617,13 @@ onBeforeUnmount(() => {
   transition: all .15s;
 }
 .transition-node:hover {
-  border-color: #818cf8;
-  color: #4f46e5;
+  border-color: #22d3ee;
+  color: #155e75;
   background: #eef2ff;
 }
 .transition-node.active {
-  border-color: #818cf8;
-  color: #6366f1;
+  border-color: #22d3ee;
+  color: #0e7490;
   background: #eef2ff;
 }
 .trim-handle {

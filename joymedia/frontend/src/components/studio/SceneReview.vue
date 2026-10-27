@@ -23,7 +23,7 @@
         class="rounded-lg border border-outline-border p-1.5 text-[11px]" :class="{ 'opacity-60': item.status !== 'Open' || !item.current_take }"
       >
         <div class="flex items-center gap-1">
-          <span class="font-mono font-semibold text-indigo-400">{{ when(item) }}</span>
+          <span class="font-mono font-semibold text-rio-400">{{ when(item) }}</span>
           <Badge :theme="item.status === 'Open' ? 'orange' : item.status === 'Addressed' ? 'blue' : 'green'" :label="statusLabel(item)" />
           <span class="ml-auto truncate text-ink-muted">{{ item.author_name }}</span>
         </div>

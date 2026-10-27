@@ -37,6 +37,28 @@ from joymedia.services.workflows.resolver import (
 )
 
 
+def _prompt_shot(shot_name, shot):
+	"""Keep the same frozen scene fields in image-pipeline and direct tasks."""
+	return frappe._dict(
+		name=shot_name,
+		shot_number=shot.get("shot_number"),
+		generation_prompt=shot.get("generation_prompt"),
+		duration_seconds=shot.get("duration_seconds"),
+		image_prompt=shot.get("image_prompt"),
+		keyframe_retry_note=shot.get("keyframe_retry_note"),
+		keyframe_artifact=shot.get("keyframe_artifact"),
+		setting_prompt=shot.get("setting_prompt"),
+		character_mode=shot.get("character_mode"),
+		views_json=shot.get("views_json"),
+		motion_plan_json=shot.get("motion_plan_json"),
+		start_state=shot.get("start_state"),
+		end_state=shot.get("end_state"),
+		handoff_type=shot.get("handoff_type"),
+		continuity_mode=shot.get("continuity_mode"),
+		references=shot.get("references") or [],
+	)
+
+
 def _continuation_settings(workflow):
 	"""Read segment behavior from the immutable workflow contract, not model code."""
 	try:
@@ -427,23 +449,7 @@ def _prepare_run(run_name: str):
 							previous_pipeline_job = existing_job
 							continue
 						prompt_text = compile_segment_prompt_from_snapshot(
-							frappe._dict(
-								name=shot_name,
-								shot_number=shot.get("shot_number"),
-								generation_prompt=shot.get("generation_prompt"),
-								duration_seconds=shot.get("duration_seconds"),
-								image_prompt=shot.get("image_prompt"),
-								keyframe_artifact=shot.get("keyframe_artifact"),
-								setting_prompt=shot.get("setting_prompt"),
-								character_mode=shot.get("character_mode"),
-								views_json=shot.get("views_json"),
-								motion_plan_json=shot.get("motion_plan_json"),
-								start_state=shot.get("start_state"),
-								end_state=shot.get("end_state"),
-								handoff_type=shot.get("handoff_type"),
-								continuity_mode=shot.get("continuity_mode"),
-								references=shot.get("references") or [],
-							),
+							_prompt_shot(shot_name, shot),
 							frappe._dict(snapshot),
 							segment["segment_index"],
 							len(segments),
@@ -557,22 +563,7 @@ def _prepare_run(run_name: str):
 					else shot_workflow
 				)
 				prompt_text = compile_segment_prompt_from_snapshot(
-					frappe._dict(
-						name=shot_name,
-						shot_number=shot.get("shot_number"),
-						generation_prompt=shot.get("generation_prompt"),
-						duration_seconds=shot.get("duration_seconds"),
-						image_prompt=shot.get("image_prompt"),
-						character_mode=shot.get("character_mode"),
-						views_json=shot.get("views_json"),
-						setting_prompt=shot.get("setting_prompt"),
-						motion_plan_json=shot.get("motion_plan_json"),
-						start_state=shot.get("start_state"),
-						end_state=shot.get("end_state"),
-						handoff_type=shot.get("handoff_type"),
-						continuity_mode=shot.get("continuity_mode"),
-						references=shot.get("references") or [],
-					),
+					_prompt_shot(shot_name, shot),
 					frappe._dict(snapshot),
 					segment["segment_index"],
 					len(segments),
@@ -658,6 +649,11 @@ def _prepare_run(run_name: str):
 
 
 def validate_generation_preflight(project, workflow, shots, *, check_comfyui=False, execution_scope=None):
+	if (execution_scope or {}).get("stage") != "keyframe":
+		from joymedia.services.keyframes.product_review import assert_product_frame_ready
+
+		for shot_row in shots:
+			assert_product_frame_ready(project, frappe.get_doc("Shot", shot_row.name))
 	if not frappe.conf.get("comfyui_base_url"):
 		frappe.throw(_("comfyui_base_url is not configured."))
 	object_info = None

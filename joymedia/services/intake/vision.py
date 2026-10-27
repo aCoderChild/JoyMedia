@@ -45,16 +45,19 @@ Describe it for a video director who cannot see it. Return only JSON:
  "scene_type": "product",
  "description": "at most 45 words: first the object itself (type of object, shape, size impression, material, frame or border, finish, main colours), then what is printed, painted or shown on it, e.g. 'A tall frosted-glass bottle with a brushed silver cap; its label shows a green mountain logo'",
  "construction": {"rigidity": "flexible|rigid|uncertain", "evidence": "visible physical creases, seams, faces or edges supporting this observation; empty when uncertain"},
+ "support_and_access": "visible way the product stands, hangs or is mounted, plus any visible dispensing opening; empty when not visible",
  "outfit": "",
  "lighting": "a few words"}
 Rules: describe only what is visible, never guess. Never describe the depicted scene as if it were the setting.
 Distinguish flexible wrapping from rigid construction using visible creases, seams and edges. A rectangular
 silhouette alone does not establish a rigid box. Use pack/package when rigidity is uncertain; reserve
 box/carton for visible rigid construction. Do not infer a hinged lid, an opening mechanism or hidden layers.
+Describe visible hanging tabs, mounting holes, bases and dispensing openings precisely. Do not infer
+that an item rests on a table when the image only shows its isolated package.
 """.strip()
 
 # Stored with each analysis; analyses made with an older prompt are redone.
-ANALYSIS_VERSION = 4
+ANALYSIS_VERSION = 5
 
 
 def is_configured():
@@ -93,6 +96,14 @@ def _is_current(version, as_product=False):
 		analysis = json.loads(version.analysis_json or "{}")
 	except ValueError:
 		return False
+	# A generated character pose has a separate, versioned visual qualification.
+	# Its stable pose/identity evidence remains usable when the generic caption
+	# prompt changes; a vision outage must not invalidate an accepted view.
+	if not as_product and analysis.get("description"):
+		from joymedia.services.planning.pose_assets import _qualified_pose_metadata
+
+		if _qualified_pose_metadata(analysis):
+			return True
 	return analysis.get("version") == ANALYSIS_VERSION and (
 		not as_product or analysis.get("kind") == "product"
 	)
@@ -101,6 +112,14 @@ def _is_current(version, as_product=False):
 def analyse_asset_version(asset_version_name, as_product=False):
 	"""Analyse one image Asset Version and store the result. Failures are recorded, not raised."""
 	file_url = frappe.db.get_value("Asset Version", asset_version_name, "file")
+	# Generated Character views carry qualification provenance which is distinct
+	# from a generic caption.  Re-running intake vision used to replace the
+	# complete JSON document and silently erase that evidence, making an accepted
+	# standing/side view look like an untrusted raw upload on the next batch.
+	try:
+		stored = json.loads(frappe.db.get_value("Asset Version", asset_version_name, "analysis_json") or "{}")
+	except (TypeError, ValueError):
+		stored = {}
 	try:
 		analysis = describe_image(
 			_image_data_url(file_url), PRODUCT_ANALYSIS_PROMPT if as_product else ANALYSIS_PROMPT
@@ -116,6 +135,14 @@ def analyse_asset_version(asset_version_name, as_product=False):
 			update_modified=False,
 		)
 		return None
+	for key in (
+		"source_asset_version",
+		"pose_qualification_version",
+		"qualified_pose_and_support",
+		"qualified_pose_view",
+	):
+		if stored.get(key):
+			analysis[key] = stored[key]
 	frappe.db.set_value(
 		"Asset Version",
 		asset_version_name,
@@ -177,6 +204,13 @@ def normalize_analysis(result, as_product=False):
 		if not isinstance(rigidity, str) or rigidity not in {"flexible", "rigid"} or not evidence:
 			rigidity, evidence = "uncertain", ""
 		analysis["construction"] = {"rigidity": rigidity, "evidence": evidence}
+		support_and_access = result.get("support_and_access")
+		support_and_access = support_and_access.strip()[:240] if isinstance(support_and_access, str) else ""
+		analysis["support_and_access"] = support_and_access
+		if support_and_access:
+			analysis["description"] = (
+				f"Visible support and access: {support_and_access}. " + analysis["description"]
+			)
 		if evidence:
 			analysis["description"] = (
 				f"Visible construction: {rigidity}; {evidence}. " + analysis["description"]

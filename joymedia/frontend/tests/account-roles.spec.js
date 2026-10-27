@@ -18,7 +18,7 @@ test.describe('explicit account roles',()=>{
   await expect(page.locator('[data-test="client-workspace"]')).toBeVisible();await expect(page).not.toHaveURL(/editor=/);
   await page.locator('[data-test="client-workspace"] header summary').click();
   await expect(page.locator('[data-test="open-advanced-editor"]')).toHaveCount(0);
-  await expect(page.locator('[data-test="client-version-history"]')).toBeVisible();
+  await page.locator('summary', {hasText:/More|Thêm/}).first().click();await expect(page.locator('[data-test="open-project-history"]')).toBeVisible();
   const hidden=await context.request.get(api+'joymedia.api.projects.get_project_workspace',{params:{name:'PRJ-02503'}});expect([403,417]).toContain(hidden.status());
   const grants=await context.request.get('/api/resource/Partner Access');expect([403,417]).toContain(grants.status());
   await page.screenshot({path:'/workspace/development/verification/flow-ui/client-role.png',fullPage:true});

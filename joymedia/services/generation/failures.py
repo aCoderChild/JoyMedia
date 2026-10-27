@@ -12,6 +12,10 @@ def classify_failure(error, default="Unknown"):
 	lower_message = message.lower()
 	if "cancel" in lower_message:
 		return "Cancelled"
+	# An interrupted ComfyUI execution says nothing about the workflow; its status
+	# log merely lists cached "nodes". Render the scene again.
+	if "execution_interrupted" in lower_message:
+		return "Infrastructure"
 	# Provider/node authentication cannot be fixed by submitting the same prompt
 	# again.  Treat it as a workflow configuration issue so the UI asks for the
 	# integration to be connected instead of claiming the render is still queued.

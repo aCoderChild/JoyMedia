@@ -646,11 +646,45 @@ class TestRoleInputCount(FrappeTestCase):
 
 
 class TestVisionAnalysis(FrappeTestCase):
+	def test_reviewed_character_pose_keeps_its_versioned_qualification(self):
+		qualified = {
+			"source_asset_version": "ASTV-source",
+			"pose_qualification_version": 2,
+			"qualified_pose_and_support": "standing on supported feet",
+			"qualified_pose_view": "front",
+			"description": "A full-body studio view",
+		}
+		self.assertTrue(
+			vision_analysis._is_current(
+				frappe._dict(analysis_status="Ready", analysis_json=frappe.as_json(qualified))
+			)
+		)
+		self.assertFalse(
+			vision_analysis._is_current(
+				frappe._dict(
+					analysis_status="Ready",
+					analysis_json=frappe.as_json({**qualified, "pose_qualification_version": 1}),
+				)
+			)
+		)
+
 	def test_pose_and_support_survive_analysis_without_inventing_hidden_geometry(self):
-		analysis = vision_analysis.normalize_analysis({"kind": "other", "description": "A stylized figure.", "pose_and_support": "Seated on the visible floor; feet face forward."})
+		analysis = vision_analysis.normalize_analysis(
+			{
+				"kind": "other",
+				"description": "A stylized figure.",
+				"pose_and_support": "Seated on the visible floor; feet face forward.",
+			}
+		)
 		self.assertEqual("Seated on the visible floor; feet face forward.", analysis["pose_and_support"])
-		self.assertEqual("", vision_analysis.normalize_analysis({"description": "A figure."})["pose_and_support"])
-		self.assertFalse(vision_analysis._is_current(frappe._dict(analysis_status="Ready", analysis_json='{"version":3,"kind":"product"}')))
+		self.assertEqual(
+			"", vision_analysis.normalize_analysis({"description": "A figure."})["pose_and_support"]
+		)
+		self.assertFalse(
+			vision_analysis._is_current(
+				frappe._dict(analysis_status="Ready", analysis_json='{"version":3,"kind":"product"}')
+			)
+		)
 
 	def test_product_rigidity_requires_visible_evidence_and_is_available_to_the_writer(self):
 		for construction in [{}, {"rigidity": "rigid"}, {"rigidity": [], "evidence": "guess"}]:
@@ -668,6 +702,22 @@ class TestVisionAnalysis(FrappeTestCase):
 			as_product=True,
 		)
 		self.assertTrue(result["description"].startswith("Visible construction: flexible"))
+
+	def test_product_support_and_access_requires_visible_evidence(self):
+		result = vision_analysis.normalize_analysis(
+			{
+				"description": "A soft package.",
+				"support_and_access": "Two holes in an extended hanging tab; tissue emerges through the front opening.",
+			},
+			as_product=True,
+		)
+		self.assertIn("Visible support and access: Two holes", result["description"])
+		self.assertEqual(
+			"",
+			vision_analysis.normalize_analysis({"description": "A package."}, as_product=True)[
+				"support_and_access"
+			],
+		)
 
 	def test_old_packaging_description_is_reanalysed_after_material_rules_change(self):
 		self.assertFalse(

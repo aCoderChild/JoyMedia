@@ -25,7 +25,7 @@
         v-for="row in rows" :key="row.name" :data-status="row.status"
         class="flex items-start gap-2 rounded-lg border border-outline-border p-1.5 text-[11px]" :class="{ 'opacity-60': row.status !== 'Open' }"
       >
-        <button type="button" class="shrink-0 font-mono font-semibold text-indigo-400 hover:underline" :disabled="row.at === null" @click="$emit('seek', row.at)">
+        <button type="button" class="shrink-0 font-mono font-semibold text-rio-400 hover:underline" :disabled="row.at === null" @click="$emit('seek', row.at)">
           {{ `${tr('Scene', 'Cảnh')} ${row.number}` }} · {{ row.when }}
         </button>
         <span class="grow whitespace-pre-wrap break-words text-ink-primary">{{ row.comment }}</span>

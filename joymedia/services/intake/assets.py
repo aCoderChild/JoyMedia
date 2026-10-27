@@ -96,7 +96,8 @@ def _get_duplicate_version(
 
 
 @frappe.whitelist()
-def create_media_asset(asset_name, asset_category, file_url=None, file_name=None):
+def create_media_asset(asset_name, asset_category, file_url=None, file_name=None, source="Uploaded"):
+	"""source: "Generated" for pictures the system drew itself, which stay out of the Library view."""
 	from joymedia.services.partners import is_reviewer, require_generation
 
 	if is_reviewer():
@@ -147,7 +148,7 @@ def create_media_asset(asset_name, asset_category, file_url=None, file_name=None
 			"doctype": "Asset Version",
 			"media_asset": asset.name,
 			"file": file_url,
-			"source": "Uploaded",
+			"source": "Generated" if source == "Generated" else "Uploaded",
 		}
 	).insert(ignore_permissions=True)
 	# Small images still work as references, but identity and detail suffer, so the

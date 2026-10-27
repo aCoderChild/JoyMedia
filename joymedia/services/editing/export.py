@@ -11,6 +11,7 @@ from frappe import _
 
 from joymedia.services.editing import finishing as finishing
 from joymedia.services.editing.composer import (
+	_escape_concat_path,
 	_get_audio_sources,
 	_get_or_create_final_asset,
 	_get_video_duration,
@@ -485,6 +486,37 @@ def _render_sequence(
 ):
 	if positioned:
 		return _render_positioned_sequence(paths, clips, clip_frames, output_path, profile, total_frames)
+	# Every input has already been normalized to the same codec, dimensions,
+	# frame rate and frame count.  A cut-only edit can be joined without opening
+	# all video decoders at once.  The filter graph below exhausted memory on
+	# six 720p clips in the application worker.
+	if len(paths) > 1 and not any(transition_frames[:-1]):
+		manifest = Path(output_path).with_suffix(".concat.txt")
+		manifest.write_text(
+			"".join(f"file '{_escape_concat_path(Path(path).resolve())}'\n" for path in paths),
+			encoding="utf-8",
+		)
+		_run_ffmpeg(
+			[
+				"ffmpeg",
+				"-y",
+				"-f",
+				"concat",
+				"-safe",
+				"0",
+				"-i",
+				str(manifest),
+				"-map",
+				"0:v:0",
+				"-an",
+				"-c:v",
+				"copy",
+				"-movflags",
+				"+faststart",
+				str(output_path),
+			]
+		)
+		return
 	if len(paths) == 1:
 		_run_ffmpeg(
 			[

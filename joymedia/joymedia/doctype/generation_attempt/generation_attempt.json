@@ -20,6 +20,7 @@
   "started_at",
   "completed_at",
   "runtime_seconds",
+  "timing_json",
   "resolved_execution_section",
   "resolved_workflow_json",
   "resolved_workflow_hash",
@@ -121,6 +122,13 @@
    "fieldname": "runtime_seconds",
    "fieldtype": "Float",
    "label": "Runtime (Seconds)",
+   "read_only": 1
+  },
+  {
+   "description": "Measured input staging, submission, ingestion, and visual admission timings in seconds.",
+   "fieldname": "timing_json",
+   "fieldtype": "Code",
+   "label": "Stage Timings JSON",
    "read_only": 1
   },
   {

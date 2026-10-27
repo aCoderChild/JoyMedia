@@ -280,6 +280,12 @@ def _plan_project(project, wanted, apply, progress=None):
 		if progress:
 			progress(len(results), total, results[-1])
 	if apply and any(not result["held_back"] for result in results):
+		# The image stage receives a complete pose/action coverage map only after
+		# every scene has been planned. This produces explicit bridge-keyframe
+		# requirements before any GPU image task is submitted.
+		from joymedia.services.planning.pose_coverage import annotate_shots
+
+		annotate_shots(project, [shot for shot in shots if not wanted or shot.name in wanted])
 		_mark_storyboard_needs_review(project)
 		frappe.db.commit()
 	return results
@@ -638,7 +644,14 @@ def update_project_shot(project_name, shot_name, values):
 	):
 		shot.save(ignore_permissions=True)
 	# Captions are finishing-only; the approved plan signature already covers generation inputs.
-	if action_changed or changed or contract_changed or image_prompt_changed or state_changed or continuity_changed:
+	if (
+		action_changed
+		or changed
+		or contract_changed
+		or image_prompt_changed
+		or state_changed
+		or continuity_changed
+	):
 		_mark_storyboard_needs_review(project)
 	if caption_changed:
 		from joymedia.services.editing.timeline import _invalidate_project_output
@@ -704,6 +717,17 @@ def set_project_shot_keyframe(project_name, shot_name, frame_role, asset_version
 	)
 	shot.append("generation_inputs", {"reference_role": frame_role, "asset_version": asset.name})
 	shot.save(ignore_permissions=True)
+	if frame_role == "first_frame":
+		from joymedia.services.keyframes.product_review import has_product, queue_product_frame_audit
+
+		if has_product(shot):
+			from joymedia.services.keyframes.stage import PENDING, keyframe_signature
+
+			shot.db_set(
+				{"keyframe_status": PENDING, "keyframe_signature": keyframe_signature(shot)},
+				update_modified=False,
+			)
+			queue_product_frame_audit(project, shot, asset.name)
 	_mark_storyboard_needs_review(project)
 	return {
 		"shot_name": shot.name,
@@ -736,7 +760,11 @@ def clear_project_shot_keyframe(project_name, shot_name, frame_role):
 	shot.set("generation_inputs", remaining)
 	shot.save(ignore_permissions=True)
 	_mark_storyboard_needs_review(project)
-	return {"shot_name": shot.name, "frame_role": frame_role, "is_outdated": bool(shot.selected_output_asset_version)}
+	return {
+		"shot_name": shot.name,
+		"frame_role": frame_role,
+		"is_outdated": bool(shot.selected_output_asset_version),
+	}
 
 
 @frappe.whitelist()

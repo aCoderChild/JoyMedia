@@ -50,7 +50,7 @@ class TestProjectVersions(FrappeTestCase):
 		self.assertEqual(root.name, stack["root"])
 		# No storyboard, film or script in progress yet: nothing to watch or compare.
 		self.assertEqual([], stack["videos"])
-		frappe.get_doc(
+		batch = frappe.get_doc(
 			{
 				"doctype": "Creative Batch",
 				"source_project": root.name,
@@ -61,6 +61,23 @@ class TestProjectVersions(FrappeTestCase):
 		).insert(ignore_permissions=True)
 		stack = versions.get_videos(second.name)
 		self.assertEqual([("Video 1", "Planning")], [(v["label"], v["stage"]) for v in stack["videos"]])
+		batch.db_set(
+			{
+				"status": "Needs Attention",
+				"variants_json": json.dumps(
+					[
+						{
+							"project": first.name,
+							"status": "Needs Attention",
+							"error": "The script needs another scene.",
+						}
+					]
+				),
+			}
+		)
+		self.assertEqual(
+			"The script needs another scene.", versions.get_videos(root.name)["videos"][0]["stage_error"]
+		)
 
 	def test_other_owner_cannot_be_grouped_even_by_admin(self):
 		root, edit = project(), project()

@@ -28,6 +28,8 @@ EMPTY_SETTING = (
 	"Establish the complete authored location in coherent perspective, retaining its specified architecture, "
 	"furniture, ground and fixed props. Leave working surfaces clear unless the setting explicitly places "
 	"an object on them. Keep described openings reachable and unobstructed by objects or overhanging furniture. "
+	"Give the room credible foreground, middle-ground and background depth through its existing architecture, "
+	"material texture and motivated light; keep cast seats and product supports legible. "
 	"Do not add decorative clutter to working areas or impose a different floor layout."
 )
 

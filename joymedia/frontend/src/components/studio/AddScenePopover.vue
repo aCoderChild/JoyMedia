@@ -23,7 +23,7 @@
             max="120"
             step="0.5"
             inputmode="decimal"
-            class="w-full rounded-xl border border-outline-border bg-surface-muted px-3 py-2 pr-10 text-sm text-ink-primary focus:border-indigo-500 focus:outline-none"
+            class="w-full rounded-xl border border-outline-border bg-surface-muted px-3 py-2 pr-10 text-sm text-ink-primary focus:border-rio-500 focus:outline-none"
             placeholder="15"
           />
           <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-muted">sec</span>
@@ -44,12 +44,12 @@
           v-model="instruction"
           rows="3"
           :placeholder="currentLang === 'vi' ? 'Để trống để AI Director tự tiếp tục câu chuyện...' : 'Leave blank and AI Director will continue naturally...'"
-          class="w-full resize-none rounded-xl border border-outline-border bg-surface-muted px-2.5 py-2 text-xs text-ink-primary placeholder:text-ink-muted focus:border-indigo-500 focus:outline-none"
+          class="w-full resize-none rounded-xl border border-outline-border bg-surface-muted px-2.5 py-2 text-xs text-ink-primary placeholder:text-ink-muted focus:border-rio-500 focus:outline-none"
         />
       </div>
 
       <label class="flex items-start gap-2 rounded-xl border border-outline-border bg-surface-muted p-2 text-[11px] text-ink-secondary cursor-pointer">
-        <input v-model="continuity" type="checkbox" class="mt-0.5 accent-indigo-600" />
+        <input v-model="continuity" type="checkbox" class="mt-0.5 accent-rio-600" />
         <span>
           <span class="block font-semibold text-ink-primary">{{ currentLang === 'vi' ? 'Tiếp nối cảnh trước' : 'Continue from previous shot' }}</span>
           <span class="block text-ink-muted mt-0.5">{{ currentLang === 'vi' ? 'Dùng khung cuối của cảnh trước khi workflow hỗ trợ.' : 'Use the previous shot’s last frame when supported.' }}</span>
@@ -60,7 +60,7 @@
         <button type="button" class="rounded-lg px-3 py-1.5 text-xs text-ink-secondary hover:bg-surface-hover cursor-pointer" @click="$emit('close')">{{ currentLang === 'vi' ? 'Hủy' : 'Cancel' }}</button>
         <button
           type="submit"
-          class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 cursor-pointer disabled:opacity-50"
+          class="rounded-lg bg-rio-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rio-500 cursor-pointer disabled:opacity-50"
           :disabled="busy"
         >
           {{ busy ? (currentLang === 'vi' ? 'Đang lập kế hoạch…' : 'Planning…') : (currentLang === 'vi' ? 'Tạo' : 'Generate') }}

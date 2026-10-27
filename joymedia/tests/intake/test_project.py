@@ -115,7 +115,10 @@ class TestCreateFromBrief(FrappeTestCase):
 		first = project_intake.create_project_from_brief(
 			"Pack film", references=[{"file_name": pack.name, "label": "pack", "role": "Product"}]
 		)["project"]
-		again, mascot = self._picture("pack copy.png", (20, 120, 220)), self._picture("bear.png", (240, 240, 230))
+		again, mascot = (
+			self._picture("pack copy.png", (20, 120, 220)),
+			self._picture("bear.png", (240, 240, 230)),
+		)
 		self.assertEqual([first], [row.name for row in project_intake.find_product_project([again.name])])
 		self.assertEqual([], project_intake.find_product_project([mascot.name]))
 

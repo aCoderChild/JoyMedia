@@ -1,12 +1,12 @@
 <template>
   <div
     class="media-thumbnail-root relative overflow-hidden rounded-xl bg-surface-muted border border-outline-border flex items-center justify-center select-none group"
-    :class="[aspectClass, customClass, { 'ring-2 ring-indigo-500': selected }]"
+    :class="[aspectClass, customClass, { 'ring-2 ring-rio-500': selected }]"
   >
     <!-- Top-left Badge (e.g. Reference Role) -->
     <span
       v-if="badge"
-      class="absolute top-2 left-2 z-10 text-[10px] font-bold px-2 py-0.5 rounded-md backdrop-blur-md shadow-xs bg-indigo-600/90 text-white uppercase tracking-wider"
+      class="absolute top-2 left-2 z-10 text-[10px] font-bold px-2 py-0.5 rounded-md backdrop-blur-md shadow-xs bg-rio-600/90 text-white uppercase tracking-wider"
     >
       {{ badge }}
     </span>
@@ -25,7 +25,7 @@
       />
       <!-- Play overlay icon -->
       <div class="absolute inset-0 z-10 flex items-center justify-center bg-black/25 group-hover:bg-black/35 transition-colors pointer-events-none">
-        <div v-if="showPlayOverlay" class="size-8 sm:size-9 rounded-full bg-white/90 dark:bg-zinc-900/90 flex items-center justify-center text-indigo-600 shadow-md group-hover:scale-110 transition-transform">
+        <div v-if="showPlayOverlay" class="size-8 sm:size-9 rounded-full bg-white/90 dark:bg-zinc-900/90 flex items-center justify-center text-rio-600 shadow-md group-hover:scale-110 transition-transform">
           <svg class="size-4 fill-current ml-0.5" viewBox="0 0 24 24">
             <polygon points="5 3 19 12 5 21 5 3" />
           </svg>
@@ -42,15 +42,15 @@
 
     <!-- CASE 2: Audio -->
     <template v-else-if="resolvedType === 'Audio'">
-      <div class="w-full h-full flex flex-col items-center justify-center p-3 bg-gradient-to-br from-indigo-950/40 via-surface-card to-purple-950/30 text-center">
+      <div class="w-full h-full flex flex-col items-center justify-center p-3 bg-gradient-to-br from-rio-950/40 via-surface-card to-purple-950/30 text-center">
         <!-- Audio Waveform Graphic -->
         <div class="flex items-end justify-center gap-1 h-8 mb-2">
-          <span class="w-1 bg-indigo-400 rounded-full h-3 group-hover:h-5 transition-all" />
-          <span class="w-1 bg-indigo-500 rounded-full h-6 group-hover:h-8 transition-all" />
-          <span class="w-1 bg-indigo-400 rounded-full h-4 group-hover:h-6 transition-all" />
+          <span class="w-1 bg-rio-400 rounded-full h-3 group-hover:h-5 transition-all" />
+          <span class="w-1 bg-rio-500 rounded-full h-6 group-hover:h-8 transition-all" />
+          <span class="w-1 bg-rio-400 rounded-full h-4 group-hover:h-6 transition-all" />
           <span class="w-1 bg-purple-400 rounded-full h-7 group-hover:h-7 transition-all" />
           <span class="w-1 bg-purple-500 rounded-full h-5 group-hover:h-8 transition-all" />
-          <span class="w-1 bg-indigo-400 rounded-full h-2 group-hover:h-4 transition-all" />
+          <span class="w-1 bg-rio-400 rounded-full h-2 group-hover:h-4 transition-all" />
         </div>
         <span class="text-xs font-semibold text-ink-primary truncate max-w-full px-2">
           {{ alt || "Audio Track" }}

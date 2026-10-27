@@ -106,6 +106,15 @@ class TestComfyUIClient(FrappeTestCase):
 		self.assertEqual("pending", get_queue_state("prompt-pending", base_url="http://comfyui"))
 		self.assertIsNone(get_queue_state("prompt-gone", base_url="http://comfyui"))
 		self.assertEqual("http://comfyui/queue", get.call_args.args[0])
+		self.assertEqual((5, 20), get.call_args.kwargs["timeout"])
+
+	@patch("joymedia.services.workflows.comfyui.frappe.conf", {})
+	@patch("joymedia.services.workflows.comfyui.requests.get")
+	def test_history_poll_uses_short_timeout_and_reports_tunnel_stall(self, get):
+		get.side_effect = requests.ReadTimeout("stalled tunnel")
+		with self.assertRaises(frappe.ValidationError):
+			get_history("prompt-1", base_url="http://comfyui")
+		self.assertEqual((5, 20), get.call_args.kwargs["timeout"])
 
 	@patch("joymedia.services.workflows.comfyui.frappe.conf", {})
 	@patch("joymedia.services.workflows.comfyui.requests.post")
@@ -146,19 +155,27 @@ class TestComfyUIClient(FrappeTestCase):
 
 
 class TestComfyUIUploadRoutes(FrappeTestCase):
-	@patch("joymedia.services.workflows.comfyui.frappe.conf", {
-		"comfyui_download_fallback_routes": {"http://data": "http://alternate"},
-	})
+	@patch(
+		"joymedia.services.workflows.comfyui.frappe.conf",
+		{
+			"comfyui_download_fallback_routes": {"http://data": "http://alternate"},
+		},
+	)
 	@patch("joymedia.services.workflows.comfyui.requests.get")
 	def test_output_timeout_fetches_same_file_without_resubmitting(self, get):
 		get.side_effect = [requests.ReadTimeout("response lost"), Mock(ok=True, content=b"audio")]
 		self.assertEqual(b"audio", download_output("scene.flac", "audio", base_url="http://data"))
-		self.assertEqual(["http://data/view", "http://alternate/view"], [c.args[0] for c in get.call_args_list])
+		self.assertEqual(
+			["http://data/view", "http://alternate/view"], [c.args[0] for c in get.call_args_list]
+		)
 		self.assertEqual(get.call_args_list[0].kwargs["params"], get.call_args_list[1].kwargs["params"])
 
-	@patch("joymedia.services.workflows.comfyui.frappe.conf", {
-		"comfyui_upload_fallback_routes": {"http://data": "http://alternate"},
-	})
+	@patch(
+		"joymedia.services.workflows.comfyui.frappe.conf",
+		{
+			"comfyui_upload_fallback_routes": {"http://data": "http://alternate"},
+		},
+	)
 	@patch("joymedia.services.workflows.comfyui.filelock", return_value=nullcontext())
 	@patch("joymedia.services.workflows.comfyui.requests.post")
 	def test_timeout_reopens_same_upload_on_explicit_transport(self, post, lock):
@@ -167,6 +184,7 @@ class TestComfyUIUploadRoutes(FrappeTestCase):
 		from joymedia.services.workflows.comfyui import upload_local_file
 
 		seen = []
+
 		def receive(url, **kwargs):
 			name, handle = kwargs["files"]["image"]
 			seen.append((url, name, handle.read()))
@@ -175,6 +193,7 @@ class TestComfyUIUploadRoutes(FrappeTestCase):
 			response = Mock(ok=True)
 			response.json.return_value = {"name": name}
 			return response
+
 		post.side_effect = receive
 		with tempfile.TemporaryDirectory() as directory:
 			path = Path(directory) / "input.png"
@@ -186,18 +205,26 @@ class TestComfyUIUploadRoutes(FrappeTestCase):
 		self.assertEqual(seen[0][1:], seen[1][1:])
 		self.assertEqual(expected, seen[1][2])
 
-	@patch("joymedia.services.workflows.comfyui.frappe.conf", {
-		"comfyui_upload_fallback_routes": {"http://data": "http://alternate"},
-	})
+	@patch(
+		"joymedia.services.workflows.comfyui.frappe.conf",
+		{
+			"comfyui_upload_fallback_routes": {"http://data": "http://alternate"},
+		},
+	)
 	def test_unmapped_server_has_no_implicit_upload_fallback(self):
 		from joymedia.services.workflows.comfyui import get_upload_urls
+
 		self.assertEqual(["http://other"], get_upload_urls("http://other/"))
 
-	@patch("joymedia.services.workflows.comfyui.frappe.conf", {
-		"comfyui_upload_fallback_routes": {"http://data": "file:///tmp"},
-	})
+	@patch(
+		"joymedia.services.workflows.comfyui.frappe.conf",
+		{
+			"comfyui_upload_fallback_routes": {"http://data": "file:///tmp"},
+		},
+	)
 	def test_invalid_upload_route_is_rejected(self):
 		from joymedia.services.workflows.comfyui import get_upload_urls
+
 		with self.assertRaises(ValueError):
 			get_upload_urls("http://data")
 

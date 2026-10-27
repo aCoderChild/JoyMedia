@@ -8,17 +8,107 @@ from joymedia.services.planning.prompts import (
 	_keyframe_retry_direction,
 	compile_prompt_for_documents,
 	compile_segment_prompt_from_snapshot,
+	source_prop_exclusions,
 )
 
 
 class TestPromptCompiler(FrappeTestCase):
+	def test_standing_opening_keeps_feet_and_forbids_a_supporting_chair(self):
+		shot = frappe._dict(
+			name="SHOT-TEST",
+			shot_number=2,
+			start_state="The mascot stands beside the table.",
+			image_prompt="The mascot faces the product.",
+			motion_plan_json='{"pose_requirement":{"opening_pose":"upright_supported","constraints":["show both feet"]}}',
+		)
+		project = frappe._dict(generation_mode="Multi-shot", global_instructions="")
+		prompt = compile_prompt_for_documents(shot, project, prompt_source="image")
+		self.assertIn("standing upright on both feet", prompt)
+		self.assertIn("no chair, sofa, stool, or table carries its body weight", prompt)
+
+	def test_product_free_character_opening_excludes_unrequested_merchandise(self):
+		shot = frappe._dict(
+			name="SHOT-TEST",
+			shot_number=1,
+			image_prompt="The mascot sits beside the coffee table.",
+			references=[{"reference_role": "character", "asset_version": "ASTV-MASCOT"}],
+		)
+		project = frappe._dict(generation_mode="Multi-shot", global_instructions="")
+		prompt = compile_prompt_for_documents(shot, project, prompt_source="image")
+		self.assertIn("no advertised product", prompt)
+		self.assertIn("retail packs", prompt)
+
+	def test_pack_artwork_does_not_authorize_source_heart_in_mascot_paws(self):
+		shot = frappe._dict(
+			start_state="The mascot sits beside the pack with empty paws.",
+			image_prompt="A tissue pack printed with a cartoon bear holding a heart sits on the table.",
+			generation_prompt="The mascot reaches for the tissue pack.",
+			generation_inputs=[frappe._dict(reference_role="Character", asset_version="CLEAN")],
+		)
+		with (
+			patch("frappe.db.get_value", return_value='{"source_asset_version":"SOURCE"}'),
+			patch("frappe.cache.get_value", return_value=["heart"]),
+		):
+			self.assertEqual(["heart"], source_prop_exclusions(shot, frappe._dict()))
+			shot.image_prompt = "The mascot faces a pack printed with a cartoon bear holding a heart."
+			shot.name = "SHOT-TEST"
+			compiled = compile_prompt_for_documents(
+				shot,
+				frappe._dict(generation_mode="Multi-shot", global_instructions=""),
+				prompt_source="image",
+			)
+			self.assertIn("Do not add these source-only held props to the live actor: heart", compiled)
+		shot.start_state = "The mascot holds a heart beside the pack."
+		with (
+			patch("frappe.db.get_value", return_value='{"source_asset_version":"SOURCE"}'),
+			patch("frappe.cache.get_value", return_value=["heart"]),
+		):
+			self.assertEqual([], source_prop_exclusions(shot, frappe._dict()))
+
+	def test_geometry_retry_uses_authored_opening_without_video_action_or_invented_chair(self):
+		project = frappe._dict(name="PRJ-TEST", references=[], generation_mode="Multi-shot")
+		shot = frappe._dict(
+			name="SHOT-TEST",
+			shot_number=1,
+			character_mode="Draw in scene",
+			image_prompt="The bear sits on the floor beside the table.",
+			generation_prompt="The bear rises and reaches for the pack.",
+			consistency_status="Redrawing",
+			consistency_notes="Critical geometry: bear rests on a table",
+			references=[{"reference_role": "character", "asset_version": "ASTV-MASCOT"}],
+		)
+		with patch("joymedia.services.planning.prompts._mood", return_value="Warm daylight."):
+			image = compile_prompt_for_documents(shot, project, prompt_source="image")
+		self.assertIn("bear sits on the floor", image)
+		self.assertIn("positions specified by the scene", image)
+		self.assertNotIn("bear rises", image)
+		self.assertNotIn("show a chair", image.lower())
+
 	def test_keyframe_retry_direction_is_bounded_to_critical_redraws(self):
 		shot = frappe._dict(consistency_status="Redrawing", consistency_notes="Critical framing: full body")
 		self.assertIn("actor's feet", _keyframe_retry_direction(shot))
 		shot.consistency_notes = "Critical geometry: unsupported product"
 		self.assertIn("supporting surface", _keyframe_retry_direction(shot))
+		self.assertIn(
+			"supporting surface",
+			_keyframe_retry_direction(
+				frappe._dict(keyframe_retry_note="Critical geometry: unsupported product")
+			),
+		)
 		shot.consistency_notes = "Critical prop: extra printed package"
 		self.assertIn("undeclared retail package", _keyframe_retry_direction(shot))
+		shot.consistency_notes = (
+			"Critical geometry: arm crosses the table; "
+			"Critical identity: character eye design changed from the original reference"
+		)
+		direction = _keyframe_retry_direction(shot)
+		self.assertIn("supporting surface", direction)
+		self.assertIn("original character image controls the face", direction)
+		shot.consistency_notes = (
+			"Critical identity: character eye design changed from the original reference; "
+			"Critical geometry: arm crosses the table"
+		)
+		self.assertIn("supporting surface", _keyframe_retry_direction(shot))
 		shot.consistency_status = "Needs Review"
 		self.assertEqual("", _keyframe_retry_direction(shot))
 
@@ -48,7 +138,7 @@ class TestPromptCompiler(FrappeTestCase):
 		)
 		image = compile_prompt_for_documents(shot, project, prompt_source="image")
 		motion = compile_prompt_for_documents(shot, project, prompt_source="motion")
-		self.assertEqual(image, "Compose the bottle on a marble table.")
+		self.assertEqual("Compose the bottle on a marble table.", image)
 		self.assertIn("The hand lifts the bottle", motion)
 		self.assertNotIn("Compose the bottle on a marble table.", motion)
 		self.assertIn("0-4s: lift the bottle", motion)
@@ -64,6 +154,20 @@ class TestPromptCompiler(FrappeTestCase):
 		prompt = compile_prompt_for_documents(shot, project, prompt_source="motion")
 		self.assertIn("show only the intended reference subjects and assets", prompt)
 		self.assertIn("do not swap, merge, deform", prompt)
+
+	def test_product_only_keyframe_explicitly_excludes_hands_and_actors(self):
+		project = frappe._dict(generation_mode="Multi-shot", global_instructions="")
+		shot = frappe._dict(
+			name="SHOT-TEST",
+			shot_number=1,
+			image_prompt="A close-up of the product on a table.",
+			generation_prompt="Show the product.",
+			references=[{"reference_role": "product", "asset_version": "ASTV-TEST"}],
+		)
+		prompt = compile_prompt_for_documents(shot, project, prompt_source="image")
+		self.assertIn("This is a product-only composition", prompt)
+		self.assertIn("no person, human hand", prompt)
+		self.assertIn("freestanding, untouched", prompt)
 
 	def test_continuation_only_receives_its_own_action_window(self):
 		project = frappe._dict(references=[], generation_mode="Multi-shot", global_instructions="")
@@ -449,6 +553,10 @@ class TestAudioLineLast(FrappeTestCase):
 			prompt,
 		)
 		self.assertIn("not the pose or objects in their reference image", prompt)
+		self.assertIn("Keep props separate from actors' heads and bodies", prompt)
+		self.assertIn("Physical actor staging:", prompt)
+		self.assertIn("The floor or seat visibly supports its weight", prompt)
+		self.assertIn("never invent a chair when the scene specifies the floor", prompt)
 		self.assertIn(
 			"The place: A warm wooden kitchen, the room of picture 3: the same furniture, window and light.",
 			prompt,
@@ -680,7 +788,7 @@ class TestSheetBrief(FrappeTestCase):
 				{"child": "White bear cub", "mother": "White bear mother - the main character"},
 				brief["characters"],
 			)
-			self.assertEqual("Mood: Cute, warm. ", prompts._mood(project))
+			self.assertEqual("Mood: Cute, warm. " + prompts.MEDIUM_LOCK + " ", prompts._mood(project))
 			# A selling point is not drawn: a drawing model would print it as text in the picture.
 			self.assertEqual("The advertised product is tissues. ", prompts.product_identity(project))
 
@@ -698,7 +806,10 @@ class TestReferenceDescriptions(FrappeTestCase):
 				"avoid": "",
 			},
 		):
-			self.assertEqual("Visual style: Warm directional light. ", prompts._mood(frappe._dict()))
+			self.assertEqual(
+				"Visual style: Warm directional light. " + prompts.MEDIUM_LOCK + " ",
+				prompts._mood(frappe._dict()),
+			)
 		with patch.object(
 			prompts,
 			"sheet_brief",
@@ -952,6 +1063,32 @@ class TestOverlayTextStaysOutOfPictures(FrappeTestCase):
 
 
 class TestDeclaredReferenceRole(TestCase):
+	def test_generated_pose_does_not_repeat_source_prop_rule(self):
+		from joymedia.services.planning.prompts import keep_rules
+
+		shot = frappe._dict(references=[{"reference_role": "Character", "asset_version": "POSE"}])
+		project = frappe._dict(
+			selected_media=[
+				{
+					"asset_version": "SOURCE",
+					"label": "Bear",
+					"reference_role": "Character",
+					"keep_rule": "Keep the pink heart in the ending scene.",
+				},
+				{
+					"asset_version": "POSE",
+					"label": "Bear standing",
+					"reference_role": "Character",
+					"keep_rule": "Keep the pink heart in the ending scene.",
+				},
+			]
+		)
+		with (
+			patch("frappe.db.get_value", return_value=frappe.as_json({"source_asset_version": "SOURCE"})),
+			patch("joymedia.services.planning.prompts._english", side_effect=lambda text, *a: text),
+		):
+			self.assertEqual("", keep_rules(shot, project))
+
 	def test_general_composition_reference_is_not_described_as_a_logo(self):
 		from joymedia.services.planning.prompts import keep_rules
 

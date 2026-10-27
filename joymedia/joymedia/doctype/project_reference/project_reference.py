@@ -116,6 +116,13 @@ class ProjectReference(Document):
 			)
 			if active and any(
 				self.has_value_changed(fieldname)
-				for fieldname in ("reference_key", "identity_key", "reference_role", "label", "asset_version")
+				for fieldname in (
+					"reference_key",
+					"identity_key",
+					"reference_role",
+					"product_view",
+					"label",
+					"asset_version",
+				)
 			):
 				frappe.throw(_("Project References cannot change while generation is active."))

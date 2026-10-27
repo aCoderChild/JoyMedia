@@ -2,10 +2,46 @@
 # See license.txt
 
 import base64
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+
+
+class TestPipelinePromotionCompatibility(IntegrationTestCase):
+	@patch("joymedia.services.workflows.routing.resolve_shot_render_route")
+	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.get_doc")
+	@patch("joymedia.joymedia.doctype.media_project.media_project.frappe.get_all", return_value=["SHOT-1"])
+	def test_incompatible_existing_reference_keeps_saved_pipeline(self, get_all, get_doc, route):
+		from joymedia.joymedia.doctype.media_project.media_project import (
+			_active_pipeline_accepts_existing_shots,
+		)
+
+		get_doc.return_value = SimpleNamespace(
+			generation_inputs=[SimpleNamespace(reference_role="General", asset_version="ASV-1")],
+			handoff_type="New Scene",
+			motion_plan_json="{}",
+		)
+		route.side_effect = frappe.ValidationError("missing reference role")
+		self.assertFalse(
+			_active_pipeline_accepts_existing_shots(
+				SimpleNamespace(name="PRJ-1"),
+				SimpleNamespace(name="PIPE-NEW"),
+				SimpleNamespace(name="WF-NEW"),
+			)
+		)
+		route.assert_called_once()
+		self.assertEqual("PIPE-NEW", route.call_args.kwargs["pipeline_name"])
+
+		route.side_effect = None
+		self.assertTrue(
+			_active_pipeline_accepts_existing_shots(
+				SimpleNamespace(name="PRJ-1"),
+				SimpleNamespace(name="PIPE-NEW"),
+				SimpleNamespace(name="WF-NEW"),
+			)
+		)
 
 
 class IntegrationTestMediaProject(IntegrationTestCase):

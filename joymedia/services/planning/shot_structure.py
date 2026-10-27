@@ -192,13 +192,13 @@ def visibility_instruction(structure, contract):
 	return (
 		"Preserve the visible working area for "
 		+ ", ".join(targets)
-		+ ". Keep the authored contact points and action targets readable; natural hand occlusion is allowed. "
+		+ ". Keep the authored contact points and action targets readable. "
 		"Do not crop away the action to simulate progress or create an extra copy during handling."
 		+ (
 			" Show their complete outlines and supporting surfaces in this broad view, with clear margins."
 			if structure["framing"] in {"wide", "full"}
 			else (
-				" Fill this detail view with the authored focal subject and contact area; include only the actor parts needed for the action, allowing the rest of the body outside the frame. The setting provides background depth rather than full-room coverage."
+				" Fill this detail view with the authored focal subject and contact area. If an actor is authored, include only the parts needed for the action and allow the rest of the body outside the frame. The setting provides background depth rather than full-room coverage."
 				if structure["framing"] in {"close_up", "extreme_close_up"}
 				else ""
 			)
