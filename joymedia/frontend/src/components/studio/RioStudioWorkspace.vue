@@ -64,15 +64,17 @@
 						</div>
 						<i class="rio-port rio-port-in" /><i class="rio-port rio-port-out" />
 					</article>
-					<div v-if="!shots.length" class="rio-empty-canvas">
-						<strong>{{ t('Your storyboard will appear here', 'Bảng phân cảnh sẽ xuất hiện ở đây') }}</strong>
-						<p>{{ t('Plan the video from your references to create scene nodes.', 'Lập kịch bản từ tư liệu để tạo các cảnh.') }}</p>
-						<textarea :value="idea" :disabled="!canWork" :aria-label="t('Video idea', 'Ý tưởng video')" :placeholder="t('Describe the product and what should happen in the video', 'Mô tả sản phẩm và nội dung video')" rows="4" @input="emit('update:idea', $event.target.value)" />
-						<button v-if="canWork" type="button" :disabled="busy || !idea?.trim()" @click="emit('continue')">{{ t('Generate storyboard', 'Tạo phân cảnh') }}</button>
-					</div>
 				</div>
-				<div class="rio-canvas-controls"><button type="button" :aria-label="t('Zoom out', 'Thu nhỏ')" @click="zoom = Math.max(0.45, zoom - 0.1)">−</button><span>{{ Math.round(zoom * 100) }}%</span><button type="button" :aria-label="t('Zoom in', 'Phóng to')" @click="zoom = Math.min(1.6, zoom + 0.1)">＋</button><button type="button" :aria-label="t('Fit all scenes on screen', 'Hiện tất cả cảnh trên màn hình')" @click="fitCanvas">⛶</button></div>
-				<div v-if="showMinimap" class="rio-minimap" aria-hidden="true"><span>{{ t('OVERVIEW', 'TỔNG QUAN') }}</span><div v-for="(shot, index) in shots" :key="shot.name" :style="miniStyle(shot, index)" /></div>
+				<div v-if="!shots.length" class="rio-empty-canvas" data-test="rio-empty-storyboard">
+					<span class="rio-empty-step">{{ t('START HERE', 'BẮT ĐẦU TẠI ĐÂY') }}</span>
+					<h2>{{ t('Create your storyboard', 'Tạo bảng phân cảnh') }}</h2>
+					<p>{{ t('Describe the story you want to tell. We will turn your idea and references into scenes.', 'Mô tả câu chuyện bạn muốn kể. JoyMedia sẽ dùng ý tưởng và tư liệu bên trái để tạo các cảnh.') }}</p>
+					<label for="rio-video-idea">{{ t('Video idea', 'Ý tưởng video') }}</label>
+					<textarea id="rio-video-idea" :value="idea" :disabled="!canWork" :placeholder="t('Describe the product and what should happen in the video', 'Mô tả sản phẩm và nội dung video')" rows="7" @input="emit('update:idea', $event.target.value)" />
+					<div class="rio-empty-actions"><span>{{ t('You can review and edit the scenes after generation.', 'Bạn có thể xem và chỉnh sửa các cảnh sau khi tạo.') }}</span><button v-if="canWork" type="button" :disabled="busy || !idea?.trim()" @click="emit('continue')">{{ t('Generate storyboard', 'Tạo phân cảnh') }} →</button></div>
+				</div>
+				<div v-if="shots.length" class="rio-canvas-controls"><button type="button" :aria-label="t('Zoom out', 'Thu nhỏ')" @click="zoom = Math.max(0.45, zoom - 0.1)">−</button><span>{{ Math.round(zoom * 100) }}%</span><button type="button" :aria-label="t('Zoom in', 'Phóng to')" @click="zoom = Math.min(1.6, zoom + 0.1)">＋</button><button type="button" :aria-label="t('Fit all scenes on screen', 'Hiện tất cả cảnh trên màn hình')" @click="fitCanvas">⛶</button></div>
+				<div v-if="showMinimap && shots.length" class="rio-minimap" aria-hidden="true"><span>{{ t('OVERVIEW', 'TỔNG QUAN') }}</span><div v-for="(shot, index) in shots" :key="shot.name" :style="miniStyle(shot, index)" /></div>
 			</section>
 			<aside v-if="selectedAsset || detailsShot" class="rio-details" :aria-label="t('Details', 'Chi tiết')">
 					<header><strong>{{ detailsShot ? `${t('Shot', 'Cảnh')} ${detailsShot.shot_number || selectedShotIndex + 1}` : t('Asset', 'Tư liệu') }}</strong><button type="button" :title="t('Close', 'Đóng')" :aria-label="t('Close details', 'Đóng chi tiết')" @click="closeDetails">×</button></header>
@@ -320,4 +322,21 @@ function seekTimeline(seconds) {
 @media(max-width:900px){.rio-work-area>.rio-details{flex-basis:220px;width:220px}}
 @media(max-width:640px){.rio-work-area>.rio-details{position:absolute;right:0;top:0;bottom:0;z-index:20;width:min(300px,85vw);box-shadow:-10px 0 30px #0009}}
 @media(max-width:640px){.rio-bottom{height:255px;flex-direction:column;overflow:auto}.rio-timeline{flex:none;min-height:120px}.rio-monitor{display:flex;flex:none;width:100%;min-width:0;height:125px}.rio-monitor video,.rio-monitor img{max-height:100px}.rio-header-actions{max-width:70%}.rio-guidance{font-size:11px}}
+.rio-assets{width:340px}
+.rio-assets-list{gap:10px;padding:12px}
+.rio-asset-card{padding:7px}
+.rio-asset-thumb :deep(img),.rio-asset-thumb :deep(video){object-fit:contain}
+.rio-asset-name{height:44px;max-height:44px;overflow:hidden;padding:6px 3px 4px;text-align:left;font-size:12px;line-height:17px;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.rio-empty-canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(700px,calc(100% - 48px));max-height:calc(100% - 36px);overflow:auto;padding:28px 32px;text-align:left;border:1px solid #236778;border-radius:14px;background:#0d1722f5;box-shadow:0 20px 50px #000a;color:#e7f5f8;touch-action:auto}
+.rio-empty-step{display:inline-block;margin-bottom:10px;color:var(--rio-cyan);font-size:11px;font-weight:800;letter-spacing:1.4px}
+.rio-empty-canvas h2{margin:0;font-size:25px;line-height:1.2;font-weight:700}
+.rio-empty-canvas p{margin:10px 0 24px;color:#a9c3cf;font-size:14px;line-height:1.5}
+.rio-empty-canvas label{display:block;margin-bottom:8px;color:#d9edf2;font-size:13px;font-weight:700}
+.rio-empty-canvas textarea{width:100%;min-height:150px;max-height:35vh;margin:0;padding:14px 16px;border-color:#3a6879;border-radius:9px;background:#09121c;color:#f2fafb;font-size:14px;line-height:1.55}
+.rio-empty-actions{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:18px}
+.rio-empty-actions span{color:#97b5c2;font-size:12px;line-height:1.4}
+.rio-empty-actions button{flex:none;min-height:42px;margin:0;padding:9px 17px;border-color:#11a6bb;border-radius:8px;background:#07566a;color:#f0fcff;font-size:13px;font-weight:700}
+.rio-empty-actions button:hover:not(:disabled){background:#08748c}
+@media(max-width:1000px){.rio-assets{width:285px}.rio-assets-list{gap:7px;padding:8px}}
+@media(max-width:640px){.rio-assets{width:min(340px,85vw)}.rio-empty-canvas{width:calc(100% - 24px);padding:22px 18px}.rio-empty-canvas h2{font-size:21px}.rio-empty-actions{align-items:stretch;flex-direction:column}.rio-empty-actions button{width:100%}}
 </style>

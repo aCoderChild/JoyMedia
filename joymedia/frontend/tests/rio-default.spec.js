@@ -51,7 +51,7 @@ test('project and legacy editor links open the JoyMedia studio workspace', async
   await page.locator('.rio-details header button').click();
   await page.locator('.rio-node-head button').first().click();
   await expect(page.locator('.rio-details')).toBeVisible();
-  await expect(page.locator('.rio-details')).toContainText(/Thời lượng: (?:\d+(?:\.\d)?s|—)/);
+  await expect(page.locator('.rio-details-summary span')).toContainText(/^(?:\d+(?:\.\d)?s|—)$/);
   await page.locator('.rio-details header button').click();
   await expect(page.locator('.rio-minimap')).toHaveCount(0);
   await page.locator('.rio-header-actions button[title="Bật/tắt sơ đồ nhỏ"]').click();
