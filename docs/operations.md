@@ -19,7 +19,7 @@ release blockers and acceptance checks, see
 ## Workers
 
 ```bash
-bench set-config -g workers '{"joymedia_render": {"timeout": 10800}, "joymedia_planning": {"timeout": 3600}}' --parse
+bench set-config -g workers '{"joymedia_render": {"timeout": 10800}, "joymedia_planning": {"timeout": 10800}}' --parse
 bench worker --queue short,default
 bench worker --queue long
 bench worker --queue joymedia_render

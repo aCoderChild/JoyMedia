@@ -81,7 +81,7 @@ class TestOpeningTextCrossCheck(TestCase):
 			cache.lock.side_effect = occupied_lock
 			self.assertIsNone(prepare_batch("CRB-00001", 0))
 			prepare.assert_not_called()
-			cache.lock.assert_called_once_with("joymedia-creative-prepare:CRB-00001:0", timeout=3600, blocking_timeout=0)
+			cache.lock.assert_called_once_with("joymedia-creative-prepare:CRB-00001:0", timeout=10800, blocking_timeout=0)
 
 	def test_cinematic_opening_keeps_a_broad_product_action_moving(self):
 		from joymedia.services.planning.camera import infer_cinematic_intent

@@ -68,6 +68,7 @@ AUTOMATIC_PICTURE_REDRAWS = 3
 # from the six in-context repairs in ``draft_script``: a fresh variation ID
 # prevents the planner cache from returning the same rejected proposal.
 AUTOMATIC_SCRIPT_REDRAWS = 4
+PLANNING_JOB_TIMEOUT = 10800  # Multi-pose preparation can run several GPU jobs.
 # Before a whole new concept, rewrite only the scenes whose drawn first frame
 # failed a clear check (ViMax/Idea2Img-style targeted repair): passing scenes
 # keep their pictures and a failed staging is corrected with its own evidence.
@@ -946,7 +947,7 @@ def _queue_prepare(batch_name, variants, *, replacement=False):
 		frappe.enqueue(
 			"joymedia.services.generation.creative_batch.prepare_batch",
 			queue=_planning_queue(),
-			timeout=3600,
+			timeout=PLANNING_JOB_TIMEOUT,
 			batch_name=batch_name,
 			position=index,
 			job_id=job_id,
@@ -1174,10 +1175,10 @@ def prepare_batch(batch_name, position=None):
 	"""Admit one planner per video, even with several queue workers or retry jobs."""
 	key = f"joymedia-creative-prepare:{batch_name}:{position}"
 	try:
-		# The RQ job timeout is 3600 seconds. Duplicate jobs can otherwise plan
+		# The RQ job timeout covers multi-pose GPU preparation. Duplicate jobs can otherwise plan
 		# the same video concurrently. The minute scheduler requeues a variant
 		# that remains Queued or Planning after a duplicate exits here.
-		with frappe.cache.lock(key, timeout=3600, blocking_timeout=0):
+		with frappe.cache.lock(key, timeout=PLANNING_JOB_TIMEOUT, blocking_timeout=0):
 			return _prepare_batch_locked(batch_name, position)
 	except LockError:
 		return
