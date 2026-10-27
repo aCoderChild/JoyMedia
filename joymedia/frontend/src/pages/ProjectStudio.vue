@@ -2402,19 +2402,50 @@ async function onReorderShots(fromIdx, toIdx) {
 
 // Lifecycle Hooks
 let studioDisposed = false;
+let idleWorkspaceSyncTimer = null;
+let idleWorkspaceSyncInFlight = false;
+async function syncIdleWorkspace() {
+	if (
+		studioDisposed || document.visibilityState !== "visible" ||
+		idleWorkspaceSyncInFlight || workspaceLoading.value ||
+		clientActionBusy.value || isGenerating.value
+	) return;
+	idleWorkspaceSyncInFlight = true;
+	const previousIdea = workspace.value?.project?.video_idea || "";
+	const ideaWasUnchanged = videoIdeaPrompt.value === previousIdea;
+	try {
+		await fetchWorkspace();
+		if (studioDisposed || !workspace.value) return;
+		if (ideaWasUnchanged) videoIdeaPrompt.value = workspace.value.project?.video_idea || "";
+		if (!workspace.value.family?.archived && workspace.value.project?.status !== "Archived") {
+			resumeProduction(workspace.value.production, workspace.value.project?.planning_status);
+		}
+	} finally {
+		idleWorkspaceSyncInFlight = false;
+	}
+}
+function syncWorkspaceWhenVisible() {
+	if (document.visibilityState === "visible") void syncIdleWorkspace();
+}
 onMounted(async () => {
 	await fetchWorkspace();
 	if (studioDisposed) return;
 	videoIdeaPrompt.value = workspace.value?.project?.video_idea || "";
-	if (workspace.value?.family?.archived || workspace.value?.project?.status === "Archived")
-		return;
-	resumeProduction(workspace.value?.production, workspace.value?.project?.planning_status);
-	if (advancedMode.value) await loadTimeline(true);
+	if (!workspace.value?.family?.archived && workspace.value?.project?.status !== "Archived") {
+		resumeProduction(workspace.value?.production, workspace.value?.project?.planning_status);
+		if (advancedMode.value) await loadTimeline(true);
+	}
+	idleWorkspaceSyncTimer = window.setInterval(syncWorkspaceWhenVisible, 30000);
+	window.addEventListener("focus", syncWorkspaceWhenVisible);
+	document.addEventListener("visibilitychange", syncWorkspaceWhenVisible);
 });
 
 onUnmounted(() => {
 	studioDisposed = true;
 	stopPolling();
+	if (idleWorkspaceSyncTimer) window.clearInterval(idleWorkspaceSyncTimer);
+	window.removeEventListener("focus", syncWorkspaceWhenVisible);
+	document.removeEventListener("visibilitychange", syncWorkspaceWhenVisible);
 });
 </script>
 

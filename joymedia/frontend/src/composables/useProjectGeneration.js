@@ -95,6 +95,15 @@ export function useProjectGeneration(projectName, onRefresh) {
           // Still generating
           if (onRefresh) await onRefresh(snap);
         }
+      } else if (snap) {
+        // Planning may finish before a Generation Run exists. Apply the new
+        // storyboard and release the busy state instead of leaving the UI
+        // stuck on the last queued planning snapshot.
+        if (onRefresh) await onRefresh(snap);
+        if (!["Queued", "Running"].includes(currentRun.value?.status)) {
+          stopPolling();
+          isGenerating.value = false;
+        }
       }
     } catch (err) {
       consecutivePollFailures += 1;
