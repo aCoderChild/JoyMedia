@@ -24,10 +24,17 @@ bench worker --queue short,default
 bench worker --queue long
 bench worker --queue joymedia_render
 bench worker --queue joymedia_planning
+bench worker --queue joymedia_planning
 ```
 
 Run the workers under Supervisor or systemd in production. The render queue
 isolates long scene renders and exports from short interactive work.
+Run two separate `joymedia_planning` processes: a slow rewrite must not block
+the next video in the queue. In a development Bench, run
+`deploy/ensure-planning-workers.sh` once before `bench start`; it adds the second
+planning process to the local Procfile and is safe to rerun. Under Supervisor
+or systemd, configure two managed processes instead. Planning uses a per-video
+Redis lock, so queued retries for one video cannot write its state concurrently.
 
 The scheduler must be enabled (`bench --site <site> enable-scheduler`; `bench start`
 runs it in development). A per-minute job syncs ComfyUI attempts and advances

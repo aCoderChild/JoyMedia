@@ -9,6 +9,7 @@ import time
 import uuid
 
 import frappe
+from redis.exceptions import LockError
 from frappe.utils.background_jobs import get_queue, get_queues_timeout, get_workers
 
 from joymedia.services.generation.automation import advance_automatic_run, delivery_context, is_automatic
@@ -1170,7 +1171,20 @@ def untitled_names():
 
 
 def prepare_batch(batch_name, position=None):
-	"""Background CPU planning. Inference never holds a database or Redis lock."""
+	"""Admit one planner per video, even with several queue workers or retry jobs."""
+	key = f"joymedia-creative-prepare:{batch_name}:{position}"
+	try:
+		# The RQ job timeout is 3600 seconds. Duplicate jobs can otherwise plan
+		# the same video concurrently. The minute scheduler requeues a variant
+		# that remains Queued or Planning after a duplicate exits here.
+		with frappe.cache.lock(key, timeout=3600, blocking_timeout=0):
+			return _prepare_batch_locked(batch_name, position)
+	except LockError:
+		return
+
+
+def _prepare_batch_locked(batch_name, position=None):
+	"""Background CPU planning. Inference never holds a database write lock."""
 	from frappe.utils.file_manager import save_file
 
 	from joymedia.api.storyboard import _plan_project, import_storyboard_workbook

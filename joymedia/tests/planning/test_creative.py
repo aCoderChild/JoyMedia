@@ -1,10 +1,13 @@
 import copy
 import json
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import ClassVar
 from unittest import TestCase
 from unittest.mock import Mock, patch
+
+from redis.exceptions import LockError
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -63,6 +66,23 @@ def sample_script():
 
 
 class TestOpeningTextCrossCheck(TestCase):
+	def test_parallel_planners_do_not_prepare_the_same_video_twice(self):
+		from joymedia.services.generation.creative_batch import prepare_batch
+
+		@contextmanager
+		def occupied_lock(*args, **kwargs):
+			raise LockError("already held")
+			yield
+
+		with (
+			patch("joymedia.services.generation.creative_batch.frappe.cache") as cache,
+			patch("joymedia.services.generation.creative_batch._prepare_batch_locked") as prepare,
+		):
+			cache.lock.side_effect = occupied_lock
+			self.assertIsNone(prepare_batch("CRB-00001", 0))
+			prepare.assert_not_called()
+			cache.lock.assert_called_once_with("joymedia-creative-prepare:CRB-00001:0", timeout=3600, blocking_timeout=0)
+
 	def test_cinematic_opening_keeps_a_broad_product_action_moving(self):
 		from joymedia.services.planning.camera import infer_cinematic_intent
 
