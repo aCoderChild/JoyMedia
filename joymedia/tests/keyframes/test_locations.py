@@ -37,6 +37,8 @@ class TestLocationPlates(FrappeTestCase):
 				b"proportionate",
 			)
 			self.assertEqual(observer.call_args.args[0], [b"oversized", b"proportionate"])
+			self.assertIn("material, finish, and design", observer.call_args.args[1])
+			self.assertIn("location, perspective, and reach", observer.call_args.args[1])
 
 	def test_location_comparison_keeps_first_when_ambiguous(self):
 		with patch("joymedia.services.review.consistency.ask", return_value={"better": None}):
@@ -62,6 +64,7 @@ class TestLocationPlates(FrappeTestCase):
 				)
 			)
 			self.assertIn("low coffee table", observer.call_args_list[-1].args[1])
+			self.assertIn("material, finish and design", observer.call_args_list[-1].args[1])
 
 	def test_living_room_table_requires_observer_evidence(self):
 		with patch("joymedia.services.review.consistency.ask", side_effect=RuntimeError("offline")):

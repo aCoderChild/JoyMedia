@@ -376,7 +376,7 @@ def render_place(project, setting, view=False, staging=""):
 
 	width, height = require_dimensions(settings)
 	cache_key = hashlib.sha256(
-		f"{workflow_version.workflow_hash}:{width}x{height}:{prompt}:location-selection-v2".encode()
+		f"{workflow_version.workflow_hash}:{width}x{height}:{prompt}:location-selection-v3".encode()
 	).hexdigest()
 	cache = Path(frappe.get_site_path("private", "joymedia-location-cache", cache_key + ".png"))
 	if cache.exists():
@@ -433,10 +433,13 @@ def _prefer_location_plate(candidates, setting, staging):
 			candidates[:2],
 			"These are two alternative empty location plates, in image order. "
 			f"Requested setting: {str(setting or '')[:200]}. Planned support: {str(staging or '')[:350]}. "
-			"Which plate has a main working table more proportionate to the nearby seating, "
-			"reachable from the planned actor position, and less visually dominant while leaving "
-			"a clear floor or seat position? Compare table height, footprint and perspective, "
-			"not the attractiveness of unrelated room decor. Return JSON with better=1 or 2 "
+			"Which plate has a main working table that fits this room best across ALL of these: "
+			"(1) height and footprint relative to nearby seating and plausible product scale; "
+			"(2) material, finish, and design coherent with the room's furniture; "
+			"(3) location, perspective, and reach from the planned actor's seat or floor position, "
+			"while leaving clear movement space? Penalize an occupied tabletop. "
+			"Judge the table and its physical relationship to the scene, not unrelated decor. "
+			"Return JSON with better=1 or 2 "
 			"only when the difference is visible, otherwise null, and a short reason.",
 			max_edge=1024,
 		)
@@ -460,11 +463,13 @@ def _location_supports_staging(content, setting, staging):
 			return False
 		foreground = ask(
 			content,
-			"Is the main working surface occupied by ANY loose object or transient action state, including a cup, "
+			"Inspect the full main action tabletop at high resolution. List all loose objects resting on it, "
+			"including books or magazines. Is the main working surface occupied by ANY loose object or transient action state, including a cup, "
 			"liquid, spill, stain, tissue, retail package, printed container, branded box, dispenser, logo or text-bearing product? "
 			"Ignore built-in furniture and fixed lighting. The work surface must be bare before the first action. "
 			"Return JSON answer=true if any listed object or liquid is visible, false "
-			"otherwise, with reason.",
+			"otherwise, with reason and a list of visible objects.",
+			max_edge=1024,
 		)
 		if foreground.get("answer") is not False:
 			return False
@@ -493,11 +498,13 @@ def _location_supports_staging(content, setting, staging):
 				content,
 				"Inspect the MAIN foreground action table relative to the sofa or lounge seating, not "
 				"the room's other cabinets. Is it clearly a low coffee table of plausible height and "
-				"footprint for this seating area, with coherent perspective and an accessible working "
-				"surface? Answer false for a tall dining/work table, an oversized table that dominates "
-				"the seating area, or a table disconnected from the actor's planned position. "
+				"surface? Does its material, finish and design also fit the room's other furniture? "
+				"Answer false for a tall dining/work table, an oversized table that dominates "
+				"the seating area, a visibly mismatched material/design, or a table disconnected "
+				"from the actor's planned position. Check all three: scale, visual fit and placement. "
 				"Return JSON answer=true only when visibly suitable, false when contradicted, null "
 				"when the relationship cannot be seen; include visual evidence.",
+				max_edge=1024,
 			)
 			if fit.get("answer") is not True:
 				return False
