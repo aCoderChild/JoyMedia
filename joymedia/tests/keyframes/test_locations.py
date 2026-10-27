@@ -30,6 +30,47 @@ def _shot(name, setting, environment=None, camera="Wide shot."):
 
 
 class TestLocationPlates(FrappeTestCase):
+	def test_prefers_better_proportioned_location_plate(self):
+		with patch("joymedia.services.review.consistency.ask", return_value={"better": 2}) as observer:
+			self.assertEqual(
+				locations._prefer_location_plate([b"oversized", b"proportionate"], "living room", "working table"),
+				b"proportionate",
+			)
+			self.assertEqual(observer.call_args.args[0], [b"oversized", b"proportionate"])
+
+	def test_location_comparison_keeps_first_when_ambiguous(self):
+		with patch("joymedia.services.review.consistency.ask", return_value={"better": None}):
+			self.assertEqual(
+				locations._prefer_location_plate([b"first", b"second"], "living room", "working table"),
+				b"first",
+			)
+
+	def test_living_room_rejects_a_table_that_does_not_fit_the_seating(self):
+		with patch(
+			"joymedia.services.review.consistency.ask",
+			side_effect=[
+				{"answer": False},  # no actor
+				{"answer": False},  # bare surface
+				{"answer": True},  # structurally valid table
+				{"answer": True},  # sofa is present
+				{"answer": False},  # table is dining height beside sofa
+			],
+		) as observer:
+			self.assertFalse(
+				locations._location_supports_staging(
+					b"image", "A cozy living room with a sofa", "reachable working table"
+				)
+			)
+			self.assertIn("low coffee table", observer.call_args_list[-1].args[1])
+
+	def test_living_room_table_requires_observer_evidence(self):
+		with patch("joymedia.services.review.consistency.ask", side_effect=RuntimeError("offline")):
+			self.assertFalse(
+				locations._location_supports_staging(
+					b"image", "A cozy living room", "reachable working table"
+				)
+			)
+
 	def test_location_plate_rejects_any_embedded_cast_or_product(self):
 		with patch("joymedia.services.review.consistency.ask", return_value={"answer": True}) as observer:
 			self.assertFalse(locations._location_supports_staging(b"image", "living room", "table"))

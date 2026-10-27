@@ -25,6 +25,12 @@ from joymedia.services.project.realtime import PROJECT_UPDATED, publish_project_
 
 CLOSE_FRAMING = re.compile(r"close|top[- ]?down|overhead|bird'?s[- ]eye|insert|detail", re.I)
 ROOM_FRAMING = re.compile(r"wide|medium|full|establishing|long shot", re.I)
+LIVING_ROOM = re.compile(r"\bliving room\b|\bsitting room\b|\bfamily room\b|\blounge\b|phòng khách", re.I)
+
+
+def _living_room_work_surface(setting, staging):
+	"""A living-room action table must read as furniture belonging to that seating area."""
+	return bool(LIVING_ROOM.search(str(setting or "")) and "working table" in str(staging or ""))
 
 
 def location_key(setting):
@@ -345,12 +351,18 @@ def render_place(project, setting, view=False, staging=""):
 	from joymedia.services.planning.prompts import _mood
 
 	# The film's own style and mood (the Brand sheet, Tone & Mood): the place is drawn as the frames will be drawn.
-	table_guidance = (
-		"If a working table is requested, use one ordinary rigid four-legged table with all four legs "
-		"structurally joined to the same tabletop and resting on the floor. "
-		if "working table" in staging
-		else ""
-	)
+	table_guidance = ""
+	if "working table" in staging:
+		table_guidance = (
+			"Use one rigid table whose top and base belong to the same object, with its supports meeting "
+			"the floor. Match the table's type, height, footprint, material and perspective to the room "
+			"and nearby seating. "
+		)
+		if _living_room_work_surface(setting, staging):
+			table_guidance += (
+				"Make it a low coffee table proportionate to the sofa and reachable from the sofa or the "
+				"planned floor position, not a full-height dining or work table in front of lounge seating. "
+			)
 	prompt = (
 		f"{_architectural_setting(setting)}\n\n{VIEW_SETTING if view else LOCATION_PLATE} "
 		f"Furnish the location for these upcoming shot compositions and support surfaces: {staging}. "
@@ -364,7 +376,7 @@ def render_place(project, setting, view=False, staging=""):
 
 	width, height = require_dimensions(settings)
 	cache_key = hashlib.sha256(
-		f"{workflow_version.workflow_hash}:{width}x{height}:{prompt}".encode()
+		f"{workflow_version.workflow_hash}:{width}x{height}:{prompt}:location-selection-v2".encode()
 	).hexdigest()
 	cache = Path(frappe.get_site_path("private", "joymedia-location-cache", cache_key + ".png"))
 	if cache.exists():
@@ -374,6 +386,7 @@ def render_place(project, setting, view=False, staging=""):
 	output_node = get_workflow_adapter(workflow_version).extract_execution_metadata(stored)[
 		"primary_output_node_key"
 	]
+	eligible = []
 	for attempt in range(3):
 		workflow = build_execution_workflow(
 			workflow_version,
@@ -388,13 +401,49 @@ def render_place(project, setting, view=False, staging=""):
 		content = run_workflow_to_bytes(workflow, output_node, forget=True)
 		frappe.db.commit()  # the render took a while; start a fresh snapshot before writing
 		if _location_supports_staging(content, setting, staging):
-			cache.parent.mkdir(parents=True, exist_ok=True)
-			cache.write_bytes(content)
-			return content
+			eligible.append(content)
+			if not _living_room_work_surface(setting, staging) or len(eligible) == 2:
+				chosen = _prefer_location_plate(eligible, setting, staging)
+				cache.parent.mkdir(parents=True, exist_ok=True)
+				cache.write_bytes(chosen)
+				return chosen
+			continue
 		evidence = Path(frappe.get_site_path("private", "joymedia-location-rejections"))
 		evidence.mkdir(parents=True, exist_ok=True)
 		(evidence / f"{hashlib.sha256(prompt.encode()).hexdigest()[:16]}-{attempt}.png").write_bytes(content)
+	if eligible:
+		cache.parent.mkdir(parents=True, exist_ok=True)
+		cache.write_bytes(eligible[0])
+		return eligible[0]
 	raise ValueError("The generated place does not support the authored shot staging.")
+
+
+def _prefer_location_plate(candidates, setting, staging):
+	"""Prefer the room whose action furniture fits its seating and actor access.
+
+	A single-image yes/no observer can approve two very different tables. Comparing
+	two independently rendered plates supplies the spatial context needed to choose.
+	"""
+	if len(candidates) < 2:
+		return candidates[0]
+	from joymedia.services.review.consistency import ask
+
+	try:
+		result = ask(
+			candidates[:2],
+			"These are two alternative empty location plates, in image order. "
+			f"Requested setting: {str(setting or '')[:200]}. Planned support: {str(staging or '')[:350]}. "
+			"Which plate has a main working table more proportionate to the nearby seating, "
+			"reachable from the planned actor position, and less visually dominant while leaving "
+			"a clear floor or seat position? Compare table height, footprint and perspective, "
+			"not the attractiveness of unrelated room decor. Return JSON with better=1 or 2 "
+			"only when the difference is visible, otherwise null, and a short reason.",
+			max_edge=1024,
+		)
+	except Exception:
+		frappe.log_error(title="Location plate comparison unavailable")
+		return candidates[0]
+	return candidates[1] if str(result.get("better")) == "2" else candidates[0]
 
 
 def _location_supports_staging(content, setting, staging):
@@ -430,7 +479,7 @@ def _location_supports_staging(content, setting, staging):
 			)
 			if table.get("answer") is False:
 				return False
-		if re.search(r"\bliving room\b|\blounge\b", setting, re.I):
+		if LIVING_ROOM.search(str(setting or "")):
 			living_room = ask(
 				content,
 				"Does this setting clearly contain a living-room seating area such as a sofa, couch or lounge armchair, "
@@ -438,6 +487,19 @@ def _location_supports_staging(content, setting, staging):
 				"with only upright dining chairs. Return JSON answer=true or false with visible evidence.",
 			)
 			if living_room.get("answer") is not True:
+				return False
+		if _living_room_work_surface(setting, staging):
+			fit = ask(
+				content,
+				"Inspect the MAIN foreground action table relative to the sofa or lounge seating, not "
+				"the room's other cabinets. Is it clearly a low coffee table of plausible height and "
+				"footprint for this seating area, with coherent perspective and an accessible working "
+				"surface? Answer false for a tall dining/work table, an oversized table that dominates "
+				"the seating area, or a table disconnected from the actor's planned position. "
+				"Return JSON answer=true only when visibly suitable, false when contradicted, null "
+				"when the relationship cannot be seen; include visual evidence.",
+			)
+			if fit.get("answer") is not True:
 				return False
 		if not staging:
 			return True
@@ -457,7 +519,7 @@ def _location_supports_staging(content, setting, staging):
 		# An unavailable observer must not prevent the established image workflow
 		# from furnishing a location; later frame review still runs.
 		frappe.log_error(title="Location staging observation unavailable")
-		return True
+		return not _living_room_work_surface(setting, staging)
 	return result.get("answer") is not False
 
 
