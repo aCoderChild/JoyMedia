@@ -1861,6 +1861,21 @@ def _demonstrations(scene):
 
 def story_logic_errors(scenes):
 	"""Objective story faults: the same demonstration twice, or an effect with no physical cause."""
+	# Detect identical adjacent action sequences even for products whose names are
+	# outside the vocabulary used by the more specific demonstration check.
+	# Leave the final packshot to the existing closing-scene checks.
+	for index in range(1, len(scenes) - 1):
+		previous, current = scenes[index - 1], scenes[index]
+
+		def normalized_action(scene):
+			return " ".join(re.sub(r"\[[^\]]*\]", " ", str(scene.get("action") or "")).casefold().split())
+
+		before, after = normalized_action(previous), normalized_action(current)
+		if before and before == after:
+			return (
+				f"Scenes {index} and {index + 1} repeat the same action sequence. "
+				"Give the later scene a distinct action or visible result."
+			)
 	seen = {}
 	for index, scene in enumerate(scenes[:-1], 1):
 		for pair in _demonstrations(scene):

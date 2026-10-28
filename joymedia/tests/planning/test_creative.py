@@ -305,6 +305,18 @@ class TestOpeningTextCrossCheck(TestCase):
 
 
 class TestGeneratedScriptValidation(TestCase):
+	def test_identical_adjacent_actions_are_detected_without_product_vocabulary(self):
+		from joymedia.services.planning.creative import story_logic_errors
+
+		scenes = [
+			{"action": "[0-1s] Model holds the garment up. [1-2s] Model turns it."},
+			{"action": "[0-0.5s] Model holds the garment up. [0.5-2s] Model turns it."},
+			{"action": "Present the product."},
+		]
+		self.assertIn("Scenes 1 and 2 repeat", story_logic_errors(scenes))
+		scenes[1]["action"] = "Model touches the garment's fabric."
+		self.assertIsNone(story_logic_errors(scenes))
+
 	def test_explicit_shot_count_is_enforced_before_advisory_fallback(self):
 		with self.assertRaisesRegex(ValueError, "requests 5 shots"):
 			validate_script(
