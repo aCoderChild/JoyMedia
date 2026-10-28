@@ -39,9 +39,9 @@ class AssetVersion(Document):
 		# Lock the parent asset row while allocating the next number. This
 		# serializes concurrent inserts for the same logical Media Asset.
 		frappe.db.sql("SELECT name FROM `tabMedia Asset` WHERE name=%s FOR UPDATE", self.media_asset)
-		latest_version = frappe.db.get_value(
-			"Asset Version", {"media_asset": self.media_asset}, [{"MAX": "version_number"}], order_by=None
-		)
+		latest_version = frappe.db.sql(
+			"SELECT MAX(version_number) FROM `tabAsset Version` WHERE media_asset=%s", self.media_asset
+		)[0][0]
 		self.version_number = (latest_version or 0) + 1
 
 	def validate_immutable_fields(self):

@@ -174,6 +174,10 @@ VACE and also composites the original control frames outside the mask before
 encoding. That outer composite is the mechanism that protects untouched regions;
 VACE alone does not guarantee pixel preservation. Model-native frame padding is
 expressed as `ceil_to_multiple` with an offset, followed by an exact output trim.
+The automatic `joymedia.install.setup` command does not register or select this
+optional template. It requires a separately configured `guided_video` workflow
+and compatible ComfyUI nodes and models; keeping the template in the repository
+does not change the default FLUX/H3 pipeline.
 
 VACE reference/video/masked editing is documented in the official
 [ICCV 2025 repository](https://github.com/ali-vilab/VACE) (Apache-2.0 for code and

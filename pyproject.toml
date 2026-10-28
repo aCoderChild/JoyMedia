@@ -8,13 +8,14 @@ requires-python = ">=3.12"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
+	"Pillow>=11.1,<13",
     # "frappe~=16.0.0" # Installed and managed by bench.
 ]
 
 [project.optional-dependencies]
 quality = ["ruff==0.14.10"]
 narration = ["edge-tts>=7.3.1,<8"]
-tracking = ["opencv-python-headless>=4.11,<6"]
+tracking = ["opencv-python-headless>=4.11,<5"]
 cinematography = ["opencv-python-headless>=4.11,<5", "numpy>=2.1,<3", "pydantic>=2.10,<3"]
 previs = ["pymunk>=7.3.1,<8"]
 

@@ -19,7 +19,7 @@ AUTOSTART="${JOYMEDIA_GPU_AUTOSTART:-1}"
 
 ssh_options=(
 	-i "$KEY" -p "$PORT"
-	-o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+	-o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4
 	-o ConnectTimeout=20 -o BatchMode=yes
 )
 

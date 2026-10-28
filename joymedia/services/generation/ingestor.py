@@ -359,7 +359,7 @@ def _find_last_frame_image(history, workflow=None):
 	node_output = (history.get("outputs") or {}).get(node_key, {})
 	for output in node_output.get("images", []):
 		filename = str(output.get("filename", "")).lower()
-		if filename.endswith((".png", ".jpg", ".jpeg", ".webp")):
+		if filename.endswith((".png", ".jpg", ".jpeg", ".webp", ".avif")):
 			return output
 	return None
 
@@ -542,7 +542,7 @@ def _find_primary_output(history, workflow, preferred_node_keys=None):
 	media_type = getattr(workflow, "output_media_type", "Video") if workflow else "Video"
 	extensions = {
 		"Video": (".mp4", ".webm", ".mov", ".mkv"),
-		"Image": (".png", ".jpg", ".jpeg", ".webp"),
+		"Image": (".png", ".jpg", ".jpeg", ".webp", ".avif"),
 		"Audio": (".wav", ".mp3", ".flac", ".ogg", ".m4a"),
 	}.get(media_type, ())
 	return _find_output_by_extensions(history, extensions, preferred_node_keys)

@@ -26,11 +26,10 @@ class GenerationAttempt(Document):
 			frappe.throw(_("A Generation Task can have only one initial Generation Attempt."))
 		job.validate_for_execution()
 		self._validate_retry_reference()
-		latest_attempt_number = frappe.db.get_value(
-			"Generation Attempt",
-			{"generation_task": self.generation_task},
-			[{"MAX": "attempt_number"}],
-		)
+		latest_attempt_number = frappe.db.sql(
+			"SELECT MAX(attempt_number) FROM `tabGeneration Attempt` WHERE generation_task=%s",
+			self.generation_task,
+		)[0][0]
 		self.attempt_number = (latest_attempt_number or 0) + 1
 
 	def _validate_retry_reference(self):

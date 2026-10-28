@@ -19,7 +19,7 @@ CONTROL_POLL_TIMEOUT = (5, 20)
 # Consecutive failed history polls (5 s apart) tolerated while a job runs.
 MAX_POLL_FAILURES = 24
 MISSING_PROMPT_POLLS = 12
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".avif"}
 
 
 class ComfyJobLostError(RuntimeError):

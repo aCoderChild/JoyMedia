@@ -41,9 +41,9 @@ class TestGenerationAttempt(FrappeTestCase):
 				return_value=job,
 			),
 			patch(
-				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.db.get_value",
-				return_value=3,
-			) as get_value,
+				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.db.sql",
+				return_value=[(3,)],
+			) as sql,
 			patch(
 				"joymedia.joymedia.doctype.generation_attempt.generation_attempt.frappe.db.exists",
 				return_value=None,
@@ -53,10 +53,9 @@ class TestGenerationAttempt(FrappeTestCase):
 
 		self.assertEqual(attempt.attempt_number, 4)
 		job.validate_for_execution.assert_called_once()
-		get_value.assert_called_once_with(
-			"Generation Attempt",
-			{"generation_task": "JOB-00001"},
-			[{"MAX": "attempt_number"}],
+		sql.assert_called_once_with(
+			"SELECT MAX(attempt_number) FROM `tabGeneration Attempt` WHERE generation_task=%s",
+			"JOB-00001",
 		)
 
 	def test_create_retry_attempt_creates_a_pending_successor(self):
