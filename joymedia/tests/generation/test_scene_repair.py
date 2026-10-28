@@ -99,6 +99,24 @@ class TestAutomaticSceneRepair(FrappeTestCase):
 		with self.assertRaises(cb.UnverifiedPoseRequirements):
 			cb._admit_pose_preparation({**variant, "pose_script_redraws": 0})
 
+	def test_revision_cannot_import_unverified_pose(self):
+		variant = {"pose_views": [{"scene": 1, "status": "deferred", "pose": "standing"}]}
+		with self.assertRaises(cb.UnverifiedPoseRequirements):
+			cb._admit_revised_pose_preparation(variant, {"scenes": [{"action": "Stand."}]})
+
+	def test_revision_checks_transition_after_pose_qualification(self):
+		variant = {
+			"pose_views": [
+				{"scene": 1, "status": "ready", "source": "actor", "pose": "seated on the floor"},
+				{"scene": 2, "status": "ready", "source": "actor", "pose": "standing upright"},
+			]
+		}
+		script = {"scenes": [{"action": "Looks at the product."}, {"action": "Waves."}]}
+		with self.assertRaisesRegex(ValueError, "unsupported body transition"):
+			cb._admit_revised_pose_preparation(variant, script)
+		script["scenes"][0]["action"] = "The actor stands up."
+		cb._admit_revised_pose_preparation(variant, script)
+
 	def test_selected_pose_cannot_jump_from_seated_to_upright(self):
 		script = {
 			"scenes": [

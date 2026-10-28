@@ -1,0 +1,12 @@
+[Unit]
+Description=JoyMedia demo local reverse proxy
+After=joymedia-demo-web.service
+Requires=joymedia-demo-web.service
+[Service]
+User=ubuntu
+ExecStart=/usr/sbin/nginx -c /home/ubuntu/joymedia-demo-staging/nginx.conf -g 'daemon off;'
+ExecReload=/usr/sbin/nginx -s reload -c /home/ubuntu/joymedia-demo-staging/nginx.conf
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

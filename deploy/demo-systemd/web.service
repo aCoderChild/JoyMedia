@@ -1,0 +1,12 @@
+[Unit]
+Description=JoyMedia demo web
+After=network.target mariadb.service redis-server.service
+Requires=mariadb.service redis-server.service
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/joymedia-demo-staging/bench/sites
+ExecStart=/home/ubuntu/joymedia-demo-staging/env/bin/gunicorn --bind 127.0.0.1:18080 --workers 2 --timeout 120 frappe.app:application
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=JoyMedia demo worker for %i
+After=mariadb.service redis-server.service
+Requires=mariadb.service redis-server.service
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/joymedia-demo-staging/bench/sites
+ExecStart=/home/ubuntu/joymedia-demo-staging/env/bin/python -m frappe.utils.bench_helper frappe worker --queue %i
+Restart=always
+RestartSec=5
+TimeoutStopSec=120
+[Install]
+WantedBy=multi-user.target

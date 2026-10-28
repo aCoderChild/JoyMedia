@@ -157,6 +157,14 @@ def _pose_transition_defects(script, pose_views):
 	return defects
 
 
+def _admit_revised_pose_preparation(variant, script):
+	"""Apply the same pose and continuity gates before importing a revision."""
+	_admit_pose_preparation(variant)
+	defects = _pose_transition_defects(script, variant.get("pose_views"))
+	if defects:
+		raise ValueError("Revised script retained an unsupported body transition: " + defects[0])
+
+
 def _restart_script_after_pose_shortfall(variant):
 	"""Replan once from observed pose coverage before admitting any first frame."""
 	if int(variant.get("pose_script_redraws") or 0) >= AUTOMATIC_POSE_SCRIPT_REDRAWS:
@@ -1924,7 +1932,7 @@ def rewrite_scenes_in_place(batch_name, position):
 			from joymedia.services.planning.pose_assets import prepare_script_pose_views
 
 			variant["pose_views"] = prepare_script_pose_views(project, script)
-			resolve_pose_shortfall(variant)
+			_admit_revised_pose_preparation(variant, script)
 			project.reload()
 		content = script_workbook(script, project)
 		file = save_file(

@@ -1,0 +1,14 @@
+[Unit]
+Description=JoyMedia demo Cloudflare quick tunnel
+After=network-online.target joymedia-demo-proxy.service
+Wants=network-online.target
+Requires=joymedia-demo-proxy.service
+[Service]
+User=ubuntu
+ExecStart=/home/ubuntu/joymedia-demo-staging/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:18081
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/ubuntu/joymedia-demo-staging/tunnel-systemd.log
+StandardError=append:/home/ubuntu/joymedia-demo-staging/tunnel-systemd.log
+[Install]
+WantedBy=multi-user.target
