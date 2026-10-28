@@ -23,13 +23,15 @@
         <button class="jm-project-open w-full block text-left" :disabled="projectsResource.loading" @click="openStudio(project.open_project || project.name)">
           <MediaThumbnail :src="project.cover_image" :alt="project.project_name" aspect="aspect-video" contain />
           <div class="jm-project-copy p-4 space-y-2"><h2 class="font-semibold text-ink-primary line-clamp-2">{{ project.project_name || (currentLang==='vi'?'Một video':'A video') }}</h2>
+            <p v-if="duplicateNames.has((project.project_name || '').trim().toLocaleLowerCase())" class="text-xs text-ink-secondary">{{ currentLang==='vi'?'Mã dự án':'Project ID' }}: {{ project.name }}</p>
             <p v-if="project.in_project" class="text-xs text-ink-secondary">{{ currentLang==='vi'?`Video trong “${project.in_project}”`:`Video in “${project.in_project}”` }}</p>
             <p v-if="project.status==='Archived'" class="text-xs" :class="project.days_left<=3?'text-rose-600 dark:text-rose-300':'text-ink-secondary'">{{ daysLeftText(project) }}</p>
             <div v-else class="flex flex-wrap gap-1.5 text-[11px]" data-test="video-states">
+			  <span v-if="project.videos_attention" class="rounded-full bg-rose-100 px-2 py-0.5 text-rose-900 dark:bg-rose-900/40 dark:text-rose-200">{{ project.videos_attention }} {{ currentLang==='vi'?'cần xử lý':'need attention' }}</span>
               <span v-if="project.videos_waiting" class="rounded-full bg-amber-100 px-2 py-0.5 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">{{ project.videos_waiting }} {{ currentLang==='vi'?'chờ bạn xem':'waiting for you' }}</span>
               <span v-if="project.videos_ready" class="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">{{ project.videos_ready }} {{ currentLang==='vi'?'sẵn sàng xem':'ready to watch' }}</span>
               <span v-if="project.videos_working" class="rounded-full bg-rio-100 px-2 py-0.5 text-rio-800 dark:bg-rio-900/40 dark:text-rio-200">{{ project.videos_working }} {{ currentLang==='vi'?'đang làm':'in progress' }}</span>
-              <span v-if="!project.videos_waiting && !project.videos_ready && !project.videos_working" class="text-ink-secondary">{{ project.has_video ? (currentLang==='vi'?'Có video để xem':'Video available to watch') : (currentLang==='vi'?'Chưa có video':'No video yet') }}</span>
+              <span v-if="!project.videos_attention && !project.videos_waiting && !project.videos_ready && !project.videos_working" class="text-ink-secondary">{{ project.has_video ? (currentLang==='vi'?'Có video để xem':'Video available to watch') : (currentLang==='vi'?'Chưa có video':'No video yet') }}</span>
             </div>
             <span class="inline-block pt-2 text-sm font-semibold text-rio-500">{{ project.video_count > 1 ? (currentLang==='vi'?'Xem các phiên bản →':'See versions →') : project.has_video ? (currentLang==='vi'?'Xem video →':'Watch video →') : (currentLang==='vi'?'Mở dự án →':'Open project →') }}</span>
           </div>
@@ -86,6 +88,14 @@ const projectsResource = useLibraryCollection("joymedia.api.projects.get_project
 const galleryView=useGalleryView('joymedia_project_gallery');
 
 const projectsList = computed(() => projectsResource.data?.items || []);
+const duplicateNames = computed(() => {
+  const counts = new Map();
+  for (const project of projectsList.value) {
+    const name = (project.project_name || '').trim().toLocaleLowerCase();
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
+});
 const projectTotal = computed(() => projectsResource.data?.total || 0);
 
 const filteredProjects = computed(() => projectsList.value);

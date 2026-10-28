@@ -12,13 +12,19 @@ function pick(lang, en, vi) {
  * @returns {{key:string,label:string,state:'done'|'running'|'review'|'waiting'|'attention',
  *   detail:string, reason?:string, percent?:number, etaMinutes?:number}[]}
  */
-export function buildStages({ project = {}, production = null, shots = [], assets = [], frames = [], lang = "vi" } = {}) {
+export function buildStages({ project = {}, production = null, automatic = null, shots = [], assets = [], frames = [], lang = "vi" } = {}) {
   const t = (en, vi) => pick(lang, en, vi);
   const stages = [];
 
   // 1. Script — the scenes themselves are the evidence it is done.
   const sceneCount = shots.length;
-  if (project.planning_status === "Failed") {
+  if (!sceneCount && automatic?.status === "Needs Attention") {
+    stages.push({ key: "script", label: t("Preparation", "Chuẩn bị video"), state: "attention",
+      detail: t("The automatic process stopped. See the reason below.", "Quá trình tự động đã dừng. Xem lý do bên dưới.") });
+  } else if (!sceneCount && ["Queued", "Planning", "Locations"].includes(automatic?.status)) {
+    stages.push({ key: "script", label: t("Preparation", "Chuẩn bị video"), state: automatic.status === "Queued" ? "waiting" : "running",
+      detail: automatic.status === "Queued" ? t("Waiting for the system.", "Đang chờ hệ thống xử lý.") : t("Preparing the script and references.", "Đang chuẩn bị kịch bản và tư liệu.") });
+  } else if (project.planning_status === "Failed") {
     stages.push({
       key: "script", label: t("Script", "Kịch bản"), state: "attention",
       detail: t("Preparing the scenes stopped.", "Việc chuẩn bị cảnh đã dừng."),

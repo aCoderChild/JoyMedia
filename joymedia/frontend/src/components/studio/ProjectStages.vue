@@ -35,6 +35,7 @@ import { buildStages, currentStage } from "../../utils/projectStages";
 const props = defineProps({
   project: { type: Object, default: () => ({}) },
   production: { type: Object, default: null },
+  automatic: { type: Object, default: null },
   shots: { type: Array, default: () => [] },
   assets: { type: Array, default: () => [] },
   frames: { type: Array, default: () => [] },
@@ -48,6 +49,7 @@ const stages = computed(() =>
   buildStages({
     project: props.project,
     production: props.production,
+    automatic: props.automatic,
     shots: props.shots,
     assets: props.assets,
     frames: props.frames,

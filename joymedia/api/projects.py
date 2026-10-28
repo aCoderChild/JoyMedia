@@ -53,14 +53,16 @@ def get_project_cards(search=None, status=None, start=0, page_length=24):
 			project.update(video_count=1)
 			continue
 		videos = get_videos(project["name"])["videos"]
-		waiting = {"Pictures Ready", "Script Ready", "Needs Attention"}
+		waiting = {"Pictures Ready", "Script Ready"}
+		attention = {"Needs Attention", "Failed"}
 		project.update(
 			video_count=len(videos),
 			# What each video waits on, so the card says what to do without opening it.
 			videos_ready=sum(bool(v["video"]) for v in videos),
 			videos_waiting=sum(not v["video"] and (v["stage"] or v["status"]) in waiting for v in videos),
+			videos_attention=sum(not v["video"] and (v["stage"] or v["status"]) in attention for v in videos),
 			videos_working=sum(
-				not v["video"] and (v["stage"] or v["status"]) not in waiting | {"Cancelled", "Draft"}
+				not v["video"] and (v["stage"] or v["status"]) not in waiting | attention | {"Cancelled", "Draft"}
 				for v in videos
 			),
 		)
@@ -75,7 +77,7 @@ def get_project_cards(search=None, status=None, start=0, page_length=24):
 					(
 						v
 						for v in reversed(videos)
-						if not v["video"] and (v["stage"] or v["status"]) in waiting
+						if not v["video"] and (v["stage"] or v["status"]) in waiting | attention
 					),
 					None,
 				)
