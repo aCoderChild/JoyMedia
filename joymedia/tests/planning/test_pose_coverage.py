@@ -1,3 +1,4 @@
+import hashlib
 import io
 from unittest import TestCase
 from unittest.mock import patch
@@ -490,7 +491,7 @@ class TestPoseCoverage(TestCase):
 				"frappe.db.get_value",
 				side_effect=lambda _dt, _name, field: "{}" if field == "analysis_json" else "/source",
 			),
-			patch("joymedia.services.planning.pose_assets._view_matches", return_value=False),
+			patch("joymedia.services.planning.pose_assets._view_matches", return_value=False) as observe,
 			patch(
 				"joymedia.services.planning.pose_assets._pose_view", side_effect=ValueError("unqualified")
 			) as render,
@@ -499,6 +500,7 @@ class TestPoseCoverage(TestCase):
 			prepared = prepare_script_pose_views(project, script)
 		self.assertEqual(["deferred", "deferred"], [item["status"] for item in prepared])
 		render.assert_called_once()
+		observe.assert_called_once()
 
 	def test_script_identity_is_replaced_by_a_required_upright_view_before_storyboard(self):
 		project = frappe._dict(
@@ -595,6 +597,38 @@ class TestPoseCoverage(TestCase):
 		self.assertEqual("bear_standing", prepared[0]["view"])
 		observed.assert_not_called()
 		redraw.assert_not_called()
+
+	def test_unqualified_hashed_pose_cannot_bypass_visual_checks(self):
+		pose = "standing with one arm forward"
+		key = "pose_" + hashlib.sha256(f"person:{pose}:front".encode()).hexdigest()[:12]
+		project = frappe._dict(
+			name="PRJ-TEST",
+			selected_media=[
+				frappe._dict(
+					reference_key="person",
+					identity_key="person",
+					reference_role="Character",
+					asset_version="A",
+				),
+				frappe._dict(
+					reference_key=key, identity_key="person", reference_role="Character", asset_version="B"
+				),
+			],
+		)
+		script = {"scenes": [{"cast": ["person"], "action": "Reach forward."}]}
+		state = {"scene_index": 0, "cast_key": "person", "opening_pose": pose, "view": "front"}
+		with (
+			patch("joymedia.services.planning.pose_assets._plan_required_states", return_value=[state]),
+			patch(
+				"frappe.db.get_value",
+				side_effect=lambda _dt, _name, field: "{}" if field == "analysis_json" else "/source",
+			),
+			patch("joymedia.services.planning.pose_assets._view_matches", return_value=False),
+			patch("joymedia.services.planning.pose_assets._pose_view", side_effect=ValueError("unqualified")),
+			patch("frappe.log_error"),
+		):
+			result = prepare_script_pose_views(project, script)
+		self.assertEqual("deferred", result[0]["status"])
 
 	def test_neutral_qualified_view_cannot_replace_scripted_reaching_paw(self):
 		project = frappe._dict(

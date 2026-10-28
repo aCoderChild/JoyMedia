@@ -332,8 +332,8 @@ def _accept_pose_view(
 		"Image 1 is the source character; image 2 is a generated pose. Ignoring pose, camera angle, "
 		"lighting, plain background and removable held objects, does image 2 preserve the same "
 		"character identity: body proportions and silhouette, face, colour, material and head-worn accessories? "
-		"The source may be seated, but a rounded, squat bear with short paws and feet must not "
-		"become a slender human-shaped bear with a narrow waist, long arms, long legs or fingers. "
+		"Preserve the source's characteristic anatomy and relative proportions; do not introduce "
+		"or elongate limbs, alter body shape, or change distinctive features. "
 		"Return JSON answer true only if recognizably the same character, false if different, "
 		"or null if uncertain; include a reason.",
 		max_edge=768,
@@ -1103,7 +1103,7 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 			if key in by_key
 		]
 	prepared = []
-	failed_pose_keys = set()
+	failed_pose_keys = {}
 	for state in states:
 		scene = script["scenes"][state["scene_index"]]
 		cast_key = state["cast_key"]
@@ -1143,7 +1143,13 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 				)
 			except Exception:
 				choice_analysis = {}
-			if choice_analysis.get("source_asset_version") and not _qualified_pose_metadata(choice_analysis):
+			qualified = _qualified_pose_metadata(choice_analysis)
+			if not (
+				choice.get("identity_key") == identity
+				and qualified
+				and " ".join(qualified["pose"].casefold().split()) == pose.casefold()
+				and (not qualified["view"] or qualified["view"] == angle)
+			):
 				choice = None
 		preferred = by_key.get(state.get("reference_key"))
 		if preferred and preferred.get("identity_key") == identity:
@@ -1167,6 +1173,17 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 			):
 				choice = preferred
 		if not choice:
+			if failed_pose_keys.get(key) == len(selected):
+				prepared.append(
+					{
+						"scene": state["scene_index"] + 1,
+						"source": cast_key,
+						"pose": pose,
+						"status": "deferred",
+						"reason": "same pose failed qualification earlier in this pass",
+					}
+				)
+				continue
 			# Source and alternate views are checked visually against the planned
 			# state; text labels and action keywords cannot certify a pose.
 			candidates = [source] + [
@@ -1285,7 +1302,7 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 
 				if isinstance(exc, ComfyJobLostError):
 					raise
-				failed_pose_keys.add(key)
+				failed_pose_keys[key] = len(selected)
 				frappe.log_error(title=f"Pose preparation deferred for {project.name}")
 				prepared.append(
 					{
