@@ -9,6 +9,7 @@ from joymedia.services.keyframes.overlay import DRAW, PASTE
 from joymedia.services.planning.pose_assets import (
 	_accept_pose_view,
 	_clean_identity_source,
+	_h3_pose_prompt,
 	_h3_start_view,
 	_plan_required_states,
 	_pose_view,
@@ -29,6 +30,15 @@ from joymedia.services.project.reference_lineage import lineage_identity
 
 
 class TestPoseCoverage(TestCase):
+	def test_h3_pose_prompt_preserves_source_anatomy_for_people_and_mascots(self):
+		for pose in ("a person reaching forward", "a mascot raising one paw"):
+			with self.subTest(pose=pose):
+				prompt = _h3_pose_prompt(pose, "front", "")
+				self.assertIn(pose, prompt)
+				self.assertIn("source subject's face, body shape, limb proportions", prompt)
+				self.assertNotIn("No human anatomy", prompt)
+				self.assertNotIn("rounded body and short limbs", prompt)
+
 	def test_matching_body_state_does_not_reuse_a_prop_holding_source(self):
 		with (
 			patch("joymedia.services.planning.pose_assets._observed_pose_matches", return_value=True),

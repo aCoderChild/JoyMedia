@@ -822,6 +822,8 @@ class TestGeneratedScriptValidation(TestCase):
 			}
 			if script:
 				variant["script"] = script
+				variant["pose_prepared"] = True
+				variant["pose_views"] = [{"scene": 1, "status": "deferred"}]
 			batch = Mock(name="batch", status="Needs Attention", variants_json=json.dumps([variant]))
 			batch.name = "BATCH"
 			with (
@@ -830,13 +832,21 @@ class TestGeneratedScriptValidation(TestCase):
 				patch.object(frappe.cache, "lock"),
 				patch.object(frappe.db, "commit"),
 				patch.object(frappe.db, "set_value") as save,
-				patch("frappe.enqueue"),
+				patch("frappe.enqueue") as enqueue,
+				patch(
+					"joymedia.services.generation.creative_batch._planning_queue",
+					return_value="joymedia_planning",
+				),
 			):
 				retry_product_variant(batch.name, 1)
+				self.assertEqual("joymedia_planning", enqueue.call_args.kwargs["queue"])
+				self.assertEqual(10800, enqueue.call_args.kwargs["timeout"])
 				retried = json.loads(save.call_args.args[2]["variants_json"])[0]
 				if script:
 					self.assertEqual("old", retried["nonce"])
 					self.assertEqual(script, retried["script"])
+					self.assertFalse(retried["pose_prepared"])
+					self.assertEqual("deferred", retried["pose_views"][0]["status"])
 				else:
 					self.assertNotEqual("old", retried["nonce"])
 					self.assertEqual(

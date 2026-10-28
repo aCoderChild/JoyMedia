@@ -608,6 +608,14 @@ def retry_product_variant(batch_name, index):
 				{"nonce": variant.get("nonce"), "error": variant.get("error", "")}
 			)
 			variant["nonce"] = uuid.uuid4().hex
+		if (
+			stage == "Planning"
+			and variant.get("script")
+			and any(row.get("status") == "deferred" for row in (variant.get("pose_views") or []))
+		):
+			# A retry after a pose-renderer fix must re-qualify unresolved poses;
+			# keeping pose_prepared=true would bypass the gate on resume.
+			variant["pose_prepared"] = False
 		variant.update(status=stage, error="")
 		frappe.db.set_value(
 			"Creative Batch",
@@ -622,14 +630,14 @@ def retry_product_variant(batch_name, index):
 				else "Finishing",
 			},
 		)
-		from joymedia.services.generation.creative_batch import _planning_queue
+		from joymedia.services.generation.creative_batch import PLANNING_JOB_TIMEOUT, _planning_queue
 
 		frappe.enqueue(
 			"joymedia.services.generation.creative_batch.prepare_batch"
 			if stage == "Planning"
 			else "joymedia.services.generation.creative_batch.advance_batch",
-			queue="long" if stage != "Planning" or variant.get("script") else _planning_queue(),
-			timeout=3600,
+			queue=_planning_queue() if stage == "Planning" else "long",
+			timeout=PLANNING_JOB_TIMEOUT if stage == "Planning" else 3600,
 			batch_name=batch.name,
 			**({"position": position} if stage == "Planning" else {}),
 			job_id=(

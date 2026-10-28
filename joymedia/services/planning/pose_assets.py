@@ -447,6 +447,23 @@ def _h3_start_view(project, source, target_pose, angle, exclude_asset_versions=(
 	return row, urls[row.asset_version]
 
 
+def _h3_pose_prompt(pose_description, angle, eye_instruction):
+	"""Request a pose without imposing anatomy that may contradict the source."""
+	angle_text = {"side": "side profile", "back": "rear view", "front": "front view"}[angle]
+	return (
+		"One continuous studio shot of exactly the subject in the first frame. "
+		"It smoothly changes from its current pose into this final body state: "
+		f"{pose_description}. End in a clear {angle_text} and hold the final pose. "
+		"Preserve the source subject's face, body shape, limb proportions, colour, material, "
+		"markings and worn accessories. Do not add accessories absent from the source. "
+		+ eye_instruction
+		+ "Keep anatomy connected and maintain visible, physically plausible support "
+		"appropriate to the requested pose. Do not add limbs, props, other subjects, "
+		"furniture unrelated to the requested support, text or a scene change. "
+		"Plain neutral studio background, full body, fixed camera."
+	)
+
+
 def _pose_view_from_h3(project, source, pose_description, angle):
 	"""Use the installed MiniMax H3 image-to-video workflow as a pose bridge.
 
@@ -473,18 +490,10 @@ def _pose_view_from_h3(project, source, pose_description, angle):
 	if not name:
 		raise ValueError("No installed MiniMax H3 image-to-video workflow is available for pose preparation.")
 	workflow = frappe.get_doc("Generation Workflow", name)
-	angle_text = {"side": "side profile", "back": "rear view", "front": "front view"}[angle]
-	prompt = (
-		"One continuous studio shot of exactly the character in the first frame. "
-		"It smoothly changes from its current pose into this final body state: "
-		f"{pose_description}. End in a clear {angle_text} and hold the final pose. "
-		"Preserve the same face, colour, material, proportions, head accessories; "
-		"never add a flower, bow, hat or other head accessory absent in the source. "
-		+ _eye_design_instruction(frappe.db.get_value("Asset Version", source.asset_version, "file"), angle)
-		+ "rounded body and short limbs throughout. The character keeps connected "
-		"anatomy and visible weight support on the floor. No human anatomy, long "
-		"limbs, fingers, props, other characters, furniture, text or scene change. "
-		"Plain neutral studio background, full body, fixed camera."
+	prompt = _h3_pose_prompt(
+		pose_description,
+		angle,
+		_eye_design_instruction(frappe.db.get_value("Asset Version", source.asset_version, "file"), angle),
 	)
 	output = get_workflow_adapter(workflow).extract_execution_metadata(json.loads(workflow.workflow_json))[
 		"primary_output_node_key"
