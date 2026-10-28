@@ -859,7 +859,8 @@ class TestPoseCoverage(TestCase):
 		prompt = planner.call_args.args[0]
 		self.assertIn("walks upright toward the tissue pack", prompt)
 		self.assertIn("right paw extended toward the pack", prompt)
-		self.assertIn("A neutral standing pose does not satisfy a scripted reach", prompt)
+		self.assertIn("already underway at the first frame", prompt)
+		self.assertIn("do not require its later reached or held state", prompt)
 		self.assertIn("starts on two supported feet", prompt)
 		self.assertNotIn("seated mascot reference photograph", prompt)
 
