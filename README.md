@@ -6,18 +6,35 @@ finishing product videos with Qwen and ComfyUI.
 ## Install from a fresh clone
 
 JoyMedia is an app, not a standalone web server. A fresh clone runs inside a
-[Frappe Bench](https://github.com/frappe/bench). The following installs the
-same repository layout used by CI:
+[Frappe Bench](https://github.com/frappe/bench). For the Python 3.12 and Frappe
+15 combination used by the current GPU demo, install MariaDB, Redis, Node.js 20,
+Yarn, Git, FFmpeg, Python 3.12 and its development headers first. Follow the
+Frappe Bench prerequisites for your operating system. Then, in a development
+environment, install the Bench CLI separately from the site's Python environment:
 
 ```bash
-bench init --frappe-branch version-16 joymedia-bench
+python3.12 -m venv ~/.venvs/joymedia-bench-cli
+~/.venvs/joymedia-bench-cli/bin/pip install 'frappe-bench==5.31.0'
+export PATH="$HOME/.venvs/joymedia-bench-cli/bin:$PATH"
+bench init --python "$(command -v python3.12)" --frappe-branch version-15 joymedia-bench
 cd joymedia-bench
-bench get-app https://github.com/aCoderChild/JoyMedia.git --branch main
+bench get-app --branch main joymedia https://github.com/aCoderChild/JoyMedia.git
+./env/bin/pip install --only-binary=opencv-python-headless -e 'apps/joymedia[tracking,cinematography,narration]'
 bench new-site joymedia.localhost
 bench --site joymedia.localhost install-app joymedia
 bench build
+cd apps/joymedia/joymedia/frontend
+npm ci
+npm run build
+cd ../../../..
 bench start
 ```
+
+Open `http://joymedia.localhost:8000/joymedia/projects`. The installation above
+creates an empty site with its own administrator account. Git does not include
+existing demo projects, uploaded files, user credentials, database content, or
+server configuration. Add `joymedia.localhost` to your hosts file if your system
+does not resolve localhost subdomains.
 
 For a direct clone, validate the checkout before adding it to a Bench:
 
@@ -29,6 +46,11 @@ python scripts/verify_app_layout.py
 
 The app does not include model weights, Qwen, or ComfyUI. Configure those
 services separately after installation; see [operations](docs/operations.md).
+Installing the app and opening the UI does not establish that video generation
+works. The planner, vision service, ComfyUI, compatible models and workflows,
+queues, scheduler and accessible storage must be configured and tested together.
+Automatic pose and physical-consistency checks can stop a batch for review; the
+current reference-to-final-video flow has not been qualified for every input.
 
 ## Repository layout
 
@@ -66,15 +88,16 @@ See [architecture](docs/architecture.md) for boundaries and request flow.
 ## Development and verification
 
 ```bash
-python scripts/verify_app_layout.py
-ruff check joymedia scripts deploy
-ruff format --check joymedia scripts deploy
-python scripts/run_tests.py joymedia.localhost            # every test module (or add a package name: planning)
-cd joymedia/frontend && npm ci && npm run build
+# Run from the Bench directory after installing the app and site.
+python apps/joymedia/scripts/verify_app_layout.py
+bench --site joymedia.localhost set-config allow_tests true
+python apps/joymedia/scripts/run_tests.py joymedia.localhost  # optionally add: planning
+cd apps/joymedia/joymedia/frontend && node --test tests/*.test.mjs && npm run build
 ```
 
 The site name is environment-specific. Use the site created by `bench new-site`
-in your local Bench. `bench run-tests --app joymedia` only finds the doctype-side tests, so
+in your local Bench. Use a dedicated test site: the test suite can create records and files.
+`bench run-tests --app joymedia` only finds the doctype-side tests, so
 `scripts/run_tests.py` runs each test module and is what CI uses. To set up a site for rendering,
 run `bench --site <site> execute joymedia.install.setup` (see [docs/production-pipeline.md](docs/production-pipeline.md)).
 
