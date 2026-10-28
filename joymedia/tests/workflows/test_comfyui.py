@@ -155,6 +155,18 @@ class TestComfyUIClient(FrappeTestCase):
 
 
 class TestComfyUIUploadRoutes(FrappeTestCase):
+	@patch("joymedia.services.workflows.comfyui.requests.get")
+	def test_stalled_transfer_prefers_only_explicit_alternate(self, get):
+		from joymedia.services.workflows.comfyui import _prefer_reachable_transfer
+
+		get.side_effect = requests.ReadTimeout("stalled")
+		self.assertEqual(
+			["http://alternate", "http://data"],
+			_prefer_reachable_transfer(["http://data", "http://alternate"]),
+		)
+		self.assertEqual(["http://other"], _prefer_reachable_transfer(["http://other"]))
+		get.assert_called_once()
+
 	@patch(
 		"joymedia.services.workflows.comfyui.frappe.conf",
 		{
@@ -162,7 +174,8 @@ class TestComfyUIUploadRoutes(FrappeTestCase):
 		},
 	)
 	@patch("joymedia.services.workflows.comfyui.requests.get")
-	def test_output_timeout_fetches_same_file_without_resubmitting(self, get):
+	@patch("joymedia.services.workflows.comfyui._prefer_reachable_transfer", side_effect=lambda urls: urls)
+	def test_output_timeout_fetches_same_file_without_resubmitting(self, prefer, get):
 		get.side_effect = [requests.ReadTimeout("response lost"), Mock(ok=True, content=b"audio")]
 		self.assertEqual(b"audio", download_output("scene.flac", "audio", base_url="http://data"))
 		self.assertEqual(
@@ -178,7 +191,8 @@ class TestComfyUIUploadRoutes(FrappeTestCase):
 	)
 	@patch("joymedia.services.workflows.comfyui.filelock", return_value=nullcontext())
 	@patch("joymedia.services.workflows.comfyui.requests.post")
-	def test_timeout_reopens_same_upload_on_explicit_transport(self, post, lock):
+	@patch("joymedia.services.workflows.comfyui._prefer_reachable_transfer", side_effect=lambda urls: urls)
+	def test_timeout_reopens_same_upload_on_explicit_transport(self, prefer, post, lock):
 		from PIL import Image
 
 		from joymedia.services.workflows.comfyui import upload_local_file

@@ -114,6 +114,23 @@ def get_upload_urls(base_url=None):
 	return _transfer_urls(base_url, "comfyui_upload_fallback_routes")
 
 
+def _prefer_reachable_transfer(urls):
+	"""Avoid long transfer timeouts on a stalled explicitly mapped transport.
+
+	The alternate must already be configured as a route to the same server.
+	This probe never submits a workflow or retries a non-idempotent operation.
+	"""
+	if len(urls) < 2:
+		return urls
+	try:
+		response = requests.get(f"{urls[0]}/system_stats", auth=get_request_auth(), timeout=3)
+		if response.ok:
+			return urls
+	except (requests.ConnectionError, requests.Timeout):
+		pass
+	return [urls[1], urls[0]]
+
+
 def upload_frappe_file(file_url: str, *, base_url: str | None = None, input_dir: str | None = None) -> dict:
 	if not file_url:
 		frappe.throw(_("File URL is required."))
@@ -132,7 +149,7 @@ def upload_local_file(local_path, *, base_url: str | None = None) -> dict:
 	# Generation Tasks can run concurrently, but staging their inputs must be
 	# serialized across Frappe workers to keep the remote server responsive.
 	with filelock("joymedia-comfyui-upload"):
-		urls = get_upload_urls(base_url)
+		urls = _prefer_reachable_transfer(get_upload_urls(base_url))
 		comfyui_filename = f"joymedia_{uuid.uuid4().hex}{path.suffix.lower()}"
 		for index, url in enumerate(urls):
 			try:
@@ -327,7 +344,7 @@ def get_object_info(*, base_url: str | None = None) -> dict:
 def download_output(
 	filename: str, subfolder: str = "", file_type: str = "output", *, base_url: str | None = None
 ) -> bytes:
-	urls = _transfer_urls(base_url, "comfyui_download_fallback_routes")
+	urls = _prefer_reachable_transfer(_transfer_urls(base_url, "comfyui_download_fallback_routes"))
 	for index, url in enumerate(urls):
 		try:
 			response = requests.get(
