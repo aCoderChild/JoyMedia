@@ -260,13 +260,9 @@ def _blocking_script_defects(script):
 	not safe inputs for a pose library or a first-frame model: a correct character
 	pose cannot make an impossible action chain coherent.
 	"""
-	# ``draft_script(require_clean=True)`` may retain the last structurally valid
-	# screenplay after its bounded optional rewrites fail. Its deferred review is
-	# evidence for production review, not a new hard invalidation. Treating those
-	# same findings as blockers here caused an automatic batch to stop forever
-	# even though the script writer had already selected its valid fallback.
-	if (script.get("writer_fallback") or {}).get("quality_review") == "deferred":
-		return []
+	# A structurally valid fallback is not proof of physical causality. Keep
+	# unresolved structured findings as blockers even when optional review was
+	# deferred; retracted findings have already been reclassified by the reviewer.
 	blocking = {"missing_prerequisite", "brief_contradiction", "missing_contact_or_result"}
 	issues = (script.get("action_review") or {}).get("issues") or []
 	return list(
@@ -1303,19 +1299,6 @@ def _prepare_batch_locked(batch_name, position=None):
 					language=request.get("language"),
 					require_clean=is_automatic(request) and not variant.get("accept_advisory_fallback"),
 				)
-				# Do this before pose preparation.  The script is the source of truth
-				# for required states; submitting a physically incomplete draft merely
-				# makes the image model hide the error behind the reference pose.
-				blocking_defects = _blocking_script_defects(script)
-				if blocking_defects:
-					if _restart_automatic_script_variant(variant, script, blocking_defects):
-						_write(batch.name, variants, "Planning", changed_index=index)
-						_queue_prepare(batch.name, variants, replacement=True)
-						frappe.db.commit()
-						return
-					raise ValueError(
-						"AI Director could not produce a physically coherent action sequence after retries."
-					)
 				if is_automatic(request):
 					defects = _automatic_script_defects(script)
 					if defects:
@@ -1341,6 +1324,18 @@ def _prepare_batch_locked(batch_name, position=None):
 				if not _write(batch.name, variants, "Planning", changed_index=index):
 					return
 			script = variant["script"]
+			# Check saved scripts on resume as well as newly generated drafts.
+			# Retries must not bypass a newly enforced physical consistency gate.
+			blocking_defects = _blocking_script_defects(script)
+			if blocking_defects:
+				if _restart_automatic_script_variant(variant, script, blocking_defects):
+					_write(batch.name, variants, "Planning", changed_index=index)
+					_queue_prepare(batch.name, variants, replacement=True)
+					frappe.db.commit()
+					return
+				raise ValueError(
+					"AI Director could not produce a physically coherent action sequence after retries."
+				)
 			original_names = [scene.get("beat_name") for scene in script["scenes"]]
 			unique_scene_names(script)
 			if original_names != [scene["beat_name"] for scene in script["scenes"]]:

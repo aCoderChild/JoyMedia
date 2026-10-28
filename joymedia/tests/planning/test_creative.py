@@ -114,7 +114,7 @@ class TestOpeningTextCrossCheck(TestCase):
 			_automatic_script_defects({"director_notes": ["Scene 1: Acquire the product before use."]}),
 		)
 		self.assertEqual(
-			[],
+			["Show the spill first."],
 			_blocking_script_defects(
 				{
 					"writer_fallback": {"quality_review": "deferred"},
