@@ -7,10 +7,9 @@ from typing import ClassVar
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from redis.exceptions import LockError
-
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from redis.exceptions import LockError
 
 from joymedia.services.planning.creative import script_workbook, validate_script
 from joymedia.services.planning.grounding import grounded_contract
@@ -81,7 +80,9 @@ class TestOpeningTextCrossCheck(TestCase):
 			cache.lock.side_effect = occupied_lock
 			self.assertIsNone(prepare_batch("CRB-00001", 0))
 			prepare.assert_not_called()
-			cache.lock.assert_called_once_with("joymedia-creative-prepare:CRB-00001:0", timeout=10800, blocking_timeout=0)
+			cache.lock.assert_called_once_with(
+				"joymedia-creative-prepare:CRB-00001:0", timeout=10800, blocking_timeout=0
+			)
 
 	def test_cinematic_opening_keeps_a_broad_product_action_moving(self):
 		from joymedia.services.planning.camera import infer_cinematic_intent
@@ -2984,6 +2985,17 @@ class TestAutomaticScriptContracts(TestCase):
 		self.assertNotIn("duration", result["examples"][0])
 		self.assertEqual(["Gentle", "Fresh"], result["claims"])
 		self.assertEqual(["a memorable example line here"], result["voice_lines"])
+
+	def test_approved_examples_supply_safe_structure_without_client_workbook(self):
+		from joymedia.services.planning.creative import script_exemplars
+
+		result = script_exemplars([], 0)
+		self.assertTrue(result["examples"])
+		self.assertTrue(result["marketing_rhythm"])
+		self.assertEqual([], result["claims"])
+		serialized = json.dumps(result).lower()
+		for private_word in ("shera", "auntie", "mascot", "tissue", "shirt", "cookie"):
+			self.assertNotIn(private_word, serialized)
 
 	def test_commercial_rhythm_requires_progression_not_repeated_handling(self):
 		from joymedia.services.planning.creative import commercial_action_findings

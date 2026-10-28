@@ -61,6 +61,7 @@ import {useGalleryView} from "../composables/useGalleryView";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { call } from "frappe-ui";
+import { rioConfirm } from "../utils/rioDialog";
 import { notify } from "../utils/notify";
 import { errorMessage } from "../utils/errors";
 import { useI18n } from "../stores/i18n";
@@ -119,7 +120,7 @@ const daysLeftText = (project) => {
 // Deleting moves the project to the trash, like a file manager: restorable for 30 days.
 async function archiveProject(project) {
   const vi = currentLang.value === "vi";
-  const confirmed = window.confirm(
+  const confirmed = await rioConfirm(
     vi
       ? `Chuyển “${project.project_name}” vào thùng rác? Bạn có thể khôi phục trong 30 ngày, sau đó sẽ bị xóa vĩnh viễn.`
       : `Move “${project.project_name}” to the trash? You can restore it within 30 days; after that it is deleted for good.`
@@ -158,7 +159,7 @@ async function deleteForever(project) {
   const vi = currentLang.value === "vi";
   const name = project.project_name || project.in_project;
   const others = project.in_project ? 0 : Math.max(0, (project.video_count || 1) - 1);
-  const confirmed = window.confirm(
+  const confirmed = await rioConfirm(
     vi
       ? `Xóa vĩnh viễn “${name}”${others ? ` cùng ${others} video bên trong` : ''}? Không thể hoàn tác.`
       : `Delete “${name}”${others ? ` and the ${others} videos inside it` : ''} forever? This cannot be undone.`

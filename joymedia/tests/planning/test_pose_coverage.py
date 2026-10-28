@@ -12,13 +12,16 @@ from joymedia.services.planning.pose_assets import (
 	_h3_start_view,
 	_plan_required_states,
 	_pose_view,
+	_view_matches,
 	_visible_change,
 	prepare_script_pose_views,
 )
 from joymedia.services.planning.pose_coverage import (
 	annotate_shots,
+	assert_opening_character_references,
 	keyframe_character_mode,
 	matching_view,
+	opening_reference_conflicts,
 	pose_requirement,
 	required_pose,
 )
@@ -26,6 +29,45 @@ from joymedia.services.project.reference_lineage import lineage_identity
 
 
 class TestPoseCoverage(TestCase):
+	def test_matching_body_state_does_not_reuse_a_prop_holding_source(self):
+		with (
+			patch("joymedia.services.planning.pose_assets._observed_pose_matches", return_value=True),
+			patch(
+				"joymedia.services.review.consistency.ask",
+				return_value={"held_object_count": 1, "held_objects": ["heart"]},
+			),
+		):
+			self.assertFalse(_view_matches("/private/files/source.png", "seated on a rug", "front"))
+
+	def test_free_paws_cannot_use_held_prop_source_as_opening_reference(self):
+		shot = frappe._dict(
+			shot_number=1,
+			start_state="The mascot is seated with both paws free.",
+			image_prompt="A single mascot beside the table.",
+			generation_inputs=[frappe._dict(reference_role="Character", asset_version="source")],
+		)
+		with patch(
+			"frappe.db.get_value",
+			return_value=frappe.as_json({"description": "The character is holding a separate toy."}),
+		):
+			self.assertEqual(["source"], opening_reference_conflicts(shot))
+			with self.assertRaisesRegex(ValueError, "prop-free pose"):
+				assert_opening_character_references([shot])
+
+	def test_qualified_prop_free_pose_can_open_the_scene(self):
+		shot = frappe._dict(
+			start_state="The mascot is seated with empty paws.",
+			generation_inputs=[frappe._dict(reference_role="Character", asset_version="clean")],
+		)
+		analysis = {
+			"source_asset_version": "source",
+			"qualified_pose_and_support": "seated on a rug, paws empty",
+			"qualified_pose_view": "front",
+			"pose_qualification_version": 2,
+		}
+		with patch("frappe.db.get_value", return_value=frappe.as_json(analysis)):
+			self.assertEqual([], opening_reference_conflicts(shot))
+
 	def test_generated_view_inherits_original_identity_through_asset_lineage(self):
 		root = frappe._dict(asset_version="A", identity_key="mascot", reference_role="Character")
 		view = frappe._dict(asset_version="B", identity_key="mistaken_variant", reference_role="Character")
@@ -822,6 +864,43 @@ class TestPoseCoverage(TestCase):
 	def test_stand_up_opens_seated_but_a_walking_shot_opens_upright(self):
 		self.assertEqual("seated_supported", required_pose("The mascot stands up, then walks to the pack."))
 		self.assertEqual("upright_supported", required_pose("The mascot walks to the pack."))
+
+	def test_planner_later_standing_pose_is_corrected_to_seated_opening(self):
+		selected = [
+			frappe._dict(
+				reference_key="bear", identity_key="bear", reference_role="Character", asset_version="A"
+			)
+		]
+		script = {
+			"scenes": [
+				{
+					"cast": ["bear"],
+					"start_state": "The bear is seated on the rug with both paws free.",
+					"action": "The bear stands up, approaches the pack, then lifts it.",
+				}
+			]
+		}
+		planner = [
+			{
+				"states": [
+					{
+						"scene_index": 0,
+						"cast_key": "bear",
+						"reference_key": "bear",
+						"opening_pose": "standing upright with empty paws",
+						"view": "front",
+					}
+				]
+			},
+			{"pose": "seated on the rug with both paws free and feet forward"},
+		]
+		with (
+			patch("frappe.db.get_value", return_value="{}"),
+			patch("joymedia.services.planning.production._ask_planner", side_effect=planner),
+		):
+			state = _plan_required_states(script, selected)[0]
+		self.assertEqual("bear", state["reference_key"])
+		self.assertIn("seated on the rug", state["opening_pose"])
 
 	def test_locomotion_overrides_a_planner_selected_seated_view(self):
 		"""A script action wins when a planner response contradicts its support."""

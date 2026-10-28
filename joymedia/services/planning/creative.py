@@ -445,13 +445,16 @@ def commercial_action_findings(scenes, total_seconds):
 
 
 def script_exemplars(file_names, index=0, *, scene_chars=520):
-	"""Client-authored example workbooks -> compact style examples for the writer.
+	"""Client workbooks or reviewed fallback examples -> compact writer guidance.
 
 	Examples teach structure, pacing, tone and how the client writes voice-over and
 	on-screen text. The writer gets a new premise; their selling points are client
 	claims. The primary example rotates with the variant so variants differ.
 	"""
 	from joymedia.services.planning.workbook import parse_storyboard_workbook
+
+	if not file_names:
+		return approved_script_exemplars(index)
 
 	def shot_sizes(value):
 		text = str(value or "").casefold()
@@ -530,6 +533,40 @@ def script_exemplars(file_names, index=0, *, scene_chars=520):
 	}
 
 
+def approved_script_exemplars(index=0):
+	"""Use reviewed, anonymized pacing examples when no client workbook is supplied.
+
+	The data file contains only shot sizes, relative timing and line lengths. It
+	never gives another project's subject, claims, dialogue or plot to the writer.
+	"""
+	from pathlib import Path
+
+	path = Path(__file__).with_name("approved_examples.json")
+	try:
+		stored = json.loads(path.read_text(encoding="utf-8"))
+	except (OSError, ValueError):
+		return {}
+	examples = [
+		{key: example[key] for key in ("tone", "marketing_rhythm", "scenes") if key in example}
+		for example in stored.get("examples", [])
+		if isinstance(example, dict) and isinstance(example.get("scenes"), list)
+	]
+	if not examples:
+		return {}
+	ordered = examples[index % len(examples) :] + examples[: index % len(examples)]
+	return {
+		"examples": [ordered[0]] + [{"scenes": row["scenes"]} for row in ordered[1:3]],
+		"marketing_rhythm": ordered[0].get("marketing_rhythm", []),
+		"claims": [],
+		"voice_lines": [],
+		"screen_lines": [],
+	}
+
+
+class ReferenceAnalysisUnavailable(ValueError):
+	"""An image analysis attempt failed and can be retried without changing the script."""
+
+
 def reference_inventory(project):
 	from joymedia.services.intake.vision import ensure_project_image_analysis
 	from joymedia.services.scene.references import canonical_reference_rows, identity_key
@@ -545,7 +582,10 @@ def reference_inventory(project):
 			asset = frappe.get_doc("Asset Version", view.asset_version)
 			analysis = frappe.parse_json(asset.analysis_json or "{}") or {}
 			if asset.analysis_status != "Ready" or not str(analysis.get("description") or "").strip():
-				raise ValueError("Product/mascot reference analysis is missing: " + view.reference_key)
+				message = "Product/mascot reference analysis is missing: " + view.reference_key
+				if asset.analysis_status == "Failed":
+					raise ReferenceAnalysisUnavailable(message)
+				raise ValueError(message)
 			from joymedia.services.planning.pose_assets import _qualified_pose_metadata
 
 			qualified = _qualified_pose_metadata(analysis)
@@ -672,6 +712,22 @@ def script_schema(inventory, constraints):
 	scene["visual_camera"] = {
 		**text,
 		"description": "One opening composition before the first timed action, with environment and subject placement. Do not describe a later result or camera movement.",
+	}
+	scene["product_view"] = {
+		"type": "string",
+		"enum": [
+			"source",
+			"front",
+			"front_left",
+			"front_right",
+			"top_front",
+			"three_quarter",
+			"side",
+			"left",
+			"right",
+			"back",
+		],
+		"description": "Opening angle of the visible hero product, separate from the room camera. Use source when no different package orientation is required or the product is absent. Specify a different angle only when the opening frame needs it; unseen print remains unverified.",
 	}
 	scene["visible_change"] = {
 		**text,
@@ -997,7 +1053,7 @@ def draft_script(
 		+ "MARKETING ACTION ARC: For a commercial of twenty seconds or more, build a visible progression: an immediate action hook; a product response that changes the situation; a tactile or functional proof caused by that response; a brief payoff (reaction or presentation); then a clean hero CTA. A tension/problem is optional and only allowed when the supplied action references make it physically feasible. Never create a problem merely to fill the structure. Do not repeat a low-level handling verb in adjacent scenes: each beat must change the product, material, actor state or viewer information. At least one middle scene needs two causal timed phases (setup/contact, then the visible result). Client examples supply only this abstract rhythm, never their plot, actors, products, words or claims. "
 		"RULES: "
 		"1) Use roster keys only in cast and products; in prose describe subjects visually (e.g. 'the bear mascot'), never by key. Each identity is exactly ONE subject and cast always uses its canonical roster key, never a pose or alternate-view key. CAST DECLARES WHO ACTS, NOT THE OPENING POSE. Write the supported body state and action the scene requires, even if it differs from the supplied photograph; after the script is accepted, pose preparation selects or generates the needed Character view before any storyboard image is made. Only roster actors appear in prose and cast (example scripts' characters do not exist here); no human or hand unless a Person is supplied. "
-		"2) Every shot that shows the hero product uses the same roster product; never change its package, colour, print or construction. Do not translate or invent printed words. Once a consumable piece has been physically removed, a close action shot of only that detached piece and the actor may leave products empty so the image generator does not introduce a second container. Keep the product reference in any shot where the package or hero object is actually visible, especially the opening and final packshot. When the client requests named package angles, assign each to a product-visible opening composition in visual_camera; describe the package angle, not merely the room camera. Otherwise choose package orientations from the shot's narrative and camera needs, name any changed product-facing angle in visual_camera, and keep an unchanged angle when an interaction needs continuity. Product-view preparation follows this script. Do not claim unseen printed panels are factual. "
+		"2) Every shot that shows the hero product uses the same roster product; never change its package, colour, print or construction. Do not translate or invent printed words. Once a consumable piece has been physically removed, a close action shot of only that detached piece and the actor may leave products empty so the image generator does not introduce a second container. Keep the product reference in any shot where the package or hero object is actually visible, especially the opening and final packshot. Set product_view for the package orientation needed in the opening frame, independently of the room camera. A changed angle must also be described in visual_camera. Use source for an unchanged package orientation or when no package is visible. If the product is visible in multiple scenes, plan at least one distinct package-facing view where the camera and object placement make that view physically possible; preserve the established orientation across continuous handling unless an action turns the package or a camera cut changes the viewpoint. Client-requested angles must be assigned to product-visible openings. Product-view preparation follows this script. Do not claim unseen printed panels are factual. "
 		"3) The supplied characters are the protagonists who perform the product actions. Open on a visible event already happening. Each non-final scene completes ONE tangible interaction (grip, take out, open, press, place, carry, apply...) with a visible result; combine reach and grab in one scene; no scene of only looking, posing, smiling, thumbs-up or walking. Put a brief reaction after a completed interaction in that same scene, never in its own scene. "
 		"4) Prerequisites first: take an item out before using it; used material never returns to the pack; objects keep their state across cuts. For a package that must appear on a table in later shots, prefer keeping the whole package on that table throughout and manipulating only its removable contents. If an actor picks up the package itself, a later table shot requires a timed action that visibly places the package back on its support before that cut. "
 		"5) "

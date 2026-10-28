@@ -1,5 +1,6 @@
 import { computed, watch, onUnmounted } from "vue";
 import { call } from "frappe-ui";
+import { rioConfirm } from "../utils/rioDialog";
 import { notify } from "../utils/notify";
 import { errorMessage } from "../utils/errors";
 
@@ -21,7 +22,7 @@ export function useProjectFinishing({
 	async function finishFilm() {
 		const withMusic =
 			(videoSettings.value?.soundtrack_mode || "Sound effects only") === "Full soundtrack";
-		const confirmed = window.confirm(
+		const confirmed = await rioConfirm(
 			currentLang.value === "vi"
 				? `Dựng lại phim${
 						withMusic ? " với nhạc nền" : " từ các cảnh đã duyệt"

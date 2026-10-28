@@ -145,3 +145,19 @@
 .jm-media-grid.is-list .jm-project-copy {padding:16px 20px;}
 .jm-media-grid.is-list .jm-media-card>details {padding:9px 16px;}
 @media(max-width:767px){.jm-gallery-toolbar .jm-view-switch {margin-left:0;}.jm-archive-filter {margin-left:auto;}.jm-media-grid.is-list .jm-project-copy {padding:12px;}.jm-gallery-heading h1 {font-size:26px;}}
+.dialog-scroll-container:has(.jm-create-dialog) .dialog-content{max-width:min(900px,calc(100vw - 24px));border:1px solid #235366;border-radius:14px;background:#0d1722;color:#eaf5f8;box-shadow:0 22px 70px #000b}
+.dialog-scroll-container:has(.jm-create-dialog) .dialog-content>div{background:#0d1722}
+.dialog-scroll-container:has(.jm-create-dialog) .dialog-content h3{color:#f0fbfd;font-size:20px;font-weight:700}
+.dialog-scroll-container:has(.jm-create-dialog) .dialog-content [data-slot="actions"]{border-top:1px solid #244658}
+.dialog-scroll-container:has(.jm-create-dialog) .jm-create-dialog{color:#d8eaf0}
+.dialog-scroll-container:has(.jm-create-dialog) .jm-create-dialog .text-ink-primary{color:#eaf5f8}
+.dialog-scroll-container:has(.jm-create-dialog) .jm-create-dialog .text-ink-muted{color:#a3bfca}
+.dialog-scroll-container:has(.jm-create-dialog) .jm-create-dialog .border-outline-border{border-color:#315567}
+.dialog-scroll-container:has(.jm-create-dialog) .jm-create-dialog input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),.dialog-scroll-container:has(.jm-create-dialog) .jm-create-dialog textarea,.dialog-scroll-container:has(.jm-create-dialog) .jm-create-dialog select{background:#101f2b;color:#f0fafb;border-color:#315567}
+.dialog-scroll-container:has(.jm-create-dialog) .jm-create-dialog input::placeholder,.dialog-scroll-container:has(.jm-create-dialog) .jm-create-dialog textarea::placeholder{color:#829fae}
+.jm-studio-settings{background:#0d1722!important;border-color:#235366!important;color:#eaf5f8!important}
+.jm-studio-settings .text-ink-primary{color:#f0fafb!important}
+.jm-studio-settings .text-ink-secondary,.jm-studio-settings .text-ink-muted{color:#abc3ce!important}
+.jm-studio-settings .bg-surface-muted{background:#101f2b!important}
+.jm-studio-settings .border-outline-border{border-color:#315567!important}
+.jm-studio-settings input,.jm-studio-settings textarea{color:#f0fafb}

@@ -132,6 +132,19 @@ def multiview_reconstruction_inputs(project, canonical_key):
 
 def requested_product_view(plan):
 	"""Return a requested *opening* product view, never a later video action."""
+	explicit = str(plan.get("product_view") or "").strip().casefold()
+	if explicit in {
+		"front",
+		"front_left",
+		"front_right",
+		"top_front",
+		"three_quarter",
+		"side",
+		"left",
+		"right",
+		"back",
+	}:
+		return explicit
 	text = " ".join(str(plan.get(field) or "") for field in ("image_prompt", "start_state", "setting_prompt"))
 	# Rotation in a later video action is not an opening-frame request.  The
 	# first frame must be grounded before the video model is asked to animate it.
@@ -145,6 +158,19 @@ def requested_product_view_for_scene(scene):
 	view -> prepared media -> storyboard.  ``source`` means the script has no
 	opening-angle requirement and therefore does not justify another candidate.
 	"""
+	explicit = str(scene.get("product_view") or "").strip().casefold()
+	if explicit in {
+		"front",
+		"front_left",
+		"front_right",
+		"top_front",
+		"three_quarter",
+		"side",
+		"left",
+		"right",
+		"back",
+	}:
+		return explicit
 	return _explicit_product_view_text(
 		" ".join(str(scene.get(field) or "") for field in ("image_prompt", "start_state", "visual_camera"))
 	)
@@ -273,6 +299,7 @@ def apply_requested_view_sequence(script, creative_direction):
 		if requested_product_view_for_scene(scene) != "source":
 			continue
 		label = view.replace("_", "-")
+		scene["product_view"] = view
 		scene["visual_camera"] = (
 			str(scene.get("visual_camera") or "").rstrip(" .")
 			+ f". Opening product view: {label} view of the advertised pack."

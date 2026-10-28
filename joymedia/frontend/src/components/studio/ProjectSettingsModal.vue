@@ -1,6 +1,6 @@
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs" data-test="video-settings-modal" @click.self="$emit('close')">
-    <div class="w-full max-w-lg bg-surface-card border border-outline-border rounded-2xl p-6 shadow-2xl space-y-4 text-xs">
+    <div class="jm-studio-settings w-full max-w-2xl bg-surface-card border border-outline-border rounded-2xl p-6 shadow-2xl space-y-4 text-xs">
       <!-- Modal Header -->
       <div class="flex items-center justify-between pb-3 border-b border-outline-border">
         <div>

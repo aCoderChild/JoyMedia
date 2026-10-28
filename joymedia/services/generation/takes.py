@@ -126,6 +126,10 @@ def _start_takes_run_locked(
 	With stage="keyframe" it draws only the scenes' first frames, for review before any video."""
 	if project.storyboard_approval_status != "Approved":
 		frappe.throw(_("Review and approve the storyboard before generating another take."))
+	if stage == "keyframe":
+		from joymedia.services.planning.pose_coverage import assert_opening_character_references
+
+		assert_opening_character_references(frappe.get_doc("Shot", name) for name in shot_names)
 	from joymedia.services.generation.orchestrator import start_run_internal, validate_run_preflight
 	from joymedia.services.planning.signature import assert_plan_matches_approval, compute_plan_signature
 	from joymedia.services.project.context import build_project_snapshot

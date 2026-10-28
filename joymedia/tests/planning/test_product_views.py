@@ -52,6 +52,40 @@ class TestProductViewContracts(TestCase):
 		apply_requested_view_sequence(script, "Show the product from front-left and top-front angles.")
 		self.assertEqual([("pack", "front_left"), ("pack", "top_front")], product_view_requirements(script))
 
+	def test_structured_script_angle_drives_preparation_without_prose_keyword(self):
+		script = {
+			"scenes": [
+				{
+					"products": ["pack"],
+					"visual_camera": "A close pack shot on the table.",
+					"product_view": "front_right",
+				}
+			]
+		}
+		self.assertEqual([("pack", "front_right")], product_view_requirements(script))
+		self.assertEqual(
+			"front_right",
+			requested_product_view({"product_view": "front_right", "image_prompt": "A pack on a table"}),
+		)
+
+	def test_explicit_client_angle_overrides_director_source(self):
+		script = {
+			"scenes": [
+				{"products": ["pack"], "visual_camera": "A pack on a table.", "product_view": "source"}
+			]
+		}
+		apply_requested_view_sequence(script, "Show the product from a front-left angle.")
+		self.assertEqual([("pack", "front_left")], product_view_requirements(script))
+
+	def test_director_schema_requires_opening_package_angle(self):
+		from joymedia.services.planning.creative import script_schema
+
+		schema = script_schema([], {"duration_seconds": None, "fps": 24, "max_scene_frames": None})
+		scene = schema["properties"]["scenes"]["items"]
+		self.assertIn("product_view", scene["required"])
+		self.assertIn("source", scene["properties"]["product_view"]["enum"])
+		self.assertIn("front_right", scene["properties"]["product_view"]["enum"])
+
 	def setUp(self):
 		self.project = {
 			"selected_media": [

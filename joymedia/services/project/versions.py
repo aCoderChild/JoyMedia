@@ -279,7 +279,7 @@ def get_history(project_name, kind="edits", start=0, page_length=30, shot_name=N
 	root = family(project)
 	try:
 		start, page_length = max(0, int(start)), min(100, max(1, int(page_length)))
-	except ValueError, TypeError:
+	except (ValueError, TypeError):
 		frappe.throw(_("Invalid history paging."))
 	names = members(root)
 	if shot_name and not frappe.db.exists("Shot", {"name": shot_name, "media_project": ["in", names]}):
@@ -600,7 +600,7 @@ def card_rows(search=None, status=None, start=0, page_length=24):
 	"""One root per card; pagination/counts use the chosen edit's actual status."""
 	try:
 		start, page_length = max(0, int(start)), min(100, max(1, int(page_length)))
-	except ValueError, TypeError:
+	except (ValueError, TypeError):
 		frappe.throw(_("Invalid project paging."))
 	filters = {}
 	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles():

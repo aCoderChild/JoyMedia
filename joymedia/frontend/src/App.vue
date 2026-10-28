@@ -3,6 +3,9 @@
     <AppShell>
       <RouterView :key="$route.fullPath" />
     </AppShell>
+    <RioToasts />
+    <RioDialogHost />
+    <UpdateBanner />
   </FrappeUIProvider>
 </template>
 
@@ -10,6 +13,9 @@
 import { watchEffect } from "vue";
 import { FrappeUIProvider } from "frappe-ui";
 import AppShell from "./components/AppShell.vue";
+import RioDialogHost from "./components/RioDialogHost.vue";
+import RioToasts from "./components/RioToasts.vue";
+import UpdateBanner from "./components/UpdateBanner.vue";
 import { useAttention } from "./composables/useAttention";
 import { useSession } from "./stores/session";
 

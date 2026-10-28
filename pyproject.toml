@@ -4,7 +4,7 @@ authors = [
     { name = "JoyMedia", email = "maianh.pham@reliable-ai.org"}
 ]
 description = "AI Video Generation for product commercialization"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
@@ -33,7 +33,7 @@ packages = ["ffmpeg"]
 [tool.ruff]
 extend-exclude = ["joymedia/vendor/camerapath", "joymedia/vendor/open_storyline"]
 line-length = 110
-target-version = "py314"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = [

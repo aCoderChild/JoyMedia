@@ -22,6 +22,7 @@
         </label>
         <button type="button" class="timeline-history-btn" :disabled="!canUndo || busy" @click="$emit('undo')">↶ {{ currentLang === 'vi' ? 'Hoàn tác' : 'Undo' }}</button>
         <button type="button" class="timeline-history-btn" :disabled="!canRedo || busy" @click="$emit('redo')">↷ {{ currentLang === 'vi' ? 'Làm lại' : 'Redo' }}</button>
+        <button type="button" class="timeline-history-btn" :disabled="busy" :title="currentLang === 'vi' ? 'Xếp lại dòng thời gian từ các cảnh đã dựng' : 'Rebuild the timeline from the generated scenes'" @click="$emit('rebuild')">🧹 {{ currentLang === 'vi' ? 'Xếp lại' : 'Rebuild' }}</button>
       </div>
     </div>
 
@@ -131,6 +132,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits([
+  "rebuild",
   "selectClip",
   "update:playheadFrame",
   "trim",

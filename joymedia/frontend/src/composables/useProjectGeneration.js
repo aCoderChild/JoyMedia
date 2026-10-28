@@ -264,7 +264,11 @@ export function useProjectGeneration(projectName, onRefresh) {
     }
   }
 
-  async function reviseShotWithAi(shotName, instruction) {
+  // The AI's proposal is held here so the person can see what changed and accept
+  // or discard it, instead of the prompt being overwritten without review.
+  const pendingRevision = ref(null);
+
+  async function reviseShotWithAi(shotName, instruction, currentPrompt = "") {
     if (!instruction?.trim() || aiRevisionLoading.value) return;
     aiRevisionLoading.value = true;
     try {
@@ -273,22 +277,48 @@ export function useProjectGeneration(projectName, onRefresh) {
         shot_name: shotName,
         instruction: instruction.trim(),
       });
-      if (res?.generation_prompt || res?.prompt) {
-        // Auto apply revision to shot
-        await call("joymedia.api.storyboard.apply_project_shot_ai_revision", {
-          project_name: project(),
-          shot_name: shotName,
+      const proposed = res?.generation_prompt || res?.prompt;
+      if (proposed) {
+        pendingRevision.value = {
+          shotName,
           values: res,
-          regenerate: false,
-        });
-        if (onRefresh) await onRefresh();
-        notify({ title: "Shot revised", text: "AI updated the shot prompt.", type: "success" });
+          original: currentPrompt || "",
+          proposed,
+          summary: res.summary || "",
+        };
+      } else {
+        notify({ title: "AI revision", text: "The AI did not suggest a change.", type: "info" });
       }
     } catch (err) {
       notify({ title: "AI revision failed", text: errorMessage(err, "Could not revise shot."), type: "error" });
     } finally {
       aiRevisionLoading.value = false;
     }
+  }
+
+  async function applyPendingRevision() {
+    const pending = pendingRevision.value;
+    if (!pending) return;
+    aiRevisionLoading.value = true;
+    try {
+      await call("joymedia.api.storyboard.apply_project_shot_ai_revision", {
+        project_name: project(),
+        shot_name: pending.shotName,
+        values: pending.values,
+        regenerate: false,
+      });
+      pendingRevision.value = null;
+      if (onRefresh) await onRefresh();
+      notify({ title: "Shot revised", text: "The AI changes were applied.", type: "success" });
+    } catch (err) {
+      notify({ title: "AI revision failed", text: errorMessage(err, "Could not apply the revision."), type: "error" });
+    } finally {
+      aiRevisionLoading.value = false;
+    }
+  }
+
+  function discardPendingRevision() {
+    pendingRevision.value = null;
   }
 
   const improvingIdea = ref(false);
@@ -351,6 +381,9 @@ export function useProjectGeneration(projectName, onRefresh) {
     isRevising,
     revisionError,
     aiRevisionLoading,
+    pendingRevision,
+    applyPendingRevision,
+    discardPendingRevision,
     improvingIdea,
     productionError,
     getFrappeErrorMessage,

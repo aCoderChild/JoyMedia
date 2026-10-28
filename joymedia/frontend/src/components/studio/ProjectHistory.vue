@@ -74,6 +74,7 @@ import {usePreviewPlayback} from '../../composables/usePreviewPlayback';
 const playback=usePreviewPlayback();
 import { call } from 'frappe-ui';
 import { errorMessage } from '../../utils/errors';
+import { rioPrompt } from '../../utils/rioDialog';
 const props=defineProps({project:{type:String,required:true},currentLang:{type:String,default:'en'},sourceEdit:{type:String,default:''},simple:{type:Boolean,default:false},initialShot:{type:String,default:''}});
 const emit=defineEmits(['close','open','changed','review']);
 const historyDialog=ref(null);useDialogFocus(historyDialog,()=>emit('close'));
@@ -89,7 +90,7 @@ function useTake(item){return mutate(async()=>{await call('joymedia.services.gen
 function makeCurrent(item){return mutate(async()=>{await call('joymedia.services.project.versions.set_working_edit',{project_name:props.project,edit_name:item.name,expected_current:data.value.family.current_edit});await load();});}
 function archive(item){return mutate(async()=>{await call(item.status==='Archived'?'joymedia.api.projects.restore_project':'joymedia.api.projects.archive_project',{project_name:item.name});await load();});}
 function create(){return mutate(async()=>{const result=await call('joymedia.services.project.versions.create_edit',{project_name:props.sourceEdit||data.value.family.current_edit||props.project,label:newLabel.value,expected_current:data.value.family.current_edit});open(result.edit);});}
-function rename(item){const label=window.prompt(t('Edit name','Tên bản dựng'),item.label);if(label===null)return;return mutate(async()=>{await call('joymedia.services.project.versions.rename_edit',{project_name:item.name,label});await load();});}
+async function rename(item){const label=await rioPrompt(t('Edit name','Tên bản dựng'),item.label);if(label===null)return;return mutate(async()=>{await call('joymedia.services.project.versions.rename_edit',{project_name:item.name,label});await load();});}
 function date(value){const parsed=new Date(String(value).replace(' ','T'));return Number.isNaN(parsed.getTime())?value:new Intl.DateTimeFormat(props.currentLang==='vi'?'vi-VN':'en-GB',{dateStyle:'medium',timeStyle:'short'}).format(parsed);}
 watch([()=>props.project,kind,selectedShot],()=>{items.value=[];preview.value='';load();},{immediate:true});
 </script>

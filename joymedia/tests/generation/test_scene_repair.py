@@ -24,6 +24,9 @@ class TestAutomaticSceneRepair(FrappeTestCase):
 		}
 		self.assertTrue(cb._restart_script_after_pose_shortfall(variant))
 		self.assertIn("scenes 2", variant["revision"]["notes"][1]["text"])
+		instruction = variant["revision"]["notes"][0]["text"]
+		self.assertIn("source-faithful character cutaway may be static", instruction)
+		self.assertNotIn("Every non-final shot must complete", instruction)
 		self.assertEqual(cb.AUTOMATIC_SCRIPT_REDRAWS + 1, variant["automatic_script_redraws"])
 		self.assertEqual(1, variant["pose_script_redraws"])
 		for key in (
@@ -85,15 +88,14 @@ class TestAutomaticSceneRepair(FrappeTestCase):
 				[{"scene": 1, "status": "deferred", "pose": "seated with free hands"}]
 			)
 
-	def test_unverified_pose_reaches_frame_qa_after_script_replan(self):
+	def test_unverified_pose_still_blocks_after_script_replan(self):
 		variant = {
 			"pose_script_redraws": cb.AUTOMATIC_POSE_SCRIPT_REDRAWS,
 			"pose_views": [{"scene": 2, "status": "deferred", "pose": "seated with free hands"}],
 			"script": {"director_notes": []},
 		}
-		cb._admit_pose_preparation(variant)
-		self.assertEqual([2], variant["pose_unverified_scenes"])
-		self.assertIn("not pre-certified", variant["script"]["director_notes"][0])
+		with self.assertRaises(cb.UnverifiedPoseRequirements):
+			cb._admit_pose_preparation(variant)
 		with self.assertRaises(cb.UnverifiedPoseRequirements):
 			cb._admit_pose_preparation({**variant, "pose_script_redraws": 0})
 

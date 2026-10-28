@@ -937,6 +937,39 @@ def _plan_required_states(script, selected):
 			state["reference_key"] = compatible.get("reference_key")
 			state["opening_pose"] = compatible_pose["pose"]
 			state["view"] = compatible_pose.get("view") or state["view"]
+		elif needs_support_correction:
+			# The opening state is authored by the script. A planner that describes
+			# the later action as the first frame must not change that state merely
+			# because no matching reference is already in the library.
+			repaired = _ask_planner(
+				"Describe only the character's OPENING body pose for this scene. "
+				"Keep the body support required by the first action and explicit start_state; "
+				"omit all props, products and scenery. Do not describe a later action as "
+				"the opening pose. Return JSON pose string. "
+				+ json.dumps(
+					{
+						"start_state": script_scene.get("start_state"),
+						"action": script_scene.get("action"),
+						"required_support": requirement,
+						"rejected_pose": state["opening_pose"],
+					},
+					ensure_ascii=False,
+				),
+				system="You correct a first-frame pose to match the authored scene opening.",
+				capability="planner",
+				sampling_profile="production_plan",
+				response_schema={
+					"type": "object",
+					"properties": {"pose": {"type": "string"}},
+					"required": ["pose"],
+					"additionalProperties": False,
+				},
+			)
+			corrected = str(repaired.get("pose") or "").strip()
+			if source_pose_state([corrected]) != needed_support:
+				raise ValueError("Pose planner could not preserve the scripted opening body support.")
+			state["opening_pose"] = corrected[:300]
+			state["reference_key"] = state["cast_key"]
 		elif requirement == "upright_supported" or qualified:
 			# No reviewed upright view exists.  Keep the canonical identity as the
 			# source so preparation creates the requested pose and view.
@@ -1010,7 +1043,18 @@ def _plan_required_states(script, selected):
 
 
 def _view_matches(file_url, pose_description, angle):
-	return _observed_pose_matches(file_url, pose_description, angle)
+	"""A reusable action view must match the body state and have empty paws.
+
+	A pose-only comparison can accept a seated source holding an unrelated prop
+	for a seated, free-paw scene. Check object contact independently before the
+	view can bypass automatic pose generation.
+	"""
+	from joymedia.services.review.consistency import ask
+
+	if not _observed_pose_matches(file_url, pose_description, angle):
+		return False
+	count = ask(file_url, HELD_PROP_QUESTION, max_edge=768).get("held_object_count")
+	return type(count) is int and count == 0
 
 
 def prepare_script_pose_views(project, script, _retry_deferred=True):
@@ -1227,7 +1271,11 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 				choice = project.selected_media[-1]
 				selected.append(choice)
 				by_key[key] = choice
-			except Exception:
+			except Exception as exc:
+				from joymedia.services.workflows.comfyui import ComfyJobLostError
+
+				if isinstance(exc, ComfyJobLostError):
+					raise
 				failed_pose_keys.add(key)
 				frappe.log_error(title=f"Pose preparation deferred for {project.name}")
 				prepared.append(
@@ -1244,7 +1292,11 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 
 			if sam2_configured():
 				choice = ensure_transparent_reference(project, choice)
-		except Exception:
+		except Exception as exc:
+			from joymedia.services.workflows.comfyui import ComfyJobLostError
+
+			if isinstance(exc, ComfyJobLostError):
+				raise
 			frappe.log_error(title=f"Character cutout deferred for {project.name}")
 			prepared.append(
 				{
@@ -1284,6 +1336,10 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 					candidate = by_scene.get((row["scene"], row["source"]))
 					if candidate and candidate["status"] == "ready":
 						prepared[index] = candidate
-		except Exception:
+		except Exception as exc:
+			from joymedia.services.workflows.comfyui import ComfyJobLostError
+
+			if isinstance(exc, ComfyJobLostError):
+				raise
 			frappe.log_error(title=f"Pose retry pass deferred for {project.name}")
 	return prepared

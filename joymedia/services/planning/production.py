@@ -105,7 +105,9 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 		return constrain_product_views(
 			project,
 			plan,
-			required_view=requested_product_view_for_scene({"visual_camera": beat["camera"]}),
+			required_view=requested_product_view_for_scene(
+				{"visual_camera": beat["camera"], "product_view": beat.get("product_view")}
+			),
 		)
 	prompt = build_planning_prompt(project, shot, beat, references, previous_end_state)
 	raw = _ask_planner(prompt)
@@ -153,7 +155,9 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 	plan = constrain_product_views(
 		project,
 		plan,
-		required_view=requested_product_view_for_scene({"visual_camera": beat["camera"]}),
+		required_view=requested_product_view_for_scene(
+			{"visual_camera": beat["camera"], "product_view": beat.get("product_view")}
+		),
 	)
 	coverage, missing = beat_coverage(beat["summary"], plan["image_prompt"], plan["video_prompt"])
 	plan["coverage"] = round(coverage, 2)
@@ -869,6 +873,7 @@ def creative_beat(project, shot):
 			break
 	text = {
 		"camera": source.get("visual_camera") or "",
+		"product_view": source.get("product_view") or "",
 		**{
 			k: source.get(k) or ""
 			for k in ("shot_framing", "shot_angle", "narrative_stage", "subject_motion", "camera_move")

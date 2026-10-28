@@ -18,7 +18,12 @@ DEFAULT_TIMEOUT = 180
 CONTROL_POLL_TIMEOUT = (5, 20)
 # Consecutive failed history polls (5 s apart) tolerated while a job runs.
 MAX_POLL_FAILURES = 24
+MISSING_PROMPT_POLLS = 12
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+
+
+class ComfyJobLostError(RuntimeError):
+	"""A submitted prompt is absent from both the queue and completed history."""
 
 
 def get_base_url(base_url: str | None = None):
@@ -357,6 +362,7 @@ def run_workflow_to_bytes(
 		on_submitted(prompt_id)
 	deadline = time.monotonic() + timeout
 	poll_failures = 0
+	missing_polls = 0
 	while time.monotonic() < deadline:
 		try:
 			history = get_history(prompt_id, base_url=base_url).get(prompt_id)
@@ -392,6 +398,29 @@ def run_workflow_to_bytes(
 				return content
 			if status.get("completed"):
 				frappe.throw(_("ComfyUI job {0} produced no output.").format(prompt_id))
+			missing_polls = 0
+		else:
+			try:
+				queue = get_queue(base_url=base_url)
+				if not all(isinstance(queue.get(key), list) for key in ("queue_running", "queue_pending")):
+					missing_polls = 0
+				elif any(
+					isinstance(item, (list, tuple)) and len(item) > 1 and item[1] == prompt_id
+					for key in ("queue_running", "queue_pending")
+					for item in queue[key]
+				):
+					missing_polls = 0
+				else:
+					missing_polls += 1
+					if missing_polls >= MISSING_PROMPT_POLLS and not get_history(
+						prompt_id, base_url=base_url
+					).get(prompt_id):
+						raise ComfyJobLostError(
+							f"ComfyUI job {prompt_id} disappeared from its queue and history."
+						)
+			except (requests.RequestException, frappe.ValidationError):
+				# Do not treat an unavailable or invalid control connection as a lost job.
+				missing_polls = 0
 		time.sleep(5)
 	interrupt(prompt_id=prompt_id, base_url=base_url)
 	frappe.throw(_("ComfyUI job {0} timed out.").format(prompt_id))

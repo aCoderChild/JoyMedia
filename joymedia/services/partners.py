@@ -160,6 +160,13 @@ def get_access(project_name=None):
 	from joymedia.services.access import portal_access
 
 	access = portal_access()
+	access["display_name"] = (
+		"Administrator"
+		if frappe.session.user == "Administrator"
+		else frappe.db.get_value("User", frappe.session.user, "username")
+		or frappe.db.get_value("User", frappe.session.user, "full_name")
+		or frappe.session.user
+	)
 	if not access["reviewer"]:
 		return {
 			**access,

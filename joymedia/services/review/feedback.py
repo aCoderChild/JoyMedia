@@ -82,7 +82,7 @@ def annotation(value):
 		):
 			raise ValueError
 		return result
-	except TypeError, ValueError, OverflowError:
+	except (TypeError, ValueError, OverflowError):
 		frappe.throw(_("Mark an area inside the video frame."))
 
 
@@ -92,7 +92,7 @@ def _frame(value):
 		if not math.isfinite(result) or result < 0 or result != int(result):
 			raise ValueError
 		return int(result)
-	except TypeError, ValueError, OverflowError:
+	except (TypeError, ValueError, OverflowError):
 		frappe.throw(_("Choose a valid video frame."))
 
 
@@ -241,7 +241,7 @@ def get_feedback(
 	_root, _asset, version, _shot, fps, limit = target(project_name, asset_version)
 	try:
 		start, page_length = max(0, int(start)), min(100, max(1, int(page_length)))
-	except TypeError, ValueError:
+	except (TypeError, ValueError):
 		frappe.throw(_("Invalid review paging."))
 	from joymedia.services.partners import is_reviewer
 

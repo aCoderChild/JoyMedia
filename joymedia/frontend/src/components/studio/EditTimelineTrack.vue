@@ -13,10 +13,28 @@
           type="button"
           class="tool-btn"
           :disabled="!canSplit || busy"
+          :title="currentLang === 'vi' ? 'Bỏ phần trước playhead' : 'Drop everything before the playhead'"
+          @click="trimToPlayhead('left')"
+        >
+          ⇥ {{ currentLang === 'vi' ? 'Cắt trái' : 'Trim left' }}
+        </button>
+        <button
+          type="button"
+          class="tool-btn"
+          :disabled="!canSplit || busy"
           :title="currentLang === 'vi' ? 'Tách clip tại playhead' : 'Split clip at playhead'"
           @click="splitAtPlayhead"
         >
           ✂ {{ currentLang === 'vi' ? 'Tách' : 'Split' }}
+        </button>
+        <button
+          type="button"
+          class="tool-btn"
+          :disabled="!canSplit || busy"
+          :title="currentLang === 'vi' ? 'Bỏ phần sau playhead' : 'Drop everything after the playhead'"
+          @click="trimToPlayhead('right')"
+        >
+          ⇤ {{ currentLang === 'vi' ? 'Cắt phải' : 'Trim right' }}
         </button>
         <button
           type="button"
@@ -320,6 +338,20 @@ function splitAtPlayhead() {
   emit("split", { clip, sourceSplitFrame: splitSourceFrame });
 }
 
+// Trim to the playhead: "left" drops what is before it, "right" what is after.
+// The clip keeps its place because the server reflows the track after a trim.
+function trimToPlayhead(side) {
+  const clip = activeClip.value;
+  if (!clip) return;
+  const local = Math.max(1, Math.min(clip.duration_frames - 1, props.playheadFrame - clip.timeline_start_frame));
+  const cut = clip.source_in_frame + local;
+  emit("trim", {
+    clip,
+    sourceInFrame: side === "left" ? cut : clip.source_in_frame,
+    sourceOutFrame: side === "left" ? clip.source_out_frame : cut,
+  });
+}
+
 function duplicateSelected() {
   if (!selectedClip.value) return;
   emit("duplicate", selectedClip.value);
@@ -447,9 +479,15 @@ onBeforeUnmount(() => {
 .timeline-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 14px;
   min-height: 32px;
+  /* The track scrolls horizontally, so the row is pinned to the left edge of the
+     viewport; otherwise the tools sit at the far end of the canvas and scroll away. */
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: max-content;
+  max-width: 100%;
 }
 .timeline-meta {
   font: 700 10px ui-monospace, SFMono-Regular, Menlo, monospace;

@@ -9,8 +9,8 @@ import time
 import uuid
 
 import frappe
-from redis.exceptions import LockError
 from frappe.utils.background_jobs import get_queue, get_queues_timeout, get_workers
+from redis.exceptions import LockError
 
 from joymedia.services.generation.automation import advance_automatic_run, delivery_context, is_automatic
 from joymedia.services.generation.availability import partner_batch_waits_for_gpu
@@ -121,11 +121,8 @@ def _require_verified_pose_views(views):
 
 
 def _admit_pose_preparation(variant):
-	"""Try a script correction first; then send uncertain poses to frame QA."""
-	if int(variant.get("pose_script_redraws") or 0) < AUTOMATIC_POSE_SCRIPT_REDRAWS:
-		_require_verified_pose_views(variant.get("pose_views"))
-	else:
-		resolve_pose_shortfall(variant)
+	"""Do not turn a failed reusable pose into a rendered character reference."""
+	_require_verified_pose_views(variant.get("pose_views"))
 
 
 def _pose_transition_defects(script, pose_views):
@@ -221,6 +218,7 @@ def _restart_script_after_pose_shortfall(variant):
 			"unverified generated pose as a qualified reference."
 		],
 		extra_budget=AUTOMATIC_POSE_SCRIPT_REDRAWS,
+		allow_character_cutaway=True,
 	):
 		return False
 	variant["pose_script_redraws"] = int(variant.get("pose_script_redraws") or 0) + 1
@@ -595,7 +593,9 @@ def _start_automatic_scene_repair(batch_name, variants, index, notes):
 	return True
 
 
-def _restart_automatic_script_variant(variant, script, defects, *, extra_budget=0):
+def _restart_automatic_script_variant(
+	variant, script, defects, *, extra_budget=0, allow_character_cutaway=False
+):
 	"""Reset a pre-render variant for an autonomous screenplay rewrite.
 
 	The old child project and script remain in the variant history for audit. A
@@ -619,6 +619,12 @@ def _restart_automatic_script_variant(variant, script, defects, *, extra_budget=
 		variant.get("project")
 		and not any(variant.get(key) for key in ("workbook", "keyframe_request", "generation_request"))
 	)
+	shot_requirement = (
+		"A source-faithful character cutaway may be static when required poses cannot be verified; "
+		"put the product interaction in another physically supported shot while preserving the requested story. "
+		if allow_character_cutaway
+		else "Every non-final shot must complete an object or material interaction; keep smiles and gestures as brief reactions after that interaction, never as a standalone shot."
+	)
 	notes = [
 		{
 			"scene": None,
@@ -626,7 +632,8 @@ def _restart_automatic_script_variant(variant, script, defects, *, extra_budget=
 				"Automatic quality gate: the previous screenplay cannot be rendered. "
 				"The findings below are diagnoses, not approved replacement directions; ignore any suggested new action that conflicts with supplied references, the client's avoid rules, or visible cause-before-effect order. "
 				"Replace the unsafe or incomplete action chain with direct, supported product handling. "
-				"Do not invent water, spills, cleaning effects, unsupported travel, idle posing, or an action whose prerequisite is not visible. An effect explicitly required by the client's mandatories and supported by approved claims is allowed: show its cause, contact and gradual visible result. Every non-final shot must complete an object or material interaction; keep smiles and gestures as brief reactions after that interaction, never as a standalone shot."
+				"Do not invent water, spills, cleaning effects, unsupported travel, or an action whose prerequisite is not visible. An effect explicitly required by the client's mandatories and supported by approved claims is allowed: show its cause, contact and gradual visible result. "
+				+ shot_requirement
 			),
 		}
 	]
@@ -848,6 +855,44 @@ def _defer_planner_outage(variant, exc):
 		error=str(exc)[:1600],
 		planner_outage_attempts=attempts,
 		retry_after=time.time() + min(60 * 2 ** min(attempts - 1, 5), 1800),
+	)
+	return True
+
+
+def _defer_reference_analysis(variant, exc):
+	"""Retry failed image analysis with a bounded budget and preserve the same video."""
+	from joymedia.services.planning.creative import ReferenceAnalysisUnavailable
+
+	if not isinstance(exc, ReferenceAnalysisUnavailable):
+		return False
+	attempts = int(variant.get("reference_analysis_attempts") or 0) + 1
+	variant["reference_analysis_attempts"] = attempts
+	if attempts >= 3:
+		return False
+	variant.update(
+		status="Queued",
+		resume_stage="Planning",
+		error=str(exc)[:1600],
+		retry_after=time.time() + 60 * attempts,
+	)
+	return True
+
+
+def _defer_lost_comfy_job(variant, exc):
+	"""Resume preparation when a submitted GPU job disappeared after a restart."""
+	from joymedia.services.workflows.comfyui import ComfyJobLostError
+
+	if not isinstance(exc, ComfyJobLostError):
+		return False
+	attempts = int(variant.get("lost_comfy_attempts") or 0) + 1
+	variant["lost_comfy_attempts"] = attempts
+	if attempts >= 3:
+		return False
+	variant.update(
+		status="Queued",
+		resume_stage="Planning",
+		error=str(exc)[:1600],
+		retry_after=time.time() + 30 * attempts,
 	)
 	return True
 
@@ -1352,9 +1397,8 @@ def _prepare_batch_locked(batch_name, position=None):
 					raise ValueError(
 						"Automatic script retained an unsupported body transition: " + pose_defects[0]
 					)
-				# One screenplay rewrite gets the first chance to use qualified media.
-				# After that the shot-specific renderer may try a still, but no
-				# unqualified image is promoted as a reusable Character view.
+				# A failed pose may trigger a bounded screenplay rewrite. Do not
+				# submit a first frame from an incompatible source after that retry.
 				_admit_pose_preparation(variant)
 				project.reload()
 				if not _write(batch.name, variants, "Planning", changed_index=index):
@@ -1405,6 +1449,14 @@ def _prepare_batch_locked(batch_name, position=None):
 		except Exception as exc:
 			frappe.db.rollback()
 			if _defer_planner_outage(variant, exc):
+				_write(batch.name, variants, "Planning", changed_index=index)
+				frappe.db.commit()
+				return
+			if _defer_reference_analysis(variant, exc):
+				_write(batch.name, variants, "Planning", changed_index=index)
+				frappe.db.commit()
+				return
+			if _defer_lost_comfy_job(variant, exc):
 				_write(batch.name, variants, "Planning", changed_index=index)
 				frappe.db.commit()
 				return

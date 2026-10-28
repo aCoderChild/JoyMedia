@@ -1,5 +1,13 @@
 <template>
-	<div class="rio-studio" data-test="rio-studio">
+	<div v-if="missing" class="rio-studio rio-missing" data-test="rio-missing">
+		<div class="rio-missing-box" role="alert">
+			<span class="rio-missing-icon" aria-hidden="true">⚠</span>
+			<h2>{{ t('This project is no longer available', 'Dự án này không còn nữa') }}</h2>
+			<p>{{ t('It may have been removed, or the link is out of date. Go back to your videos to continue.', 'Dự án có thể đã bị xoá hoặc đường dẫn đã cũ. Hãy quay lại danh sách video để tiếp tục.') }}</p>
+			<a class="rio-missing-link" href="/joymedia/projects">{{ t('Back to my videos', 'Về danh sách video') }}</a>
+		</div>
+	</div>
+	<div v-else class="rio-studio" data-test="rio-studio">
 		<header class="rio-header">
 			<div class="rio-brand" aria-label="JoyMedia">
 				<span class="rio-brand-mark" aria-hidden="true">◇</span>
@@ -8,26 +16,48 @@
 			</div>
 			<div class="rio-project-name" :title="projectTitle">{{ projectTitle }}</div>
 			<div class="rio-header-actions">
+				<div class="rio-template-anchor">
+					<button type="button" class="rio-template-trigger" data-test="rio-templates-toggle" :aria-expanded="templatesOpen" aria-controls="rio-template-library" @click="toggleTemplates">🎬 {{ t('Templates', 'Mẫu kịch bản') }} <span aria-hidden="true">⌄</span></button>
+					<div v-if="templatesOpen" id="rio-template-library" class="rio-template-menu" data-test="rio-template-library">
+						<header><strong>🎬 {{ t('VIDEO TEMPLATE LIBRARY', 'THƯ VIỆN MẪU VIDEO') }}<small v-if="templateTargetShot"> · {{ t('Shot', 'Cảnh') }} {{ templateTargetShot.shot_number }}</small></strong><span>{{ templates.length }} {{ t('templates', 'mẫu') }}</span></header>
+						<p v-if="templatesLoading" role="status">{{ t('Loading templates…', 'Đang tải mẫu…') }}</p>
+						<p v-else-if="templatesError" role="alert">{{ templatesError }} <button type="button" @click="loadTemplates">{{ t('Retry', 'Thử lại') }}</button></p>
+						<p v-else-if="!templates.length">{{ t('No templates available.', 'Chưa có mẫu.') }}</p>
+						<div v-for="template in templates" :key="template.id" class="rio-template-item">
+							<strong>{{ props.currentLang === 'vi' ? template.title : template.title_en }}</strong>
+							<p>{{ props.currentLang === 'vi' ? template.description : template.description_en }}</p>
+							<p v-if="template.duration_seconds" class="rio-template-meta">{{ t(`${template.duration_seconds} seconds`, `${template.duration_seconds} giây`) }}<template v-if="template.source_label"> · {{ t('from', 'từ') }} {{ template.source_label }}</template></p>
+							<!-- Watching the original is the only way to judge a reproduction. -->
+							<button v-if="template.source_video" type="button" class="rio-template-preview-btn" @click="previewTemplate = previewTemplate === template.id ? null : template.id">{{ previewTemplate === template.id ? t('Hide the original', 'Ẩn video gốc') : t('Watch the original', 'Xem video gốc') }}</button>
+							<video v-if="previewTemplate === template.id" class="rio-template-video" :src="template.source_video" controls playsinline preload="metadata" />
+							<div><button v-if="!shots.length" type="button" :disabled="!canWork || busy" @click="useIdeaTemplate(template)">{{ t('Use for video idea', 'Dùng cho ý tưởng') }}</button><button v-if="shots.length" type="button" :disabled="!canEdit || busy" @click="useSceneTemplate(template)">{{ t('Add to selected scene', 'Thêm vào cảnh chọn') }}</button></div>
+						</div>
+					</div>
+				</div>
 				<router-link class="rio-header-link" to="/projects">{{ t('Projects', 'Dự án') }}</router-link>
 				<button type="button" data-test="rio-versions-toggle" :aria-expanded="versionsOpen" @click="versionsOpen = !versionsOpen">{{ t('Video versions', 'Các phiên bản') }}</button>
 				<button v-if="canRestore" type="button" @click="emit('restore')">{{ t('Restore project', 'Khôi phục dự án') }}</button>
 				<button type="button" @click="emit('open-history')">{{ t('History', 'Lịch sử') }}</button>
-				<button v-if="canWork && nextActionLabel" type="button" class="rio-next-action" :disabled="busy || (nextAction === 'brief' && !idea?.trim())" @click="emit('continue')">{{ nextActionLabel }}</button>
+				<button v-if="canWork && nextActionLabel && !automaticInProgress" type="button" class="rio-next-action" :disabled="busy || (nextAction === 'brief' && !idea?.trim())" @click="emit('continue')">{{ nextActionLabel }}</button>
 				<button v-if="canWork" type="button" :title="t('Project settings', 'Cài đặt dự án')" :aria-label="t('Project settings', 'Cài đặt dự án')" @click="emit('settings')">⚙</button>
 				<button v-if="canEdit" type="button" :title="t('Add scene', 'Thêm cảnh')" :aria-label="t('Add scene', 'Thêm cảnh')" @click="emit('add-scene')">＋</button>
 				<button type="button" :title="t('Project media', 'Tư liệu dự án')" :aria-label="t('Show or hide project media', 'Hiện hoặc ẩn tư liệu dự án')" :aria-expanded="assetsOpen" @click="assetsOpen = !assetsOpen">▧</button>
 				<button type="button" :title="t('Toggle minimap', 'Bật/tắt sơ đồ nhỏ')" :aria-label="t('Toggle minimap', 'Bật/tắt sơ đồ nhỏ')" :aria-pressed="showMinimap" @click="showMinimap = !showMinimap">▦</button>
+				<button v-if="canEdit && shots.length" type="button" :title="t('Slice a storyboard sheet into scene images', 'Cắt bảng phân cảnh thành ảnh từng cảnh')" :aria-label="t('Slice a storyboard sheet', 'Cắt bảng phân cảnh')" @click="emit('slice-storyboard')">▦▦</button>
 				<button type="button" :title="t('Fit canvas', 'Toàn cảnh')" :aria-label="t('Fit all scenes on screen', 'Hiện tất cả cảnh trên màn hình')" @click="fitCanvas">⛶</button>
 			</div>
 		</header>
 		<div v-if="versionsOpen" class="rio-versions" data-test="rio-versions"><header><strong>{{ t('Videos in this project', 'Video trong dự án') }}</strong><button type="button" :aria-label="t('Close versions', 'Đóng phiên bản')" @click="versionsOpen = false">×</button></header><VideoShelf :project="projectName" :readonly="!canWork" /></div>
-		<p v-if="nextActionHint && !error" class="rio-guidance" role="status">{{ nextActionHint }}</p>
+		<p v-if="automaticInProgress" class="rio-guidance" role="status">{{ automaticMessage }} <span v-if="shots.length && automaticVariant.status === 'Needs Attention'">{{ automaticFailureReason }}</span></p>
+		<p v-else-if="nextActionHint && !error" class="rio-guidance" role="status">{{ nextActionHint }}</p>
+		<ProjectStages :project="project" :production="production" :shots="shots" :assets="assets" :frames="frames" :current-lang="currentLang" />
 		<div v-if="error" class="rio-alert" role="alert">{{ error }} <button type="button" @click="emit('retry')">{{ t('Retry', 'Thử lại') }}</button></div>
 		<div class="rio-work-area">
-			<aside v-if="assetsOpen" class="rio-assets" :aria-label="t('Project media', 'Tư liệu dự án')">
+			<aside v-if="assetsOpen" class="rio-assets" :class="{ 'is-drop-target': fileDragDepth > 0 }" :style="{ width: `${drawerWidth}px` }" :aria-label="t('Project media', 'Tư liệu dự án')" @dragenter="onFileDragEnter" @dragover="onFileDragOver" @dragleave="onFileDragLeave" @drop="onFileDrop">
+				<div class="rio-drawer-resize" :title="t('Drag to change the panel width', 'Kéo để đổi độ rộng')" @pointerdown="startDrawerResize" @pointermove="moveDrawerResize" @pointerup="endDrawerResize" @pointercancel="endDrawerResize" />
 				<div class="rio-assets-head"><strong>◇ {{ t('ASSETS', 'TƯ LIỆU') }}</strong><div class="rio-asset-tools"><div class="rio-asset-size" :aria-label="t('Thumbnail size', 'Cỡ ảnh')"><button v-for="size in ['s', 'm', 'l']" :key="size" type="button" :class="{ active: assetSize === size }" :aria-pressed="assetSize === size" @click="assetSize = size">{{ size.toUpperCase() }}</button></div><button v-if="canWork" type="button" class="rio-asset-plus" :title="t('Add media', 'Thêm tư liệu')" @click="emit('open-media')">＋</button></div></div>
-				<div class="rio-assets-list" :class="`size-${assetSize}`">
-					<div v-for="asset in displayedAssets" :key="asset.asset_version || asset.name" class="rio-asset-card" :class="{ selected: selectedAsset?.asset_version === asset.asset_version }" :draggable="canEdit && Boolean(asset.reference_key)" @dragstart="startAssetDrag($event, asset)" @dragend="draggedAsset = null">
+				<div ref="assetListRef" class="rio-assets-list" :class="`size-${assetSize}`" @pointerdown="startMarquee">
+					<div v-for="asset in displayedAssets" :key="asset.asset_version || asset.name" class="rio-asset-card" :class="{ selected: selectedAsset?.asset_version === asset.asset_version, 'is-multi-selected': selectedAssetKeys.includes(assetKey(asset)) }" :data-asset-key="assetKey(asset)" :draggable="canEdit && Boolean(asset.reference_key)" @dragstart="startAssetDrag($event, asset)" @dragend="draggedAsset = null">
 						<div class="rio-asset-thumb"><button type="button" class="rio-asset-image" :title="asset.asset_name || asset.label || asset.display_name" @click="emit('select-asset', asset)"><MediaThumbnail :src="asset.file" :media-type="asset.media_type" :alt="asset.display_name" aspect="aspect-square" /></button><button type="button" class="rio-asset-badge" :class="asset.display_category.toLowerCase()" :title="t('Change category', 'Đổi danh mục')" :disabled="!canEdit" @click="categoryAsset = categoryAsset === asset.asset_version ? null : asset.asset_version">{{ categoryIcon(asset.display_category) }} <span>{{ categoryLabel(asset.display_category) }}</span></button></div>
 						<div v-if="editingAsset === asset.asset_version" class="rio-asset-name-edit"><input v-model="editedAssetName" :aria-label="t('Asset name', 'Tên tư liệu')" maxlength="140" @keydown.enter.prevent="saveAssetName(asset)" @keydown.esc="editingAsset = null" @blur="saveAssetName(asset)" /></div>
 						<button v-else type="button" class="rio-asset-name" :title="t('Rename asset', 'Đổi tên tư liệu')" :disabled="!canEdit" @click="beginAssetName(asset)">{{ asset.display_name }}</button>
@@ -38,12 +68,23 @@
 					<p v-if="!assets.length" class="rio-empty-assets">{{ t('Add product, character, and location references.', 'Thêm ảnh sản phẩm, nhân vật và bối cảnh.') }}</p>
 				</div>
 				<button v-if="canWork" type="button" class="rio-add-media" @click="emit('open-media')">＋ {{ t('Add reference', 'Thêm tư liệu') }}</button>
+				<div v-if="marquee.visible" class="rio-marquee" :style="marqueeStyle" aria-hidden="true" />
+				<div v-if="selectedAssetKeys.length" class="rio-batch-bar" role="status">
+					<span>📌 {{ t('Selected', 'Đã chọn') }} <b>{{ selectedAssetKeys.length }}</b></span>
+					<div class="rio-batch-actions">
+						<button v-if="canEdit" type="button" class="rio-batch-remove" :disabled="busy" :title="t('Remove the selected media from this project (Delete)', 'Gỡ các tư liệu đã chọn khỏi dự án (Delete)')" @click="removeSelectedAssets">🗑 {{ t('Remove', 'Gỡ') }} ({{ selectedAssetKeys.length }})</button>
+						<button type="button" class="rio-batch-cancel" :title="t('Clear selection (Esc)', 'Bỏ chọn (Esc)')" :aria-label="t('Clear selection', 'Bỏ chọn')" @click="clearAssetSelection">✖</button>
+					</div>
+				</div>
+				<p v-if="fileDragDepth > 0" class="rio-drop-hint" role="status">{{ t('Drop files to add them to your media library', 'Thả tệp để thêm vào thư viện tư liệu') }}</p>
 			</aside>
 			<section class="rio-canvas" ref="canvasRef" :aria-label="t('Scene canvas', 'Sơ đồ cảnh')" @pointerdown="startPan" @pointermove="movePan" @pointerup="endPan" @pointercancel="endPan">
 				<div class="rio-canvas-inner" :style="{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }">
 					<svg class="rio-connections" :width="canvasWidth" :height="canvasHeight" aria-hidden="true">
-						<path v-for="(edge, index) in edges" :key="index" :d="edge" />
+						<path v-for="link in links" :key="link.key" :d="link.d" :class="{ continues: link.continues }" />
 					</svg>
+					<!-- Plain-language control for continuity_mode, which decides whether a scene reuses the previous scene's ending. -->
+					<button v-for="link in links" :key="`link-${link.key}`" type="button" class="rio-link-toggle" :class="{ continues: link.continues }" :style="{ left: `${link.midX}px`, top: `${link.midY}px` }" :disabled="!canEdit || busy || link.busy" :title="link.hint" :aria-label="link.hint" @pointerdown.stop @click.stop="toggleContinuity(link)">{{ link.continues ? t('Continues', 'Tiếp nối') : t('New scene', 'Cảnh mới') }}</button>
 					<article v-for="(shot, index) in shots" :key="shot.name" class="rio-node" :class="{ active: index === selectedShotIndex }" :style="nodeStyle(shot, index)" @pointerdown.stop="startNodeDrag($event, shot, index)" @pointermove.stop="moveNodeDrag" @pointerup.stop="endNodeDrag" @pointercancel.stop="endNodeDrag" @dragover.prevent @drop.prevent.stop="dropAssetOnShot($event, shot)">
 						<div class="rio-node-head"><span>🎬 <strong>{{ t('Shot', 'Cảnh') }} {{ String(shot.shot_number || index + 1).padStart(2, '0') }}</strong></span><span class="rio-node-ratio">{{ ratioLabel }}</span><button type="button" :title="t('Scene details', 'Chi tiết cảnh')" :aria-label="t('Scene details', 'Chi tiết cảnh')" @click.stop="openShotDetails(shot, index)">⋯</button></div>
 						<button type="button" class="rio-node-preview" @click.stop="selectShot(shot, index)">
@@ -51,7 +92,7 @@
 							<span v-else><b>▧</b>{{ t('No scene image yet', 'Chưa có ảnh đầu cảnh') }}</span>
 						</button>
 						<div class="rio-node-body">
-							<label :for="`rio-prompt-${shot.name}`">{{ t('Prompt', 'Mô tả cảnh') }}</label>
+							<div class="rio-prompt-heading"><label :for="`rio-prompt-${shot.name}`">{{ t('Prompt', 'Mô tả cảnh') }}</label><button v-if="canEdit && speechSupported" type="button" class="rio-dictate" :class="{ listening: dictatingShot === shot.name }" :disabled="busy || isShotBusy(shot)" :title="dictatingShot === shot.name ? t('Stop dictating', 'Dừng đọc') : t('Dictate this scene description', 'Đọc mô tả cảnh')" :aria-label="dictatingShot === shot.name ? t('Stop dictating', 'Dừng đọc') : t('Dictate this scene description', 'Đọc mô tả cảnh')" :aria-pressed="dictatingShot === shot.name" @click.stop="toggleDictation(shot)">🎙</button><button v-if="canEdit" type="button" :disabled="busy || isShotBusy(shot)" :aria-label="t('Open prompt library for this scene', 'Mở thư viện gợi ý cho cảnh này')" @click.stop="openSceneTemplates(shot)">▤ {{ t('Prompt library', 'Thư viện gợi ý') }}</button></div>
 							<textarea :id="`rio-prompt-${shot.name}`" :value="draftFor(shot)" :disabled="!canEdit || busy || isShotBusy(shot)" rows="3" @input="setDraft(shot, $event.target.value)" @keydown.ctrl.enter.prevent="saveDraft(shot)" @keydown.meta.enter.prevent="saveDraft(shot)" />
 							<div v-if="shotReferenceKeys(shot).length" class="rio-reference-line" :title="shot.references.map(reference => referenceLabel(reference)).join(' · ')">{{ shot.references.map(reference => referenceLabel(reference)).join(' · ') }}</div>
 						</div>
@@ -65,7 +106,15 @@
 						<i class="rio-port rio-port-in" /><i class="rio-port rio-port-out" />
 					</article>
 				</div>
-				<div v-if="!shots.length" class="rio-empty-canvas" data-test="rio-empty-storyboard">
+				<div v-if="!shots.length && automaticVariant" class="rio-empty-canvas" data-test="rio-automatic-status" role="status">
+					<span class="rio-empty-step">{{ t('AUTOMATIC VIDEO', 'VIDEO TỰ ĐỘNG') }}</span>
+					<h2>{{ automaticStatusTitle }}</h2>
+					<p>{{ automaticMessage }}</p>
+					<p v-if="automaticVariant.error && automaticVariant.status === 'Needs Attention'" class="rio-auto-reason">{{ automaticFailureReason }}</p>
+					<p v-if="automaticStatusError" role="alert">{{ automaticStatusError }}</p>
+					<button v-if="canWork && automaticVariant.status === 'Needs Attention'" type="button" :disabled="automaticRetrying" @click="retryAutomatic">{{ automaticRetrying ? t('Resuming…', 'Đang tiếp tục…') : t('Retry video', 'Thử lại video') }}</button>
+				</div>
+				<div v-else-if="!shots.length" class="rio-empty-canvas" data-test="rio-empty-storyboard">
 					<span class="rio-empty-step">{{ t('START HERE', 'BẮT ĐẦU TẠI ĐÂY') }}</span>
 					<h2>{{ t('Create your storyboard', 'Tạo bảng phân cảnh') }}</h2>
 					<p>{{ t('Describe the story you want to tell. We will turn your idea and references into scenes.', 'Mô tả câu chuyện bạn muốn kể. JoyMedia sẽ dùng ý tưởng và tư liệu bên trái để tạo các cảnh.') }}</p>
@@ -74,7 +123,8 @@
 					<div class="rio-empty-actions"><span>{{ t('You can review and edit the scenes after generation.', 'Bạn có thể xem và chỉnh sửa các cảnh sau khi tạo.') }}</span><button v-if="canWork" type="button" :disabled="busy || !idea?.trim()" @click="emit('continue')">{{ t('Generate storyboard', 'Tạo phân cảnh') }} →</button></div>
 				</div>
 				<div v-if="shots.length" class="rio-canvas-controls"><button type="button" :aria-label="t('Zoom out', 'Thu nhỏ')" @click="zoom = Math.max(0.45, zoom - 0.1)">−</button><span>{{ Math.round(zoom * 100) }}%</span><button type="button" :aria-label="t('Zoom in', 'Phóng to')" @click="zoom = Math.min(1.6, zoom + 0.1)">＋</button><button type="button" :aria-label="t('Fit all scenes on screen', 'Hiện tất cả cảnh trên màn hình')" @click="fitCanvas">⛶</button></div>
-				<div v-if="showMinimap && shots.length" class="rio-minimap" aria-hidden="true"><span>{{ t('OVERVIEW', 'TỔNG QUAN') }}</span><div v-for="(shot, index) in shots" :key="shot.name" :style="miniStyle(shot, index)" /></div>
+				<!-- A pointer shortcut for panning. The zoom and fit buttons above cover the same ground for keyboards, so this stays hidden from screen readers. -->
+				<div v-if="showMinimap && shots.length" ref="minimapRef" class="rio-minimap is-interactive" aria-hidden="true" @pointerdown="startMinimapDrag" @pointermove="moveMinimapDrag" @pointerup="endMinimapDrag" @pointercancel="endMinimapDrag"><span>{{ t('OVERVIEW', 'TỔNG QUAN') }}</span><div v-for="(shot, index) in shots" :key="shot.name" :class="{ active: index === selectedShotIndex }" :style="miniStyle(shot, index)" /><b class="rio-minimap-viewport" :style="minimapViewport" /></div>
 			</section>
 			<aside v-if="selectedAsset || detailsShot" class="rio-details" :aria-label="t('Details', 'Chi tiết')">
 					<header><strong>{{ detailsShot ? `${t('Shot', 'Cảnh')} ${detailsShot.shot_number || selectedShotIndex + 1}` : t('Asset', 'Tư liệu') }}</strong><button type="button" :title="t('Close', 'Đóng')" :aria-label="t('Close details', 'Đóng chi tiết')" @click="closeDetails">×</button></header>
@@ -87,27 +137,46 @@
 						<div class="rio-details-references"><div v-for="reference in detailsShot.references || []" :key="reference.reference_key" class="rio-details-reference"><span class="rio-details-reference-icon" aria-hidden="true">{{ categoryIcon(referenceCategory(reference)) }}</span><span class="rio-details-reference-copy"><small>{{ categoryLabel(referenceCategory(reference)) }}</small><strong :title="referenceLabel(reference)">{{ referenceLabel(reference) }}</strong></span><button v-if="canEdit" type="button" :title="t('Remove from scene', 'Gỡ khỏi cảnh')" :aria-label="`${t('Remove from scene', 'Gỡ khỏi cảnh')}: ${referenceLabel(reference)}`" @click="removeShotReference(detailsShot, reference.reference_key)">×</button></div><small v-if="!detailsShot.references?.length">{{ t('Drag an asset onto this scene to add it.', 'Kéo tư liệu vào cảnh để thêm.') }}</small></div>
 						<button v-if="canEdit" type="button" class="rio-details-action" @click="emit('edit-shot', detailsShot, selectedShotIndex)">{{ t('Edit scene settings', 'Chỉnh sửa cảnh') }}</button>
 					</template>
-					<template v-else-if="selectedAsset"><MediaThumbnail :src="selectedAsset.file" :media-type="selectedAsset.media_type" :alt="selectedAsset.asset_name || selectedAsset.label" aspect="aspect-square" /><p>{{ selectedAsset.label || selectedAsset.asset_name }}</p><p>{{ categoryLabel(selectedAsset.reference_role || selectedAsset.asset_category) }}</p><p v-if="selectedAsset.product_view && selectedAsset.product_view !== 'source'">{{ t('View', 'Góc nhìn') }}: {{ selectedAsset.product_view.replaceAll('_', ' ') }}</p><button v-if="canEdit && selectedAsset.reference_key && selectedShot" type="button" class="rio-details-action" :disabled="shotReferenceKeys(selectedShot).includes(selectedAsset.reference_key)" @click="emit('assign-asset', selectedAsset)">{{ t('Add to selected scene', 'Thêm vào cảnh đang chọn') }}</button></template>
+					<template v-else-if="selectedAsset"><MediaThumbnail :src="selectedAsset.file" :media-type="selectedAsset.media_type" :alt="selectedAsset.asset_name || selectedAsset.label" aspect="aspect-square" /><p>{{ selectedAsset.label || selectedAsset.asset_name }}</p><p>{{ categoryLabel(selectedAsset.reference_role || selectedAsset.asset_category) }}</p><p v-if="selectedAsset.product_view && selectedAsset.product_view !== 'source'">{{ t('View', 'Góc nhìn') }}: {{ selectedAsset.product_view.replaceAll('_', ' ') }}</p><div v-if="canEdit && selectedAsset.reference_key" class="rio-identity">
+							<label :for="`rio-identity-${selectedAsset.asset_version}`">@{{ t('tag', 'thẻ') }}</label>
+							<input :id="`rio-identity-${selectedAsset.asset_version}`" v-model="identityDraft" :placeholder="t('e.g. BearShera', 'ví dụ: GauShera')" maxlength="60" @keydown.enter.prevent="saveIdentity" @blur="saveIdentity" />
+							<small>{{ t('Give the same tag to every picture of one character or product, so they stay the same across scenes.', 'Đặt cùng một thẻ cho mọi ảnh của một nhân vật hoặc sản phẩm, để chúng giống nhau giữa các cảnh.') }}</small>
+						</div>
+						<button v-if="canEdit && selectedAsset.reference_key && selectedShot" type="button" class="rio-details-action" :disabled="shotReferenceKeys(selectedShot).includes(selectedAsset.reference_key)" @click="emit('assign-asset', selectedAsset)">{{ t('Add to selected scene', 'Thêm vào cảnh đang chọn') }}</button></template>
 				</aside>
 		</div>
 		<section class="rio-bottom" :style="{ height: `${Math.min(420, 220 + Math.max(0, audioLanes.length - 1) * 57 + (selectedAudio ? 42 : 0))}px` }">
 			<div class="rio-timeline">
-				<div class="rio-timeline-head"><button type="button" :disabled="!previewVideo" :aria-label="playing ? t('Pause preview', 'Tạm dừng xem trước') : t('Play preview', 'Phát xem trước')" @click="togglePlayback">{{ playing ? 'Ⅱ' : '▶' }}</button><strong>{{ t('TIMELINE', 'DÒNG THỜI GIAN') }}</strong><span>{{ clips.length }} {{ t('clips', 'đoạn') }}</span><div v-if="canWork" class="rio-audio-add"><button type="button" data-test="rio-add-audio" :aria-expanded="audioAddOpen" @click="audioAddOpen = !audioAddOpen">＋ {{ t('Add audio', 'Thêm âm thanh') }}</button><div v-if="audioAddOpen" class="rio-audio-add-menu"><button v-for="role in ['BGM', 'Voiceover', 'SFX']" :key="role" type="button" @click="chooseAudioRole(role)">{{ audioRoleLabel(role) }}</button></div></div><button v-if="canWork" type="button" @click="emit('open-timeline')">{{ t('Edit tracks', 'Biên tập') }}</button><button v-if="canEdit" type="button" class="rio-export" :disabled="!canExport || exporting" @click="emit('export')">{{ exporting ? '…' : t('Export video', 'Xuất video') }}</button></div>
-				<div class="rio-ruler"><span v-for="tick in ticks" :key="tick" :style="{ left: `${tick / totalSeconds * 100}%` }">{{ tick }}s</span><input v-if="clips.length" type="range" min="0" :max="totalSeconds" step="0.1" :value="playheadSeconds" :aria-label="t('Preview position', 'Vị trí xem trước')" @input="seekTimeline(Number($event.target.value))" /></div>
-				<div class="rio-track"><b :title="t('Video track', 'Đường hình')">{{ t('VIDEO', 'HÌNH') }}</b><div class="rio-track-content"><button v-for="(clip, index) in orderedClips" :key="clip.name || index" type="button" class="rio-video-clip" :class="{ selected: clip.name === activeClip?.name }" :style="clipStyle(clip, index)" :title="clipDescription(clip, index)" @click="selectClip(clip)">{{ clipTitle(clip, index) }}</button><span v-if="!clips.length" class="rio-track-empty">{{ t('Generated clips appear here', 'Video sau khi dựng sẽ xuất hiện ở đây') }}</span></div></div>
-				<div v-for="(lane, laneIndex) in audioLanes" :key="`audio-${laneIndex}`" class="rio-track rio-audio-row"><b :title="audioRoleLabel(lane.role)">{{ audioRoleLabel(lane.role) }}</b><div class="rio-track-content"><button v-for="clip in lane.clips" :key="clip.name" type="button" class="rio-audio-clip" :class="{ 'is-selected': selectedAudioName === clip.name, 'is-disabled': !clip.enabled }" :style="audioStyle(clip)" :title="`${audioTitle(clip)}${clip.enabled ? '' : ` · ${t('Disabled', 'Đã tắt')}`}`" @click="selectedAudioName = clip.name" @dblclick="emit('open-timeline', clip)">{{ audioTitle(clip) }}</button></div></div>
-				<div v-if="!audioLanes.length" class="rio-track rio-audio-row"><b :title="t('Audio track', 'Đường âm thanh')">{{ t('AUDIO', 'ÂM THANH') }}</b><div class="rio-track-content"><span class="rio-track-empty">{{ t('No audio yet. Add music, voice, or effects.', 'Chưa có âm thanh. Thêm nhạc, lời thoại hoặc hiệu ứng.') }}</span></div></div>
+				<div class="rio-timeline-head"><button type="button" class="rio-tl-play" :disabled="!previewVideo" :aria-label="playing ? t('Pause preview', 'Tạm dừng xem trước') : t('Play preview', 'Phát xem trước')" @click="togglePlayback">{{ playing ? 'Ⅱ' : '▶' }}</button><strong>{{ t('TIMELINE', 'DÒNG THỜI GIAN') }}</strong><span>{{ clips.length }} {{ t('clips', 'đoạn') }}</span>
+					<div v-if="clips.length" class="rio-tl-zoom" :title="t('Zoom the timeline', 'Co giãn dòng thời gian')"><button type="button" :aria-label="t('Zoom out', 'Thu nhỏ')" @click="timelineZoom = Math.max(1, timelineZoom - 0.25)">－</button><input type="range" min="1" max="4" step="0.25" :value="timelineZoom" :aria-label="t('Timeline zoom', 'Mức co giãn')" @input="timelineZoom = Number($event.target.value)" /><button type="button" :aria-label="t('Zoom in', 'Phóng to')" @click="timelineZoom = Math.min(4, timelineZoom + 0.25)">＋</button></div>
+					<div v-if="canWork" class="rio-audio-add"><button type="button" data-test="rio-add-audio" :aria-expanded="audioAddOpen" @click="audioAddOpen = !audioAddOpen">＋ {{ t('Add audio', 'Thêm âm thanh') }}</button><div v-if="audioAddOpen" class="rio-audio-add-menu"><button v-for="role in ['BGM', 'Voiceover', 'SFX']" :key="role" type="button" @click="chooseAudioRole(role)">{{ audioRoleLabel(role) }}</button></div></div><button v-if="canWork && clips.length" type="button" class="rio-tl-clear" :title="t('Rebuild the timeline from the scenes', 'Xếp lại dòng thời gian từ các cảnh')" :aria-label="t('Rebuild the timeline', 'Xếp lại dòng thời gian')" @click="emit('rebuild-timeline')">🧹</button><button v-if="canWork" type="button" @click="emit('open-timeline')">{{ t('Edit tracks', 'Biên tập') }}</button><button v-if="canEdit" type="button" class="rio-export" :disabled="!canExport || exporting" @click="emit('export')">{{ exporting ? '…' : t('Export video', 'Xuất video') }}</button></div>
+				<div class="rio-tl-scroll"><div class="rio-tl-inner" :style="{ width: `${timelineZoom * 100}%` }">
+					<div class="rio-ruler"><span v-for="tick in ticks" :key="tick" :style="{ left: `${tick / totalSeconds * 100}%` }">{{ tick }}s</span><input v-if="clips.length" type="range" min="0" :max="totalSeconds" step="0.1" :value="playheadSeconds" :aria-label="t('Preview position', 'Vị trí xem trước')" @input="seekTimeline(Number($event.target.value))" /></div>
+					<div v-if="clips.length" class="rio-tl-needle" :style="{ left: `${Math.min(100, playheadSeconds / totalSeconds * 100)}%` }" aria-hidden="true" />
+					<div class="rio-track"><b class="rio-track-icon" :title="t('Video track', 'Đường hình')" aria-hidden="true">📹</b><div class="rio-track-content"><button v-for="(clip, index) in orderedClips" :key="clip.name || index" type="button" class="rio-video-clip" :class="{ selected: clip.name === activeClip?.name }" :style="clipStyle(clip, index)" :title="clipDescription(clip, index)" @click="selectClip(clip)">{{ clipTitle(clip, index) }}</button><span v-if="!clips.length" class="rio-track-empty">{{ t('Generated clips appear here', 'Video sau khi dựng sẽ xuất hiện ở đây') }}</span></div></div>
+					<div v-for="(lane, laneIndex) in audioLanes" :key="`audio-${laneIndex}`" class="rio-track rio-audio-row"><b class="rio-track-icon" :title="audioRoleLabel(lane.role)" aria-hidden="true">{{ lane.role === 'SFX' ? '〰️' : lane.role === 'Voiceover' ? '🎙️' : '🔊' }}</b><div class="rio-track-content"><button v-for="clip in lane.clips" :key="clip.name" type="button" class="rio-audio-clip" :class="{ 'is-selected': selectedAudioName === clip.name, 'is-disabled': !clip.enabled }" :style="audioStyle(clip)" :title="`${audioTitle(clip)}${clip.enabled ? '' : ` · ${t('Disabled', 'Đã tắt')}`}`" @click="selectedAudioName = clip.name" @dblclick="emit('open-timeline', clip)">{{ audioTitle(clip) }}</button></div></div>
+					<div v-if="!audioLanes.length" class="rio-track rio-audio-row"><b class="rio-track-icon" :title="t('Audio track', 'Đường âm thanh')" aria-hidden="true">🔊</b><div class="rio-track-content"><span class="rio-track-empty">{{ t('No audio yet. Add music, voice, or effects.', 'Chưa có âm thanh. Thêm nhạc, lời thoại hoặc hiệu ứng.') }}</span></div></div>
+				</div></div>
 				<div v-if="selectedAudio" class="rio-audio-actions"><strong :title="audioTitle(selectedAudio)">{{ audioTitle(selectedAudio) }}</strong><button v-if="canWork" type="button" :disabled="busy" @click="emit('toggle-audio', selectedAudio, !selectedAudio.enabled)">{{ selectedAudio.enabled ? t('Disable', 'Tắt') : t('Enable', 'Bật') }}</button><button v-if="canWork && selectedAudio.audio_role !== 'Source'" type="button" :disabled="busy" @click="removeSelectedAudio">{{ t('Remove', 'Xóa khỏi dòng thời gian') }}</button><button type="button" @click="emit('open-timeline', selectedAudio)">{{ t('More controls', 'Điều chỉnh thêm') }}</button></div>
 			</div>
-			<div class="rio-monitor"><div class="rio-monitor-head"><span>▣ {{ t('PREVIEW', 'XEM TRƯỚC') }}</span><time>{{ timecode }}</time></div><video v-if="previewVideo" ref="videoRef" :src="previewVideo" controls playsinline @loadedmetadata="applyPendingSeek" @play="playing = true" @pause="playing = false" @timeupdate="onTimeUpdate" @ended="playing = false" /><img v-else-if="previewImage" :src="previewImage" :alt="t('Selected first frame', 'Ảnh đầu cảnh đã chọn')" /><div v-else class="rio-monitor-empty">🎬<span>{{ t('Select a scene to preview', 'Chọn cảnh để xem trước') }}</span></div></div>
+			<div class="rio-monitor"><div class="rio-monitor-head"><span>▣ {{ t('PREVIEW', 'XEM TRƯỚC') }}</span><time>{{ timecode }}</time></div>
+				<div v-if="previewVideo" class="rio-monitor-stage">
+					<!-- Two players: one shows the current clip while the other preloads the next, so playback crosses a cut without stalling. -->
+					<video v-show="activePlayer === 'a'" ref="videoRefA" :src="sources.a" controls playsinline @loadedmetadata="applyPendingSeek" @play="onPlayerPlay('a')" @pause="onPlayerPause('a')" @timeupdate="onPlayerTimeUpdate('a', $event)" @ended="onPlayerEnded('a')" />
+					<video v-show="activePlayer === 'b'" ref="videoRefB" :src="sources.b" controls playsinline @loadedmetadata="applyPendingSeek" @play="onPlayerPlay('b')" @pause="onPlayerPause('b')" @timeupdate="onPlayerTimeUpdate('b', $event)" @ended="onPlayerEnded('b')" />
+					<span class="rio-monitor-timecode" aria-hidden="true">{{ timecode }}</span>
+				</div>
+				<img v-else-if="previewImage" :src="previewImage" :alt="t('Selected first frame', 'Ảnh đầu cảnh đã chọn')" /><div v-else class="rio-monitor-empty">🎬<span>{{ t('Select a scene to preview', 'Chọn cảnh để xem trước') }}</span></div></div>
 		</section>
 	</div>
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { call } from 'frappe-ui';
 import MediaThumbnail from '../MediaThumbnail.vue';
 import VideoShelf from './VideoShelf.vue';
+import ProjectStages from './ProjectStages.vue';
 import { groupAssets } from '../../utils/assetPresentation.js';
 import { clipAtSeconds, layoutAudioLanes, orderTimelineClips, shotIndexForClip, sourceSecondsForTimeline } from '../../utils/rioTimeline.js';
 import { aspectRatio, categoryIcon, categoryLabel as getCategoryLabel, categoryOptions, formatDuration, referenceCategory as getReferenceCategory, referenceLabel as getReferenceLabel } from '../../utils/rioPresentation.js';
@@ -122,10 +191,73 @@ const props = defineProps({
 	width: Number, height: Number, busy: Boolean, exporting: Boolean, canExport: Boolean,
 	storyboardApproved: Boolean, busyShots: { type: Array, default: () => [] },
 	frames: { type: Array, default: () => [] }, nextAction: String, error: String,
+	project: { type: Object, default: () => ({}) }, production: { type: Object, default: null },
+	missing: Boolean,
 });
-const emit = defineEmits(['restore', 'open-history', 'update:idea', 'settings', 'add-scene', 'open-media', 'select-asset', 'assign-asset', 'update-asset', 'remove-asset', 'update-shot-references', 'select-shot', 'edit-shot', 'draw-shot', 'approve-frame', 'render-shot', 'save-prompt', 'open-timeline', 'add-audio', 'toggle-audio', 'remove-audio', 'export', 'retry', 'continue']);
+const emit = defineEmits(['restore', 'open-history', 'update:idea', 'settings', 'add-scene', 'open-media', 'select-asset', 'assign-asset', 'update-asset', 'remove-asset', 'update-shot-references', 'select-shot', 'edit-shot', 'draw-shot', 'approve-frame', 'render-shot', 'save-prompt', 'open-timeline', 'add-audio', 'toggle-audio', 'remove-audio', 'export', 'retry', 'continue', 'set-continuity', 'upload-files', 'slice-storyboard', 'dictation-error', 'set-identity', 'apply-template-duration', 'rebuild-timeline']);
 const t = (en, vi) => props.currentLang === 'vi' ? vi : en;
-const assetsOpen = ref(typeof window === 'undefined' || window.innerWidth > 640), assetSize = ref('m'), draggedAsset = ref(null), editingAsset = ref(null), editingAssetName = ref(''), detailsShotName = ref(null), canvasRef = ref(null), videoRef = ref(null), playing = ref(false), elapsed = ref(0), zoom = ref(1), showMinimap = ref(false), versionsOpen = ref(false), selectedAudioName = ref(null), audioAddOpen = ref(false);
+const automaticBatch = ref(null), automaticVariant = ref(null), automaticStatusError = ref(''), automaticRetrying = ref(false);
+const automaticInProgress = computed(() => Boolean(automaticVariant.value && !['Completed', 'Cancelled'].includes(automaticVariant.value.status)));
+let batchTimer, batchEpoch = 0;
+async function refreshAutomaticBatch() {
+	const epoch = ++batchEpoch, project = props.projectName;
+	try {
+		const batches = await call('joymedia.api.creative.get_project_batches', { project_name: project }) || [];
+		if (epoch !== batchEpoch || project !== props.projectName) return;
+		const found = batches.filter(batch => batch.delivery_mode === 'automatic').map(batch => ({ batch, variant: (batch.variants || []).find(v => v.project === project) || (batch.source_project === project && batch.variants?.length === 1 ? batch.variants[0] : null) })).find(item => item.variant);
+		automaticBatch.value = found?.batch || null;
+		automaticVariant.value = found?.variant ? (found.batch.status === 'Cancelled' && found.variant.status !== 'Completed' ? { ...found.variant, status: 'Cancelled' } : found.variant) : null;
+		automaticStatusError.value = '';
+	} catch (error) { if (epoch === batchEpoch) automaticStatusError.value = t('Could not refresh video status.', 'Không thể cập nhật trạng thái video.'); }
+	if (epoch === batchEpoch) batchTimer = window.setTimeout(refreshAutomaticBatch, 10000);
+}
+watch(() => props.projectName, () => { clearTimeout(batchTimer); automaticBatch.value = null; automaticVariant.value = null; void refreshAutomaticBatch(); }, { immediate: true });
+onUnmounted(() => { ++batchEpoch; clearTimeout(batchTimer); });
+const automaticStatusTitle = computed(() => automaticVariant.value?.status === 'Needs Attention' ? t('Video needs attention', 'Video cần xử lý') : automaticVariant.value?.status === 'Cancelled' ? t('Video stopped', 'Video đã dừng') : automaticVariant.value?.status === 'Completed' ? t('Video complete', 'Video đã hoàn tất') : t('Creating your video', 'Đang tạo video'));
+const automaticFailureReason = computed(() => /reference analysis is missing/i.test(automaticVariant.value?.error || '') ? t('The product or character image could not be analyzed. Check the image analysis service, then retry.', 'Chưa phân tích được ảnh sản phẩm hoặc nhân vật. Kiểm tra dịch vụ phân tích ảnh rồi thử lại.') : automaticVariant.value?.error || '');
+const automaticMessage = computed(() => {
+	const status = automaticVariant.value?.status;
+	if (status === 'Needs Attention') return t('The automatic process stopped before it could finish.', 'Quá trình tự động đã dừng trước khi hoàn thành.');
+	if (status === 'Cancelled') return t('This video was stopped.', 'Video này đã được dừng.');
+	if (status === 'Completed') return t('Your video is ready to preview.', 'Video đã sẵn sàng để xem.');
+	if (status === 'Queued') return t('Waiting for the next available worker.', 'Đang chờ hệ thống xử lý.');
+	return t('JoyMedia is preparing this video automatically. Scenes will appear here when ready.', 'JoyMedia đang tự động chuẩn bị video. Các cảnh sẽ xuất hiện khi hoàn tất.');
+});
+async function retryAutomatic() {
+	if (!automaticBatch.value || !automaticVariant.value || automaticRetrying.value) return;
+	try {
+		automaticRetrying.value = true; automaticStatusError.value = '';
+		await call('joymedia.api.creative.retry_product_variant', { batch_name: automaticBatch.value.name, index: automaticVariant.value.index });
+		clearTimeout(batchTimer); await refreshAutomaticBatch();
+	} catch (error) { automaticStatusError.value = error?.messages?.[0] || error?.message || t('Could not resume the video.', 'Không thể tiếp tục video.'); }
+	finally { automaticRetrying.value = false; }
+}
+const previewTemplate = ref(null);
+const templatesOpen = ref(false), templatesLoading = ref(false), templatesError = ref(''), templates = ref([]), templateTargetShot = ref(null);
+async function loadTemplates() {
+	templatesLoading.value = true; templatesError.value = '';
+	try { templates.value = await call('joymedia.api.prompt_templates.list_prompt_templates') || []; }
+	catch (error) { templatesError.value = error?.messages?.[0] || error?.message || t('Could not load templates.', 'Không tải được mẫu.'); }
+	finally { templatesLoading.value = false; }
+}
+function toggleTemplates() { templateTargetShot.value = null; templatesOpen.value = !templatesOpen.value; if (templatesOpen.value && !templates.value.length) loadTemplates(); }
+function openSceneTemplates(shot) { templateTargetShot.value = shot; templatesOpen.value = true; if (!templates.value.length) loadTemplates(); }
+function useIdeaTemplate(template) {
+	const current = String(props.idea || '').trim();
+	emit('update:idea', [current, template.idea].filter(Boolean).join('\n\n'));
+	// The beats in the idea are written for a specific length, so carry it across;
+	// leaving the project on another length silently produces a different film.
+	if (Number(template.duration_seconds) > 0) emit('apply-template-duration', Number(template.duration_seconds), template);
+	templatesOpen.value = false;
+}
+function useSceneTemplate(template) {
+	const shot = templateTargetShot.value || props.shots[props.selectedShotIndex] || props.shots[0];
+	if (!shot) return;
+	setDraft(shot, [draftFor(shot).trim(), template.scene].filter(Boolean).join('\n\n'));
+	templatesOpen.value = false;
+	templateTargetShot.value = null;
+}
+const assetsOpen = ref(typeof window === 'undefined' || window.innerWidth > 640), assetSize = ref('m'), draggedAsset = ref(null), editingAsset = ref(null), editingAssetName = ref(''), detailsShotName = ref(null), canvasRef = ref(null), minimapRef = ref(null), videoRefA = ref(null), videoRefB = ref(null), playing = ref(false), elapsed = ref(0), zoom = ref(1), showMinimap = ref(true), versionsOpen = ref(false), timelineZoom = ref(1), selectedAudioName = ref(null), audioAddOpen = ref(false);
 const pan = reactive({ x: 0, y: 0 });
 const positions = reactive({});
 const drafts = reactive({});
@@ -133,6 +265,8 @@ const nodeWidth = 380, nodeHeight = 430, nodeGap = 100;
 const canvasWidth = computed(() => Math.max(1100, props.shots.length * (nodeWidth + nodeGap) + 180));
 const canvasHeight = 830;
 const statusLabel = computed(() => {
+	if (automaticVariant.value?.status === 'Needs Attention') return t('Needs attention', 'Cần xử lý');
+	if (automaticVariant.value && ['Queued', 'Planning', 'Locations', 'Keyframes', 'Rendering', 'Finishing', 'Exporting'].includes(automaticVariant.value.status)) return t('Working', 'Đang xử lý');
 	if (props.busy) return t('Working', 'Đang xử lý');
 	const labels = {
 		Draft: t('Draft', 'Bản nháp'), Planning: t('Planning', 'Đang lập kế hoạch'),
@@ -193,7 +327,26 @@ const previewVideo = computed(() => props.finalVideo?.file || activeClip.value?.
 const previewImage = computed(() => frameFor(previewShot.value));
 const playheadSeconds = computed(() => props.finalVideo?.file ? elapsed.value : activeClip.value ? Number(activeClip.value.timeline_start_frame || 0) / Math.max(1, props.fps) + Math.max(0, elapsed.value - Number(activeClip.value.source_in_frame || 0) / Math.max(1, props.fps)) : elapsed.value);
 const timecode = computed(() => { const s = Math.max(0, playheadSeconds.value); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}.${Math.floor((s % 1) * 10)}`; });
-const edges = computed(() => props.shots.slice(0, -1).map((shot, index) => { const a = positionFor(shot, index), b = positionFor(props.shots[index + 1], index + 1); const x1 = a.x + nodeWidth, y1 = a.y + 215, x2 = b.x, y2 = b.y + 215; return `M ${x1} ${y1} C ${x1 + 52} ${y1}, ${x2 - 52} ${y2}, ${x2} ${y2}`; }));
+// One link per gap between scenes. `continues` mirrors the next scene's
+// continuity_mode, so the line and its label always show what will be rendered.
+const links = computed(() => props.shots.slice(0, -1).map((shot, index) => {
+	const next = props.shots[index + 1];
+	const a = positionFor(shot, index), b = positionFor(next, index + 1);
+	const x1 = a.x + nodeWidth, y1 = a.y + 215, x2 = b.x, y2 = b.y + 215;
+	const continues = next.continuity_mode === 'Continue';
+	return {
+		key: next.name, shot: next, continues, busy: isShotBusy(next),
+		d: `M ${x1} ${y1} C ${x1 + 52} ${y1}, ${x2 - 52} ${y2}, ${x2} ${y2}`,
+		midX: (x1 + x2) / 2, midY: (y1 + y2) / 2,
+		hint: continues
+			? t('This scene carries on from the one before it. Choose to start it fresh instead.', 'Cảnh này tiếp nối cảnh trước. Bấm để bắt đầu một cảnh mới.')
+			: t('This scene starts fresh. Choose to carry on from the scene before it.', 'Cảnh này bắt đầu mới. Bấm để tiếp nối cảnh trước.'),
+	};
+}));
+function toggleContinuity(link) {
+	if (!props.canEdit || props.busy || link.busy) return;
+	emit('set-continuity', link.shot, link.continues ? 'New Scene' : 'Continue');
+}
 function frameFor(shot) {
 	const frame = props.frames.find(row => row.shot === shot?.name);
 	if (frame?.stale) return '';
@@ -206,6 +359,36 @@ function defaultPosition(index) { return { x: 100 + index * (nodeWidth + nodeGap
 function positionFor(shot, index) { return positions[shot.name] || defaultPosition(index); }
 function nodeStyle(shot, index) { const p = positionFor(shot, index); return { left: `${p.x}px`, top: `${p.y}px` }; }
 function miniStyle(shot, index) { const p = positionFor(shot, index); return { left: `${Math.min(92, p.x / canvasWidth.value * 100)}%`, top: `${p.y / canvasHeight * 100}%` }; }
+// The canvas is translated then scaled from its top-left, so the visible region
+// starts at -pan/zoom and spans the viewport divided by zoom.
+const minimapViewport = computed(() => {
+	const scale = zoom.value || 1;
+	const view = canvasRef.value;
+	const w = (view?.clientWidth || 900) / scale, h = (view?.clientHeight || 600) / scale;
+	return {
+		left: `${Math.max(0, Math.min(100, -pan.x / scale / canvasWidth.value * 100))}%`,
+		top: `${Math.max(0, Math.min(100, -pan.y / scale / canvasHeight * 100))}%`,
+		width: `${Math.max(4, Math.min(100, w / canvasWidth.value * 100))}%`,
+		height: `${Math.max(4, Math.min(100, h / canvasHeight * 100))}%`,
+	};
+});
+/** Centres the canvas on the point the pointer picked in the minimap. */
+function panToMinimap(event) {
+	const box = minimapRef.value?.getBoundingClientRect();
+	const view = canvasRef.value;
+	if (!box?.width || !view) return;
+	const scale = zoom.value || 1;
+	const targetX = (event.clientX - box.left) / box.width * canvasWidth.value;
+	const targetY = (event.clientY - box.top) / box.height * canvasHeight;
+	// Keep the canvas from drifting entirely out of view.
+	const minX = Math.min(0, view.clientWidth - canvasWidth.value * scale);
+	const minY = Math.min(0, view.clientHeight - canvasHeight * scale);
+	pan.x = Math.max(minX, Math.min(0, view.clientWidth / 2 - targetX * scale));
+	pan.y = Math.max(minY, Math.min(0, view.clientHeight / 2 - targetY * scale));
+}
+function startMinimapDrag(event) { if (event.button !== 0) return; minimapDragging = true; event.currentTarget.setPointerCapture(event.pointerId); panToMinimap(event); }
+function moveMinimapDrag(event) { if (minimapDragging) panToMinimap(event); }
+function endMinimapDrag(event) { if (!minimapDragging) return; minimapDragging = false; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }
 function layoutKey() { return `joymedia:rio-layout:${props.projectName}`; }
 watch(() => props.projectName, () => { for (const key of Object.keys(positions)) delete positions[key]; try { const saved = JSON.parse(localStorage.getItem(layoutKey()) || '{}'); for (const [key, value] of Object.entries(saved)) if (Number.isFinite(value?.x) && Number.isFinite(value?.y)) positions[key] = value; } catch { /* Layout is optional. */ } nextTick(focusCanvas); }, { immediate: true });
 function persistLayout() { try { localStorage.setItem(layoutKey(), JSON.stringify(positions)); } catch { /* Browsers can disable storage. */ } }
@@ -213,6 +396,177 @@ function focusCanvas() { zoom.value = 0.82; pan.x = 0; pan.y = 0; }
 function fitCanvas() { const w = canvasRef.value?.clientWidth || 900; zoom.value = Math.max(0.45, Math.min(1, (w - 80) / Math.max(700, canvasWidth.value))); pan.x = 0; pan.y = 0; }
 watch(() => props.shots.length, () => nextTick(focusCanvas));
 let drag = null;
+let minimapDragging = false;
+
+// ---- Dictation: the browser's own speech recognition, where it exists ----
+const SpeechRecognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+const speechSupported = Boolean(SpeechRecognition);
+const dictatingShot = ref(null);
+
+// The @tag is the project's identity_key: pictures sharing it are one character or prop.
+const identityDraft = ref('');
+watch(() => props.selectedAsset?.asset_version, () => {
+	identityDraft.value = props.selectedAsset?.identity_key || '';
+}, { immediate: true });
+function saveIdentity() {
+	const next = identityDraft.value.trim();
+	if (!props.selectedAsset || next === (props.selectedAsset.identity_key || '').trim()) return;
+	emit('set-identity', props.selectedAsset, next);
+}
+let recognition = null;
+
+function stopDictation() {
+	if (recognition) { recognition.onend = null; recognition.stop(); recognition = null; }
+	dictatingShot.value = null;
+}
+function toggleDictation(shot) {
+	if (dictatingShot.value === shot.name) { stopDictation(); return; }
+	stopDictation();
+	recognition = new SpeechRecognition();
+	recognition.lang = props.currentLang === 'vi' ? 'vi-VN' : 'en-US';
+	recognition.continuous = true;
+	recognition.interimResults = false;
+	// Only settled phrases are appended, so the textarea never churns mid-sentence.
+	recognition.onresult = (event) => {
+		let heard = '';
+		for (let i = event.resultIndex; i < event.results.length; i += 1) {
+			if (event.results[i].isFinal) heard += event.results[i][0].transcript;
+		}
+		if (!heard.trim()) return;
+		const existing = draftFor(shot);
+		setDraft(shot, existing ? `${existing.trimEnd()} ${heard.trim()}` : heard.trim());
+	};
+	recognition.onerror = (event) => {
+		stopDictation();
+		if (event.error === 'aborted' || event.error === 'no-speech') return;
+		emit('dictation-error', event.error);
+	};
+	recognition.onend = () => { dictatingShot.value = null; recognition = null; };
+	dictatingShot.value = shot.name;
+	try { recognition.start(); } catch { stopDictation(); }
+}
+onUnmounted(stopDictation);
+
+// ---- Media panel: resize, rubber-band selection, OS file drops, shortcuts ----
+const DRAWER_WIDTH_KEY = 'joymedia:rio-drawer-width';
+const storedWidth = Number(typeof localStorage !== 'undefined' ? localStorage.getItem(DRAWER_WIDTH_KEY) : 0);
+const drawerWidth = ref(Number.isFinite(storedWidth) && storedWidth >= 220 ? Math.min(650, storedWidth) : 290);
+let drawerResizing = false;
+function startDrawerResize(event) {
+	if (event.button !== 0) return;
+	drawerResizing = true;
+	event.currentTarget.setPointerCapture(event.pointerId);
+	event.preventDefault();
+}
+function moveDrawerResize(event) {
+	if (!drawerResizing) return;
+	// The panel is flush with the left edge, so the pointer's x is the width.
+	drawerWidth.value = Math.max(220, Math.min(650, event.clientX));
+}
+function endDrawerResize(event) {
+	if (!drawerResizing) return;
+	drawerResizing = false;
+	if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+	try { localStorage.setItem(DRAWER_WIDTH_KEY, String(Math.round(drawerWidth.value))); } catch { /* Browsers can disable storage. */ }
+}
+
+const assetListRef = ref(null);
+const selectedAssetKeys = ref([]);
+const marquee = reactive({ active: false, visible: false, startX: 0, startY: 0, left: 0, top: 0, width: 0, height: 0 });
+const marqueeStyle = computed(() => ({ left: `${marquee.left}px`, top: `${marquee.top}px`, width: `${marquee.width}px`, height: `${marquee.height}px` }));
+function assetKey(asset) { return asset.asset_version || asset.name; }
+function clearAssetSelection() { selectedAssetKeys.value = []; }
+watch(() => props.projectName, clearAssetSelection);
+// Media removed elsewhere must not linger in the selection.
+watch(() => props.assets, (list) => {
+	if (!selectedAssetKeys.value.length) return;
+	const live = new Set((list || []).map(assetKey));
+	selectedAssetKeys.value = selectedAssetKeys.value.filter((key) => live.has(key));
+});
+
+function startMarquee(event) {
+	if (event.button !== 0 || !props.canEdit) return;
+	const card = event.target.closest('.rio-asset-card');
+	if (card) {
+		// Ctrl/Cmd/Shift picks cards out; a plain press still starts a drag to the canvas.
+		if (event.ctrlKey || event.metaKey || event.shiftKey) {
+			event.preventDefault();
+			const key = card.dataset.assetKey;
+			selectedAssetKeys.value = selectedAssetKeys.value.includes(key)
+				? selectedAssetKeys.value.filter((item) => item !== key)
+				: [...selectedAssetKeys.value, key];
+		}
+		return;
+	}
+	if (event.target.closest('button, input')) return;
+	marquee.active = true;
+	marquee.visible = false;
+	marquee.startX = event.clientX;
+	marquee.startY = event.clientY;
+	if (!event.ctrlKey && !event.metaKey && !event.shiftKey) clearAssetSelection();
+	window.addEventListener('pointermove', moveMarquee);
+	window.addEventListener('pointerup', endMarquee);
+}
+function moveMarquee(event) {
+	if (!marquee.active) return;
+	const dx = Math.abs(event.clientX - marquee.startX), dy = Math.abs(event.clientY - marquee.startY);
+	if (dx <= 4 && dy <= 4) return;
+	marquee.visible = true;
+	const left = Math.min(marquee.startX, event.clientX), top = Math.min(marquee.startY, event.clientY);
+	Object.assign(marquee, { left, top, width: dx, height: dy });
+	const band = { left, top, right: left + dx, bottom: top + dy };
+	const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+	const next = new Set(additive ? selectedAssetKeys.value : []);
+	for (const card of assetListRef.value?.querySelectorAll('.rio-asset-card') || []) {
+		const box = card.getBoundingClientRect();
+		const hit = !(box.right < band.left || box.left > band.right || box.bottom < band.top || box.top > band.bottom);
+		if (hit) next.add(card.dataset.assetKey);
+		else if (!additive) next.delete(card.dataset.assetKey);
+	}
+	selectedAssetKeys.value = [...next];
+}
+function endMarquee() {
+	marquee.active = false;
+	marquee.visible = false;
+	window.removeEventListener('pointermove', moveMarquee);
+	window.removeEventListener('pointerup', endMarquee);
+}
+
+function removeSelectedAssets() {
+	if (!props.canEdit || props.busy || !selectedAssetKeys.value.length) return;
+	const chosen = new Set(selectedAssetKeys.value);
+	const assets = (props.assets || []).filter((asset) => chosen.has(assetKey(asset)));
+	clearAssetSelection();
+	for (const asset of assets) emit('remove-asset', asset);
+}
+
+// Files dragged in from the desktop. dragenter/dragleave fire per child element,
+// so a depth counter keeps the highlight steady while moving across the panel.
+const fileDragDepth = ref(0);
+const hasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes('Files');
+function onFileDragEnter(event) { if (props.canWork && hasFiles(event)) { event.preventDefault(); fileDragDepth.value += 1; } }
+function onFileDragOver(event) { if (props.canWork && hasFiles(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }
+function onFileDragLeave(event) { if (fileDragDepth.value > 0 && hasFiles(event)) fileDragDepth.value -= 1; }
+function onFileDrop(event) {
+	if (!props.canWork || !hasFiles(event)) return;
+	event.preventDefault();
+	fileDragDepth.value = 0;
+	const files = Array.from(event.dataTransfer.files || []);
+	if (files.length) emit('upload-files', files);
+}
+
+function onWorkspaceKeydown(event) {
+	const el = document.activeElement;
+	if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+	if (!selectedAssetKeys.value.length) return;
+	if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); removeSelectedAssets(); }
+	else if (event.key === 'Escape') { event.preventDefault(); clearAssetSelection(); }
+}
+onMounted(() => window.addEventListener('keydown', onWorkspaceKeydown));
+onUnmounted(() => {
+	window.removeEventListener('keydown', onWorkspaceKeydown);
+	endMarquee();
+});
 function startPan(event) { if (event.button !== 0 || event.target.closest('button,textarea,input')) return; drag = { kind: 'pan', x: event.clientX, y: event.clientY, originalX: pan.x, originalY: pan.y }; event.currentTarget.setPointerCapture(event.pointerId); }
 function movePan(event) { if (drag?.kind !== 'pan') return; pan.x = drag.originalX + event.clientX - drag.x; pan.y = drag.originalY + event.clientY - drag.y; }
 function endPan(event) { if (drag?.kind === 'pan') { drag = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); } }
@@ -224,15 +578,62 @@ function draftFor(shot) { return shot.name in drafts ? drafts[shot.name] : shot.
 function promptDirty(shot) { return String(draftFor(shot)).trim() !== String(shot.generation_prompt || shot.storyboard_action || '').trim(); }
 function setDraft(shot, value) { drafts[shot.name] = value; }
 function saveDraft(shot) { if (!props.canEdit) return; const value = String(drafts[shot.name] ?? '').trim(); if (value && value !== String(shot.generation_prompt || '').trim()) emit('save-prompt', shot, value); }
-function togglePlayback() { const player = videoRef.value; if (!player) return; if (player.paused) player.play().catch(() => { playing.value = false; }); else player.pause(); }
+function togglePlayback() { const player = activeVideo(); if (!player) return; if (player.paused) player.play().catch(() => { playing.value = false; }); else player.pause(); }
 function onTimeUpdate(event) { elapsed.value = event.target.currentTime || 0; }
 function clipTitle(_clip, index) { return `${t('Clip', 'Đoạn')} ${index + 1}`; }
 function clipDescription(clip, index) { const shot = props.shots.find(row => row.name === clip.shot); const number = shot?.shot_number || clip.shot_number; const source = number ? `${t('Shot', 'Cảnh')} ${number}` : t('Unlinked scene', 'Chưa gắn cảnh'); return `${clipTitle(clip, index)} · ${source} · ${formatDuration(clip.duration_seconds)}`; }
 function audioTitle(clip) { return clip.audio_role === 'Voiceover' ? t('Voiceover', 'Lời thoại') : clip.audio_role === 'Source' ? t('Scene audio', 'Âm thanh cảnh') : clip.audio_role === 'Music' ? t('Music', 'Nhạc') : clip.source_asset_name || t('Audio', 'Âm thanh'); }
 function clipStyle(clip, index = 0) { const start = Number(clip.timeline_start_frame || 0) / Math.max(1, props.fps); const duration = Number(clip.duration_frames || 0) / Math.max(1, props.fps) || totalSeconds.value / Math.max(1, props.clips.length); return { left: `${Math.max(0, start / totalSeconds.value * 100)}%`, width: `${Math.max(3, Math.min(100, duration / totalSeconds.value * 100))}%`, zIndex: index + 1 }; }
 function audioStyle(clip) { return clipStyle(clip); }
+// ---- Preview monitor: two players so a cut does not stall on a fresh load ----
+const activePlayer = ref('a');
+const sources = reactive({ a: '', b: '' });
+const activeVideo = () => (activePlayer.value === 'a' ? videoRefA.value : videoRefB.value);
+const idleVideo = () => (activePlayer.value === 'a' ? videoRefB.value : videoRefA.value);
+const idleSlot = () => (activePlayer.value === 'a' ? 'b' : 'a');
+// Only the visible player drives state; the idle one is mid-preload and must stay quiet.
+const isActive = (slot) => slot === activePlayer.value;
+function onPlayerPlay(slot) { if (isActive(slot)) playing.value = true; else idleVideo()?.pause(); }
+function onPlayerPause(slot) { if (isActive(slot)) playing.value = false; }
+function onPlayerTimeUpdate(slot, event) { if (isActive(slot)) elapsed.value = event.target.currentTime || 0; }
+
+const nextClip = computed(() => {
+	if (props.finalVideo?.file || !activeClip.value) return null;
+	const ordered = orderedClips.value;
+	const index = ordered.findIndex((clip) => clip.name === activeClip.value.name);
+	return index >= 0 ? ordered[index + 1] || null : null;
+});
+
+// Keep the visible player on the current source and park the next one in the idle player.
+watch([previewVideo, () => nextClip.value?.source_file], ([current, upcoming]) => {
+	if (!current) { sources.a = ''; sources.b = ''; return; }
+	if (sources[activePlayer.value] !== current) {
+		// If the idle player already holds it (we preloaded it), just swap instead of reloading.
+		if (sources[idleSlot()] === current) {
+			const wasPlaying = playing.value;
+			activeVideo()?.pause();
+			activePlayer.value = idleSlot();
+			if (wasPlaying) nextTick(() => activeVideo()?.play().catch(() => { playing.value = false; }));
+		} else {
+			sources[activePlayer.value] = current;
+		}
+	}
+	const idle = idleSlot();
+	if (sources[idle] !== (upcoming || '')) sources[idle] = upcoming || '';
+}, { immediate: true });
+
+// At the end of a clip, roll straight into the next one instead of stopping.
+function onPlayerEnded(slot) {
+	if (!isActive(slot)) return;
+	const upcoming = nextClip.value;
+	if (!upcoming) { playing.value = false; return; }
+	const startSeconds = Number(upcoming.timeline_start_frame || 0) / Math.max(1, props.fps);
+	selectClip(upcoming, startSeconds);
+	nextTick(() => activeVideo()?.play().catch(() => { playing.value = false; }));
+}
+
 let pendingSeekSeconds = null;
-function applyPendingSeek() { const player = videoRef.value; if (player && pendingSeekSeconds !== null && player.readyState >= 1) { player.currentTime = Math.max(0, Math.min(pendingSeekSeconds, Number.isFinite(player.duration) ? player.duration : pendingSeekSeconds)); pendingSeekSeconds = null; } }
+function applyPendingSeek() { const player = activeVideo(); if (player && pendingSeekSeconds !== null && player.readyState >= 1) { player.currentTime = Math.max(0, Math.min(pendingSeekSeconds, Number.isFinite(player.duration) ? player.duration : pendingSeekSeconds)); pendingSeekSeconds = null; } }
 function selectClip(clip, timelineSeconds = Number(clip.timeline_start_frame || 0) / Math.max(1, props.fps)) {
 	const index = shotIndexForClip(props.shots, clip);
 	if (index < 0) { emit('open-timeline', clip); return; }
@@ -250,7 +651,18 @@ function seekTimeline(seconds) {
 </script>
 
 <style scoped>
-.rio-studio{--rio-cyan:var(--primary-accent);--rio-line:var(--outline-border);--rio-muted:var(--ink-muted);display:flex;flex-direction:column;min-height:0;height:100%;width:100%;background:#070b10;color:#ecf7fb;font:13px Inter,system-ui,sans-serif}.rio-studio button{cursor:pointer}.rio-studio button:disabled{opacity:.4;cursor:not-allowed}.rio-header{height:52px;flex:none;display:flex;align-items:center;gap:18px;padding:0 16px;border-bottom:1px solid var(--rio-line);background:#080d13}.rio-brand{display:flex;align-items:center;gap:8px;white-space:nowrap}.rio-brand-mark{font-size:29px;line-height:1;color:var(--rio-cyan);text-shadow:0 0 14px var(--rio-cyan)}.rio-brand strong{font-size:17px;letter-spacing:1px}.rio-brand strong span{color:var(--rio-cyan)}.rio-status{display:inline-flex;align-items:center;gap:6px;border:1px solid #166b61;border-radius:30px;background:#08352d;color:#47dfb8;padding:3px 9px;font-size:10px;font-weight:700}.rio-status.is-busy{border-color:#8e6918;background:#3b2c0e;color:#ffd063}.rio-status i{width:6px;height:6px;border-radius:50%;background:currentColor}.rio-project-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b7c9d2;font-weight:600;flex:1}.rio-header-actions{display:flex;gap:7px}.rio-header-actions button,.rio-canvas-controls button{min-width:29px;height:29px;border:1px solid #293e4b;border-radius:7px;background:#111a26;color:#d4f8fa}.rio-header-actions button:hover,.rio-canvas-controls button:hover{border-color:var(--rio-cyan);color:var(--rio-cyan)}.rio-header-actions .rio-classic{font-size:11px;padding:0 9px}.rio-alert{padding:8px 14px;color:#ffb8be;background:#36131b;border-bottom:1px solid #8c3545}.rio-alert button{margin-left:10px;text-decoration:underline}.rio-work-area{display:flex;flex:1;min-height:160px}.rio-assets{width:290px;flex:none;display:flex;flex-direction:column;background:#0b111a;border-right:1px solid var(--rio-line);min-height:0}.rio-assets-head{display:flex;justify-content:space-between;align-items:center;padding:12px;color:var(--rio-cyan);letter-spacing:1px;border-bottom:1px solid var(--rio-line)}.rio-assets-head button,.rio-add-media{border:1px solid #137888;border-radius:7px;background:#0a2833;color:var(--rio-cyan);padding:4px 9px}.rio-assets-list{overflow:auto;flex:1;padding:9px}.rio-asset{display:flex;gap:9px;width:100%;align-items:center;text-align:left;padding:7px;border:1px solid transparent;border-radius:8px;background:transparent;color:#e8f3f8}.rio-asset:hover,.rio-asset.selected{border-color:#1c8ba0;background:#122533}.rio-asset :deep(img),.rio-asset :deep(video){width:50px;height:50px;object-fit:cover;border-radius:5px}.rio-asset span{min-width:0;display:flex;flex-direction:column}.rio-asset strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.rio-asset small{color:var(--rio-muted);font-size:10px}.rio-empty-assets{padding:16px 6px;color:var(--rio-muted)}.rio-add-media{margin:9px;text-align:center}.rio-canvas{position:relative;overflow:hidden;flex:1;min-width:0;background-color:#050a10;background-image:linear-gradient(#0b273177 1px,transparent 1px),linear-gradient(90deg,#0b273177 1px,transparent 1px);background-size:24px 24px;touch-action:none}.rio-canvas-inner{position:absolute;inset:0;transform-origin:0 0}.rio-connections{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}.rio-connections path{fill:none;stroke:#087e9c;stroke-width:2.5;filter:drop-shadow(0 0 4px #00e5f288)}.rio-node{position:absolute;width:380px;min-height:430px;border:1px solid #344755;border-radius:13px;background:#171e2a;box-shadow:0 12px 35px #000b;touch-action:none}.rio-node.active{border-color:var(--rio-cyan);box-shadow:0 0 0 1px #00e5f255,0 16px 40px #000c}.rio-node-head{height:39px;display:flex;align-items:center;gap:8px;padding:0 11px;border-bottom:1px solid #2c3746}.rio-node-head>span:first-child{flex:1}.rio-node-ratio{color:#57dcb9;background:#103e39;border:1px solid #236b65;border-radius:4px;font-size:9px;padding:2px 5px}.rio-node-head button{font-size:20px;color:#9cb0bc;padding:0 3px}.rio-node-preview{display:flex;width:calc(100% - 22px);height:190px;margin:10px 11px;align-items:center;justify-content:center;overflow:hidden;border:1px solid #0a202a;border-radius:9px;background:#070b11;color:var(--rio-muted)}.rio-node-preview img{width:100%;height:100%;object-fit:contain}.rio-node-preview span{display:flex;flex-direction:column;align-items:center;font-size:11px}.rio-node-preview b{font-size:26px;color:var(--rio-cyan)}.rio-node-body{padding:4px 11px 8px}.rio-node-body label{display:block;margin-bottom:5px;font-size:11px;color:#b5c5d3}.rio-node-body textarea{width:100%;min-height:70px;resize:vertical;padding:8px;border:1px solid #243445;border-radius:6px;background:#0a1019;color:#eef7fb;font:11px/1.45 inherit}.rio-node-body textarea:focus{outline:1px solid var(--rio-cyan)}.rio-reference-line{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--rio-muted);font-size:10px}.rio-node-actions{display:flex;gap:6px;padding:0 11px 11px}.rio-node-actions button{flex:1;padding:6px 5px;border:1px solid #245e70;border-radius:6px;background:#102634;color:#84eafb;font-size:11px;font-weight:700}.rio-node-actions button:nth-child(2){border-color:#5d408a;color:#d5afff;background:#2d213d}.rio-node-actions button:nth-child(3){border-color:#2d4656;color:#d7e6ec;background:#172533}.rio-node-actions button:hover{filter:brightness(1.35)}.rio-port{position:absolute;top:205px;width:20px;height:20px;border-radius:50%;border:2px solid #07131a;box-shadow:0 0 12px currentColor}.rio-port-in{left:-11px;background:#a855f7;color:#a855f7}.rio-port-out{right:-11px;background:var(--rio-cyan);color:var(--rio-cyan)}.rio-canvas-controls{position:absolute;left:12px;bottom:12px;display:flex;align-items:center;gap:4px;padding:4px;border:1px solid var(--rio-line);border-radius:9px;background:#0b1520e8}.rio-canvas-controls span{min-width:40px;text-align:center;color:var(--rio-cyan);font-size:11px}.rio-minimap{position:absolute;right:12px;top:12px;width:130px;height:85px;border:1px solid #166a7b;border-radius:7px;background:#091a26eb;pointer-events:none;overflow:hidden}.rio-minimap span{position:absolute;left:7px;top:4px;color:var(--rio-muted);font-size:9px}.rio-minimap div{position:absolute;width:15px;height:10px;border:1px solid var(--rio-cyan);border-radius:2px;background:#14546999}.rio-empty-canvas{position:absolute;top:22%;left:50%;transform:translateX(-50%);text-align:center;color:#d9e6e8}.rio-empty-canvas p{margin:8px;color:var(--rio-muted)}.rio-empty-canvas button{margin-top:10px;border:1px solid var(--rio-cyan);border-radius:7px;padding:7px 11px;color:var(--rio-cyan)}.rio-bottom{height:220px;display:flex;gap:5px;flex:none;padding:5px;border-top:1px solid #113a49;background:#05080d}.rio-timeline{flex:1;min-width:0;border:1px solid var(--rio-line);border-radius:8px;overflow:hidden;background:#070d14}.rio-timeline-head{height:37px;display:flex;align-items:center;gap:9px;padding:0 9px;border-bottom:1px solid var(--rio-line)}.rio-timeline-head>button:first-child{background:var(--rio-cyan);color:#041018;border-radius:7px;width:27px;height:25px;font-weight:900}.rio-timeline-head strong{color:#d9f7fa;font-size:10px;letter-spacing:1px}.rio-timeline-head span{flex:1;color:var(--rio-muted);font-size:10px}.rio-timeline-head button:not(:first-child){border:1px solid #2c5263;border-radius:6px;padding:4px 8px;color:#aeeaf1;font-size:10px}.rio-timeline-head .rio-export{background:linear-gradient(90deg,#074d61,#503281);color:white!important;font-weight:700}.rio-ruler{position:relative;height:25px;margin-left:34px;border-bottom:1px solid var(--rio-line)}.rio-ruler span{position:absolute;top:6px;color:#6e8597;font-size:9px}.rio-track{display:flex;height:57px;border-bottom:1px solid var(--rio-line)}.rio-track>b{width:34px;display:grid;place-items:center;border-right:1px solid var(--rio-line);color:#90c1cb}.rio-track-content{position:relative;flex:1;min-width:0}.rio-video-clip,.rio-audio-clip{position:absolute;top:8px;height:38px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;padding:8px;border:1px solid #15a7bb;border-radius:5px;background:#103b4c;color:#ddfbff;font-size:10px}.rio-audio-clip{border-color:#7942a5;background:#382348;color:#eed1ff}.rio-track-empty{display:block;margin:16px;color:#536675;font-size:10px}.rio-monitor{width:30%;min-width:220px;display:flex;flex-direction:column;border:1px solid #087c91;border-radius:8px;overflow:hidden;background:#010306}.rio-monitor-head{display:flex;justify-content:space-between;padding:5px 9px;color:#85bac4;font-size:9px;letter-spacing:.8px}.rio-monitor-head time{color:var(--rio-cyan)}.rio-monitor video,.rio-monitor img{width:100%;height:calc(100% - 23px);object-fit:contain}.rio-monitor-empty{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;color:#8294a2;font-size:23px}.rio-monitor-empty span{font-size:10px}@media(max-width:900px){.rio-project-name{display:none}.rio-assets{width:210px}.rio-bottom{height:185px}.rio-monitor{min-width:180px}}@media(max-width:640px){.rio-assets{position:absolute;left:0;top:0;bottom:0;z-index:5;box-shadow:10px 0 30px #0009}.rio-header-actions .rio-classic{display:none}.rio-monitor{display:none}.rio-node{width:380px}}
+.rio-studio{--rio-cyan:var(--primary-accent);--rio-line:var(--outline-border);--rio-muted:var(--ink-muted);display:flex;flex-direction:column;min-height:0;height:100%;width:100%;background:#070b10;color:#ecf7fb;font:13px Inter,system-ui,sans-serif}.rio-studio button{cursor:pointer}.rio-studio button:disabled{opacity:.4;cursor:not-allowed}.rio-header{height:52px;flex:none;display:flex;align-items:center;gap:18px;padding:0 16px;border-bottom:1px solid var(--rio-line);background:#080d13}.rio-brand{display:flex;align-items:center;gap:8px;white-space:nowrap}.rio-brand-mark{font-size:29px;line-height:1;color:var(--rio-cyan);text-shadow:0 0 14px var(--rio-cyan)}.rio-brand strong{font-size:17px;letter-spacing:1px}.rio-brand strong span{color:var(--rio-cyan)}.rio-status{display:inline-flex;align-items:center;gap:6px;border:1px solid #166b61;border-radius:30px;background:#08352d;color:#47dfb8;padding:3px 9px;font-size:10px;font-weight:700}.rio-status.is-busy{border-color:#8e6918;background:#3b2c0e;color:#ffd063}.rio-status i{width:6px;height:6px;border-radius:50%;background:currentColor}.rio-project-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b7c9d2;font-weight:600;flex:1}.rio-header-actions{display:flex;gap:7px}.rio-header-actions button,.rio-canvas-controls button{min-width:29px;height:29px;border:1px solid #293e4b;border-radius:7px;background:#111a26;color:#d4f8fa}.rio-header-actions button:hover,.rio-canvas-controls button:hover{border-color:var(--rio-cyan);color:var(--rio-cyan)}.rio-header-actions .rio-classic{font-size:11px;padding:0 9px}.rio-alert{padding:8px 14px;color:#ffb8be;background:#36131b;border-bottom:1px solid #8c3545}.rio-alert button{margin-left:10px;text-decoration:underline}.rio-work-area{display:flex;flex:1;min-height:160px}.rio-assets{width:290px;flex:none;display:flex;flex-direction:column;background:#0b111a;border-right:1px solid var(--rio-line);min-height:0}.rio-assets-head{display:flex;justify-content:space-between;align-items:center;padding:12px;color:var(--rio-cyan);letter-spacing:1px;border-bottom:1px solid var(--rio-line)}.rio-assets-head button,.rio-add-media{border:1px solid #137888;border-radius:7px;background:#0a2833;color:var(--rio-cyan);padding:4px 9px}.rio-assets-list{overflow:auto;flex:1;padding:9px}.rio-asset{display:flex;gap:9px;width:100%;align-items:center;text-align:left;padding:7px;border:1px solid transparent;border-radius:8px;background:transparent;color:#e8f3f8}.rio-asset:hover,.rio-asset.selected{border-color:#1c8ba0;background:#122533}.rio-asset :deep(img),.rio-asset :deep(video){width:50px;height:50px;object-fit:cover;border-radius:5px}.rio-asset span{min-width:0;display:flex;flex-direction:column}.rio-asset strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.rio-asset small{color:var(--rio-muted);font-size:10px}.rio-empty-assets{padding:16px 6px;color:var(--rio-muted)}.rio-add-media{margin:9px;text-align:center}.rio-canvas{position:relative;overflow:hidden;flex:1;min-width:0;background-color:#050a10;background-image:linear-gradient(#0b273177 1px,transparent 1px),linear-gradient(90deg,#0b273177 1px,transparent 1px);background-size:24px 24px;touch-action:none}.rio-canvas-inner{position:absolute;inset:0;transform-origin:0 0}.rio-connections{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}.rio-connections path{fill:none;stroke:#087e9c;stroke-width:2.5;filter:drop-shadow(0 0 4px #00e5f288)}.rio-node{position:absolute;width:380px;min-height:430px;border:1px solid #344755;border-radius:13px;background:#171e2a;box-shadow:0 12px 35px #000b;touch-action:none}.rio-node.active{border-color:var(--rio-cyan);box-shadow:0 0 0 1px #00e5f255,0 16px 40px #000c}.rio-node-head{height:39px;display:flex;align-items:center;gap:8px;padding:0 11px;border-bottom:1px solid #2c3746}.rio-node-head>span:first-child{flex:1}.rio-node-ratio{color:#57dcb9;background:#103e39;border:1px solid #236b65;border-radius:4px;font-size:9px;padding:2px 5px}.rio-node-head button{font-size:20px;color:#9cb0bc;padding:0 3px}.rio-node-preview{display:flex;width:calc(100% - 22px);height:190px;margin:10px 11px;align-items:center;justify-content:center;overflow:hidden;border:1px solid #0a202a;border-radius:9px;background:#070b11;color:var(--rio-muted)}.rio-node-preview img{width:100%;height:100%;object-fit:contain}.rio-node-preview span{display:flex;flex-direction:column;align-items:center;font-size:11px}.rio-node-preview b{font-size:26px;color:var(--rio-cyan)}.rio-node-body{padding:4px 11px 8px}.rio-node-body label{display:block;margin-bottom:5px;font-size:11px;color:#b5c5d3}.rio-node-body textarea{width:100%;min-height:70px;resize:vertical;padding:8px;border:1px solid #243445;border-radius:6px;background:#0a1019;color:#eef7fb;font:11px/1.45 inherit}.rio-node-body textarea:focus{outline:1px solid var(--rio-cyan)}.rio-reference-line{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--rio-muted);font-size:10px}.rio-node-actions{display:flex;gap:6px;padding:0 11px 11px}.rio-node-actions button{flex:1;padding:6px 5px;border:1px solid #245e70;border-radius:6px;background:#102634;color:#84eafb;font-size:11px;font-weight:700}.rio-node-actions button:nth-child(2){border-color:#5d408a;color:#d5afff;background:#2d213d}.rio-node-actions button:nth-child(3){border-color:#2d4656;color:#d7e6ec;background:#172533}.rio-node-actions button:hover{filter:brightness(1.35)}.rio-port{position:absolute;top:205px;width:20px;height:20px;border-radius:50%;border:2px solid #07131a;box-shadow:0 0 12px currentColor}.rio-port-in{left:-11px;background:#a855f7;color:#a855f7}.rio-port-out{right:-11px;background:var(--rio-cyan);color:var(--rio-cyan)}.rio-canvas-controls{position:absolute;left:12px;bottom:12px;display:flex;align-items:center;gap:4px;padding:4px;border:1px solid var(--rio-line);border-radius:9px;background:#0b1520e8}.rio-canvas-controls span{min-width:40px;text-align:center;color:var(--rio-cyan);font-size:11px}.rio-minimap{position:absolute;right:12px;top:12px;width:130px;height:85px;border:1px solid #166a7b;border-radius:7px;background:#091a26eb;pointer-events:none;overflow:hidden}.rio-minimap span{position:absolute;left:7px;top:4px;color:var(--rio-muted);font-size:9px}.rio-minimap div{position:absolute;width:15px;height:10px;border:1px solid var(--rio-cyan);border-radius:2px;background:#14546999}.rio-empty-canvas{position:absolute;top:22%;left:50%;transform:translateX(-50%);text-align:center;color:#d9e6e8}.rio-empty-canvas p{margin:8px;color:var(--rio-muted)}.rio-empty-canvas button{margin-top:10px;border:1px solid var(--rio-cyan);border-radius:7px;padding:7px 11px;color:var(--rio-cyan)}.rio-bottom{height:220px;display:flex;gap:5px;flex:none;padding:5px;border-top:1px solid #113a49;background:#05080d}.rio-timeline{flex:1;min-width:0;border:1px solid var(--rio-line);border-radius:8px;overflow:hidden;background:#070d14}.rio-timeline-head{height:37px;display:flex;align-items:center;gap:9px;padding:0 9px;border-bottom:1px solid var(--rio-line)}.rio-timeline-head>button:first-child{background:var(--rio-cyan);color:#041018;border-radius:7px;width:27px;height:25px;font-weight:900}.rio-timeline-head strong{color:#d9f7fa;font-size:10px;letter-spacing:1px}.rio-timeline-head span{flex:1;color:var(--rio-muted);font-size:10px}.rio-timeline-head button:not(:first-child){border:1px solid #2c5263;border-radius:6px;padding:4px 8px;color:#aeeaf1;font-size:10px}.rio-timeline-head .rio-export{background:linear-gradient(90deg,#074d61,#503281);color:white!important;font-weight:700}
+.rio-tl-play{background:var(--rio-cyan);color:#041018;border-radius:7px;width:27px;height:25px;font-weight:900}
+.rio-tl-zoom{display:flex;align-items:center;gap:5px;padding:2px 7px;border:1px solid #2c5263;border-radius:30px;background:#0a1a24}
+.rio-tl-zoom button{border:0;background:none;color:#8be9fb;font-size:13px;line-height:1;padding:0 2px}
+.rio-tl-zoom input[type=range]{width:80px;accent-color:var(--rio-cyan)}
+.rio-tl-clear{border:1px solid #2c5263;border-radius:6px;background:#102634;padding:4px 7px}
+.rio-tl-clear:hover{border-color:var(--rio-cyan)}
+.rio-tl-scroll{flex:1;min-height:0;overflow-x:auto;overflow-y:hidden}
+.rio-tl-inner{position:relative;min-width:100%}
+.rio-tl-needle{position:absolute;top:0;bottom:0;width:2px;margin-left:34px;background:var(--rio-cyan);box-shadow:0 0 7px var(--rio-cyan);pointer-events:none;z-index:3}
+.rio-track-icon{font-size:15px}
+.rio-ruler{position:relative;height:25px;margin-left:34px;border-bottom:1px solid var(--rio-line)}.rio-ruler span{position:absolute;top:6px;color:#6e8597;font-size:9px}.rio-track{display:flex;height:57px;border-bottom:1px solid var(--rio-line)}.rio-track>b{width:34px;display:grid;place-items:center;border-right:1px solid var(--rio-line);color:#90c1cb}.rio-track-content{position:relative;flex:1;min-width:0}.rio-video-clip,.rio-audio-clip{position:absolute;top:8px;height:38px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;padding:8px;border:1px solid #15a7bb;border-radius:5px;background:#103b4c;color:#ddfbff;font-size:10px}.rio-audio-clip{border-color:#7942a5;background:#382348;color:#eed1ff}.rio-track-empty{display:block;margin:16px;color:#536675;font-size:10px}.rio-monitor{width:30%;min-width:220px;display:flex;flex-direction:column;border:1px solid #087c91;border-radius:8px;overflow:hidden;background:#010306}.rio-monitor-head{display:flex;justify-content:space-between;padding:5px 9px;color:#85bac4;font-size:9px;letter-spacing:.8px}.rio-monitor-head time{color:var(--rio-cyan)}.rio-monitor video,.rio-monitor img{width:100%;height:calc(100% - 23px);object-fit:contain}.rio-monitor-empty{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;color:#8294a2;font-size:23px}.rio-monitor-empty span{font-size:10px}@media(max-width:900px){.rio-project-name{display:none}.rio-assets{width:210px}.rio-bottom{height:185px}.rio-monitor{min-width:180px}}@media(max-width:640px){.rio-assets{position:absolute;left:0;top:0;bottom:0;z-index:5;box-shadow:10px 0 30px #0009}.rio-header-actions .rio-classic{display:none}.rio-monitor{display:none}.rio-node{width:380px}}
 .rio-studio{flex:1;height:auto}
 .rio-header-actions .rio-next-action{padding:0 12px;border-color:#087f91;background:#06313e;color:#a9f3fb;font-weight:700;white-space:nowrap}
 .rio-empty-canvas textarea{display:block;width:min(460px,80vw);margin:14px auto 0;padding:10px;border:1px solid #2b5867;border-radius:7px;background:#0d1923;color:#eef7fb;font:inherit;resize:vertical}
@@ -339,4 +751,71 @@ function seekTimeline(seconds) {
 .rio-empty-actions button:hover:not(:disabled){background:#08748c}
 @media(max-width:1000px){.rio-assets{width:285px}.rio-assets-list{gap:7px;padding:8px}}
 @media(max-width:640px){.rio-assets{width:min(340px,85vw)}.rio-empty-canvas{width:calc(100% - 24px);padding:22px 18px}.rio-empty-canvas h2{font-size:21px}.rio-empty-actions{align-items:stretch;flex-direction:column}.rio-empty-actions button{width:100%}}
+.rio-template-anchor{position:relative;flex:none}
+.rio-template-trigger{border-color:#0c8497!important;background:#063744!important;color:#d8fbff!important;font-weight:700}
+.rio-template-menu{position:fixed;top:62px;right:16px;z-index:45;width:min(440px,calc(100vw - 24px));max-height:min(68vh,650px);overflow:auto;border:1px solid #168ca4;border-radius:12px;background:#0d1924;box-shadow:0 18px 48px #000a;color:#ecf7fb}
+.rio-template-menu header{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid #285063;background:#102330;color:#56daf0;font-size:12px;letter-spacing:.5px}
+.rio-template-menu header span{border:1px solid #168ca4;border-radius:99px;padding:3px 9px;white-space:nowrap}
+.rio-template-menu>p{padding:12px 15px;color:#b0c9d2}
+.rio-template-item{padding:13px 15px;border-bottom:1px solid #244352}
+.rio-template-item:last-child{border-bottom:0}
+.rio-template-meta{color:var(--rio-cyan);font-size:10px;margin:2px 0 0}
+.rio-template-preview-btn{margin-top:6px;border:1px solid #245e70;border-radius:6px;background:#102634;color:#84eafb;padding:3px 8px;font-size:10px}
+.rio-template-preview-btn:hover{border-color:var(--rio-cyan)}
+.rio-template-video{display:block;width:100%;margin-top:7px;border-radius:7px;background:#000}
+.rio-template-item strong{font-size:13px}
+.rio-template-item p{margin:5px 0 10px;color:#aec5cf;font-size:12px;line-height:1.45}
+.rio-template-item div{display:flex;gap:7px;flex-wrap:wrap}
+.rio-template-item button{min-height:31px;padding:5px 9px;border:1px solid #147f94;border-radius:6px;background:#093441;color:#d8faff;font-size:11px}
+.rio-template-item button:hover:not(:disabled){background:#0d5263}
+.rio-prompt-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+.rio-prompt-heading label{margin:0}
+.rio-dictate.listening{border-color:#f43f5e;color:#ffb8be;background:#36131b;animation:rio-dictate-pulse 1.4s ease-in-out infinite}
+@keyframes rio-dictate-pulse{50%{opacity:.5}}
+@media(prefers-reduced-motion:reduce){.rio-dictate.listening{animation:none}}
+.rio-prompt-heading button{border:1px solid #245e70;border-radius:5px;background:#102634;color:#84eafb;padding:3px 7px;font-size:10px}
+.rio-prompt-heading button:hover:not(:disabled){border-color:var(--rio-cyan)}
+/* A scene that starts fresh gets a dashed, dimmer line; one that carries on gets the lit line. */
+.rio-connections path{stroke:#2b4654;stroke-dasharray:7 6;filter:none}
+.rio-connections path.continues{stroke:#087e9c;stroke-dasharray:none;filter:drop-shadow(0 0 4px #00e5f288)}
+.rio-link-toggle{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border:1px solid #2b4654;border-radius:30px;background:#0b1520f2;color:#8aa6b4;padding:3px 10px;font-size:10px;font-weight:700;letter-spacing:.3px}
+.rio-link-toggle.continues{border-color:#0e7f97;background:#072934f2;color:#8be9fb}
+.rio-link-toggle:hover:not(:disabled){border-color:var(--rio-cyan);color:var(--rio-cyan)}
+.rio-link-toggle:focus-visible{outline:2px solid var(--rio-cyan);outline-offset:2px}
+/* Bottom-right keeps the overview clear of the toast stack, which owns the top-right. */
+.rio-minimap{top:auto;bottom:12px}
+.rio-minimap.is-interactive{pointer-events:auto;cursor:crosshair}
+.rio-minimap div.active{border-color:#fff;background:#2b7f98cc}
+.rio-missing{align-items:center;justify-content:center}
+.rio-missing-box{max-width:460px;text-align:center;padding:30px;border:1px solid var(--rio-line);border-radius:14px;background:#0b1520}
+.rio-missing-icon{font-size:40px;color:#f59e0b}
+.rio-missing-box h2{margin:12px 0 8px;font-size:17px;color:#f6d79a}
+.rio-missing-box p{margin:0 0 16px;color:var(--rio-muted);font-size:13px;line-height:1.6}
+.rio-missing-link{display:inline-block;border:1px solid var(--rio-cyan);border-radius:8px;padding:8px 16px;color:var(--rio-cyan);text-decoration:none;font-weight:700}
+.rio-missing-link:hover{background:#06313e}
+.rio-identity{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.rio-identity label{color:var(--rio-cyan);font-size:11px;font-weight:700}
+.rio-identity input{padding:6px 8px;border:1px solid #243445;border-radius:6px;background:#0a1019;color:#eef7fb;font:12px inherit}
+.rio-identity input:focus{outline:1px solid var(--rio-cyan)}
+.rio-identity small{color:var(--rio-muted);font-size:10px;line-height:1.45}
+.rio-minimap-viewport{position:absolute;border:1px solid #7fe9ff;border-radius:2px;background:#7fe9ff1f;pointer-events:none}
+/* Media panel: width handle, drop target, rubber band and the batch bar. */
+.rio-assets{position:relative}
+.rio-drawer-resize{position:absolute;right:-3px;top:0;bottom:0;width:7px;z-index:4;cursor:col-resize;touch-action:none}
+.rio-drawer-resize:hover{background:linear-gradient(90deg,transparent,#00f0ff55,transparent)}
+.rio-assets.is-drop-target{outline:2px dashed var(--rio-cyan);outline-offset:-4px;background:#0d1a24}
+.rio-drop-hint{margin:0;padding:8px 10px;border-top:1px solid var(--rio-line);color:var(--rio-cyan);font-size:11px;text-align:center}
+.rio-asset-card.is-multi-selected{outline:2px solid var(--rio-cyan);outline-offset:-1px;box-shadow:0 0 14px #00e5f24d}
+.rio-marquee{position:fixed;z-index:50;border:1px solid var(--rio-cyan);border-radius:3px;background:#00f0ff22;pointer-events:none}
+.rio-batch-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-top:1px solid #0e7f97;background:#07222cf5;color:#cdeef6;font-size:11px}
+.rio-batch-actions{display:flex;gap:6px}
+.rio-batch-bar b{color:var(--rio-cyan)}
+.rio-batch-remove{border:1px solid #8c3545;border-radius:6px;background:#36131b;color:#ffb8be;padding:4px 9px;font-weight:700}
+.rio-batch-remove:hover:not(:disabled){border-color:#f43f5e;color:#fff}
+.rio-batch-cancel{border:1px solid #2b4654;border-radius:6px;background:transparent;color:#8aa6b4;padding:4px 8px}
+.rio-batch-cancel:hover{border-color:var(--rio-cyan);color:var(--rio-cyan)}
+/* Preview stage holds both players stacked, plus the floating timecode. */
+.rio-monitor-stage{position:relative;flex:1;min-height:0}
+.rio-monitor-stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+.rio-monitor-timecode{position:absolute;right:8px;top:8px;z-index:2;padding:2px 7px;border-radius:5px;background:#030a0ecc;color:var(--rio-cyan);font-size:11px;font-variant-numeric:tabular-nums;letter-spacing:.5px;pointer-events:none;text-shadow:0 0 8px #00e5f2aa}
 </style>

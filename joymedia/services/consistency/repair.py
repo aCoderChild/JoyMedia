@@ -83,7 +83,7 @@ def queue_source_art_repair(
 			sort_keys=True,
 			allow_nan=False,
 		)
-	except ValueError, TypeError:
+	except (ValueError, TypeError):
 		frappe.throw("Protected-plane controls must contain finite JSON values.")
 	identifier = "source-art-" + hashlib.sha256(request.encode()).hexdigest()[:24]
 	# This is CPU work. Do not put it behind a GPU finishing job waiting for

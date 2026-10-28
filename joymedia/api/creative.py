@@ -599,6 +599,8 @@ def retry_product_variant(batch_name, index):
 			# scenes that have none, keeping every finished take and approved picture.
 			rerender_failed_scenes(variant, frappe.parse_json(batch.request_json))
 		if stage == "Planning" and not variant.get("script"):
+			# Explicit recovery receives a fresh bounded image-analysis retry budget.
+			variant.pop("reference_analysis_attempts", None)
 			# An unchanged variation ID retrieves the same cached rejected draft.
 			# Keep the failed proposal's identity and reason, then ask for a new
 			# concept. Accepted scripts/workbooks and media retries remain stable.

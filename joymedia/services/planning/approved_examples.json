@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "examples": [
+    {
+      "source_project": "PRJ-02566",
+      "source_asset_version": "ASTV-04894",
+      "review_scope": "five temporal samples plus saved script; useful structure, not quality guarantee",
+      "tone": "Bright, playful, warm and premium; restrained contrast and layered depth.",
+      "marketing_rhythm": [
+        "action_hook",
+        "tension",
+        "product_response",
+        "tactile_proof",
+        "product_response",
+        "product_response",
+        "payoff",
+        "hero_cta"
+      ],
+      "scenes": [
+        {
+          "sequence": 1,
+          "duration_share": 0.13,
+          "shot_sizes": [],
+          "voice_words": 2,
+          "screen_words": 0
+        },
+        {
+          "sequence": 2,
+          "duration_share": 0.1,
+          "shot_sizes": [],
+          "voice_words": 3,
+          "screen_words": 0
+        },
+        {
+          "sequence": 3,
+          "duration_share": 0.07,
+          "shot_sizes": [],
+          "voice_words": 7,
+          "screen_words": 0
+        },
+        {
+          "sequence": 4,
+          "duration_share": 0.07,
+          "shot_sizes": [
+            "close_up"
+          ],
+          "voice_words": 0,
+          "screen_words": 0
+        },
+        {
+          "sequence": 5,
+          "duration_share": 0.17,
+          "shot_sizes": [
+            "extreme_close_up",
+            "close_up"
+          ],
+          "voice_words": 9,
+          "screen_words": 6
+        },
+        {
+          "sequence": 6,
+          "duration_share": 0.17,
+          "shot_sizes": [
+            "close_up"
+          ],
+          "voice_words": 9,
+          "screen_words": 0
+        },
+        {
+          "sequence": 7,
+          "duration_share": 0.13,
+          "shot_sizes": [],
+          "voice_words": 7,
+          "screen_words": 0
+        },
+        {
+          "sequence": 8,
+          "duration_share": 0.17,
+          "shot_sizes": [],
+          "voice_words": 10,
+          "screen_words": 8
+        }
+      ]
+    },
+    {
+      "source_project": "PRJ-02563",
+      "source_asset_version": "ASTV-04667",
+      "review_scope": "five temporal samples plus saved script; useful structure, not quality guarantee",
+      "tone": "Cinematic live action, warm restrained street light and soft neutral indoor daylight. Brisk confident real-time actions, direct cuts on resolved actions; no slow motion or idle posing.",
+      "marketing_rhythm": [
+        "action_hook",
+        "product_action",
+        "product_response",
+        "product_response",
+        "product_response",
+        "product_action",
+        "product_response",
+        "hero_cta"
+      ],
+      "scenes": [
+        {
+          "sequence": 1,
+          "duration_share": 0.13,
+          "shot_sizes": [],
+          "voice_words": 0,
+          "screen_words": 0
+        },
+        {
+          "sequence": 2,
+          "duration_share": 0.1,
+          "shot_sizes": [],
+          "voice_words": 0,
+          "screen_words": 0
+        },
+        {
+          "sequence": 3,
+          "duration_share": 0.1,
+          "shot_sizes": [],
+          "voice_words": 0,
+          "screen_words": 0
+        },
+        {
+          "sequence": 4,
+          "duration_share": 0.13,
+          "shot_sizes": [],
+          "voice_words": 0,
+          "screen_words": 0
+        },
+        {
+          "sequence": 5,
+          "duration_share": 0.13,
+          "shot_sizes": [],
+          "voice_words": 0,
+          "screen_words": 0
+        },
+        {
+          "sequence": 6,
+          "duration_share": 0.1,
+          "shot_sizes": [],
+          "voice_words": 0,
+          "screen_words": 0
+        },
+        {
+          "sequence": 7,
+          "duration_share": 0.13,
+          "shot_sizes": [],
+          "voice_words": 0,
+          "screen_words": 0
+        },
+        {
+          "sequence": 8,
+          "duration_share": 0.17,
+          "shot_sizes": [],
+          "voice_words": 0,
+          "screen_words": 0
+        }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 <template>
   <Dialog v-model="open" :title="tr('New video', 'Video mới')" size="xl">
     <template #default>
-      <div class="flex flex-col gap-4">
+      <div class="jm-create-dialog flex flex-col gap-4">
         <p class="text-sm text-ink-muted">
           {{ tr('Add photos of your product. The AI writes the story, draws every scene for you to check, then makes the video.', 'Thêm ảnh sản phẩm của bạn. AI viết kịch bản, vẽ từng cảnh để bạn duyệt, rồi làm video.') }}
         </p>

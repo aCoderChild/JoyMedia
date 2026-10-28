@@ -29,13 +29,15 @@ test('RIO submits a real first-frame job and receives its image through Frappe',
   await page.goto(`/joymedia/projects/${edit}`);
   await expect(page.locator('[data-test="rio-studio"]')).toBeVisible();
   await expect(page.locator('.rio-node').first()).toBeVisible();
-  page.on('dialog', dialog => dialog.accept());
+  // Studio confirmations are in-app dialogs now, so there is no native dialog to accept.
   const projectResponse = await context.request.get('/api/method/joymedia.api.projects.get_project_workspace', { params: { name: edit } });
   expect(projectResponse.ok(), await projectResponse.text()).toBeTruthy();
   const project = (await projectResponse.json()).message.project;
   if (project.storyboard_approval_status !== 'Approved') {
     const approval = page.waitForResponse(r => r.url().includes('approve_project_storyboard') && r.request().method() === 'POST', { timeout: 90_000 });
     await page.locator('.rio-next-action').click();
+    // Storyboards with timing gaps ask to confirm first; most do not.
+    await page.locator('[data-test="rio-dialog-confirm"]').click({ timeout: 5000 }).catch(() => {});
     const approved = await approval;
     expect(approved.ok(), await approved.text()).toBeTruthy();
     evidence.storyboard_approved = true;

@@ -1,5 +1,6 @@
 import { ref, unref } from "vue";
 import { call, upload as uploadFile } from "frappe-ui";
+import { rioConfirm } from "../utils/rioDialog";
 import { notify } from "../utils/notify";
 import { errorMessage } from "../utils/errors";
 import { tr } from "../stores/i18n";
@@ -147,7 +148,7 @@ export function useProjectReferences(projectName, onRefresh) {
         media_asset: asset.name,
       });
       if (result?.in_use) {
-        const confirmed = window.confirm(
+        const confirmed = await rioConfirm(
           `${asset.asset_name} is used by ${result.projects?.length || 0} project(s). Archive it and remove it from those projects?`
         );
         if (!confirmed) return;

@@ -36,6 +36,7 @@ import { useRouter } from 'vue-router';
 import { call } from 'frappe-ui';
 import { tr } from '../../stores/i18n';
 import { errorMessage } from '../../utils/errors';
+import { rioConfirm } from '../../utils/rioDialog';
 import CompareVideos from './CompareVideos.vue';
 
 const props = defineProps({ project: { type: String, required: true }, readonly: Boolean });
@@ -125,7 +126,7 @@ function pick(video) {
 }
 // Removal moves the video to the trash: restorable for 30 days, then deleted for good.
 async function remove(video) {
-  if (!window.confirm(tr(`Move "${name(video)}" to the trash? You can restore it within 30 days from the Trash on the Videos page.`, `Chuyển "${name(video)}" vào thùng rác? Bạn có thể khôi phục trong 30 ngày ở mục Thùng rác của trang Video.`))) return;
+  if (!(await rioConfirm(tr(`Move "${name(video)}" to the trash? You can restore it within 30 days from the Trash on the Videos page.`, `Chuyển "${name(video)}" vào thùng rác? Bạn có thể khôi phục trong 30 ngày ở mục Thùng rác của trang Video.`), { destructive: true }))) return;
   busy.value = true;
   error.value = '';
   try {

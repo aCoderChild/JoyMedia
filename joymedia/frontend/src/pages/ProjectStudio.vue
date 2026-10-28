@@ -140,6 +140,7 @@
 			:frames="clientFrames.rows.value"
 			:next-action="clientNextAction"
 			:error="productionError || syncError"
+			:missing="workspaceMissing"
 			@restore="restoreClientProject"
 			@open-history="historyOpen = true"
 			@update:idea="videoIdeaPrompt = $event"
@@ -157,6 +158,15 @@
 			@approve-frame="(shot, approved) => clientFrames.approve(shot, approved)"
 			@render-shot="regenerateCurrentShot"
 			@save-prompt="(shot, prompt) => saveActiveShot(shot.name, prompt)"
+			@set-continuity="setShotContinuity"
+			@upload-files="uploadDroppedMedia"
+			@slice-storyboard="slicerOpen = true"
+			@dictation-error="onDictationError"
+			@set-identity="updateReferenceIdentity"
+			@apply-template-duration="applyTemplateDuration"
+			@rebuild-timeline="rebuildTimeline"
+			:project="workspace?.project || {}"
+			:production="workspace?.production || null"
 			@open-timeline="openRioTimeline"
 			@add-audio="openAudioPicker"
 			@toggle-audio="onSetAudioClipEnabled"
@@ -172,13 +182,21 @@
 			:active-selected-shot="activeSelectedShot" :selected-shot-index="selectedShotIndex"
 			:selected-shot-frame="selectedShotFrame" :generation-mode="videoSettings.generation_mode"
 			:current-duration="videoSettings.duration || 15" :current-preset="videoSettings.delivery_preset || 'Landscape'"
-			:is-production-active="isProductionActive" :ai-revision-loading="aiRevisionLoading"
+			:is-production-active="isProductionActive" :ai-revision-loading="aiRevisionLoading" :pending-revision="pendingRevision"
 			:project-name="projectName" :busy-shots="workspace?.project?.busy_shots || []"
 			:current-lang="currentLang" :estimate-shot-duration="estimateShotDuration"
 			:format-shot-keyframe-time="formatShotKeyframeTime"
 			@change-shot-duration="changeShotDuration" @regenerate-current-shot="regenerateCurrentShot"
-			@save-scene-description="saveActiveShot" @ask-ai="onAskAiRewriteShot"
+			@save-scene-description="saveActiveShot" @ask-ai="onAskAiRewriteShot" @accept-revision="applyPendingRevision" @discard-revision="discardPendingRevision"
 			@review-changed="onReviewChanged" @open-settings="showSettings = true" @open-media-picker="openPicker"
+		/>
+		<StoryboardSlicer
+			v-if="slicerOpen"
+			:project-name="projectName"
+			:shots="storyboardShots"
+			:current-lang="currentLang"
+			@close="slicerOpen = false"
+			@done="onStoryboardSliced"
 		/>
 		<div v-if="advancedMode && rioMode && rioTimelineOpen" class="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-6" role="dialog" aria-modal="true" :aria-label="currentLang === 'vi' ? 'Biên tập dòng thời gian' : 'Edit timeline'">
 			<div class="relative w-full max-w-7xl max-h-full overflow-auto rounded-xl border border-outline-border bg-surface-card p-4">
@@ -192,7 +210,7 @@
 					:current-lang="currentLang" :can-undo="canUndo" :can-redo="canRedo" :markers="timelineMarkers"
 					@select-clip="onSelectClip" @update:playhead-frame="onSeekPlayhead" @trim="handleTrimClip"
 					@split="handleSplitClip" @duplicate="duplicateClip" @delete="deleteClip" @reorder="handleReorderClip"
-					@move="handleMoveClip" @select-transition="setTransition" @open-inspector="openClipInspector"
+					@move="handleMoveClip" @select-transition="setTransition" @rebuild="rebuildTimeline" @open-inspector="openClipInspector"
 					@open-audio-picker="openAudioPicker" @add-scene="openAddScenePopover" @undo="undo" @redo="redo"
 					@set-audio-clip-enabled="onSetAudioClipEnabled"
 				/>
@@ -557,7 +575,7 @@
 							@delete="deleteClip"
 							@reorder="handleReorderClip"
 							@move="handleMoveClip"
-							@select-transition="setTransition"
+							@select-transition="setTransition" @rebuild="rebuildTimeline"
 							@open-inspector="openClipInspector"
 							@open-audio-picker="openAudioPicker"
 							@add-scene="openAddScenePopover"
@@ -603,7 +621,7 @@
 				:current-duration="videoSettings.duration || 15"
 				:current-preset="videoSettings.delivery_preset || 'Landscape'"
 				:is-production-active="isProductionActive"
-				:ai-revision-loading="aiRevisionLoading"
+				:ai-revision-loading="aiRevisionLoading" :pending-revision="pendingRevision"
 				:project-name="projectName"
 				:busy-shots="workspace?.project?.busy_shots || []"
 				:current-lang="currentLang"
@@ -635,6 +653,8 @@
 				@regenerate-current-shot="regenerateCurrentShot"
 				@save-scene-description="saveActiveShot"
 				@ask-ai="onAskAiRewriteShot"
+				@accept-revision="applyPendingRevision"
+				@discard-revision="discardPendingRevision"
 				@review-changed="onReviewChanged"
 				@open-settings="showSettings = true"
 				@open-media-picker="openPicker"
@@ -805,6 +825,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Button, Dialog, FormControl, call } from "frappe-ui";
 import { notify } from "../utils/notify";
+import { rioConfirm } from "../utils/rioDialog";
 import { errorMessage } from "../utils/errors";
 import { useSession } from "../stores/session";
 import { useI18n } from "../stores/i18n";
@@ -830,6 +851,7 @@ import { useKeyframes } from "../composables/useKeyframes";
 import { clientJourney } from "../utils/clientJourney";
 import ReadinessChecklist from "../components/studio/ReadinessChecklist.vue";
 import EditTimeline from "../components/studio/EditTimeline.vue";
+import StoryboardSlicer from "../components/studio/StoryboardSlicer.vue";
 import StudioInspector from "../components/studio/StudioInspector.vue";
 import MediaPicker from "../components/studio/MediaPicker.vue";
 import ProjectSettingsModal from "../components/studio/ProjectSettingsModal.vue";
@@ -997,6 +1019,9 @@ const {
 	cancelGeneration,
 	reviseStoryboard,
 	reviseShotWithAi,
+	pendingRevision,
+	applyPendingRevision,
+	discardPendingRevision,
 	improveVideoIdea,
 	stopPolling,
 } = useProjectGeneration(projectName, refreshStudioGenerationState);
@@ -1073,11 +1098,11 @@ async function approveStoryboard() {
 	const warnings = workspace.value?.project?.storyboard_timing_warnings || [];
 	const acknowledge =
 		!warnings.length ||
-		window.confirm(
+		(await rioConfirm(
 			currentLang.value === "vi"
 				? `Kịch bản có ${warnings.length} khoảng trống/chồng chéo thời lượng. Xác nhận duyệt để giữ các cảnh nguồn không thay đổi?`
 				: `This storyboard has ${warnings.length} timing gap/overlap warning(s). Approve while preserving the authored scenes?`
-		);
+		));
 	if (!acknowledge) return false;
 	try {
 		await call("joymedia.api.storyboard.approve_project_storyboard", {
@@ -1162,6 +1187,7 @@ const {
 	moveClip,
 	addAudioClip,
 	exportTimeline,
+	resetTimeline,
 } = useProjectTimeline(projectName);
 
 const { isFinishing, finishFilm, replaceMusic, cancelFinishing } = useProjectFinishing({
@@ -1923,12 +1949,13 @@ async function removeStoryboardShot(shot) {
 	try {
 		let result = await call("joymedia.api.storyboard.remove_project_scene", request);
 		if (result?.requires_confirmation) {
-			const confirmed = window.confirm(
+			const confirmed = await rioConfirm(
 				`${result.message}\n\n${
 					currentLang.value === "vi"
 						? "Bạn vẫn muốn xóa cảnh này?"
 						: "Remove this scene anyway?"
-				}`
+				}`,
+				{ destructive: true }
 			);
 			if (!confirmed) return;
 			result = await call("joymedia.api.storyboard.remove_project_scene", {
@@ -2263,6 +2290,122 @@ async function updateShotCaption(shot, caption) {
 	}
 }
 
+const slicerOpen = ref(false);
+
+// A template's beats are written for its length, so using one sets the project to
+// that length. Every other video setting is passed back unchanged.
+async function applyTemplateDuration(seconds, template) {
+	const vi = currentLang.value === "vi";
+	const current = workspace.value?.video_settings || {};
+	if (!current.delivery_preset) return; // Settings not loaded yet; never guess a preset.
+	if (Number(current.duration) === Number(seconds)) return;
+	try {
+		await call("joymedia.api.projects.save_project_video_settings", {
+			project_name: projectName.value,
+			total_duration_seconds: seconds,
+			delivery_preset: current.delivery_preset,
+			aspect_ratio: current.aspect_ratio || undefined,
+			generation_mode: current.generation_mode || undefined,
+			global_instructions: current.global_instructions || "",
+			reference_mode: current.reference_mode || undefined,
+			quality_mode: current.quality_mode || undefined,
+			soundtrack_prompt: current.soundtrack_prompt || "",
+			export_quality: current.export_quality || undefined,
+			show_captions: current.show_captions === 0 ? 0 : 1,
+			character_mode: current.character_mode || undefined,
+			soundtrack_mode: current.soundtrack_mode || undefined,
+			planning_mode: current.planning_mode || undefined,
+		});
+		await fetchWorkspace();
+		notify({
+			title: vi ? "Đã đặt độ dài video" : "Video length set",
+			text: vi
+				? `${seconds} giây, khớp với mẫu ${template?.source_label || ""}`.trim()
+				: `${seconds} seconds, to match the ${template?.source_label || ""} template`.trim(),
+			type: "success",
+		});
+	} catch (err) {
+		notify({ title: vi ? "Không đặt được độ dài" : "Could not set the length", text: errorMessage(err, ""), type: "error" });
+	}
+}
+
+// Supplied first frames change the keyframe stage too, and that resource reloads
+// on its own realtime event rather than with the workspace, so refresh both.
+async function onStoryboardSliced() {
+	await Promise.all([fetchWorkspace(), clientFrames.reload()]);
+}
+
+// The browser refuses the microphone rather than failing silently; say so plainly.
+function onDictationError(code) {
+	const vi = currentLang.value === "vi";
+	notify({
+		title: vi ? "Không nghe được" : "Could not hear you",
+		text: code === "not-allowed" || code === "service-not-allowed"
+			? (vi ? "Trình duyệt chưa được phép dùng micro." : "The browser has not been given microphone permission.")
+			: (vi ? `Nhận giọng nói lỗi: ${code}` : `Speech recognition error: ${code}`),
+		type: "warning",
+	});
+}
+
+// Rebuilding restacks the timeline from the generated scenes and drops manual
+// edits, so it asks first. Narration is kept.
+async function rebuildTimeline() {
+	const vi = currentLang.value === "vi";
+	const confirmed = await rioConfirm(
+		vi
+			? "Xếp lại dòng thời gian từ các cảnh đã dựng? Các chỉnh sửa thủ công trên timeline sẽ bị bỏ."
+			: "Rebuild the timeline from the generated scenes? Manual timeline edits will be discarded.",
+		{ destructive: true }
+	);
+	if (!confirmed) return;
+	const result = await resetTimeline();
+	if (result) {
+		notify({
+			title: vi ? "Đã xếp lại dòng thời gian" : "Timeline rebuilt",
+			text: vi ? "Các cảnh đã được xếp lại theo thứ tự." : "Scenes were restacked in order.",
+			type: "success",
+		});
+	}
+}
+
+// Files dropped on the media panel land in the library; the picker then opens so the
+// person says what each one is, since the role cannot be guessed from the file.
+async function uploadDroppedMedia(files) {
+	await uploadFilesToLibrary(files);
+	openPicker();
+}
+
+// "Continues" reuses the previous scene's ending; the server rejects it on scene one.
+async function setShotContinuity(shot, continuityMode) {
+	const vi = currentLang.value === "vi";
+	try {
+		const result = await call("joymedia.api.storyboard.update_project_shot", {
+			project_name: projectName.value,
+			shot_name: shot.name,
+			values: { continuity_mode: continuityMode },
+		});
+		shot.continuity_mode = result.continuity_mode;
+		notify({
+			title: vi ? "Đã cập nhật cách nối cảnh" : "Scene connection updated",
+			text:
+				result.continuity_mode === "Continue"
+					? vi
+						? "Cảnh này sẽ tiếp nối cảnh trước."
+						: "This scene will carry on from the one before it."
+					: vi
+						? "Cảnh này sẽ bắt đầu mới."
+						: "This scene will start fresh.",
+			type: "success",
+		});
+	} catch (err) {
+		notify({
+			title: vi ? "Không thể đổi cách nối cảnh" : "Could not change how the scene connects",
+			text: errorMessage(err, ""),
+			type: "error",
+		});
+	}
+}
+
 async function selectShotTake(shot, takeIndex) {
 	const vi = currentLang.value === "vi";
 	try {
@@ -2293,7 +2436,7 @@ async function selectShotTake(shot, takeIndex) {
 function onAskAiRewriteShot(instruction) {
 	const shot = activeSelectedShot.value;
 	if (!shot?.name) return;
-	reviseShotWithAi(shot.name, instruction);
+	reviseShotWithAi(shot.name, instruction, shot.generation_prompt || shot.storyboard_action || "");
 }
 
 const timelineMarkers = ref([]);

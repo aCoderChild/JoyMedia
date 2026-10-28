@@ -320,6 +320,7 @@
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { Button, FormControl, call, createResource, upload as uploadFile } from "frappe-ui";
+import { rioConfirm } from "../utils/rioDialog";
 import { notify } from "../utils/notify";
 import { errorMessage } from "../utils/errors";
 import { useI18n } from "../stores/i18n";
@@ -422,7 +423,7 @@ async function archiveAsset(asset) {
     });
     if (result?.in_use) {
       const projectCount = result.projects?.length || 0;
-      const confirmed = window.confirm(
+      const confirmed = await rioConfirm(
         `${asset.asset_name} is used by ${projectCount} project(s). Archive it and remove it from those projects?`
       );
       if (!confirmed) return;

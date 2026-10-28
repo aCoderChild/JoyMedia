@@ -179,9 +179,9 @@
 
           <RoleBadge v-if="access.administrator" />
           <!-- User Badge -->
-          <div class="user-badge" :title="user">
+          <div class="user-badge" :title="userDisplayName">
             <span class="user-avatar">{{ userInitial }}</span>
-            <span class="user-name hidden lg:inline">{{ user || "Creator" }}</span>
+            <span class="user-name hidden lg:inline">{{ userDisplayName }}</span>
           </div>
 
           <!-- Log out -->
@@ -291,10 +291,8 @@ const currentPageTitle = computed(() => {
   return "JoyMedia Studio";
 });
 
-const userInitial = computed(() => {
-  if (!user.value) return "J";
-  return user.value.charAt(0).toUpperCase();
-});
+const userDisplayName = computed(() => access.value.display_name || user.value || "Creator");
+const userInitial = computed(() => userDisplayName.value.charAt(0).toUpperCase());
 
 const headerDropdownOptions = computed(() => [
   { label: "JoyMedia Studio", onClick: () => router.push("/campaigns") },

@@ -1,7 +1,9 @@
+import io
 from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from PIL import Image
 
 from joymedia.services.keyframes import locations
 
@@ -30,10 +32,28 @@ def _shot(name, setting, environment=None, camera="Wide shot."):
 
 
 class TestLocationPlates(FrappeTestCase):
+	def test_failed_place_does_not_start_first_frames(self):
+		with (
+			patch.object(locations, "draw_project_places", side_effect=ValueError("no verified table")),
+			patch("joymedia.services.keyframes.stage.generate_keyframes") as frames,
+		):
+			with self.assertRaisesRegex(ValueError, "no verified table"):
+				locations.draw_places_then_frames("PRJ-X", ["SHOT-X"], "test@example.com")
+		frames.assert_not_called()
+
+	def test_ambiguous_action_support_is_rejected(self):
+		with patch(
+			"joymedia.services.review.consistency.ask",
+			side_effect=[{"answer": False}, {"answer": False}, {"answer": None}],
+		):
+			self.assertFalse(locations._location_supports_staging(b"image", "studio", "clear floor"))
+
 	def test_prefers_better_proportioned_location_plate(self):
 		with patch("joymedia.services.review.consistency.ask", return_value={"better": 2}) as observer:
 			self.assertEqual(
-				locations._prefer_location_plate([b"oversized", b"proportionate"], "living room", "working table"),
+				locations._prefer_location_plate(
+					[b"oversized", b"proportionate"], "living room", "working table"
+				),
 				b"proportionate",
 			)
 			self.assertEqual(observer.call_args.args[0], [b"oversized", b"proportionate"])
@@ -48,16 +68,21 @@ class TestLocationPlates(FrappeTestCase):
 			)
 
 	def test_living_room_rejects_a_table_that_does_not_fit_the_seating(self):
-		with patch(
-			"joymedia.services.review.consistency.ask",
-			side_effect=[
-				{"answer": False},  # no actor
-				{"answer": False},  # bare surface
-				{"answer": True},  # structurally valid table
-				{"answer": True},  # sofa is present
-				{"answer": False},  # table is dining height beside sofa
-			],
-		) as observer:
+		with (
+			patch(
+				"joymedia.services.review.consistency.ask",
+				side_effect=[
+					{"answer": False},  # no actor
+					{"answer": False},  # bare surface
+					{"bbox": [200, 400, 800, 600]},  # tabletop bounds
+					{"answer": False},  # bare cropped tabletop
+					{"answer": True},  # structurally valid table
+					{"answer": True},  # sofa is present
+					{"answer": False},  # table is dining height beside sofa
+				],
+			) as observer,
+			patch.object(locations, "_tabletop_crop", return_value=b"crop"),
+		):
 			self.assertFalse(
 				locations._location_supports_staging(
 					b"image", "A cozy living room with a sofa", "reachable working table"
@@ -65,6 +90,34 @@ class TestLocationPlates(FrappeTestCase):
 			)
 			self.assertIn("low coffee table", observer.call_args_list[-1].args[1])
 			self.assertIn("material, finish and design", observer.call_args_list[-1].args[1])
+
+	def test_tabletop_crop_rejects_invalid_geometry(self):
+		buffer = io.BytesIO()
+		Image.new("RGB", (400, 600), "white").save(buffer, "PNG")
+		self.assertIsNone(locations._tabletop_crop(buffer.getvalue(), [800, 100, 200, 300]))
+		self.assertIsNone(locations._tabletop_crop(buffer.getvalue(), [100, 100, 102, 102]))
+		crop = locations._tabletop_crop(buffer.getvalue(), [100, 300, 900, 650])
+		self.assertIsNotNone(crop)
+		with Image.open(io.BytesIO(crop)) as image:
+			self.assertLess(image.width, 400)
+
+	def test_rejects_tabletop_with_books_even_if_full_image_check_missed_them(self):
+		with (
+			patch(
+				"joymedia.services.review.consistency.ask",
+				side_effect=[
+					{"answer": False},
+					{"answer": False},
+					{"bbox": [150, 400, 850, 700]},
+					{"answer": True, "objects": ["books"]},
+				],
+			) as observer,
+			patch.object(locations, "_tabletop_crop", return_value=b"crop"),
+		):
+			self.assertFalse(
+				locations._location_supports_staging(b"image", "living room", "reachable working table")
+			)
+			self.assertEqual(observer.call_args.args[0], b"crop")
 
 	def test_living_room_table_requires_observer_evidence(self):
 		with patch("joymedia.services.review.consistency.ask", side_effect=RuntimeError("offline")):

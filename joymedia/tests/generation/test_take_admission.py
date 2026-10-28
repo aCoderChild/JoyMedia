@@ -11,6 +11,25 @@ from joymedia.services.generation import takes
 
 
 class TestTakeAdmission(TestCase):
+	def test_incompatible_opening_reference_stops_before_run_allocation(self):
+		import frappe
+
+		project = frappe._dict(name="P", storyboard_approval_status="Approved")
+		shot = frappe._dict(
+			name="S",
+			shot_number=1,
+			start_state="The mascot sits with both paws free.",
+			generation_inputs=[frappe._dict(reference_role="Character", asset_version="heart-photo")],
+		)
+		with (
+			patch.object(takes.frappe, "get_doc", return_value=shot),
+			patch.object(takes.frappe.db, "get_value", return_value='{"description":"Bear holding a heart"}'),
+			patch("joymedia.services.generation.orchestrator.start_run_internal") as start,
+		):
+			with self.assertRaisesRegex(ValueError, "prop-free pose"):
+				takes._start_takes_run_locked(project, ["S"], stage="keyframe")
+			start.assert_not_called()
+
 	def test_remote_preflight_precedes_allocation_of_global_run_number(self):
 		from unittest.mock import Mock
 

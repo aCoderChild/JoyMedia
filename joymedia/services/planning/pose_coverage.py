@@ -20,6 +20,12 @@ UPRIGHT = re.compile(
 STAND_UP = re.compile(r"\b(?:stand(?:s|ing)?|get(?:s|ting)?)\s+up\b", re.I)
 SEATED = re.compile(r"\b(?:sit(?:s|ting)?|seated)\b", re.I)
 LOW_SUPPORT = re.compile(r"\b(?:kneel(?:s|ing)?|crouch(?:es|ing)?|lie(?:s|lying)?)\b", re.I)
+FREE_HANDS = re.compile(
+	r"\b(?:both\s+)?(?:paws?|hands?)\s+(?:are\s+)?(?:free|empty|unoccupied)\b"
+	r"|\b(?:free|empty|unoccupied)\s+(?:paws?|hands?)\b",
+	re.I,
+)
+HELD_OBJECT = re.compile(r"\b(?:hold(?:s|ing)?|carr(?:y|ies|ying)|grip(?:s|ping)?|clutch(?:es|ing)?)\b", re.I)
 
 
 def required_pose(action, structure=None):
@@ -143,6 +149,55 @@ def keyframe_character_mode(requirement, current_mode=None):
 
 		return DRAW
 	return current_mode
+
+
+def opening_reference_conflicts(shot):
+	"""Find clear contradictions between a shot's opening and its image inputs.
+
+	A generated pose is trusted only when it passed the reusable pose qualification.
+	An uploaded photo can preserve identity, but a visibly held prop must not be
+	used as the body-state reference for a free-paw first frame.
+	"""
+	import frappe
+
+	opening = " ".join(str(shot.get(key) or "") for key in ("start_state", "image_prompt"))
+	if not FREE_HANDS.search(opening):
+		return []
+	from joymedia.services.planning.pose_assets import _qualified_pose_metadata
+
+	conflicts = []
+	for row in shot.get("generation_inputs") or shot.get("references") or []:
+		if str(row.get("reference_role") or "").casefold() not in {"character", "person"}:
+			continue
+		version = row.get("asset_version")
+		if not version:
+			continue
+		analysis = (
+			frappe.parse_json(frappe.db.get_value("Asset Version", version, "analysis_json") or "{}") or {}
+		)
+		qualified = _qualified_pose_metadata(analysis)
+		if qualified and not HELD_OBJECT.search(qualified["pose"]):
+			continue
+		held = analysis.get("held_objects")
+		if (
+			qualified
+			or held not in (None, "", "none", "None", [], {})
+			or HELD_OBJECT.search(str(analysis.get("description") or ""))
+		):
+			conflicts.append(version)
+	return conflicts
+
+
+def assert_opening_character_references(shots):
+	"""Stop first-frame rendering when a source contradicts an explicit opening pose."""
+	for shot in shots:
+		conflicts = opening_reference_conflicts(shot)
+		if conflicts:
+			raise ValueError(
+				f"Scene {shot.get('shot_number') or shot.get('name')}: the opening requires free paws or hands, "
+				"but its character reference holds a separate object. Prepare and verify a prop-free "
+				"pose of the same character before drawing the first frame."
+			)
 
 
 def annotate_shots(project, shots):

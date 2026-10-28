@@ -13,12 +13,14 @@ own (a client's photo of the location) keeps it.
 """
 
 import hashlib
+import io
 import json
 import re
 from pathlib import Path
 
 import frappe
 from frappe import _
+from PIL import Image
 
 from joymedia.services.keyframes.overlay import usable_setting
 from joymedia.services.project.realtime import PROJECT_UPDATED, publish_project_event
@@ -376,7 +378,7 @@ def render_place(project, setting, view=False, staging=""):
 
 	width, height = require_dimensions(settings)
 	cache_key = hashlib.sha256(
-		f"{workflow_version.workflow_hash}:{width}x{height}:{prompt}:location-selection-v3".encode()
+		f"{workflow_version.workflow_hash}:{width}x{height}:{prompt}:location-selection-v4".encode()
 	).hexdigest()
 	cache = Path(frappe.get_site_path("private", "joymedia-location-cache", cache_key + ".png"))
 	if cache.exists():
@@ -449,6 +451,34 @@ def _prefer_location_plate(candidates, setting, staging):
 	return candidates[1] if str(result.get("better")) == "2" else candidates[0]
 
 
+def _tabletop_crop(content, box):
+	"""Crop a detected tabletop for a second, detailed observation of loose props."""
+	if not isinstance(box, (list, tuple)) or len(box) != 4:
+		return None
+	try:
+		x1, y1, x2, y2 = [float(value) for value in box]
+	except (TypeError, ValueError):
+		return None
+	if not (0 <= x1 < x2 <= 1000 and 0 <= y1 < y2 <= 1000):
+		return None
+	with Image.open(io.BytesIO(content)) as image:
+		width, height = image.size
+		if (x2 - x1) * width / 1000 < 24 or (y2 - y1) * height / 1000 < 12:
+			return None
+		pad_x, pad_y = (x2 - x1) * 0.07, (y2 - y1) * 0.12
+		crop = image.crop(
+			(
+				max(0, int((x1 - pad_x) * width / 1000)),
+				max(0, int((y1 - pad_y) * height / 1000)),
+				min(width, int((x2 + pad_x) * width / 1000)),
+				min(height, int((y2 + pad_y) * height / 1000)),
+			)
+		).convert("RGB")
+		buffer = io.BytesIO()
+		crop.save(buffer, "PNG")
+		return buffer.getvalue()
+
+
 def _location_supports_staging(content, setting, staging):
 	"""Use the existing vision observer to reject a room with the wrong furniture or support geometry."""
 	from joymedia.services.review.consistency import ask
@@ -474,6 +504,26 @@ def _location_supports_staging(content, setting, staging):
 		if foreground.get("answer") is not False:
 			return False
 		if "working table" in staging:
+			surface = ask(
+				content,
+				"Locate the main foreground ACTION TABLETOP, not the sofa, rug, cabinet or table legs. "
+				"Return JSON with bbox=[left,top,right,bottom] in 0..1000 image coordinates, "
+				"tightly enclosing its visible top surface. Use null if no tabletop is clearly visible.",
+				max_edge=1024,
+			)
+			crop = _tabletop_crop(content, surface.get("bbox"))
+			if crop is None:
+				return False
+			close_check = ask(
+				crop,
+				"This is a close crop of the main action tabletop. Is ANY loose object resting on the "
+				"surface, including books, magazines, decor, cups, packages, tissue, food, or liquid? "
+				"Return JSON answer=true if occupied, false only if the tabletop is visibly bare, "
+				"null if uncertain, with objects and visual evidence.",
+				max_edge=1024,
+			)
+			if close_check.get("answer") is not False:
+				return False
 			table = ask(
 				content,
 				"Inspect only the main foreground working table. If its entire tabletop and base are visible, "
@@ -523,11 +573,10 @@ def _location_supports_staging(content, setting, staging):
 			"false if contradicted, or null if uncertain, plus a short reason.",
 		)
 	except Exception:
-		# An unavailable observer must not prevent the established image workflow
-		# from furnishing a location; later frame review still runs.
+		# An unverified location must not be attached to a first frame.
 		frappe.log_error(title="Location staging observation unavailable")
-		return not _living_room_work_surface(setting, staging)
-	return result.get("answer") is not False
+		return False
+	return result.get("answer") is True
 
 
 def _location_staging(shot):
@@ -616,8 +665,10 @@ def draw_project_places(project_name, shot_names, user):
 			else:
 				add_place(project, key, setting, render_place(project, setting, staging=staging))
 		except Exception:
-			# Without the picture the frames are still drawn, each from the setting text alone.
 			frappe.log_error(title=f"Could not draw the place for {project_name}")
+			# A scene without its verified environment reference can invent or distort
+			# the action furniture. Leave this run failed instead of rendering frames.
+			raise
 		frappe.db.commit()
 		project = frappe.get_doc("Media Project", project_name)
 		publish_project_event(project_name, PROJECT_UPDATED, {"doctype": "Media Project"})

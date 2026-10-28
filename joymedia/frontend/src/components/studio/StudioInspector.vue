@@ -591,9 +591,22 @@
             <span v-if="aiRevisionLoading" class="lucide-refresh-cw size-3 animate-spin inline-block" />
             <span v-else>✨ {{ currentLang === 'vi' ? 'AI tinh chỉnh mô tả' : 'AI refine description' }}</span>
           </button>
-          <p class="text-[10px] text-ink-muted text-center">
-            {{ currentLang === 'vi' ? 'Qwen sẽ đồng bộ mô tả với ý tưởng video và tự động áp dụng kết quả.' : 'Qwen aligns the description with the video idea and applies the result automatically.' }}
+          <p v-if="!revisionForThisShot" class="text-[10px] text-ink-muted text-center">
+            {{ currentLang === 'vi' ? 'Qwen đồng bộ mô tả với ý tưởng video. Bạn xem thay đổi trước khi áp dụng.' : 'Qwen aligns the description with the video idea. You review the change before it is applied.' }}
           </p>
+
+          <!-- The AI's proposed description, with the words it added highlighted. -->
+          <div v-if="revisionForThisShot" class="rounded-lg border border-rio-500/40 bg-rio-500/5 p-2.5 space-y-2">
+            <p class="text-[10px] font-bold text-rio-400">{{ currentLang === 'vi' ? 'AI đề xuất' : 'AI proposes' }}</p>
+            <p v-if="revisionForThisShot.summary" class="text-[10px] text-ink-muted">{{ revisionForThisShot.summary }}</p>
+            <p class="text-[11px] leading-relaxed text-ink-primary">
+              <template v-for="(seg, i) in revisionSegments" :key="i"><span :class="seg.added ? 'rounded bg-emerald-500/25 text-emerald-300 px-0.5' : ''">{{ seg.text }}</span>{{ i < revisionSegments.length - 1 ? ' ' : '' }}</template>
+            </p>
+            <div class="flex gap-2 pt-1">
+              <button type="button" class="flex-1 jm-btn-primary !py-1.5 text-[11px]" :disabled="aiRevisionLoading" @click="$emit('accept-revision')">✓ {{ currentLang === 'vi' ? 'Áp dụng' : 'Apply' }}</button>
+              <button type="button" class="flex-1 rounded-md border border-outline-border py-1.5 text-[11px] text-ink-muted hover:text-ink-primary" :disabled="aiRevisionLoading" @click="$emit('discard-revision')">{{ currentLang === 'vi' ? 'Bỏ qua' : 'Discard' }}</button>
+            </div>
+          </div>
         </div>
 
         <!-- Regenerate -->
@@ -627,6 +640,7 @@
 
 <script setup>
 import { computed, ref, watch } from "vue";
+import { diffPromptAdditions } from "../../utils/qwenDiff";
 import MediaThumbnail from "../MediaThumbnail.vue";
 import SceneReview from "./SceneReview.vue";
 
@@ -648,6 +662,7 @@ const props = defineProps({
   regeneratingSource: { type: Boolean, default: false },
   isProductionActive: { type: Boolean, default: false },
   aiRevisionLoading: { type: Boolean, default: false },
+  pendingRevision: { type: Object, default: null },
   projectName: { type: String, default: "" },
   busyShots: { type: Array, default: () => [] },
   currentLang: { type: String, default: "en" },
@@ -656,6 +671,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits([
+  "accept-revision",
+  "discard-revision",
   "update:open",
   "update:selectedTarget",
   "changeTransition",
@@ -784,4 +801,16 @@ const inspectorHeaderIcon = computed(() => {
   if (props.activeSelectedShot) return "🎞️";
   return "⚙";
 });
+// The pending revision belongs to one scene; show it only while that scene is open.
+const revisionForThisShot = computed(() =>
+  props.pendingRevision && props.activeSelectedShot && props.pendingRevision.shotName === props.activeSelectedShot.name
+    ? props.pendingRevision
+    : null,
+);
+const revisionSegments = computed(() =>
+  revisionForThisShot.value
+    ? diffPromptAdditions(revisionForThisShot.value.original, revisionForThisShot.value.proposed)
+    : [],
+);
+
 </script>
