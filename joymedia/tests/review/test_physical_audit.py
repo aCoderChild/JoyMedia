@@ -13,6 +13,7 @@ from joymedia.services.review.physical_audit import (
 	obvious_geometry_results,
 	opening_actor_support,
 	refine_support_pose,
+	scale_is_calibrated,
 )
 from joymedia.tests.planning.test_creative import sample_script
 
@@ -20,6 +21,23 @@ SCENE = {"human_cast": False, "has_product": True, "medium_locked": True, "close
 
 
 class TestPhysicalAudit(FrappeTestCase):
+	def test_fictional_actor_crop_does_not_define_absolute_world_size(self):
+		self.assertFalse(scale_is_calibrated({"references": [{"reference_role": "Character"}]}))
+		self.assertTrue(scale_is_calibrated({"references": [{"reference_role": "Product"}]}))
+		self.assertTrue(scale_is_calibrated({"image_prompt": "The figure is 50 cm tall."}))
+		rows = obvious_geometry_results(
+			[b"frame"],
+			scale_calibrated=False,
+			ask=lambda *args, **kwargs: {
+				key: {"present": False, "evidence": "Visible coherent geometry."}
+				for key in ("solid_intersection", "unsupported_load")
+			},
+		)
+		self.assertEqual(
+			{"geometry.solid_intersection", "geometry.unsupported_load"}, {r["id"] for r in rows}
+		)
+		self.assertTrue(all(r["verdict"] == "supported" for r in rows))
+
 	def test_conflicting_pose_is_observed_blindly_and_never_cleared_without_evidence(self):
 		for answer, expected in (
 			({"pose": "seated", "evidence": "Pelvis rests on rug and soles face forward."}, "seated"),

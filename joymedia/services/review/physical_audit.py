@@ -52,7 +52,24 @@ def opening_actor_support(opening):
 	return next(iter(classes)) if len(classes) == 1 else None
 
 
-def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None):
+def scale_is_calibrated(scene):
+	"""Fictional actor reference crops do not establish a world-space height."""
+	roles = {str(r.get("reference_role") or "").lower() for r in scene.get("references") or []}
+	if roles & {"product", "person", "people", "talent"}:
+		return True
+	text = " ".join(
+		str(scene.get(k) or "") for k in ("image_prompt", "generation_prompt", "motion_plan_json")
+	)
+	return bool(
+		re.search(
+			r"\b\d+(?:\.\d+)?\s*(?:cm|mm|m|centimet(?:er|re)s?|millimet(?:er|re)s?|met(?:er|re)s?|inch(?:es)?|feet|ft)\b",
+			text,
+			re.I,
+		)
+	)
+
+
+def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None, scale_calibrated=True):
 	"""Observe positive defects, then negate strict evidence in code.
 
 	These checks also run on decoded video, after source-art compositing. An
@@ -63,6 +80,9 @@ def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None)
 		from joymedia.services.review.consistency import ask
 
 	observations = []
+	defects = dict(OBVIOUS_GEOMETRY)
+	if not scale_calibrated:
+		defects.pop("implausible_scale")
 	expected_support = opening_actor_support(opening)
 	defect_schema = {
 		"type": "object",
@@ -76,9 +96,9 @@ def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None)
 	schema = {
 		"type": "object",
 		"additionalProperties": False,
-		"required": [*OBVIOUS_GEOMETRY, "actor_support"],
+		"required": [*defects, "actor_support"],
 		"properties": {
-			**{key: defect_schema for key in OBVIOUS_GEOMETRY},
+			**{key: defect_schema for key in defects},
 			"actor_support": {
 				"type": "object",
 				"additionalProperties": False,
@@ -107,8 +127,12 @@ def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None)
 			"Observe visible geometry and fill the required JSON fields from the image. "
 			"solid_intersection means solid objects pass through or fuse with each other. "
 			"unsupported_load means a stationary object visibly floats without support or a grip. "
-			"implausible_scale means an object has clearly impossible scale relative to nearby objects. "
-			"For each defect, present=true for a clear violation, false for visibly coherent geometry, "
+			+ (
+				"implausible_scale means an object has clearly impossible scale relative to nearby objects. "
+				if scale_calibrated
+				else "The fictional actor has no calibrated absolute height; do not invent a world-space size from its reference crop. "
+			)
+			+ "For each defect, present=true for a clear violation, false for visibly coherent geometry, "
 			"null for hidden/ambiguous geometry; give concrete evidence. Ordinary occlusion is not "
 			"solid intersection. Jumping/flying is not unsupported stationary weight. Compare scale "
 			"only at comparable depth; miniature subjects are allowed. "
@@ -119,7 +143,7 @@ def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None)
 		)
 		answer = ask(picture, question, configured=configured, max_edge=768, schema=schema)
 		observations.append(answer if isinstance(answer, dict) else {})
-	claims = dict(OBVIOUS_GEOMETRY)
+	claims = dict(defects)
 	if expected_support:
 		claims["wrong_opening_support"] = (
 			"Visible starting support agrees with the authored opening: " + str(opening)[:1800]

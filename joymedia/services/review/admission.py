@@ -29,6 +29,7 @@ def implementation_hash():
 			for name in (
 				"review/admission.py",
 				"review/physical_audit.py",
+				"review/sheet_observation.py",
 				"review/recheck.py",
 				"review/canvas.py",
 				"review/consistency.py",
@@ -283,8 +284,10 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		),
 	)
 	report = run_temporal_check(check, configured=frappe._dict(policy["judge"]))
-	from joymedia.services.review.physical_audit import obvious_geometry_results
+	from joymedia.services.review.physical_audit import obvious_geometry_results, scale_is_calibrated
+	from joymedia.services.review.sheet_observation import sheet_marking_results
 
+	calibrated_scale = scale_is_calibrated(scene)
 	geometry = obvious_geometry_results(
 		pictures,
 		opening=(scene.get("image_prompt") or "")
@@ -294,7 +297,15 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		)
 		else "",
 		configured=frappe._dict(policy["judge"]),
+		scale_calibrated=calibrated_scale,
 	)
+	report["scale_calibration"] = {
+		"available": calibrated_scale,
+		"limitation": "Absolute height of an unspecified fictional actor is not inferred from an image crop. Reference proportions, support and contact remain separately screened.",
+	}
+	material = sheet_marking_results(pictures, scene, configured=frappe._dict(policy["judge"]))
+	report["results"].extend(material)
+	report["required_claim_ids"].extend(r["id"] for r in material)
 	report["results"].extend(geometry)
 	report["required_claim_ids"].extend(r["id"] for r in geometry)
 	if video:

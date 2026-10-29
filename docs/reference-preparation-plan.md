@@ -213,3 +213,21 @@ product named by its brand, when its structured subject state is stationary.
 It rejects camera-only statements, additional transformation clauses and actor
 scenes. This closes the gap between a correct static screenplay and the literal
 canonical action used by the source renderer. 18 scope/camera checks passed.
+
+Live material review exposed confirmation bias: direct constrained questions
+called a visibly illustrated sheet unprinted, while free description correctly
+reported its bear drawing and stars. `sheet_observation` now describes the image
+first, then extracts sheet marks from that text with the same frozen vision
+endpoint, requiring an exact supporting quote. Both passes and their results
+are retained in admission evidence. Live printed/blank examples were correctly
+distinguished. Up to five chronological samples receive this extra check;
+unclear/missing observations remain held. This does not certify unsampled frames.
+
+Absolute height is not inferred from a fictional character crop. Scale screening
+requires a source Product/Person anchor or authored physical dimensions; support,
+intersection, original proportions and topology retain their separate checks.
+The generic geometry-qualification caveat remains, including for automatic
+review previews. Source-product scale screening is unchanged. The prior
+mascot-larger-than-paper rejection was not a measured contradiction.
+52 admission/material/automatic-delivery tests and 23 physical-audit method
+checks passed after these changes. No failed image was manually approved.
