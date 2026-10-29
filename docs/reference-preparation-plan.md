@@ -103,15 +103,15 @@ successful unattended-film claim.
 
 `register_h3_storyboard_pipeline.execute` installs an opt-in pipeline from the
 existing H3 reference-only workflow. It does not promote a global default.
-Its image stage holds the authored opening for 73 preparation frames, selects
-frame 68 through ImageFromBatch and saves an ordinary Primary Image. The
+Its image stage holds the authored opening for 39 preparation frames, selects
+frame 36 through ImageFromBatch and saves an ordinary Primary Image. The
 separate final H3 stage performs the authored timed actions; a preparation hold
 never substitutes for an action. The full preparation clip is retained as a
 private Intermediate artifact, attached to the project and visible with the
 other preparation clips, never as a selectable take. Frozen workflow/snapshot
 lineage and a clip SHA-256 identify the selected frame.
 
-The registered local route is PIPE-00071: WF-02700 storyboard images, WF-02695
+The registered local route is PIPE-00072: WF-02701 storyboard images, WF-02695
 animation, with independent WF-02656 empty environments. Its product default
 remains source_pixels. Batch requests honor the project's trusted backend
 execution pin; client RPCs do not select internal recipes. This preserves the
@@ -135,3 +135,12 @@ new run evidence rather than silently reusing old reports.
 622 targeted backend test executions passed before the clean H3-route test.
 The historical CRB-00104 run is diagnostic evidence and does not establish a
 successful automatic final export.
+
+CRB-00105 / PRJ-02728 exercised the H3 image route. Its first opening
+incorrectly invented a retail box; the geometry gate rejected it. The compact
+H3 prompt now carries only bound subjects and the authored opening, rather than
+image-engine boilerplate about an advertised product in every shot. The retry
+encountered a remote GPU-sharing memory stall. The preparation-only profile now
+uses 512x896 portrait, 896x512 landscape or 640x640 square with 39 frames; final
+animation settings are unchanged. The cancelled diagnostic is not a final export.
+29 focused H3/bridge tests passed after this resource-profile adjustment.

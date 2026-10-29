@@ -13,10 +13,10 @@ WORKFLOW_KEY = "minimax_h3_storyboard_hold"
 
 def image_recipe(graph, spec, environment_workflow):
 	graph, spec = copy.deepcopy(graph), copy.deepcopy(spec)
-	graph["111"]["inputs"]["value"] = 73 / 24
+	graph["111"]["inputs"]["value"] = 39 / 24
 	graph["storyboard_frame"] = {
 		"class_type": "ImageFromBatch",
-		"inputs": {"image": ["10", 0], "batch_index": 68, "length": 1},
+		"inputs": {"image": ["10", 0], "batch_index": 36, "length": 1},
 	}
 	graph["storyboard_save"] = {
 		"class_type": "SaveImage",
@@ -24,7 +24,7 @@ def image_recipe(graph, spec, environment_workflow):
 	}
 	spec["outputs"] = {
 		"primary": {"node_key": "storyboard_save", "media_type": "Image"},
-		"preparation_bridge": {"node_key": "92", "frame_index": 68},
+		"preparation_bridge": {"node_key": "92", "frame_index": 36},
 	}
 	spec["metadata"] = {"frame_count": 1, "output_fps": 24, "produces_video": 0, "produces_audio": 0}
 	spec["limits"] = {"max_frames": 1}
@@ -34,6 +34,13 @@ def image_recipe(graph, spec, environment_workflow):
 	spec["parameters"] = [
 		p for p in spec["parameters"] if p["semantic"] not in {"frame_count", "output_prefix"}
 	]
+	for parameter in spec["parameters"]:
+		if parameter.get("transform") == "nearest_size_dimension":
+			parameter["options"] = [
+				{"width": 896, "height": 512},
+				{"width": 512, "height": 896},
+				{"width": 640, "height": 640},
+			]
 	spec["parameters"] += [
 		{"semantic": "output_prefix", "node_key": node, "input_name": "filename_prefix"}
 		for node in ("92", "storyboard_save")
