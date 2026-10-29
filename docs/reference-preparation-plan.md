@@ -144,3 +144,11 @@ encountered a remote GPU-sharing memory stall. The preparation-only profile now
 uses 512x896 portrait, 896x512 landscape or 640x640 square with 39 frames; final
 animation settings are unchanged. The cancelled diagnostic is not a final export.
 29 focused H3/bridge tests passed after this resource-profile adjustment.
+
+The clean reduced-memory run also exposed a camera-variety conflict: a writer
+requested the original product photograph, then the variety pass introduced a
+move. Explicit original-photo hero placeholders with a static camera now become
+the existing literal product hold. Camera variety cannot change that source
+presentation; authored camera travel and real actions remain executable.
+177 creative and prompt-scope tests passed, including source-hold recognition
+and preservation of explicitly authored movement.

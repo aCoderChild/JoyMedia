@@ -3409,6 +3409,52 @@ class TestIdentityGroups(TestCase):
 
 
 class TestCameraDirection(TestCase):
+	def test_explicit_original_photo_hero_survives_camera_variety_as_source_hold(self):
+		from joymedia.services.consistency.retention import authored_static_product_hold
+		from joymedia.services.planning.creative import direct_camera, normalize_static_final_packshot
+
+		last = {
+			"cast": [],
+			"products": ["pack"],
+			"camera_move": "static",
+			"shot_framing": "full",
+			"shot_angle": "eye_level",
+			"narrative_stage": "hero",
+			"product_view": "source",
+			"subject_motion": "stationary",
+			"duration_seconds": 3,
+			"visual_camera": "Clean hero product shot with the original supplied product photograph.",
+			"action": "[0-3s] Hero product shot of the supplied pack.",
+			"continuity_rules": "The bear is seated on the rug.",
+		}
+		script = {"scenes": [last]}
+		self.assertEqual(2, len(normalize_static_final_packshot(script)))
+		direct_camera(script["scenes"], {"moves": {"hero": {"behavior": "arc"}}})
+		self.assertEqual(
+			("static", "full", "eye_level"),
+			tuple(last[k] for k in ("camera_move", "shot_framing", "shot_angle")),
+		)
+		self.assertIn("No physical actor", last["continuity_rules"])
+		self.assertTrue(
+			authored_static_product_hold(
+				{
+					"references": [
+						{
+							"reference_role": "Product",
+							"asset_version": "original",
+							"reference_mode": "source_pixels",
+						}
+					],
+					"motion_plan_json": {"actions": [{"action": last["action"].split("] ", 1)[1]}]},
+				}
+			)
+		)
+		# A real authored camera move is still executable direction.
+		last.update(camera_move="dolly_out", action="[0-3s] Hero product shot of the supplied pack.")
+		self.assertEqual([], normalize_static_final_packshot(script))
+		direct_camera(script["scenes"])
+		self.assertEqual("dolly_out", last["camera_move"])
+
 	def test_camera_only_product_insert_is_normalized_without_replacing_actor_actions(self):
 		from joymedia.services.planning.creative import normalize_product_camera_inserts
 

@@ -1744,6 +1744,7 @@ def normalize_static_final_packshot(script):
 	if not scene.get("cast") and scene.get("products"):
 		from joymedia.services.scene.prompt_scope import assert_product_only_direction
 
+		changes = []
 		try:
 			assert_product_only_direction(scene.get("continuity_rules"))
 		except ValueError:
@@ -1753,7 +1754,38 @@ def normalize_static_final_packshot(script):
 			scene["continuity_rules"] = (
 				"Preserve the product's established support and original artwork. No physical actor appears in this shot."
 			)
-			return ["Final packshot: removed stale actor continuity from the declared product-only scene."]
+			changes.append(
+				"Final packshot: removed stale actor continuity from the declared product-only scene."
+			)
+		# An explicitly requested source photograph is a presentation, not a
+		# newly photographed pack. Canonicalize its idle action so the native
+		# source-frame route can recognize it. Authored camera travel and actual
+		# product actions remain outside this normalization.
+		if (
+			scene.get("camera_move") in {None, "", "static"}
+			and scene.get("product_view", "source") == "source"
+			and scene.get("subject_motion") == "stationary"
+			and re.search(r"\boriginal\b[^.]*\bproduct photograph\b", scene.get("visual_camera") or "", re.I)
+			and re.fullmatch(
+				r"(?:\[[^\]]+\]\s*)?(?:clean\s+)?hero product shot\b[^.]*\.?",
+				scene.get("action") or "",
+				re.I,
+			)
+		):
+			duration = float(scene["duration_seconds"])
+			scene["action"] = (
+				f"[0-{duration:g}s] The original product remains in its established position with its printed artwork intact."
+			)
+			scene["visible_change"] = (
+				"The original product remains in its established position with its printed artwork intact."
+			)
+			scene["camera_move"] = "static"
+			changes.append(
+				"Final packshot: retained the explicitly requested original photograph as a locked source presentation."
+			)
+
+		return changes
+
 	if (
 		not scene.get("cast")
 		or not scene.get("products")
@@ -2038,6 +2070,19 @@ def direct_camera(scenes, grammar=None):
 	changes = []
 	preferences = (grammar or {}).get("moves") or {}
 	move_for = {behavior: move for move, behavior in MOVE_BEHAVIOR.items()}
+	locked_sources = {
+		index
+		for index, scene in enumerate(scenes)
+		if not scene.get("cast")
+		and scene.get("products")
+		and scene.get("camera_move") == "static"
+		and re.search(
+			r"The original product (?:remains|stays) in its (?:established|opening) position "
+			r"(?:with its printed artwork intact|with unchanged visible artwork and support)\.?$",
+			scene.get("action") or "",
+			re.I,
+		)
+	}
 
 	def change(index, value, reason):
 		old = scenes[index].get("camera_move")
@@ -2068,6 +2113,8 @@ def direct_camera(scenes, grammar=None):
 			)
 
 	for index, scene in enumerate(scenes):
+		if index in locked_sources:
+			continue
 		motion = scene_motion(scene)
 		stage = scene.get("narrative_stage")
 		if index and (scene.get("shot_framing"), scene.get("shot_angle"), scene.get("camera_move")) == (
@@ -2098,7 +2145,8 @@ def direct_camera(scenes, grammar=None):
 	# half the film moves, and angles leave eye level where the job suits it.
 	def free(index):
 		return (
-			scenes[index].get("camera_move") == "static"
+			index not in locked_sources
+			and scenes[index].get("camera_move") == "static"
 			and not _precise_contact(scenes[index])
 			and (scene_motion(scenes[index]) != "locomotion")
 		)
@@ -2134,6 +2182,8 @@ def direct_camera(scenes, grammar=None):
 			change(index, expressive(index), "give the film enough camera movement")
 	if sum(scene.get("shot_angle") in {None, "", "eye_level"} for scene in scenes) > len(scenes) / 2:
 		for index, scene in enumerate(scenes):
+			if index in locked_sources:
+				continue
 			wanted = coverage_for.get(scene.get("narrative_stage"), (None, None))[1]
 			if scene.get("shot_angle") in {None, "", "eye_level"} and wanted not in {None, "eye_level"}:
 				old = scene.get("shot_angle")
