@@ -146,6 +146,7 @@ def analyse_asset_version(asset_version_name, as_product=False):
 		"product_view",
 		"product_view_status",
 		"visible_source_retained",
+		"product_identity_qualification_version",
 		"view_geometry_verified",
 		"unknown_panels",
 		"subject_cutout",

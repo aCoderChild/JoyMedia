@@ -332,6 +332,7 @@ def set_reference_size(media_project, asset_version, relative_size):
 	"""How large a character or product appears next to the others (1 = normal); a kid beside a parent is about 0.4."""
 	project = frappe.get_doc("Media Project", media_project)
 	project._require_write_access()
+	_ensure_references_idle(project)
 	try:
 		size = float(relative_size)
 	except (TypeError, ValueError):
@@ -343,6 +344,9 @@ def set_reference_size(media_project, asset_version, relative_size):
 		frappe.throw(_("This image is not a reference of the project."))
 	row.relative_size = size
 	project.save(ignore_permissions=True)
+	from joymedia.api.storyboard import _mark_storyboard_needs_review
+
+	_mark_storyboard_needs_review(project)
 	frappe.db.commit()
 	return {"asset_version": asset_version, "relative_size": size}
 

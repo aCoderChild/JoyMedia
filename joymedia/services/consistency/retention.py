@@ -7,6 +7,7 @@ Ambiguous placement fails before the frame can be approved or animated.
 import hashlib
 import io
 import json
+import math
 import re
 import time
 from pathlib import Path
@@ -73,6 +74,49 @@ def _write_json(path, value):
 	temporary.replace(path)
 
 
+def remember_source_outline(patch_bytes, report, source_hash, frozen):
+	"""Cache measured source-view proportions, independently of placement acceptance."""
+	from PIL import Image
+
+	if (
+		report.get("source_sha256") != source_hash
+		or report.get("recipe_sha256") != frozen["recipe_sha256"]
+		or report.get("source_rgb_unchanged") is not True
+	):
+		raise ValueError("Source outline evidence does not match its frozen source recipe.")
+	with Image.open(io.BytesIO(patch_bytes)) as patch:
+		if patch.mode != "RGBA" or not patch.getchannel("A").getbbox():
+			raise ValueError("Source outline needs a visible prepared alpha matte.")
+		outline = {
+			"width_height_ratio": patch.width / patch.height,
+			"recipe_sha256": frozen["recipe_sha256"],
+			"source_sha256": source_hash,
+			"patch_sha256": hashlib.sha256(patch_bytes).hexdigest(),
+		}
+	path = _source_outline_path(source_hash, frozen)
+	path.parent.mkdir(parents=True, exist_ok=True)
+	_write_json(path, outline)
+	frappe.cache.set_value("joymedia:source-outline:v1:" + source_hash, outline, expires_in_sec=604800)
+
+
+def _source_outline_path(source_hash, frozen):
+	key = hashlib.sha256(f"{source_hash}:{frozen['recipe_sha256']}".encode()).hexdigest()
+	return Path(frappe.get_site_path("private", "joymedia-source-outlines", key + ".json"))
+
+
+def source_outline(source_hash, frozen):
+	"""Read source facts after cache eviction without borrowing another view or recipe."""
+	outline = frappe.cache.get_value("joymedia:source-outline:v1:" + str(source_hash))
+	if not outline or outline.get("recipe_sha256") != frozen["recipe_sha256"]:
+		try:
+			outline = json.loads(_source_outline_path(source_hash, frozen).read_text())
+		except (OSError, ValueError):
+			return {}
+	if outline.get("source_sha256") != source_hash or outline.get("recipe_sha256") != frozen["recipe_sha256"]:
+		return {}
+	return outline
+
+
 def validate_prepared(image_bytes, patch_bytes, report, source_hash, frozen):
 	from PIL import Image
 
@@ -86,6 +130,31 @@ def validate_prepared(image_bytes, patch_bytes, report, source_hash, frozen):
 	if not isinstance(box, list) or len(box) != 4 or any(type(v) is not int for v in box):
 		raise ValueError("Prepared reference has invalid placement evidence.")
 	x, y, w, h = box
+	detections = report.get("detections")
+	if not isinstance(detections, list) or len(detections) != 1:
+		raise ValueError("Prepared reference needs one measured product footprint.")
+	measured = detections[0].get("box") if isinstance(detections[0], dict) else None
+	if (
+		not isinstance(measured, list)
+		or len(measured) != 4
+		or any(type(v) not in {int, float} or not math.isfinite(v) for v in measured)
+		or measured[2] <= measured[0]
+		or measured[3] <= measured[1]
+	):
+		raise ValueError("Prepared reference has an invalid measured product footprint.")
+	# A uniform resize preserves source RGB but can still enlarge the package
+	# beyond its generated support/shadow. This is an image registration tolerance,
+	# not a claim about real-world dimensions or sufficient perspective evidence.
+	for actual, expected, extent in zip(
+		(x, y, x + w, y + h),
+		measured,
+		(measured[2] - measured[0], measured[3] - measured[1]) * 2,
+		strict=True,
+	):
+		if abs(actual - expected) > max(2, 0.05 * extent):
+			raise ValueError(
+				"Source product view changes its measured scene footprint; replan the package angle and support instead of enlarging the overlay."
+			)
 	with Image.open(io.BytesIO(image_bytes)) as canvas, Image.open(io.BytesIO(patch_bytes)) as patch:
 		if (
 			x < 0
@@ -222,6 +291,7 @@ def retain(attempt, image_bytes, references, frozen, lock):
 				report["result_sha256"] = hashlib.sha256(image_bytes).hexdigest()
 				report["patch_sha256"] = hashlib.sha256(patch).hexdigest()
 				_write_json(folder / "evidence.json", report)
+			remember_source_outline(patch, report, source.content_hash, frozen)
 			validate_prepared(image_bytes, patch, report, source.content_hash, frozen)
 			with Image.open(io.BytesIO(image_bytes)) as image:
 				lock["canvas"] = list(image.size)

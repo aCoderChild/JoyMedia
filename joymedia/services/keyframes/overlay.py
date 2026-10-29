@@ -950,7 +950,8 @@ def pack_still_frames(thumbs, mask=None, tolerance=None):
 
 	The camera can move or cut despite the prompt; pasting the pack then would put it onto something else. A frame
 	counts when its pack region differs from the first frame's by less than `tolerance` (mean grey level, 0-255, over
-	the pack's own pixels); one-to-three-frame dropouts are bridged and runs shorter than a quarter second are dropped.
+	the pack's own pixels). Occlusion gaps are never bridged: painting through even a short paw crossing destroys
+	the authored contact. Runs shorter than a quarter second are dropped.
 	"""
 	from joymedia.services.project.tuning import tune
 
@@ -960,9 +961,6 @@ def pack_still_frames(thumbs, mask=None, tolerance=None):
 	first = thumbs[0]
 	pixels = [i for i in range(len(first)) if mask is None or mask[i]] or list(range(len(first)))
 	still = [sum(abs(frame[i] - first[i]) for i in pixels) / len(pixels) < tolerance for frame in thumbs]
-	for index in range(1, len(still) - 1):  # bridge short dropouts (a paw passing, a flicker)
-		if not still[index] and any(still[max(0, index - 3) : index]) and any(still[index + 1 : index + 4]):
-			still[index] = True
 	ranges, start = [], None
 	for index, ok in enumerate([*still, False]):
 		if ok and start is None:
@@ -979,8 +977,8 @@ def lock_products_in_video(video_path, lock, output_path, fps):
 
 	The video model redraws the pack in every frame, so its label and logo drift and warp. The prompt keeps the pack
 	still and the camera locked, so the pack normally stays where the keyframe put it, and the real pixels go back on
-	top. Frames where the camera moved or cut anyway are left as rendered (see pack_still_frames). Returns None when
-	no frame needs the pack, so the caller keeps the video unchanged.
+	top only when every decoded frame retains coverage. Motion, cuts or occlusion gaps require tracked,
+	occlusion-aware repair; a partial lock fails rather than emitting unprotected frames.
 	"""
 	import json
 	import subprocess

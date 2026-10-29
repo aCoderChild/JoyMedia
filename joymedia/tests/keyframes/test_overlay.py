@@ -491,8 +491,8 @@ class TestProductLock(FrappeTestCase):
 
 		same, other = bytes([100]) * 1024, bytes([200]) * 1024
 		frames = [same] * 20 + [other] * 2 + [same] * 10 + [other] * 30 + [same] * 3
-		# A two-frame dropout is bridged; the final three-frame run is too short to keep.
-		self.assertEqual([(0, 31)], pack_still_frames(frames, tolerance=18))
+		# Even a two-frame paw crossing must not be painted over. The final short run stays excluded.
+		self.assertEqual([(0, 19), (22, 31)], pack_still_frames(frames, tolerance=18))
 		self.assertEqual([], pack_still_frames([]))
 
 

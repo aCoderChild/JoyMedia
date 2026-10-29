@@ -13,6 +13,46 @@ from joymedia.services.planning.prompts import (
 
 
 class TestPromptCompiler(FrappeTestCase):
+	def test_opaque_product_photo_still_supplies_camera_viewpoint_guidance(self):
+		from joymedia.services.planning.prompts import _product_viewpoint_text
+
+		with (
+			patch("joymedia.services.keyframes.overlay._cutout_path", return_value=None),
+			patch.object(frappe.cache, "get_value", return_value=None),
+			patch.object(frappe.cache, "set_value"),
+			patch.object(frappe.db, "get_value", return_value="/private/product.jpg"),
+			patch(
+				"joymedia.services.review.consistency.ask",
+				return_value={"viewpoint": "low front-right three-quarter camera"},
+			) as observe,
+		):
+			text = _product_viewpoint_text([{"reference_role": "product", "asset_version": "opaque-photo"}])
+		self.assertIn("low front-right three-quarter camera", text)
+		observe.assert_called_once()
+
+	def test_relative_character_product_size_preserves_pose_and_detail_crop(self):
+		from joymedia.services.planning.prompts import _grounded_cast_staging
+
+		shot = frappe._dict(
+			image_prompt="Close-up of paws beside the product; mascot sitting on the rug.",
+			references=[
+				{"reference_role": "character", "asset_version": "actor"},
+				{"reference_role": "product", "asset_version": "pack"},
+			],
+		)
+		project = {
+			"references": [{"asset_version": "actor", "scale": 2}, {"asset_version": "pack", "scale": 1}]
+		}
+		text = _grounded_cast_staging(shot, "Opening.", project)
+		self.assertIn("2 times the product's height", text)
+		self.assertIn("Scale the whole subjects uniformly", text)
+		self.assertIn("Keep the authored pose and detail crop", text)
+		self.assertNotIn("stands upright on two legs", text)
+		project["references"][0]["scale"] = 1
+		self.assertNotIn("Relative scene scale", _grounded_cast_staging(shot, "Opening.", project))
+		shot.references = [{"reference_role": "character", "asset_version": "actor"}]
+		self.assertNotIn("Relative scene scale", _grounded_cast_staging(shot, "Opening.", project))
+
 	def test_grounded_detail_does_not_force_offscreen_pelvis_or_feet_into_the_crop(self):
 		from joymedia.services.planning.prompts import _grounded_cast_staging
 

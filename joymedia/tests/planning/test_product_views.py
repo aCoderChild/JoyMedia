@@ -7,7 +7,9 @@ import cv2
 import numpy as np
 
 from joymedia.services.planning.product_views import (
+	PRODUCT_IDENTITY_QUALIFICATION_VERSION,
 	_candidate_matches_requested_view,
+	_candidate_matches_visible_source,
 	_palette_retained,
 	apply_requested_view_sequence,
 	constrain_product_views,
@@ -20,6 +22,84 @@ from joymedia.services.planning.product_views import (
 
 
 class TestProductViewContracts(TestCase):
+	def test_opaque_photo_uses_attested_source_matte_ratio_not_canvas_crop(self):
+		import frappe
+
+		from joymedia.services.planning.product_views import _silhouette_phrase
+
+		with (
+			patch("joymedia.services.keyframes.overlay._cutout_path", return_value=None),
+			patch.object(frappe.db, "get_value", return_value="SOURCE"),
+			patch.object(
+				frappe.cache,
+				"get_value",
+				return_value={
+					"width_height_ratio": 1.8,
+					"recipe_sha256": "RECIPE",
+					"source_sha256": "SOURCE",
+				},
+			),
+			patch("joymedia.services.consistency.retention.policy", return_value={"recipe_sha256": "RECIPE"}),
+		):
+			self.assertIn(
+				"1.8 times as wide", _silhouette_phrase({}, ["pack"], {"pack": {"asset_version": "photo"}})
+			)
+
+	def test_matching_logo_does_not_clear_missing_print_or_changed_panel_proportions(self):
+		verified = {
+			"identity_retained": True,
+			"proportions_retained": True,
+			"shared_print_retained": True,
+			"reason": "Same visible panel proportions, artwork and readable lines.",
+		}
+		for changes, accepted in (
+			({}, True),
+			({"shared_print_retained": False}, False),
+			({"proportions_retained": False}, False),
+			({"shared_print_retained": None}, False),
+			({"reason": ""}, False),
+		):
+			with (
+				self.subTest(changes=changes),
+				patch("joymedia.services.review.consistency.ask", return_value={**verified, **changes}),
+			):
+				self.assertEqual(accepted, _candidate_matches_visible_source("original", b"view"))
+
+	def test_derived_view_with_lost_metadata_cannot_replace_original_product(self):
+		project = {
+			"selected_media": [
+				{"reference_key": "pack", "identity_key": "pack", "reference_role": "Product"},
+				{
+					"reference_key": "derived_front",
+					"identity_key": "pack",
+					"reference_role": "Product",
+					"product_view": "front",
+					"analysis_json": {"source_asset_version": "original", "view_geometry_verified": True},
+				},
+			]
+		}
+		plan = {"reference_keys": ["pack"], "image_prompt": "Front view of the package."}
+		constrain_product_views(project, plan)
+		self.assertEqual(["pack"], plan["reference_views"])
+		self.assertIn("selected source view", plan["image_prompt"])
+		self.assertNotIn("selected front view", plan["image_prompt"])
+
+	def test_only_unqualified_derived_views_fail_instead_of_becoming_a_source_fallback(self):
+		project = {
+			"selected_media": [
+				{
+					"reference_key": "derived",
+					"identity_key": "pack",
+					"reference_role": "Product",
+					"analysis_json": {"source_asset_version": "missing-original"},
+				},
+			]
+		}
+		with self.assertRaisesRegex(ValueError, "No qualified product source"):
+			constrain_product_views(
+				project, {"reference_keys": ["derived"], "image_prompt": "Package on rug."}
+			)
+
 	def test_explicit_angle_sequence_identifies_missing_side(self):
 		direction = "Request front-left, front-right, side and top-front product views."
 		self.assertEqual(
@@ -277,17 +357,27 @@ class TestProductViewContracts(TestCase):
 					"analysis_json": {
 						"product_view_status": "ai_extrapolated_candidate",
 						"view_geometry_verified": True,
+						"visible_source_retained": True,
+						"product_identity_qualification_version": PRODUCT_IDENTITY_QUALIFICATION_VERSION,
 					},
 				},
 			]
 		}
 		plan = {"reference_keys": ["shera_pack_front"], "image_prompt": "Side view of the pack"}
-		constrain_product_views(project, plan)
+		with patch("joymedia.services.planning.product_views._source_pixels_locked", return_value=False):
+			constrain_product_views(project, plan)
 		self.assertEqual(["candidate_side"], plan["reference_views"])
 		notes = " ".join(plan["notes"])
 		self.assertIn("unverified AI side candidate", notes)
 		self.assertIn("Human product-art review is required", notes)
 		self.assertNotIn("approved side source", notes)
+		# A visual identity judgment is not proof of exact printed artwork.
+		locked = {"reference_keys": ["shera_pack_front"], "image_prompt": "Side view of the pack"}
+		with patch("joymedia.services.planning.product_views._source_pixels_locked", return_value=True):
+			constrain_product_views(project, locked)
+		self.assertEqual(["shera_pack_front"], locked["reference_views"])
+		self.assertIn("selected front view", locked["image_prompt"])
+		self.assertNotIn("selected side view", locked["image_prompt"])
 
 	def test_unchecked_old_ai_angle_is_not_selected(self):
 		project = {

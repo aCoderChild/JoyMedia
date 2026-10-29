@@ -31,6 +31,7 @@ _VIEW_PATTERNS = (
 )
 _PRODUCT_NOUN = r"(?:product|pack|packet|package|box|bottle)"
 _VIEW_NOUN = r"(?:view|angle|shot|panel|face|profile|orientation)"
+PRODUCT_IDENTITY_QUALIFICATION_VERSION = 2
 
 
 def _explicit_product_view_text(text):
@@ -209,24 +210,38 @@ def _analysis(row):
 
 
 def is_extrapolated_product_view(row):
-	return _analysis(row).get("product_view_status") == "ai_extrapolated_candidate"
+	analysis = _analysis(row)
+	return analysis.get("product_view_status") == "ai_extrapolated_candidate" or bool(
+		analysis.get("source_asset_version") and not analysis.get("product_view_status")
+	)
 
 
 def _view_candidate_qualified(row):
-	status = _analysis(row).get("product_view_status")
+	analysis = _analysis(row)
+	status = analysis.get("product_view_status")
+	if is_extrapolated_product_view(row):
+		return (
+			status == "ai_extrapolated_candidate"
+			and analysis.get("view_geometry_verified") is True
+			and analysis.get("visible_source_retained") is True
+			and analysis.get("product_identity_qualification_version")
+			== PRODUCT_IDENTITY_QUALIFICATION_VERSION
+		)
 	if status in {
 		"ai_extrapolated_candidate",
 		"supplied_sheet_crop_unverified",
 		"operator_masked_view_unverified",
 	}:
-		return _analysis(row).get("view_geometry_verified") is True
+		return analysis.get("view_geometry_verified") is True
 	return True
 
 
 def _candidate_key(source, view):
 	identity = identity_key(source)
 	version = value(source, "asset_version")
-	digest = hashlib.sha256(f"{identity}:{version}:{view}:geometry_v1".encode()).hexdigest()[:12]
+	digest = hashlib.sha256(
+		f"{identity}:{version}:{view}:identity_v{PRODUCT_IDENTITY_QUALIFICATION_VERSION}".encode()
+	).hexdigest()[:12]
 	return f"product_view_{digest}"
 
 
@@ -357,13 +372,36 @@ def _candidate_matches_visible_source(source_url, candidate):
 		"Image 1 is a real product photograph. Image 2 is an AI-generated alternate-view candidate. "
 		"Judge ONLY visible facts shared with image 1: main colour palette, product category, overall pack "
 		"shape/proportions, clearly visible logo/front artwork, and exact readable printed numbers or quantity. "
+		"Separately check the visible package panel proportions (allow perspective, not a shorter/taller package), "
+		"the arrangement of logo and printed illustration, and every readable line on faces shared by both images. "
+		"Missing or replaced print on a shared visible face is a failure, even if the logo and colours match. "
 		"A different colour variant, sheet count, ply count, or logo is a different product and must be false. "
 		"Do not assume hidden side or rear "
-		"printing is factual. Return exactly JSON with keys answer (boolean) and reason (string). "
-		"Set answer true only when image 2 retains those visible facts; otherwise set it false.",
-		max_edge=768,
+		"printing is factual. Return JSON identity_retained, proportions_retained, shared_print_retained "
+		"(boolean or null for each), and reason string. True requires visible evidence; unknown is null.",
+		max_edge=1024,
+		schema={
+			"type": "object",
+			"additionalProperties": False,
+			"required": ["identity_retained", "proportions_retained", "shared_print_retained", "reason"],
+			"properties": {
+				**{
+					key: {"type": ["boolean", "null"]}
+					for key in ("identity_retained", "proportions_retained", "shared_print_retained")
+				},
+				"reason": {"type": "string", "minLength": 1},
+			},
+		},
 	)
-	return result.get("answer") is True
+	return (
+		isinstance(result, dict)
+		and isinstance(result.get("reason"), str)
+		and bool(result["reason"].strip())
+		and all(
+			result.get(key) is True
+			for key in ("identity_retained", "proportions_retained", "shared_print_retained")
+		)
+	)
 
 
 def _candidate_matches_requested_view(candidate, view):
@@ -494,9 +532,21 @@ def prepare_script_product_views(project, script):
 		):
 			prepared.append({"source": source_key, "view": view, "status": "supplied"})
 			continue
+		if _source_pixels_locked(project, [source_key], by_key):
+			chosen, _ = _choose_view(variants, view, allow_extrapolated=False)
+			prepared.append(
+				{
+					"source": source_key,
+					"view": view,
+					"status": "source_locked",
+					"fallback": value(chosen, "reference_key"),
+					"reason": "Exact artwork uses supplied source pixels; an AI angle is visual guidance, not replacement packaging.",
+				}
+			)
+			continue
 		candidate_key = _candidate_key(source, view)
 		existing = by_key.get(candidate_key)
-		if existing and _analysis(existing).get("view_geometry_verified") is True:
+		if existing and _view_candidate_qualified(existing):
 			prepared.append(
 				{"source": source_key, "view": view, "candidate": candidate_key, "status": "ready"}
 			)
@@ -540,6 +590,7 @@ def prepare_script_product_views(project, script):
 							"product_view_status": "ai_extrapolated_candidate",
 							"source_asset_version": value(source, "asset_version"),
 							"visible_source_retained": True,
+							"product_identity_qualification_version": PRODUCT_IDENTITY_QUALIFICATION_VERSION,
 							"view_geometry_verified": True,
 							"subject_cutout": mask_evidence,
 							"unknown_panels": "inferred; unverified against real packaging",
@@ -610,7 +661,13 @@ def prepare_script_product_cutouts(project, script):
 			source = next((row for row in project.selected_media or [] if row.reference_key == key), None)
 			if not source or str(source.reference_role).casefold() != "product":
 				continue
-			chosen, _ = _choose_view(_product_rows(project, key), desired)
+			chosen, _ = _choose_view(
+				_product_rows(project, key),
+				desired,
+				allow_extrapolated=not _source_pixels_locked(
+					project, [key], {r.reference_key: r for r in project.selected_media or []}
+				),
+			)
 			if chosen:
 				try:
 					masked = ensure_transparent_reference(project, chosen)
@@ -652,7 +709,10 @@ def enqueue_product_view_candidates(project_name, script):
 	return job.id
 
 
-def _choose_view(rows, desired):
+def _choose_view(rows, desired, *, allow_extrapolated=True):
+	if not allow_extrapolated:
+		rows = [row for row in rows if not is_extrapolated_product_view(row)]
+
 	def preferred(candidates):
 		# A reviewed silhouette is compositable; an opaque sheet crop is only
 		# visual guidance. Both retain the same declared camera view.
@@ -705,15 +765,12 @@ def _choose_view(rows, desired):
 		]
 	)
 	if not fallback:
-		fallback = (
-			preferred(
-				[
-					row
-					for row in rows
-					if _view_candidate_qualified(row) and not is_extrapolated_product_view(row)
-				]
-			)
-			or rows[0]
+		fallback = preferred(
+			[row for row in rows if _view_candidate_qualified(row) and not is_extrapolated_product_view(row)]
+		)
+	if not fallback:
+		raise ValueError(
+			"No qualified product source view is available; generated views cannot replace a missing original."
 		)
 	return fallback, desired == "source"
 
@@ -764,8 +821,9 @@ def _unheld_opening(image_prompt, notes):
 def _silhouette_phrase(project, view_keys, rows):
 	"""The product's on-screen proportions, measured from its own cutout.
 
-	The lock pastes the photo without stretching and rejects a drawn outline
-	whose width/height differs from it by more than about 1.5x. Words such as
+	The lock pastes the photo without stretching and rejects footprint changes.
+	A measured matte from the pinned source preparation is also usable for an
+	opaque upload; its image crop must not substitute for the object's outline. Words such as
 	"same proportions as its photo" did not reach the picture model: it drew a
 	1.8:1 pack lying on its side as a near-square box. A number does.
 	"""
@@ -775,17 +833,29 @@ def _silhouette_phrase(project, view_keys, rows):
 
 	for key in view_keys:
 		row = rows.get(key)
-		path = _cutout_path(value(row, "asset_version")) if row else None
-		if not path:
+		version = value(row, "asset_version") if row else None
+		path = _cutout_path(version) if version else None
+		ratio = None
+		if path:
+			try:
+				with Image.open(path) as image:
+					box = (
+						image.convert("RGBA").getchannel("A").point(lambda a: 255 if a > 16 else 0).getbbox()
+					)
+				if box:
+					ratio = (box[2] - box[0]) / (box[3] - box[1])
+			except OSError:
+				continue
+		elif version:
+			from joymedia.services.consistency.retention import policy, source_outline
+
+			source_hash = frappe.db.get_value("Asset Version", version, "content_hash")
+			frozen = policy() or {}
+			if source_hash and frozen.get("recipe_sha256"):
+				outline = source_outline(source_hash, frozen)
+				ratio = outline.get("width_height_ratio")
+		if not isinstance(ratio, (int, float)) or not 0 < ratio < float("inf"):
 			continue
-		try:
-			with Image.open(path) as image:
-				box = image.convert("RGBA").getchannel("A").point(lambda a: 255 if a > 16 else 0).getbbox()
-		except OSError:
-			continue
-		if not box:
-			continue
-		ratio = (box[2] - box[0]) / (box[3] - box[1])
 		if ratio >= 1.15:
 			return f"lying on its long side, its outline about {ratio:.1f} times as wide as it is tall, "
 		if ratio <= 1 / 1.15:
@@ -835,7 +905,9 @@ def constrain_product_views(project, plan, required_view=None):
 		variants = _product_rows(project, key)
 		if not variants:
 			continue
-		chosen, supported = _choose_view(variants, desired)
+		chosen, supported = _choose_view(
+			variants, desired, allow_extrapolated=not _source_pixels_locked(project, [key], rows)
+		)
 		selected_views.append(value(chosen, "reference_key"))
 		available = ", ".join(dict.fromkeys(product_view_kind(row) for row in variants))
 		chosen_text = (
@@ -883,9 +955,11 @@ def constrain_product_views(project, plan, required_view=None):
 		locked = _source_pixels_locked(project, selected_views, rows)
 		if locked:
 			plan["image_prompt"] = _unheld_opening(plan.get("image_prompt"), notes)
+		angles = {product_view_kind(rows[key]) for key in selected_views}
+		angle_label = next(iter(angles)) if len(angles) == 1 else "source"
 		plan["image_prompt"] = (
 			str(plan.get("image_prompt") or "").rstrip(". ")
-			+ f". Product orientation is locked to the selected {desired} view; do not invent unseen packaging geometry or printed surfaces. "
+			+ f". Product orientation is locked to the selected {angle_label} view; do not invent unseen packaging geometry or printed surfaces. "
 			"Align the visible package base and receding edges with the support plane and camera perspective; "
 			+ (
 				# The source-pixel lock replaces exactly one detected pack with the

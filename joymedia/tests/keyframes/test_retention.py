@@ -8,6 +8,37 @@ from scripts.identity_screening_qualification import verify
 
 
 class TestReferenceRetention(TestCase):
+	def test_source_matte_proportions_do_not_require_accepting_its_scene_placement(self):
+		import io
+		import tempfile
+		from pathlib import Path
+
+		from PIL import Image
+
+		from joymedia.services.consistency.retention import remember_source_outline, source_outline
+
+		buffer = io.BytesIO()
+		Image.new("RGBA", (180, 100), (100, 20, 40, 255)).save(buffer, "PNG")
+		report = {"source_sha256": "SOURCE", "recipe_sha256": "RECIPE", "source_rgb_unchanged": True}
+		with (
+			tempfile.TemporaryDirectory() as folder,
+			patch(
+				"joymedia.services.consistency.retention._source_outline_path",
+				return_value=Path(folder) / "outline.json",
+			),
+			patch.object(frappe.cache, "set_value") as cache,
+			patch.object(frappe.cache, "get_value", return_value=None),
+		):
+			remember_source_outline(buffer.getvalue(), report, "SOURCE", {"recipe_sha256": "RECIPE"})
+			self.assertEqual("joymedia:source-outline:v1:SOURCE", cache.call_args.args[0])
+			self.assertEqual(1.8, cache.call_args.args[1]["width_height_ratio"])
+			self.assertEqual(1.8, source_outline("SOURCE", {"recipe_sha256": "RECIPE"})["width_height_ratio"])
+			self.assertEqual({}, source_outline("OTHER", {"recipe_sha256": "RECIPE"}))
+			self.assertEqual({}, source_outline("SOURCE", {"recipe_sha256": "OTHER"}))
+			with self.assertRaises(ValueError):
+				remember_source_outline(buffer.getvalue(), report, "OTHER", {"recipe_sha256": "RECIPE"})
+			self.assertEqual(1, cache.call_count)
+
 	def test_product_rules_are_case_and_provider_independent(self):
 		for source in ["tissue-photo", "ceramic-vase", "cosmetic-bottle"]:
 			refs = [{"reference_role": "Product", "asset_version": source}]
@@ -138,6 +169,7 @@ class TestReferenceRetention(TestCase):
 			"recipe_sha256": "RECIPE",
 			"source_rgb_unchanged": True,
 			"box": [8, 8, 16, 16],
+			"detections": [{"box": [8, 8, 24, 24]}],
 		}
 		frozen = {"recipe_sha256": "RECIPE"}
 		validate_prepared(png(canvas), patch_bytes, report, "SOURCE", frozen)
@@ -146,6 +178,8 @@ class TestReferenceRetention(TestCase):
 			{"source_sha256": "OTHER"},
 			{"recipe_sha256": "LATEST"},
 			{"box": [8, 8, 17, 16]},
+			{"detections": []},
+			{"detections": [{"box": [8, 12, 24, 24]}]},
 		]:
 			with self.assertRaises(ValueError):
 				validate_prepared(png(canvas), patch_bytes, {**report, **changed}, "SOURCE", frozen)

@@ -11,6 +11,7 @@ class TestReferenceMetadata(TestCase):
 			"source_asset_version": "original",
 			"product_view": "back",
 			"product_view_status": "ai_extrapolated_candidate",
+			"product_identity_qualification_version": 2,
 			"view_geometry_verified": False,
 			"unknown_panels": "inferred and unverified",
 			"subject_cutout": {"source_hash": "hash"},

@@ -167,7 +167,7 @@ def compile_segment_prompt_from_snapshot(
 			)
 		text = _unheld_product_staging(shot, text)
 		if prompt_source != "image":
-			text = _grounded_cast_staging(shot, text)
+			text = _grounded_cast_staging(shot, text, project)
 		# Continuation segments are written from the creative text, so they need the cast and audio rules too.
 		if prompt_source != "motion" or segment_count == 1:
 			return text
@@ -325,7 +325,7 @@ def _compact_geometry_retry(shot, project, references):
 	"""
 	opening = str(shot.get("image_prompt") or shot.get("generation_prompt") or "").strip()
 	parts = [
-		_grounded_cast_staging(shot, "Opening still, before any action. " + opening),
+		_grounded_cast_staging(shot, "Opening still, before any action. " + opening, project),
 		_keyframe_retry_direction(shot).strip(),
 		_image_reference_roles(references),
 		_character_look_text(references).strip(),
@@ -384,7 +384,9 @@ def compile_prompt_for_documents(
 			if "Critical geometry:" in retry_note and _keyframe_retry_direction(shot):
 				return _compact_geometry_retry(shot, project, references)
 			return (
-				_grounded_cast_staging(shot, _with_opening_staging(_draw_prompt(shot, project), shot))
+				_grounded_cast_staging(
+					shot, _with_opening_staging(_draw_prompt(shot, project), shot), project
+				)
 				+ _image_reference_roles(references)
 				+ _character_look_text(references)
 				+ _product_viewpoint_text(references)
@@ -407,7 +409,7 @@ def compile_prompt_for_documents(
 			+ _character_look_text(getattr(shot, "references", None) or [])
 			+ _product_viewpoint_text(getattr(shot, "references", None) or [])
 		)
-		prompt = _grounded_cast_staging(shot, prompt)
+		prompt = _grounded_cast_staging(shot, prompt, project)
 		references = getattr(shot, "references", None) or []
 		roles = {_role_of(reference) for reference in references}
 		if references and "product" not in roles and not (shot.get("products") or []):
@@ -501,7 +503,40 @@ def compile_prompt_for_documents(
 	return prompt.strip()
 
 
-def _grounded_cast_staging(shot, text):
+def _relative_product_scale(shot, project):
+	"""Carry explicit size controls into drawing, independent of reference-image crop."""
+	if not project:
+		return ""
+	rows = {
+		_ref_field(row, "asset_version"): row
+		for row in project.get("references") or project.get("selected_media") or []
+	}
+	actors, products = [], []
+	for reference in shot.get("references") or []:
+		row = rows.get(_ref_field(reference, "asset_version"))
+		if row is None:
+			continue
+		scale = float(_ref_field(row, "scale") or _ref_field(row, "relative_size") or 1)
+		role = str(
+			_ref_field(reference, "reference_role") or _ref_field(reference, "input_role") or ""
+		).lower()
+		if role == "character":
+			actors.append(scale)
+		elif role == "product":
+			products.append(scale)
+	# Defaults do not establish a measured physical ratio. Do not turn 1/1 into
+	# an assertion that a character and a product must be equally tall.
+	if len(actors) != 1 or len(products) != 1 or actors[0] == products[0]:
+		return ""
+	return (
+		f"\n\nRelative scene scale: at comparable depth, the character's body height is approximately "
+		f"{actors[0] / products[0]:.2g} times the product's height. Scale the whole subjects uniformly, "
+		"preserving their designs and body proportions. Fit the furniture and reachable contact to this scale. "
+		"Reference-image crop is not physical size. Keep the authored pose and detail crop; do not reveal offscreen anatomy."
+	)
+
+
+def _grounded_cast_staging(shot, text, project=None):
 	"""A cast character is placed the way a real body could be: whole and supported.
 
 	Picture models otherwise cut a mascot through furniture (upper body above a
@@ -549,7 +584,7 @@ def _grounded_cast_staging(shot, text):
 				" Keep a distinct actor hand or paw visibly touching and supporting any held product "
 				"throughout the action; the product must not hover in front of the body."
 			)
-	return text
+	return text + _relative_product_scale(shot, project)
 
 
 def _unheld_product_staging(shot, text):
@@ -736,15 +771,13 @@ def _product_viewpoint_text(references):
 	The product lock pastes that photo unchanged, so a room drawn from another
 	height or angle leaves the pack visibly out of perspective with the floor.
 	"""
-	from joymedia.services.keyframes.overlay import _cutout_path
 	from joymedia.services.review.consistency import ask
 
 	for reference in references or []:
 		if _role_of(reference) != "product":
 			continue
 		version = _ref_field(reference, "asset_version")
-		path = _cutout_path(version) if version else None
-		if not path:
+		if not version:
 			continue
 		cache_key = f"joymedia:product-viewpoint:v1:{version}"
 		answer = frappe.cache.get_value(cache_key)
