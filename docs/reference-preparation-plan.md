@@ -113,8 +113,9 @@ lineage and a clip SHA-256 identify the selected frame.
 
 The registered local route is PIPE-00071: WF-02700 storyboard images, WF-02695
 animation, with independent WF-02656 empty environments. Its product default
-remains source_pixels. `create_product_batch` accepts an explicit registered
-generation_pipeline without changing the source project's settings.
+remains source_pixels. Batch requests honor the project's trusted backend
+execution pin; client RPCs do not select internal recipes. This preserves the
+application's administrator-only pipeline configuration boundary.
 
 The live isolated H3 trial followed a tight paws-and-plain-tissue composition
 more closely than the repeated full-body Flux results. Its clip and six samples
