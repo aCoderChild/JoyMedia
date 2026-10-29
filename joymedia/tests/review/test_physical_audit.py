@@ -22,6 +22,11 @@ class TestPhysicalAudit(FrappeTestCase):
 	def test_support_is_extracted_only_from_explicit_unambiguous_opening(self):
 		self.assertEqual("ground", opening_actor_support("The actor is seated on the rug beside the table."))
 		self.assertEqual("work_surface", opening_actor_support("The miniature stands on the coffee table."))
+		self.assertEqual("ground", opening_actor_support("The mascot is sitting on a cozy rug."))
+		self.assertEqual(
+			"seat", opening_actor_support("The actor sits on a small wooden chair beside a rug.")
+		)
+		self.assertIsNone(opening_actor_support("The actor sits on a cushion above the floor."))
 		self.assertIsNone(opening_actor_support("There is a rug and a table in the room."))
 		self.assertIsNone(opening_actor_support("One actor sits on the rug; another sits on the sofa."))
 

@@ -19,6 +19,28 @@ def _streamed(content):
 
 
 class TestChecks(FrappeTestCase):
+	def test_floor_pack_does_not_get_a_table_scale_test_from_compiler_boilerplate(self):
+		shot = frappe._dict(
+			keyframe_artifact="frame",
+			media_project="project",
+			start_state="The pack rests on the rug.",
+			image_prompt="The pack rests on the rug. Product orientation is locked. It rests on its table or floor.",
+			generation_inputs=[frappe._dict(reference_role="Product")],
+		)
+		with patch.object(frappe.db, "get_value", return_value="/frame.png"):
+			checks = consistency.frame_checks(shot)
+		self.assertNotIn(consistency.PRODUCT_TABLE_SCALE, [q for _, q, _, _ in checks])
+
+	def test_automatic_batch_is_the_only_owner_of_frame_redraws(self):
+		with (
+			patch.object(consistency, "_automatic_preview_in_progress", return_value=True),
+			patch("joymedia.services.keyframes.stage.generate_keyframes") as generate,
+			patch.object(frappe.db, "sql") as query,
+		):
+			consistency.redo_waiting("project")
+		generate.assert_not_called()
+		query.assert_not_called()
+
 	def test_boolean_and_count_answers_cannot_impersonate_each_other(self):
 		for expected, answer in (
 			(True, {"answer": 1}),
@@ -534,6 +556,7 @@ class TestConsistencyLoop(FrappeTestCase):
 	def test_waiting_scenes_go_in_one_run_and_only_when_no_run_is_going(self):
 		names = {"Redrawing": ["S1", "S3"], "Redoing": []}
 		with (
+			patch.object(consistency, "_automatic_preview_in_progress", return_value=False),
 			patch.object(frappe.db, "sql", return_value=[[1]]),
 			patch.object(frappe.db, "exists", return_value=False),
 			patch.object(
@@ -548,6 +571,7 @@ class TestConsistencyLoop(FrappeTestCase):
 			consistency.redo_waiting("PRJ-X")
 		redraw.assert_called_once_with("PRJ-X", ["S1", "S3"], automatic=True)
 		with (
+			patch.object(consistency, "_automatic_preview_in_progress", return_value=False),
 			patch.object(frappe.db, "sql", return_value=[[1]]),
 			patch.object(frappe.db, "exists", return_value=True),
 			patch("joymedia.services.keyframes.stage.generate_keyframes") as redraw,

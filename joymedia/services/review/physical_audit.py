@@ -43,7 +43,8 @@ def opening_actor_support(opening):
 	"""
 	mentions = re.findall(
 		r"\b(?:seated|sitting|sits|standing|stands)\s+(?:directly\s+)?on\s+"
-		r"(?:(?:a|an|the)\s+)?(coffee table|rug|floor|ground|chair|sofa|seat|bench|table|counter)\b",
+		r"(?:(?:a|an|the)\s+)?(?:(?:cozy|soft|thick|thin|small|large|low|wooden|padded|patterned)\s+){0,3}"
+		r"(coffee table|rug|floor|ground|chair|sofa|seat|bench|table|counter)\b",
 		str(opening or ""),
 		re.I,
 	)

@@ -10,6 +10,40 @@ from joymedia.services.scene.prompt_scope import (
 
 
 class TestPromptScope(TestCase):
+	def test_static_product_ending_avoids_an_inferred_move_but_honors_authored_camera(self):
+		import copy
+
+		from joymedia.services.planning.camera import camera_plan
+
+		scene = {
+			"duration_seconds": 3,
+			"references": [{"reference_role": "product", "asset_version": "P"}],
+			"motion_plan_json": {
+				"shot_structure": {
+					"stage": "hero",
+					"framing": "close_up",
+					"angle": "eye_level",
+					"subject_motion": "stationary",
+					"keep_visible": [],
+				},
+				"actions": [
+					{
+						"action": "The original product remains in its established position with its printed artwork intact.",
+						"start": 0,
+						"end": 3,
+					}
+				],
+				"camera_intent": {"behavior": "push_in", "allow_reframe": False, "purpose": "reveal"},
+			},
+		}
+		self.assertEqual("locked", camera_plan(scene, {}, is_final=True)["behavior"])
+		authored = copy.deepcopy(scene)
+		authored["motion_plan_json"]["camera_intent"]["source"] = "authored"
+		self.assertEqual("push_in", camera_plan(authored, {}, is_final=True)["behavior"])
+		self.assertEqual(
+			"push_in", camera_plan(scene, {"camera_grammar": {"moves": {}}}, is_final=True)["behavior"]
+		)
+
 	def test_package_lock_does_not_confuse_held_contents_with_a_held_package(self):
 		from joymedia.services.planning.creative import unheld_package_opening_errors
 
@@ -28,6 +62,31 @@ class TestPromptScope(TestCase):
 		):
 			with self.subTest(opening=opening):
 				self.assertEqual([], unheld_package_opening_errors({"scenes": [{"visual_camera": opening}]}))
+		self.assertTrue(
+			unheld_package_opening_errors(
+				{
+					"scenes": [
+						{
+							"visual_camera": "The pack rests on the rug.",
+							"continuity_rules": "The mascot holds the pack.",
+						}
+					]
+				}
+			)
+		)
+		self.assertEqual(
+			[],
+			unheld_package_opening_errors(
+				{
+					"scenes": [
+						{
+							"visual_camera": "The pack rests on the rug.",
+							"continuity_rules": "After the lift, the mascot holds the pack.",
+						}
+					]
+				}
+			),
+		)
 
 	def test_handled_sheet_keeps_paper_material_but_a_pack_is_not_a_sheet(self):
 		self.assertIn(

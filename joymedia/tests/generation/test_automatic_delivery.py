@@ -9,6 +9,75 @@ from joymedia.services.generation.automation import advance_automatic_run, curre
 
 
 class TestAutomaticDelivery(TestCase):
+	def test_floor_layout_repair_uses_the_native_location_stage_without_approval(self):
+		from joymedia.services.generation import creative_batch as cb
+
+		project = frappe._dict(name="project")
+		batch = frappe._dict(name="batch", request_json='{"delivery_mode":"automatic"}')
+		run = frappe._dict(
+			name="run",
+			status="Running",
+			media_project="project",
+			project_snapshot_json='{"automatic_delivery":{"batch":"batch"}}',
+		)
+		variants = [{"status": "Keyframes", "keyframe_request": {"run": "run"}}]
+		with (
+			patch("frappe.get_all", return_value=[]),
+			patch("frappe.get_doc", return_value=run),
+			patch(
+				"joymedia.services.keyframes.locations.missing_places",
+				return_value={"location_floor_room": "living room"},
+			),
+			patch("joymedia.services.generation.orchestrator.cancel_run") as cancel,
+			patch.object(
+				cb,
+				"_start_keyframes",
+				side_effect=lambda project, variant, *args: variant.update(status="Locations"),
+			) as prepare,
+			patch.object(cb, "_write"),
+		):
+			self.assertTrue(cb._refresh_automatic_floor_location(batch, variants, 0, project))
+		cancel.assert_called_once_with("run")
+		self.assertEqual("Locations", variants[0]["status"])
+		self.assertEqual("run", variants[0]["floor_location_repair"]["previous_run"])
+		prepare.assert_called_once_with(project, variants[0], {"delivery_mode": "automatic"}, "batch")
+
+	def test_checker_update_creates_a_new_immutable_automatic_frame_run(self):
+		from contextlib import nullcontext
+
+		from joymedia.services.generation import creative_batch as cb
+
+		snapshot = json.dumps(
+			{
+				"visual_admission": {"implementation_sha256": "old"},
+				"automatic_delivery": {"batch": "batch", "mode": "automatic", "export_purpose": "review"},
+			}
+		)
+		run = frappe._dict(
+			name="old-run", media_project="project", status="Running", project_snapshot_json=snapshot
+		)
+		batch = frappe._dict(name="batch", request_json='{"delivery_mode":"automatic"}')
+		project = frappe._dict(name="project", generation_pipeline="pipeline")
+		variants = [{"keyframe_request": {"run": "old-run"}}]
+		with (
+			patch("frappe.get_doc", return_value=run),
+			patch.object(frappe.db, "exists", return_value=False),
+			patch("joymedia.services.review.admission.implementation_hash", return_value="new"),
+			patch("joymedia.services.generation.orchestrator.cancel_run") as cancel,
+			patch(
+				"joymedia.services.keyframes.stage.generate_keyframes",
+				return_value={"run": "new-run", "status": "Queued"},
+			) as generate,
+			patch.object(cb, "pinned_execution", return_value=nullcontext()),
+			patch.object(cb, "_write"),
+		):
+			self.assertTrue(cb._refresh_automatic_frame_policy(batch, variants, 0, project))
+		cancel.assert_called_once_with("old-run")
+		generate.assert_called_once_with("project", draw_places=False, automatic=True)
+		self.assertEqual(snapshot, run.project_snapshot_json)
+		self.assertEqual("new-run", variants[0]["keyframe_request"]["run"])
+		self.assertEqual("old-run", variants[0]["frame_policy_refreshes"][0]["run"])
+
 	def test_script_rewrite_cannot_stop_an_unrelated_run(self):
 		from joymedia.services.generation import creative_batch as cb
 

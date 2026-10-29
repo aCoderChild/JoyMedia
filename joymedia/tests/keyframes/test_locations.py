@@ -32,6 +32,54 @@ def _shot(name, setting, environment=None, camera="Wide shot."):
 
 
 class TestLocationPlates(FrappeTestCase):
+	def test_floor_story_does_not_reuse_a_tabletop_plate_or_parse_boilerplate_as_furniture(self):
+		import json
+
+		shot = frappe._dict(
+			setting_prompt="Cozy living room",
+			image_prompt="The mascot sits on a cozy rug. Product orientation is locked. Its table or floor is visible.",
+		)
+		staging = locations._location_staging(shot)
+		self.assertIn("floor work area", staging)
+		self.assertNotIn("working table", staging)
+		source = {
+			"selected_demo": {
+				"scenes": [
+					{
+						"place": "Cozy living room",
+						"camera": "The mascot sits on a cozy rug.",
+						"action": "Extract a tissue from the supported pack.",
+					}
+				]
+			}
+		}
+		project = frappe._dict(
+			storyboard_source_json=json.dumps(source),
+			selected_media=[
+				frappe._dict(
+					reference_key=locations.location_key("Cozy living room"),
+					label="Location 1: Cozy living room",
+				)
+			],
+		)
+		self.assertTrue(locations.place_key(project, "Cozy living room").startswith("location_floor_"))
+		source["selected_demo"]["scenes"][0]["camera"] += " Beside a working table."
+		project.storyboard_source_json = json.dumps(source)
+		self.assertEqual(
+			locations.location_key("Cozy living room"), locations.place_key(project, "Cozy living room")
+		)
+
+	def test_floor_location_rejects_a_table_occupying_its_action_space(self):
+		with patch(
+			"joymedia.services.review.consistency.ask",
+			side_effect=[{"answer": False}, {"answer": False}, {"answer": False}],
+		):
+			self.assertFalse(
+				locations._location_supports_staging(
+					b"plate", "living room", "clear foreground floor work area"
+				)
+			)
+
 	def test_separate_location_fit_checks_require_all_three_and_no_negative_summary(self):
 		for fit, expected in [
 			({"scale": True, "visual_fit": True, "placement": True}, True),

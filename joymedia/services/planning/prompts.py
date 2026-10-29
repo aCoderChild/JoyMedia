@@ -325,7 +325,7 @@ def _compact_geometry_retry(shot, project, references):
 	"""
 	opening = str(shot.get("image_prompt") or shot.get("generation_prompt") or "").strip()
 	parts = [
-		"Opening still, before any action. " + opening,
+		_grounded_cast_staging(shot, "Opening still, before any action. " + opening),
 		_keyframe_retry_direction(shot).strip(),
 		_image_reference_roles(references),
 		_character_look_text(references).strip(),
@@ -336,6 +336,9 @@ def _compact_geometry_retry(shot, project, references):
 			"The product photo controls the one physical product's geometry and printed artwork. "
 			"Preserve its existing face, proportions and text; do not redraw a different pack."
 		)
+	material = sheet_material_instruction(opening + " " + str(shot.get("start_state") or ""))
+	if material:
+		parts.append(material)
 	return "\n\n".join(part.strip() for part in parts if part.strip())
 
 
@@ -507,6 +510,31 @@ def _grounded_cast_staging(shot, text):
 	refs = (shot.get("references") if hasattr(shot, "get") else getattr(shot, "references", None)) or []
 	roles = {str(_ref_field(r, "reference_role") or _ref_field(r, "input_role") or "").lower() for r in refs}
 	if roles & {"character", "person"}:
+		from joymedia.services.review.physical_audit import opening_actor_support
+
+		if (
+			opening_actor_support(
+				str(shot.get("image_prompt") or "") + " " + str(shot.get("start_state") or "")
+			)
+			== "ground"
+		):
+			from joymedia.services.planning.shot_structure import structure_for
+
+			structure = structure_for(shot)
+			detail = (structure or {}).get("framing") in {"close_up", "extreme_close_up"} or bool(
+				re.search(r"\bclose[- ]?up\b", str(shot.get("image_prompt") or ""), re.I)
+			)
+			contact = (
+				"Preserve the close crop around the authored contact area; keep offscreen anatomy offscreen. "
+				if detail
+				else "Show that floor directly beneath its pelvis or weight-bearing feet. "
+			)
+			text += (
+				"\n\nThe actor sits or stands directly on the foreground floor or rug in the authored pose, "
+				"outside every table footprint. "
+				+ contact
+				+ "Any table is behind or beside the actor, never beneath its body."
+			)
 		text += (
 			"\n\nPhysical actor staging: preserve the opening pose and support specified by this scene. "
 			"The floor or seat visibly supports its weight; never invent a chair when the scene specifies "

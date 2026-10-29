@@ -95,6 +95,15 @@ before starting a replacement. It never cancels an unrelated project's work.
 CRB-00103 exercised this transition from PRJ-02725 / RUN-01358 to PRJ-02726 after
 detecting incompatible openings in scenes 2 and 5. No manual approval was used.
 
+An automatic first-frame run whose frozen checker fingerprint predates a hotfix
+can be replaced by a new immutable run, at most twice per variant. The original
+report/snapshot remain unchanged, and cancellation is restricted to the batch's
+own project/run. This is not a seed retry or a reinterpretation of a failed
+report. CRB-00103 exercised RUN-01359 → RUN-01360 after support extraction was
+fixed to recognize explicit phrases such as “sitting on a cozy rug.” The image
+prompt now reinforces foreground floor contact outside table footprints; compact
+geometry retries also retain the handled-paper material rule.
+
 The V16 review cut, `PRJ-02593` / `ASTV-05069`, is a 30 s, 720×1280, 24 fps film
 with audio. Its source-art inserts preserve printed information. The selected
 moving takes and its stale shot-5 disposal label/source metadata do not establish

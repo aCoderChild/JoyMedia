@@ -142,8 +142,15 @@ def analyse_asset_version(asset_version_name, as_product=False):
 		"qualified_pose_and_support",
 		"qualified_pose_view",
 		"identity_appearance",
+		"environment_contract",
+		"product_view",
+		"product_view_status",
+		"visible_source_retained",
+		"view_geometry_verified",
+		"unknown_panels",
+		"subject_cutout",
 	):
-		if stored.get(key):
+		if stored.get(key) or stored.get(key) is False:
 			analysis[key] = stored[key]
 	frappe.db.set_value(
 		"Asset Version",

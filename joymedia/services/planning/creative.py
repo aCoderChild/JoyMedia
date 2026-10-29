@@ -669,9 +669,12 @@ def unheld_package_opening_errors(script):
 	)
 	errors = []
 	for index, scene in enumerate(script.get("scenes") or [], 1):
-		for clause in re.split(r"[.!?;\n]+", str(scene.get("visual_camera") or "")):
+		direction = str(scene.get("visual_camera") or "") + "\n" + str(scene.get("continuity_rules") or "")
+		for clause in re.split(r"[.!?;\n]+", direction):
 			if re.search(r"\b(?:not|never|no|without|printed|artwork|illustration)\b", clause, re.I):
 				continue
+			if re.search(r"\b(?:after|then|later|eventually|ending|ends)\b", clause, re.I):
+				continue  # Explicit later results do not declare an already-held opening.
 			if grip.search(clause):
 				errors.append(
 					f"Scene {index} opens with a held package, incompatible with source-pixel package preservation. "

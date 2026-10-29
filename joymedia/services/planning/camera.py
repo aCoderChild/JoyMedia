@@ -306,6 +306,19 @@ def _camera_plan(shot, project, is_final=False, framing_safety=None, generated_c
 	# handling scenes and without boundary images; it is worded as planned, never
 	# as reviewed, and keeps contact and product legibility instructions.
 	authored = bool(intent and intent.get("source") == "authored" and intent["behavior"] != "locked")
+	if closing and not authored and not project.get("camera_grammar"):
+		from joymedia.services.consistency.retention import authored_static_product_hold
+
+		if authored_static_product_hold(shot):
+			# The application's literal product hold needs no generative camera
+			# move. Preserve its source pixels instead of inventing motion merely
+			# to satisfy a default cinematic grammar. Explicit moves still win.
+			intent = {
+				"behavior": "locked",
+				"allow_reframe": False,
+				"purpose": "resolve",
+				"energy": "measured",
+			}
 	if not intent and project.get("cinematic_camera"):
 		if not structure:
 			raise ValueError("Cinematic generation requires semantic shot structure. Replan this scene.")

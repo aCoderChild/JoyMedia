@@ -139,7 +139,8 @@ def place_key(project, setting):
 	"""The key of the picture of the place a setting describes. A setting worded differently from a place already drawn
 	("Family dining room with warm light" after "Warm, cozy family dining room with a wooden table") is the same place:
 	re-planning a scene must not give it a new room."""
-	key = location_key(setting)
+	floor = _floor_location_required(project, setting)
+	key = location_key(setting).replace("location_", "location_floor_", 1) if floor else location_key(setting)
 	for row in project.get("selected_media") or []:
 		known = row.reference_key or ""
 		if known == key:
@@ -149,12 +150,32 @@ def place_key(project, setting):
 		known, label = row.reference_key or "", row.label or ""
 		if (
 			known.startswith("location_")
+			and floor == known.startswith("location_floor_")
 			and not known.endswith(CLOSE)
 			and label.startswith("Location ")
 			and same_place(place, label.split(":", 1)[-1])
 		):
 			return known
 	return key
+
+
+def _floor_location_required(project, setting):
+	"""Keep generated floor-only action spaces separate from tabletop plates."""
+	from joymedia.services.review.physical_audit import opening_actor_support
+
+	try:
+		source = frappe.parse_json(project.get("storyboard_source_json") or "{}") or {}
+		scenes = (source.get("selected_demo") or {}).get("scenes") or []
+		scenes = [s for s in scenes if same_place(str(s.get("place") or setting), setting)]
+		opens = [str(s.get("camera") or s.get("visual_camera") or "") for s in scenes]
+		text = " ".join(
+			str(s.get(k) or "") for s in scenes for k in ("camera", "visual_camera", "action", "place")
+		)
+		return any(opening_actor_support(o) == "ground" for o in opens) and not re.search(
+			r"\b(?:table|desk|counter|worktop)\b", text, re.I
+		)
+	except (TypeError, ValueError):
+		return False
 
 
 def view_key(project, view, setting):
@@ -351,10 +372,16 @@ def render_place(project, setting, view=False, staging=""):
 
 	workflow_version = _keyframe_workflow(project)
 	settings = _project_settings(project)
-	from joymedia.services.planning.prompts import _mood
+	from joymedia.services.planning.prompts import MEDIUM_LOCK, _mood
 
 	# The film's own style and mood (the Brand sheet, Tone & Mood): the place is drawn as the frames will be drawn.
 	table_guidance = ""
+	if "floor work area" in staging:
+		table_guidance = (
+			"The main action space is a large continuous EMPTY foreground rug or floor, fully visible and "
+			"unobstructed. Keep sofas and other furniture at the back or sides. No coffee table or other "
+			"raised work surface occupies this foreground floor area. The rug remains completely empty. "
+		)
 	if "working table" in staging:
 		table_guidance = (
 			"The main subject is a COMPLETELY EMPTY action tabletop: its entire upper surface "
@@ -374,9 +401,10 @@ def render_place(project, setting, view=False, staging=""):
 		f"{table_guidance}{_architectural_setting(setting)}\n\n{VIEW_SETTING if view else LOCATION_PLATE} "
 		f"Furnish the location for these upcoming shot compositions and support surfaces: {staging}. "
 		"Make the named action furniture prominent and reachable in the foreground; do not make an unmentioned "
-		"piece of furniture the room's dominant feature. Keep the actor's planned floor or seat position open. "
+		"piece of furniture the room's dominant feature. Keep the foreground floor and seating surfaces exposed. "
 		"An unoccupied environmental establishing plate: architecture and furnishings only. The main action "
-		f"surface is completely bare and the foreground is clear. {_mood(project)}"
+		"surface is completely bare and the foreground is clear. Wall art uses abstract shapes without faces. "
+		+ _mood(project, avoid=False).replace(MEDIUM_LOCK, "")
 	).strip()
 	from joymedia.services.project.formats import require_dimensions
 
@@ -509,9 +537,12 @@ def _location_supports_staging(content, setting, staging):
 		)
 		if actor.get("answer") is not False:
 			return False
+		surface_name = (
+			"foreground floor or rug action area" if "floor work area" in staging else "main action tabletop"
+		)
 		foreground = ask(
 			content,
-			"Inspect the full main action tabletop at high resolution. List all loose objects resting on it, "
+			f"Inspect the full {surface_name} at high resolution. List all loose objects resting on it, "
 			"including books or magazines. Is the main working surface occupied by ANY loose object or transient action state, including a cup, "
 			"liquid, spill, stain, tissue, retail package, printed container, branded box, dispenser, logo or text-bearing product? "
 			"Ignore built-in furniture and fixed lighting. The work surface must be bare before the first action. "
@@ -521,6 +552,24 @@ def _location_supports_staging(content, setting, staging):
 		)
 		if foreground.get("answer") is not False:
 			return False
+		if "floor work area" in staging:
+			floor = ask(
+				content,
+				"Is there a large continuous, empty foreground floor or rug area for a seated actor and product, "
+				"with furniture behind or beside it? Answer false if a coffee table or raised surface occupies "
+				"the main foreground action space. Return JSON answer true, false or null and reason with visible evidence.",
+				schema={
+					"type": "object",
+					"additionalProperties": False,
+					"required": ["answer", "reason"],
+					"properties": {
+						"answer": {"type": ["boolean", "null"]},
+						"reason": {"type": "string", "minLength": 1},
+					},
+				},
+			)
+			if floor.get("answer") is not True:
+				return False
 		if "working table" in staging:
 			surface = ask(
 				content,
@@ -549,7 +598,7 @@ def _location_supports_staging(content, setting, staging):
 			table = ask(
 				content,
 				"Inspect only the main foreground working table. If its entire tabletop and base are visible, "
-				"does it have exactly four distinct legs attached to that one tabletop, each meeting the floor, "
+				"does it have a coherent load-bearing base connected to that one tabletop and meeting the floor, "
 				"without a duplicated, fused or floating leg? Return JSON answer=true if visibly correct, "
 				"false if visibly incorrect, null if the base is occluded; include reason. "
 				"Do not infer hidden legs.",
@@ -611,7 +660,14 @@ def _location_supports_staging(content, setting, staging):
 
 def _location_staging(shot):
 	"""Request only support furniture; never copy transient shot props into a shared plate."""
-	text = " ".join((shot.setting_prompt or "", shot.image_prompt or ""))
+	# Product-view boilerplate lists "table or floor" as generic examples. It
+	# must not create an action table absent from the authored opening.
+	opening = str(shot.image_prompt or "").split("Product orientation is locked", 1)[0]
+	text = " ".join((shot.setting_prompt or "", opening))
+	if re.search(r"\b(?:rug|floor|ground)\b", text, re.I) and not re.search(
+		r"\b(?:table|desk|counter|worktop)\b", text, re.I
+	):
+		return "clear foreground floor work area and rug, with furniture behind or beside the action space"
 	supports = [
 		label
 		for label, pattern in (
@@ -652,6 +708,10 @@ def _store_place(project, key, label, content):
 	asset = create_media_asset(
 		label, "Background", file_url=image.file_url, file_name=image.name, source="Generated"
 	)
+	version = frappe.get_doc("Asset Version", asset["asset_version"])
+	analysis = frappe.parse_json(version.analysis_json or "{}") or {}
+	analysis["environment_contract"] = {"physical_cast": [], "stage": "empty_location_plate"}
+	version.db_set("analysis_json", frappe.as_json(analysis), update_modified=False)
 	select_project_asset(project.name, asset["media_asset"], "Environment", label, reference_key=key)
 
 

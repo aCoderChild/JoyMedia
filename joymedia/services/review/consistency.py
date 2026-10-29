@@ -39,7 +39,7 @@ def _automatic_preview_in_progress(project_name):
 	try:
 		batches = frappe.get_all(
 			"Creative Batch",
-			filters={"status": ["in", ["Queued", "Planning", "Rendering", "Finishing"]]},
+			filters={"status": ["in", ["Queued", "Planning", "Rendering", "Finishing", "Needs Attention"]]},
 			fields=["request_json", "variants_json"],
 		)
 	except Exception:
@@ -250,6 +250,11 @@ def redo_waiting(project_name):
 	from joymedia.services.generation.takes import _ensure_scene_free, _start_takes_run
 	from joymedia.services.keyframes.stage import generate_keyframes
 
+	if _automatic_preview_in_progress(project_name):
+		# The batch owns redraw budgets, correction prompts and run lineage.
+		# A held batch must not acquire competing, untracked replacement runs.
+		return
+
 	lock = f"joymedia-redo-{project_name}"
 	if not frappe.db.sql("select get_lock(%s, 30)", lock)[0][0]:
 		return
@@ -432,8 +437,9 @@ ACTOR_ON_TABLETOP = (
 	"Return a JSON object with answer set to true, false, or null and a reason."
 )
 PRODUCT_TABLE_SCALE = (
-	"Is the advertised handheld retail pack implausibly large relative to the table supporting it, "
-	"occupying about half or more of the visible tabletop width at the same depth? "
+	"Is the advertised retail package clearly implausibly large relative to its actual supporting table at the same depth? "
+	"A foreground package and a background table cannot be compared by screen width. "
+	"A package occupying half a small table is not by itself a defect; do not invent physical dimensions. "
 	"Answer true only when both widths can be compared and the scale is clearly implausible; "
 	"false when proportionate, or null when the table is cropped or perspective prevents comparison. "
 	"Return a JSON object with answer set to true, false, or null and a reason with estimated ratio."
@@ -448,7 +454,7 @@ PRODUCT_SUPPORT = (
 	"visible support consistent with this opening direction: {opening}? Its base should contact a table or floor "
 	"over a stable area, or a visible paw/hand should clearly grip and bear its weight. "
 	"A package projecting past an edge without a clear load-bearing grip is unsupported. A product on the "
-	"floor does not satisfy a direction placing it on a table. If the retail package clearly rests on a table, answer true "
+	"floor does not satisfy a direction placing it on a table. If the retail package clearly rests on its authored table or floor, answer true "
 	"even when the actor does not touch it. Never use the actor's posture as evidence about package support. "
 	"Return JSON with answer true, false, or "
 	"null for uncertainty, and reason explaining visible evidence."
@@ -653,13 +659,17 @@ def frame_checks(shot):
 		frappe.scrub(row.reference_role or "") == "product" for row in shot.generation_inputs or []
 	)
 	if has_product:
+		authored_opening = " ".join(
+			str(shot.get(field) or "").split("Product orientation is locked", 1)[0]
+			for field in ("start_state", "image_prompt")
+		)
 		if re.search(
 			r"\b(?:pack|package|box)\b",
-			" ".join(str(shot.get(field) or "") for field in ("start_state", "image_prompt")),
+			authored_opening,
 			re.I,
 		) and re.search(
 			r"\b(?:table|desk|counter)\b",
-			" ".join(str(shot.get(field) or "") for field in ("start_state", "image_prompt")),
+			authored_opening,
 			re.I,
 		):
 			checks.append(

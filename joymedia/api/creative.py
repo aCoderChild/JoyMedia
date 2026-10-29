@@ -337,6 +337,47 @@ def get_product_batch(batch_name):
 	request = frappe.parse_json(batch.request_json or "{}")
 	for variant in variants:
 		variant["prepared_assets"] = _prepared_assets(variant)
+		if variant.get("project"):
+			from joymedia.services.scene.registry import project_reference_registry, scene_reference_bindings
+
+			variant["reference_registry"] = project_reference_registry(
+				frappe.get_doc("Media Project", variant["project"])
+			)
+			variant["scene_reference_map"] = []
+			for shot in frappe.get_all(
+				"Shot",
+				filters={"media_project": variant["project"], "is_removed": 0},
+				fields=["name", "shot_number", "shot_name"],
+				order_by="shot_number",
+			):
+				refs = frappe.get_all(
+					"Shot Reference",
+					filters={"parent": shot.name},
+					fields=["reference_role", "asset_version"],
+				)
+				try:
+					bindings = scene_reference_bindings(refs, variant["reference_registry"])
+				except ValueError as exc:
+					variant["scene_reference_map"].append(
+						{"shot": shot.name, "scene": shot.shot_number, "error": str(exc), "bindings": []}
+					)
+				else:
+					variant["scene_reference_map"].append(
+						{"shot": shot.name, "scene": shot.shot_number, "bindings": bindings}
+					)
+			for mapping in variant["scene_reference_map"]:
+				mapping["requested_poses"] = list(
+					dict.fromkeys(
+						r.get("requested_pose") or r.get("pose")
+						for r in variant.get("pose_views") or []
+						if r.get("scene") == mapping["scene"] and (r.get("requested_pose") or r.get("pose"))
+					)
+				)
+				written = (variant.get("script") or {}).get("scenes") or []
+				if 0 < mapping["scene"] <= len(written) and written[mapping["scene"] - 1].get("products"):
+					mapping["requested_product_view"] = (
+						written[mapping["scene"] - 1].get("product_view") or "source"
+					)
 		# The name read from the package as the project shows it; the script's is the English production name.
 		variant["product"] = (
 			frappe.db.get_value("Media Project", variant["project"], "product_name")

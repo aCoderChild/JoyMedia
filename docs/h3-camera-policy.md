@@ -33,6 +33,12 @@ must not silently attach every pose of the same identity. Structured framing als
 chooses broad or close location context. Empty, declared cast/product cells mean
 that role is absent from the shot, including reaction coverage and macro inserts.
 
+The application's literal stationary product-only ending defaults to a locked
+camera and the existing source-frame hold route. A default cinematic push-in
+must not force diffusion to regenerate that ending. Explicit authored camera
+moves and supplied reference camera grammar retain precedence; actual actor or
+material actions cannot be replaced by this hold.
+
 Prompt conformance is an intention, not measured footage. Verify decoded motion,
 framing, support, action and package artwork before selecting a take. Installed
 Ref2VA weights and valid references do not establish release qualification.

@@ -13,6 +13,17 @@ from joymedia.services.planning.prompts import (
 
 
 class TestPromptCompiler(FrappeTestCase):
+	def test_grounded_detail_does_not_force_offscreen_pelvis_or_feet_into_the_crop(self):
+		from joymedia.services.planning.prompts import _grounded_cast_staging
+
+		shot = frappe._dict(
+			image_prompt="Close-up of paws; the mascot is sitting on a cozy rug.",
+			references=[{"reference_role": "character"}],
+		)
+		text = _grounded_cast_staging(shot, "Opening detail.")
+		self.assertIn("keep offscreen anatomy offscreen", text)
+		self.assertNotIn("Show that floor directly beneath its pelvis", text)
+
 	def test_paper_material_is_preserved_in_its_opening_and_handling(self):
 		shot = frappe._dict(
 			name="SHOT-TEST",

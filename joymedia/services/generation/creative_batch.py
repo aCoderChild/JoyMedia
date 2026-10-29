@@ -2519,6 +2519,98 @@ def _restart_incompatible_package_openings(batch, variants, index, project):
 	return True
 
 
+def _refresh_automatic_frame_policy(batch, variants, index, project):
+	"""Start a new immutable frame run after a checker hotfix; never reinterpret old evidence."""
+	from joymedia.services.review.admission import implementation_hash
+
+	variant = variants[index]
+	run_name = (variant.get("keyframe_request") or {}).get("run")
+	if not run_name:
+		return False
+	run = frappe.get_doc("Generation Run", run_name)
+	snapshot = frappe.parse_json(run.get("project_snapshot_json") or "{}") or {}
+	frozen = snapshot.get("visual_admission") or {}
+	current = implementation_hash()
+	if not frozen or frozen.get("implementation_sha256") == current:
+		return False
+	if (
+		run.media_project != project.name
+		or (snapshot.get("automatic_delivery") or {}).get("batch") != batch.name
+	):
+		raise ValueError("Cannot refresh a first-frame run outside this automatic batch.")
+	if frappe.db.exists(
+		"Generation Run",
+		{
+			"media_project": project.name,
+			"status": ["in", ["Draft", "Queued", "Running"]],
+			"name": ["!=", run.name],
+		},
+	):
+		return False  # Let an already-running correction settle before creating another run.
+	refreshes = variant.setdefault("frame_policy_refreshes", [])
+	if len(refreshes) >= 2:
+		raise ValueError(
+			"First-frame checker changed repeatedly; wait for a stable implementation before retrying."
+		)
+	from joymedia.services.generation.orchestrator import cancel_run
+	from joymedia.services.keyframes.stage import generate_keyframes
+
+	if run.status not in {"Completed", "Failed", "Cancelled"}:
+		cancel_run(run.name)
+	request = frappe.parse_json(batch.request_json)
+	with pinned_execution(project.name, project.generation_pipeline), delivery_context(request, batch.name):
+		replacement = generate_keyframes(project.name, draw_places=False, automatic=True)
+	refreshes.append(
+		{
+			"run": run.name,
+			"replacement": replacement.get("run"),
+			"old_implementation": frozen.get("implementation_sha256"),
+			"implementation": current,
+		}
+	)
+	variant.update(keyframe_request=replacement, status="Keyframes")
+	_write(batch.name, variants, changed_index=index)
+	return True
+
+
+def _refresh_automatic_floor_location(batch, variants, index, project):
+	"""Replace a generated tabletop plate when the authored story needs only floor support."""
+	from joymedia.services.keyframes.locations import missing_places
+
+	shots = [
+		frappe.get_doc("Shot", n)
+		for n in frappe.get_all(
+			"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"
+		)
+	]
+	if not any(key.startswith("location_floor_") for key in missing_places(project, shots)):
+		return False
+	variant = variants[index]
+	if (variant.get("floor_location_repair") or {}).get("project") == project.name:
+		raise ValueError("Floor action location did not qualify after automatic preparation.")
+	run_name = (variant.get("keyframe_request") or {}).get("run")
+	if run_name:
+		run = frappe.get_doc("Generation Run", run_name)
+		snapshot = frappe.parse_json(run.project_snapshot_json or "{}") or {}
+		if (
+			run.media_project != project.name
+			or (snapshot.get("automatic_delivery") or {}).get("batch") != batch.name
+		):
+			raise ValueError("Cannot repair a location for a run outside this automatic batch.")
+		if run.status not in {"Completed", "Failed", "Cancelled"}:
+			from joymedia.services.generation.orchestrator import cancel_run
+
+			cancel_run(run.name)
+	variant["floor_location_repair"] = {
+		"project": project.name,
+		"previous_run": run_name,
+		"reason": "Authored floor staging must not reuse a generated tabletop action plate.",
+	}
+	_start_keyframes(project, variant, frappe.parse_json(batch.request_json), batch.name)
+	_write(batch.name, variants, changed_index=index)
+	return True
+
+
 def advance_batch(batch_name, user=None):
 	from joymedia.services.audio.plan import build_audio_plan
 	from joymedia.services.editing.export_jobs import queue_project_timeline_export
@@ -2544,6 +2636,18 @@ def advance_batch(batch_name, user=None):
 				automatic
 				and variant["status"] == "Keyframes"
 				and _restart_incompatible_package_openings(batch, variants, index, project)
+			):
+				return
+			if (
+				automatic
+				and variant["status"] == "Keyframes"
+				and _refresh_automatic_floor_location(batch, variants, index, project)
+			):
+				return
+			if (
+				automatic
+				and variant["status"] == "Keyframes"
+				and _refresh_automatic_frame_policy(batch, variants, index, project)
 			):
 				return
 			if automatic and variant["status"] in {"Keyframes", "Rendering"}:

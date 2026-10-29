@@ -331,6 +331,9 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 		],
 	}
 	from joymedia.services.scene.direction import authored_action
+	from joymedia.services.scene.registry import project_reference_registry, scene_reference_bindings
+
+	snapshot["reference_registry"] = project_reference_registry(project)
 
 	sheet_scenes = _sheet_scenes(project)
 	snapshot["shots"] = []
@@ -354,6 +357,10 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 		shot_doc = frappe.get_doc("Shot", shot.name)
 		from joymedia.services.keyframes.stage import approved_keyframe_task
 
+		source_scene = sheet_scenes.get((shot_doc.storyboard_beat or "", shot_doc.source_timing or "")) or {}
+		motion = frappe.parse_json(shot.motion_plan_json or "{}") or {}
+		motion = motion if isinstance(motion, dict) else {}
+
 		shot_snapshot = {
 			"shot": shot.name,
 			"beat_name": shot_doc.get("storyboard_beat") or shot_doc.get("shot_name"),
@@ -371,9 +378,12 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 			"keyframe_task": approved_keyframe_task(shot_doc),
 			"keyframe_artifact": shot_doc.keyframe_artifact if approved_keyframe_task(shot_doc) else None,
 			"generation_prompt": shot.generation_prompt or "",
-			"authored_action": authored_action(
-				shot_doc, sheet_scenes.get((shot_doc.storyboard_beat or "", shot_doc.source_timing or ""))
-			),
+			"authored_action": authored_action(shot_doc, source_scene),
+			"reference_requirements": {
+				"opening_state": shot.start_state or "",
+				"pose_requirement": motion.get("pose_requirement") or {},
+				"product_view": source_scene.get("product_view") or "source",
+			},
 			"motion_plan_json": shot.motion_plan_json or "",
 			"start_state": shot.start_state or "",
 			"end_state": shot.end_state or "",
@@ -439,11 +449,24 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 			from joymedia.services.consistency.retention import route_presentation
 
 			route_presentation(scene, retention_policy)
+	from joymedia.services.planning.camera import camera_planning_rules, reference_camera_grammar
+
+	# Freeze supplied camera direction before deciding whether an ending can
+	# preserve its source frame; explicit reference moves must not be lost.
+	if camera_planning_rules(project):
+		snapshot["cinematic_camera"] = True
+		snapshot["camera_grammar"] = reference_camera_grammar(project)
 	_compose_end_card(snapshot["shots"], keyframe_stage=keyframe_stage, project=snapshot)
 	from joymedia.services.editing.graphics import requested_graphics
 
 	for scene in snapshot["shots"]:
 		duration = float(scene.get("planned_frame_count") or 0) / float(snapshot.get("output_fps") or 24)
+		scene["reference_bindings"] = scene_reference_bindings(
+			scene.get("references"), snapshot["reference_registry"]
+		)
+		scene["cast_ids"] = list(
+			dict.fromkeys(b["identity"] for b in scene["reference_bindings"] if b["role"] != "product")
+		)
 		scene["graphic_overlays"] = requested_graphics(
 			project.get("storyboard_source_json"),
 			scene.get("beat_name"),
@@ -463,15 +486,8 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 			references,
 			controls(frappe.get_doc("Generation Workflow", scene.get("workflow") or snapshot["workflow"])),
 		)
-	from joymedia.services.planning.camera import camera_planning_rules, reference_camera_grammar
-	from joymedia.services.review.admission import freeze_policy
-
-	# Freeze reference direction at the same boundary as workflows and subjects.
-	# Both H3 and plain prompt compilation consume this model-independent policy.
-	if camera_planning_rules(project):
-		snapshot["cinematic_camera"] = True
-		snapshot["camera_grammar"] = reference_camera_grammar(project)
 	from joymedia.services.generation.automation import current_delivery
+	from joymedia.services.review.admission import freeze_policy
 
 	automatic_delivery = current_delivery()
 	if automatic_delivery:
