@@ -341,6 +341,30 @@ class TestOpeningTextCrossCheck(TestCase):
 
 
 class TestGeneratedScriptValidation(TestCase):
+	def test_distinct_operations_do_not_repeat_their_result_presentation(self):
+		from joymedia.services.planning.creative import story_logic_errors
+
+		self.assertIsNone(
+			story_logic_errors(
+				[
+					{"action": "The mascot folds the tissue, then unfolds it, showing the crease."},
+					{"action": "The mascot sets the tissue back on the floor, showing the softness."},
+					{"action": "The original product remains still."},
+				]
+			)
+		)
+		for repeated in ("examine the tissue", "show the tissue"):
+			self.assertIn(
+				"repeat",
+				story_logic_errors(
+					[
+						{"action": "The mascot will " + repeated + "."},
+						{"action": "Then the mascot will " + repeated + "."},
+						{"action": "The original product remains still."},
+					]
+				),
+			)
+
 	def test_identical_adjacent_actions_are_detected_without_product_vocabulary(self):
 		from joymedia.services.planning.creative import story_logic_errors
 

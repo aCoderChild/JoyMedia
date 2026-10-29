@@ -175,3 +175,11 @@ A retry drew a cartoon on the tissue. Shared sheet-material screening now
 explicitly excludes unauthored print/artwork at both opening and video stages,
 without demanding a future extraction in the first frame. H3 receives this
 constraint before composition prose. These repairs do not qualify failed images.
+
+The stable studio trial exposed a deterministic script-validation defect before
+GPU work: the duplicate-demo parser fell back to the earlier word tissue for
+result clauses such as showing the crease and showing softness, rejecting
+distinct fold/unfold and placement operations. Pronoun fallback now requires an
+actual it/them object, and result-presentation clauses do not override a real
+operation. Repeated standalone show/examine demonstrations still fail. 68
+script-validation/camera tests passed after this fix.

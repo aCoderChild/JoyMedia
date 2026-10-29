@@ -2008,12 +2008,17 @@ def _demonstrations(scene):
 	pairs = set()
 	for match in DEMO_VERBS.finditer(text):
 		target = STORY_OBJECT.search(" ".join(text[match.end() :].split()[:6]))
-		if not target or re.match(r"\s*(?:it|them)\b", text[match.end() :]):
+		if re.match(r"\s*(?:it|them)\b", text[match.end() :]):
 			# "holds the tissue up to examine it": the object is the one named before, in this sentence.
 			earlier = list(STORY_OBJECT.finditer(re.split(r"[.;!?]", text[: match.start()])[-1]))
 			target = earlier[-1] if earlier else target
 		if target:
 			pairs.add((match.group(1).lower(), target.group(1).lower().rstrip("s")))
+	# Showing a completed result is not a second performance of the operation.
+	# Keep standalone product presentation detectable, but do not let a result
+	# clause erase the difference between folding, wiping or another real action.
+	if pairs - {pair for pair in pairs if pair[0] in {"show", "present"}}:
+		pairs = {pair for pair in pairs if pair[0] not in {"show", "present"}}
 	return pairs
 
 
