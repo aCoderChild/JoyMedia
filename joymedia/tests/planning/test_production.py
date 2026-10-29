@@ -20,6 +20,44 @@ RAW = {
 
 
 class TestNormalize(FrappeTestCase):
+	def test_named_character_view_keeps_fixed_identity_in_the_shot_planner(self):
+		import json
+
+		row = frappe._dict(
+			reference_key="mascot", identity_key="mascot", reference_role="Character", asset_version="pose"
+		)
+		project = frappe._dict(planning_mode="Follow the sheet", selected_media=[row])
+		beat = {
+			"cast_declared": True,
+			"cast": ["mascot"],
+			"products": [],
+			"camera": "",
+			"product_view": "source",
+		}
+		analysis = {
+			"description": "Same character in another pose",
+			"identity_appearance": "Cream smooth mascot with two round ears and closed smiling eyes.",
+			"qualified_pose_and_support": "seated on the floor",
+		}
+		plan = {"reference_keys": [], "notes": []}
+		with (
+			patch.object(planner, "creative_beat", return_value=beat),
+			patch("joymedia.services.scene.references.named_reference_views", return_value=["mascot"]),
+			patch.object(frappe.db, "get_value", return_value=json.dumps(analysis)),
+			patch.object(planner, "follow_the_sheet", return_value=plan) as follow,
+			patch.object(planner, "ground_visible_product_keys", return_value=([], [])),
+			patch(
+				"joymedia.services.planning.product_views.constrain_product_views",
+				side_effect=lambda p, plan, **kw: plan,
+			),
+		):
+			planner.plan_production_shot(project, frappe._dict(), references=[{"key": "mascot"}])
+		text = follow.call_args.args[3][0]["description"]
+		self.assertIn("two round ears", text)
+		self.assertIn("closed smiling eyes", text)
+		self.assertIn("seated on the floor", text)
+		self.assertNotIn("Same character in another pose", text)
+
 	def _norm(self, raw=None, **kw):
 		return planner.normalize_production_shot(
 			raw or RAW,

@@ -88,8 +88,14 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 						)
 						or {}
 					)
-					if analysis.get("description"):
-						descriptions.append(analysis["description"])
+					from joymedia.services.scene.prompt_scope import reference_description
+
+					appearance = reference_description(analysis, str(view.reference_role or "").lower())
+					if appearance:
+						pose = analysis.get("qualified_pose_and_support")
+						descriptions.append(
+							appearance + (" Qualified body state: " + str(pose) if pose else "")
+						)
 				if descriptions:
 					reference["description"] = "Chosen source view: " + " | ".join(descriptions)
 		plan = follow_the_sheet(project, shot, beat, references, previous_setting, previous_end_state)
