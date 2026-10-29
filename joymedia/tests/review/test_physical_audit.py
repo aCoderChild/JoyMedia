@@ -12,6 +12,7 @@ from joymedia.services.review.physical_audit import (
 	frame_findings,
 	obvious_geometry_results,
 	opening_actor_support,
+	refine_support_pose,
 )
 from joymedia.tests.planning.test_creative import sample_script
 
@@ -19,6 +20,20 @@ SCENE = {"human_cast": False, "has_product": True, "medium_locked": True, "close
 
 
 class TestPhysicalAudit(FrappeTestCase):
+	def test_conflicting_pose_is_observed_blindly_and_never_cleared_without_evidence(self):
+		for answer, expected in (
+			({"pose": "seated", "evidence": "Pelvis rests on rug and soles face forward."}, "seated"),
+			({"pose": "standing", "evidence": "Pelvis elevated above weight-bearing feet."}, "standing"),
+			({"pose": "unclear", "evidence": "Body base hidden."}, "standing"),
+			({"pose": "seated", "evidence": ""}, "standing"),
+		):
+			description = {"figures": [{"body_pose": "standing"}]}
+			with patch("joymedia.services.review.consistency.ask", return_value=answer) as observe:
+				gaps = refine_support_pose(description, b"frame", "seated_supported", ask=observe)
+				self.assertNotIn("script", observe.call_args.args[1])
+			self.assertEqual(expected, description["figures"][0]["body_pose"])
+			self.assertEqual(answer.get("pose") == "unclear" or not answer.get("evidence"), bool(gaps))
+
 	def test_retail_counts_come_from_physical_forms_and_unknown_forms_do_not_pass(self):
 		from joymedia.services.review.physical_audit import retail_container_count
 

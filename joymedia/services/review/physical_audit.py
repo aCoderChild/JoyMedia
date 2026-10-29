@@ -531,6 +531,54 @@ def actor_count_findings(observation, expected):
 	return []
 
 
+def refine_support_pose(description, frame, expected_pose, *, ask):
+	"""Resolve a conflicting broad label using a blind, evidence-bearing observation.
+
+	An upright torso is not proof of standing. This check changes only the pose
+	label; intersections, support surfaces, scale and identity keep their own checks.
+	"""
+	figures = description.get("figures") or []
+	if len(figures) != 1 or not isinstance(figures[0], dict):
+		return []
+	figure = figures[0]
+	pose = str(figure.get("body_pose") or "").strip().casefold()
+	conflict = (expected_pose == "seated_supported" and pose == "standing") or (
+		expected_pose == "upright_supported" and pose in {"seated", "kneeling", "lying"}
+	)
+	if not conflict:
+		return []
+	observation = ask(
+		frame,
+		"Observe only the foreground actor's weight-bearing body pose. A rounded character can "
+		"have an upright torso while SEATED: its pelvis/base rests on the ground, with feet "
+		"extended forward and paw-pad soles facing the viewer. STANDING means the pelvis is "
+		"lifted off the ground and body weight is carried by soles beneath the body. Do not "
+		"label an upright torso as standing. Look at the body base, feet orientation and "
+		"supporting surface. Use unclear if contacts are hidden. Return pose and concrete "
+		"visible evidence, without inferring intended action.",
+		max_edge=896,
+		schema={
+			"type": "object",
+			"additionalProperties": False,
+			"required": ["pose", "evidence"],
+			"properties": {
+				"pose": {"type": "string", "enum": ["seated", "standing", "kneeling", "lying", "unclear"]},
+				"evidence": {"type": "string", "minLength": 1},
+			},
+		},
+	)
+	description["support_pose_observation"] = observation
+	if (
+		not isinstance(observation, dict)
+		or observation.get("pose") not in {"seated", "standing", "kneeling", "lying"}
+		or not str(observation.get("evidence") or "").strip()
+	):
+		return ["Physical staging review: conflicting body-pose observations remain unverified."]
+	figure["broad_body_pose"] = figure.get("body_pose")
+	figure["body_pose"] = observation["pose"]
+	return []
+
+
 def compare(
 	description, *, human_cast, has_product, medium_locked, close_framing, cast_count=None, expected_pose=""
 ):
@@ -690,6 +738,13 @@ def frame_findings(project, shot, frame):
 		elif not isinstance(matte, dict) or matte.get("answer") is not False:
 			gaps.append("Physical staging review: product background matte remains unverified.")
 	declared_actors = sum(role in CHARACTER_ROLES for role in roles)
+	expected_pose = (
+		(frappe.parse_json(shot.motion_plan_json or "{}") or {})
+		.get("pose_requirement", {})
+		.get("opening_pose", "")
+	)
+	if declared_actors == 1:
+		gaps.extend(refine_support_pose(description, frame, expected_pose, ask=ask))
 	issues = compare(
 		description,
 		human_cast=bool(PERSON_ROLES.intersection(roles)),
@@ -697,9 +752,7 @@ def frame_findings(project, shot, frame):
 		medium_locked=MEDIUM_LOCK in _mood(project, avoid=False),
 		close_framing=structure.get("framing") in {"close_up", "extreme_close_up"},
 		cast_count=declared_actors,
-		expected_pose=(frappe.parse_json(shot.motion_plan_json or "{}") or {})
-		.get("pose_requirement", {})
-		.get("opening_pose", ""),
+		expected_pose=expected_pose,
 	)
 	if declared_actors:
 		count = ask(

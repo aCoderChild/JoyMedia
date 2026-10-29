@@ -152,3 +152,16 @@ the existing literal product hold. Camera variety cannot change that source
 presentation; authored camera travel and real actions remain executable.
 177 creative and prompt-scope tests passed, including source-hold recognition
 and preservation of explicitly authored movement.
+
+The reduced-memory route produced a 512x896, 39-frame preparation clip in
+97.66 seconds and retained its sampled opening plus clip hash. The first still
+visibly preserved the original smooth seated mascot and loose tissue on the
+rug. Admission supported every concrete observation; its generic geometry
+certification caveat remained. A later broad continuity description incorrectly
+called the upright seated torso standing. Conflicting broad pose labels now
+receive a separate blind support observation based on pelvis contact and foot
+orientation. Missing/unclear evidence remains held, and actual standing still
+fails a seated opening. A live recheck returned no physical findings; 72
+physical-admission/automatic-delivery tests passed. This does not approve a take.
+The next sampled opening still showed full-body coverage instead of the authored
+close insert; the framing gate rejected it. Automatic recovery remains under test.
