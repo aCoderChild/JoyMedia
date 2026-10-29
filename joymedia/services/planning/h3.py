@@ -15,6 +15,7 @@ def compile_opening_hold(shot, workflow, composition):
 	"""A preparation clip holds one opening state; it does not perform later actions."""
 	from joymedia.services.planning.shot_structure import structure_for
 	from joymedia.services.scene.contract import opening_instruction
+	from joymedia.services.scene.prompt_scope import sheet_material_instruction
 
 	# Vendor serialization starts from the authored still, not Flux's expanded
 	# whole-scene boilerplate. Generic product instructions primed a retail box
@@ -26,6 +27,9 @@ def compile_opening_hold(shot, workflow, composition):
 	framing = str(structure.get("framing") or "").replace("_", " ")
 	angle = str(structure.get("angle") or "").replace("_", " ")
 	opening = opening_instruction(shot.get("motion_plan_json"), shot.get("duration_seconds"))
+	material = sheet_material_instruction(
+		composition + " " + str(shot.get("generation_prompt") or ""), opening=True
+	)
 	appearance = " ".join(
 		str(r.get("visual_description") or "")
 		for r in references
@@ -52,6 +56,8 @@ def compile_opening_hold(shot, workflow, composition):
 		+ uses
 		+ " "
 		+ scope
+		+ material
+		+ " "
 		+ f"Camera: {angle} {framing}. "
 		+ composition
 		+ " "

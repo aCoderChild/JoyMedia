@@ -3454,6 +3454,13 @@ class TestCameraDirection(TestCase):
 		self.assertEqual([], normalize_static_final_packshot(script))
 		direct_camera(script["scenes"])
 		self.assertEqual("dolly_out", last["camera_move"])
+		# The audit trail identifies a move introduced by camera variety, rather
+		# than one authored by the user. A resumed revision can repair that case.
+		script["camera_adjustments"] = [
+			"Scene 1: camera_move static -> dolly_out (give the film enough camera movement)."
+		]
+		self.assertTrue(normalize_static_final_packshot(script))
+		self.assertEqual("static", last["camera_move"])
 
 	def test_camera_only_product_insert_is_normalized_without_replacing_actor_actions(self):
 		from joymedia.services.planning.creative import normalize_product_camera_inserts

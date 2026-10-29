@@ -165,3 +165,13 @@ fails a seated opening. A live recheck returned no physical findings; 72
 physical-admission/automatic-delivery tests passed. This does not approve a take.
 The next sampled opening still showed full-body coverage instead of the authored
 close insert; the framing gate rejected it. Automatic recovery remains under test.
+
+Two further live findings were repaired before continuing: exhausted close-insert
+framing errors can now reach bounded scene restaging, with explicit instructions
+to preserve real actions and change both structured framing and camera prose.
+An earlier camera-variety audit can also identify and undo its own added move
+on an explicitly requested original-photo hero; real authored movement remains.
+A retry drew a cartoon on the tissue. Shared sheet-material screening now
+explicitly excludes unauthored print/artwork at both opening and video stages,
+without demanding a future extraction in the first frame. H3 receives this
+constraint before composition prose. These repairs do not qualify failed images.

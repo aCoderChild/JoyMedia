@@ -12,6 +12,21 @@ def shot(number, status, notes=""):
 
 
 class TestAutomaticSceneRepair(FrappeTestCase):
+	def test_exhausted_close_framing_can_restage_without_removing_actions(self):
+		notes = cb._scene_repair_notes(
+			[
+				shot(
+					2,
+					"Needs Review",
+					"Critical framing: full character body appears in a close product/action detail",
+				)
+			]
+		)
+		self.assertEqual([2], [n["scene"] for n in notes])
+		self.assertIn("medium/full", notes[0]["text"])
+		self.assertIn("shot_framing and visual_camera", notes[0]["text"])
+		self.assertIn("Keep every actual action", notes[0]["text"])
+
 	def test_source_art_cutaway_preserves_material_actions_and_refuses_package_handling(self):
 		script = {
 			"scenes": [

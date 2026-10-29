@@ -76,6 +76,13 @@ class TestVisualAdmission(unittest.TestCase):
 		self.assertEqual("identity", claim["dimension"])
 		self.assertIn("thin, lightweight, flexible", claim["claim"])
 		self.assertNotIn("handled_material", [r["id"] for r in a.screening_claims(scene, False)])
+		opening = next(r for r in a.screening_claims(scene, False) if r["id"] == "opening_material")
+		self.assertIn("No unauthored text, logo, drawing or character artwork", opening["claim"])
+		self.assertIn("need not have occurred", opening["claim"])
+		scene.update(
+			image_prompt="One tissue on the rug.", generation_prompt="The mascot picks up the tissue."
+		)
+		self.assertIn("opening_material", [r["id"] for r in a.screening_claims(scene, False)])
 		scene["generation_prompt"] = "The tissue pack remains in its opening position."
 		self.assertNotIn("handled_material", [r["id"] for r in a.screening_claims(scene, True)])
 

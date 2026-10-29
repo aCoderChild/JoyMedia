@@ -143,6 +143,14 @@ def screening_claims(scene, video):
 			{"id": f"opening.{i}", "dimension": "staging", "claim": c}
 			for i, c in enumerate(opening_claims(plan, duration))
 		]
+		from joymedia.services.scene.prompt_scope import sheet_material_instruction
+
+		material = sheet_material_instruction(
+			str(scene.get("image_prompt") or "") + " " + str(scene.get("generation_prompt") or ""),
+			opening=True,
+		)
+		if material:
+			claims.append({"id": "opening_material", "dimension": "identity", "claim": material})
 	claims.append(
 		{
 			"id": "active_canvas",

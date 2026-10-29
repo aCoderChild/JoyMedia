@@ -97,6 +97,10 @@ class TestPromptScope(TestCase):
 		for action in ("Hold the tissue up to the light.", "Place the tissue flat on the table."):
 			with self.subTest(action=action):
 				self.assertIn("thin, lightweight, flexible", sheet_material_instruction(action))
+		opening = sheet_material_instruction("Pick up the paper.", opening=True)
+		self.assertIn("never transfer onto the sheet", opening)
+		self.assertIn("need not have occurred", opening)
+		self.assertNotIn("only that sheet comes from", opening)
 		self.assertEqual(
 			"", sheet_material_instruction("The original product remains in its established position.")
 		)

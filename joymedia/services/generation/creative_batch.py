@@ -350,7 +350,7 @@ def _scene_repair_notes(shots):
 			for finding in _critical_findings(shot)
 			# Geometry gets a cheap evidence-directed redraw first. If both
 			# redraws fail, it still needs a change to the scene staging.
-			if finding.startswith(("Critical geometry:", "Critical identity:"))
+			if finding.startswith(("Critical geometry:", "Critical identity:", "Critical framing:"))
 			or not any(marker in finding for marker in FRAME_CORRECTIONS)
 		]
 		if critical:
@@ -372,6 +372,14 @@ def _scene_repair_notes(shots):
 						"than adding a chair. Move furniture far enough away that it cannot divide or support the "
 						"actor. Keep the intended interaction reachable, the supplied cast in its reference look, "
 						"and each advertised product on its own support. Preserve the scene's purpose and timing."
+						+ (
+							" The close insert has exhausted its picture corrections. Choose readable medium/full "
+							"coverage with the working material and contacting parts clearly visible if a tighter "
+							"composition cannot be generated. Update structured shot_framing and visual_camera "
+							"together. Keep every actual action and visible result; do not substitute an idle hold."
+							if critical[0].startswith("Critical framing:")
+							else ""
+						)
 					),
 				}
 			)

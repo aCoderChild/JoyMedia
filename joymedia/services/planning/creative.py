@@ -1762,7 +1762,15 @@ def normalize_static_final_packshot(script):
 		# source-frame route can recognize it. Authored camera travel and actual
 		# product actions remain outside this normalization.
 		if (
-			scene.get("camera_move") in {None, "", "static"}
+			(
+				scene.get("camera_move") in {None, "", "static"}
+				or any(
+					str(note).startswith(
+						f"Scene {len(scenes)}: camera_move static -> {scene.get('camera_move')} ("
+					)
+					for note in script.get("camera_adjustments") or []
+				)
+			)
 			and scene.get("product_view", "source") == "source"
 			and scene.get("subject_motion") == "stationary"
 			and re.search(r"\boriginal\b[^.]*\bproduct photograph\b", scene.get("visual_camera") or "", re.I)

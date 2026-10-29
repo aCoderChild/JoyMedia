@@ -5,21 +5,30 @@ import re
 ACTOR_ROLES = {"character", "person", "people", "talent"}
 
 
-def sheet_material_instruction(action):
+def sheet_material_instruction(action, *, opening=False):
 	"""Keep explicitly handled paper separate from packaging graphics and objects."""
 	text = str(action or "")
 	if not re.search(
 		r"\b(?:tissue|paper|napkin)\b(?!\s+(?:pack|package|box|carton|container|cup|bag)\b)", text, re.I
 	) or not re.search(
-		r"\b(?:extract\w*|pull\w*|unfold\w*|fold\w*|rub\w*|wip\w*|hold\w*|held|lift\w*|plac\w*|lay\w*|laid|tak\w*|took|remov\w*|carr\w*|handl\w*)\b",
+		r"\b(?:extract\w*|pull\w*|pick\w*|unfold\w*|fold\w*|rub\w*|wip\w*|hold\w*|held|lift\w*|plac\w*|lay\w*|laid|tak\w*|took|remov\w*|carr\w*|handl\w*)\b",
 		text,
 		re.I,
 	):
 		return ""
-	return (
+	identity = (
 		"Whenever the handled sheet is visible, it is the authored thin, lightweight, flexible paper or tissue sheet, "
-		"with sheet edges, folds and creases visible. Its visible material and identity persist "
-		"through handling. If extraction is authored, only that sheet comes from the specified material source; "
+		"with sheet edges, folds and creases visible. No unauthored text, logo, drawing or character artwork "
+		"appears on this loose sheet. Reference figures and package graphics never transfer onto the sheet. "
+	)
+	if opening:
+		return (
+			identity
+			+ "Future acquisition, folding or other handling need not have occurred in this opening frame."
+		)
+	return identity + (
+		"Its visible material and identity persist through handling. "
+		"If extraction is authored, only that sheet comes from the specified material source; "
 		"the package, its printed graphics and all actor body parts remain their original objects."
 	)
 
