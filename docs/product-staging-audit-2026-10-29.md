@@ -75,6 +75,19 @@ Scene 2 was held by the new product-footprint check. Its failure exposed the
 opaque-reference guidance omission above. A bounded retest uses the measured
 original outline and camera guidance in RUN-01367 after replanning that scene.
 
+RUN-01367 was held because the original source could not fit the generated
+footprint. The raw image still put the actor on the table. A further layout test
+uses the already-qualified empty floor plate ASTV-06382 as an explicit environment
+reference. The initial RUN-01368 binding was automatically replaced by the old
+room because its imported key used the reserved `location_` prefix; that owned
+test was cancelled. RUN-01369's frozen inputs were verified as ASTV-06332
+(unchanged actor), ASTV-03698 (original product), and ASTV-06382 (empty floor).
+Its raw image places the actor on the rug beside the pack, with more actor scale.
+Product preparation still rejects the mismatching footprint. This is an improved
+layout candidate, not an accepted replacement shot. Scene 3 also remains Needs
+Review because screening cannot establish the scripted tissue-held-to-light action.
+No new frame/take was manually approved and no new full video was exported.
+
 The local vision model incorrectly accepted the altered product print in a live
 paired comparison. That evidence is retained in
 `old-product-view-source-comparison.json`; it is why a model verdict cannot
