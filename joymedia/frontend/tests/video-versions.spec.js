@@ -1,5 +1,24 @@
 import { test, expect } from '@playwright/test';
 
+test('automatic video exposes script and prepared references without submitting work', async ({ page }) => {
+  const writes=[];
+  page.on('request', request => { if (request.method()==='POST' && /create_product_batch|generate|render_product_variant|retry_product_variant|approve/.test(request.url())) writes.push(request.url()); });
+  await page.route('**/api/method/joymedia.api.creative.get_project_batches', route => route.fulfill({ json: { message: [{
+    name:'automatic-batch',source_project:'root',delivery_mode:'automatic',status:'Rendering',variants:[{
+      index:1,project:'FIXTURE',status:'Keyframes',script:{title:'Visible automatic script',scenes:[{shot_number:1,beat_name:'Hero',action:'Show product',duration_seconds:5}]},
+      prepared_assets:[{kind:'Product',status:'supplied',url:'/product.png',description:'front',scenes:[1]}],
+    }],
+  }] } }));
+  await page.goto('tests/fixtures/rio-timeline.html');
+  await page.locator('[data-test="rio-script-outputs"]').click();
+  const dialog=page.getByRole('dialog',{name:'Kịch bản & đầu ra video'});
+  await expect(dialog).toContainText('Visible automatic script');
+  await dialog.locator('[data-test="prepared-assets"] summary').click();
+  await expect(dialog.locator('[data-test="prepared-assets"] img')).toHaveAttribute('src','/product.png');
+  await expect(dialog.locator('[data-test="prepared-assets"]')).toContainText('Ảnh tham chiếu đã cung cấp');
+  expect(writes).toEqual([]);
+});
+
 test('workspace versions are browse/compare only and experiments stay separate without renumbering', async ({ page }) => {
   let creations = 0;
   page.on('request', request => { if (request.url().includes('create_product_batch')) creations += 1; });

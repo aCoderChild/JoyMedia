@@ -657,6 +657,10 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored, *, previo
 				),
 			)
 			raw["motion_plan"].update(actions=actions, scene_contract=authored_contract)
+			# Timed actions are authoritative, including a deliberate static hold.
+			# Use them before validation: an inferred empty motion description must
+			# not reject a packshot whose authored action is already complete.
+			raw["video_prompt"] = " ".join(row["action"] for row in actions)
 			if coverage:
 				raw["motion_plan"].setdefault("shot_structure", {}).update(coverage)
 			# Visibility is advisory camera metadata. The model sometimes names a
@@ -674,7 +678,7 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored, *, previo
 				is_first=int(shot.shot_number or 0) <= 1,
 			)
 			break
-		except ValueError as exc:
+		except (ValueError, frappe.ValidationError) as exc:
 			if attempt == 2:
 				raise
 			# The source prompt already contains all immutable inputs and schemas.
@@ -1304,7 +1308,9 @@ def normalize_production_shot(raw, *, reference_keys, duration, is_first):
 		frappe.throw(_("The planner did not return both an image prompt and a video prompt."))
 	if len(image_prompt.split()) > MAX_IMAGE_WORDS:
 		frappe.throw(
-			_("The planner's image prompt describes more than one frame; review this scene by hand.")
+			_("The planner's image prompt is too long (maximum {0} words). Please replan this scene.").format(
+				MAX_IMAGE_WORDS
+			)
 		)
 	keys, notes = [], []
 	for key in raw.get("reference_keys") if isinstance(raw.get("reference_keys"), list) else []:

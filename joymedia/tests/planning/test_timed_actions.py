@@ -40,7 +40,7 @@ class TestTimedActions(unittest.TestCase):
 			with self.subTest(text=text), self.assertRaises(ValueError):
 				read_timed_actions(text, 2)
 
-	def test_sheet_keeps_authored_actions_instead_of_model_timing(self):
+	def test_schema_repair_keeps_authored_actions_instead_of_model_timing(self):
 		import frappe
 
 		from joymedia.services.planning import production as p
@@ -72,7 +72,11 @@ class TestTimedActions(unittest.TestCase):
 			patch.object(p, "_ask_planner", return_value=raw) as planner,
 			patch.object(p, "translate", side_effect=lambda text, project: text),
 			patch.object(p, "english_roles", side_effect=lambda text, refs, product: text),
-			patch.object(p, "normalize_production_shot", return_value=normalized),
+			patch.object(
+				p,
+				"normalize_production_shot",
+				side_effect=[frappe.ValidationError("image prompt too long"), normalized],
+			),
 			patch.object(p, "audio_direction", return_value=""),
 		):
 			plan = p._timed_sheet_plan(
@@ -85,6 +89,7 @@ class TestTimedActions(unittest.TestCase):
 				previous_end_state="The displaced prop remains on its side.",
 			)
 		self.assertIn("The displaced prop remains on its side.", planner.call_args.args[0])
+		self.assertEqual(2, planner.call_count)
 		self.assertIn('"id": "action2", "description": "Lift the cup briskly."', planner.call_args.args[0])
 		self.assertEqual(authored, plan["motion_plan"]["actions"])
 		self.assertEqual(["cup"], plan["reference_keys"])
@@ -98,6 +103,44 @@ class TestTimedActions(unittest.TestCase):
 
 
 class TestInferredCameraPolicy(unittest.TestCase):
+	def test_static_authored_hold_survives_an_empty_model_motion_prompt(self):
+		import frappe
+
+		from joymedia.services.planning import production as p
+
+		raw = {
+			"image_prompt": "One product resting on the table.",
+			"video_prompt": "",
+			"motion_plan": {
+				"shot_structure": {
+					"stage": "hero",
+					"framing": "medium",
+					"angle": "eye_level",
+					"subject_motion": "stationary",
+					"keep_visible": [],
+				}
+			},
+		}
+		action = "The original product remains still with its artwork intact."
+		with (
+			patch.object(p, "_ask_planner", return_value=raw) as ask,
+			patch.object(p, "translate", side_effect=lambda text, project: text),
+			patch.object(p, "english_roles", side_effect=lambda text, refs, product: text),
+			patch.object(p, "audio_direction", return_value=""),
+			patch("joymedia.services.planning.camera.camera_planning_rules", return_value=""),
+			patch.object(frappe.db, "count", return_value=2),
+		):
+			plan = p._timed_sheet_plan(
+				frappe._dict(name="P", product_name="product"),
+				frappe._dict(duration_seconds=4, shot_number=2),
+				{},
+				[],
+				{"reference_keys": [], "setting_prompt": "table", "notes": []},
+				[{"start": 0, "end": 4, "action": action}],
+			)
+		self.assertEqual(action, plan["video_prompt"])
+		ask.assert_called_once()
+
 	def test_invalid_model_camera_cannot_override_the_structural_policy(self):
 		import frappe
 

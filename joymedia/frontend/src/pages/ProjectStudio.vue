@@ -1103,7 +1103,7 @@ async function continueClientJourney() {
 				studioMode.value = "edit";
 			}
 		} else if (["brief", "plan", "render"].includes(action)) {
-			await generateVideo();
+			await generateVideo(action === "render" ? { purpose: "review" } : {});
 		}
 	} finally {
 		clientActionBusy.value = false;

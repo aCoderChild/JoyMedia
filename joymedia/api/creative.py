@@ -307,6 +307,8 @@ def _prepared_assets(variant):
 				if kind == "Character" and row.get("status") == "ready"
 				else (row.get("candidate") if kind == "Product" else row.get("cutout"))
 			)
+			if kind == "Product" and row.get("status") == "supplied":
+				key = key or row.get("source")
 			media = selected.get(key)
 			url = frappe.db.get_value("Asset Version", media.asset_version, "file") if media else None
 			identity = (kind, key or row.get("source"), row.get("pose") or row.get("view"), row.get("status"))
@@ -320,7 +322,7 @@ def _prepared_assets(variant):
 				"description": row.get("pose") if kind == "Character" else row.get("view"),
 				"status": row.get("status"),
 				"reference_key": key if media else None,
-				"url": url if row.get("status") == "ready" else None,
+				"url": url if row.get("status") in {"ready", "supplied"} else None,
 			}
 			seen[identity] = item
 			items.append(item)

@@ -34,6 +34,23 @@ from joymedia.services.project.reference_lineage import lineage_identity
 
 
 class TestPoseCoverage(TestCase):
+	def test_recovered_pose_cannot_be_saved_without_qualification(self):
+		from unittest.mock import Mock
+
+		from joymedia.services.planning.pose_assets import register_pose_candidate
+
+		project = Mock()
+		source = frappe._dict(asset_version="original")
+		with (
+			patch("frappe.db.get_value", return_value="/original.png"),
+			patch("joymedia.services.planning.pose_assets._accept_pose_view", return_value=False),
+			patch("joymedia.services.planning.pose_assets._save_pose_view") as save,
+		):
+			with self.assertRaisesRegex(ValueError, "did not pass qualification"):
+				register_pose_candidate(project, source, "actor", "seated", "front", b"candidate")
+			project._require_write_access.assert_called_once()
+			save.assert_not_called()
+
 	def test_h3_pose_prompt_preserves_source_anatomy_for_people_and_mascots(self):
 		for pose in ("a person reaching forward", "a mascot raising one paw"):
 			with self.subTest(pose=pose):
@@ -358,6 +375,22 @@ class TestPoseCoverage(TestCase):
 		buffer = io.BytesIO()
 		Image.new("RGB", (128, 128), "white").save(buffer, format="PNG")
 		self.assertFalse(_visible_change(buffer.getvalue(), buffer.getvalue()))
+
+	def test_localized_prop_removal_is_a_visible_pose_change(self):
+		# A small held object changes materially while most studio pixels stay white.
+		before = Image.new("RGB", (128, 128), "white")
+		before.paste((255, 80, 130), (48, 48, 72, 72))
+		after = Image.new("RGB", (128, 128), "white")
+		buffers = [io.BytesIO(), io.BytesIO()]
+		for image, buffer in zip((before, after), buffers, strict=True):
+			image.save(buffer, format="PNG")
+		self.assertTrue(_visible_change(*(buffer.getvalue() for buffer in buffers)))
+
+	def test_codec_noise_does_not_establish_a_new_pose(self):
+		buffers = [io.BytesIO(), io.BytesIO()]
+		for shade, buffer in zip((250, 252), buffers, strict=True):
+			Image.new("RGB", (128, 128), (shade, shade, shade)).save(buffer, format="PNG")
+		self.assertFalse(_visible_change(*(buffer.getvalue() for buffer in buffers)))
 
 	def test_h3_bridge_starts_from_accepted_pose_of_same_identity(self):
 		clean = frappe._dict(asset_version="clean", identity_key="shera", reference_role="Character")

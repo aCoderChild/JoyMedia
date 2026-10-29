@@ -38,7 +38,7 @@
 				<button type="button" data-test="rio-versions-toggle" :aria-expanded="versionsOpen" @click="versionsOpen = !versionsOpen">{{ t('Video versions', 'Các phiên bản') }}</button>
 				<button v-if="canRestore" type="button" @click="emit('restore')">{{ t('Restore project', 'Khôi phục dự án') }}</button>
 				<button type="button" @click="emit('open-history')">{{ t('History', 'Lịch sử') }}</button>
-				<button v-if="canWork && reviewableBatch" type="button" class="rio-next-action" @click="scriptReviewOpen = true">{{ t('Review script & scenes', 'Duyệt kịch bản & cảnh') }}</button>
+				<button v-if="canWork && automaticVariant?.script" type="button" class="rio-next-action" data-test="rio-script-outputs" @click="scriptReviewOpen = true">{{ reviewableBatch ? t('Review script & scenes', 'Duyệt kịch bản & cảnh') : t('View script & outputs', 'Xem kịch bản & đầu ra') }}</button>
 				<button v-if="canWork && nextActionLabel && !automaticInProgress" type="button" class="rio-next-action" :disabled="busy || (nextAction === 'brief' && !idea?.trim())" @click="emit('continue')">{{ nextActionLabel }}</button>
 				<button v-if="canWork" type="button" :title="t('Project settings', 'Cài đặt dự án')" :aria-label="t('Project settings', 'Cài đặt dự án')" @click="emit('settings')">⚙</button>
 				<button v-if="canWork" type="button" :disabled="busy" :title="t('Add blank scene', 'Thêm cảnh trống')" :aria-label="t('Add blank scene', 'Thêm cảnh trống')" @click="emit('add-scene')">＋</button>
@@ -157,8 +157,8 @@
 		</div>
 		<p v-if="toolError" class="rio-alert" role="alert">{{ toolError }} <button @click="toolError = ''">×</button></p>
 		<div v-if="scriptReviewOpen && canWork" class="rio-tool-overlay" @click.self="scriptReviewOpen = false">
-			<section class="rio-tool-dialog" style="width:min(1000px,100%)" role="dialog" aria-modal="true" :aria-label="t('Review new video', 'Duyệt video mới')">
-				<header><strong>{{ t('Review script & scenes', 'Duyệt kịch bản & cảnh') }}</strong><button type="button" :aria-label="t('Close', 'Đóng')" @click="scriptReviewOpen = false">×</button></header>
+			<section class="rio-tool-dialog" style="width:min(1000px,100%)" role="dialog" aria-modal="true" :aria-label="reviewableBatch ? t('Review new video', 'Duyệt video mới') : t('Video script & outputs', 'Kịch bản & đầu ra video')">
+				<header><strong>{{ reviewableBatch ? t('Review script & scenes', 'Duyệt kịch bản & cảnh') : t('View script & outputs', 'Xem kịch bản & đầu ra') }}</strong><button type="button" :aria-label="t('Close', 'Đóng')" @click="scriptReviewOpen = false">×</button></header>
 				<CreativeBatchPanel :project="projectName" :focus="automaticVariant?.project || projectName" @loaded="refreshAutomaticBatch" @show-video="scriptReviewOpen = false" />
 			</section>
 		</div>
@@ -346,7 +346,7 @@ const nextActionLabel = computed(() => ({
 	brief: t('Plan video', 'Lập kịch bản'), plan: t('Generate storyboard', 'Tạo phân cảnh'),
 	approve: t('Approve storyboard', 'Duyệt phân cảnh'), previews: t('Generate first frames', 'Tạo ảnh đầu cảnh'),
 	retry: t('Retry previews', 'Thử lại ảnh'), review: t('Review scene images', 'Xem lại ảnh các cảnh'),
-	render: t('Generate video', 'Tạo video'), watch: t('Watch video', 'Xem video'),
+	render: t('Generate review preview', 'Tạo bản xem trước'), watch: t('Watch video', 'Xem video'),
 })[props.nextAction] || '');
 const nextActionHint = computed(() => ({
 	brief: t('Start with a short idea for your video and add your product photos.', 'Bắt đầu bằng ý tưởng ngắn và thêm ảnh sản phẩm.'),
@@ -354,7 +354,7 @@ const nextActionHint = computed(() => ({
 	approve: t('Read the scene descriptions, then approve the storyboard when they match your idea.', 'Đọc mô tả từng cảnh, rồi duyệt phân cảnh khi đúng ý tưởng.'),
 	previews: t('Create the first image for each scene, then check the product and character.', 'Tạo ảnh đầu cho từng cảnh, rồi kiểm tra sản phẩm và nhân vật.'),
 	review: t('Select each scene image, check it, and approve it before making the video.', 'Chọn từng ảnh cảnh, kiểm tra và duyệt trước khi tạo video.'),
-	render: t('The scene images are ready. Generate the video to see the motion.', 'Ảnh các cảnh đã sẵn sàng. Tạo video để xem chuyển động.'),
+	render: t('The scene images are ready. Generate a review preview; quality findings stay visible for review.', 'Ảnh các cảnh đã sẵn sàng. Tạo bản xem trước; các vấn đề chất lượng vẫn được giữ để duyệt.'),
 	watch: t('Your video is ready to preview below.', 'Video đã sẵn sàng để xem ở khung bên dưới.'),
 	retry: t('Some images could not be checked. Retry their preparation.', 'Một số ảnh chưa kiểm tra được. Hãy thử chuẩn bị lại.'),
 	working: t('The system is working. Finished scenes appear here as they are ready.', 'Hệ thống đang xử lý. Cảnh hoàn thành sẽ hiện tại đây.'),

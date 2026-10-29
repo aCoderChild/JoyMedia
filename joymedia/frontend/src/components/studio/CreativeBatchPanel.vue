@@ -26,7 +26,8 @@
             <div v-else class="grid h-28 place-items-center rounded bg-surface-muted px-2 text-center text-ink-muted">{{ tr('View not verified', 'Góc nhìn chưa được xác minh') }}</div>
             <p class="mt-1 font-medium">{{ asset.kind === 'Character' ? tr('Character pose', 'Tư thế nhân vật') : tr('Product view', 'Góc sản phẩm') }} <span v-if="asset.scenes?.length">· {{ tr('Scenes', 'Cảnh') }} {{ asset.scenes.join(', ') }}</span></p>
             <p class="line-clamp-2 text-ink-secondary" :title="asset.description">{{ asset.description || tr('Source view', 'Góc gốc') }}</p>
-            <p v-if="asset.status !== 'ready'" class="text-amber-700 dark:text-amber-300">{{ tr('Not verified', 'Chưa xác minh') }}</p>
+            <p v-if="asset.status === 'supplied'" class="text-ink-secondary">{{ tr('Supplied reference', 'Ảnh tham chiếu đã cung cấp') }}</p>
+            <p v-else-if="asset.status !== 'ready'" class="text-amber-700 dark:text-amber-300">{{ tr('Not verified', 'Chưa xác minh') }}</p>
           </li>
         </ul>
       </details>

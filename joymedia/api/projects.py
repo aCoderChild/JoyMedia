@@ -64,7 +64,8 @@ def get_project_cards(search=None, status=None, start=0, page_length=24):
 			videos_waiting=sum(not v["video"] and (v["stage"] or v["status"]) in waiting for v in videos),
 			videos_attention=sum(not v["video"] and (v["stage"] or v["status"]) in attention for v in videos),
 			videos_working=sum(
-				not v["video"] and (v["stage"] or v["status"]) not in waiting | attention | {"Cancelled", "Draft"}
+				not v["video"]
+				and (v["stage"] or v["status"]) not in waiting | attention | {"Cancelled", "Draft"}
 				for v in videos
 			),
 		)
@@ -593,8 +594,18 @@ def save_project_video_settings(
 
 
 @frappe.whitelist()
-def generate_project_video(project_name):
-	return frappe.get_doc("Media Project", project_name).generate_end_to_end()
+def generate_project_video(project_name, purpose=None):
+	project = frappe.get_doc("Media Project", project_name)
+	if purpose not in (None, "review"):
+		raise ValueError("Choose a review preview or the ordinary generation path.")
+	if purpose == "review":
+		from joymedia.services.generation.automation import delivery_context
+
+		# Preview authorization defers sampled visual qualification; it never
+		# writes machine passes or release approval. The native run freezes it.
+		with delivery_context({"delivery_mode": "automatic"}):
+			return project.generate_end_to_end()
+	return project.generate_end_to_end()
 
 
 @frappe.whitelist()

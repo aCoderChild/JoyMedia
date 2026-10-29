@@ -148,7 +148,7 @@ export function useProjectGeneration(projectName, onRefresh) {
     }
   }
 
-  async function generateVideo() {
+  async function generateVideo(options = {}) {
     if (isGenerating.value) return;
     isGenerating.value = true;
     productionError.value = "";
@@ -161,6 +161,7 @@ export function useProjectGeneration(projectName, onRefresh) {
 
       const res = await call("joymedia.api.projects.generate_project_video", {
         project_name: project(),
+        ...(options?.purpose === 'review' ? { purpose: 'review' } : {}),
       });
       currentRun.value = res?.status === "Planning"
         ? activeRun(null, "Running")

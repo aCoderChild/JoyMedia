@@ -15,6 +15,7 @@ own (a client's photo of the location) keeps it.
 import hashlib
 import io
 import json
+import math
 import re
 from pathlib import Path
 
@@ -317,7 +318,7 @@ LOCATION_PLATE = (
 	"furnishings and practical light consistent. Give the room foreground, middle-ground and background depth "
 	"through its existing materials and lighting. When no illustrated medium is requested, render as naturalistic "
 	"live-action commercial photography with believable textures, lens depth and motivated practical light; "
-	"avoid drawn outlines or flat cartoon shading. Use setting-appropriate lived-in furnishings, subtle color accents "
+	"avoid drawn outlines or flat cartoon shading. Use setting-appropriate furniture, subtle color accents "
 	"and balanced daylight with practical light; avoid an empty shell or a single-color cast. "
 	"Leave the main working area open and its surface bare. "
 	"The frame is an unoccupied architectural plate, with no inset panels or foreground props."
@@ -356,6 +357,10 @@ def render_place(project, setting, view=False, staging=""):
 	table_guidance = ""
 	if "working table" in staging:
 		table_guidance = (
+			"The main subject is a COMPLETELY EMPTY action tabletop: its entire upper surface "
+			"is one continuous exposed material, edge to edge, with only the surface texture visible. "
+			"The table is undecorated: zero books, magazines, cups, bowls, trays, vases or plants "
+			"on its top or lower shelf. Decorative accents belong on background walls or cabinets. "
 			"Use one rigid table whose top and base belong to the same object, with its supports meeting "
 			"the floor. Match the table's type, height, footprint, material and perspective to the room "
 			"and nearby seating. "
@@ -366,9 +371,8 @@ def render_place(project, setting, view=False, staging=""):
 				"planned floor position, not a full-height dining or work table in front of lounge seating. "
 			)
 	prompt = (
-		f"{_architectural_setting(setting)}\n\n{VIEW_SETTING if view else LOCATION_PLATE} "
+		f"{table_guidance}{_architectural_setting(setting)}\n\n{VIEW_SETTING if view else LOCATION_PLATE} "
 		f"Furnish the location for these upcoming shot compositions and support surfaces: {staging}. "
-		f"{table_guidance}"
 		"Make the named action furniture prominent and reachable in the foreground; do not make an unmentioned "
 		"piece of furniture the room's dominant feature. Keep the actor's planned floor or seat position open. "
 		"An unoccupied environmental establishing plate: architecture and furnishings only. The main action "
@@ -451,7 +455,7 @@ def _prefer_location_plate(candidates, setting, staging):
 	return candidates[1] if str(result.get("better")) == "2" else candidates[0]
 
 
-def _tabletop_crop(content, box):
+def _tabletop_crop(content, box, *, pixel_edge=None):
 	"""Crop a detected tabletop for a second, detailed observation of loose props."""
 	if not isinstance(box, (list, tuple)) or len(box) != 4:
 		return None
@@ -459,10 +463,24 @@ def _tabletop_crop(content, box):
 		x1, y1, x2, y2 = [float(value) for value in box]
 	except (TypeError, ValueError):
 		return None
-	if not (0 <= x1 < x2 <= 1000 and 0 <= y1 < y2 <= 1000):
+	if not all(math.isfinite(value) for value in (x1, y1, x2, y2)):
+		return None
+	if not (0 <= x1 < x2 and 0 <= y1 < y2):
+		return None
+	if pixel_edge is None and (x2 > 1000 or y2 > 1000):
 		return None
 	with Image.open(io.BytesIO(content)) as image:
 		width, height = image.size
+		if pixel_edge is not None:
+			# Vision sees a thumbnail and returns pixel boxes in that image, not
+			# the original canvas or a normalized 1000-unit square.
+			thumbnail = image.copy()
+			thumbnail.thumbnail((pixel_edge, pixel_edge))
+			sent_width, sent_height = thumbnail.size
+			x1, x2 = [max(0, min(1000, x * 1000 / sent_width)) for x in (x1, x2)]
+			y1, y2 = [max(0, min(1000, y * 1000 / sent_height)) for y in (y1, y2)]
+			if not (x1 < x2 and y1 < y2):
+				return None
 		if (x2 - x1) * width / 1000 < 24 or (y2 - y1) * height / 1000 < 12:
 			return None
 		pad_x, pad_y = (x2 - x1) * 0.07, (y2 - y1) * 0.12
@@ -507,11 +525,15 @@ def _location_supports_staging(content, setting, staging):
 			surface = ask(
 				content,
 				"Locate the main foreground ACTION TABLETOP, not the sofa, rug, cabinet or table legs. "
-				"Return JSON with bbox=[left,top,right,bottom] in 0..1000 image coordinates, "
+				"Return JSON with bbox_2d=[left,top,right,bottom] in PIXEL coordinates of the image you received, "
 				"tightly enclosing its visible top surface. Use null if no tabletop is clearly visible.",
 				max_edge=1024,
 			)
-			crop = _tabletop_crop(content, surface.get("bbox"))
+			crop = (
+				_tabletop_crop(content, surface["bbox_2d"], pixel_edge=1024)
+				if "bbox_2d" in surface
+				else _tabletop_crop(content, surface.get("bbox"))
+			)
 			if crop is None:
 				return False
 			close_check = ask(
@@ -556,7 +578,15 @@ def _location_supports_staging(content, setting, staging):
 				"when the relationship cannot be seen; include visual evidence.",
 				max_edge=1024,
 			)
-			if fit.get("answer") is not True:
+			# Some observers answer the three requested checks separately. Require
+			# all three explicit positives; never override a negative summary or
+			# interpret a missing/uncertain component as a pass.
+			fit_answer = fit.get("answer")
+			if "answer" not in fit and all(
+				fit.get(key) is True for key in ("scale", "visual_fit", "placement")
+			):
+				fit_answer = True
+			if fit_answer is not True:
 				return False
 		if not staging:
 			return True

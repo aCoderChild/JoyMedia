@@ -76,6 +76,31 @@ def _streamed(content):
 
 
 class TestOpeningTextCrossCheck(TestCase):
+	def test_supplied_product_view_is_visible_without_qualifying_a_missing_angle(self):
+		from joymedia.api.creative import _prepared_assets
+
+		project = frappe._dict(
+			selected_media=[frappe._dict(reference_key="product", asset_version="original")]
+		)
+		with (
+			patch("frappe.db.exists", return_value=True),
+			patch("frappe.get_doc", return_value=project),
+			patch("frappe.db.get_value", return_value="/private/files/product.jpg"),
+		):
+			assets = _prepared_assets(
+				{
+					"project": "test",
+					"product_views": [
+						{"source": "product", "view": "front", "status": "supplied"},
+						{"source": "product", "view": "back", "status": "source_locked"},
+					],
+				}
+			)
+		self.assertEqual("/private/files/product.jpg", assets[0]["url"])
+		self.assertEqual("supplied", assets[0]["status"])
+		self.assertIsNone(assets[1]["url"])
+		self.assertEqual("source_locked", assets[1]["status"])
+
 	def test_parallel_planners_do_not_prepare_the_same_video_twice(self):
 		from joymedia.services.generation.creative_batch import prepare_batch
 

@@ -32,6 +32,44 @@ def _shot(name, setting, environment=None, camera="Wide shot."):
 
 
 class TestLocationPlates(FrappeTestCase):
+	def test_separate_location_fit_checks_require_all_three_and_no_negative_summary(self):
+		for fit, expected in [
+			({"scale": True, "visual_fit": True, "placement": True}, True),
+			({"scale": True, "visual_fit": True}, False),
+			({"scale": True, "visual_fit": True, "placement": False}, False),
+			({"answer": False, "scale": True, "visual_fit": True, "placement": True}, False),
+		]:
+			with (
+				self.subTest(fit=fit),
+				patch(
+					"joymedia.services.review.consistency.ask",
+					side_effect=[
+						{"answer": False},
+						{"answer": False},
+						{"bbox": [100, 300, 800, 600]},
+						{"answer": False},
+						{"answer": True},
+						{"answer": True},
+						fit,
+						{"answer": True},
+					],
+				),
+				patch.object(locations, "_tabletop_crop", return_value=b"crop"),
+			):
+				self.assertEqual(
+					expected, locations._location_supports_staging(b"image", "living room", "working table")
+				)
+
+	def test_tabletop_pixel_box_uses_the_sent_thumbnail_dimensions(self):
+		buffer = io.BytesIO()
+		image = Image.new("RGB", (1200, 1600), "red")
+		image.paste("blue", (0, 800, 1200, 1600))
+		image.save(buffer, "PNG")
+		crop = locations._tabletop_crop(buffer.getvalue(), [0, 512, 768, 1024], pixel_edge=1024)
+		with Image.open(io.BytesIO(crop)) as result:
+			self.assertEqual((1200, 896), result.size)
+			self.assertEqual((0, 0, 255), result.getpixel((600, 448)))
+
 	def test_failed_place_does_not_start_first_frames(self):
 		with (
 			patch.object(locations, "draw_project_places", side_effect=ValueError("no verified table")),

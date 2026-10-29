@@ -258,7 +258,12 @@ def _visible_change(source_image, generated):
 		return None
 	before = cv2.resize(before, (128, 128), interpolation=cv2.INTER_AREA)
 	after = cv2.resize(after, (128, 128), interpolation=cv2.INTER_AREA)
-	return float(np.mean(np.abs(before.astype(np.float32) - after.astype(np.float32))) / 255) >= 0.05
+	# A removed prop or a moved paw can occupy a small part of a mostly white
+	# studio image. Requiring five percent average change over the entire canvas
+	# rejected real H3 edits before the independent pose/identity observations.
+	# Detect a meaningful changed region instead; mild codec noise is insufficient.
+	difference = np.mean(np.abs(before.astype(np.float32) - after.astype(np.float32)), axis=2) / 255
+	return bool(np.mean(difference > 0.1) >= 0.01)
 
 
 def _clean_identity_source(project, source):
@@ -542,6 +547,8 @@ def _h3_pose_prompt(pose_description, angle, eye_instruction):
 		f"{pose_description}. End in a clear {angle_text} and hold the final pose. "
 		"Preserve the source subject's face, body shape, limb proportions, colour, material, "
 		"markings and worn accessories. Do not add accessories absent from the source. "
+		"Any separate object held in the source is a removable prop: set it aside out of "
+		"frame before the final pose. End with empty paws or hands and no held objects. "
 		+ eye_instruction
 		+ "Keep anatomy connected and maintain visible, physically plausible support "
 		"appropriate to the requested pose. Do not add limbs, props, other subjects, "
@@ -1244,8 +1251,22 @@ def _pose_key(identity, pose, angle):
 
 def _register_pose_view(project, source, cast_key, pose, angle):
 	"""Generate one pose, pass it through the admission checks and add it to the project."""
-	key = _pose_key(source.get("identity_key") or source.get("reference_key"), pose, angle)
 	content = _pose_view(project, source, pose, angle)
+	return _save_pose_view(project, source, cast_key, pose, angle, content)
+
+
+def register_pose_candidate(project, source, cast_key, pose, angle, content):
+	"""Requalify and preserve a generated candidate, including recovered job output."""
+	project._require_write_access()
+	file_url = frappe.db.get_value("Asset Version", source.asset_version, "file")
+	if not _accept_pose_view(content, file_url, pose, angle):
+		raise ValueError("The generated pose candidate did not pass qualification.")
+	return _save_pose_view(project, source, cast_key, pose, angle, content)
+
+
+def _save_pose_view(project, source, cast_key, pose, angle, content):
+	"""Persist bytes already admitted by the generation or recovery path."""
+	key = _pose_key(source.get("identity_key") or source.get("reference_key"), pose, angle)
 	from joymedia.services.intake.subject_cutout import cutout_studio_reference, sam2_configured
 
 	mask_evidence = None
