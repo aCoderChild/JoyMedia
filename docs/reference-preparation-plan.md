@@ -111,7 +111,7 @@ private Intermediate artifact, attached to the project and visible with the
 other preparation clips, never as a selectable take. Frozen workflow/snapshot
 lineage and a clip SHA-256 identify the selected frame.
 
-The registered local route is PIPE-00072: WF-02701 storyboard images, WF-02695
+The registered local route is PIPE-00073: WF-02702 storyboard images, WF-02695
 animation, with independent WF-02656 empty environments. Its product default
 remains source_pixels. Batch requests honor the project's trusted backend
 execution pin; client RPCs do not select internal recipes. This preserves the
@@ -189,3 +189,16 @@ response fields. Earlier live checks returned an unverified-people gap on a
 visibly actor-only frame; malformed keys must remain held, but the observer
 should receive an exact response contract. Existing cropped-human and duplicate-
 actor checks passed with the constrained calls.
+
+Inspection of actual studio background files exposed unconditional furnished-room
+and sofa instructions in the environment helper. These defaults are removed.
+A separate schema-bound setting comparison now rejects a furnished room used
+for a plain studio or neutral source-photo setting, even if it has open floor.
+Foreground-negative clauses are stripped before place keying, preserving the
+neutral setting instead of falling back to an interior. The H3 hold recipe now
+declares free composition, so it receives the complete setting identity rather
+than a legacy center crop. The new immutable route is WF-02702 / PIPE-00073.
+The historical wrong-environment run CRB-00108 is cancelled, with its records
+retained. 29 location checks and 71 script/camera/H3 checks passed. Generic idle
+source-view product endings also normalize into the existing literal source
+hold; their camera remains locked rather than acquiring a variety move.

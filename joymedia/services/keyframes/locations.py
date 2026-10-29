@@ -38,7 +38,7 @@ def _living_room_work_surface(setting, staging):
 
 def location_key(setting):
 	"""The project-reference key of a place's picture. Scenes with the same setting text share it."""
-	place = " ".join(usable_setting(setting).casefold().split())
+	place = " ".join(usable_setting(_architectural_setting(setting)).casefold().split())
 	return "location_" + hashlib.sha1(place.encode()).hexdigest()[:10]
 
 
@@ -145,7 +145,7 @@ def place_key(project, setting):
 		known = row.reference_key or ""
 		if known == key:
 			return key
-	place = usable_setting(setting)
+	place = usable_setting(_architectural_setting(setting))
 	for row in project.get("selected_media") or []:
 		known, label = row.reference_key or "", row.label or ""
 		if (
@@ -205,7 +205,7 @@ def missing_places(project, shots):
 	for shot in shots:
 		key = place_key(project, shot.setting_prompt)
 		if not provided and not _own_environment(shot, places) and key not in have:
-			setting = usable_setting(shot.setting_prompt)
+			setting = usable_setting(_architectural_setting(shot.setting_prompt))
 			# Match synonymous settings within this pending batch as well as places
 			# already attached to the project. Otherwise "Same living room" gets
 			# drawn as a second, inconsistent room before either plate is stored.
@@ -339,12 +339,12 @@ VIEW_SETTING = (
 )
 
 LOCATION_PLATE = (
-	"Establish one complete furnished location in coherent perspective. Keep its architecture, floor, fixed "
-	"furnishings and practical light consistent. Give the room foreground, middle-ground and background depth "
-	"through its existing materials and lighting. When no illustrated medium is requested, render as naturalistic "
+	"Establish exactly the requested environment in coherent perspective. Preserve its stated surfaces, "
+	"architecture and any explicitly requested fixed furnishings. An empty studio, neutral surface or outdoor "
+	"setting must remain that setting; do not turn it into a furnished living room. Give the setting depth "
+	"through its authored materials and lighting. When no illustrated medium is requested, render as naturalistic "
 	"live-action commercial photography with believable textures, lens depth and motivated practical light; "
-	"avoid drawn outlines or flat cartoon shading. Use setting-appropriate furniture, subtle color accents "
-	"and balanced daylight with practical light; avoid an empty shell or a single-color cast. "
+	"avoid drawn outlines or flat cartoon shading. Add no unrequested furniture, decor or working props. "
 	"Leave the main working area open and its surface bare. "
 	"The frame is an unoccupied architectural plate, with no inset panels or foreground props."
 )
@@ -358,12 +358,12 @@ def _architectural_setting(setting):
 	)
 	if match and match.start() >= 12:
 		text = re.sub(
-			r"\s*(?:(?:,|and|with|where|while|featuring)\s+)?(?:the|a|an)?\s*$",
+			r"\s*(?:(?:,|and|with|where|while|featuring)\s+)?(?:the|a|an|no)?\s*$",
 			"",
 			text[: match.start()],
 			flags=re.I,
 		)
-	return text.rstrip(" ,.;") or "A furnished room"
+	return text.rstrip(" ,.;") or "A neutral setting"
 
 
 def render_place(project, setting, view=False, staging=""):
@@ -382,9 +382,9 @@ def render_place(project, setting, view=False, staging=""):
 	table_guidance = ""
 	if "floor work area" in staging:
 		table_guidance = (
-			"The main action space is a large continuous EMPTY foreground rug or floor, fully visible and "
-			"unobstructed. Keep sofas and other furniture at the back or sides. No coffee table or other "
-			"raised work surface occupies this foreground floor area. The rug remains completely empty. "
+			"The main action space is the authored continuous EMPTY foreground ground surface, fully visible "
+			"and unobstructed. Keep any explicitly authored furniture outside this working area. "
+			"Do not add furniture, rugs or raised surfaces that the setting does not request. "
 		)
 	if "working table" in staging:
 		table_guidance = (
@@ -403,10 +403,9 @@ def render_place(project, setting, view=False, staging=""):
 			)
 	prompt = (
 		f"{table_guidance}{_architectural_setting(setting)}\n\n{VIEW_SETTING if view else LOCATION_PLATE} "
-		f"Furnish the location for these upcoming shot compositions and support surfaces: {staging}. "
-		"Make the named action furniture prominent and reachable in the foreground; do not make an unmentioned "
-		"piece of furniture the room's dominant feature. Keep the foreground floor and seating surfaces exposed. "
-		"An unoccupied environmental establishing plate: architecture and furnishings only. The main action "
+		f"Required permanent support surfaces and grounded objects for the upcoming shots: {staging or 'none'}. "
+		"Include only the named permanent elements, at reachable scale and depth. "
+		"An unoccupied environment plate: no physical actors, products or transient working props. The main action "
 		"surface is completely bare and the foreground is clear. Wall art uses abstract shapes without faces. "
 		+ _mood(project, avoid=False).replace(MEDIUM_LOCK, "")
 	).strip()
@@ -641,6 +640,26 @@ def _location_supports_staging(content, setting, staging):
 				fit_answer = True
 			if fit_answer is not True:
 				return False
+		setting_fit = ask(
+			content,
+			f"Compare this empty environment with the requested setting: {_architectural_setting(setting)}. "
+			"Does it depict that setting, including its stated surfaces and permanent objects, rather than a "
+			"different type of location? A furnished room does not match a plain studio or neutral source-photo "
+			"setting. Judge the location only; actors and advertised products must be absent. "
+			"Return answer true only for a visible match, false for a contradiction, null if uncertain, with evidence.",
+			max_edge=1024,
+			schema={
+				"type": "object",
+				"additionalProperties": False,
+				"required": ["answer", "reason"],
+				"properties": {
+					"answer": {"type": ["boolean", "null"]},
+					"reason": {"type": "string", "minLength": 1},
+				},
+			},
+		)
+		if setting_fit.get("answer") is not True or not str(setting_fit.get("reason") or "").strip():
+			return False
 		if not staging:
 			return True
 		result = ask(

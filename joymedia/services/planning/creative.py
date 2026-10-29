@@ -1757,8 +1757,8 @@ def normalize_static_final_packshot(script):
 			changes.append(
 				"Final packshot: removed stale actor continuity from the declared product-only scene."
 			)
-		# An explicitly requested source photograph is a presentation, not a
-		# newly photographed pack. Canonicalize its idle action so the native
+		# A source-view idle product hero is a presentation. Canonicalize its
+		# stationary action so the native
 		# source-frame route can recognize it. Authored camera travel and actual
 		# product actions remain outside this normalization.
 		if (
@@ -1773,9 +1773,9 @@ def normalize_static_final_packshot(script):
 			)
 			and scene.get("product_view", "source") == "source"
 			and scene.get("subject_motion") == "stationary"
-			and re.search(r"\boriginal\b[^.]*\bproduct photograph\b", scene.get("visual_camera") or "", re.I)
 			and re.fullmatch(
-				r"(?:\[[^\]]+\]\s*)?(?:clean\s+)?hero product shot\b[^.]*\.?",
+				r"(?:\[[^\]]+\]\s*)?(?:(?:clean\s+)?hero product shot\b[^.]*"
+				r"|(?:the\s+)?(?:original\s+|supplied\s+)?product(?:\s+pack)?\s+(?:remains|stays)\s+(?:stationary|still))\.?",
 				scene.get("action") or "",
 				re.I,
 			)
@@ -1789,7 +1789,7 @@ def normalize_static_final_packshot(script):
 			)
 			scene["camera_move"] = "static"
 			changes.append(
-				"Final packshot: retained the explicitly requested original photograph as a locked source presentation."
+				"Final packshot: kept the source-view product hero as a locked source presentation."
 			)
 
 		return changes

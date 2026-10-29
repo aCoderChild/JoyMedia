@@ -3485,6 +3485,12 @@ class TestCameraDirection(TestCase):
 		]
 		self.assertTrue(normalize_static_final_packshot(script))
 		self.assertEqual("static", last["camera_move"])
+		last.update(
+			action="[0-3s] The product remains stationary.",
+			visual_camera="An eye-level shot of the supplied pack.",
+		)
+		self.assertTrue(normalize_static_final_packshot(script))
+		self.assertIn("printed artwork intact", last["action"])
 
 	def test_camera_only_product_insert_is_normalized_without_replacing_actor_actions(self):
 		from joymedia.services.planning.creative import normalize_product_camera_inserts

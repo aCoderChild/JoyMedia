@@ -28,7 +28,7 @@ def image_recipe(graph, spec, environment_workflow):
 	}
 	spec["metadata"] = {"frame_count": 1, "output_fps": 24, "produces_video": 0, "produces_audio": 0}
 	spec["limits"] = {"max_frames": 1}
-	spec["capabilities"] = ["reference_image", "multi_reference", "storyboard_hold"]
+	spec["capabilities"] = ["reference_image", "multi_reference", "storyboard_hold", "free_composition"]
 	spec["reference_defaults"] = {"Product": "source_pixels"}
 	spec["environment_workflow"] = environment_workflow
 	spec["parameters"] = [

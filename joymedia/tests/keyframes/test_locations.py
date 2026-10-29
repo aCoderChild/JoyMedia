@@ -32,6 +32,26 @@ def _shot(name, setting, environment=None, camera="Wide shot."):
 
 
 class TestLocationPlates(FrappeTestCase):
+	def test_plain_studio_cannot_pass_as_a_furnished_room(self):
+		for answer in (
+			{"answer": False, "reason": "Sofas and a table replace the neutral studio."},
+			{"answer": True, "reason": ""},
+		):
+			with patch(
+				"joymedia.services.review.consistency.ask",
+				side_effect=[{"answer": False}, {"answer": False}, answer],
+			):
+				self.assertFalse(locations._location_supports_staging(b"room", "Plain grey studio", ""))
+		self.assertNotIn("complete furnished location", locations.LOCATION_PLATE)
+		self.assertEqual(
+			"Neutral source-photo setting",
+			locations._architectural_setting("Neutral source-photo setting with no actor or loose paper."),
+		)
+		self.assertEqual(
+			locations.location_key("Neutral source-photo setting"),
+			locations.location_key("Neutral source-photo setting with no actor or loose paper."),
+		)
+
 	def test_floor_story_does_not_reuse_a_tabletop_plate_or_parse_boilerplate_as_furniture(self):
 		import json
 
@@ -99,6 +119,7 @@ class TestLocationPlates(FrappeTestCase):
 						{"answer": True},
 						{"answer": True},
 						fit,
+						{"answer": True, "reason": "Requested living room and its furniture are visible."},
 						{"answer": True},
 					],
 				),

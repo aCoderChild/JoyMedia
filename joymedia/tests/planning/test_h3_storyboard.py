@@ -27,6 +27,7 @@ class TestH3Storyboard(TestCase):
 		self.assertEqual("92", execution["outputs"]["preparation_bridge"]["node_key"])
 		self.assertEqual("flux-environment", execution["environment_workflow"])
 		self.assertEqual("source_pixels", execution["reference_defaults"]["Product"])
+		self.assertIn("free_composition", execution["capabilities"])
 		self.assertNotIn("frame_count", [p["semantic"] for p in execution["parameters"]])
 
 	def test_hold_prompt_numbers_only_bound_references_and_never_performs_the_later_action(self):
