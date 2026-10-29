@@ -1,4 +1,5 @@
 import copy
+import json
 from unittest import TestCase
 
 import frappe
@@ -49,3 +50,29 @@ class TestH3Storyboard(TestCase):
 		self.assertIn("Do not perform the later scripted action", prompt)
 		self.assertIn("overall_soundscape: N/A", prompt)
 		self.assertIn("non_diegetic_music: N/A", prompt)
+
+	def test_product_free_hold_does_not_inherit_generic_product_boilerplate(self):
+		shot = frappe._dict(
+			image_prompt="Paws hold one plain unfolded white tissue.",
+			motion_plan_json=json.dumps(
+				{
+					"shot_structure": {
+						"stage": "grip",
+						"framing": "extreme_close_up",
+						"angle": "eye_level",
+						"subject_motion": "manipulation",
+						"keep_visible": [],
+					}
+				}
+			),
+			references=[frappe._dict(reference_role="Character", asset_version="mascot")],
+		)
+		workflow = frappe._dict(bindings=[frappe._dict(required_input_role="character")])
+		prompt = compile_opening_hold(
+			shot, workflow, "Show the advertised product and their supports. Add the source-only pink heart."
+		)
+		self.assertIn(shot.image_prompt, prompt)
+		self.assertIn("no retail container", prompt)
+		self.assertIn("no full character body", prompt)
+		self.assertNotIn("advertised product and their supports", prompt)
+		self.assertNotIn("pink heart", prompt)

@@ -13,6 +13,35 @@ from joymedia.services.planning.camera import without_camera as _without_camera
 
 def compile_opening_hold(shot, workflow, composition):
 	"""A preparation clip holds one opening state; it does not perform later actions."""
+	from joymedia.services.planning.shot_structure import structure_for
+	from joymedia.services.scene.contract import opening_instruction
+
+	# Vendor serialization starts from the authored still, not Flux's expanded
+	# whole-scene boilerplate. Generic product instructions primed a retail box
+	# in a product-free actor frame even with no product image bound.
+	composition = str(shot.get("image_prompt") or composition or "").strip()
+	references = shot.get("references") or []
+	roles = {str(r.get("reference_role") or r.get("input_role") or "").lower() for r in references}
+	structure = structure_for(shot) or {}
+	framing = str(structure.get("framing") or "").replace("_", " ")
+	angle = str(structure.get("angle") or "").replace("_", " ")
+	opening = opening_instruction(shot.get("motion_plan_json"), shot.get("duration_seconds"))
+	appearance = " ".join(
+		str(r.get("visual_description") or "")
+		for r in references
+		if str(r.get("reference_role") or "").lower() in {"character", "person"}
+	)
+	scope = (
+		"Exactly one source-matching package. Its printed figures remain flat artwork. "
+		if "product" in roles
+		else "Only the authored loose materials and working props are visible; no retail container, wrapper, carton or box. "
+	)
+	if "product" in roles and not roles & {"character", "person"}:
+		scope += "No physical actor, paw or hand. "
+	if structure.get("framing") in {"close_up", "extreme_close_up"}:
+		scope += "Crop to the working material and its contacting paws/parts; no full character body, head or feet. "
+	elif roles & {"character", "person"}:
+		scope += "Keep the actor and authored weight support visible, outside solid furniture. "
 	definitions, retention, uses = _reference_sections(shot, workflow, True)
 	return (
 		"For the target video, at 0.00 seconds into the target video, the supplied reference pictures are fully referenced for [Shot 1].\n"
@@ -22,11 +51,17 @@ def compile_opening_hold(shot, workflow, composition):
 		+ "\n\nintegrated_multimodal_description: [Shot 1] "
 		+ uses
 		+ " "
+		+ scope
+		+ f"Camera: {angle} {framing}. "
 		+ composition
+		+ " "
+		+ opening
+		+ " "
+		+ appearance
 		+ " Hold exactly this opening pose, camera, props and composition throughout this preparation clip. "
 		"Do not perform the later scripted action or change state. Reusable identity references do not replace "
 		"authored scene props or contact. Keep the original anatomy, material, proportions and visible traits. "
-		"Do not transfer packaging illustrations or branding onto loose materials unless explicitly authored. "
+		"Do not add print, drawings or logos to loose material unless explicitly authored. "
 		"No new actor, duplicate subject, human hand or unauthored package."
 		"\n\noverall_soundscape: N/A\n\nnon_diegetic_music: N/A"
 	)
