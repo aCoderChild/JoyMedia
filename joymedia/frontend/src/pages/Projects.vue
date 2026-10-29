@@ -41,7 +41,8 @@
             <button class="font-semibold text-rio-500 hover:underline" :aria-label="`Restore ${project.project_name}`" @click="restoreProject(project)">{{ currentLang==='vi'?'Khôi phục':'Restore' }}</button>
             <button class="text-rose-600 hover:underline dark:text-rose-300" data-test="delete-forever" :aria-label="`Delete ${project.project_name} forever`" @click="deleteForever(project)">{{ currentLang==='vi'?'Xóa vĩnh viễn':'Delete forever' }}</button>
           </template>
-          <button v-else class="text-ink-secondary hover:text-ink-primary" :aria-label="currentLang==='vi'?`Chuyển ${project.project_name} vào thùng rác`:`Move ${project.project_name} to trash`" @click="archiveProject(project)">{{ currentLang==='vi'?'Chuyển vào thùng rác':'Move to trash' }}</button>
+          <button v-if="statusFilter!=='Archived' && access.can_create" type="button" class="font-semibold text-rio-500 hover:underline" data-test="create-another-video" @click="newVideoProject=project">{{ currentLang==='vi'?'Tạo video khác':'Create another video' }}</button>
+          <button v-if="statusFilter!=='Archived'" class="text-ink-secondary hover:text-ink-primary" :aria-label="currentLang==='vi'?`Chuyển ${project.project_name} vào thùng rác`:`Move ${project.project_name} to trash`" @click="archiveProject(project)">{{ currentLang==='vi'?'Chuyển vào thùng rác':'Move to trash' }}</button>
         </div>
       </article>
     </div>
@@ -53,6 +54,7 @@
     <button v-if="projectsList.length<projectTotal" class="jm-button-secondary self-center" :disabled="projectsResource.loading" @click="projectsResource.more()">{{ currentLang==='vi'?'Xem thêm video':'Load more videos' }}</button>
   </main>
   <NewProjectDialog v-model="showNewProject" @created="onProjectCreated" />
+  <CreateProjectVideoDialog v-if="newVideoProject" :project="newVideoProject" @close="newVideoProject=null" @started="projectsResource.reload()" @created="openCreatedVideo" />
 </template>
 
 <script setup>
@@ -69,6 +71,7 @@ import { errorMessage } from "../utils/errors";
 import { useI18n } from "../stores/i18n";
 import MediaThumbnail from "../components/MediaThumbnail.vue";
 import NewProjectDialog from "../components/NewProjectDialog.vue";
+import CreateProjectVideoDialog from "../components/CreateProjectVideoDialog.vue";
 
 const { currentLang } = useI18n();
 const router = useRouter();
@@ -83,6 +86,8 @@ const statusFilter = computed({
 const searchQuery = ref("");
 const creatingProject = ref(false);
 const showNewProject = ref(false);
+const newVideoProject = ref(null);
+function openCreatedVideo(name) { newVideoProject.value = null; router.push(`/projects/${name}`); }
 
 const projectsResource = useLibraryCollection("joymedia.api.projects.get_project_cards", !access.value.reviewer && access.value.role!=='unassigned');
 const galleryView=useGalleryView('joymedia_project_gallery');

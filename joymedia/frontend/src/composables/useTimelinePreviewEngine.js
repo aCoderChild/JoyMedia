@@ -37,6 +37,7 @@ export function useTimelinePreviewEngine({
   getVideo,
   onTimelineFrame,
   onTimelineEnd,
+  driveClock = true,
 }) {
   const audioElements = new Map();
   let animationFrame = null;
@@ -290,7 +291,7 @@ export function useTimelinePreviewEngine({
   }
 
   watch([isPlaying, studioMode], ([playing, mode]) => {
-    if (playing && mode === "edit") start();
+    if (playing && mode === "edit" && driveClock) start();
     else stop();
   }, { immediate: true });
 

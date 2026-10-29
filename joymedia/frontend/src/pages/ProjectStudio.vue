@@ -117,7 +117,7 @@
 			:project-title="projectTitle"
 			:project-status="projectStatus"
 			:idea="videoIdeaPrompt"
-			:can-edit="access.can_use_advanced_editor && !workspace?.family?.archived"
+			:can-edit="!access.reviewer && !workspace?.family?.archived"
 			:can-work="!access.reviewer && !workspace?.family?.archived"
 			:can-restore="Boolean(workspace?.family?.archived) && !access.reviewer"
 			:current-lang="currentLang"
@@ -132,9 +132,12 @@
 			:fps="fps"
 			:width="videoSettings.delivery_width"
 			:height="videoSettings.delivery_height"
-			:busy="isGenerating || isProductionActive || clientFrames.drawingAll.value"
+			:busy="isGenerating || isProductionActive || clientFrames.drawingAll.value || clientActionBusy"
 			:exporting="isExporting"
 			:can-export="timelineReady"
+			:timeline-busy="timelineBusy"
+			:can-undo="canUndo" :can-redo="canRedo"
+			:export-quality="workspace?.project?.export_quality || videoSettings.export_quality || 'Studio 1440p60'"
 			:storyboard-approved="workspace?.project?.storyboard_approval_status === 'Approved'"
 			:busy-shots="workspace?.project?.busy_shots || []"
 			:frames="clientFrames.rows.value"
@@ -145,7 +148,7 @@
 			@open-history="historyOpen = true"
 			@update:idea="videoIdeaPrompt = $event"
 			@settings="openProjectSettings"
-			@add-scene="openAddScenePopover"
+			@add-scene="addBlankScene"
 			@open-media="openPicker"
 			@select-asset="openRioAssetDetails"
 			@assign-asset="assignRioAssetToShot"
@@ -165,6 +168,13 @@
 			@set-identity="updateReferenceIdentity"
 			@apply-template-duration="applyTemplateDuration"
 			@rebuild-timeline="rebuildTimeline"
+			@clear-timeline="clearRioTimeline"
+			@trim-timeline="rioTrimClip" @split-timeline="rioSplitClip"
+			@undo-timeline="rioUndo" @redo-timeline="rioRedo"
+			@add-to-timeline="addRioSceneToTimeline"
+			@seek-timeline="onSeekPlayhead"
+			@timeline-refresh="refreshRioTimeline"
+			@export-preset="exportRioPreset"
 			:project="workspace?.project || {}"
 			:production="workspace?.production || null"
 			@open-timeline="openRioTimeline"
@@ -190,13 +200,21 @@
 			@save-scene-description="saveActiveShot" @ask-ai="onAskAiRewriteShot" @accept-revision="applyPendingRevision" @discard-revision="discardPendingRevision"
 			@review-changed="onReviewChanged" @open-settings="showSettings = true" @open-media-picker="openPicker"
 		/>
-		<StoryboardSlicer
+		<StoryboardWorkspace
 			v-if="slicerOpen"
 			:project-name="projectName"
 			:shots="storyboardShots"
+			:project-title="projectTitle"
+			:assets="projectAssets"
+			:frames="clientFrames.rows.value"
+			:selected-shot-index="selectedShotIndex"
+			:can-edit="!access.reviewer && !workspace?.family?.archived"
+			:busy="isGenerating || isProductionActive || isFinishing || isExporting || clientFrames.drawingAll.value || Boolean(clientFrames.drawingShot.value)"
 			:current-lang="currentLang"
+			@select-shot="onSelectShot"
+			@edit-shot="openRioShotDetails"
 			@close="slicerOpen = false"
-			@done="onStoryboardSliced"
+			@changed="onStoryboardSliced"
 		/>
 		<div v-if="advancedMode && rioMode && rioTimelineOpen" class="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-6" role="dialog" aria-modal="true" :aria-label="currentLang === 'vi' ? 'Biên tập dòng thời gian' : 'Edit timeline'">
 			<div class="relative w-full max-w-7xl max-h-full overflow-auto rounded-xl border border-outline-border bg-surface-card p-4">
@@ -851,7 +869,7 @@ import { useKeyframes } from "../composables/useKeyframes";
 import { clientJourney } from "../utils/clientJourney";
 import ReadinessChecklist from "../components/studio/ReadinessChecklist.vue";
 import EditTimeline from "../components/studio/EditTimeline.vue";
-import StoryboardSlicer from "../components/studio/StoryboardSlicer.vue";
+import StoryboardWorkspace from "../components/studio/StoryboardWorkspace.vue";
 import StudioInspector from "../components/studio/StudioInspector.vue";
 import MediaPicker from "../components/studio/MediaPicker.vue";
 import ProjectSettingsModal from "../components/studio/ProjectSettingsModal.vue";
@@ -1188,6 +1206,8 @@ const {
 	addAudioClip,
 	exportTimeline,
 	resetTimeline,
+	clearTimeline,
+	addSceneToTimeline,
 } = useProjectTimeline(projectName);
 
 const { isFinishing, finishFilm, replaceMusic, cancelFinishing } = useProjectFinishing({
@@ -2332,7 +2352,7 @@ async function applyTemplateDuration(seconds, template) {
 // Supplied first frames change the keyframe stage too, and that resource reloads
 // on its own realtime event rather than with the workspace, so refresh both.
 async function onStoryboardSliced() {
-	await Promise.all([fetchWorkspace(), clientFrames.reload()]);
+	await Promise.all([fetchWorkspace(), clientFrames.reload(), loadTimeline(false)]);
 }
 
 // The browser refuses the microphone rather than failing silently; say so plainly.
@@ -2349,6 +2369,36 @@ function onDictationError(code) {
 
 // Rebuilding restacks the timeline from the generated scenes and drops manual
 // edits, so it asks first. Narration is kept.
+async function addBlankScene() {
+	if (clientActionBusy.value) return;
+	clientActionBusy.value = true;
+	try {
+		const result = await call('joymedia.services.planning.storyboard_grid.add_blank_scene', { project_name: projectName.value });
+		await fetchWorkspace();
+		const index = storyboardShots.value.findIndex(shot => shot.name === result.shot);
+		if (index >= 0) onSelectShot(storyboardShots.value[index], index);
+	} catch (error) { notify({ title: currentLang.value === 'vi' ? 'Không thể thêm cảnh' : 'Could not add scene', text: errorMessage(error), type: 'error' }); }
+	finally { clientActionBusy.value = false; }
+}
+async function clearRioTimeline() {
+	const confirmed = await rioConfirm(currentLang.value === 'vi' ? 'Xóa tất cả đoạn phim và âm thanh khỏi dòng thời gian? Cảnh và tư liệu gốc vẫn được giữ. Bạn có thể hoàn tác.' : 'Clear all video and audio clips from the timeline? Source scenes and media are kept. You can undo this.', { destructive: true });
+	if (!confirmed) return;
+	if (await clearTimeline()) await fetchWorkspace();
+}
+async function rioTrimClip(payload) { if (await handleTrimClip(payload)) await fetchWorkspace(); }
+async function rioSplitClip(payload) { if (await handleSplitClip(payload)) await fetchWorkspace(); }
+async function rioUndo() { if (await undo()) await fetchWorkspace(); }
+async function rioRedo() { if (await redo()) await fetchWorkspace(); }
+async function addRioSceneToTimeline(shot) { if (await addSceneToTimeline(shot)) await fetchWorkspace(); }
+async function refreshRioTimeline() { await loadTimeline(false); await fetchWorkspace(); }
+async function exportRioPreset(quality) {
+	try {
+		await call('joymedia.api.studio_tools.set_export_quality', { project_name: projectName.value, quality });
+		await fetchWorkspace();
+		await exportAndRefresh();
+	} catch (error) { notify({ title: currentLang.value === 'vi' ? 'Không thể xuất video' : 'Could not export video', text: errorMessage(error), type: 'error' }); }
+}
+
 async function rebuildTimeline() {
 	const vi = currentLang.value === "vi";
 	const confirmed = await rioConfirm(

@@ -12,6 +12,9 @@
   "project_name",
   "version_of",
   "version_label",
+  "source_video_number",
+  "storyboard_grid_imports_json",
+  "timeline_cleared",
   "version_kind",
   "current_edit",
   "product_name",
@@ -57,6 +60,31 @@
   "archived_on"
  ],
  "fields": [
+  {
+   "fieldname": "timeline_cleared",
+   "fieldtype": "Check",
+   "label": "Timeline Cleared",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "storyboard_grid_imports_json",
+   "fieldtype": "JSON",
+   "label": "Storyboard Grid Imports",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "source_video_number",
+   "fieldtype": "Int",
+   "label": "Original Video Number",
+   "description": "Original video number retained when selectively importing a project family.",
+   "read_only": 1,
+   "no_copy": 1
+  },
   {
    "fieldname": "project_overview_section",
    "fieldtype": "Section Break",

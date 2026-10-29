@@ -255,8 +255,8 @@ def _keyframe_retry_direction(shot):
 	identity_retry = (
 		"\n\nRetry identity correction: the previous image changed the character: "
 		+ identity_issue.removeprefix("Critical identity:").strip()[:240]
-		+ ". The customer's original character image controls the face, eye design, head-to-body ratio, "
-		"torso width and limb proportions. The selected pose may change articulation only; "
+		+ ". The customer's original character image controls the face, eye design, surface material and "
+		"texture, head-to-body ratio, torso width and limb proportions. The selected pose may change articulation only; "
 		"do not elongate limbs, narrow the body, or substitute a different face."
 		if identity_issue
 		else ""
@@ -265,7 +265,9 @@ def _keyframe_retry_direction(shot):
 		return (
 			"\n\nRetry correction: show exactly one advertised product package anywhere in the frame, fully inside "
 			"it with space around it, in the same orientation and proportions as its product photo: the same face "
-			"toward the camera, never stood on end, rotated or seen edge-on. No second package, poster or printed copy."
+			"toward the camera, never stood on end, rotated or seen edge-on. No second package, poster or printed copy. "
+			"The package rests on its own surface, not held, lifted or covered by a paw or hand: the product lock "
+			"replaces it with the original photo, which a gripping limb would hide. Any contact begins in the video."
 		)
 	if "Critical style:" in note:
 		return (
@@ -325,6 +327,7 @@ def _compact_geometry_retry(shot, project, references):
 		"Opening still, before any action. " + opening,
 		_keyframe_retry_direction(shot).strip(),
 		_image_reference_roles(references),
+		_character_look_text(references).strip(),
 		_mood(project, avoid=False),
 	]
 	if any(_role_of(ref) == "product" for ref in references):
@@ -379,6 +382,8 @@ def compile_prompt_for_documents(
 			return (
 				_grounded_cast_staging(shot, _with_opening_staging(_draw_prompt(shot, project), shot))
 				+ _image_reference_roles(references)
+				+ _character_look_text(references)
+				+ _product_viewpoint_text(references)
 				+ "\n\nPhysical staging: every rigid product, container and furniture item has its own visible support. Keep props separate from actors' heads and bodies unless explicitly authored as wearable. Show each advertised product as one physical object in its authored position; do not repeat it as another box, reflection, background prop or oversized printed cutout. Packaging artwork remains flat on that single object."
 				+ _keyframe_retry_direction(shot)
 			)
@@ -388,8 +393,11 @@ def compile_prompt_for_documents(
 			return f"{usable_setting(getattr(shot, 'setting_prompt', None))}\n\n{EMPTY_SETTING}"
 
 	if prompt_source == "image":
-		prompt = _with_opening_staging(prompt, shot) + _image_reference_roles(
-			getattr(shot, "references", None) or []
+		prompt = (
+			_with_opening_staging(prompt, shot)
+			+ _image_reference_roles(getattr(shot, "references", None) or [])
+			+ _character_look_text(getattr(shot, "references", None) or [])
+			+ _product_viewpoint_text(getattr(shot, "references", None) or [])
 		)
 		prompt = _grounded_cast_staging(shot, prompt)
 		references = getattr(shot, "references", None) or []
@@ -403,7 +411,10 @@ def compile_prompt_for_documents(
 			prompt += (
 				"\n\nPhysical staging: every rigid product, container and furniture item has its own visible "
 				"support. Keep props separate from actors' heads and bodies; only an explicitly authored "
-				"wearable accessory may touch the head. Keep the product at its stated opening location."
+				"wearable accessory may touch the head. Keep the product at its stated opening location. "
+				# "Holding a tissue" was drawn twice as an invented branded snack bag.
+				"Only an approved product reference carries packaging or branding; any other named item, such "
+				"as a product's contents, is plain and unbranded, never a bag, box or wrapper."
 			)
 		# A product-only packshot has no actor whose hands could legitimately be
 		# visible.  Generic contact language used to make Flux invent hands even
@@ -662,6 +673,104 @@ def _image_reference_roles(references):
 			"Environment references control the setting, support texture and lighting only; do not copy their incidental foreground objects or replace the advertised product with them."
 		)
 	return "\n\nReference roles: " + " ".join(parts) if parts else ""
+
+
+PRODUCT_VIEWPOINT_QUESTION = (
+	"This is a product photograph. Describe only the camera viewpoint it was taken from. Return JSON "
+	"elevation exactly one of eye_level, slightly_above, high_above; turn exactly one of facing_camera, "
+	"turned_left, turned_right; and viewpoint, one short phrase such as 'seen slightly from above, "
+	"its right end receding'."
+)
+
+
+def _product_viewpoint_text(references):
+	"""Set the room camera to the one product photo's own viewpoint.
+
+	The product lock pastes that photo unchanged, so a room drawn from another
+	height or angle leaves the pack visibly out of perspective with the floor.
+	"""
+	from joymedia.services.keyframes.overlay import _cutout_path
+	from joymedia.services.review.consistency import ask
+
+	for reference in references or []:
+		if _role_of(reference) != "product":
+			continue
+		version = _ref_field(reference, "asset_version")
+		path = _cutout_path(version) if version else None
+		if not path:
+			continue
+		cache_key = f"joymedia:product-viewpoint:v1:{version}"
+		answer = frappe.cache.get_value(cache_key)
+		if not answer:
+			try:
+				file_url = frappe.db.get_value("Asset Version", version, "file")
+				answer = ask(file_url, PRODUCT_VIEWPOINT_QUESTION, max_edge=768) or {}
+			except Exception:
+				continue
+			# The model sometimes nests its answer one level down.
+			nested = next((value for value in answer.values() if isinstance(value, dict)), None)
+			if not answer.get("viewpoint") and nested:
+				answer = nested
+			if answer.get("viewpoint"):
+				frappe.cache.set_value(cache_key, answer, expires_in_sec=7 * 24 * 3600)
+		viewpoint = " ".join(str(answer.get("viewpoint") or "").split())[:160]
+		if viewpoint:
+			return (
+				"\n\nCamera: the advertised product appears exactly as in its photo, "
+				+ viewpoint.rstrip(".")
+				+ ". Set the room camera height and angle to match that view, so the floor and furniture "
+				"share the product's perspective."
+			)
+	return ""
+
+
+def _character_look_text(references):
+	"""Each cast character's fixed appearance, measured from its original identity image.
+
+	A reference image plus "bear mascot" let the image model drift to a fluffy
+	teddy bear; the words now carry the reference's own surface and face.
+	"""
+	from joymedia.services.planning.pose_assets import character_look
+
+	looks = []
+	for reference in references or []:
+		if _role_of(reference) not in {"character", "person"}:
+			continue
+		version = _ref_field(reference, "asset_version")
+		if not version:
+			continue
+		try:
+			analysis = (
+				frappe.parse_json(frappe.db.get_value("Asset Version", version, "analysis_json") or "{}")
+				or {}
+			)
+			identity = analysis.get("source_asset_version") or version
+			look = {}
+			# The original identity image first; its approved view when that answer is thin.
+			for candidate in dict.fromkeys((identity, version)):
+				file_url = frappe.db.get_value("Asset Version", candidate, "file")
+				observed = character_look(file_url) if file_url else {}
+				look = {
+					"appearance": look.get("appearance") or observed.get("appearance"),
+					"surface": look.get("surface") or observed.get("surface"),
+				}
+				if len(str(look.get("appearance") or "").split()) >= 8 and look.get("surface"):
+					break
+		except Exception:
+			continue
+		if not look.get("appearance"):
+			continue
+		texture = (
+			" Its surface is smooth and seamless: no fur, fuzz, stitching or fabric texture."
+			if look.get("surface") == "smooth_seamless"
+			else ""
+		)
+		looks.append(look["appearance"].rstrip(".") + "." + texture)
+	if not looks:
+		return ""
+	return "\n\nCharacter appearance from its original reference photo, to keep exactly: " + " ".join(
+		dict.fromkeys(looks)
+	)
 
 
 def _views(shot):

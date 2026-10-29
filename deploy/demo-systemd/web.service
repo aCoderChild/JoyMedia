@@ -1,7 +1,7 @@
 [Unit]
 Description=JoyMedia demo web
 After=network.target mariadb.service redis-server.service
-Requires=mariadb.service redis-server.service
+Wants=mariadb.service redis-server.service
 [Service]
 User=ubuntu
 WorkingDirectory=/home/ubuntu/joymedia-demo-staging/bench/sites

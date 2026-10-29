@@ -1112,3 +1112,24 @@ class TestUnheldProductStaging(TestCase):
 		self.assertIn("nothing and no one holding it", alone)
 		cast = {"references": [{"reference_role": "Product"}, {"reference_role": "Character"}]}
 		self.assertEqual("Close-up.", _unheld_product_staging(cast, "Close-up."))
+
+
+class TestProductViewpoint(FrappeTestCase):
+	def test_the_room_camera_is_told_the_product_photos_own_viewpoint(self):
+		from joymedia.services.planning.prompts import _product_viewpoint_text
+
+		for answer in (
+			{"viewpoint": "seen slightly from above, its right end receding"},
+			{"camera_viewpoint": {"viewpoint": "seen slightly from above, its right end receding"}},
+		):
+			with (
+				self.subTest(answer=answer),
+				patch("joymedia.services.keyframes.overlay._cutout_path", return_value="/cutout.png"),
+				patch("frappe.db.get_value", return_value="/files/cutout.png"),
+				patch.object(frappe.cache, "get_value", return_value=None),
+				patch.object(frappe.cache, "set_value"),
+				patch("joymedia.services.review.consistency.ask", return_value=answer),
+			):
+				text = _product_viewpoint_text([{"reference_role": "Product", "asset_version": "AV"}])
+			self.assertIn("seen slightly from above, its right end receding", text)
+			self.assertIn("room camera height and angle", text)

@@ -1055,3 +1055,80 @@ class TestNoPrintableNamesInPrompts(FrappeTestCase):
 		)
 		self.assertEqual([], planner.colour_terms("Cảm giác êm ái"))
 		self.assertEqual(["xanh lá = green"], planner.colour_terms("lá cây xanh lá"))
+
+
+class TestReferenceOptions(FrappeTestCase):
+	def test_a_multi_view_character_is_not_described_by_its_canonical_photos_pose_and_props(self):
+		from joymedia.services.planning.production import project_reference_options
+
+		rows = [
+			frappe._dict(
+				reference_key="mascot_front",
+				identity_key="mascot",
+				reference_role="Character",
+				asset_version="A",
+				label="mascot_front",
+			),
+			frappe._dict(
+				reference_key="pose_seated",
+				identity_key="mascot",
+				reference_role="Character",
+				asset_version="B",
+				label="seated view",
+			),
+			frappe._dict(
+				reference_key="pack",
+				identity_key="pack",
+				reference_role="Product",
+				asset_version="C",
+				label="pack",
+			),
+		]
+		analyses = {
+			"A": {"description": "A seated bear hugging a pink heart."},
+			"C": {"description": "A blue tissue pack, front view."},
+		}
+
+		def value(doctype, name, field):
+			if field == "media_asset":
+				return "MA-" + name
+			if field == "media_type":
+				return "Image"
+			return frappe.as_json(analyses.get(name, {}))
+
+		with patch("frappe.db.get_value", side_effect=value):
+			options = {
+				row["key"]: row for row in project_reference_options(frappe._dict(selected_media=rows))
+			}
+		self.assertNotIn("heart", options["mascot_front"]["description"])
+		self.assertIn("2 approved views", options["mascot_front"]["description"])
+		# A single photograph still tells the planner what it shows.
+		self.assertIn("tissue pack", options["pack"]["description"])
+
+
+class TestUnauthoredPackage(FrappeTestCase):
+	def test_a_package_the_script_does_not_show_is_removed_from_the_opening_still(self):
+		from joymedia.services.planning.production import _without_unauthored_package
+
+		carried = "A bear seated on the ground, holding a tissue pack with one paw, a puddle nearby."
+		for answer, expected, note in (
+			(
+				{"image_prompt": "A bear seated on the ground holding one tissue, a puddle nearby."},
+				"holding one tissue",
+				"Removed",
+			),
+			({"image_prompt": "A bear holding the pack."}, carried, "names a package"),
+			(RuntimeError("offline"), carried, "names a package"),
+		):
+			notes = []
+			with (
+				self.subTest(answer=answer),
+				patch(
+					"joymedia.services.planning.production._ask_planner",
+					**(
+						{"side_effect": answer} if isinstance(answer, Exception) else {"return_value": answer}
+					),
+				),
+			):
+				self.assertIn(expected, _without_unauthored_package(carried, notes))
+			self.assertIn(note, notes[0])

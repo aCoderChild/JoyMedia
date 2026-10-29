@@ -1,0 +1,8 @@
+[Unit]
+Description=Check and recover JoyMedia demo HTTP services
+After=network.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/joymedia-demo-healthcheck.py
+StateDirectory=joymedia-demo-health
+TimeoutStartSec=100

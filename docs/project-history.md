@@ -18,6 +18,21 @@ flowchart TD
 
 ## Client flow
 
+The workspace's **Versions & comparison** panel only browses, selects and compares
+existing videos. Its **Video** and **Experiments** tabs retain the original video
+numbers; filtering never renumbers a version or deletes its media. Diagnostic
+edits remain available under Experiments. Older AI-created videos were also
+marked Experiment, so Creative Batch provenance distinguishes those from
+diagnostics; explicitly imported video numbers are retained in the normal list.
+New AI-created videos are classified as Creative.
+
+**Create another video** lives on each project card in the project overview.
+It opens an explicit request using the project's references and prepares one
+separate script in assisted review mode. It does not automatically render scenes.
+The workspace opens the existing script-review panel when that script is ready.
+Closing the creation dialog preserves the pending batch locally so reopening it
+resumes progress checking instead of submitting another request.
+
 Open the project once, then use **Versions & history**:
 
 - **Edits**: open an alternative, name a new edit, choose the working edit, rename it, or archive/restore a nonworking alternative. The working edit is first, followed by creative edits, experiments and archived work.

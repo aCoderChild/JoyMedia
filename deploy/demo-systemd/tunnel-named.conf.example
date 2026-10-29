@@ -1,0 +1,5 @@
+# Install as joymedia-demo-tunnel.service.d/zz-named.conf only AFTER provisioning
+# the named tunnel and DNS hostname in Cloudflare. The token file is secret.
+[Service]
+ExecStart=
+ExecStart=/home/ubuntu/joymedia-demo-staging/bin/cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:20241 run --token-file /etc/joymedia/cloudflare-tunnel.token

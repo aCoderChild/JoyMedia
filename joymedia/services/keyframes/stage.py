@@ -320,6 +320,11 @@ def get_project_keyframes(project_name):
 			if shot.keyframe_artifact
 			else None
 		)
+		if url:
+			from joymedia.services.project.context import _get_asset_file_url
+
+			media_asset = frappe.db.get_value("Asset Version", explicit[0], "media_asset") if explicit else None
+			url = _get_asset_file_url(media_asset, url)
 		rows.append(
 			{
 				"shot": shot.name,

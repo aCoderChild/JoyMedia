@@ -75,6 +75,8 @@ class Shot(Document):
 		self._recalculate_durations()
 
 	def _recalculate_durations(self, media_project=None):
+		if self.flags.get("preserve_authored_timing"):
+			return
 		from joymedia.services.planning.durations import recalculate_shot_durations
 
 		recalculate_shot_durations(media_project or self.media_project)

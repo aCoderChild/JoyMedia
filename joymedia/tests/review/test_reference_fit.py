@@ -7,6 +7,14 @@ from joymedia.services.review.physical_audit import reference_fit_findings
 
 
 class TestReferenceFit(FrappeTestCase):
+	def setUp(self):
+		# Surface material has its own test below; these sequences cover other findings.
+		patcher = patch(
+			"joymedia.services.planning.pose_assets.character_look", return_value={"surface": None}
+		)
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	def test_generated_pose_still_checks_original_identity_and_eye_design(self):
 		shot = frappe._dict(
 			generation_inputs=[frappe._dict(reference_role="Character", asset_version="POSE")]
@@ -30,7 +38,7 @@ class TestReferenceFit(FrappeTestCase):
 					"anatomy_connected": None,
 				}
 			if "eye drawing" in prompt:
-				return {"eye_shape": "closed_arcs" if images == "/source.png" else "open_dots"}
+				return {"eye_shape": "closed_smiling_arcs" if images == "/source.png" else "open_dots"}
 			if "head" in prompt:
 				return {"head_accessories": []}
 			return {}
@@ -124,4 +132,43 @@ class TestReferenceFit(FrappeTestCase):
 		self.assertTrue(any("not visible well enough" in finding for finding in findings))
 		self.assertTrue(
 			any("product angle against its support remains unverified" in finding for finding in findings)
+		)
+
+	def test_a_plush_frame_of_a_smooth_mascot_is_a_critical_identity_change(self):
+		shot = frappe._dict(
+			generation_inputs=[frappe._dict(reference_role="Character", asset_version="POSE")]
+		)
+
+		def asset_value(_dt, name, field):
+			if field == "analysis_json":
+				return '{"source_asset_version":"SOURCE"}' if name == "POSE" else "{}"
+			return {"POSE": "/pose.png", "SOURCE": "/source.png"}.get(name)
+
+		def observe(images, prompt, **_kwargs):
+			if "Compare ONLY mascot/person arm and leg topology" in prompt:
+				return {"distortion": False}
+			if isinstance(images, list):
+				return {
+					"comparable": True,
+					"identity_match": True,
+					"proportions_match": True,
+					"anatomy_connected": True,
+				}
+			if "eye drawing" in prompt:
+				return {"eye_shape": "closed_smiling_arcs"}
+			if "head" in prompt:
+				return {"head_accessories": []}
+			return {}
+
+		surfaces = {"/source.png": "smooth_seamless", "/frame.png": "fur_or_plush"}
+		with (
+			patch("frappe.db.get_value", side_effect=asset_value),
+			patch(
+				"joymedia.services.planning.pose_assets.character_look",
+				side_effect=lambda image: {"surface": surfaces.get(image)},
+			),
+		):
+			findings = reference_fit_findings(shot, "/frame.png", ask=observe)
+		self.assertIn(
+			"Critical identity: character surface changed from smooth_seamless to fur_or_plush", findings
 		)

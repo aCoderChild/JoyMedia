@@ -1,0 +1,15 @@
+[Unit]
+Description=JoyMedia Tailscale (userspace networking for GPU container)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+[Service]
+ExecStart=/usr/local/sbin/tailscaled --tun=userspace-networking --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock
+Restart=always
+RestartSec=5
+StateDirectory=tailscale
+StateDirectoryMode=0700
+RuntimeDirectory=tailscale
+RuntimeDirectoryMode=0755
+[Install]
+WantedBy=multi-user.target

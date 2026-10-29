@@ -15,6 +15,8 @@ export function assetCategory(asset) {
 function compactName(value) {
 	return String(value || '')
 		.replace(/\.[a-z0-9]{2,5}$/i, '')
+		// A generated media key ends in a hash, e.g. product_cutout_266d190359.
+		.replace(/[_-](?=[a-f0-9]*\d)[a-f0-9]{8,}$/i, '')
 		.replace(/[_-]+/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();

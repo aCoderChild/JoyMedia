@@ -453,3 +453,76 @@ class TestProductViewContracts(TestCase):
 		plan = {"reference_keys": ["shera_pack_front"], "image_prompt": "Pack on a wooden table"}
 		constrain_product_views(self.project, plan)
 		self.assertIn("receding edges with the support plane", plan["image_prompt"])
+
+	def test_a_source_pixel_lock_is_told_its_acceptance_conditions_on_the_first_drawing(self):
+		for policy, expected, absent in (
+			({"recipe_sha256": "x"}, "not held, lifted or covered", "load-bearing grip"),
+			(None, "load-bearing grip", "not held, lifted or covered"),
+		):
+			plan = {"reference_keys": ["shera_pack_front"], "image_prompt": "Pack on a wooden table"}
+			with (
+				self.subTest(locked=bool(policy)),
+				patch("joymedia.services.consistency.retention.policy", return_value=policy),
+			):
+				constrain_product_views(self.project, plan)
+			self.assertIn(expected, plan["image_prompt"])
+			self.assertNotIn(absent, plan["image_prompt"])
+
+
+class TestUnheldOpening(TestCase):
+	def test_a_held_locked_product_is_rewritten_to_rest_untouched_and_checked(self):
+		from joymedia.services.planning.product_views import _unheld_opening
+
+		held = "The bear is seated, holding the pack open with one paw."
+		cases = (
+			(
+				{"image_prompt": "The bear is seated; the pack rests on the floor in front of it."},
+				"rests on the floor",
+			),
+			({"image_prompt": "The bear still holding the pack."}, held),
+			(RuntimeError("planner offline"), held),
+		)
+		for answer, expected in cases:
+			notes = []
+			with (
+				self.subTest(answer=answer),
+				patch(
+					"joymedia.services.planning.production._ask_planner",
+					**(
+						{"side_effect": answer} if isinstance(answer, Exception) else {"return_value": answer}
+					),
+				),
+			):
+				self.assertIn(expected, _unheld_opening(held, notes))
+			self.assertEqual(1, len(notes))
+
+	def test_an_unheld_opening_costs_no_planner_call(self):
+		from joymedia.services.planning.product_views import _unheld_opening
+
+		with patch("joymedia.services.planning.production._ask_planner") as planner:
+			self.assertEqual(
+				"The pack rests on the table.", _unheld_opening("The pack rests on the table.", [])
+			)
+		planner.assert_not_called()
+
+
+class TestProductSilhouette(TestCase):
+	def test_the_prompt_states_the_cutouts_measured_proportions(self):
+		import tempfile
+
+		from PIL import Image
+
+		from joymedia.services.planning.product_views import _silhouette_phrase
+
+		for size, expected in (
+			((360, 200), "1.8 times as wide"),
+			((100, 250), "2.5 times as tall"),
+			((100, 100), "as wide as it is tall"),
+		):
+			with tempfile.NamedTemporaryFile(suffix=".png") as handle:
+				canvas = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+				canvas.paste(Image.new("RGBA", size, (90, 160, 220, 255)), (20, 30))
+				canvas.save(handle.name)
+				rows = {"pack": {"asset_version": "AV"}}
+				with patch("joymedia.services.keyframes.overlay._cutout_path", return_value=handle.name):
+					self.assertIn(expected, _silhouette_phrase(None, ["pack"], rows))

@@ -982,11 +982,39 @@ def _value(value):
 	return int(text) if text.isdigit() else value
 
 
-def _post_visual_request(*args, **kwargs):
+# A vision answer is a short JSON object; silence this long means the request was
+# lost in the GPU tunnel, not that the model is still working.
+VISION_IDLE_SECONDS = 60
+
+
+class _StreamedAnswer:
+	"""The completed stream, read like the plain response callers already use."""
+
+	def __init__(self, response, content):
+		self.status_code = response.status_code
+		self._response = response
+		self._content = content
+
+	def raise_for_status(self):
+		self._response.raise_for_status()
+
+	def json(self):
+		return {"choices": [{"message": {"content": self._content}}]}
+
+
+def _post_visual_request(url, *, json=None, timeout=(10, 120)):
 	"""Retry a dropped read-only observation, never a judgment or media render."""
+	from joymedia.services.runtime.streaming import post_streamed
+
 	for attempt in range(3):
 		try:
-			return requests.post(*args, **kwargs)
+			response, content = post_streamed(
+				url,
+				json or {},
+				idle_seconds=min(VISION_IDLE_SECONDS, timeout[1]),
+				deadline_seconds=timeout[1],
+			)
+			return response if content is None else _StreamedAnswer(response, content)
 		except (requests.ConnectionError, requests.Timeout):
 			if attempt == 2:
 				raise

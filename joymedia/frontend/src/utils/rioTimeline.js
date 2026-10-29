@@ -28,6 +28,19 @@ export function sourceSecondsForTimeline(clip, seconds, fps) {
   return Number(clip.source_in_frame || 0) / rate + offset;
 }
 
+// Toolbar cuts operate in source frames while the playhead is in timeline seconds.
+export function timelineCut(clip, seconds, fps, action) {
+  if (!clip || !['left', 'split', 'right'].includes(action)) return null;
+  const rate = Math.max(1, Number(fps) || 24);
+  const start = Number(clip.source_in_frame || 0);
+  const end = Number(clip.source_out_frame ?? start + Number(clip.duration_frames || 0));
+  const frame = start + Math.round(seconds * rate) - Number(clip.timeline_start_frame || 0);
+  const minimum = Math.max(1, Math.round(rate * 0.25));
+  if (frame <= start || frame >= end) return null;
+  if ((action !== 'left' && frame - start < minimum) || (action !== 'right' && end - frame < minimum)) return null;
+  return action === 'split' ? { clip, sourceSplitFrame: frame } : { clip, sourceInFrame: action === 'left' ? frame : start, sourceOutFrame: action === 'right' ? frame : end };
+}
+
 // The compact view groups audio by purpose. Separate backend track indices are
 // preserved on each clip for editing/export; only the display lanes are packed.
 export function layoutAudioLanes(clips = []) {

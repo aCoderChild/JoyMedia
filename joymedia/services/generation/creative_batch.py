@@ -673,7 +673,6 @@ def _restart_automatic_script_variant(
 		"scene_revision",
 		"pose_prepared",
 		"pose_views",
-		"pose_unverified_scenes",
 		"product_views_prepared",
 		"product_views",
 		"product_cutouts",
@@ -687,28 +686,6 @@ def _restart_automatic_script_variant(
 		status="Queued",
 	)
 	return True
-
-
-def resolve_pose_shortfall(variant):
-	"""Disclose unqualified reusable poses without blocking the automatic batch.
-
-	A prepared Character view is useful evidence, but a missing view must not turn an
-	automatic project into a dead end. Each shot still carries a pose requirement and
-	its first frame undergoes the normal identity, physical and correction checks.
-	"""
-	unresolved = [row for row in variant.get("pose_views") or [] if row.get("status") != "ready"]
-	scenes = ", ".join(str(row.get("scene")) for row in unresolved)
-	if not scenes:
-		return ""
-	variant["pose_unverified_scenes"] = [row.get("scene") for row in unresolved]
-	note = (
-		f"Reusable character pose not pre-certified for scene(s) {scenes}: each of those "
-		"first frames is drawn from its own shot pose contract and must pass the normal frame checks."
-	)
-	notes = variant.setdefault("script", {}).setdefault("director_notes", [])
-	if note not in notes:
-		notes.append(note)
-	return note
 
 
 def _stale_keyframe(shot_name):
@@ -1160,7 +1137,7 @@ def _create_variant(batch, request, index, hero=None):
 	project.save(ignore_permissions=True)
 	organize_edits(
 		root.name,
-		[{"project": project.name, "label": f"Video {number}", "kind": "Experiment"}],
+		[{"project": project.name, "label": f"Video {number}", "kind": "Creative"}],
 	)
 	frappe.db.commit()
 	persist_execution_pin(project.name, request["generation_pipeline"])
@@ -1434,7 +1411,6 @@ def _prepare_batch_locked(batch_name, position=None):
 			if any(p.get("held_back") for p in plans):
 				raise ValueError("One or more scenes could not be planned faithfully.")
 			variant["plans"] = [{"shot": p["shot"], "notes": p.get("notes", [])} for p in plans]
-			resolve_pose_shortfall(variant)
 			if (
 				index == 0
 				and not request["auto_render"]
@@ -1888,38 +1864,45 @@ def rewrite_scenes_in_place(batch_name, position):
 	try:
 		project = frappe.get_doc("Media Project", variant["project"])
 		old = variant["script"]
-		notes = variant["scene_revision"]["notes"]
-		script = draft_script(
-			project,
-			nonce=uuid.uuid4().hex,
-			examples=script_exemplars(request.get("example_workbooks"), position),
-			hero_product=variant.get("hero_product"),
-			revision={"script": old, "notes": notes},
-			language=request.get("language"),
-		)
-		changed = sorted({n["scene"] - 1 for n in notes if 0 < n["scene"] <= len(old["scenes"])})
-		for i in range(len(script["scenes"])):
-			if i not in changed:
-				script["scenes"][i] = old["scenes"][i]
-				continue
-			# Same beat name and duration: the shot, its timeline slot and the film length stay.
-			scene, duration = script["scenes"][i], old["scenes"][i]["duration_seconds"]
-			phases = read_timed_actions(scene["action"])
-			plan = {"duration_seconds": duration, "motion_plan": {"actions": phases}}
-			_rescale_motion_plan(plan, phases[-1]["end"])
-			scene.update(beat_name=old["scenes"][i]["beat_name"], duration_seconds=duration)
-			scene["action"] = "\n".join(
-				f"[{row['start']:.9f}-{row['end']:.9f}s] {row['action']}"
-				for row in plan["motion_plan"]["actions"]
+		pose_scenes = variant["scene_revision"].get("pose_scenes")
+		if pose_scenes:
+			# A retry after a pose stop: the script stands. Only those scenes' opening
+			# poses are resolved again, rebound and redrawn below.
+			script = copy.deepcopy(old)
+			changed = sorted(n - 1 for n in pose_scenes if 0 < n <= len(old["scenes"]))
+		else:
+			notes = variant["scene_revision"]["notes"]
+			script = draft_script(
+				project,
+				nonce=uuid.uuid4().hex,
+				examples=script_exemplars(request.get("example_workbooks"), position),
+				hero_product=variant.get("hero_product"),
+				revision={"script": old, "notes": notes},
+				language=request.get("language"),
 			)
-		script["duration_seconds"] = old["duration_seconds"]
-		from joymedia.services.planning.creative import vary_against_neighbours
+			changed = sorted({n["scene"] - 1 for n in notes if 0 < n["scene"] <= len(old["scenes"])})
+			for i in range(len(script["scenes"])):
+				if i not in changed:
+					script["scenes"][i] = old["scenes"][i]
+					continue
+				# Same beat name and duration: the shot, its timeline slot and the film length stay.
+				scene, duration = script["scenes"][i], old["scenes"][i]["duration_seconds"]
+				phases = read_timed_actions(scene["action"])
+				plan = {"duration_seconds": duration, "motion_plan": {"actions": phases}}
+				_rescale_motion_plan(plan, phases[-1]["end"])
+				scene.update(beat_name=old["scenes"][i]["beat_name"], duration_seconds=duration)
+				scene["action"] = "\n".join(
+					f"[{row['start']:.9f}-{row['end']:.9f}s] {row['action']}"
+					for row in plan["motion_plan"]["actions"]
+				)
+			script["duration_seconds"] = old["duration_seconds"]
+			from joymedia.services.planning.creative import vary_against_neighbours
 
-		# The camera director ran before the untouched scenes were restored: vary
-		# each rewritten scene against its real neighbours (whose pictures stay).
-		script.setdefault("camera_adjustments", []).extend(
-			change for i in changed for change in vary_against_neighbours(script["scenes"], i)
-		)
+			# The camera director ran before the untouched scenes were restored: vary
+			# each rewritten scene against its real neighbours (whose pictures stay).
+			script.setdefault("camera_adjustments", []).extend(
+				change for i in changed for change in vary_against_neighbours(script["scenes"], i)
+			)
 		# A scene rewrite can change the opening body state. Resolve its cast views
 		# again before importing the workbook; the old shot may still point at a
 		# pose whose qualification has since been revoked.
@@ -1968,7 +1951,11 @@ def rewrite_scenes_in_place(batch_name, position):
 		if _transient(exc):
 			return
 		frappe.log_error(title=f"Scene rewrite failed: {batch_name}/{position + 1}")
-		if isinstance(exc, UnverifiedPoseRequirements):
+		if isinstance(exc, UnverifiedPoseRequirements) or (variant.get("scene_revision") or {}).get(
+			"pose_scenes"
+		):
+			# A pose retry that did not finish leaves those shots on their old
+			# character view; never continue to first frames from them.
 			variant.update(
 				resume_stage="Keyframes",
 				status="Needs Attention",

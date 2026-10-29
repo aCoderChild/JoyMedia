@@ -111,6 +111,8 @@ def get_videos(project_name):
 			"name",
 			"project_name",
 			"version_label",
+			"version_kind",
+			"source_video_number",
 			"status",
 			"creation",
 			"current_output_asset_version",
@@ -142,6 +144,7 @@ def get_videos(project_name):
 	# The batch knows where an AI-written video stands; its project status alone does not.
 	stages = {}
 	stage_errors = {}
+	creative_projects = set()
 	for batch in frappe.get_all(
 		"Creative Batch",
 		filters={"source_project": ["in", [row.name for row in rows]]},
@@ -150,6 +153,7 @@ def get_videos(project_name):
 	):
 		for variant in frappe.parse_json(batch.variants_json or "[]"):
 			if variant.get("project"):
+				creative_projects.add(variant["project"])
 				stopped = batch.status == "Cancelled" and variant.get("status") != "Completed"
 				stages[variant["project"]] = "Cancelled" if stopped else variant.get("status")
 				stage_errors[variant["project"]] = (
@@ -182,6 +186,7 @@ def get_videos(project_name):
 		{
 			"name": row.name,
 			"label": row.version_label or ("Original" if row.name == root.name else row.project_name),
+			"is_experiment": bool(row.version_kind == "Experiment" and row.name not in creative_projects and not row.source_video_number),
 			"status": row.status,
 			"stage": stages.get(row.name),
 			"stage_error": stage_errors.get(row.name) or "",

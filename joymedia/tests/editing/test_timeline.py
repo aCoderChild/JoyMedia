@@ -8,11 +8,14 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.editing.timeline import (
+	add_scene_to_timeline,
 	add_timeline_audio_clip,
+	clear_project_timeline,
 	delete_timeline_clip,
 	duplicate_timeline_clip,
 	fit_audio_clip_to_full_video,
 	fit_audio_clip_to_video,
+	get_project_timeline,
 	get_project_timeline_export_status,
 	move_timeline_clip,
 	queue_project_timeline_export,
@@ -125,6 +128,19 @@ class TestTimelineEditor(FrappeTestCase):
 				"transition_frames": 0,
 			}
 		).insert(ignore_permissions=True)
+
+	def test_clear_stays_empty_after_reload_and_can_be_undone_or_manually_populated(self):
+		before = frappe.get_all("Timeline Clip", filters={"media_project": self.project.name}, fields=["*"])
+		clear_project_timeline(self.project.name)
+		self.assertEqual([], get_project_timeline(self.project.name, create_if_possible=True)["clips"])
+		self.assertTrue(frappe.db.exists("Shot", self.shot.name))
+		self.assertTrue(frappe.db.exists("Asset Version", self.version_1.name))
+		restore_timeline_state(self.project.name, {"clips": before})
+		self.assertEqual(1, len(get_project_timeline(self.project.name)["clips"]))
+		clear_project_timeline(self.project.name)
+		self.assertEqual(1, len(add_scene_to_timeline(self.project.name, self.shot.name)["clips"]))
+		self.assertEqual(1, len(add_scene_to_timeline(self.project.name, self.shot.name)["clips"]))
+		self.assertTrue(frappe.db.get_value("Media Project", self.project.name, "timeline_cleared"))
 
 	def test_scenes_rendered_separately_all_reach_the_timeline_in_storyboard_order(self):
 		# Scene 1 already has its clip. Scenes 3 then 2 finish later, each as its own take (no full run ever built the

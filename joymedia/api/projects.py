@@ -53,6 +53,8 @@ def get_project_cards(search=None, status=None, start=0, page_length=24):
 			project.update(video_count=1)
 			continue
 		videos = get_videos(project["name"])["videos"]
+		project["experiment_count"] = sum(bool(video.get("is_experiment")) for video in videos)
+		videos = [video for video in videos if not video.get("is_experiment")]
 		waiting = {"Pictures Ready", "Script Ready"}
 		attention = {"Needs Attention", "Failed"}
 		project.update(
@@ -96,17 +98,22 @@ def get_project_videos(project_name):
 	from joymedia.services.project.versions import get_videos
 
 	result = get_videos(project_name)
-	created = dict(
-		frappe.get_all(
-			"Media Project",
-			filters={"name": ["in", [video["name"] for video in result["videos"]]]},
-			fields=["name", "creation"],
-			as_list=True,
-		)
+	fields = ["name", "creation"]
+	if frappe.get_meta("Media Project").has_field("source_video_number"):
+		fields.append("source_video_number")
+	records = frappe.get_all(
+		"Media Project",
+		filters={"name": ["in", [video["name"] for video in result["videos"]]]},
+		fields=fields,
 	)
+	created = {row.name: row.creation for row in records}
+	source_numbers = {row.name: row.get("source_video_number") for row in records}
 	# Numbered in creation order, so "Video 3" keeps its number however the shelf is sorted.
 	for number, video in enumerate(result["videos"], start=1):
-		video.update(number=number, created_at=str(created.get(video["name"]) or ""))
+		video.update(
+			number=source_numbers.get(video["name"]) or number,
+			created_at=str(created.get(video["name"]) or ""),
+		)
 	result["videos"].sort(key=lambda video: (video["created_at"], video["name"]), reverse=True)
 	return result
 

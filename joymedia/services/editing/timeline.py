@@ -63,7 +63,7 @@ def get_project_timeline(project_name: str, create_if_possible=True):
 	create_if_possible = _as_bool(create_if_possible)
 
 	clips = _timeline_clip_rows(project.name)
-	if not clips and create_if_possible:
+	if not clips and create_if_possible and not project.get("timeline_cleared"):
 		_require_project_write(project)
 		_initialize_timeline(project)
 		clips = _timeline_clip_rows(project.name)
@@ -74,10 +74,43 @@ def get_project_timeline(project_name: str, create_if_possible=True):
 
 
 @frappe.whitelist()
+def clear_project_timeline(project_name: str):
+	"""Clear the edit decision list, preserving source scenes and immutable media."""
+	project = frappe.get_doc("Media Project", project_name)
+	_require_project_write(project)
+	if project.export_status in ("Queued", "Running"):
+		frappe.throw(_("Wait for the current export to finish before clearing the timeline."))
+	for name in frappe.get_all("Timeline Clip", filters={"media_project": project.name}, pluck="name"):
+		frappe.delete_doc("Timeline Clip", name, ignore_permissions=True, force=True)
+	project.db_set("timeline_cleared", 1, update_modified=False)
+	_invalidate_project_output(project.name)
+	frappe.db.commit()
+	return _serialize_timeline(project, [])
+
+
+@frappe.whitelist()
+def add_scene_to_timeline(project_name: str, shot_name: str):
+	project = frappe.get_doc("Media Project", project_name)
+	_require_project_write(project)
+	shot = frappe.get_doc("Shot", shot_name)
+	if shot.media_project != project.name or shot.is_removed or not shot.selected_output_asset_version:
+		frappe.throw(_("Choose a rendered scene from this project."))
+	if not frappe.db.exists("Timeline Clip", {"media_project": project.name, "shot": shot.name, "track_type": "Video"}):
+		rows = _timeline_clip_rows(project.name)
+		order = max((int(row.clip_order or 0) for row in rows), default=0) + 1
+		end = max((int(row.timeline_start_frame or 0) + _clip_length(row) for row in rows if row.track_type == "Video"), default=0)
+		_create_timeline_clip_pair(project, shot, order, end, _project_fps(project.name))
+		_invalidate_project_output(project.name)
+		frappe.db.commit()
+	return _serialize_timeline(project, _timeline_clip_rows(project.name))
+
+
+@frappe.whitelist()
 def reset_project_timeline(project_name: str, preserve_narration=False):
 	"""Rebuild the edit timeline from the newest fully generated shot set."""
 	project = frappe.get_doc("Media Project", project_name)
 	_require_project_write(project)
+	project.db_set("timeline_cleared", 0, update_modified=False)
 	preserve = str(preserve_narration).lower() in {"1", "true", "yes", "on"}
 	for clip in frappe.get_all(
 		"Timeline Clip", filters={"media_project": project.name}, fields=["name", "track_type", "audio_role"]
@@ -435,6 +468,7 @@ def restore_timeline_state(project_name: str, state_json):
 		"is_outdated",
 	)
 	old_to_new = {}
+	project.db_set("timeline_cleared", int(bool(state.get("timeline_cleared", not rows))), update_modified=False)
 	for clip_name in frappe.get_all("Timeline Clip", filters={"media_project": project.name}, pluck="name"):
 		frappe.delete_doc("Timeline Clip", clip_name, ignore_permissions=True, force=True)
 
@@ -746,6 +780,8 @@ def _create_timeline_clip_pair(project, shot, order, timeline_cursor, fps):
 
 
 def _sync_missing_generated_shots_to_timeline(project):
+	if project.get("timeline_cleared"):
+		return
 	fps = _project_fps(project.name)
 	existing = frappe.get_all(
 		"Timeline Clip",

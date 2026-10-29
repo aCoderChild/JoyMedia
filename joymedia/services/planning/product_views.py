@@ -718,6 +718,98 @@ def _choose_view(rows, desired):
 	return fallback, desired == "source"
 
 
+HELD = re.compile(
+	r"\b(?:hold|holds|holding|grip|grips|gripping|carry|carries|carrying|clutch|clutches|clutching)\b", re.I
+)
+
+
+def _unheld_opening(image_prompt, notes):
+	"""Rewrite an opening still that has the locked product in a paw or hand.
+
+	The planner is told the product rests untouched, but repeated "holding the
+	pack" anyway. Check its answer, as the pose planner checks prop verbs, and
+	ask once for the same still with the product resting on its support.
+	"""
+	text = str(image_prompt or "")
+	if not HELD.search(text):
+		return text
+	from joymedia.services.planning.production import _ask_planner
+
+	try:
+		answer = _ask_planner(
+			"Rewrite this opening still so the advertised product rests untouched on its support, its printed "
+			"face toward the camera, and nobody holds, grips or carries anything yet. Keep every subject, the "
+			"place, the framing and each body's support; any handling happens later in the video. "
+			"Return JSON image_prompt string. Source: " + text,
+			system="You correct an opening still for an exact product overlay.",
+			capability="planner",
+			sampling_profile="production_plan",
+			response_schema={
+				"type": "object",
+				"properties": {"image_prompt": {"type": "string"}},
+				"required": ["image_prompt"],
+				"additionalProperties": False,
+			},
+		)
+		rewritten = " ".join(str((answer or {}).get("image_prompt") or "").split())
+	except Exception:
+		rewritten = ""
+	if rewritten and not HELD.search(rewritten):
+		notes.append("Opening still rewritten so the locked product rests untouched.")
+		return rewritten
+	notes.append("Opening still still describes the locked product held; the product lock will judge it.")
+	return text
+
+
+def _silhouette_phrase(project, view_keys, rows):
+	"""The product's on-screen proportions, measured from its own cutout.
+
+	The lock pastes the photo without stretching and rejects a drawn outline
+	whose width/height differs from it by more than about 1.5x. Words such as
+	"same proportions as its photo" did not reach the picture model: it drew a
+	1.8:1 pack lying on its side as a near-square box. A number does.
+	"""
+	from PIL import Image
+
+	from joymedia.services.keyframes.overlay import _cutout_path
+
+	for key in view_keys:
+		row = rows.get(key)
+		path = _cutout_path(value(row, "asset_version")) if row else None
+		if not path:
+			continue
+		try:
+			with Image.open(path) as image:
+				box = image.convert("RGBA").getchannel("A").point(lambda a: 255 if a > 16 else 0).getbbox()
+		except OSError:
+			continue
+		if not box:
+			continue
+		ratio = (box[2] - box[0]) / (box[3] - box[1])
+		if ratio >= 1.15:
+			return f"lying on its long side, its outline about {ratio:.1f} times as wide as it is tall, "
+		if ratio <= 1 / 1.15:
+			return f"standing upright, its outline about {1 / ratio:.1f} times as tall as it is wide, "
+		return "its outline about as wide as it is tall, "
+	return ""
+
+
+def _source_pixels_locked(project, view_keys, rows):
+	"""Whether the GPU source-pixel lock will replace this shot's drawn product."""
+	from joymedia.services.consistency.retention import policy
+	from joymedia.services.intake.references import preservation_modes
+
+	if not policy():
+		return False
+	# Absent workbook choices mean the strict source_pixels default.
+	modes = preservation_modes(project) if hasattr(project, "selected_media") else {}
+	return any(
+		modes.get(value(rows[key], "asset_version"), "source_pixels") != "reference_guided"
+		for key in view_keys
+		if rows.get(key)
+	)
+
+
 def constrain_product_views(project, plan, required_view=None):
 	"""Constrain each visible product identity to one truthful source view.
 
@@ -788,11 +880,25 @@ def constrain_product_views(project, plan, required_view=None):
 		# The image prompt is fed to a model that draws the setting.  State the
 		# contract there as well, so it does not invent a second/different pack
 		# behind the exact source-art overlay.
+		locked = _source_pixels_locked(project, selected_views, rows)
+		if locked:
+			plan["image_prompt"] = _unheld_opening(plan.get("image_prompt"), notes)
 		plan["image_prompt"] = (
 			str(plan.get("image_prompt") or "").rstrip(". ")
 			+ f". Product orientation is locked to the selected {desired} view; do not invent unseen packaging geometry or printed surfaces. "
 			"Align the visible package base and receding edges with the support plane and camera perspective; "
-			"the package must make broad, visible contact with its table or floor, or have a visible load-bearing grip."
+			+ (
+				# The source-pixel lock replaces exactly one detected pack with the
+				# photo. It rejects a second pack, a tilted outline and any paw over
+				# it, so a "load-bearing grip" opening could never pass. State its
+				# acceptance conditions on the first drawing, not after a rejection.
+				"show exactly one package, resting with broad, visible contact on its table or floor, "
+				+ _silhouette_phrase(project, selected_views, rows)
+				+ "its photographed face toward the camera, fully in frame and not held, lifted or covered by any "
+				"paw or hand; any handling begins after this opening frame."
+				if locked
+				else "the package must make broad, visible contact with its table or floor, or have a visible load-bearing grip."
+			)
 		)
 	plan["notes"] = list(dict.fromkeys(notes))
 	return plan

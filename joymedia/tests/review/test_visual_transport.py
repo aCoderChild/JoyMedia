@@ -1,9 +1,21 @@
 from unittest import TestCase
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import requests
 
 from joymedia.services.review.consistency import _post_visual_request
+
+
+def _streamed(content):
+	"""A vision answer as vLLM streams it."""
+	import json
+
+	response = MagicMock(ok=True, status_code=200)
+	response.iter_lines.return_value = [
+		"data: " + json.dumps({"choices": [{"delta": {"content": content}}]}),
+		"data: [DONE]",
+	]
+	return response
 
 
 class TestVisualTransport(TestCase):
@@ -57,23 +69,24 @@ class TestVisualTransport(TestCase):
 		self.assertEqual("supported", report["results"][0]["verdict"])
 
 	def test_dropped_observation_retries_the_same_request(self):
-		response = Mock()
+		response = _streamed('{"answer": true}')
 		payload = {"messages": ["same immutable image and question"]}
 		with (
 			patch(
-				"joymedia.services.review.consistency.requests.post",
+				"joymedia.services.runtime.streaming.requests.post",
 				side_effect=[requests.ConnectionError("dropped"), response],
 			) as post,
 			patch("joymedia.services.review.consistency.time.sleep"),
 		):
-			self.assertIs(response, _post_visual_request("endpoint", json=payload, timeout=(10, 120)))
+			answer = _post_visual_request("endpoint", json=payload, timeout=(10, 120))
+		self.assertEqual('{"answer": true}', answer.json()["choices"][0]["message"]["content"])
 		self.assertEqual(2, post.call_count)
 		self.assertEqual(post.call_args_list[0], post.call_args_list[1])
 
 	def test_unavailable_observation_still_fails_after_a_bounded_retry(self):
 		with (
 			patch(
-				"joymedia.services.review.consistency.requests.post", side_effect=requests.Timeout("offline")
+				"joymedia.services.runtime.streaming.requests.post", side_effect=requests.Timeout("offline")
 			) as post,
 			patch("joymedia.services.review.consistency.time.sleep"),
 			self.assertRaises(requests.Timeout),
@@ -82,8 +95,8 @@ class TestVisualTransport(TestCase):
 		self.assertEqual(3, post.call_count)
 
 	def test_an_http_result_is_not_rerolled(self):
-		response = Mock(status_code=400)
-		with patch("joymedia.services.review.consistency.requests.post", return_value=response) as post:
+		response = Mock(status_code=400, ok=False)
+		with patch("joymedia.services.runtime.streaming.requests.post", return_value=response) as post:
 			self.assertIs(response, _post_visual_request("endpoint"))
 		post.assert_called_once()
 
@@ -95,27 +108,20 @@ class TestVisualTransport(TestCase):
 		from joymedia.services.review.consistency import run_temporal_check
 		from joymedia.services.scene.evidence import SequenceCheck
 
-		response = Mock()
-		response.json.return_value = {
-			"choices": [
+		response = _streamed(
+			json.dumps(
 				{
-					"message": {
-						"content": json.dumps(
-							{
-								"observations": [
-									{
-										"id": "action",
-										"verdict": "supported",
-										"frames": [0, 1],
-										"reason": "The same cup is lifted.",
-									}
-								]
-							}
-						)
-					}
+					"observations": [
+						{
+							"id": "action",
+							"verdict": "supported",
+							"frames": [0, 1],
+							"reason": "The same cup is lifted.",
+						}
+					]
 				}
-			]
-		}
+			)
+		)
 		check = SequenceCheck(
 			[b"first", b"last"],
 			[{"index": 0, "time": 0}, {"index": 1, "time": 1}],
@@ -124,7 +130,7 @@ class TestVisualTransport(TestCase):
 		)
 		with (
 			patch(
-				"joymedia.services.review.consistency.requests.post",
+				"joymedia.services.runtime.streaming.requests.post",
 				side_effect=[requests.ConnectionError("reconnecting"), response],
 			) as post,
 			patch("joymedia.services.review.consistency.time.sleep") as delay,

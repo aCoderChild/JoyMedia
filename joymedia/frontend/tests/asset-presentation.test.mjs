@@ -1,3 +1,4 @@
+import { referenceLabel } from '../src/utils/rioPresentation.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { assetCategory, assetDisplayName, groupAssets } from '../src/utils/assetPresentation.js';
@@ -29,4 +30,10 @@ test('keeps product views distinct and disambiguates repeated display names', ()
 	]);
 	assert.deepEqual(groups[0].items.map(item => item.display_name), ['Package · Front Left', 'Package · Front Right']);
 	assert.deepEqual(groups[1].items.map(item => item.display_name), ['Room (1)', 'Room (2)']);
+});
+
+test('scene reference lines never show technical media keys', () => {
+	assert.equal(referenceLabel({ reference_key: 'product_cutout_266d190359', label: 'product_cutout_266d190359', reference_role: 'Product' }), 'product cutout');
+	assert.equal(referenceLabel({ reference_key: 'mascot_front', label: 'mascot_front', reference_role: 'Character' }), 'mascot front');
+	assert.equal(referenceLabel({ reference_key: 'room' }, [{ reference_key: 'room', display_name: 'Living room' }]), 'Living room');
 });

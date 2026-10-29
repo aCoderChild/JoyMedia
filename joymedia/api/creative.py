@@ -616,6 +616,38 @@ def retry_product_variant(batch_name, index):
 			# A retry after a pose-renderer fix must re-qualify unresolved poses;
 			# keeping pose_prepared=true would bypass the gate on resume.
 			variant["pose_prepared"] = False
+		pose_scenes = sorted(
+			{
+				int(row["scene"])
+				for row in variant.get("pose_views") or []
+				if row.get("status") != "ready" and row.get("scene")
+			}
+		)
+		if stage == "Keyframes" and pose_scenes and variant.get("script"):
+			# A pose stop after the storyboard exists: its shots still carry the old
+			# character view. Resolve those scenes' poses again and redraw only them.
+			variant.update(
+				status="Rewriting", error="", scene_revision={"pose_scenes": pose_scenes, "by": "Retry"}
+			)
+			frappe.db.set_value(
+				"Creative Batch",
+				batch.name,
+				{"variants_json": frappe.as_json(variants), "error": "", "status": "Planning"},
+			)
+			from joymedia.services.generation.creative_batch import _planning_queue
+
+			frappe.enqueue(
+				"joymedia.services.generation.creative_batch.rewrite_scenes_in_place",
+				queue=_planning_queue(),
+				timeout=3600,
+				batch_name=batch.name,
+				position=position,
+				job_id=f"joymedia-creative-rewrite:{batch.name}:{position}",
+				deduplicate=True,
+				enqueue_after_commit=True,
+			)
+			frappe.db.commit()
+			return {"batch": batch.name, "index": int(index), "status": "Rewriting"}
 		variant.update(status=stage, error="")
 		frappe.db.set_value(
 			"Creative Batch",

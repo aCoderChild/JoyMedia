@@ -55,9 +55,13 @@ LIMB_TOPOLOGY_PROMPT = (
 	"Determine whether the rendered subject has any visibly elongated or narrowed "
 	"limb relative to its torso compared with source, any extra or fused paw/hand, "
 	"or any limb attached at an impossible place. Ignore normal perspective and "
-	"ordinary occlusion, and never infer hidden limbs. Return one JSON object "
+	"ordinary occlusion, and never infer hidden limbs. A different arm position "
+	"(raised, bent, extended forward, wrapped around or holding an object) is not "
+	"elongation: compare each limb's length and thickness relative to the torso, "
+	"not where the limb points. Return one JSON object "
 	"with exactly these top-level keys: distortion (true, false, or null), "
-	"evidence (string). Use null if occlusion prevents a confident judgment."
+	"evidence (string). Return false when the visible limbs keep their proportions; "
+	"use null only when the limbs are mostly hidden."
 )
 
 
@@ -215,7 +219,12 @@ def reference_fit_findings(shot, frame, ask=None):
 			max_edge=768,
 		)
 		if role in {"character", "person"}:
-			from joymedia.services.planning.pose_assets import EYE_DESIGN_QUESTION, HEAD_ACCESSORY_QUESTION
+			from joymedia.services.planning.pose_assets import (
+				EYE_DESIGN_QUESTION,
+				HEAD_ACCESSORY_QUESTION,
+				KNOWN_EYE_SHAPES,
+				character_look,
+			)
 
 			# A broad paired comparison can overlook a small but defining feature.
 			# Observe each image independently so the source traits are not copied
@@ -223,13 +232,24 @@ def reference_fit_findings(shot, frame, ask=None):
 			# excludes characters printed on the product package.
 			source_eyes = (ask(identity_url, EYE_DESIGN_QUESTION, max_edge=1024) or {}).get("eye_shape")
 			frame_eyes = (ask(frame, EYE_DESIGN_QUESTION, max_edge=1024) or {}).get("eye_shape")
-			known_eyes = {"closed_arcs", "closed_other", "open_dots", "open_other"}
+			# A smiling (^ ^) and a sleeping closed-eye drawing are different designs.
+			closed_drawings = {"closed_smiling_arcs", "closed_sleeping_arcs"}
 			if (
-				source_eyes in known_eyes
-				and frame_eyes in known_eyes
-				and (source_eyes.startswith("closed") != frame_eyes.startswith("closed"))
+				source_eyes in KNOWN_EYE_SHAPES
+				and frame_eyes in KNOWN_EYE_SHAPES
+				and (
+					source_eyes.startswith("closed") != frame_eyes.startswith("closed")
+					or ({source_eyes, frame_eyes} <= closed_drawings and source_eyes != frame_eyes)
+				)
 			):
 				issues.append(f"Critical identity: {role} eye design changed from the original reference")
+			# Every check passed a smooth vinyl mascot redrawn as a fluffy plush teddy.
+			source_surface = character_look(identity_url).get("surface")
+			frame_surface = character_look(frame).get("surface")
+			if source_surface and frame_surface and source_surface != frame_surface:
+				issues.append(
+					f"Critical identity: {role} surface changed from {source_surface} to {frame_surface}"
+				)
 			source_head = (ask(identity_url, HEAD_ACCESSORY_QUESTION, max_edge=768) or {}).get(
 				"head_accessories"
 			)

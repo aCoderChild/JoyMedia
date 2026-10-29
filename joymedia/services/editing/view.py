@@ -85,6 +85,7 @@ def _serialize_timeline(project, clips):
 	if not enabled_clips:
 		return {
 			"ready": False,
+			"timeline_cleared": bool(project.get("timeline_cleared")),
 			"project": project.name,
 			"media_project": project.name,
 			"latest_generation_run": latest_run.name if latest_run else None,
@@ -186,6 +187,7 @@ def _serialize_timeline(project, clips):
 	canvas_total_frames = max([render_total_frames, *audio_end_frames])
 	return {
 		"ready": bool(serialized),
+		"timeline_cleared": bool(project.get("timeline_cleared")),
 		"project": project.name,
 		"media_project": project.name,
 		"latest_generation_run": latest_run.name if latest_run else None,

@@ -19,3 +19,24 @@ test('an ordinary empty draft still waits for an idea', () => {
   assert.equal(stage.state, 'waiting');
   assert.match(stage.detail, /ý tưởng/);
 });
+
+test('a failed first-frame run is reported on scene images, not scene video', () => {
+  const stages = buildStages({
+    shots: [{}],
+    frames: [{ needs_keyframe: true }],
+    production: { status: 'Failed', stage: 'keyframe', failed_tasks: 1, total_tasks: 1, error_summary: 'Một tư liệu đã chọn không dùng được cho cảnh này.' },
+    lang: 'vi',
+  });
+  const images = stages.find((stage) => stage.key === 'images');
+  const video = stages.find((stage) => stage.key === 'video');
+  assert.equal(images.state, 'attention');
+  assert.match(images.reason, /tư liệu/);
+  assert.equal(video.state, 'waiting');
+});
+
+test('preparing poses again shows scene images as in progress, not idle', () => {
+  const images = buildStages({ shots: [{}], frames: [{ needs_keyframe: true }], automatic: { status: 'Rewriting' }, lang: 'vi' })
+    .find((stage) => stage.key === 'images');
+  assert.equal(images.state, 'running');
+  assert.match(images.reason, /tư thế nhân vật/);
+});

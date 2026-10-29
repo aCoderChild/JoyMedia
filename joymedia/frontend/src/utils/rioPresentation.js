@@ -1,3 +1,5 @@
+import { assetDisplayName } from './assetPresentation.js';
+
 const categoryNames = {
 	Product: 'Sản phẩm', Character: 'Nhân vật', Environment: 'Bối cảnh',
 	Brand: 'Thương hiệu', Logo: 'Thương hiệu', Style: 'Phong cách',
@@ -19,8 +21,7 @@ export function categoryIcon(category) {
 
 export function referenceLabel(reference, assets = []) {
 	const asset = assets.find(item => item.reference_key === reference.reference_key);
-	return asset?.display_name || asset?.label || reference.label
-		|| String(reference.reference_key || '').replace(/[_-]+/g, ' ');
+	return asset?.display_name || assetDisplayName(asset || reference);
 }
 
 export function referenceCategory(reference, assets = []) {

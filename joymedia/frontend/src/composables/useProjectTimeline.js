@@ -85,6 +85,7 @@ export function useProjectTimeline(projectName) {
 
   function snapshotTimeline() {
     return {
+      timeline_cleared: Boolean(timeline.value?.timeline_cleared),
       clips: clips.value.map((clip) => ({
         name: clip.name,
         shot: clip.shot,
@@ -248,6 +249,14 @@ export function useProjectTimeline(projectName) {
 
   function resetTimeline() {
     return mutate("reset_project_timeline", {});
+  }
+
+  function clearTimeline() {
+    return mutate("clear_project_timeline", {});
+  }
+
+  function addSceneToTimeline(shot) {
+    return mutate("add_scene_to_timeline", { shot_name: shot.name });
   }
 
   function resetClip(clip) {
@@ -448,6 +457,8 @@ export function useProjectTimeline(projectName) {
     deleteClip,
     setTransition,
     resetTimeline,
+    clearTimeline,
+    addSceneToTimeline,
     resetClip,
     updateSourceForShot,
     updateAudioClip,

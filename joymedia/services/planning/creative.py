@@ -28,11 +28,12 @@ from joymedia.services.planning.timed_actions import normalize_action_separators
 CREATIVE_INVARIANTS = (
 	"Preserve reference identities, observed product construction, explicit format/duration and approved claims. "
 	"Write the story for canonical character identities, never for a photographed pose or an alternate reference view. "
+	"A separate object a character holds in its reference photo (a toy, a heart, a cup) belongs to that photo, not to the character: show it only where the story uses it. "
 	"Describe the physically supported body state and action the story needs; a later pose-preparation stage reads this completed script, then selects or generates the opening Character view for each scene. "
 	"Do not change, limit or simplify an action merely because the supplied identity photograph shows a different pose. Change body state where the story gains from it, not in every scene. "
 	"For a multi-scene character commercial, do not keep the actor in the source photograph's pose for every action by default. Plan a visible, physically supported change of body state or orientation when it advances the story; name that change in the timed action and maintain its support across subsequent shots. A different camera crop of the same seated body is not an action or pose change. "
 	"Keep one coherent interaction per shot, chronological prerequisites and persistent object/support states. "
-	"Before each grasp, put the actor and target within a natural paw or hand reach in the opening visual_camera; state their support and relative position there, before the timed action starts. If the original body position cannot reach, establish a visible move first or choose a different interaction. Check that a paw is free. An actor carrying two objects must explicitly set one down before taking a third. Track each object's supporting surface between shots; show any transfer rather than silently moving it. Keep furniture load bearing, with a fully visible ordinary table supported by four connected floor-contacting legs. "
+	"Before each grasp, put the actor and target within a natural paw or hand reach in the opening visual_camera; state their support and relative position there, before the timed action starts. If the original body position cannot reach, establish a visible move first or choose a different interaction. Check that a paw is free. These checks are for you: the timed action states only what visibly happens, never an assurance that a rule is met (that a paw is free, a pose is possible or something is positioned correctly).An actor carrying two objects must explicitly set one down before taking a third. Track each object's supporting surface between shots; show any transfer rather than silently moving it. Keep furniture load bearing, with a fully visible ordinary table supported by four connected floor-contacting legs. "
 	"Fit each support to the character's build and size in its reference photos: a large or round-bodied figure sits on the floor, a rug, a sofa or a bench, or stands beside low furniture, rather than perching on an ordinary chair or squeezing under or behind a tabletop it cannot fit. "
 	"Tell a story a viewer wants to finish: a surprising or relatable hook in the first seconds, a small everyday problem, the product as the turning point with a visible cause and result, an emotional payoff, then the brand. Every scene adds something new; never show the same demonstration twice. "
 	"Give the film rhythm: scene durations are relative weights, so make the hook quick, give the key proof the most time, keep detail cutaways and the closing brand shot short. Never put more than two close handling details in a row; follow them with a reaction, a visible result or a wider shot. "
@@ -749,6 +750,11 @@ def script_schema(inventory, constraints):
 	scene["camera_move"]["description"] = (
 		"One of the six basic moves with its direction, or static: the move that best serves this beat."
 	)
+	scene["opening_support"] = {
+		"type": "string",
+		"enum": ["standing", "seated", "lying", "none"],
+		"description": "How the cast's body is supported in the opening frame, before the first timed action: standing, seated or lying. Use none only when no character is cast. Keep it consistent with the previous scene unless that scene shows the change.",
+	}
 	scene["subject_motion"] = {
 		"type": "string",
 		"enum": sorted(MOTIONS),
@@ -1183,7 +1189,8 @@ def draft_script(
 				"and change its dependent "
 				"opening/continuity/result text. Preserve chronological prerequisites across scenes. "
 				"A later result must not be inserted into an earlier scene before acquisition/contact. "
-				"Mechanical staging notes belong in continuity_rules. Return the complete schema.\n"
+				"Mechanical staging notes belong in continuity_rules. Fix a defect by changing what "
+				"visibly happens; never add a sentence asserting that it is fixed. Return the complete schema.\n"
 				+ "REFERENCE ROSTER: "
 				+ json.dumps(roster, ensure_ascii=False)
 				+ "\nCONSTRAINTS: "

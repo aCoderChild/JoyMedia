@@ -148,7 +148,7 @@ def _busy_shots(media_project):
 
 
 def _project_runs(filters):
-	return frappe.get_all(
+	runs = frappe.get_all(
 		"Generation Run",
 		filters=filters,
 		fields=[
@@ -164,10 +164,16 @@ def _project_runs(filters):
 			"running_tasks",
 			"error_summary",
 			"project_snapshot_hash",
+			"execution_scope_json",
 		],
 		order_by="creation desc",
 		limit_page_length=1,
 	)
+	# A first-frame run and a scene-video run are different steps for the client.
+	for run in runs:
+		scope = frappe.parse_json(run.pop("execution_scope_json", None) or "{}") or {}
+		run["stage"] = scope.get("stage") or "video"
+	return runs
 
 
 def _customer_style_details(settings):
@@ -628,6 +634,7 @@ def _storyboard_payload(specification):
 			"motion_plan_json",
 			"storyboard_beat",
 			"storyboard_action",
+			"modified",
 			"source_timing",
 			"source_start_seconds",
 			"source_end_seconds",

@@ -1,7 +1,7 @@
 [Unit]
 Description=JoyMedia demo local reverse proxy
 After=joymedia-demo-web.service
-Requires=joymedia-demo-web.service
+Wants=joymedia-demo-web.service
 [Service]
 User=ubuntu
 ExecStart=/usr/sbin/nginx -c /home/ubuntu/joymedia-demo-staging/nginx.conf -g 'daemon off;'

@@ -26,9 +26,48 @@ EYE_DESIGN_QUESTION = (
 	"Describe the visible eye drawing on the main physical three-dimensional character only. "
 	"Ignore any character printed on product packaging, posters or screens. "
 	"If the main character is turned away, cropped, or its eyes cannot be resolved, say not_visible or unclear. "
-	"Return JSON eye_shape exactly one of closed_arcs, open_dots, "
+	"closed_smiling_arcs means closed eyes drawn as upward-bulging arcs like a smile (^ ^); "
+	"closed_sleeping_arcs means closed eyes drawn as downward-bulging arcs. "
+	"Return JSON eye_shape exactly one of closed_smiling_arcs, closed_sleeping_arcs, open_dots, "
 	"open_other, closed_other, not_visible, unclear; include reason."
 )
+# Both closed-arc drawings once read as one "closed_arcs" value, so a sleepy
+# downward-eyed pose passed for a mascot whose closed eyes smile upward.
+KNOWN_EYE_SHAPES = frozenset(
+	{"closed_smiling_arcs", "closed_sleeping_arcs", "open_dots", "open_other", "closed_other"}
+)
+# The image model drew a smooth vinyl mascot as a fluffy plush teddy while
+# every pose and identity check passed: none of them asked about the surface.
+CHARACTER_LOOK_QUESTION = (
+	"Describe only the main physical character's fixed appearance, ignoring its pose, any object it holds, "
+	"packaging artwork and the background. In at most 40 words cover its surface material and texture, "
+	"colour, body shape, head, ear and muzzle proportions, and the exact eye drawing. Return JSON appearance "
+	"string and surface exactly one of smooth_seamless, fur_or_plush, fabric, other, unclear."
+)
+KNOWN_SURFACES = frozenset({"smooth_seamless", "fur_or_plush", "fabric", "other"})
+
+
+def character_look(image):
+	"""A reference character's fixed appearance, observed once per immutable image."""
+	from joymedia.services.review.consistency import ask
+
+	cache_key = None
+	if isinstance(image, str):
+		cache_key = "joymedia:character-look:v1:" + hashlib.sha256(image.encode()).hexdigest()
+		cached = frappe.cache.get_value(cache_key)
+		if cached:
+			return cached
+	answer = ask(image, CHARACTER_LOOK_QUESTION, max_edge=768) or {}
+	appearance = " ".join(str(answer.get("appearance") or "").split())[:300]
+	surface = answer.get("surface") if answer.get("surface") in KNOWN_SURFACES else None
+	if not surface and appearance.casefold() in KNOWN_SURFACES:
+		# The model sometimes answers the surface value in the appearance field.
+		surface, appearance = appearance.casefold(), ""
+	look = {"appearance": appearance, "surface": surface}
+	if cache_key and look["appearance"] and look["surface"]:
+		frappe.cache.set_value(cache_key, look, expires_in_sec=7 * 24 * 3600)
+	return look
+
 
 POSE_QUALIFICATION_VERSION = 2
 
@@ -46,7 +85,8 @@ def _eye_design_instruction(source_image, angle):
 
 	shape = ask(source_image, EYE_DESIGN_QUESTION, max_edge=768).get("eye_shape")
 	return {
-		"closed_arcs": "Keep both eyes as closed curved arcs exactly as the source; do not open them. ",
+		"closed_smiling_arcs": "Keep both eyes as closed arcs curving upward like a smile, exactly as the source; do not open them. ",
+		"closed_sleeping_arcs": "Keep both eyes as closed downward-curving arcs exactly as the source; do not open them. ",
 		"open_dots": "Keep both eyes as open round dots exactly as the source. ",
 		"closed_other": "Keep the source's closed-eye design exactly; do not open the eyes. ",
 		"open_other": "Keep the source's open-eye design exactly. ",
@@ -116,6 +156,23 @@ def _qualified_view_for_requirement(selected, identity_key, requirement, request
 		((row, qualified) for row, qualified in candidates if qualified.get("view") == requested_view),
 		candidates[0],
 	)
+
+
+def _approved_view_with_same_support(selected, identity_key, pose, angle):
+	"""Closest approved view when a scripted gesture cannot be prepared as its own pose.
+
+	Follows ViMax's ReferenceImageSelector (reference/ViMax/agents/reference_image_selector.py):
+	a character reference is the closest existing view of that character, and the
+	frame prompt carries the posture. A reach or touch is drawn by the first frame
+	from the shot's own direction; the reference only anchors identity and support.
+	A different support state (seated for standing) is never substituted.
+	"""
+	from joymedia.services.planning.pose_coverage import source_pose_state
+
+	requirement = {"mobile_or_upright": "upright_supported", "seated_supported": "seated_supported"}.get(
+		source_pose_state([pose])
+	)
+	return _qualified_view_for_requirement(selected, identity_key, requirement, angle)
 
 
 def _silhouette_aspect(image):
@@ -247,7 +304,8 @@ def _observed_pose_matches(content, pose_description, angle=None):
 	# vision repeated "kneeling" for a visibly seated Shera and falsely accepted it.
 	cache_key = None
 	if isinstance(content, str):
-		cache_key = "joymedia_pose_observed:" + hashlib.sha256(content.encode()).hexdigest()
+		# v2 observations include limb positions; older cached answers lack them.
+		cache_key = "joymedia_pose_observed:v2:" + hashlib.sha256(content.encode()).hexdigest()
 	observed = frappe.cache.get_value(cache_key) if cache_key else None
 	if observed is None:
 		observed = ask(
@@ -255,15 +313,17 @@ def _observed_pose_matches(content, pose_description, angle=None):
 			"Without knowing the intended pose, describe only the body pose and support visible "
 			"in this image. Do not infer hidden knee, shin, foot or floor contacts. "
 			"Distinguish resting on the rump with feet forward from kneeling on knees. "
+			"Describe where each visible arm and paw or hand is (for example at the sides, "
+			"resting on the body or floor, raised, extended forward) and whether it is empty. "
 			"Also describe camera view as front, side or back. "
-			"Return JSON pose_description, visible_contact_points array, view, and certainty "
-			"(high, medium, low).",
+			"Return JSON pose_description, limb_positions, visible_contact_points array, view, "
+			"and certainty (high, medium, low).",
 			max_edge=768,
 		)
 		if cache_key and observed.get("certainty") == "high":
 			frappe.cache.set_value(cache_key, observed, expires_in_sec=7 * 24 * 3600)
 	if observed.get("certainty") != "high" or not observed.get("pose_description"):
-		return False
+		return _rejected("uncertain pose observation", observed)
 	match = _ask_planner(
 		"Observed visible body state: "
 		+ json.dumps(observed, ensure_ascii=False)
@@ -281,7 +341,15 @@ def _observed_pose_matches(content, pose_description, angle=None):
 			"additionalProperties": False,
 		},
 	)
-	return match.get("answer") is True
+	if match.get("answer") is not True:
+		return _rejected("pose comparison", observed, match)
+	return True
+
+
+def _rejected(gate, *evidence):
+	"""Record which admission check refused a pose candidate; the result stays False."""
+	frappe.logger("joymedia.pose").warning("Pose candidate rejected by %s: %s", gate, evidence)
+	return False
 
 
 def _accept_pose_view(
@@ -290,14 +358,14 @@ def _accept_pose_view(
 	from joymedia.services.review.consistency import ask
 
 	if source_image is not None and _retains_body_proportions(source_image, content) is False:
-		return False
+		return _rejected("body proportions")
 	if source_image is not None and _visible_change(source_image, content) is False:
-		return False
+		return _rejected("no visible change from the source")
 	# A target-led yes/no question can agree with the requested gesture even when
 	# independent observation sees a different one.  Never let it override a
 	# failed blind observation when certifying a reusable pose.
 	if not _observed_pose_matches(content, pose_description, angle):
-		return False
+		return _rejected("observed pose", pose_description)
 	support = ask(
 		content,
 		"Does this image contain exactly one complete character with connected anatomy, "
@@ -311,20 +379,34 @@ def _accept_pose_view(
 	prop = ask(content, HELD_PROP_QUESTION, max_edge=768)
 	count = prop.get("held_object_count")
 	if support.get("answer") is not True or type(count) is not int or count != 0:
-		return False
+		return _rejected("support or held prop", support, prop)
 	# The broad support question accepted a real H3 side view whose lower body
 	# had collapsed into one stump. Ask about that failure independently; a
 	# separate foot count is unreliable for a stylized bear (toes look like feet).
-	lower_body = ask(
-		content,
+	lower_body_question = (
 		"Describe the lower body and floor contacts only. Count anatomically distinct "
 		"legs and feet that are visible, and say if feet are fused into the body. "
 		"Return JSON visible_leg_count integer, visible_foot_count integer, "
-		"fused_lower_body boolean, reason string.",
-		max_edge=768,
+		"fused_lower_body boolean, reason string."
 	)
+	lower_body = ask(content, lower_body_question, max_edge=768)
 	if lower_body.get("fused_lower_body") is not False:
-		return False
+		# The check catches a lower body collapsed into one stump. A squat mascot's
+		# feet are part of its rounded body by design, so "fused" with two distinct
+		# legs and feet is intact. The model also called the same source "not fused,
+		# four feet", so a source comparison is only a second chance, not the rule.
+		def counts(answer):
+			return [answer.get(key) for key in ("visible_leg_count", "visible_foot_count")]
+
+		intact = all(type(value) is int and value >= 2 for value in counts(lower_body))
+		if not intact:
+			source_lower_body = (
+				ask(source_image, lower_body_question, max_edge=768) if source_image is not None else {}
+			)
+			if source_lower_body.get("fused_lower_body") is not True or counts(lower_body) != counts(
+				source_lower_body
+			):
+				return _rejected("lower body", lower_body, source_lower_body)
 	if source_image is None:
 		return True
 	identity = ask(
@@ -339,26 +421,30 @@ def _accept_pose_view(
 		max_edge=768,
 	)
 	if identity.get("answer") is not True:
-		return False
+		return _rejected("identity", identity)
 	# Broad identity comparisons missed a new yellow flower on Shera. Check the
 	# source and candidate independently before certifying a reusable pose.
 	source_head = ask(source_image, HEAD_ACCESSORY_QUESTION, max_edge=768).get("head_accessories")
 	generated_head = ask(content, HEAD_ACCESSORY_QUESTION, max_edge=768).get("head_accessories")
 	if not isinstance(source_head, list) or not isinstance(generated_head, list):
-		return False
+		return _rejected("head accessories unreadable")
 	if sorted(str(item).strip().casefold() for item in source_head) != sorted(
 		str(item).strip().casefold() for item in generated_head
 	):
-		return False
+		return _rejected("head accessories", source_head, generated_head)
+	source_surface = character_look(source_image).get("surface")
+	generated_surface = character_look(content).get("surface")
+	if source_surface and generated_surface and source_surface != generated_surface:
+		return _rejected("surface", source_surface, generated_surface)
 	# A broad identity judgement can miss a small but defining facial mark.
 	# Ask each image independently: paired-image comparisons have repeatedly
 	# described this Shera source's closed eyes as open in both pictures.
 	if angle == "front":
 		source_eyes = ask(source_image, EYE_DESIGN_QUESTION, max_edge=768).get("eye_shape")
 		generated_eyes = ask(content, EYE_DESIGN_QUESTION, max_edge=768).get("eye_shape")
-		if source_eyes in {"closed_arcs", "open_dots", "open_other", "closed_other"}:
+		if source_eyes in KNOWN_EYE_SHAPES:
 			if generated_eyes != source_eyes:
-				return False
+				return _rejected("eye design", source_eyes, generated_eyes)
 	return True
 
 
@@ -541,24 +627,28 @@ def _pose_view_from_h3(project, source, pose_description, angle):
 				second = round(duration * fraction, 3)
 				frame_path = Path(temp_dir) / "candidate.png"
 				frame_path.unlink(missing_ok=True)
-				result = subprocess.run(
-					[
-						"ffmpeg",
-						"-hide_banner",
-						"-loglevel",
-						"error",
-						"-y",
-						"-ss",
-						str(second),
-						"-i",
-						str(video_path),
-						"-frames:v",
-						"1",
-						str(frame_path),
-					],
-					capture_output=True,
-					timeout=60,
-				)
+				try:
+					result = subprocess.run(
+						[
+							"ffmpeg",
+							"-hide_banner",
+							"-loglevel",
+							"error",
+							"-y",
+							"-ss",
+							str(second),
+							"-i",
+							str(video_path),
+							"-frames:v",
+							"1",
+							str(frame_path),
+						],
+						capture_output=True,
+						timeout=60,
+					)
+				except subprocess.TimeoutExpired:
+					# A stalled extraction says nothing about the pose; try the next frame.
+					continue
 				if result.returncode or not frame_path.exists():
 					continue
 				content = frame_path.read_bytes()
@@ -659,6 +749,55 @@ def _pose_view(project, source, pose_description, angle):
 	raise ValueError(f"No generated pose passed support and identity review: {pose_description}")
 
 
+def _body_only_pose(pose, cache):
+	"""Describe a planned pose as body articulation only.
+
+	A reusable pose image is prop-free, so the pose check can never see the pack,
+	puddle or purpose a planner names ("reaching towards a pack"). Such words made
+	every correctly seated candidate fail the exact-match comparison. Keep the
+	support and every limb position; on any doubt keep the planner's text.
+	"""
+	if pose in cache:
+		return cache[pose]
+	from joymedia.services.planning.pose_coverage import source_pose_state
+	from joymedia.services.planning.production import _ask_planner
+
+	result = pose
+	try:
+		repaired = _ask_planner(
+			"Rewrite this character pose for a prop-free reference image. Keep its body "
+			"support, orientation and the position of EVERY arm, paw, leg and the head, "
+			"stated as body geometry (for example 'right paw extended forward at chest "
+			"height'). Remove every object, product, target, destination, scenery and "
+			"purpose (for example 'towards a pack', 'near a puddle', 'as if'). Do not "
+			"invent limbs or change the support. Return JSON pose string. Source: " + pose,
+			system="You describe a character pose as visible body articulation only.",
+			capability="planner",
+			sampling_profile="production_plan",
+			response_schema={
+				"type": "object",
+				"properties": {"pose": {"type": "string"}},
+				"required": ["pose"],
+				"additionalProperties": False,
+			},
+		)
+		candidate = " ".join(str((repaired or {}).get("pose") or "").split())[:300]
+		if (
+			candidate
+			and source_pose_state([candidate]) == source_pose_state([pose])
+			and not re.search(
+				r"\b(?:hold|holding|carry|carrying|grip|gripping|clutch|clutching|presenting)\b",
+				candidate,
+				re.I,
+			)
+		):
+			result = candidate
+	except Exception:
+		frappe.logger("joymedia.pose").warning("Body-only pose rewrite unavailable for %r", pose)
+	cache[pose] = result
+	return result
+
+
 def _plan_required_states(script, selected):
 	"""Ask the existing planner for the finite opening states needed by the full script.
 
@@ -673,6 +812,7 @@ def _plan_required_states(script, selected):
 		if str(row.get("reference_role") or "").casefold() in {"character", "person"}
 	}
 	available_views = []
+	qualified_poses = set()
 	for row in selected:
 		if str(row.get("reference_role") or "").casefold() not in {"character", "person"}:
 			continue
@@ -690,6 +830,7 @@ def _plan_required_states(script, selected):
 		# anchor, but must not be presented to the Director as a reliable action view.
 		qualified = _qualified_pose_metadata(analysis)
 		if qualified:
+			qualified_poses.add(qualified["pose"])
 			available_views.append(
 				{
 					"key": row.get("reference_key"),
@@ -704,6 +845,7 @@ def _plan_required_states(script, selected):
 			"cast": [key for key in scene.get("cast") or [] if key in characters],
 			"action": scene.get("action"),
 			"start_state": scene.get("start_state"),
+			"opening_support": scene.get("opening_support"),
 			"subject_motion": scene.get("subject_motion"),
 			"visual_camera": scene.get("visual_camera"),
 			"image_prompt": scene.get("image_prompt"),
@@ -837,6 +979,7 @@ def _plan_required_states(script, selected):
 	states.sort(key=lambda state: state.get("scene_index") if type(state.get("scene_index")) is int else -1)
 	seen = set()
 	previous_by_identity = {}
+	body_only = {}
 	for state in states:
 		# Compatibility for an in-flight or cached planner response produced before
 		# reference_key was added.  New responses must make the choice explicitly.
@@ -885,6 +1028,11 @@ def _plan_required_states(script, selected):
 		requirement = required_pose(
 			script_scene.get("action"),
 			{"subject_motion": script_scene.get("subject_motion")},
+		)
+		# The writer's stated opening support is authoritative. Without it, the
+		# same script was planned standing one day and seated the next.
+		requirement = {"standing": "upright_supported", "seated": "seated_supported"}.get(
+			script_scene.get("opening_support"), requirement
 		)
 		if requirement == "preserve_reference_pose":
 			# A prop interaction alone does not move the body from seated to
@@ -1047,6 +1195,10 @@ def _plan_required_states(script, selected):
 			):
 				raise ValueError("Reusable character pose includes scene-specific object contact.")
 			state["opening_pose"] = candidate_pose[:300]
+		elif state["opening_pose"] not in qualified_poses:
+			# An approved view's own text is its reviewed contract; anything else
+			# is prepared and checked against a prop-free image.
+			state["opening_pose"] = _body_only_pose(state["opening_pose"], body_only)
 		if characters.get(state["cast_key"]):
 			previous_by_identity[characters[state["cast_key"]]] = dict(state)
 		seen.add(pair)
@@ -1066,6 +1218,97 @@ def _view_matches(file_url, pose_description, angle):
 		return False
 	count = ask(file_url, HELD_PROP_QUESTION, max_edge=768).get("held_object_count")
 	return type(count) is int and count == 0
+
+
+def _neutral_pose(pose):
+	"""The relaxed pose of the same body support, or None when the support is unclear."""
+	from joymedia.services.planning.pose_coverage import source_pose_state
+
+	return {
+		# "Arms at the sides" read as a mismatch for a round mascot whose arms rest
+		# against its body, and "empty paws" as "not touching the body".
+		"seated_supported": (
+			"seated, both arms resting down in a relaxed position against the body or at "
+			"the sides, nothing in either paw or hand"
+		),
+		"mobile_or_upright": (
+			"standing upright on two visible, supported feet, both arms resting down in a "
+			"relaxed position against the body or at the sides, nothing in either paw or hand"
+		),
+	}.get(source_pose_state([pose]))
+
+
+def _pose_key(identity, pose, angle):
+	return "pose_" + hashlib.sha256(f"{identity}:{pose.casefold()}:{angle}".encode()).hexdigest()[:12]
+
+
+def _register_pose_view(project, source, cast_key, pose, angle):
+	"""Generate one pose, pass it through the admission checks and add it to the project."""
+	key = _pose_key(source.get("identity_key") or source.get("reference_key"), pose, angle)
+	content = _pose_view(project, source, pose, angle)
+	from joymedia.services.intake.subject_cutout import cutout_studio_reference, sam2_configured
+
+	mask_evidence = None
+	if sam2_configured():
+		content, mask_evidence = cutout_studio_reference(content)
+	frappe.db.commit()  # Do not hold a transaction across GPU rendering.
+	from joymedia.services.intake.assets import create_media_asset
+
+	image = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"{key}.png",
+			"content": content,
+			"is_private": 1,
+			"attached_to_doctype": "Media Project",
+			"attached_to_name": project.name,
+		}
+	).insert(ignore_permissions=True)
+	asset = create_media_asset(
+		f"{source.label or cast_key} {pose[:60]} {angle}",
+		"Character",
+		file_url=image.file_url,
+		file_name=image.name,
+		source="Generated",
+	)
+	frappe.db.set_value(
+		"Asset Version",
+		asset["asset_version"],
+		{
+			"analysis_status": "Ready",
+			"analysis_json": frappe.as_json(
+				{
+					"kind": "character",
+					"description": f"Same character in {pose}; {angle} view",
+					"pose_and_support": pose,
+					"view": angle,
+					"qualified_pose_and_support": pose,
+					"qualified_pose_view": angle,
+					"pose_qualification_version": POSE_QUALIFICATION_VERSION,
+					"source_asset_version": source.asset_version,
+					"subject_cutout": mask_evidence,
+				}
+			),
+		},
+		update_modified=False,
+	)
+	project.reload()
+	project.append(
+		"selected_media",
+		{
+			"asset_version": asset["asset_version"],
+			"reference_key": key,
+			"identity_key": source.identity_key,
+			"reference_role": source.reference_role,
+			"label": f"{source.label or cast_key} {pose[:60]} {angle} (generated)",
+			# A source rule may describe its held prop or a particular shot.
+			# The reusable pose must not carry that instruction into every scene.
+			"relative_size": source.relative_size,
+			"keep_rule": "",
+		},
+	)
+	project.save(ignore_permissions=True)
+	return project.selected_media[-1]
 
 
 def prepare_script_pose_views(project, script, _retry_deferred=True):
@@ -1104,8 +1347,14 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 			for key in scene.get("cast") or []
 			if key in by_key
 		]
+	from joymedia.services.planning.pose_coverage import source_pose_state
+
 	prepared = []
 	failed_pose_keys = {}
+	# Gesture variants of one body support (a paw near a pack, near a tissue) fail
+	# for the same reason. After one failed generation, the rest bind the closest
+	# approved view of that support instead of spending another GPU pass each.
+	failed_supports = set()
 	for state in states:
 		scene = script["scenes"][state["scene_index"]]
 		cast_key = state["cast_key"]
@@ -1133,7 +1382,9 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 		pose = " ".join(state["opening_pose"].split())[:300]
 		angle = state["view"]
 		identity = source.get("identity_key") or source.get("reference_key")
-		key = "pose_" + hashlib.sha256(f"{identity}:{pose.casefold()}:{angle}".encode()).hexdigest()[:12]
+		key = _pose_key(identity, pose, angle)
+		support_key = (identity, source_pose_state([pose]), angle)
+		requested_pose = None
 		choice = by_key.get(key)
 		if choice:
 			try:
@@ -1174,8 +1425,9 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 				and (not qualified["view"] or qualified["view"] == angle)
 			):
 				choice = preferred
-		if not choice:
-			if failed_pose_keys.get(key) == len(selected):
+		if not choice and failed_pose_keys.get(key) == len(selected):
+			choice, approved = _approved_view_with_same_support(selected, identity, pose, angle)
+			if not choice:
 				prepared.append(
 					{
 						"scene": state["scene_index"] + 1,
@@ -1186,6 +1438,8 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 					}
 				)
 				continue
+			requested_pose, pose = pose, approved["pose"]
+		if not choice:
 			# Source and alternate views are checked visually against the planned
 			# state; text labels and action keywords cannot certify a pose.
 			candidates = [source] + [
@@ -1220,8 +1474,9 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 				if matches:
 					choice = candidate
 					break
-		if not choice:
-			if key in failed_pose_keys:
+		if not choice and (key in failed_pose_keys or support_key in failed_supports):
+			choice, approved = _approved_view_with_same_support(selected, identity, pose, angle)
+			if not choice:
 				prepared.append(
 					{
 						"scene": state["scene_index"] + 1,
@@ -1232,71 +1487,10 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 					}
 				)
 				continue
+			requested_pose, pose = pose, approved["pose"]
+		if not choice:
 			try:
-				content = _pose_view(project, source, pose, angle)
-				from joymedia.services.intake.subject_cutout import cutout_studio_reference, sam2_configured
-
-				mask_evidence = None
-				if sam2_configured():
-					content, mask_evidence = cutout_studio_reference(content)
-				frappe.db.commit()  # Do not hold a transaction across GPU rendering.
-				from joymedia.services.intake.assets import create_media_asset
-
-				image = frappe.get_doc(
-					{
-						"doctype": "File",
-						"file_name": f"{key}.png",
-						"content": content,
-						"is_private": 1,
-						"attached_to_doctype": "Media Project",
-						"attached_to_name": project.name,
-					}
-				).insert(ignore_permissions=True)
-				asset = create_media_asset(
-					f"{source.label or cast_key} {pose[:60]} {angle}",
-					"Character",
-					file_url=image.file_url,
-					file_name=image.name,
-					source="Generated",
-				)
-				frappe.db.set_value(
-					"Asset Version",
-					asset["asset_version"],
-					{
-						"analysis_status": "Ready",
-						"analysis_json": frappe.as_json(
-							{
-								"kind": "character",
-								"description": f"Same character in {pose}; {angle} view",
-								"pose_and_support": pose,
-								"view": angle,
-								"qualified_pose_and_support": pose,
-								"qualified_pose_view": angle,
-								"pose_qualification_version": POSE_QUALIFICATION_VERSION,
-								"source_asset_version": source.asset_version,
-								"subject_cutout": mask_evidence,
-							}
-						),
-					},
-					update_modified=False,
-				)
-				project.reload()
-				project.append(
-					"selected_media",
-					{
-						"asset_version": asset["asset_version"],
-						"reference_key": key,
-						"identity_key": source.identity_key,
-						"reference_role": source.reference_role,
-						"label": f"{source.label or cast_key} {pose[:60]} {angle} (generated)",
-						# A source rule may describe its held prop or a particular shot.
-						# The reusable pose must not carry that instruction into every scene.
-						"relative_size": source.relative_size,
-						"keep_rule": "",
-					},
-				)
-				project.save(ignore_permissions=True)
-				choice = project.selected_media[-1]
+				choice = _register_pose_view(project, source, cast_key, pose, angle)
 				selected.append(choice)
 				by_key[key] = choice
 			except Exception as exc:
@@ -1305,16 +1499,37 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 				if isinstance(exc, ComfyJobLostError):
 					raise
 				failed_pose_keys[key] = len(selected)
+				if isinstance(exc, ValueError):
+					# Only a rejected pose is evidence about the body support; an
+					# unavailable service must not stop the other scenes' attempts.
+					failed_supports.add(support_key)
 				frappe.log_error(title=f"Pose preparation deferred for {project.name}")
-				prepared.append(
-					{
-						"scene": state["scene_index"] + 1,
-						"source": cast_key,
-						"pose": pose,
-						"status": "deferred",
-					}
-				)
-				continue
+				choice, approved = _approved_view_with_same_support(selected, identity, pose, angle)
+				neutral = _neutral_pose(pose) if isinstance(exc, ValueError) else None
+				if not choice and neutral and neutral != pose:
+					# The pose workflows reliably produce a relaxed body but not a held
+					# gesture. Open on the neutral pose of the same support; the first
+					# frame draws the gesture from the shot direction.
+					try:
+						choice = _register_pose_view(project, source, cast_key, neutral, angle)
+						selected.append(choice)
+						by_key[_pose_key(identity, neutral, angle)] = choice
+						approved = {"pose": neutral}
+					except Exception as neutral_exc:
+						if isinstance(neutral_exc, ComfyJobLostError):
+							raise
+						frappe.log_error(title=f"Neutral pose preparation deferred for {project.name}")
+				if not choice:
+					prepared.append(
+						{
+							"scene": state["scene_index"] + 1,
+							"source": cast_key,
+							"pose": pose,
+							"status": "deferred",
+						}
+					)
+					continue
+				requested_pose, pose = pose, approved["pose"]
 		try:
 			from joymedia.services.intake.subject_cutout import ensure_transparent_reference, sam2_configured
 
@@ -1344,6 +1559,8 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 				"view": choice.reference_key,
 				"pose": pose,
 				"status": "ready",
+				# The gesture the first frame still has to draw over the approved view.
+				**({"requested_pose": requested_pose} if requested_pose else {}),
 			}
 		)
 	# Pose states can depend on each other: a side view may fail from the

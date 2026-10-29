@@ -1,16 +1,24 @@
 <template>
-  <section v-if="videos.length" class="rounded-xl border border-outline-border p-3" data-test="video-shelf">
+  <section class="rounded-xl border border-outline-border p-3" data-test="video-shelf">
     <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-      <h2 class="text-sm font-semibold">{{ tr('Videos in this project', 'Các video trong dự án') }} · {{ videos.length }}</h2>
+      <h2 v-if="!embedded" class="text-sm font-semibold">{{ tr('Versions & comparison', 'Phiên bản & so sánh') }}</h2>
       <div class="flex items-center gap-2 text-xs">
-        <button v-if="!readonly" class="jm-button-secondary" data-test="generate-from-references" :disabled="busy" @click="generate">{{ pendingBatch ? tr('Starting your video…', 'Đang khởi tạo video…') : tr('New video from these references', 'Tạo video mới từ ảnh tham chiếu') }}</button>
+
         <span v-if="finished >= 2 && comparing.length < 2" class="text-ink-muted">{{ tr('Tick two videos to compare them', 'Tích hai video để so sánh') }}</span>
         <button v-if="comparing.length === 2" class="jm-button-primary" data-test="open-compare" @click="compareOpen = true">{{ tr('Compare', 'So sánh') }}</button>
       </div>
     </div>
+    <nav class="video-shelf-tabs" :aria-label="tr('Version category', 'Loại phiên bản')">
+      <button type="button" :aria-pressed="view === 'videos'" @click="setView('videos')">{{ tr('Videos', 'Video') }} · {{ regularVideos.length }}</button>
+      <button v-if="experiments.length" type="button" :aria-pressed="view === 'experiments'" @click="setView('experiments')">{{ tr('Experiments', 'Thử nghiệm') }} · {{ experiments.length }}</button>
+    </nav>
+    <p v-if="currentExperiment && view !== 'experiments'" class="text-xs text-ink-muted mb-2">{{ tr('The open workspace is an experiment.', 'Không gian đang mở là một bản thử nghiệm.') }} <button type="button" class="text-rio-500 underline" @click="setView('experiments')">{{ tr('Show experiments', 'Xem thử nghiệm') }}</button></p>
+    <p v-if="loading" class="text-xs text-ink-muted" role="status">{{ tr('Loading versions…', 'Đang tải phiên bản…') }}</p>
+    <p v-if="!loading && !videos.length && !error" class="text-xs text-ink-muted">{{ tr('No videos in this category yet.', 'Chưa có video trong mục này.') }}</p>
+    <p v-if="view === 'experiments'" class="text-xs text-ink-muted mb-2">{{ tr('Test edits are kept here separately from your videos. No media has been deleted.', 'Các bản thử nghiệm được giữ riêng ở đây. Không có tư liệu nào bị xóa.') }}</p>
     <p v-if="error" class="text-xs text-rose-500 mb-2">{{ error }}</p>
-    <ol class="flex gap-3 overflow-x-auto pb-1">
-      <li v-for="(video, i) in videos" :key="video.name" class="relative w-44 shrink-0 rounded-lg border p-2 flex flex-col gap-1" :class="video.is_open ? 'border-rio-500 ring-1 ring-rio-500' : 'border-outline-border'" :data-video="video.name">
+    <ol class="video-shelf-grid">
+      <li v-for="video in videos" :key="video.name" class="relative min-w-0 rounded-lg border p-2 flex flex-col gap-1" :class="video.is_open ? 'border-rio-500 ring-1 ring-rio-500' : 'border-outline-border'" :data-video="video.name">
         <button v-if="!readonly && !video.is_working_edit" class="absolute right-1 top-1 z-10 grid h-6 w-6 place-items-center rounded-full bg-surface-card/90 text-ink-muted hover:text-rose-600" :title="tr('Move to trash', 'Chuyển vào thùng rác')" :aria-label="tr('Move to trash', 'Chuyển vào thùng rác')" :disabled="busy" data-test="remove-video" @click.stop="remove(video)">✕</button>
         <button class="text-left" :aria-current="video.is_open ? 'page' : undefined" @click="open(video)">
           <video v-if="video.video" :src="video.video + '#t=1'" class="w-full aspect-video rounded bg-surface-muted object-cover" preload="metadata" muted playsinline />
@@ -39,12 +47,15 @@ import { errorMessage } from '../../utils/errors';
 import { rioConfirm } from '../../utils/rioDialog';
 import CompareVideos from './CompareVideos.vue';
 
-const props = defineProps({ project: { type: String, required: true }, readonly: Boolean });
+const props = defineProps({ project: { type: String, required: true }, readonly: Boolean, embedded: Boolean });
 const router = useRouter();
-const data = ref(null), comparing = ref([]), compareOpen = ref(false), busy = ref(false), error = ref('');
+const data = ref(null), view = ref('videos'), loading = ref(false), comparing = ref([]), compareOpen = ref(false), busy = ref(false), error = ref('');
 // Newest first, as the server sends them.
-const videos = computed(() => data.value?.videos || []);
-const pendingBatch = ref('');
+const regularVideos = computed(() => (data.value?.videos || []).filter(video => !video.is_experiment));
+const currentExperiment = computed(() => (data.value?.videos || []).find(video => video.is_open && video.is_experiment));
+const experiments = computed(() => (data.value?.videos || []).filter(video => video.is_experiment));
+const videos = computed(() => view.value === 'experiments' ? experiments.value : regularVideos.value);
+function setView(value) { view.value = value; comparing.value = []; compareOpen.value = false; }
 let timer, epoch = 0;
 // An AI-written video reports its batch stage; any other video its project status.
 const STATUS = {
@@ -65,8 +76,8 @@ const STATUS = {
 };
 const finished = computed(() => videos.value.filter((v) => v.video).length);
 // Internal batch labels ("AI CRB-00021 · 2") mean nothing to a reviewer.
-// Numbered 1, 2, 3… in creation order among the videos listed, so removed ones leave no gaps;
-// the stored label adds only the video's own title.
+// Numbers come from the full family before category filtering; switching tabs
+// never renumbers an existing video. The label adds only its own title.
 const name = (video) => {
   const number = video.number;
   const title = /^(AI CRB-\d+|Original$)/.test(video.label || '') ? '' : String(video.label || '').replace(/^Video \d+\s*·?\s*/, '');
@@ -89,36 +100,18 @@ const statusLabel = (video) => {
 
 async function load() {
   const current = ++epoch;
+  loading.value = true; error.value = '';
   try {
     const result = await call('joymedia.api.projects.get_project_videos', { project_name: props.project });
     if (current !== epoch) return;
     data.value = result;
     comparing.value = comparing.value.map((v) => videos.value.find((x) => x.name === v.name)).filter(Boolean);
-    if (pendingBatch.value) {
-      const batch = await call('joymedia.api.creative.get_product_batch', { batch_name: pendingBatch.value });
-      if (current !== epoch) return;
-      const variant = batch.variants?.find(v => v.project);
-      if (variant) {
-        pendingBatch.value = ''; busy.value = false;
-        router.push('/projects/' + variant.project);
-      } else if (['Needs Attention', 'Cancelled'].includes(batch.status)) {
-        pendingBatch.value = ''; busy.value = false;
-        error.value = batch.variants?.[0]?.error || tr('The video could not start.', 'Chưa khởi tạo được video.');
-      }
-    }
+
   } catch (e) {
     if (current === epoch) error.value = errorMessage(e);
   }
-  if (current === epoch && (pendingBatch.value || videos.value.some(v => ['Queued', 'Planning', 'Locations', 'Keyframes', 'Rendering', 'Finishing', 'Exporting', 'Generating'].includes(v.stage || v.status)))) timer = setTimeout(load, 5000);
-}
-async function generate() {
-  if (busy.value) return;
-  busy.value = true; error.value = '';
-  try {
-    const result = await call('joymedia.api.creative.create_product_batch', { source_project: props.project, count: 1, auto_render: true, delivery_mode: 'automatic' });
-    pendingBatch.value = result.batch;
-    clearTimeout(timer); await load();
-  } catch (e) { busy.value = false; error.value = errorMessage(e); }
+  if (current === epoch) loading.value = false;
+  if (current === epoch && (data.value?.videos || []).some(v => ['Queued', 'Planning', 'Locations', 'Keyframes', 'Rendering', 'Finishing', 'Exporting', 'Generating'].includes(v.stage || v.status))) timer = setTimeout(load, 5000);
 }
 const open = (video) => { if (!video.is_open) router.push('/projects/' + video.name); };
 function pick(video) {
@@ -152,6 +145,11 @@ async function choose(video) {
     busy.value = false;
   }
 }
-watch(() => props.project, () => { clearTimeout(timer); load(); }, { immediate: true });
+watch(() => props.project, () => { clearTimeout(timer); data.value = null; comparing.value = []; compareOpen.value = false; view.value = 'videos'; load(); }, { immediate: true });
 onUnmounted(() => { epoch++; clearTimeout(timer); });
 </script>
+
+<style scoped>
+.video-shelf-tabs{display:flex;gap:8px;margin:8px 0 12px}.video-shelf-tabs button{padding:5px 10px;border:1px solid var(--outline-border);border-radius:7px;font-size:12px;color:var(--ink-muted)}.video-shelf-tabs button[aria-pressed=true]{color:var(--primary-accent);border-color:var(--primary-accent);background:#06b6d415}
+.video-shelf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;max-height:55vh;overflow-y:auto;padding:2px}
+</style>

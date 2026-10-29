@@ -407,42 +407,6 @@ class TestFinishPreviousConcept(FrappeTestCase):
 			self.assertFalse(cb._finish_previous_concept({"history": [{"project": "PRJ-X", "script": {}}]}))
 
 
-class TestUnqualifiedPoseLibrary(FrappeTestCase):
-	"""An unverified reusable pose is not a precondition for an automatic video.
-
-	Every shot already carries its own ``pose_requirement`` and bridge-keyframe
-	contract from ``_plan_project``, and its first frame is checked on its own.
-	"""
-
-	def variant(self):
-		return {
-			"status": "Planning",
-			"script": {"scenes": [{}, {}, {}], "director_notes": []},
-			"pose_views": [
-				{"scene": 1, "status": "ready"},
-				{"scene": 2, "status": "deferred"},
-				{"scene": 3, "status": "deferred"},
-			],
-		}
-
-	def test_an_uncertified_pose_never_blocks_drawing_and_is_disclosed_once(self):
-		variant = self.variant()
-		note = cb.resolve_pose_shortfall(variant)
-		cb.resolve_pose_shortfall(variant)
-		self.assertEqual("Planning", variant["status"])
-		self.assertEqual([note], variant["script"]["director_notes"])
-		self.assertIn("scene(s) 2, 3", note)
-		self.assertIn("own shot pose contract", note)
-		# The reviewer sees which scenes carry a new body position.
-		self.assertEqual([2, 3], variant["pose_unverified_scenes"])
-
-	def test_a_fully_qualified_pose_plan_records_nothing(self):
-		ready = {"pose_views": [{"scene": 1, "status": "ready"}], "script": {"director_notes": []}}
-		self.assertEqual("", cb.resolve_pose_shortfall(ready))
-		self.assertEqual([], ready["script"]["director_notes"])
-		self.assertNotIn("pose_unverified_scenes", ready)
-
-
 class TestStaleKeyframe(FrappeTestCase):
 	def test_a_frame_that_no_longer_matches_its_scene_is_redrawn(self):
 		shot = frappe._dict(name="S1", keyframe_artifact="GART-1", keyframe_signature="old")

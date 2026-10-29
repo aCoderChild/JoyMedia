@@ -583,7 +583,8 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored, *, previo
 		"Convert this authored timed scene into an English production plan, JSON only. "
 		"Preserve every subject and action; invent no objects, actors, packaging layers or claims. "
 		"image_prompt: ONE opening still before the first timed action, at most 60 words. "
-		"setting_prompt: place and lighting only, at most 30 words. video_prompt: authored motion only. "
+		+ _locked_product_opening_rule()
+		+ "setting_prompt: place and lighting only, at most 30 words. video_prompt: authored motion only. "
 		"start_state and end_state: concise visible states including the actor's posture, support and held objects. "
 		"Carry unchanged posture, support and object placement from the preceding state; focusing on a new action must not silently move an actor onto furniture or move an object to a different support. Use New Scene for a direct cut. "
 		"needs_editing: report impossible action timing without omitting actions. "
@@ -802,6 +803,18 @@ def _place(project, beat, attempt=0):
 	)
 
 
+def _locked_product_opening_rule():
+	"""The opening still the source-pixel product lock can accept, or nothing without the lock."""
+	from joymedia.services.consistency.retention import policy
+
+	if not policy():
+		return ""
+	return (
+		"When the advertised product appears in image_prompt, it rests untouched on its support with its "
+		"printed face toward the camera; nobody holds it yet. Any handling starts in video_prompt. "
+	)
+
+
 def project_reference_options(project):
 	"""Canonical visual identities the planner may assign to a shot.
 
@@ -843,7 +856,14 @@ def project_reference_options(project):
 		except (TypeError, ValueError):
 			analysis = {}
 		# What the picture actually shows (pose, framing) lets the prompt agree with it.
-		if isinstance(analysis, dict) and analysis.get("description"):
+		# A character with several approved views is drawn from the view bound to each
+		# scene, so the canonical upload's pose and held props (a seated mascot hugging
+		# a heart) must not be written into every scene's opening frame.
+		several_character_views = variant_count > 1 and str(row.reference_role or "").casefold() in {
+			"character",
+			"person",
+		}
+		if isinstance(analysis, dict) and analysis.get("description") and not several_character_views:
 			option["description"] = " ".join(
 				filter(
 					None, (option.get("description"), " ".join(str(analysis["description"]).split())[:200])
@@ -1114,6 +1134,7 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		"continuous shot. Keep every action the beat requires; invent no claims or extra characters.",
 		"- image_prompt is ONE still frame, never a sequence of events. When a reference shows a pose, keep the "
 		"character's pose in the prompt consistent with it.",
+		"- " + _locked_product_opening_rule(),
 		"- Name a character only as the same subject its reference shows (for example 'the mascot'); never use a "
 		"generic animal or person word, which makes the video model invent a "
 		"different one.",
@@ -1190,6 +1211,43 @@ PRODUCT_CONTAINER_WORDS = frozenset(
 )
 
 
+def _without_unauthored_package(image_prompt, notes):
+	"""Remove a package the planner carried into a scene whose roster has none.
+
+	Unbound, the image model drew an invented branded bag for "holding a tissue
+	pack". Ask once for the same opening still without any package; a loose
+	item it names (a tissue) stays. Keep the planner's text if that fails.
+	"""
+	text = str(image_prompt or "")
+	# The product-lock contract appended to a prompt is not the planner naming a package.
+	described = text.split("Product orientation is locked")[0]
+	if not (_words(described.casefold()) & (PRODUCT_CONTAINER_WORDS - {"product", "branded"})):
+		return text
+	try:
+		answer = _ask_planner(
+			"Rewrite this opening still without any package, pack, box or container: this scene's script "
+			"shows none. Keep every other subject, any loose item it names, the place, framing and each "
+			"body's support. Return JSON image_prompt string. Source: " + text,
+			system="You remove an unauthored product package from an opening still.",
+			capability="planner",
+			sampling_profile="production_plan",
+			response_schema={
+				"type": "object",
+				"properties": {"image_prompt": {"type": "string"}},
+				"required": ["image_prompt"],
+				"additionalProperties": False,
+			},
+		)
+		rewritten = " ".join(str((answer or {}).get("image_prompt") or "").split())
+	except Exception:
+		rewritten = ""
+	if rewritten and not (_words(rewritten.casefold()) & (PRODUCT_CONTAINER_WORDS - {"product", "branded"})):
+		notes.append("Removed a package the script does not show from the opening still.")
+		return rewritten
+	notes.append("The opening still names a package the script does not show.")
+	return text
+
+
 def ground_visible_product_keys(project, plan, keys, references, *, beat=None):
 	"""Bind product source art whenever the resolved shot visibly contains its container.
 
@@ -1207,7 +1265,9 @@ def ground_visible_product_keys(project, plan, keys, references, *, beat=None):
 			product_keys = {
 				reference["key"] for reference in references if reference.get("role") == "Product"
 			}
-			return [key for key in keys if key not in product_keys], []
+			notes = []
+			plan["image_prompt"] = _without_unauthored_package(plan.get("image_prompt"), notes)
+			return [key for key in keys if key not in product_keys], notes
 	text = " ".join(
 		str(plan.get(field) or "") for field in ("image_prompt", "video_prompt", "start_state", "end_state")
 	).casefold()
@@ -1406,6 +1466,32 @@ def _ask_planner(
 	return answer
 
 
+# vLLM sends nothing while it compiles a new JSON schema (81 s observed once), so
+# the idle limit must exceed that; a lost request is still noticed in 2 minutes.
+PLANNER_IDLE_SECONDS = 120
+
+
+def _planner_completion(base_url, payload, timeout):
+	"""Return (response, content); a lost connection is asked once more.
+
+	The request carries a fixed seed, so asking again gives the same answer.
+	"""
+	from joymedia.services.runtime.streaming import post_streamed
+
+	for attempt in range(2):
+		try:
+			return post_streamed(
+				f"{base_url}/chat/completions",
+				payload,
+				idle_seconds=PLANNER_IDLE_SECONDS,
+				deadline_seconds=timeout,
+			)
+		except requests.RequestException as exc:
+			if attempt:
+				raise
+			frappe.logger("joymedia.planner").warning("Planner answer lost (%s); asking once more.", exc)
+
+
 def _request_planner(
 	prompt,
 	*,
@@ -1451,7 +1537,7 @@ def _request_planner(
 			# A deterministic invalid completion needs a different seed.
 			payload["seed"] = request_seed(system, prompt, "json-retry")
 		try:
-			response = requests.post(f"{base_url}/chat/completions", json=payload, timeout=(10, timeout))
+			response, content = _planner_completion(base_url, payload, timeout)
 		except requests.RequestException as exc:
 			raise PlannerUnavailableError(
 				_("The planner is unavailable at {0}: {1}").format(base_url, str(exc))
@@ -1467,7 +1553,7 @@ def _request_planner(
 				_("The planner request failed ({0}): {1}").format(response.status_code, response.text[:300])
 			)
 		try:
-			return parse_json_dict(response.json()["choices"][0]["message"]["content"])
+			return parse_json_dict(content)
 		except (KeyError, IndexError, TypeError, ValueError) as exc:
 			if attempt:
 				frappe.throw(_("The planner returned invalid JSON after retry: {0}").format(str(exc)))

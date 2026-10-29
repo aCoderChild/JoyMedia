@@ -1,5 +1,6 @@
 import hashlib
 import io
+import subprocess
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -9,9 +10,11 @@ from PIL import Image
 from joymedia.services.keyframes.overlay import DRAW, PASTE
 from joymedia.services.planning.pose_assets import (
 	_accept_pose_view,
+	_body_only_pose,
 	_clean_identity_source,
 	_h3_pose_prompt,
 	_h3_start_view,
+	_observed_pose_matches,
 	_plan_required_states,
 	_pose_view,
 	_view_matches,
@@ -203,6 +206,8 @@ class TestPoseCoverage(TestCase):
 					{"answer": True},
 					{"head_accessories": []},
 					{"head_accessories": []},
+					{"appearance": "smooth vinyl bear", "surface": "smooth_seamless"},
+					{"appearance": "smooth vinyl bear", "surface": "smooth_seamless"},
 				],
 			),
 		):
@@ -252,7 +257,9 @@ class TestPoseCoverage(TestCase):
 					{"answer": True},
 					{"head_accessories": []},
 					{"head_accessories": []},
-					{"eye_shape": "closed_arcs"},
+					{"appearance": "smooth vinyl bear", "surface": "smooth_seamless"},
+					{"appearance": "smooth vinyl bear", "surface": "smooth_seamless"},
+					{"eye_shape": "closed_smiling_arcs"},
 					{"eye_shape": "open_dots"},
 				],
 			),
@@ -275,6 +282,42 @@ class TestPoseCoverage(TestCase):
 			),
 		):
 			self.assertFalse(_accept_pose_view(b"generated image"))
+
+	def test_a_fused_looking_lower_body_with_two_legs_and_feet_is_the_design_not_a_stump(self):
+		cases = (
+			# Two distinct legs and feet: intact, whatever the source answer says.
+			({"fused_lower_body": True, "visible_leg_count": 2, "visible_foot_count": 2}, None, "identity"),
+			# A stump the source does not share is a collapsed generation.
+			(
+				{"fused_lower_body": True, "visible_leg_count": 1, "visible_foot_count": 1},
+				{"fused_lower_body": False, "visible_leg_count": 2, "visible_foot_count": 2},
+				"lower body",
+			),
+			# The same reading as the source character is its design.
+			(
+				{"fused_lower_body": True, "visible_leg_count": 1, "visible_foot_count": 1},
+				{"fused_lower_body": True, "visible_leg_count": 1, "visible_foot_count": 1},
+				"identity",
+			),
+		)
+		for candidate, source, expected_gate in cases:
+			gates = []
+			answers = [{"answer": True}, {"held_object_count": 0}, candidate]
+			answers += [source] if source else []
+			answers.append({"answer": False})
+			with (
+				self.subTest(candidate=candidate, source=source),
+				patch("joymedia.services.planning.pose_assets._retains_body_proportions", return_value=None),
+				patch("joymedia.services.planning.pose_assets._visible_change", return_value=None),
+				patch("joymedia.services.planning.pose_assets._observed_pose_matches", return_value=True),
+				patch(
+					"joymedia.services.planning.pose_assets._rejected",
+					side_effect=lambda gate, *evidence: gates.append(gate) or False,
+				),
+				patch("joymedia.services.review.consistency.ask", side_effect=answers),
+			):
+				self.assertFalse(_accept_pose_view(b"generated", b"source", "seated", "front"))
+			self.assertEqual([expected_gate], gates)
 
 	def test_observed_seated_pose_cannot_be_promoted_as_kneeling(self):
 		with (
@@ -459,7 +502,8 @@ class TestPoseCoverage(TestCase):
 			result = prepare_script_pose_views(project, script)
 		self.assertEqual("deferred", result[0]["status"])
 		planner.assert_called_once()
-		render.assert_called_once()
+		# The pose and its neutral same-support fallback, once each.
+		self.assertEqual(2, render.call_count)
 
 	def test_same_failed_pose_is_not_rendered_again_for_next_scene(self):
 		project = frappe._dict(
@@ -499,7 +543,8 @@ class TestPoseCoverage(TestCase):
 		):
 			prepared = prepare_script_pose_views(project, script)
 		self.assertEqual(["deferred", "deferred"], [item["status"] for item in prepared])
-		render.assert_called_once()
+		# The pose and its neutral same-support fallback, once each.
+		self.assertEqual(2, render.call_count)
 		observe.assert_called_once()
 
 	def test_script_identity_is_replaced_by_a_required_upright_view_before_storyboard(self):
@@ -630,7 +675,7 @@ class TestPoseCoverage(TestCase):
 			result = prepare_script_pose_views(project, script)
 		self.assertEqual("deferred", result[0]["status"])
 
-	def test_neutral_qualified_view_cannot_replace_scripted_reaching_paw(self):
+	def test_failed_reach_binds_closest_approved_view_with_the_same_support(self):
 		project = frappe._dict(
 			name="PRJ-TEST",
 			selected_media=[
@@ -681,8 +726,230 @@ class TestPoseCoverage(TestCase):
 			patch("frappe.log_error"),
 		):
 			prepared = prepare_script_pose_views(project, script)
-		self.assertEqual("deferred", prepared[0]["status"])
+		# The reach is drawn by the first frame; the approved view anchors identity and support.
+		self.assertEqual(
+			("ready", "bear_standing", "standing with both paws relaxed at sides"),
+			(prepared[0]["status"], prepared[0]["view"], prepared[0]["pose"]),
+		)
+		self.assertEqual("standing with right paw reaching forward", prepared[0]["requested_pose"])
+		self.assertEqual(["bear_standing"], script["scenes"][0]["cast"])
 		render.assert_called_once()
+
+	def _standing_library_project(self, approved_pose):
+		project = frappe._dict(
+			name="PRJ-TEST",
+			selected_media=[
+				frappe._dict(
+					reference_key="bear", identity_key="bear", reference_role="Character", asset_version="A"
+				),
+				frappe._dict(
+					reference_key="bear_view",
+					identity_key="bear",
+					reference_role="Character",
+					asset_version="B",
+				),
+			],
+		)
+
+		def asset_value(_doctype, name, field):
+			if field == "analysis_json":
+				return (
+					frappe.as_json(
+						{
+							"source_asset_version": "A",
+							"pose_qualification_version": 2,
+							"qualified_pose_and_support": approved_pose,
+							"qualified_pose_view": "front",
+						}
+					)
+					if name == "B"
+					else "{}"
+				)
+			return "/" + name
+
+		return project, asset_value
+
+	def test_gesture_variants_of_one_support_stop_spending_gpu_after_one_failure(self):
+		project, asset_value = self._standing_library_project("standing upright, both paws free")
+		script = {
+			"scenes": [
+				{"cast": ["bear"], "action": "The bear reaches toward a pack."},
+				{"cast": ["bear"], "action": "The bear points at a puddle."},
+			]
+		}
+		states = [
+			{
+				"scene_index": 0,
+				"cast_key": "bear",
+				"opening_pose": "standing upright, one paw near a pack",
+				"view": "front",
+			},
+			{
+				"scene_index": 1,
+				"cast_key": "bear",
+				"opening_pose": "standing upright, one paw near a puddle",
+				"view": "front",
+			},
+		]
+		with (
+			patch("joymedia.services.planning.pose_assets._plan_required_states", return_value=states),
+			patch("frappe.db.get_value", side_effect=asset_value),
+			patch("joymedia.services.planning.pose_assets._view_matches", return_value=False),
+			patch(
+				"joymedia.services.planning.pose_assets._pose_view", side_effect=ValueError("no")
+			) as render,
+			patch("frappe.log_error"),
+		):
+			prepared = prepare_script_pose_views(project, script)
+		self.assertEqual(["ready", "ready"], [row["status"] for row in prepared])
+		self.assertEqual(["bear_view", "bear_view"], [row["view"] for row in prepared])
+		render.assert_called_once()
+
+	def test_an_unavailable_service_does_not_skip_the_other_scenes_attempts(self):
+		project, asset_value = self._standing_library_project("seated on the floor, both paws free")
+		script = {
+			"scenes": [
+				{"cast": ["bear"], "action": "The bear reaches toward a pack."},
+				{"cast": ["bear"], "action": "The bear points at a puddle."},
+			]
+		}
+		states = [
+			{
+				"scene_index": 0,
+				"cast_key": "bear",
+				"opening_pose": "standing, one paw near a pack",
+				"view": "front",
+			},
+			{
+				"scene_index": 1,
+				"cast_key": "bear",
+				"opening_pose": "standing, one paw near a puddle",
+				"view": "front",
+			},
+		]
+		with (
+			patch("joymedia.services.planning.pose_assets._plan_required_states", return_value=states),
+			patch("frappe.db.get_value", side_effect=asset_value),
+			patch("joymedia.services.planning.pose_assets._view_matches", return_value=False),
+			patch(
+				"joymedia.services.planning.pose_assets._pose_view",
+				side_effect=subprocess.TimeoutExpired("ffmpeg", 60),
+			) as render,
+			patch("frappe.log_error"),
+		):
+			prepare_script_pose_views(project, script)
+		self.assertEqual(2, render.call_count)
+
+	def test_planned_pose_is_checked_as_body_articulation_without_scene_targets(self):
+		cases = [
+			# A target is dropped while the support and limb geometry stay.
+			(
+				"seated with both paws free, reaching towards a pack",
+				{"pose": "seated, both paws extended forward at chest height"},
+				"seated, both paws extended forward at chest height",
+			),
+			# A rewrite that changes the body support is refused.
+			("seated, one paw raised", {"pose": "standing, one paw raised"}, "seated, one paw raised"),
+			# An unavailable planner keeps the original text.
+			("seated, paws at the sides", RuntimeError("down"), "seated, paws at the sides"),
+		]
+		for pose, answer, expected in cases:
+			with (
+				self.subTest(pose=pose),
+				patch(
+					"joymedia.services.planning.production._ask_planner",
+					**(
+						{"side_effect": answer} if isinstance(answer, Exception) else {"return_value": answer}
+					),
+				) as planner,
+			):
+				cache = {}
+				self.assertEqual(expected, _body_only_pose(pose, cache))
+				self.assertEqual(expected, _body_only_pose(pose, cache))
+				planner.assert_called_once()
+
+	def test_blind_pose_observation_reports_limb_positions(self):
+		with (
+			patch("joymedia.services.review.consistency.ask", return_value={"certainty": "low"}) as ask,
+			patch.object(frappe.cache, "get_value", return_value=None),
+			patch("frappe.logger"),
+		):
+			self.assertFalse(_observed_pose_matches("/files/pose.png", "seated, paws at the sides"))
+		self.assertIn("limb_positions", ask.call_args.args[1])
+		self.assertNotIn("paws at the sides", ask.call_args.args[1])
+
+	def test_a_failed_gesture_opens_on_the_neutral_pose_of_the_same_support(self):
+		project, asset_value = self._standing_library_project("standing upright, both paws free")
+		script = {
+			"scenes": [
+				{"cast": ["bear"], "action": "The bear reaches toward a pack."},
+				{"cast": ["bear"], "action": "The bear points at a puddle."},
+			]
+		}
+		states = [
+			{
+				"scene_index": 0,
+				"cast_key": "bear",
+				"opening_pose": "seated, right paw extended forward",
+				"view": "front",
+			},
+			{
+				"scene_index": 1,
+				"cast_key": "bear",
+				"opening_pose": "seated, left paw raised",
+				"view": "front",
+			},
+		]
+		neutral_row = frappe._dict(reference_key="pose_neutral", identity_key="bear", asset_version="N")
+
+		def register(_project, _source, _cast, pose, _angle):
+			if "relaxed" not in pose:
+				raise ValueError("gesture not drawn")
+			return neutral_row
+
+		def approved_view(selected, _identity, pose, _angle):
+			# The registered neutral view is the only seated approval in this library.
+			return (neutral_row, {"pose": "seated relaxed"}) if neutral_row in selected else (None, None)
+
+		with (
+			patch("joymedia.services.planning.pose_assets._plan_required_states", return_value=states),
+			patch("frappe.db.get_value", side_effect=asset_value),
+			patch("joymedia.services.planning.pose_assets._view_matches", return_value=False),
+			patch(
+				"joymedia.services.planning.pose_assets._register_pose_view", side_effect=register
+			) as render,
+			patch(
+				"joymedia.services.planning.pose_assets._approved_view_with_same_support",
+				side_effect=approved_view,
+			),
+			patch("frappe.log_error"),
+		):
+			prepared = prepare_script_pose_views(project, script)
+		self.assertEqual(["ready", "ready"], [row["status"] for row in prepared])
+		self.assertEqual(["pose_neutral", "pose_neutral"], [row["view"] for row in prepared])
+		self.assertEqual("seated, right paw extended forward", prepared[0]["requested_pose"])
+		# One gesture attempt and one neutral attempt; the second scene reuses the result.
+		self.assertEqual(2, render.call_count)
+
+	def test_a_different_body_support_is_never_substituted(self):
+		project, asset_value = self._standing_library_project("seated on the floor, both paws free")
+		script = {"scenes": [{"cast": ["bear"], "action": "The bear walks to the pack."}]}
+		state = {
+			"scene_index": 0,
+			"cast_key": "bear",
+			"opening_pose": "standing upright, mid-step",
+			"view": "front",
+		}
+		with (
+			patch("joymedia.services.planning.pose_assets._plan_required_states", return_value=[state]),
+			patch("frappe.db.get_value", side_effect=asset_value),
+			patch("joymedia.services.planning.pose_assets._view_matches", return_value=False),
+			patch("joymedia.services.planning.pose_assets._pose_view", side_effect=ValueError("no")),
+			patch("frappe.log_error"),
+		):
+			prepared = prepare_script_pose_views(project, script)
+		self.assertEqual("deferred", prepared[0]["status"])
+		self.assertEqual(["bear"], script["scenes"][0]["cast"])
 
 	def test_seated_description_with_no_standing_legs_uses_supplied_upright_view(self):
 		project = frappe._dict(
@@ -818,7 +1085,8 @@ class TestPoseCoverage(TestCase):
 		):
 			states = _plan_required_states(script, selected)
 		self.assertEqual([0, 1], [state["scene_index"] for state in states])
-		self.assertIn('[1, "bear"]', planner.call_args.args[0])
+		# The second planner call asks only for the omitted pair.
+		self.assertIn('[1, "bear"]', planner.call_args_list[1].args[0])
 
 	def test_pose_requirements_are_derived_from_script_actions_not_reference_labels(self):
 		selected = [
@@ -856,7 +1124,7 @@ class TestPoseCoverage(TestCase):
 			) as planner,
 		):
 			self.assertEqual(states, _plan_required_states(script, selected))
-		prompt = planner.call_args.args[0]
+		prompt = planner.call_args_list[0].args[0]
 		self.assertIn("walks upright toward the tissue pack", prompt)
 		self.assertIn("right paw extended toward the pack", prompt)
 		self.assertIn("already underway at the first frame", prompt)
@@ -1012,6 +1280,65 @@ class TestPoseCoverage(TestCase):
 			state = _plan_required_states(script, selected)[0]
 		self.assertEqual("bear_standing", state["reference_key"])
 		self.assertIn("standing upright", state["opening_pose"])
+
+	def test_the_writers_opening_support_decides_between_standing_and_seated(self):
+		selected = [
+			frappe._dict(
+				reference_key="bear", identity_key="shera", reference_role="Character", asset_version="A"
+			),
+			frappe._dict(
+				reference_key="bear_standing",
+				identity_key="shera",
+				reference_role="Character",
+				asset_version="B",
+			),
+			frappe._dict(
+				reference_key="bear_seated",
+				identity_key="shera",
+				reference_role="Character",
+				asset_version="C",
+			),
+		]
+		analyses = {
+			"B": {
+				"source_asset_version": "A",
+				"pose_qualification_version": 2,
+				"qualified_pose_and_support": "standing upright on two supported feet",
+				"qualified_pose_view": "front",
+			},
+			"C": {
+				"source_asset_version": "A",
+				"pose_qualification_version": 2,
+				"qualified_pose_and_support": "seated on the floor with feet forward",
+				"qualified_pose_view": "front",
+			},
+		}
+		# The action names no support; only the authored field settles it.
+		script = {
+			"scenes": [
+				{
+					"cast": ["bear"],
+					"opening_support": "standing",
+					"action": "[0-2s] The bear reaches toward the pack.",
+				}
+			]
+		}
+		planned = {
+			"scene_index": 0,
+			"cast_key": "bear",
+			"reference_key": "bear_seated",
+			"opening_pose": "seated on the floor",
+			"view": "front",
+		}
+		with (
+			patch(
+				"frappe.db.get_value",
+				side_effect=lambda _dt, name, _field: frappe.as_json(analyses.get(name, {})),
+			),
+			patch("joymedia.services.planning.production._ask_planner", return_value={"states": [planned]}),
+		):
+			state = _plan_required_states(script, selected)[0]
+		self.assertEqual("bear_standing", state["reference_key"])
 
 	def test_distinctive_wave_is_not_replaced_by_first_standing_view(self):
 		selected = [

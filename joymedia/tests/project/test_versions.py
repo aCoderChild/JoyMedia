@@ -21,6 +21,24 @@ def project(label="Version test"):
 
 
 class TestProjectVersions(FrappeTestCase):
+	def test_video_shelf_distinguishes_diagnostics_from_legacy_creative_batches(self):
+		root, normal, diagnostic, imported = project(), project(), project(), project()
+		versions.organize_edits(root.name, [
+			{"project": edit.name, "label": label, "kind": "Experiment"}
+			for edit, label in [(normal, "Legacy generated video"), (diagnostic, "UI stress test"), (imported, "Imported video")]
+		])
+		for edit in (diagnostic, imported):
+			frappe.db.set_value("Media Project", edit.name, "current_output_asset_version", "test-placeholder", update_modified=False)
+		frappe.db.set_value("Media Project", imported.name, "source_video_number", 33, update_modified=False)
+		frappe.get_doc({
+			"doctype": "Creative Batch", "source_project": root.name, "status": "Planning",
+			"request_json": "{}", "variants_json": json.dumps([{"project": normal.name, "status": "Script Ready"}]),
+		}).insert(ignore_permissions=True)
+		videos = {row["name"]: row for row in versions.get_videos(root.name)["videos"]}
+		self.assertFalse(videos[normal.name]["is_experiment"])
+		self.assertFalse(videos[imported.name]["is_experiment"])
+		self.assertTrue(videos[diagnostic.name]["is_experiment"])
+
 	def test_explicit_grouping_preserves_projects_and_status(self):
 		root, edit = project(), project("Alternate")
 		before = edit.as_dict()

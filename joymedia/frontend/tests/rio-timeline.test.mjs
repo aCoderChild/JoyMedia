@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { clipAtSeconds, layoutAudioLanes, orderTimelineClips, shotIndexForClip, sourceSecondsForTimeline } from '../src/utils/rioTimeline.js';
+import { clipAtSeconds, layoutAudioLanes, orderTimelineClips, shotIndexForClip, sourceSecondsForTimeline, timelineCut } from '../src/utils/rioTimeline.js';
+
+test('toolbar cuts preserve source offsets and reject the playhead outside the selected clip', () => {
+  const clip = { timeline_start_frame: 240, source_in_frame: 48, source_out_frame: 144 };
+  assert.equal(timelineCut(clip, 12, 24, 'split').sourceSplitFrame, 96);
+  assert.deepEqual(timelineCut(clip, 12, 24, 'left'), { clip, sourceInFrame: 96, sourceOutFrame: 144 });
+  assert.deepEqual(timelineCut(clip, 12, 24, 'right'), { clip, sourceInFrame: 48, sourceOutFrame: 96 });
+  for (const seconds of [0, 10, 14, 20]) assert.equal(timelineCut(clip, seconds, 24, 'split'), null);
+  assert.equal(timelineCut(clip, 10.1, 24, 'split'), null);
+});
 
 const clips = [
   { name: 'later', shot: 'shot-2', clip_order: 2, timeline_start_frame: 120, duration_frames: 120, source_in_frame: 24 },

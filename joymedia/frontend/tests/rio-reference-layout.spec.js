@@ -1,0 +1,38 @@
+import { test, expect } from '@playwright/test';
+
+test('reference workspace preserves canvas space and connects its scene controls', async ({ page }) => {
+  await page.setViewportSize({ width: 1512, height: 850 });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('tests/fixtures/rio-timeline.html');
+  const first = page.locator('.rio-node').first();
+  await expect(first).toBeVisible();
+  await expect(page.locator('.rio-canvas-controls span')).toHaveText('100%');
+  await expect(page.locator('[data-test="project-stages"]')).toHaveCount(0);
+  const canvas = await page.locator('.rio-canvas').boundingBox();
+  const minimap = await page.locator('.rio-minimap').boundingBox();
+  expect(minimap.y - canvas.y).toBeLessThan(30);
+  const mapHeader = await page.locator('.rio-minimap > span').boundingBox();
+  await page.mouse.move(mapHeader.x + 30, mapHeader.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(mapHeader.x - 70, mapHeader.y + 60, { steps: 5 });
+  await page.mouse.up();
+  expect((await page.locator('.rio-minimap').boundingBox()).x).toBeLessThan(minimap.x - 50);
+  const before = await first.boundingBox();
+  await first.locator('.rio-node-collapse').click();
+  await expect(first).toHaveClass(/compact/);
+  expect((await first.boundingBox()).height).toBeLessThan(before.height / 2);
+  await first.locator('.rio-node-collapse').click();
+  await expect(first).not.toHaveClass(/compact/);
+  await expect(first.locator('.rio-action-timeline')).toBeDisabled();
+  await page.locator('.rio-node').nth(1).locator('.rio-action-timeline').click();
+  expect(await page.evaluate(() => window.fixtureEvents)).toContain('edit:clip-2');
+  await first.locator('.rio-action-settings').click();
+  await expect(page.locator('.rio-details')).toBeVisible();
+  await page.locator('.rio-details header button').click();
+  await page.locator('.rio-status').click();
+  await expect(page.locator('[data-test="project-stages"]')).toBeVisible();
+  await expect(page.locator('.rio-tl-zoom')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+  expect(errors).toEqual([]);
+});

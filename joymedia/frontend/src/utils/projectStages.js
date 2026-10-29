@@ -15,6 +15,9 @@ function pick(lang, en, vi) {
 export function buildStages({ project = {}, production = null, automatic = null, shots = [], assets = [], frames = [], lang = "vi" } = {}) {
   const t = (en, vi) => pick(lang, en, vi);
   const stages = [];
+  // A run that draws first frames reports on the scene-image step, not the video step.
+  const frameRun = production?.stage === "keyframe" ? production : null;
+  if (frameRun) production = null;
 
   // 1. Script — the scenes themselves are the evidence it is done.
   const sceneCount = shots.length;
@@ -95,16 +98,24 @@ export function buildStages({ project = {}, production = null, automatic = null,
   const fromSheet = authoredCount
     ? t(` ${authoredCount} from your storyboard.`, ` ${authoredCount} lấy từ bảng phân cảnh.`)
     : "";
+  const frameFailed = Boolean(frameRun && Number(frameRun.failed_tasks || 0));
+  // Poses or scenes being prepared again come before any new drawing.
+  const rewriting = automatic?.status === "Rewriting";
+  const frameRunning = rewriting || ["Queued", "Running"].includes(frameRun?.status);
   stages.push({
     key: "images",
     label: t("Scene images", "Ảnh đầu cảnh"),
-    state: !total ? "waiting" : ready >= total ? "done" : ready ? "running" : "waiting",
+    state: frameFailed ? "attention" : !total ? "waiting" : ready >= total ? "done" : ready || frameRunning ? "running" : "waiting",
     detail: total
       ? t(`${ready} of ${total} ready.${fromSheet}`, `${ready}/${total} đã xong.${fromSheet}`)
       : t("Waiting for the storyboard.", "Đang chờ bảng phân cảnh."),
-    reason: total && ready < total
-      ? t(`${total - ready} still to draw.`, `Còn ${total - ready} cảnh cần vẽ.`)
-      : "",
+    reason: frameFailed
+      ? frameRun.error_summary || ""
+      : rewriting
+        ? t("Preparing character poses and some scenes before drawing them.", "Đang chuẩn bị tư thế nhân vật và một số cảnh trước khi vẽ.")
+        : total && ready < total
+        ? t(`${total - ready} still to draw.`, `Còn ${total - ready} cảnh cần vẽ.`)
+        : "",
   });
 
   // 5. Video — the run carries its own progress, so only pass it through.

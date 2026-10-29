@@ -12,7 +12,7 @@
 			<div class="rio-brand" aria-label="JoyMedia">
 				<span class="rio-brand-mark" aria-hidden="true">◇</span>
 				<strong>JOY<span>MEDIA</span></strong>
-				<span class="rio-status" :class="{ 'is-busy': busy, 'is-attention': automaticVariant?.status === 'Needs Attention' || projectStatus === 'Failed' }"><i />{{ statusLabel }}</span>
+				<button type="button" class="rio-status" :aria-expanded="statusOpen" :title="t('Show production status', 'Xem tiến độ sản xuất')" @click="statusOpen = !statusOpen" :class="{ 'is-busy': busy, 'is-attention': automaticVariant?.status === 'Needs Attention' || ['Failed', 'Needs Attention'].includes(projectStatus) }"><i />{{ statusLabel }} <small aria-hidden="true">⌄</small></button>
 			</div>
 			<div class="rio-project-name" :title="projectTitle">{{ projectTitle }}</div>
 			<div class="rio-header-actions">
@@ -38,19 +38,24 @@
 				<button type="button" data-test="rio-versions-toggle" :aria-expanded="versionsOpen" @click="versionsOpen = !versionsOpen">{{ t('Video versions', 'Các phiên bản') }}</button>
 				<button v-if="canRestore" type="button" @click="emit('restore')">{{ t('Restore project', 'Khôi phục dự án') }}</button>
 				<button type="button" @click="emit('open-history')">{{ t('History', 'Lịch sử') }}</button>
+				<button v-if="canWork && reviewableBatch" type="button" class="rio-next-action" @click="scriptReviewOpen = true">{{ t('Review script & scenes', 'Duyệt kịch bản & cảnh') }}</button>
 				<button v-if="canWork && nextActionLabel && !automaticInProgress" type="button" class="rio-next-action" :disabled="busy || (nextAction === 'brief' && !idea?.trim())" @click="emit('continue')">{{ nextActionLabel }}</button>
 				<button v-if="canWork" type="button" :title="t('Project settings', 'Cài đặt dự án')" :aria-label="t('Project settings', 'Cài đặt dự án')" @click="emit('settings')">⚙</button>
-				<button v-if="canEdit" type="button" :title="t('Add scene', 'Thêm cảnh')" :aria-label="t('Add scene', 'Thêm cảnh')" @click="emit('add-scene')">＋</button>
+				<button v-if="canWork" type="button" :disabled="busy" :title="t('Add blank scene', 'Thêm cảnh trống')" :aria-label="t('Add blank scene', 'Thêm cảnh trống')" @click="emit('add-scene')">＋</button>
+				<button type="button" :title="t('Character references and identity', 'Tư liệu và nhận dạng nhân vật')" :aria-label="t('Character references and identity', 'Tư liệu và nhận dạng nhân vật')" @click="openCharacters">🎭</button>
 				<button type="button" :title="t('Project media', 'Tư liệu dự án')" :aria-label="t('Show or hide project media', 'Hiện hoặc ẩn tư liệu dự án')" :aria-expanded="assetsOpen" @click="assetsOpen = !assetsOpen">▧</button>
 				<button type="button" :title="t('Toggle minimap', 'Bật/tắt sơ đồ nhỏ')" :aria-label="t('Toggle minimap', 'Bật/tắt sơ đồ nhỏ')" :aria-pressed="showMinimap" @click="showMinimap = !showMinimap">▦</button>
-				<button v-if="canEdit && shots.length" type="button" :title="t('Slice a storyboard sheet into scene images', 'Cắt bảng phân cảnh thành ảnh từng cảnh')" :aria-label="t('Slice a storyboard sheet', 'Cắt bảng phân cảnh')" @click="emit('slice-storyboard')">▦▦</button>
+				<button type="button" :title="t('View and edit the current storyboard', 'Xem và chỉnh sửa phân cảnh hiện tại')" :aria-label="t('Storyboard editor', 'Bảng phân cảnh')" @click="emit('slice-storyboard')">▦▦</button>
 				<button type="button" :title="t('Fit canvas', 'Toàn cảnh')" :aria-label="t('Fit all scenes on screen', 'Hiện tất cả cảnh trên màn hình')" @click="fitCanvas">⛶</button>
+				<button type="button" :title="t('Fullscreen', 'Toàn màn hình')" :aria-label="t('Fullscreen', 'Toàn màn hình')" @click="toggleFullscreen">⛶+</button>
 			</div>
 		</header>
-		<div v-if="versionsOpen" class="rio-versions" data-test="rio-versions"><header><strong>{{ t('Videos in this project', 'Video trong dự án') }}</strong><button type="button" :aria-label="t('Close versions', 'Đóng phiên bản')" @click="versionsOpen = false">×</button></header><VideoShelf :project="projectName" :readonly="!canWork" /></div>
+		<div v-if="versionsOpen" class="rio-versions" data-test="rio-versions"><header><strong>{{ t('Versions & comparison', 'Phiên bản & so sánh') }}</strong><button type="button" :aria-label="t('Close versions', 'Đóng phiên bản')" @click="versionsOpen = false">×</button></header><VideoShelf :project="projectName" :readonly="!canWork" embedded /></div>
+		<div v-if="statusOpen" class="rio-status-panel">
 		<p v-if="automaticInProgress" class="rio-guidance" role="status">{{ automaticMessage }} <span v-if="shots.length && automaticVariant.status === 'Needs Attention'">{{ automaticFailureReason }}</span></p>
 		<p v-else-if="nextActionHint && !error" class="rio-guidance" role="status">{{ nextActionHint }}</p>
 		<ProjectStages :project="project" :production="production" :automatic="automaticVariant" :shots="shots" :assets="assets" :frames="frames" :current-lang="currentLang" />
+		</div>
 		<div v-if="error" class="rio-alert" role="alert">{{ error }} <button type="button" @click="emit('retry')">{{ t('Retry', 'Thử lại') }}</button></div>
 		<div class="rio-work-area">
 			<aside v-if="assetsOpen" class="rio-assets" :class="{ 'is-drop-target': fileDragDepth > 0 }" :style="{ width: `${drawerWidth}px` }" :aria-label="t('Project media', 'Tư liệu dự án')" @dragenter="onFileDragEnter" @dragover="onFileDragOver" @dragleave="onFileDragLeave" @drop="onFileDrop">
@@ -85,25 +90,29 @@
 					</svg>
 					<!-- Plain-language control for continuity_mode, which decides whether a scene reuses the previous scene's ending. -->
 					<button v-for="link in links" :key="`link-${link.key}`" type="button" class="rio-link-toggle" :class="{ continues: link.continues }" :style="{ left: `${link.midX}px`, top: `${link.midY}px` }" :disabled="!canEdit || busy || link.busy" :title="link.hint" :aria-label="link.hint" @pointerdown.stop @click.stop="toggleContinuity(link)">{{ link.continues ? t('Continues', 'Tiếp nối') : t('New scene', 'Cảnh mới') }}</button>
-					<article v-for="(shot, index) in shots" :key="shot.name" class="rio-node" :class="{ active: index === selectedShotIndex }" :style="nodeStyle(shot, index)" @pointerdown.stop="startNodeDrag($event, shot, index)" @pointermove.stop="moveNodeDrag" @pointerup.stop="endNodeDrag" @pointercancel.stop="endNodeDrag" @dragover.prevent @drop.prevent.stop="dropAssetOnShot($event, shot)">
-						<div class="rio-node-head"><span>🎬 <strong>{{ t('Shot', 'Cảnh') }} {{ String(shot.shot_number || index + 1).padStart(2, '0') }}</strong></span><span class="rio-node-ratio">{{ ratioLabel }}</span><button type="button" :title="t('Scene details', 'Chi tiết cảnh')" :aria-label="t('Scene details', 'Chi tiết cảnh')" @click.stop="openShotDetails(shot, index)">⋯</button></div>
-						<button type="button" class="rio-node-preview" @click.stop="selectShot(shot, index)">
+					<article v-for="(shot, index) in shots" :key="shot.name" class="rio-node" :class="{ active: index === selectedShotIndex, compact: compactShots.has(shot.name) }" :style="nodeStyle(shot, index)" @pointerdown.stop="startNodeDrag($event, shot, index)" @pointermove.stop="moveNodeDrag" @pointerup.stop="endNodeDrag" @pointercancel.stop="endNodeDrag" @dragover.prevent @drop.prevent.stop="dropAssetOnShot($event, shot)">
+						<div class="rio-node-head"><span>🎬 <strong>{{ t('Shot', 'Cảnh') }} {{ String(shot.shot_number || index + 1).padStart(2, '0') }}</strong></span><span class="rio-node-ratio" :class="{ working: isShotBusy(shot) }">{{ isShotBusy(shot) ? t('WORKING…', 'ĐANG TẠO…') : ratioLabel }}</span><button type="button" class="rio-node-collapse" :title="compactShots.has(shot.name) ? t('Expand scene', 'Mở rộng cảnh') : t('Collapse scene', 'Thu gọn cảnh')" :aria-expanded="!compactShots.has(shot.name)" @click.stop="toggleCompact(shot)">{{ compactShots.has(shot.name) ? '+' : '−' }}</button><button type="button" :title="t('Scene details', 'Chi tiết cảnh')" :aria-label="t('Scene details', 'Chi tiết cảnh')" @click.stop="openShotDetails(shot, index)">⋯</button></div>
+						<button v-show="!compactShots.has(shot.name)" type="button" class="rio-node-preview" @click.stop="selectShot(shot, index)">
 							<img v-if="frameFor(shot)" :src="frameFor(shot)" :alt="shot.shot_name || `Shot ${index + 1}`" />
-							<span v-else><b>▧</b>{{ t('No scene image yet', 'Chưa có ảnh đầu cảnh') }}</span>
+							<span v-else><b>🖼️</b>{{ t('No first frame / video yet', 'Chưa có ảnh đầu cảnh / video') }}</span>
 						</button>
-						<div class="rio-node-body">
-							<div class="rio-prompt-heading"><label :for="`rio-prompt-${shot.name}`">{{ t('Prompt', 'Mô tả cảnh') }}</label><button v-if="canEdit && speechSupported" type="button" class="rio-dictate" :class="{ listening: dictatingShot === shot.name }" :disabled="busy || isShotBusy(shot)" :title="dictatingShot === shot.name ? t('Stop dictating', 'Dừng đọc') : t('Dictate this scene description', 'Đọc mô tả cảnh')" :aria-label="dictatingShot === shot.name ? t('Stop dictating', 'Dừng đọc') : t('Dictate this scene description', 'Đọc mô tả cảnh')" :aria-pressed="dictatingShot === shot.name" @click.stop="toggleDictation(shot)">🎙</button><button v-if="canEdit" type="button" :disabled="busy || isShotBusy(shot)" :aria-label="t('Open prompt library for this scene', 'Mở thư viện gợi ý cho cảnh này')" @click.stop="openSceneTemplates(shot)">▤ {{ t('Prompt library', 'Thư viện gợi ý') }}</button></div>
-							<textarea :id="`rio-prompt-${shot.name}`" :value="draftFor(shot)" :disabled="!canEdit || busy || isShotBusy(shot)" rows="3" @input="setDraft(shot, $event.target.value)" @keydown.ctrl.enter.prevent="saveDraft(shot)" @keydown.meta.enter.prevent="saveDraft(shot)" />
+						<div v-show="!compactShots.has(shot.name)" class="rio-node-body">
+							<div class="rio-prompt-heading"><label :for="`rio-prompt-${shot.name}`">{{ t('Prompt', 'Mô tả cảnh') }}</label><button type="button" :title="t('Inspect this scene', 'Xem chi tiết cảnh')" :aria-label="t('Inspect this scene', 'Xem chi tiết cảnh')" @click.stop="openShotDetails(shot, index)">👁</button><button type="button" class="rio-dictate" :class="{ listening: dictatingShot === shot.name }" :disabled="!canEdit || !speechSupported || busy || isShotBusy(shot)" :title="dictatingShot === shot.name ? t('Stop dictating', 'Dừng đọc') : t('Dictate this scene description', 'Đọc mô tả cảnh')" :aria-label="dictatingShot === shot.name ? t('Stop dictating', 'Dừng đọc') : t('Dictate this scene description', 'Đọc mô tả cảnh')" :aria-pressed="dictatingShot === shot.name" @click.stop="toggleDictation(shot)">🎙</button><button type="button" :disabled="!canEdit || busy || isShotBusy(shot)" :title="t('Prompt library', 'Thư viện gợi ý')" :aria-label="t('Open prompt library for this scene', 'Mở thư viện gợi ý cho cảnh này')" @click.stop="openSceneTemplates(shot)">▤</button></div>
+							<textarea :placeholder="t('Describe this scene…', 'Mô tả cảnh bạn muốn tạo…')" :id="`rio-prompt-${shot.name}`" :value="draftFor(shot)" :disabled="!canEdit || busy || isShotBusy(shot)" rows="3" @input="setDraft(shot, $event.target.value)" @keydown.ctrl.enter.prevent="saveDraft(shot)" @keydown.meta.enter.prevent="saveDraft(shot)" />
 							<div v-if="shotReferenceKeys(shot).length" class="rio-reference-line" :title="shot.references.map(reference => referenceLabel(reference)).join(' · ')">{{ shot.references.map(reference => referenceLabel(reference)).join(' · ') }}</div>
 						</div>
-							<div class="rio-node-actions">
+							<div v-show="!compactShots.has(shot.name)" class="rio-node-actions">
 								<button v-if="canWork && frameNeedsApproval(shot)" type="button" :disabled="busy || isShotBusy(shot)" :title="t('Approve this first frame', 'Duyệt ảnh đầu cảnh')" @click.stop="emit('approve-frame', shot.name, true)">{{ t('Approve image', 'Duyệt ảnh') }}</button>
 								<button v-if="canEdit && promptDirty(shot)" type="button" :disabled="busy || isShotBusy(shot)" @click.stop="saveDraft(shot)">{{ t('Save', 'Lưu') }}</button>
-								<button v-if="canWork" type="button" :disabled="busy || isShotBusy(shot) || !storyboardApproved || promptDirty(shot)" :title="!storyboardApproved ? t('Approve storyboard first', 'Duyệt bảng phân cảnh trước') : promptDirty(shot) ? t('Save the scene description first', 'Lưu mô tả cảnh trước') : t('Generate or redraw this scene’s first image', 'Tạo hoặc vẽ lại ảnh đầu cảnh')" @click.stop="emit('draw-shot', shot)">{{ t('Create image', 'Tạo ảnh') }}</button>
-								<button v-if="canEdit" type="button" :disabled="busy || isShotBusy(shot) || !frameFor(shot) || frameNeedsApproval(shot)" :title="frameNeedsApproval(shot) ? t('Approve the scene image first', 'Duyệt ảnh cảnh trước') : t('Generate this scene’s video', 'Tạo video cho cảnh này')" @click.stop="emit('render-shot', shot)">{{ t('Create clip', 'Tạo đoạn phim') }}</button>
-							<button v-if="canEdit" type="button" @click.stop="openShotDetails(shot, index)">{{ t('Details', 'Chi tiết') }}</button>
+								<button v-if="canWork" type="button" class="rio-action-f0" :disabled="busy || isShotBusy(shot) || !storyboardApproved || promptDirty(shot)" :title="!storyboardApproved ? t('Approve storyboard first', 'Duyệt bảng phân cảnh trước') : promptDirty(shot) ? t('Save the scene description first', 'Lưu mô tả cảnh trước') : t('Generate or redraw this scene’s first image', 'Tạo hoặc vẽ lại ảnh đầu cảnh')" @click.stop="emit('draw-shot', shot)">✨ F0</button>
+								<button type="button" class="rio-action-settings" :title="t('Scene and video settings', 'Cài đặt cảnh và video')" @click.stop="openShotDetails(shot, index)">🎬 {{ t('Clip', 'Clip') }}</button>
+								<button v-if="canWork" type="button" class="rio-action-render" :disabled="!canEdit || busy || isShotBusy(shot) || !frameFor(shot) || frameNeedsApproval(shot)" :title="!canEdit ? t('Scene rendering requires a production role', 'Dựng từng cảnh cần quyền sản xuất') : frameNeedsApproval(shot) ? t('Approve the scene image first', 'Duyệt ảnh cảnh trước') : t('Generate this scene’s video', 'Tạo video cho cảnh này')" @click.stop="emit('render-shot', shot)">ϟ Render</button>
+								<button type="button" class="rio-action-timeline" :disabled="timelineBusy || (!clips.some(clip => clip.shot === shot.name) && (!canWork || !shot.selected_output_asset_version))" :title="t('Open this scene in the timeline editor', 'Mở cảnh này trong trình biên tập dòng thời gian')" @click.stop="openSceneTimeline(shot)">＋ Timeline</button>
 						</div>
-						<i class="rio-port rio-port-in" /><i class="rio-port rio-port-out" />
+						<button type="button" class="rio-port rio-port-reference" :title="t('Scene references', 'Tư liệu của cảnh')" :aria-label="t('Scene references', 'Tư liệu của cảnh')" @click.stop="openShotDetails(shot, index)" />
+						<button type="button" class="rio-port rio-port-in" :title="t('First frame', 'Ảnh đầu cảnh')" :aria-label="t('First frame', 'Ảnh đầu cảnh')" @click.stop="selectShot(shot, index)" />
+						<button type="button" class="rio-port rio-port-ending" :title="t('Scene frame settings', 'Cài đặt khung hình cảnh')" :aria-label="t('Scene frame settings', 'Cài đặt khung hình cảnh')" @click.stop="openShotDetails(shot, index)" />
+						<button type="button" class="rio-port rio-port-out" :title="t('Preview scene output', 'Xem đầu ra của cảnh')" :aria-label="t('Preview scene output', 'Xem đầu ra của cảnh')" @click.stop="selectShot(shot, index)" />
 					</article>
 				</div>
 				<div v-if="!shots.length && automaticVariant" class="rio-empty-canvas" data-test="rio-automatic-status" role="status">
@@ -125,7 +134,7 @@
 				</div>
 				<div v-if="shots.length" class="rio-canvas-controls"><button type="button" :aria-label="t('Zoom out', 'Thu nhỏ')" @click="zoom = Math.max(0.45, zoom - 0.1)">−</button><span>{{ Math.round(zoom * 100) }}%</span><button type="button" :aria-label="t('Zoom in', 'Phóng to')" @click="zoom = Math.min(1.6, zoom + 0.1)">＋</button><button type="button" :aria-label="t('Fit all scenes on screen', 'Hiện tất cả cảnh trên màn hình')" @click="fitCanvas">⛶</button></div>
 				<!-- A pointer shortcut for panning. The zoom and fit buttons above cover the same ground for keyboards, so this stays hidden from screen readers. -->
-				<div v-if="showMinimap && shots.length" ref="minimapRef" class="rio-minimap is-interactive" aria-hidden="true" @pointerdown="startMinimapDrag" @pointermove="moveMinimapDrag" @pointerup="endMinimapDrag" @pointercancel="endMinimapDrag"><span>{{ t('OVERVIEW', 'TỔNG QUAN') }}</span><div v-for="(shot, index) in shots" :key="shot.name" :class="{ active: index === selectedShotIndex }" :style="miniStyle(shot, index)" /><b class="rio-minimap-viewport" :style="minimapViewport" /></div>
+				<div v-if="showMinimap && shots.length" ref="minimapRef" class="rio-minimap is-interactive" :style="minimapPosition.x === null ? {} : { left: `${minimapPosition.x}px`, top: `${minimapPosition.y}px`, right: 'auto' }" :aria-label="t('Canvas minimap', 'Sơ đồ nhỏ')" @pointerdown.stop="startMinimapDrag" @pointermove.stop="moveMinimapDrag" @pointerup.stop="endMinimapDrag" @pointercancel.stop="endMinimapDrag"><span>MINIMAP</span><div class="rio-minimap-content"><div v-for="(shot, index) in shots" :key="shot.name" :class="{ active: index === selectedShotIndex }" :style="miniStyle(shot, index)" /><b class="rio-minimap-viewport" :style="minimapViewport" /></div></div>
 			</section>
 			<aside v-if="selectedAsset || detailsShot" class="rio-details" :aria-label="t('Details', 'Chi tiết')">
 					<header><strong>{{ detailsShot ? `${t('Shot', 'Cảnh')} ${detailsShot.shot_number || selectedShotIndex + 1}` : t('Asset', 'Tư liệu') }}</strong><button type="button" :title="t('Close', 'Đóng')" :aria-label="t('Close details', 'Đóng chi tiết')" @click="closeDetails">×</button></header>
@@ -146,16 +155,52 @@
 						<button v-if="canEdit && selectedAsset.reference_key && selectedShot" type="button" class="rio-details-action" :disabled="shotReferenceKeys(selectedShot).includes(selectedAsset.reference_key)" @click="emit('assign-asset', selectedAsset)">{{ t('Add to selected scene', 'Thêm vào cảnh đang chọn') }}</button></template>
 				</aside>
 		</div>
-		<section class="rio-bottom" :style="{ height: `${Math.min(420, 220 + Math.max(0, audioLanes.length - 1) * 57 + (selectedAudio ? 42 : 0))}px` }">
+		<p v-if="toolError" class="rio-alert" role="alert">{{ toolError }} <button @click="toolError = ''">×</button></p>
+		<div v-if="scriptReviewOpen && canWork" class="rio-tool-overlay" @click.self="scriptReviewOpen = false">
+			<section class="rio-tool-dialog" style="width:min(1000px,100%)" role="dialog" aria-modal="true" :aria-label="t('Review new video', 'Duyệt video mới')">
+				<header><strong>{{ t('Review script & scenes', 'Duyệt kịch bản & cảnh') }}</strong><button type="button" :aria-label="t('Close', 'Đóng')" @click="scriptReviewOpen = false">×</button></header>
+				<CreativeBatchPanel :project="projectName" :focus="automaticVariant?.project || projectName" @loaded="refreshAutomaticBatch" @show-video="scriptReviewOpen = false" />
+			</section>
+		</div>
+		<StudioEffectsDialog v-if="effectsOpen" :project-name="projectName" :shot="selectedShot" :current-lang="currentLang" @close="effectsOpen = false" @upload="emit('add-audio', 'SFX')" @done="emit('timeline-refresh')" />
+		<div v-if="charactersOpen" class="rio-tool-overlay" @click.self="charactersOpen = false">
+			<section class="rio-tool-dialog" role="dialog" aria-modal="true" :aria-label="t('Character identity', 'Nhận dạng nhân vật')">
+				<header><strong>🎭 {{ t('CHARACTER REFERENCES & IDENTITY', 'TƯ LIỆU & NHẬN DẠNG NHÂN VẬT') }}</strong><button :aria-label="t('Close', 'Đóng')" @click="charactersOpen = false">×</button></header>
+				<p>{{ t('Give pictures of the same character the same identity tag. Assign a reference to a scene before generating its images.', 'Đặt cùng thẻ nhận dạng cho các ảnh của một nhân vật. Gán tư liệu cho cảnh trước khi tạo ảnh.') }}</p>
+				<p v-if="!characterAssets.length">{{ t('Add a character picture to the project, then set its category to Character.', 'Thêm ảnh nhân vật vào dự án, rồi chọn danh mục Nhân vật.') }}</p>
+				<div v-for="asset in characterAssets" :key="asset.asset_version" class="rio-character-row">
+					<MediaThumbnail :src="asset.file" media-type="Image" :alt="asset.display_name" aspect="aspect-square" :contain="true" />
+					<div><strong>{{ asset.display_name }}</strong><label>{{ t('Identity tag', 'Thẻ nhận dạng') }}<input v-model="characterTags[asset.asset_version]" :disabled="!canWork" maxlength="60" placeholder="@character" /></label></div>
+					<button :disabled="!canWork || busy || (characterTags[asset.asset_version] || '').trim() === (asset.identity_key || '')" @click="emit('set-identity', asset, (characterTags[asset.asset_version] || '').trim())">{{ t('Save tag', 'Lưu thẻ') }}</button>
+					<button v-if="selectedShot" :disabled="!canWork || busy || !asset.reference_key || shotReferenceKeys(selectedShot).includes(asset.reference_key)" @click="emit('assign-asset', asset)">{{ t('Use in selected scene', 'Dùng trong cảnh chọn') }}</button>
+				</div>
+				<footer><button @click="emit('open-media'); charactersOpen = false">＋ {{ t('Add reference pictures', 'Thêm ảnh tham chiếu') }}</button></footer>
+			</section>
+		</div>
+		<div v-if="exportOptionsOpen" class="rio-tool-overlay" @click.self="exportOptionsOpen = false">
+			<section class="rio-tool-dialog rio-export-options" role="dialog" aria-modal="true" :aria-label="t('Export video', 'Xuất video')">
+				<header><strong>🎬 {{ t('EXPORT VIDEO', 'XUẤT VIDEO') }}</strong><button :aria-label="t('Close', 'Đóng')" @click="exportOptionsOpen = false">×</button></header>
+				<label>{{ t('Output preset', 'Chất lượng xuất') }}<select v-model="exportPreset"><option value="Draft 720p">720p · {{ t('Draft', 'Bản nháp') }}</option><option value="Studio 1440p60">Cinema · 1440p / 60 fps</option></select></label>
+				<p>{{ t('The export uses the timeline cuts, transitions, audio mix and project aspect ratio. Higher resolution does not restore details absent from the source.', 'Video xuất dùng bản dựng, chuyển cảnh, âm thanh và tỉ lệ của dự án. Độ phân giải cao hơn không khôi phục chi tiết thiếu trong nguồn.') }}</p>
+				<footer><button @click="emit('settings'); exportOptionsOpen = false">{{ t('Project settings', 'Cài đặt dự án') }}</button><button :disabled="!canWork || !canExport || exporting || timelineBusy" @click="emit('export-preset', exportPreset); exportOptionsOpen = false">{{ t('Export', 'Xuất video') }}</button></footer>
+			</section>
+		</div>
+
+		<section class="rio-bottom" :style="{ height: `${Math.min(420, 240 + Math.max(0, audioLanes.length - 2) * 57 + (selectedAudio ? 42 : 0))}px` }">
 			<div class="rio-timeline">
-				<div class="rio-timeline-head"><button type="button" class="rio-tl-play" :disabled="!previewVideo" :aria-label="playing ? t('Pause preview', 'Tạm dừng xem trước') : t('Play preview', 'Phát xem trước')" @click="togglePlayback">{{ playing ? 'Ⅱ' : '▶' }}</button><strong>{{ t('TIMELINE', 'DÒNG THỜI GIAN') }}</strong><span>{{ clips.length }} {{ t('clips', 'đoạn') }}</span>
-					<div v-if="clips.length" class="rio-tl-zoom" :title="t('Zoom the timeline', 'Co giãn dòng thời gian')"><button type="button" :aria-label="t('Zoom out', 'Thu nhỏ')" @click="timelineZoom = Math.max(1, timelineZoom - 0.25)">－</button><input type="range" min="1" max="4" step="0.25" :value="timelineZoom" :aria-label="t('Timeline zoom', 'Mức co giãn')" @input="timelineZoom = Number($event.target.value)" /><button type="button" :aria-label="t('Zoom in', 'Phóng to')" @click="timelineZoom = Math.min(4, timelineZoom + 0.25)">＋</button></div>
-					<div v-if="canWork" class="rio-audio-add"><button type="button" data-test="rio-add-audio" :aria-expanded="audioAddOpen" @click="audioAddOpen = !audioAddOpen">＋ {{ t('Add audio', 'Thêm âm thanh') }}</button><div v-if="audioAddOpen" class="rio-audio-add-menu"><button v-for="role in ['BGM', 'Voiceover', 'SFX']" :key="role" type="button" @click="chooseAudioRole(role)">{{ audioRoleLabel(role) }}</button></div></div><button v-if="canWork && clips.length" type="button" class="rio-tl-clear" :title="t('Rebuild the timeline from the scenes', 'Xếp lại dòng thời gian từ các cảnh')" :aria-label="t('Rebuild the timeline', 'Xếp lại dòng thời gian')" @click="emit('rebuild-timeline')">🧹</button><button v-if="canWork" type="button" @click="emit('open-timeline')">{{ t('Edit tracks', 'Biên tập') }}</button><button v-if="canEdit" type="button" class="rio-export" :disabled="!canExport || exporting" @click="emit('export')">{{ exporting ? '…' : t('Export video', 'Xuất video') }}</button></div>
+				<div class="rio-timeline-head"><button type="button" class="rio-tl-play" :disabled="!previewVideo" :aria-label="playing ? t('Pause preview', 'Tạm dừng xem trước') : t('Play preview', 'Phát xem trước')" @click="togglePlayback">{{ playing ? 'Ⅱ' : '▶' }}</button><span class="rio-timeline-description" :title="t('Timeline', 'Dòng thời gian')">{{ clips.length }} {{ t('clips', 'đoạn') }}</span>
+
+					<div v-if="canWork" class="rio-audio-add"><button type="button" data-test="rio-add-audio" :aria-expanded="audioAddOpen" @click="effectsOpen = true">🎙 SFX</button><div v-if="audioAddOpen" class="rio-audio-add-menu"><button v-for="role in ['BGM', 'Voiceover', 'SFX']" :key="role" type="button" @click="chooseAudioRole(role)">{{ audioRoleLabel(role) }}</button></div></div><button v-if="canWork" type="button" class="rio-tl-clear" :disabled="timelineBusy || exporting || !clips.length && !audioClips.length" :title="t('Clear the timeline', 'Xóa dòng thời gian')" :aria-label="t('Clear the timeline', 'Xóa dòng thời gian')" @click="pausePreview(); emit('clear-timeline')">🧹</button>
+					<button v-for="action in ['left', 'split', 'right']" :key="action" v-show="canWork" type="button" class="rio-tl-cut" :disabled="timelineBusy || exporting || !cutPayload(action)" :title="cutLabel(action)" :aria-label="cutLabel(action)" @click="cutAtPlayhead(action)">{{ action === 'left' ? '✂‹' : action === 'right' ? '›✂' : '✂' }}</button>
+					<button v-if="canWork" type="button" :disabled="!canUndo || timelineBusy" :aria-label="t('Undo timeline edit', 'Hoàn tác chỉnh sửa')" @click="pausePreview(); emit('undo-timeline')">↶</button>
+					<button v-if="canWork" type="button" :disabled="!canRedo || timelineBusy" :aria-label="t('Redo timeline edit', 'Làm lại chỉnh sửa')" @click="pausePreview(); emit('redo-timeline')">↷</button>
+					<button v-if="canWork" type="button" @click="emit('open-timeline')">✂ {{ t('Edit tracks', 'Biên tập') }}</button><div class="rio-tl-zoom" :title="t('Zoom the timeline', 'Co giãn dòng thời gian')"><button type="button" :aria-label="t('Zoom out', 'Thu nhỏ')" @click="timelineZoom = Math.max(1, timelineZoom - 0.25)">－</button><input type="range" min="1" max="4" step="0.25" :value="timelineZoom" :aria-label="t('Timeline zoom', 'Mức co giãn')" @input="timelineZoom = Number($event.target.value)" /><button type="button" :aria-label="t('Zoom in', 'Phóng to')" @click="timelineZoom = Math.min(4, timelineZoom + 0.25)">＋</button></div><span class="rio-timeline-spacer" /><button v-if="canWork" type="button" class="rio-export" :disabled="!canExport || exporting || timelineBusy" @click="exportPreset = exportQuality; exportOptionsOpen = true">{{ exporting ? '…' : '🎬 ' + (exportQuality === 'Studio 1440p60' ? 'Cinema · 1440p60' : '720p') }}</button></div>
 				<div class="rio-tl-scroll"><div class="rio-tl-inner" :style="{ width: `${timelineZoom * 100}%` }">
-					<div class="rio-ruler"><span v-for="tick in ticks" :key="tick" :style="{ left: `${tick / totalSeconds * 100}%` }">{{ tick }}s</span><input v-if="clips.length" type="range" min="0" :max="totalSeconds" step="0.1" :value="playheadSeconds" :aria-label="t('Preview position', 'Vị trí xem trước')" @input="seekTimeline(Number($event.target.value))" /></div>
-					<div v-if="clips.length" class="rio-tl-needle" :style="{ left: `${Math.min(100, playheadSeconds / totalSeconds * 100)}%` }" aria-hidden="true" />
+					<div class="rio-ruler"><span v-for="tick in ticks" :key="tick" :style="{ left: `${tick / totalSeconds * 100}%` }">{{ tick }}s</span><input v-if="clips.length" type="range" min="0" :max="totalSeconds" :step="1 / Math.max(1, fps)" :value="playheadSeconds" :aria-label="t('Preview position', 'Vị trí xem trước')" @input="seekTimeline(Number($event.target.value))" /></div>
+					<div v-if="clips.length" class="rio-tl-needle" :style="{ left: `calc(${Math.max(0, Math.min(1, playheadSeconds / totalSeconds)) * 100}% + ${48 * (1 - Math.max(0, Math.min(1, playheadSeconds / totalSeconds)))}px)` }" aria-hidden="true" />
 					<div class="rio-track"><b class="rio-track-icon" :title="t('Video track', 'Đường hình')" aria-hidden="true">📹</b><div class="rio-track-content"><button v-for="(clip, index) in orderedClips" :key="clip.name || index" type="button" class="rio-video-clip" :class="{ selected: clip.name === activeClip?.name }" :style="clipStyle(clip, index)" :title="clipDescription(clip, index)" @click="selectClip(clip)">{{ clipTitle(clip, index) }}</button><span v-if="!clips.length" class="rio-track-empty">{{ t('Generated clips appear here', 'Video sau khi dựng sẽ xuất hiện ở đây') }}</span></div></div>
 					<div v-for="(lane, laneIndex) in audioLanes" :key="`audio-${laneIndex}`" class="rio-track rio-audio-row"><b class="rio-track-icon" :title="audioRoleLabel(lane.role)" aria-hidden="true">{{ lane.role === 'SFX' ? '〰️' : lane.role === 'Voiceover' ? '🎙️' : '🔊' }}</b><div class="rio-track-content"><button v-for="clip in lane.clips" :key="clip.name" type="button" class="rio-audio-clip" :class="{ 'is-selected': selectedAudioName === clip.name, 'is-disabled': !clip.enabled }" :style="audioStyle(clip)" :title="`${audioTitle(clip)}${clip.enabled ? '' : ` · ${t('Disabled', 'Đã tắt')}`}`" @click="selectedAudioName = clip.name" @dblclick="emit('open-timeline', clip)">{{ audioTitle(clip) }}</button></div></div>
+					<div v-if="!audioLanes.some(lane => lane.role === 'SFX')" class="rio-track rio-sfx-row"><b class="rio-track-icon" :title="t('Sound effects', 'Hiệu ứng âm thanh')" aria-hidden="true">〰</b><div class="rio-track-content" /></div>
 					<div v-if="!audioLanes.length" class="rio-track rio-audio-row"><b class="rio-track-icon" :title="t('Audio track', 'Đường âm thanh')" aria-hidden="true">🔊</b><div class="rio-track-content"><span class="rio-track-empty">{{ t('No audio yet. Add music, voice, or effects.', 'Chưa có âm thanh. Thêm nhạc, lời thoại hoặc hiệu ứng.') }}</span></div></div>
 				</div></div>
 				<div v-if="selectedAudio" class="rio-audio-actions"><strong :title="audioTitle(selectedAudio)">{{ audioTitle(selectedAudio) }}</strong><button v-if="canWork" type="button" :disabled="busy" @click="emit('toggle-audio', selectedAudio, !selectedAudio.enabled)">{{ selectedAudio.enabled ? t('Disable', 'Tắt') : t('Enable', 'Bật') }}</button><button v-if="canWork && selectedAudio.audio_role !== 'Source'" type="button" :disabled="busy" @click="removeSelectedAudio">{{ t('Remove', 'Xóa khỏi dòng thời gian') }}</button><button type="button" @click="emit('open-timeline', selectedAudio)">{{ t('More controls', 'Điều chỉnh thêm') }}</button></div>
@@ -163,8 +208,8 @@
 			<div class="rio-monitor"><div class="rio-monitor-head"><span>▣ {{ t('PREVIEW', 'XEM TRƯỚC') }}</span><time>{{ timecode }}</time></div>
 				<div v-if="previewVideo" class="rio-monitor-stage">
 					<!-- Two players: one shows the current clip while the other preloads the next, so playback crosses a cut without stalling. -->
-					<video v-show="activePlayer === 'a'" ref="videoRefA" :src="sources.a" controls playsinline @loadedmetadata="applyPendingSeek" @play="onPlayerPlay('a')" @pause="onPlayerPause('a')" @timeupdate="onPlayerTimeUpdate('a', $event)" @ended="onPlayerEnded('a')" />
-					<video v-show="activePlayer === 'b'" ref="videoRefB" :src="sources.b" controls playsinline @loadedmetadata="applyPendingSeek" @play="onPlayerPlay('b')" @pause="onPlayerPause('b')" @timeupdate="onPlayerTimeUpdate('b', $event)" @ended="onPlayerEnded('b')" />
+					<video v-show="activePlayer === 'a'" ref="videoRefA" :src="sources.a" :muted="muteSourceVideo" controls playsinline @loadedmetadata="applyPendingSeek" @play="onPlayerPlay('a')" @pause="onPlayerPause('a')" @timeupdate="onPlayerTimeUpdate('a', $event)" @ended="onPlayerEnded('a')" />
+					<video v-show="activePlayer === 'b'" ref="videoRefB" :src="sources.b" :muted="muteSourceVideo" controls playsinline @loadedmetadata="applyPendingSeek" @play="onPlayerPlay('b')" @pause="onPlayerPause('b')" @timeupdate="onPlayerTimeUpdate('b', $event)" @ended="onPlayerEnded('b')" />
 					<span class="rio-monitor-timecode" aria-hidden="true">{{ timecode }}</span>
 				</div>
 				<img v-else-if="previewImage" :src="previewImage" :alt="t('Selected first frame', 'Ảnh đầu cảnh đã chọn')" /><div v-else class="rio-monitor-empty">🎬<span>{{ t('Select a scene to preview', 'Chọn cảnh để xem trước') }}</span></div></div>
@@ -178,8 +223,11 @@ import { call } from 'frappe-ui';
 import MediaThumbnail from '../MediaThumbnail.vue';
 import VideoShelf from './VideoShelf.vue';
 import ProjectStages from './ProjectStages.vue';
+import StudioEffectsDialog from './StudioEffectsDialog.vue';
+import CreativeBatchPanel from './CreativeBatchPanel.vue';
+import { useTimelinePreviewEngine } from '../../composables/useTimelinePreviewEngine.js';
 import { groupAssets } from '../../utils/assetPresentation.js';
-import { clipAtSeconds, layoutAudioLanes, orderTimelineClips, shotIndexForClip, sourceSecondsForTimeline } from '../../utils/rioTimeline.js';
+import { clipAtSeconds, layoutAudioLanes, orderTimelineClips, shotIndexForClip, sourceSecondsForTimeline, timelineCut } from '../../utils/rioTimeline.js';
 import { aspectRatio, categoryIcon, categoryLabel as getCategoryLabel, categoryOptions, formatDuration, referenceCategory as getReferenceCategory, referenceLabel as getReferenceLabel } from '../../utils/rioPresentation.js';
 
 const props = defineProps({
@@ -193,36 +241,42 @@ const props = defineProps({
 	storyboardApproved: Boolean, busyShots: { type: Array, default: () => [] },
 	frames: { type: Array, default: () => [] }, nextAction: String, error: String,
 	project: { type: Object, default: () => ({}) }, production: { type: Object, default: null },
-	missing: Boolean,
+	missing: Boolean, timelineBusy: Boolean, canUndo: Boolean, canRedo: Boolean, exportQuality: { type: String, default: 'Studio 1440p60' },
 });
-const emit = defineEmits(['restore', 'open-history', 'update:idea', 'settings', 'add-scene', 'open-media', 'select-asset', 'assign-asset', 'update-asset', 'remove-asset', 'update-shot-references', 'select-shot', 'edit-shot', 'draw-shot', 'approve-frame', 'render-shot', 'save-prompt', 'open-timeline', 'add-audio', 'toggle-audio', 'remove-audio', 'export', 'retry', 'continue', 'set-continuity', 'upload-files', 'slice-storyboard', 'dictation-error', 'set-identity', 'apply-template-duration', 'rebuild-timeline']);
+const emit = defineEmits(['restore', 'open-history', 'update:idea', 'settings', 'add-scene', 'open-media', 'select-asset', 'assign-asset', 'update-asset', 'remove-asset', 'update-shot-references', 'select-shot', 'edit-shot', 'draw-shot', 'approve-frame', 'render-shot', 'save-prompt', 'open-timeline', 'add-audio', 'toggle-audio', 'remove-audio', 'export', 'retry', 'continue', 'set-continuity', 'upload-files', 'slice-storyboard', 'dictation-error', 'set-identity', 'apply-template-duration', 'rebuild-timeline', 'clear-timeline', 'trim-timeline', 'split-timeline', 'undo-timeline', 'redo-timeline', 'add-to-timeline', 'seek-timeline', 'timeline-refresh', 'export-preset']);
 const t = (en, vi) => props.currentLang === 'vi' ? vi : en;
 const automaticBatch = ref(null), automaticVariant = ref(null), automaticStatusError = ref(''), automaticRetrying = ref(false);
+const scriptReviewOpen = ref(false);
+const reviewableBatch = computed(() => automaticBatch.value?.delivery_mode === 'assisted' && ['Script Ready', 'Pictures Ready'].includes(automaticVariant.value?.status));
+watch(reviewableBatch, ready => { if (ready && props.canWork) scriptReviewOpen.value = true; });
 const automaticInProgress = computed(() => Boolean(automaticVariant.value && !['Completed', 'Cancelled'].includes(automaticVariant.value.status)));
 let batchTimer, batchEpoch = 0;
 async function refreshAutomaticBatch() {
+	clearTimeout(batchTimer);
 	const epoch = ++batchEpoch, project = props.projectName;
 	try {
 		const batches = await call('joymedia.api.creative.get_project_batches', { project_name: project }) || [];
 		if (epoch !== batchEpoch || project !== props.projectName) return;
-		const found = batches.filter(batch => batch.delivery_mode === 'automatic').map(batch => ({ batch, variant: (batch.variants || []).find(v => v.project === project) || (batch.source_project === project && batch.variants?.length === 1 ? batch.variants[0] : null) })).find(item => item.variant);
+		const found = batches.map(batch => ({ batch, variant: (batch.variants || []).find(v => v.project === project) || (batch.source_project === project && batch.variants?.length === 1 ? batch.variants[0] : null) })).find(item => item.variant);
 		automaticBatch.value = found?.batch || null;
 		automaticVariant.value = found?.variant ? (found.batch.status === 'Cancelled' && found.variant.status !== 'Completed' ? { ...found.variant, status: 'Cancelled' } : found.variant) : null;
 		automaticStatusError.value = '';
 	} catch (error) { if (epoch === batchEpoch) automaticStatusError.value = t('Could not refresh video status.', 'Không thể cập nhật trạng thái video.'); }
 	if (epoch === batchEpoch) batchTimer = window.setTimeout(refreshAutomaticBatch, 10000);
 }
-watch(() => props.projectName, () => { clearTimeout(batchTimer); automaticBatch.value = null; automaticVariant.value = null; void refreshAutomaticBatch(); }, { immediate: true });
+watch(() => props.projectName, () => { clearTimeout(batchTimer); scriptReviewOpen.value = false; automaticBatch.value = null; automaticVariant.value = null; void refreshAutomaticBatch(); }, { immediate: true });
 onUnmounted(() => { ++batchEpoch; clearTimeout(batchTimer); });
-const automaticStatusTitle = computed(() => automaticVariant.value?.status === 'Needs Attention' ? t('Video needs attention', 'Video cần xử lý') : automaticVariant.value?.status === 'Cancelled' ? t('Video stopped', 'Video đã dừng') : automaticVariant.value?.status === 'Completed' ? t('Video complete', 'Video đã hoàn tất') : t('Creating your video', 'Đang tạo video'));
+const automaticStatusTitle = computed(() => reviewableBatch.value ? t('Review this video before continuing', 'Duyệt video này trước khi tiếp tục') : automaticVariant.value?.status === 'Needs Attention' ? t('Video needs attention', 'Video cần xử lý') : automaticVariant.value?.status === 'Cancelled' ? t('Video stopped', 'Video đã dừng') : automaticVariant.value?.status === 'Completed' ? t('Video complete', 'Video đã hoàn tất') : t('Creating your video', 'Đang tạo video'));
 const automaticFailureReason = computed(() => {
 	const error = automaticVariant.value?.error || '';
 	if (/reference analysis is missing/i.test(error)) return t('The product or character image could not be analyzed. Try again later.', 'Chưa phân tích được ảnh sản phẩm hoặc nhân vật. Hãy thử lại sau.');
 	if (/required character pose references could not be verified/i.test(error)) return t('The character poses could not be verified, so image generation stopped. Add suitable reference images or adjust the idea before retrying.', 'Chưa xác minh được tư thế nhân vật nên hệ thống đã dừng tạo ảnh. Hãy thêm ảnh tham chiếu phù hợp hoặc điều chỉnh ý tưởng trước khi thử lại.');
+	if (/disappeared from its queue|Unable to upload to ComfyUI|Connection reset|GPU connection failure/i.test(error)) return t('The image server was interrupted. Nothing was lost; retry when ready.', 'Máy tạo hình bị gián đoạn. Không mất dữ liệu; hãy bấm thử lại.');
 	return error;
 });
 const automaticMessage = computed(() => {
 	const status = automaticVariant.value?.status;
+	if (reviewableBatch.value) return t('Review the script or scene images, then choose whether to continue generation.', 'Hãy duyệt kịch bản hoặc ảnh cảnh, rồi chọn có tiếp tục tạo video hay không.');
 	if (status === 'Needs Attention') return t('The automatic process stopped before it could finish.', 'Quá trình tự động đã dừng trước khi hoàn thành.');
 	if (status === 'Cancelled') return t('This video was stopped.', 'Video này đã được dừng.');
 	if (status === 'Completed') return t('Your video is ready to preview.', 'Video đã sẵn sàng để xem.');
@@ -264,10 +318,16 @@ function useSceneTemplate(template) {
 	templateTargetShot.value = null;
 }
 const assetsOpen = ref(typeof window === 'undefined' || window.innerWidth > 640), assetSize = ref('m'), draggedAsset = ref(null), editingAsset = ref(null), editingAssetName = ref(''), detailsShotName = ref(null), canvasRef = ref(null), minimapRef = ref(null), videoRefA = ref(null), videoRefB = ref(null), playing = ref(false), elapsed = ref(0), zoom = ref(1), showMinimap = ref(true), versionsOpen = ref(false), timelineZoom = ref(1), selectedAudioName = ref(null), audioAddOpen = ref(false);
+const statusOpen = ref(false), charactersOpen = ref(false), effectsOpen = ref(false), exportOptionsOpen = ref(false), exportPreset = ref(props.exportQuality), toolError = ref('');
+const characterTags = reactive({});
+const characterAssets = computed(() => displayedAssets.value.filter(asset => asset.display_category === 'Character'));
+const compactShots = reactive(new Set());
+function toggleCompact(shot) { if (compactShots.has(shot.name)) compactShots.delete(shot.name); else compactShots.add(shot.name); }
+const minimapPosition = reactive({ x: null, y: null });
 const pan = reactive({ x: 0, y: 0 });
 const positions = reactive({});
 const drafts = reactive({});
-const nodeWidth = 380, nodeHeight = 430, nodeGap = 100;
+const nodeWidth = 380, nodeHeight = 440, nodeGap = 110;
 const canvasWidth = computed(() => Math.max(1100, props.shots.length * (nodeWidth + nodeGap) + 180));
 const canvasHeight = 830;
 const statusLabel = computed(() => {
@@ -277,7 +337,7 @@ const statusLabel = computed(() => {
 	const labels = {
 		Draft: t('Draft', 'Bản nháp'), Planning: t('Planning', 'Đang lập kế hoạch'),
 		Queued: t('Waiting', 'Đang chờ'), Running: t('Working', 'Đang xử lý'),
-		Completed: t('Complete', 'Hoàn tất'), Failed: t('Needs attention', 'Cần xử lý'),
+		Completed: t('Complete', 'Hoàn tất'), 'Needs Attention': t('Needs attention', 'Cần xử lý'), Failed: t('Needs attention', 'Cần xử lý'),
 		Archived: t('Archived', 'Đã lưu trữ'),
 	};
 	return labels[props.projectStatus] || props.projectStatus || t('Ready', 'Sẵn sàng');
@@ -323,8 +383,8 @@ const selectedAudio = computed(() => props.audioClips.find(clip => clip.name ===
 function removeSelectedAudio() { if (!selectedAudio.value || !props.canWork) return; const clip = selectedAudio.value; selectedAudioName.value = null; emit('remove-audio', clip); }
 function audioRoleLabel(role) { return { BGM: t('Music', 'Nhạc nền'), Music: t('Music', 'Nhạc nền'), Voiceover: t('Voiceover', 'Lời thoại'), SFX: t('Sound effect', 'Hiệu ứng âm thanh'), Source: t('Scene audio', 'Âm thanh cảnh') }[role] || t('Audio', 'Âm thanh'); }
 function chooseAudioRole(role) { audioAddOpen.value = false; emit('add-audio', role); }
-const totalSeconds = computed(() => Math.max(1, Number(props.timeline?.total_seconds || 0), ...[...props.clips, ...props.audioClips].map(clip => (Number(clip.timeline_start_frame || 0) + Number(clip.duration_frames || 0)) / Math.max(1, props.fps)), Number(props.shots.reduce((sum, shot) => sum + Number(shot.duration_seconds || 0), 0) || 0)));
-const ticks = computed(() => { const step = totalSeconds.value > 30 ? 10 : totalSeconds.value > 12 ? 5 : 2; return Array.from({ length: Math.floor(totalSeconds.value / step) + 1 }, (_, i) => i * step); });
+const totalSeconds = computed(() => Math.max(props.clips.length ? 1 : 24, Number(props.timeline?.total_seconds || 0), ...[...props.clips, ...props.audioClips].map(clip => (Number(clip.timeline_start_frame || 0) + Number(clip.duration_frames || 0)) / Math.max(1, props.fps)), Number(props.shots.reduce((sum, shot) => sum + Number(shot.duration_seconds || 0), 0) || 0)));
+const ticks = computed(() => { const step = totalSeconds.value > 60 ? 10 : totalSeconds.value > 30 ? 5 : 2; return Array.from({ length: Math.floor(totalSeconds.value / step) + 1 }, (_, i) => i * step); });
 const previewShot = computed(() => props.shots[props.selectedShotIndex] || props.shots[0]);
 const selectedShot = previewShot;
 const activeClipName = ref(null);
@@ -332,13 +392,22 @@ const activeClip = computed(() => props.clips.find(clip => clip.name === activeC
 const previewVideo = computed(() => props.finalVideo?.file || activeClip.value?.source_file || previewShot.value?.selected_output_file || previewShot.value?.output_video || '');
 const previewImage = computed(() => frameFor(previewShot.value));
 const playheadSeconds = computed(() => props.finalVideo?.file ? elapsed.value : activeClip.value ? Number(activeClip.value.timeline_start_frame || 0) / Math.max(1, props.fps) + Math.max(0, elapsed.value - Number(activeClip.value.source_in_frame || 0) / Math.max(1, props.fps)) : elapsed.value);
+const muteSourceVideo = computed(() => !props.finalVideo?.file && props.audioClips.some(clip => clip.audio_role === 'Source'));
+const previewAudio = useTimelinePreviewEngine({
+	videoClips: computed(() => []), audioClips: computed(() => props.finalVideo?.file ? [] : props.audioClips),
+	fps: computed(() => props.fps), isPlaying: playing, isMuted: computed(() => Boolean(props.finalVideo?.file)),
+	studioMode: computed(() => 'edit'), playheadFrame: computed(() => Math.round(playheadSeconds.value * Math.max(1, props.fps))),
+	timelineTotalFrames: computed(() => totalSeconds.value * Math.max(1, props.fps)),
+	renderTotalFrames: computed(() => totalSeconds.value * Math.max(1, props.fps)), getVideo: () => null, driveClock: false,
+});
+watch([playheadSeconds, playing, () => props.audioClips], () => previewAudio.syncAtFrame(Math.round(playheadSeconds.value * Math.max(1, props.fps))), { deep: true });
 const timecode = computed(() => { const s = Math.max(0, playheadSeconds.value); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}.${Math.floor((s % 1) * 10)}`; });
 // One link per gap between scenes. `continues` mirrors the next scene's
 // continuity_mode, so the line and its label always show what will be rendered.
 const links = computed(() => props.shots.slice(0, -1).map((shot, index) => {
 	const next = props.shots[index + 1];
 	const a = positionFor(shot, index), b = positionFor(next, index + 1);
-	const x1 = a.x + nodeWidth, y1 = a.y + 215, x2 = b.x, y2 = b.y + 215;
+	const x1 = a.x + nodeWidth, y1 = a.y + (compactShots.has(shot.name) ? 20 : nodeHeight / 2), x2 = b.x, y2 = b.y + (compactShots.has(next.name) ? 20 : nodeHeight / 2);
 	const continues = next.continuity_mode === 'Continue';
 	return {
 		key: next.name, shot: next, continues, busy: isShotBusy(next),
@@ -361,7 +430,7 @@ function frameFor(shot) {
 function frameNeedsApproval(shot) { const frame = props.frames.find(row => row.shot === shot?.name); return Boolean(frame?.needs_keyframe && frame?.url && !frame?.stale && frame?.status !== 'Approved'); }
 function shotReferenceKeys(shot) { return Array.isArray(shot?.references) ? shot.references.map(reference => reference.reference_key).filter(Boolean) : []; }
 function isShotBusy(shot) { return props.busyShots.some(item => (typeof item === 'string' ? item : item?.name || item?.shot) === shot?.name); }
-function defaultPosition(index) { return { x: 100 + index * (nodeWidth + nodeGap), y: 135 + (index % 2) * 110 }; }
+function defaultPosition(index) { return { x: 70 + index * (nodeWidth + nodeGap), y: 64 }; }
 function positionFor(shot, index) { return positions[shot.name] || defaultPosition(index); }
 function nodeStyle(shot, index) { const p = positionFor(shot, index); return { left: `${p.x}px`, top: `${p.y}px` }; }
 function miniStyle(shot, index) { const p = positionFor(shot, index); return { left: `${Math.min(92, p.x / canvasWidth.value * 100)}%`, top: `${p.y / canvasHeight * 100}%` }; }
@@ -380,7 +449,7 @@ const minimapViewport = computed(() => {
 });
 /** Centres the canvas on the point the pointer picked in the minimap. */
 function panToMinimap(event) {
-	const box = minimapRef.value?.getBoundingClientRect();
+	const box = minimapRef.value?.querySelector('.rio-minimap-content')?.getBoundingClientRect();
 	const view = canvasRef.value;
 	if (!box?.width || !view) return;
 	const scale = zoom.value || 1;
@@ -392,13 +461,27 @@ function panToMinimap(event) {
 	pan.x = Math.max(minX, Math.min(0, view.clientWidth / 2 - targetX * scale));
 	pan.y = Math.max(minY, Math.min(0, view.clientHeight / 2 - targetY * scale));
 }
-function startMinimapDrag(event) { if (event.button !== 0) return; minimapDragging = true; event.currentTarget.setPointerCapture(event.pointerId); panToMinimap(event); }
-function moveMinimapDrag(event) { if (minimapDragging) panToMinimap(event); }
+function startMinimapDrag(event) {
+	if (event.button !== 0) return;
+	const box = minimapRef.value.getBoundingClientRect(), canvas = canvasRef.value.getBoundingClientRect();
+	minimapDragging = event.target.closest('span')
+		? { x: event.clientX, y: event.clientY, left: box.left - canvas.left, top: box.top - canvas.top }
+		: { navigate: true };
+	event.currentTarget.setPointerCapture(event.pointerId);
+	if (minimapDragging.navigate) panToMinimap(event);
+}
+function moveMinimapDrag(event) {
+	if (!minimapDragging) return;
+	if (minimapDragging.navigate) { panToMinimap(event); return; }
+	const view = canvasRef.value, map = minimapRef.value;
+	minimapPosition.x = Math.max(0, Math.min(view.clientWidth - map.offsetWidth, minimapDragging.left + event.clientX - minimapDragging.x));
+	minimapPosition.y = Math.max(0, Math.min(view.clientHeight - map.offsetHeight, minimapDragging.top + event.clientY - minimapDragging.y));
+}
 function endMinimapDrag(event) { if (!minimapDragging) return; minimapDragging = false; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }
 function layoutKey() { return `joymedia:rio-layout:${props.projectName}`; }
 watch(() => props.projectName, () => { for (const key of Object.keys(positions)) delete positions[key]; try { const saved = JSON.parse(localStorage.getItem(layoutKey()) || '{}'); for (const [key, value] of Object.entries(saved)) if (Number.isFinite(value?.x) && Number.isFinite(value?.y)) positions[key] = value; } catch { /* Layout is optional. */ } nextTick(focusCanvas); }, { immediate: true });
 function persistLayout() { try { localStorage.setItem(layoutKey(), JSON.stringify(positions)); } catch { /* Browsers can disable storage. */ } }
-function focusCanvas() { zoom.value = 0.82; pan.x = 0; pan.y = 0; }
+function focusCanvas() { zoom.value = 1; pan.x = 0; pan.y = 0; }
 function fitCanvas() { const w = canvasRef.value?.clientWidth || 900; zoom.value = Math.max(0.45, Math.min(1, (w - 80) / Math.max(700, canvasWidth.value))); pan.x = 0; pan.y = 0; }
 watch(() => props.shots.length, () => nextTick(focusCanvas));
 let drag = null;
@@ -485,6 +568,7 @@ function clearAssetSelection() { selectedAssetKeys.value = []; }
 watch(() => props.projectName, clearAssetSelection);
 // Media removed elsewhere must not linger in the selection.
 watch(() => props.assets, (list) => {
+	if (event.code === 'Space' && previewVideo.value) { event.preventDefault(); togglePlayback(); return; }
 	if (!selectedAssetKeys.value.length) return;
 	const live = new Set((list || []).map(assetKey));
 	selectedAssetKeys.value = selectedAssetKeys.value.filter((key) => live.has(key));
@@ -561,7 +645,32 @@ function onFileDrop(event) {
 	if (files.length) emit('upload-files', files);
 }
 
+function openCharacters() {
+	for (const asset of characterAssets.value) characterTags[asset.asset_version] = asset.identity_key || '';
+	charactersOpen.value = true;
+}
+async function toggleFullscreen() {
+	try {
+		if (document.fullscreenElement) await document.exitFullscreen();
+		else await canvasRef.value?.closest('[data-test="rio-studio"]')?.requestFullscreen();
+	} catch { toolError.value = t('Fullscreen is not available in this browser.', 'Trình duyệt chưa hỗ trợ toàn màn hình.'); }
+}
+function openSceneTimeline(shot) {
+	const clip = props.clips.find(item => item.shot === shot.name);
+	if (clip) emit('open-timeline', clip); else if (props.canWork && shot.selected_output_asset_version) emit('add-to-timeline', shot);
+}
+function pausePreview() { activeVideo()?.pause(); playing.value = false; }
+function cutLabel(action) { return action === 'left' ? t('Trim left of playhead', 'Bỏ phần trước đầu phát') : action === 'right' ? t('Trim right of playhead', 'Bỏ phần sau đầu phát') : t('Split at playhead', 'Tách tại đầu phát'); }
+function cutPayload(action) { return timelineCut(activeClip.value, playheadSeconds.value, props.fps, action); }
+function cutAtPlayhead(action) {
+	if (!props.canWork || props.timelineBusy) return;
+	const payload = cutPayload(action); if (!payload) return;
+	pausePreview(); emit(action === 'split' ? 'split-timeline' : 'trim-timeline', payload);
+}
+
 function onWorkspaceKeydown(event) {
+	if (event.key === 'Escape' && (scriptReviewOpen.value || charactersOpen.value || effectsOpen.value || exportOptionsOpen.value)) { scriptReviewOpen.value = charactersOpen.value = effectsOpen.value = exportOptionsOpen.value = false; return; }
+	if (scriptReviewOpen.value || charactersOpen.value || effectsOpen.value || exportOptionsOpen.value) return;
 	const el = document.activeElement;
 	if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
 	if (!selectedAssetKeys.value.length) return;
@@ -644,12 +753,14 @@ function selectClip(clip, timelineSeconds = Number(clip.timeline_start_frame || 
 	const index = shotIndexForClip(props.shots, clip);
 	if (index < 0) { emit('open-timeline', clip); return; }
 	activeClipName.value = clip.name;
+	emit('seek-timeline', Math.round(timelineSeconds * Math.max(1, props.fps)));
 	emit('select-shot', props.shots[index], index);
 	pendingSeekSeconds = props.finalVideo?.file ? timelineSeconds : sourceSecondsForTimeline(clip, timelineSeconds, props.fps);
 	elapsed.value = pendingSeekSeconds;
 	nextTick(applyPendingSeek);
 }
 function seekTimeline(seconds) {
+	emit('seek-timeline', Math.round(seconds * Math.max(1, props.fps)));
 	const target = Math.max(0, Math.min(totalSeconds.value, seconds));
 	const clip = clipAtSeconds(orderedClips.value, target, props.fps);
 	if (clip) selectClip(clip, target);
@@ -690,11 +801,11 @@ function seekTimeline(seconds) {
 .rio-studio :is(button,a,textarea,input):focus-visible{outline:2px solid var(--rio-cyan);outline-offset:2px}
 .rio-node-actions{flex-wrap:wrap}.rio-node-actions button{min-height:34px;min-width:calc(50% - 4px);font-size:12px}
 .rio-header-actions button,.rio-canvas-controls button,.rio-header-link{min-height:34px}
-.rio-ruler input[type="range"]{position:absolute;inset:0;width:100%;height:100%;margin:0;background:transparent;appearance:none;cursor:pointer}
+.rio-ruler input[type="range"]{position:absolute;inset:0 auto 0 -6px;width:calc(100% + 12px);height:100%;margin:0;padding:0;background:transparent;appearance:none;cursor:pointer}
 .rio-ruler input[type="range"]::-webkit-slider-runnable-track{height:2px;background:#306073}
 .rio-ruler input[type="range"]::-moz-range-track{height:2px;background:#306073}
-.rio-ruler input[type="range"]::-webkit-slider-thumb{width:12px;height:12px;margin-top:-5px;border:2px solid #061018;border-radius:50%;background:#22d3ee;appearance:none;box-shadow:0 0 0 2px #22d3ee66}
-.rio-ruler input[type="range"]::-moz-range-thumb{width:10px;height:10px;border:2px solid #061018;border-radius:50%;background:#22d3ee}
+.rio-ruler input[type="range"]::-webkit-slider-thumb{box-sizing:border-box;width:12px;height:12px;margin-top:-5px;border:2px solid #061018;border-radius:50%;background:#22d3ee;appearance:none;box-shadow:0 0 0 2px #22d3ee66}
+.rio-ruler input[type="range"]::-moz-range-thumb{box-sizing:border-box;width:12px;height:12px;border:2px solid #061018;border-radius:50%;background:#22d3ee}
 .rio-timeline{overflow-y:auto;overflow-x:hidden}
 .rio-ruler{margin-left:88px}
 .rio-track>b{width:88px;flex:none;padding:0 5px;text-align:center;font-size:10px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}
@@ -825,4 +936,73 @@ function seekTimeline(seconds) {
 .rio-monitor-stage{position:relative;flex:1;min-height:0}
 .rio-monitor-stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
 .rio-monitor-timecode{position:absolute;right:8px;top:8px;z-index:2;padding:2px 7px;border-radius:5px;background:#030a0ecc;color:var(--rio-cyan);font-size:11px;font-variant-numeric:tabular-nums;letter-spacing:.5px;pointer-events:none;text-shadow:0 0 8px #00e5f2aa}
+
+/* Workspace proportions follow the standalone editor; workflow feedback is in
+   the status popover so it does not take space from the canvas. */
+.rio-header{height:52px;min-height:52px;background:#070a10}
+.rio-brand .rio-status{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font:inherit;font-size:10px}
+.rio-status small{font-size:11px;color:inherit}
+.rio-status-panel{position:absolute;top:52px;left:16px;z-index:40;width:min(680px,calc(100vw - 32px));max-height:60vh;overflow:auto;border:1px solid #1c6273;border-radius:0 0 10px 10px;background:#0d1722;box-shadow:0 14px 35px #000a}
+.rio-status-panel .rio-guidance{font-size:12px}
+.rio-canvas{background-color:#070a10;background-image:linear-gradient(#0b273155 1px,transparent 1px),linear-gradient(90deg,#0b273155 1px,transparent 1px);background-size:20px 20px}
+.rio-assets{margin:10px 0 10px 10px;background:#0e121a}
+.rio-assets-head{height:46px;flex-shrink:0}
+.rio-add-media{font-size:11px;padding:5px;min-height:28px}
+.rio-node{display:flex;flex-direction:column;min-height:430px;background:#141824;border:1.5px solid #232d42;border-radius:12px}
+.rio-node.active{border-color:#00e5f2;box-shadow:0 0 0 1px #00e5f2,0 0 18px #00e5f244,0 16px 40px #000b}
+.rio-node-head{flex:none;height:39px;background:#ffffff03;border-color:#ffffff0f;cursor:move}
+.rio-node-head .rio-node-collapse{height:22px;min-width:22px;padding:0;border:1px solid #2a4059;border-radius:5px;font-size:14px;line-height:1}
+.rio-node-ratio.working{color:#fbbf24;border-color:#845d22;background:#f59e0b15}
+.rio-node-preview{flex:none;height:200px;margin:10px 12px 8px;width:calc(100% - 24px);border:1px solid #ffffff0d;background:#05070c;box-shadow:inset 0 0 20px #000b}
+.rio-node-preview b{font-size:23px;margin-bottom:8px}
+.rio-node-body{flex:1;padding:6px 12px 8px;min-height:0}
+.rio-node-body textarea{height:82px;min-height:82px;resize:vertical;background:#080c14;font-size:12px;line-height:1.5}
+.rio-prompt-heading{gap:5px;min-height:23px}
+.rio-prompt-heading label{flex:1;margin:0;font-weight:600}
+.rio-prompt-heading button{max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rio-node-actions{flex:none;gap:5px;padding:0 12px 11px;align-items:center;flex-wrap:wrap}
+.rio-node-actions button{min-width:0;min-height:28px;flex:1;white-space:nowrap;font-size:10px;padding:5px 6px}
+.rio-node-actions .rio-action-f0{background:#112a3a;color:#38bdf8;border-color:#265576}
+.rio-node-actions .rio-action-settings{background:#473054;color:#f2ddff;border-color:#ba5ce7}
+.rio-node-actions .rio-action-render{background:#10b981;color:#041911;border-color:#10b981}
+.rio-node-actions .rio-action-timeline{background:#0c1b29;color:#38bdf8;border-color:#265576}
+.rio-node.compact{min-height:39px;height:39px}
+.rio-port{top:50%;transform:translateY(-50%);width:24px;height:24px;border:3px solid #07090e;padding:0;z-index:3;cursor:pointer}
+.rio-port-in{left:-13px}.rio-port-out{right:-13px}
+.rio-port-reference{left:-13px;top:22%;color:#10b981;background:#10b981}
+.rio-port-ending{left:-13px;top:78%;color:#f59e0b;background:#f59e0b}
+.rio-node.compact .rio-port-reference,.rio-node.compact .rio-port-ending{display:none}
+.rio-minimap{top:16px;bottom:auto;right:16px;width:170px;height:110px;border-radius:9px;background:#0d1420eb;box-shadow:0 0 18px #00e5f21a}
+.rio-minimap .rio-minimap-content{position:absolute;inset:23px 8px 8px;width:auto;height:auto;background:none;border:0;overflow:hidden}
+.rio-minimap>span{left:0;right:0;top:0;padding:6px 9px;cursor:move;touch-action:none;font-size:10px;font-weight:700;letter-spacing:1px}
+.rio-minimap-viewport{border-color:#00e5f2;box-shadow:0 0 10px #00e5f255}
+.rio-canvas-controls{opacity:.65;padding:3px}
+.rio-canvas-controls:hover,.rio-canvas-controls:focus-within{opacity:1}
+.rio-bottom{gap:6px;padding:5px;background:#070a10}
+.rio-timeline{display:flex;flex-direction:column;background:#070b11}
+.rio-timeline-head{flex:none;min-height:40px;height:40px;gap:7px;padding:0 9px;background:#10131f}
+.rio-timeline-head .rio-tl-play{border-radius:20px;width:31px;height:27px;box-shadow:0 0 12px #00e5f233}
+.rio-timeline-head .rio-timeline-description{display:none}
+.rio-timeline-head .rio-timeline-spacer{flex:1;min-width:3px}
+.rio-timeline-head .rio-export{margin-left:auto;background:linear-gradient(100deg,#06b6d4,#8b5cf6);color:#080d17!important;min-height:28px;font-size:11px;border:0;box-shadow:0 0 12px #06b6d433}
+.rio-tl-zoom{flex:none;gap:4px;padding:3px 5px}
+.rio-tl-zoom input[type=range]{width:65px}
+.rio-ruler{height:23px;margin-left:48px}
+.rio-track>b{width:48px;flex-shrink:0}.rio-tl-needle{margin-left:0;transform:translateX(-50%)}
+.rio-track{height:61px}.rio-track-empty{font-size:11px;color:#637887}
+.rio-monitor{width:26%;min-width:220px;border-color:#00dcea;border-radius:9px;position:relative}
+.rio-monitor-head{position:absolute;top:5px;right:5px;z-index:3;padding:2px 5px;border:1px solid #135969;border-radius:4px;background:#030a0ecc;box-shadow:0 0 8px #00e5f244}
+.rio-monitor-head>span{display:none}
+.rio-monitor>img{height:100%;width:100%}
+.rio-monitor-timecode{display:none}
+@media(max-width:900px){.rio-timeline-head{overflow-x:auto}.rio-monitor{min-width:180px}.rio-tl-zoom input[type=range]{width:45px}.rio-minimap{width:140px;height:90px}}
+@media(max-width:640px){.rio-header-actions{max-width:62%}.rio-bottom{height:auto!important;max-height:40vh}.rio-monitor{min-height:120px;width:100%}.rio-minimap{width:110px;height:75px;right:8px;top:8px}}
+
+.rio-tool-overlay{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:20px;background:#03060bc9;backdrop-filter:blur(4px)}
+.rio-tool-dialog{width:min(760px,100%);max-height:90vh;overflow:auto;padding:20px;border:1px solid #24576c;border-radius:13px;background:#101722;color:#e7f2f7;font:13px/1.6 Inter,system-ui,sans-serif;box-shadow:0 20px 60px #000a}
+.rio-tool-dialog header,.rio-tool-dialog footer{display:flex;align-items:center;justify-content:space-between;gap:12px}.rio-tool-dialog header{color:#55e5f0}.rio-tool-dialog header button{font-size:24px}.rio-tool-dialog p{margin:14px 0;color:#a9bfcc}.rio-tool-dialog footer{margin-top:16px}.rio-tool-dialog button{padding:6px 10px;border:1px solid #23657c;border-radius:7px;background:#11313e;color:#86eff7}.rio-tool-dialog label{display:block;color:#a9bfcc;font-size:11px}.rio-tool-dialog input,.rio-tool-dialog select{display:block;width:100%;padding:8px;border:1px solid #2a4054;border-radius:6px;background:#090e17;color:#eff8ff}
+.rio-character-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #243645}.rio-character-row>:first-child{width:72px;min-width:72px;flex:0 0 72px}.rio-character-row>div{flex:1;min-width:100px}.rio-character-row strong{display:block;font-size:12px}.rio-export-options{max-width:480px}.rio-timeline-head{overflow-x:auto}.rio-timeline-head>button,.rio-tl-zoom,.rio-audio-add{flex-shrink:0}
+@media(max-width:640px){.rio-character-row{flex-wrap:wrap}.rio-tool-dialog{padding:14px}}
+
+.rio-versions{display:flex;flex-direction:column;overflow:hidden}.rio-versions>header{flex:none}.rio-versions :deep([data-test="video-shelf"]){display:flex;flex-direction:column;min-height:0;overflow:hidden}.rio-versions :deep(.video-shelf-grid){min-height:0;max-height:none;overflow-y:auto;flex:1}
 </style>

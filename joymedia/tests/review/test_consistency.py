@@ -8,6 +8,16 @@ from frappe.tests.utils import FrappeTestCase
 from joymedia.services.review import consistency
 
 
+def _streamed(content):
+	"""A vision answer as vLLM streams it."""
+	response = MagicMock(ok=True, status_code=200)
+	response.iter_lines.return_value = [
+		"data: " + json.dumps({"choices": [{"delta": {"content": content}}]}),
+		"data: [DONE]",
+	]
+	return response
+
+
 class TestChecks(FrappeTestCase):
 	def test_boolean_and_count_answers_cannot_impersonate_each_other(self):
 		for expected, answer in (
@@ -539,8 +549,7 @@ class TestAsk(FrappeTestCase):
 
 		buffer = io.BytesIO()
 		Image.new("RGB", (1600, 900), "white").save(buffer, "PNG")
-		reply = MagicMock()
-		reply.json.return_value = {"choices": [{"message": {"content": json.dumps({"count": 2})}}]}
+		reply = _streamed(json.dumps({"count": 2}))
 		with (
 			patch.dict(
 				frappe.conf,
@@ -568,13 +577,7 @@ class TestLocate(FrappeTestCase):
 		Image.new("RGB", (720, 1280), "white").save(buffer, "PNG")
 
 		def reply(box):
-			response = MagicMock()
-			response.json.return_value = {
-				"choices": [
-					{"message": {"content": f'```json\n[{{"bbox_2d": {box}, "label": "pack"}}]\n```'}}
-				]
-			}
-			return response
+			return _streamed(f'```json\n[{{"bbox_2d": {box}, "label": "pack"}}]\n```')
 
 		conf = {"qwen_vl_base_url": "http://vl:8002/v1", "qwen_vl_model": "vl"}
 		with (

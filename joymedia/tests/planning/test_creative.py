@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import ClassVar
 from unittest import TestCase
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -62,6 +62,17 @@ def sample_script():
 			},
 		],
 	}
+
+
+def _streamed(content):
+	"""A planner response as vLLM streams it: one content delta, then [DONE]."""
+	response = MagicMock(ok=True)
+	response.iter_lines.return_value = [
+		"data: " + json.dumps({"choices": [{"delta": {"content": content}}]}),
+		"",
+		"data: [DONE]",
+	]
+	return response
 
 
 class TestOpeningTextCrossCheck(TestCase):
@@ -649,15 +660,14 @@ class TestGeneratedScriptValidation(TestCase):
 			"required": ["value"],
 			"additionalProperties": False,
 		}
-		response = Mock(ok=True)
-		response.json.return_value = {"choices": [{"message": {"content": '{"value":"done"}'}}]}
+		response = _streamed('{"value":"done"}')
 		with (
 			patch(
 				"joymedia.services.runtime.endpoints.endpoint",
 				return_value=frappe._dict(base_url="http://planner/v1", model="configured", timeout=30),
 			),
 			patch("joymedia.services.planning.plan_parsing._completion_budget", return_value=100),
-			patch("joymedia.services.planning.production.requests.post", return_value=response) as post,
+			patch("joymedia.services.runtime.streaming.requests.post", return_value=response) as post,
 		):
 			_request_planner("Write the object.", system="JSON only.", max_tokens=100, response_schema=schema)
 		payload = post.call_args.kwargs["json"]
@@ -675,20 +685,48 @@ class TestGeneratedScriptValidation(TestCase):
 				return_value=frappe._dict(base_url="http://planner/v1", model="configured", timeout=30),
 			),
 			patch(
-				"joymedia.services.planning.production.requests.post",
+				"joymedia.services.runtime.streaming.requests.post",
 				side_effect=requests.ConnectionError("offline"),
 			),
 		):
 			with self.assertRaises(PlannerUnavailableError):
 				_request_planner("Write the object.", system="JSON only.", max_tokens=100)
 
+	def test_a_lost_planner_answer_is_detected_while_streaming_and_asked_once_more(self):
+		import requests
+
+		from joymedia.services.planning.production import PLANNER_IDLE_SECONDS, _request_planner
+
+		calls = []
+
+		def reply(*args, **kwargs):
+			calls.append(kwargs)
+			if len(calls) == 1:
+				raise requests.ConnectionError("Read timed out.")
+			return _streamed('{"value":"done"}')
+
+		with (
+			patch(
+				"joymedia.services.runtime.endpoints.endpoint",
+				return_value=frappe._dict(base_url="http://planner/v1", model="configured", timeout=600),
+			),
+			patch("joymedia.services.planning.plan_parsing._completion_budget", return_value=100),
+			patch("joymedia.services.runtime.streaming.requests.post", side_effect=reply),
+		):
+			self.assertEqual(
+				{"value": "done"}, _request_planner("Write the object.", system="JSON only.", max_tokens=100)
+			)
+		# Idle, not the whole 600 s answer budget, decides that an answer was lost.
+		self.assertEqual((10, PLANNER_IDLE_SECONDS), calls[0]["timeout"])
+		self.assertTrue(calls[0]["json"]["stream"])
+		# Same request both times: the seed makes the retried answer identical.
+		self.assertEqual(calls[0]["json"]["seed"], calls[1]["json"]["seed"])
+
 	def test_malformed_planner_json_gets_one_new_seed(self):
 		from joymedia.services.planning.production import _request_planner
 
-		bad = Mock(ok=True)
-		bad.json.return_value = {"choices": [{"message": {"content": "no json"}}]}
-		good = Mock(ok=True)
-		good.json.return_value = {"choices": [{"message": {"content": '{"value":"done"}'}}]}
+		bad = _streamed("no json")
+		good = _streamed('{"value":"done"}')
 		seeds = []
 
 		def reply(*args, **kwargs):
@@ -701,7 +739,7 @@ class TestGeneratedScriptValidation(TestCase):
 				return_value=frappe._dict(base_url="http://planner/v1", model="configured", timeout=30),
 			),
 			patch("joymedia.services.planning.plan_parsing._completion_budget", return_value=100),
-			patch("joymedia.services.planning.production.requests.post", side_effect=reply),
+			patch("joymedia.services.runtime.streaming.requests.post", side_effect=reply),
 		):
 			self.assertEqual(
 				{"value": "done"}, _request_planner("Write the object.", system="JSON only.", max_tokens=100)
@@ -852,6 +890,36 @@ class TestGeneratedScriptValidation(TestCase):
 					self.assertEqual(
 						[{"nonce": "old", "error": "Rejected draft"}], retried["script_attempts"]
 					)
+
+	def test_retry_after_a_pose_stop_resolves_those_scenes_instead_of_drawing_old_bindings(self):
+		from joymedia.api.creative import retry_product_variant
+
+		variant = {
+			"status": "Needs Attention",
+			"resume_stage": "Keyframes",
+			"project": "PRJ-1",
+			"script": {"scenes": [{"cast": ["bear"]}, {"cast": ["bear"]}, {"cast": []}]},
+			"pose_views": [{"scene": 1, "status": "deferred"}, {"scene": 2, "status": "ready"}],
+		}
+		batch = Mock(name="batch", status="Needs Attention", variants_json=json.dumps([variant]))
+		batch.name = "BATCH"
+		with (
+			patch("frappe.get_doc", return_value=batch),
+			patch("frappe.get_all", return_value=[]),
+			patch.object(frappe.cache, "lock"),
+			patch.object(frappe.db, "commit"),
+			patch.object(frappe.db, "set_value") as save,
+			patch("frappe.enqueue") as enqueue,
+			patch(
+				"joymedia.services.generation.creative_batch._planning_queue",
+				return_value="joymedia_planning",
+			),
+		):
+			result = retry_product_variant(batch.name, 1)
+		self.assertEqual("Rewriting", result["status"])
+		self.assertIn("rewrite_scenes_in_place", enqueue.call_args.args[0])
+		retried = json.loads(save.call_args.args[2]["variants_json"])[0]
+		self.assertEqual({"pose_scenes": [1], "by": "Retry"}, retried["scene_revision"])
 
 	def test_final_automatic_script_retry_uses_advisory_fallback_once(self):
 		from joymedia.services.generation.creative_batch import (
@@ -2280,6 +2348,73 @@ class TestCreativeWorkflow(FrappeTestCase):
 		self.assertEqual("Rewriting", variant["status"])
 		self.assertEqual(self.project.name, variant["project"])  # same project, pictures kept
 		self.assertIn("rewrite_scenes_in_place", enqueue.call_args.args[0])
+
+	def test_pose_only_rewrite_keeps_the_script_and_requalifies_the_named_scenes(self):
+		from joymedia.services.generation import creative_batch as cb
+
+		batch = self.batch()
+		variants = frappe.parse_json(batch.variants_json)
+		script = sample_script()
+		variants[0].update(
+			status="Rewriting",
+			project=self.project.name,
+			script=script,
+			scene_revision={"pose_scenes": [1], "by": "Retry"},
+		)
+		frappe.db.set_value("Creative Batch", batch.name, "variants_json", frappe.as_json(variants))
+		deferred = [{"scene": 1, "source": "x", "pose": "standing", "status": "deferred"}]
+		with (
+			patch("joymedia.services.planning.creative.draft_script", side_effect=AssertionError) as draft,
+			patch(
+				"joymedia.services.planning.pose_assets.prepare_script_pose_views", return_value=deferred
+			) as prepare,
+			patch("frappe.log_error"),
+			# The job's error path rolls back; keep this test's uncommitted fixture.
+			patch.object(frappe.db, "rollback"),
+		):
+			script["scenes"][0]["cast"] = script["scenes"][0].get("cast") or ["x"]
+			variants[0]["script"] = script
+			frappe.db.set_value("Creative Batch", batch.name, "variants_json", frappe.as_json(variants))
+			cb.rewrite_scenes_in_place(batch.name, 0)
+		draft.assert_not_called()
+		prepare.assert_called_once()
+		variant = frappe.parse_json(frappe.db.get_value("Creative Batch", batch.name, "variants_json"))[0]
+		# Still no qualified pose with that support: the run stops again, with its evidence.
+		self.assertEqual(("Needs Attention", "Keyframes"), (variant["status"], variant["resume_stage"]))
+		self.assertIn("could not be verified", variant["error"])
+
+	def test_an_interrupted_pose_retry_never_continues_to_old_first_frames(self):
+		from joymedia.services.generation import creative_batch as cb
+		from joymedia.services.workflows.comfyui import ComfyJobLostError
+
+		batch = self.batch()
+		variants = frappe.parse_json(batch.variants_json)
+		script = sample_script()
+		script["scenes"][0]["cast"] = script["scenes"][0].get("cast") or ["x"]
+		request = frappe.parse_json(batch.request_json)
+		request["delivery_mode"] = "automatic"
+		variants[0].update(
+			status="Rewriting",
+			project=self.project.name,
+			script=script,
+			scene_revision={"pose_scenes": [1], "by": "Retry"},
+		)
+		frappe.db.set_value(
+			"Creative Batch",
+			batch.name,
+			{"variants_json": frappe.as_json(variants), "request_json": frappe.as_json(request)},
+		)
+		with (
+			patch(
+				"joymedia.services.planning.pose_assets.prepare_script_pose_views",
+				side_effect=ComfyJobLostError("ComfyUI job x disappeared from its queue and history."),
+			),
+			patch("frappe.log_error"),
+			patch.object(frappe.db, "rollback"),
+		):
+			cb.rewrite_scenes_in_place(batch.name, 0)
+		variant = frappe.parse_json(frappe.db.get_value("Creative Batch", batch.name, "variants_json"))[0]
+		self.assertEqual(("Needs Attention", "Keyframes"), (variant["status"], variant["resume_stage"]))
 
 	def test_reviewer_approves_pictures_or_redraws_one(self):
 		from joymedia.services.generation.creative_batch import (
