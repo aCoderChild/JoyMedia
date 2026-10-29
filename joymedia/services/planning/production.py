@@ -1233,7 +1233,29 @@ PRODUCT_CONTAINER_WORDS = frozenset(
 )
 
 
-def _without_unauthored_package(image_prompt, notes):
+def _visible_package_words(text):
+	"""Explicitly offscreen packages and negative instructions do not add visible inventory."""
+	words = set()
+	for clause in re.split(r"[.!?;\n]+", str(text or "").split("Product orientation is locked", 1)[0]):
+		if re.search(
+			r"\boff[- ]?screen\b|\bout of (?:the )?(?:frame|view)\b|\boutside (?:the )?(?:close[- ]?up|frame|view)\b",
+			clause,
+			re.I,
+		):
+			continue
+		clause = re.sub(
+			r"\b(?:no|without|never show|do not show)\s+(?:a\s+|any\s+|the\s+)?"
+			r"(?:pack(?:et|age)?s?|box(?:es)?|cartons?|dispensers?|bottles?|tubes?|pouches?|containers?)\b",
+			"",
+			clause,
+			flags=re.I,
+		)
+		words.update(_words(clause.casefold(), minimum=1))
+	containers = PRODUCT_CONTAINER_WORDS - {"product", "branded"}
+	return words & (containers | {name + "s" for name in containers} | {"boxes", "pouches"})
+
+
+def _without_unauthored_package(image_prompt, notes, *, description="opening still"):
 	"""Remove a package the planner carried into a scene whose roster has none.
 
 	Unbound, the image model drew an invented branded bag for "holding a tissue
@@ -1242,15 +1264,15 @@ def _without_unauthored_package(image_prompt, notes):
 	"""
 	text = str(image_prompt or "")
 	# The product-lock contract appended to a prompt is not the planner naming a package.
-	described = text.split("Product orientation is locked")[0]
-	if not (_words(described.casefold()) & (PRODUCT_CONTAINER_WORDS - {"product", "branded"})):
+	if not _visible_package_words(text):
 		return text
 	try:
 		answer = _ask_planner(
-			"Rewrite this opening still without any package, pack, box or container: this scene's script "
+			f"Rewrite this {description} without any package, pack, box or container: this scene's script "
 			"shows none. Keep every other subject, any loose item it names, the place, framing and each "
-			"body's support. Return JSON image_prompt string. Source: " + text,
-			system="You remove an unauthored product package from an opening still.",
+			"body's support. Preserve the action order and whether this is a starting or ending state. "
+			"Return JSON image_prompt string. Source: " + text,
+			system=f"You remove an unauthored product package from a {description}.",
 			capability="planner",
 			sampling_profile="production_plan",
 			response_schema={
@@ -1263,10 +1285,10 @@ def _without_unauthored_package(image_prompt, notes):
 		rewritten = " ".join(str((answer or {}).get("image_prompt") or "").split())
 	except Exception:
 		rewritten = ""
-	if rewritten and not (_words(rewritten.casefold()) & (PRODUCT_CONTAINER_WORDS - {"product", "branded"})):
-		notes.append("Removed a package the script does not show from the opening still.")
+	if rewritten and not _visible_package_words(rewritten):
+		notes.append(f"Removed a package the script does not show from the {description}.")
 		return rewritten
-	notes.append("The opening still names a package the script does not show.")
+	notes.append(f"The {description} names a package the script does not show.")
 	return text
 
 
@@ -1282,13 +1304,25 @@ def ground_visible_product_keys(project, plan, keys, references, *, beat=None):
 	# without its container. Generic product-lock instructions in the planner's
 	# prompt are not evidence that the package belongs in that opening frame.
 	if beat is not None and beat.get("products") == []:
-		authored = " ".join(str(beat.get(field) or "") for field in ("raw", "camera", "action"))
-		if not (_words(authored) & (PRODUCT_CONTAINER_WORDS - {"product", "branded"})):
+		authored = " ".join(str(beat.get(field) or "") for field in ("raw", "camera", "action", "rules"))
+		if not _visible_package_words(authored):
 			product_keys = {
 				reference["key"] for reference in references if reference.get("role") == "Product"
 			}
 			notes = []
-			plan["image_prompt"] = _without_unauthored_package(plan.get("image_prompt"), notes)
+			for field, description in (
+				("image_prompt", "opening still"),
+				("start_state", "starting state"),
+				("end_state", "ending state"),
+				("video_prompt", "motion direction"),
+			):
+				if not plan.get(field):
+					continue
+				plan[field] = _without_unauthored_package(plan[field], notes, description=description)
+				if _visible_package_words(plan[field]):
+					raise ValueError(
+						f"The {description} still introduces a package absent from the scene's product roster."
+					)
 			return [key for key in keys if key not in product_keys], notes
 	text = " ".join(
 		str(plan.get(field) or "") for field in ("image_prompt", "video_prompt", "start_state", "end_state")

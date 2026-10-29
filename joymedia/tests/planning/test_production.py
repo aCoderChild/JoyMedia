@@ -1145,6 +1145,65 @@ class TestReferenceOptions(FrappeTestCase):
 
 
 class TestUnauthoredPackage(FrappeTestCase):
+	def test_offscreen_and_excluded_packages_do_not_expand_visible_inventory(self):
+		from joymedia.services.planning.production import _visible_package_words
+
+		for text in (
+			"The pack stays outside the close-up.",
+			"Mascot holds one loose tissue, without any box.",
+			"No packages. Show the folded paper.",
+		):
+			with self.subTest(text=text):
+				self.assertFalse(_visible_package_words(text))
+		self.assertTrue(_visible_package_words("Two boxes stand beside the mascot."))
+		self.assertTrue(_visible_package_words("No fur on the mascot, which holds a box."))
+
+	def test_empty_product_roster_constrains_both_boundaries_and_motion(self):
+		from joymedia.services.planning.production import ground_visible_product_keys
+
+		plan = {
+			"image_prompt": "Seated mascot holding a tissue on the rug.",
+			"start_state": "Seated mascot beside an open pack, holding a tissue on the rug.",
+			"end_state": "Seated mascot holding a folded tissue beside the box on the rug.",
+			"video_prompt": "The seated mascot folds the tissue beside the pack.",
+		}
+		with patch(
+			"joymedia.services.planning.production._ask_planner",
+			side_effect=[
+				{"image_prompt": "Seated mascot holding a tissue on the rug."},
+				{"image_prompt": "Seated mascot holding a folded tissue on the rug."},
+				{"image_prompt": "The seated mascot folds the tissue."},
+			],
+		) as rewrite:
+			keys, notes = ground_visible_product_keys(
+				frappe._dict(),
+				plan,
+				["mascot", "pack"],
+				[{"key": "pack", "role": "Product"}],
+				beat={"products": [], "camera": "Seated mascot holds a loose tissue on the rug."},
+			)
+		self.assertEqual(["mascot"], keys)
+		self.assertEqual(3, rewrite.call_count)
+		self.assertEqual(3, len(notes))
+		self.assertIn("folded tissue", plan["end_state"])
+		self.assertIn("rug", plan["start_state"])
+		self.assertEqual("The seated mascot folds the tissue.", plan["video_prompt"])
+
+	def test_failed_package_removal_cannot_leave_unbound_boundary_objects(self):
+		from joymedia.services.planning.production import ground_visible_product_keys
+
+		with (
+			patch("joymedia.services.planning.production._ask_planner", side_effect=RuntimeError("offline")),
+			self.assertRaisesRegex(ValueError, "starting state.*absent"),
+		):
+			ground_visible_product_keys(
+				frappe._dict(),
+				{"image_prompt": "Mascot holding a tissue.", "start_state": "Mascot beside a pack."},
+				["mascot"],
+				[],
+				beat={"products": [], "camera": "Mascot holding a loose tissue."},
+			)
+
 	def test_a_package_the_script_does_not_show_is_removed_from_the_opening_still(self):
 		from joymedia.services.planning.production import _without_unauthored_package
 

@@ -27,6 +27,14 @@ alongside the actual bindings. Caption refresh preserves pose qualifications,
 product-angle provenance, negative verification flags and the empty-environment
 contract; recaptioning must not turn an inferred angle into a supplied photo.
 
+For a declared loose-consumable scene with no package, production planning checks
+the opening image, starting state, ending state and motion direction for a carried-over
+container. It attempts a bounded rewrite that retains the loose paper, actor pose,
+support and action order. If the package remains, planning fails before execution.
+An explicitly offscreen package or an instruction excluding packages does not add
+visible inventory. This prevents the preceding shot's package from contradicting
+the current scene's reference map through its state boundaries.
+
 Generated room plates have an empty physical cast. Their prompts contain
 architecture, furnishings, lighting and support-space requirements, without future
 actor performances or character-reference styling. Physical people/characters in
