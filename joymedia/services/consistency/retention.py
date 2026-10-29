@@ -391,15 +391,29 @@ def authored_static_product_hold(scene):
 	plan = scene.get("motion_plan_json") or {}
 	plan = json.loads(plan) if isinstance(plan, str) else plan
 	actions = plan.get("actions") or []
-	return bool(actions) and all(
-		re.fullmatch(
+	structure = plan.get("shot_structure") or {}
+
+	def stationary_action(row):
+		text = str(row.get("action") or "").strip()
+		if re.fullmatch(
 			r"The original product (?:remains|stays) in its (?:established|opening) position "
 			r"(?:with its printed artwork intact|with unchanged visible artwork and support)\.?",
-			str(row.get("action") or "").strip(),
+			text,
 			re.I,
+		):
+			return True
+		# A branded product name need not be rewritten to the literal words
+		# "original product" before its explicit static state can be executed.
+		# No extra clause, camera-only instruction or transformation is accepted.
+		return structure.get("subject_motion") == "stationary" and bool(
+			re.fullmatch(
+				r"(?!.*\bcamera\b)[^.!?;\n]{1,120}\s+(?:remains|stays)\s+(?:stationary|still)\.?",
+				text,
+				re.I,
+			)
 		)
-		for row in actions
-	)
+
+	return bool(actions) and all(stationary_action(row) for row in actions)
 
 
 def is_static_presentation(scene):

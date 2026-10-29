@@ -123,6 +123,17 @@ class TestPromptScope(TestCase):
 		}
 		self.assertTrue(authored_static_product_hold(scene))
 		self.assertFalse(is_static_presentation(scene))
+		scene["motion_plan_json"]["shot_structure"] = {"subject_motion": "stationary"}
+		for action, expected in (
+			("The Sample Brand pack remains stationary.", True),
+			("The Sample Brand pack remains stationary while its lid opens.", False),
+			("The camera remains stationary.", False),
+		):
+			scene["motion_plan_json"]["actions"][0]["action"] = action
+			self.assertEqual(expected, authored_static_product_hold(scene))
+		scene["motion_plan_json"]["actions"][0]["action"] = (
+			"The original product remains in its established position with its printed artwork intact."
+		)
 		scene["effective_camera_behavior"] = "locked"
 		self.assertTrue(is_static_presentation(scene))
 		scene["motion_plan_json"]["actions"][0]["action"] = (

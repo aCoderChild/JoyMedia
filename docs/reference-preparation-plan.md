@@ -207,3 +207,9 @@ A live revised environment render removed the sofas/table and produced clear
 grey floor. The machine setting check passed, but visual inspection found
 unrequested wall art. The remaining positive wall-art instruction is removed;
 that diagnostic stays machine-qualified only, not visually approved.
+
+Native source-hold recognition now also accepts an explicitly stationary
+product named by its brand, when its structured subject state is stationary.
+It rejects camera-only statements, additional transformation clauses and actor
+scenes. This closes the gap between a correct static screenplay and the literal
+canonical action used by the source renderer. 18 scope/camera checks passed.
