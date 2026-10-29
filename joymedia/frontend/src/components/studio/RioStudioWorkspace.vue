@@ -169,6 +169,7 @@
 				<header><strong>🎭 {{ t('CHARACTER REFERENCES & IDENTITY', 'TƯ LIỆU & NHẬN DẠNG NHÂN VẬT') }}</strong><button :aria-label="t('Close', 'Đóng')" @click="charactersOpen = false">×</button></header>
 				<p>{{ t('Give pictures of the same character the same identity tag. Assign a reference to a scene before generating its images.', 'Đặt cùng thẻ nhận dạng cho các ảnh của một nhân vật. Gán tư liệu cho cảnh trước khi tạo ảnh.') }}</p>
 				<ReferenceRegistry :registry="automaticVariant?.reference_registry" :scenes="automaticVariant?.scene_reference_map" />
+				<ReferencePreparation :plan="automaticVariant?.reference_plan" :bridges="automaticVariant?.reference_bridges" />
 				<p v-if="!characterAssets.length">{{ t('Add a character picture to the project, then set its category to Character.', 'Thêm ảnh nhân vật vào dự án, rồi chọn danh mục Nhân vật.') }}</p>
 				<div v-for="asset in characterAssets" :key="asset.asset_version" class="rio-character-row">
 					<MediaThumbnail :src="asset.file" media-type="Image" :alt="asset.display_name" aspect="aspect-square" :contain="true" />
@@ -228,6 +229,7 @@ import ProjectStages from './ProjectStages.vue';
 import StudioEffectsDialog from './StudioEffectsDialog.vue';
 import CreativeBatchPanel from './CreativeBatchPanel.vue';
 import ReferenceRegistry from './ReferenceRegistry.vue';
+import ReferencePreparation from './ReferencePreparation.vue';
 import { useTimelinePreviewEngine } from '../../composables/useTimelinePreviewEngine.js';
 import { groupAssets } from '../../utils/assetPresentation.js';
 import { clipAtSeconds, layoutAudioLanes, orderTimelineClips, shotIndexForClip, sourceSecondsForTimeline, timelineCut } from '../../utils/rioTimeline.js';

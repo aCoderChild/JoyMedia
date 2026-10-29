@@ -737,11 +737,18 @@ def draw_project_places(project_name, shot_names, user):
 	# a reachable table, chair or floor. Give the environment renderer the
 	# actual opening compositions so it cannot silently substitute a bedroom.
 	staging_by_key = {}
+	from joymedia.services.planning.reference_plan import environment_staging
+
+	preparation = (frappe.parse_json(project.storyboard_source_json or "{}") or {}).get(
+		"reference_preparation_plan"
+	)
 	for shot in shots:
 		key = place_key(project, shot.setting_prompt)
 		opening = _location_staging(shot)
-		if opening and key not in staging_by_key:
-			staging_by_key[key] = opening
+		objects = environment_staging(preparation, int(shot.shot_number or 0))
+		staging = "; ".join(part for part in (opening, objects) if part)
+		if staging and staging not in staging_by_key.get(key, ""):
+			staging_by_key[key] = "; ".join(part for part in (staging_by_key.get(key), staging) if part)
 	for key, setting, view in wanted:
 		try:
 			staging = staging_by_key.get(key, "")

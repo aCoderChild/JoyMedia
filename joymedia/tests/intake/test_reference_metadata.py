@@ -23,6 +23,7 @@ class TestReferenceMetadata(TestCase):
 			"qualified_pose_view": "front",
 			"pose_qualification_version": 2,
 			"environment_contract": {"physical_cast": []},
+			"preparation_bridge": {"file": "/private/bridge.mp4", "timestamp": 2.5, "frame_sha256": "frame"},
 		}
 		with (
 			patch.object(

@@ -35,8 +35,6 @@ from joymedia.services.project.reference_lineage import lineage_identity
 
 class TestPoseCoverage(TestCase):
 	def test_masked_pose_with_lost_traits_is_not_saved_as_character_media(self):
-		from unittest.mock import Mock
-
 		from joymedia.services.planning.pose_assets import _save_pose_view
 
 		with (
@@ -59,7 +57,7 @@ class TestPoseCoverage(TestCase):
 		):
 			with self.assertRaisesRegex(ValueError, "final masked pose"):
 				_save_pose_view(
-					Mock(),
+					frappe._dict(name="project"),
 					frappe._dict(asset_version="start", identity_key="actor"),
 					"actor",
 					"seated",

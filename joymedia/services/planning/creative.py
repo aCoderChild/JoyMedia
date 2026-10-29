@@ -774,6 +774,24 @@ def script_schema(inventory, constraints):
 		],
 		"description": "Opening angle of the visible hero product, separate from the room camera. Use source when no different package orientation is required or the product is absent. Specify a different angle only when the opening frame needs it; unseen print remains unverified.",
 	}
+	scene["environment_entities"] = {
+		"type": "array",
+		"maxItems": 20,
+		"description": "List the setting's supports, furniture, background objects and working props/materials. Exclude actors and the advertised package. Each name must occur inside source_quote, which must be copied exactly from this scene's place, visual_camera, action or continuity_rules. Do not invent an object to fill the list.",
+		"items": {
+			"type": "object",
+			"additionalProperties": False,
+			"required": ["name", "kind", "source_quote"],
+			"properties": {
+				"name": text,
+				"kind": {
+					"type": "string",
+					"enum": ["support", "furnishing", "background", "working_prop", "material"],
+				},
+				"source_quote": text,
+			},
+		},
+	}
 	scene["visible_change"] = {
 		**text,
 		"description": "The observable end-state change caused by this shot's actions, after their prerequisites.",
@@ -1300,6 +1318,7 @@ def draft_script(
 				result, constraints["duration_seconds"], fps, max_scene_frames=constraints["max_scene_frames"]
 			)
 			from joymedia.services.planning.product_views import apply_requested_view_sequence
+			from joymedia.services.planning.reference_plan import ground_generated_inventory
 
 			apply_requested_view_sequence(script, constraints.get("creative_direction"))
 			wording = (
@@ -1309,6 +1328,7 @@ def draft_script(
 				+ normalize_static_final_packshot(script)
 				+ normalize_early_closing_beat(script)
 				+ fresh_example_copies(script, constraints)
+				+ ground_generated_inventory(script)
 			)
 			# Keep the complete proposal for repair even when semantic validation
 			# rejects it; detached error messages otherwise recreate the same defect.
@@ -2208,6 +2228,12 @@ def validate_script(script, inventory, constraints, advisory=None):
 	for scene_index, scene in enumerate(script["scenes"]):
 		if not isinstance(scene, dict):
 			raise ValueError("Each scene must be an object.")
+		from joymedia.services.planning.reference_plan import environment_entities
+
+		try:
+			environment_entities(scene)
+		except ValueError as exc:
+			raise ValueError(f"Scene {scene_index + 1}: {exc}") from exc
 		duration = scene.get("duration_seconds")
 		if type(duration) not in (int, float) or not math.isfinite(duration) or not 0 < duration <= 30:
 			raise ValueError("Scene duration must be finite, positive and at most thirty seconds.")

@@ -337,6 +337,21 @@ def get_product_batch(batch_name):
 	request = frappe.parse_json(batch.request_json or "{}")
 	for variant in variants:
 		variant["prepared_assets"] = _prepared_assets(variant)
+		variant["reference_bridges"] = (
+			frappe.get_all(
+				"File",
+				filters={
+					"attached_to_doctype": "Media Project",
+					"attached_to_name": variant.get("project") or "",
+					"file_name": ["like", "reference-bridge-%.mp4"],
+				},
+				fields=["file_name", "file_url"],
+				order_by="creation desc",
+				limit=12,
+			)
+			if variant.get("project")
+			else []
+		)
 		if variant.get("project"):
 			from joymedia.services.scene.registry import project_reference_registry, scene_reference_bindings
 

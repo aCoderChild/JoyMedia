@@ -19,6 +19,7 @@
         <p v-if="nextStep(batch, variant).detail" class="text-xs mt-0.5 opacity-80">{{ nextStep(batch, variant).detail }}</p>
       </div>
       <ReferenceRegistry :registry="variant.reference_registry" :scenes="variant.scene_reference_map" />
+      <ReferencePreparation :plan="variant.reference_plan" :bridges="variant.reference_bridges" />
       <details v-if="variant.prepared_assets?.length" class="rounded-lg border border-outline-border p-3" data-test="prepared-assets">
         <summary class="cursor-pointer font-medium">{{ tr('Prepared product views and character poses', 'Góc sản phẩm và tư thế nhân vật đã chuẩn bị') }}</summary>
         <ul class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -188,6 +189,7 @@ import { call } from 'frappe-ui';
 import { tr } from '../../stores/i18n';
 import { errorMessage } from '../../utils/errors';
 import ReferenceRegistry from './ReferenceRegistry.vue';
+import ReferencePreparation from './ReferencePreparation.vue';
 // `focus` is the one video whose details are shown; the shelf above chooses it.
 const props = defineProps({ project: { type: String, required: true }, focus: { type: String, default: '' } });
 const emit = defineEmits(['loaded', 'show-video']);

@@ -1,7 +1,7 @@
 """Prepare reusable character poses after the director script, before visual storyboards.
 
-Uses the project's registered Klein image workflow and its native character
-reference binding. CharacterPose's reference -> pose-library -> scene workflow
+Uses H3 preparation clips by default, with a qualified image-workflow fallback.
+CharacterPose's reference -> pose-library -> scene workflow
 inspired this stage; its sprite-specific nodes are deliberately not loaded into
 the 3D mascot renderer. Generated images are selectable views of the same
 identity, never replacements for the customer's original photograph.
@@ -687,49 +687,29 @@ def _pose_view_from_h3(project, source, pose_description, angle):
 			output_prefix=f"joymedia/poses/{frappe.generate_hash(length=10)}",
 		)
 		video = run_workflow_to_bytes(graph, output, forget=True)
-		with tempfile.TemporaryDirectory(prefix="joymedia-h3-pose-") as temp_dir:
-			video_path = Path(temp_dir) / "pose.mp4"
-			video_path.write_bytes(video)
-			# The requested pose can appear before the end and then drift. Inspect a
-			# bounded sequence through the transition, late frames first, using the
-			# actual requested clip length rather than fixed timestamps.
-			duration = max(0.1, (frame_count - 1) / float(workflow.output_fps or 24))
-			for fraction in (0.95, 0.82, 0.69, 0.56, 0.43, 0.30):
-				second = round(duration * fraction, 3)
-				frame_path = Path(temp_dir) / "candidate.png"
-				frame_path.unlink(missing_ok=True)
-				try:
-					result = subprocess.run(
-						[
-							"ffmpeg",
-							"-hide_banner",
-							"-loglevel",
-							"error",
-							"-y",
-							"-ss",
-							str(second),
-							"-i",
-							str(video_path),
-							"-frames:v",
-							"1",
-							str(frame_path),
-						],
-						capture_output=True,
-						timeout=60,
-					)
-				except subprocess.TimeoutExpired:
-					# A stalled extraction says nothing about the pose; try the next frame.
-					continue
-				if result.returncode or not frame_path.exists():
-					continue
-				content = frame_path.read_bytes()
-				try:
-					if _accept_pose_view(
-						content, file_url, pose_description, angle, identity_image=identity["file"]
-					):
-						return content
-				except Exception:
-					frappe.log_error(title="H3 pose observation unavailable; candidate not accepted")
+		from joymedia.services.planning.reference_bridges import record_sample, sample_bridge, store_bridge
+
+		seed = int(
+			hashlib.sha256(
+				f"{identity_source.asset_version}:{pose_description}:{angle}:{attempt}".encode()
+			).hexdigest()[:12],
+			16,
+		)
+		bridge = store_bridge(
+			project, identity_source, identity, workflow, video, prompt=prompt, seed=seed, purpose="character"
+		)
+		for content, second in sample_bridge(bridge):
+			try:
+				qualified = _accept_pose_view(
+					content, file_url, pose_description, angle, identity_image=identity["file"]
+				)
+			except Exception:
+				frappe.log_error(title="H3 pose observation unavailable; candidate not accepted")
+				qualified = False
+			record_sample(bridge, content, second, qualified)
+			if qualified:
+				return content
+
 	raise ValueError(f"H3 did not produce a qualified pose view: {pose_description}")
 
 
@@ -1340,6 +1320,9 @@ def _save_pose_view(project, source, cast_key, pose, angle, content):
 	identity = original_reference(source.asset_version)
 	source_url = identity["file"]
 	identity_appearance = character_look(source_url) if source_url else {}
+	from joymedia.services.planning.reference_bridges import frame_provenance
+
+	bridge_provenance = frame_provenance(project, content)
 	from joymedia.services.intake.subject_cutout import cutout_studio_reference, sam2_configured
 
 	mask_evidence = None
@@ -1386,6 +1369,7 @@ def _save_pose_view(project, source, cast_key, pose, angle, content):
 					"source_asset_version": source.asset_version,
 					"identity_source_asset_version": identity["asset_version"],
 					"identity_source_sha256": identity["content_hash"],
+					"preparation_bridge": bridge_provenance,
 					"subject_cutout": mask_evidence,
 				}
 			),
@@ -1411,7 +1395,7 @@ def _save_pose_view(project, source, cast_key, pose, angle, content):
 	return project.selected_media[-1]
 
 
-def prepare_script_pose_views(project, script, _retry_deferred=True):
+def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=None):
 	"""Resolve script-required character states before importing the storyboard."""
 	from joymedia.services.project.reference_lineage import lineage_identity
 
@@ -1449,6 +1433,8 @@ def prepare_script_pose_views(project, script, _retry_deferred=True):
 		]
 	from joymedia.services.planning.pose_coverage import source_pose_state
 
+	if on_plan:
+		on_plan(states)
 	prepared = []
 	failed_pose_keys = {}
 	# Gesture variants of one body support (a paw near a pack, near a tissue) fail

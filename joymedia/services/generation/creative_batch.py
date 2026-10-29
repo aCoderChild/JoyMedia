@@ -1301,6 +1301,18 @@ def _prepare_batch_locked(batch_name, position=None):
 				if not _write(batch.name, variants, "Planning", changed_index=index):
 					return
 			script = variant["script"]
+			if not variant.get("workbook"):
+				from joymedia.services.planning.product_views import apply_requested_view_sequence
+				from joymedia.services.planning.reference_plan import build_reference_plan, script_fingerprint
+				from joymedia.services.scene.registry import project_reference_registry
+
+				apply_requested_view_sequence(script, request.get("direction") or project.video_idea)
+				if (variant.get("reference_plan") or {}).get("script_sha256") != script_fingerprint(script):
+					variant["reference_plan"] = build_reference_plan(
+						script, project_reference_registry(project)
+					)
+					if not _write(batch.name, variants, "Planning", changed_index=index):
+						return
 			# Check saved scripts on resume as well as newly generated drafts.
 			# Retries must not bypass a newly enforced physical consistency gate.
 			blocking_defects = _blocking_script_defects(script)
@@ -1340,6 +1352,7 @@ def _prepare_batch_locked(batch_name, position=None):
 				# before the storyboard binds product media to individual frames.
 				apply_requested_view_sequence(script, request.get("direction") or project.video_idea)
 				variant["product_views"] = prepare_script_product_views(project, script)
+				variant["reference_plan"]["prepared_products"] = variant["product_views"]
 				from joymedia.services.planning.product_views import prepare_script_product_cutouts
 
 				variant["product_cutouts"] = prepare_script_product_cutouts(project, script)
@@ -1370,7 +1383,12 @@ def _prepare_batch_locked(batch_name, position=None):
 				# The director has named every action. Prepare missing reusable
 				# character poses now, before the text storyboard is imported and
 				# before any scene first frame or H3 job is submitted.
-				variant["pose_views"] = prepare_script_pose_views(project, script)
+				def record_pose_plan(states):
+					variant["reference_plan"]["pose_requirements"] = states
+					_write(batch.name, variants, "Planning", changed_index=index)
+
+				variant["pose_views"] = prepare_script_pose_views(project, script, on_plan=record_pose_plan)
+				variant["reference_plan"]["prepared_poses"] = variant["pose_views"]
 				variant["pose_prepared"] = True
 				pose_defects = _pose_transition_defects(script, variant["pose_views"])
 				if pose_defects:
@@ -1391,6 +1409,9 @@ def _prepare_batch_locked(batch_name, position=None):
 				if not _write(batch.name, variants, "Planning", changed_index=index):
 					return
 			if not variant.get("workbook"):
+				variant["reference_plan"]["prepared_products"] = variant.get("product_views") or []
+				variant["reference_plan"]["prepared_poses"] = variant.get("pose_views") or []
+				variant["reference_plan"]["script_sha256"] = script_fingerprint(script)
 				file = save_file(
 					f"{batch.name}-variant-{index + 1}.xlsx",
 					script_workbook(script, project),
@@ -1406,6 +1427,7 @@ def _prepare_batch_locked(batch_name, position=None):
 				# resolves them against action, framing and available endpoints.
 				source = frappe.parse_json(project.storyboard_source_json or "{}") or {}
 				source["generation_origin"] = "ai_director"
+				source["reference_preparation_plan"] = variant.get("reference_plan")
 				project.db_set("storyboard_source_json", frappe.as_json(source))
 				project.storyboard_source_json = frappe.as_json(source)
 				project.soundtrack_prompt = script["music"]

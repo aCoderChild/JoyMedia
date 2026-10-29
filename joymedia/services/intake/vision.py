@@ -144,6 +144,7 @@ def analyse_asset_version(asset_version_name, as_product=False):
 		"identity_appearance",
 		"identity_source_asset_version",
 		"identity_source_sha256",
+		"preparation_bridge",
 		"environment_contract",
 		"product_view",
 		"product_view_status",

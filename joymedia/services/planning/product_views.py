@@ -490,7 +490,7 @@ def _candidate_matches_requested_view(candidate, view):
 
 
 def _generate_candidate(project, source, view):
-	"""Generate a product-only novel-view candidate with the configured image workflow."""
+	"""Try H3 product-view candidates, respecting an explicit image-workflow override."""
 	from joymedia.services.keyframes.locations import _keyframe_workflow
 	from joymedia.services.project.context import _project_settings
 	from joymedia.services.project.formats import preparation_dimensions
@@ -499,16 +499,32 @@ def _generate_candidate(project, source, view):
 	from joymedia.workflow_adapters import get_workflow_adapter
 
 	configured = frappe.conf.get("joymedia_product_view_workflow")
-	workflow = (
-		frappe.get_doc("Generation Workflow", configured) if configured else _keyframe_workflow(project)
-	)
-	if not any(row["role"] == "product" for row in get_workflow_input_contract(workflow)):
-		raise ValueError("The selected product-view workflow lacks a product reference input.")
 	source_url = frappe.db.get_value("Asset Version", source.asset_version, "file")
 	if not source_url:
 		raise ValueError("The product source has no image file.")
 	identity = original_reference(source.asset_version)
 	identity_path = frappe.get_doc("File", {"file_url": identity["file"]}).get_full_path()
+
+	def accepts(content):
+		return (
+			_palette_retained(identity_path, content)
+			and _candidate_matches_visible_source(identity["file"], content)
+			and _candidate_matches_requested_view(content, view)
+			and _candidate_physically_plausible(identity["file"], content)
+		)
+
+	if not configured:
+		from joymedia.services.planning.reference_bridges import product_view_from_h3
+
+		try:
+			return product_view_from_h3(project, source, view, accepts)
+		except ValueError:
+			frappe.log_error(title="H3 product-view preparation deferred; trying configured image fallback")
+	workflow = (
+		frappe.get_doc("Generation Workflow", configured) if configured else _keyframe_workflow(project)
+	)
+	if not any(row["role"] == "product" for row in get_workflow_input_contract(workflow)):
+		raise ValueError("The selected product-view workflow lacks a product reference input.")
 	product = upload_frappe_file(source_url)["server_path"]
 	width, height = preparation_dimensions(_project_settings(project))
 	direction = {
@@ -548,11 +564,7 @@ def _generate_candidate(project, source, view):
 			output_prefix=f"joymedia/product-views/{frappe.generate_hash(length=10)}",
 		)
 		content = run_workflow_to_bytes(graph, output, forget=True)
-		palette_ok = _palette_retained(identity_path, content)
-		identity_ok = palette_ok and _candidate_matches_visible_source(identity["file"], content)
-		geometry_ok = identity_ok and _candidate_matches_requested_view(content, view)
-		physical_ok = geometry_ok and _candidate_physically_plausible(identity["file"], content)
-		if palette_ok and identity_ok and geometry_ok and physical_ok:
+		if accepts(content):
 			return content
 		# Keep evidence outside selectable Product media. A rejected artifact is
 		# useful for diagnosing a model/configuration change, but must never be
@@ -561,6 +573,23 @@ def _generate_candidate(project, source, view):
 		evidence.mkdir(parents=True, exist_ok=True)
 		(evidence / f"{_candidate_key(source, view)}-{attempt}.png").write_bytes(content)
 	raise ValueError(f"No {view} product candidate retained the observable source identity.")
+
+
+def _prepared_view_result(source, view, candidate, strict):
+	return {
+		"source": source,
+		"view": view,
+		"candidate": candidate,
+		"status": "source_locked" if strict else "ready",
+		**(
+			{
+				"fallback": source,
+				"reason": "Generated angle is an inferred preview; exact artwork stays bound to the supplied photograph.",
+			}
+			if strict
+			else {}
+		),
+	}
 
 
 def prepare_script_product_views(project, script):
@@ -578,6 +607,7 @@ def prepare_script_product_views(project, script):
 		if not source or str(value(source, "reference_role") or "").casefold() != "product":
 			continue
 		variants = _product_rows(project, source_key)
+		strict = _source_pixels_locked(project, [source_key], by_key)
 		if any(
 			product_view_kind(row) == view
 			and _view_candidate_qualified(row)
@@ -586,28 +616,17 @@ def prepare_script_product_views(project, script):
 		):
 			prepared.append({"source": source_key, "view": view, "status": "supplied"})
 			continue
-		if _source_pixels_locked(project, [source_key], by_key):
-			chosen, _ = _choose_view(variants, view, allow_extrapolated=False)
-			prepared.append(
-				{
-					"source": source_key,
-					"view": view,
-					"status": "source_locked",
-					"fallback": value(chosen, "reference_key"),
-					"reason": "Exact artwork uses supplied source pixels; an AI angle is visual guidance, not replacement packaging.",
-				}
-			)
-			continue
 		candidate_key = _candidate_key(source, view)
 		existing = by_key.get(candidate_key)
 		if existing and _view_candidate_qualified(existing):
-			prepared.append(
-				{"source": source_key, "view": view, "candidate": candidate_key, "status": "ready"}
-			)
+			prepared.append(_prepared_view_result(source_key, view, candidate_key, strict))
 			continue
 		try:
 			content = _generate_candidate(project, source, view)
 			identity = original_reference(source.asset_version)
+			from joymedia.services.planning.reference_bridges import frame_provenance
+
+			bridge_provenance = frame_provenance(project, content)
 			from joymedia.services.intake.subject_cutout import cutout_studio_reference, sam2_configured
 
 			mask_evidence = None
@@ -654,6 +673,7 @@ def prepare_script_product_views(project, script):
 							"source_asset_version": value(source, "asset_version"),
 							"identity_source_asset_version": identity["asset_version"],
 							"identity_source_sha256": identity["content_hash"],
+							"preparation_bridge": bridge_provenance,
 							"visible_source_retained": True,
 							"product_identity_qualification_version": PRODUCT_IDENTITY_QUALIFICATION_VERSION,
 							"view_geometry_verified": True,
@@ -684,9 +704,7 @@ def prepare_script_product_views(project, script):
 			new_row = next(row for row in project.selected_media if row.reference_key == candidate_key)
 			selected.append(new_row)
 			by_key[candidate_key] = new_row
-			prepared.append(
-				{"source": source_key, "view": view, "candidate": candidate_key, "status": "ready"}
-			)
+			prepared.append(_prepared_view_result(source_key, view, candidate_key, strict))
 		except Exception as exc:
 			frappe.log_error(frappe.get_traceback(), f"Product-view candidate deferred for {project.name}")
 			# This is a safe automatic fallback, not a stopped production

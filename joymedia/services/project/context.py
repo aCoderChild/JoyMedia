@@ -334,6 +334,9 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 	from joymedia.services.scene.registry import project_reference_registry, scene_reference_bindings
 
 	snapshot["reference_registry"] = project_reference_registry(project)
+	source = frappe.parse_json(project.get("storyboard_source_json") or "{}") or {}
+	if source.get("reference_preparation_plan"):
+		snapshot["reference_preparation_plan"] = source["reference_preparation_plan"]
 
 	sheet_scenes = _sheet_scenes(project)
 	snapshot["shots"] = []
