@@ -179,10 +179,12 @@ qualified assets in PRJ-02673 are ASTV-06034 (standing), ASTV-06035 (raised
 paw) and ASTV-06036 (side).
 
 The local vision reviewer can contradict itself about a squat mascot's floor
-contact. A narrow target-pose question supplements independent observation;
-silhouette, identity, prop and support checks still apply. The service does not
-promote an unqualified frame. This improves the tested Shera states but does
-not certify every possible pose or action. The alternative
+contact. The pilot's target-led supplement was later found to falsely accept
+a wrong crouch in the 25 October audit. Current qualification cannot override
+failed independent pose observation with that target-led answer. It also checks
+traits against the immutable original separately from the generated starting
+pose; see [reference-trait-validation.md](reference-trait-validation.md).
+These results do not certify every possible pose or action. The alternative
 [ComfyUI Qwen Image Edit workflow](https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_qwen_image_edit_2509.json)
 was downloaded and inspected. It would add roughly 30 GB of models; the model
 download hit the guest container's writable limit despite host free space, so

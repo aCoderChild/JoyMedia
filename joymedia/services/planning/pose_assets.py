@@ -16,6 +16,8 @@ from pathlib import Path
 
 import frappe
 
+from joymedia.services.project.reference_lineage import original_reference
+
 HELD_PROP_QUESTION = (
 	"Count separate objects physically held between or against the character's paws or arms. "
 	"Do not count flowers, hats, bows or other accessories attached to the head. "
@@ -45,6 +47,21 @@ CHARACTER_LOOK_QUESTION = (
 	"string and surface exactly one of smooth_seamless, fur_or_plush, fabric, other, unclear."
 )
 KNOWN_SURFACES = frozenset({"smooth_seamless", "fur_or_plush", "fabric", "other"})
+BINARY_REVIEW_SCHEMA = {
+	"type": "object",
+	"additionalProperties": False,
+	"required": ["answer", "reason"],
+	"properties": {"answer": {"type": ["boolean", "null"]}, "reason": {"type": "string", "minLength": 1}},
+}
+
+
+def _affirmed(observation):
+	return (
+		isinstance(observation, dict)
+		and observation.get("answer") is True
+		and isinstance(observation.get("reason"), str)
+		and bool(observation["reason"].strip())
+	)
 
 
 def character_look(image):
@@ -374,10 +391,18 @@ def _rejected(gate, *evidence):
 
 
 def _accept_pose_view(
-	content, source_image=None, pose_description="standing on its own visible feet", angle=None
+	content,
+	source_image=None,
+	pose_description="standing on its own visible feet",
+	angle=None,
+	*,
+	identity_image=None,
 ):
 	from joymedia.services.review.consistency import ask
 
+	identity_image = identity_image if identity_image is not None else source_image
+	if identity_image is None:
+		return _rejected("original identity reference unavailable")
 	if source_image is not None and _retains_body_proportions(source_image, content) is False:
 		return _rejected("body proportions")
 	if source_image is not None and _visible_change(source_image, content) is False:
@@ -394,12 +419,13 @@ def _accept_pose_view(
 		"Return JSON answer true only if unambiguous, false if wrong, null if uncertain, "
 		"with reason.",
 		max_edge=768,
+		schema=BINARY_REVIEW_SCHEMA,
 	)
 	# A combined question said answer=true for a real image even while its
 	# reason acknowledged Shera was holding a pink heart. Check props alone.
 	prop = ask(content, HELD_PROP_QUESTION, max_edge=768)
 	count = prop.get("held_object_count")
-	if support.get("answer") is not True or type(count) is not int or count != 0:
+	if not _affirmed(support) or type(count) is not int or count != 0:
 		return _rejected("support or held prop", support, prop)
 	# The broad support question accepted a real H3 side view whose lower body
 	# had collapsed into one stump. Ask about that failure independently; a
@@ -421,17 +447,13 @@ def _accept_pose_view(
 
 		intact = all(type(value) is int and value >= 2 for value in counts(lower_body))
 		if not intact:
-			source_lower_body = (
-				ask(source_image, lower_body_question, max_edge=768) if source_image is not None else {}
-			)
+			source_lower_body = ask(identity_image, lower_body_question, max_edge=768)
 			if source_lower_body.get("fused_lower_body") is not True or counts(lower_body) != counts(
 				source_lower_body
 			):
 				return _rejected("lower body", lower_body, source_lower_body)
-	if source_image is None:
-		return True
 	identity = ask(
-		[source_image, content],
+		[identity_image, content],
 		"Image 1 is the source character; image 2 is a generated pose. Ignoring pose, camera angle, "
 		"lighting, plain background and removable held objects, does image 2 preserve the same "
 		"character identity: body proportions and silhouette, face, colour, material, visible ear count/shape/attachment, eye design and head-worn accessories? "
@@ -440,12 +462,13 @@ def _accept_pose_view(
 		"Return JSON answer true only if recognizably the same character, false if different, "
 		"or null if uncertain; include a reason.",
 		max_edge=768,
+		schema=BINARY_REVIEW_SCHEMA,
 	)
-	if identity.get("answer") is not True:
+	if not _affirmed(identity):
 		return _rejected("identity", identity)
 	# Broad identity comparisons missed a new yellow flower on Shera. Check the
 	# source and candidate independently before certifying a reusable pose.
-	source_head = ask(source_image, HEAD_ACCESSORY_QUESTION, max_edge=768).get("head_accessories")
+	source_head = ask(identity_image, HEAD_ACCESSORY_QUESTION, max_edge=768).get("head_accessories")
 	generated_head = ask(content, HEAD_ACCESSORY_QUESTION, max_edge=768).get("head_accessories")
 	if not isinstance(source_head, list) or not isinstance(generated_head, list):
 		return _rejected("head accessories unreadable")
@@ -453,19 +476,38 @@ def _accept_pose_view(
 		str(item).strip().casefold() for item in generated_head
 	):
 		return _rejected("head accessories", source_head, generated_head)
-	source_surface = character_look(source_image).get("surface")
+	source_surface = character_look(identity_image).get("surface")
 	generated_surface = character_look(content).get("surface")
-	if source_surface and generated_surface and source_surface != generated_surface:
+	if not source_surface or not generated_surface:
+		return _rejected("surface unverified", source_surface, generated_surface)
+	if source_surface != generated_surface:
 		return _rejected("surface", source_surface, generated_surface)
 	# A broad identity judgement can miss a small but defining facial mark.
 	# Ask each image independently: paired-image comparisons have repeatedly
 	# described this Shera source's closed eyes as open in both pictures.
-	if angle == "front":
-		source_eyes = ask(source_image, EYE_DESIGN_QUESTION, max_edge=768).get("eye_shape")
+	if angle in {"front", "side", "back"}:
+		source_eyes = ask(identity_image, EYE_DESIGN_QUESTION, max_edge=768).get("eye_shape")
 		generated_eyes = ask(content, EYE_DESIGN_QUESTION, max_edge=768).get("eye_shape")
-		if source_eyes in KNOWN_EYE_SHAPES:
-			if generated_eyes != source_eyes:
-				return _rejected("eye design", source_eyes, generated_eyes)
+		if (
+			source_eyes in KNOWN_EYE_SHAPES
+			and generated_eyes in KNOWN_EYE_SHAPES
+			and generated_eyes != source_eyes
+		):
+			return _rejected("eye design", source_eyes, generated_eyes)
+		if angle == "front" and (
+			source_eyes not in KNOWN_EYE_SHAPES or generated_eyes not in KNOWN_EYE_SHAPES
+		):
+			return _rejected("eye design unverified", source_eyes, generated_eyes)
+	from joymedia.services.review.physical_audit import LIMB_TOPOLOGY_PROMPT, TOPOLOGY_SCHEMA
+
+	topology = ask([identity_image, content], LIMB_TOPOLOGY_PROMPT, max_edge=768, schema=TOPOLOGY_SCHEMA)
+	if (
+		not isinstance(topology, dict)
+		or topology.get("distortion") is not False
+		or not isinstance(topology.get("evidence"), str)
+		or not topology["evidence"].strip()
+	):
+		return _rejected("original-reference ear and limb topology", topology)
 	return True
 
 
@@ -604,10 +646,11 @@ def _pose_view_from_h3(project, source, pose_description, angle):
 	if not name:
 		raise ValueError("No installed MiniMax H3 image-to-video workflow is available for pose preparation.")
 	workflow = frappe.get_doc("Generation Workflow", name)
+	identity = original_reference(source.asset_version)
 	prompt = _h3_pose_prompt(
 		pose_description,
 		angle,
-		_eye_design_instruction(frappe.db.get_value("Asset Version", source.asset_version, "file"), angle),
+		_eye_design_instruction(identity["file"], angle),
 	)
 	output = get_workflow_adapter(workflow).extract_execution_metadata(json.loads(workflow.workflow_json))[
 		"primary_output_node_key"
@@ -681,7 +724,9 @@ def _pose_view_from_h3(project, source, pose_description, angle):
 					continue
 				content = frame_path.read_bytes()
 				try:
-					if _accept_pose_view(content, file_url, pose_description, angle):
+					if _accept_pose_view(
+						content, file_url, pose_description, angle, identity_image=identity["file"]
+					):
 						return content
 				except Exception:
 					frappe.log_error(title="H3 pose observation unavailable; candidate not accepted")
@@ -721,6 +766,7 @@ def _pose_view(project, source, pose_description, angle):
 	):
 		raise ValueError("The configured pose workflow lacks a required pose guide input.")
 	identity_source, file_url = _clean_identity_source(project, source)
+	identity = original_reference(source.asset_version)
 	frappe.db.commit()  # The remote GPU call should not hold a project write transaction.
 	image = upload_frappe_file(file_url)["server_path"]
 	width, height = preparation_dimensions(_project_settings(project))
@@ -734,7 +780,7 @@ def _pose_view(project, source, pose_description, angle):
 		("refcontrol. Follow image 1 for body articulation and image 2 for identity. " if pose_guide else "")
 		+ "One full-body character pose reference on a plain neutral studio ground. "
 		"Render exactly the same character as the supplied identity image: preserve face, anatomy, "
-		+ _eye_design_instruction(file_url, angle)
+		+ _eye_design_instruction(identity["file"], angle)
 		+ "colour, material, markings and wearable accessories. The source may show a separate held prop: "
 		"remove every object held in the paws or arms. A held heart, toy, tool or package is not part of "
 		"the character's body or costume. Keep only head accessories present in the source; "
@@ -768,7 +814,9 @@ def _pose_view(project, source, pose_description, angle):
 		)
 		content = run_workflow_to_bytes(graph, output, forget=True)
 		try:
-			if not _accept_pose_view(content, file_url, pose_description, angle):
+			if not _accept_pose_view(
+				content, file_url, pose_description, angle, identity_image=identity["file"]
+			):
 				continue
 		except Exception:
 			frappe.log_error(title="Pose view observation unavailable; reusable pose not accepted")
@@ -1280,7 +1328,8 @@ def register_pose_candidate(project, source, cast_key, pose, angle, content):
 	"""Requalify and preserve a generated candidate, including recovered job output."""
 	project._require_write_access()
 	file_url = frappe.db.get_value("Asset Version", source.asset_version, "file")
-	if not _accept_pose_view(content, file_url, pose, angle):
+	identity = original_reference(source.asset_version)
+	if not _accept_pose_view(content, file_url, pose, angle, identity_image=identity["file"]):
 		raise ValueError("The generated pose candidate did not pass qualification.")
 	return _save_pose_view(project, source, cast_key, pose, angle, content)
 
@@ -1288,13 +1337,17 @@ def register_pose_candidate(project, source, cast_key, pose, angle, content):
 def _save_pose_view(project, source, cast_key, pose, angle, content):
 	"""Persist bytes already admitted by the generation or recovery path."""
 	key = _pose_key(source.get("identity_key") or source.get("reference_key"), pose, angle)
-	source_url = frappe.db.get_value("Asset Version", source.asset_version, "file")
+	identity = original_reference(source.asset_version)
+	source_url = identity["file"]
 	identity_appearance = character_look(source_url) if source_url else {}
 	from joymedia.services.intake.subject_cutout import cutout_studio_reference, sam2_configured
 
 	mask_evidence = None
 	if sam2_configured():
 		content, mask_evidence = cutout_studio_reference(content)
+		motion_source = frappe.db.get_value("Asset Version", source.asset_version, "file")
+		if not _accept_pose_view(content, motion_source, pose, angle, identity_image=source_url):
+			raise ValueError("The final masked pose no longer passes original-reference qualification.")
 	frappe.db.commit()  # Do not hold a transaction across GPU rendering.
 	from joymedia.services.intake.assets import create_media_asset
 
@@ -1331,6 +1384,8 @@ def _save_pose_view(project, source, cast_key, pose, angle, content):
 					"qualified_pose_view": angle,
 					"pose_qualification_version": POSE_QUALIFICATION_VERSION,
 					"source_asset_version": source.asset_version,
+					"identity_source_asset_version": identity["asset_version"],
+					"identity_source_sha256": identity["content_hash"],
 					"subject_cutout": mask_evidence,
 				}
 			),

@@ -34,6 +34,97 @@ from joymedia.services.project.reference_lineage import lineage_identity
 
 
 class TestPoseCoverage(TestCase):
+	def test_masked_pose_with_lost_traits_is_not_saved_as_character_media(self):
+		from unittest.mock import Mock
+
+		from joymedia.services.planning.pose_assets import _save_pose_view
+
+		with (
+			patch(
+				"joymedia.services.planning.pose_assets.original_reference",
+				return_value={"asset_version": "original", "file": "/original.png", "content_hash": "hash"},
+			),
+			patch(
+				"joymedia.services.planning.pose_assets.character_look",
+				return_value={"appearance": "Original identity"},
+			),
+			patch("joymedia.services.intake.subject_cutout.sam2_configured", return_value=True),
+			patch(
+				"joymedia.services.intake.subject_cutout.cutout_studio_reference",
+				return_value=(b"ear removed by mask", {}),
+			),
+			patch.object(frappe.db, "get_value", return_value="/motion-start.png"),
+			patch("joymedia.services.planning.pose_assets._accept_pose_view", return_value=False) as qualify,
+			patch("joymedia.services.intake.assets.create_media_asset") as save,
+		):
+			with self.assertRaisesRegex(ValueError, "final masked pose"):
+				_save_pose_view(
+					Mock(),
+					frappe._dict(asset_version="start", identity_key="actor"),
+					"actor",
+					"seated",
+					"front",
+					b"raw pose",
+				)
+			self.assertEqual(b"ear removed by mask", qualify.call_args.args[0])
+			self.assertEqual("/original.png", qualify.call_args.kwargs["identity_image"])
+			save.assert_not_called()
+
+	def test_pose_identity_is_compared_to_original_not_generated_motion_start(self):
+		with (
+			patch("joymedia.services.planning.pose_assets._retains_body_proportions", return_value=True),
+			patch("joymedia.services.planning.pose_assets._visible_change", return_value=True),
+			patch("joymedia.services.planning.pose_assets._observed_pose_matches", return_value=True),
+			patch(
+				"joymedia.services.review.consistency.ask",
+				side_effect=[
+					{"answer": True, "reason": "Connected and supported."},
+					{"held_object_count": 0},
+					{"fused_lower_body": False},
+					{"answer": False, "reason": "Ear shape differs from the original."},
+				],
+			) as observe,
+		):
+			self.assertFalse(_accept_pose_view(b"candidate", b"generated start", identity_image=b"original"))
+			self.assertEqual([b"original", b"candidate"], observe.call_args_list[3].args[0])
+
+	def test_unknown_surface_is_held_even_when_broad_identity_check_passes(self):
+		with (
+			patch("joymedia.services.planning.pose_assets._retains_body_proportions", return_value=True),
+			patch("joymedia.services.planning.pose_assets._visible_change", return_value=True),
+			patch("joymedia.services.planning.pose_assets._observed_pose_matches", return_value=True),
+			patch(
+				"joymedia.services.planning.pose_assets.character_look",
+				side_effect=[{"surface": "smooth_seamless"}, {"surface": None}],
+			),
+			patch(
+				"joymedia.services.review.consistency.ask",
+				side_effect=[
+					{"answer": True, "reason": "Supported."},
+					{"held_object_count": 0},
+					{"fused_lower_body": False},
+					{"answer": True, "reason": "Broad silhouette matches."},
+					{"head_accessories": []},
+					{"head_accessories": []},
+				],
+			),
+		):
+			self.assertFalse(_accept_pose_view(b"candidate", b"original"))
+
+	def test_missing_original_or_reason_never_qualifies_a_pose(self):
+		with patch("joymedia.services.review.consistency.ask") as observe:
+			self.assertFalse(_accept_pose_view(b"candidate"))
+			observe.assert_not_called()
+		from joymedia.services.planning.pose_assets import _affirmed
+
+		for observation in (
+			{"answer": True},
+			{"answer": 1, "reason": "same"},
+			{"answer": True, "reason": 1},
+			{"answer": True, "reason": ""},
+		):
+			self.assertFalse(_affirmed(observation))
+
 	def test_recovered_pose_cannot_be_saved_without_qualification(self):
 		from unittest.mock import Mock
 
@@ -43,6 +134,10 @@ class TestPoseCoverage(TestCase):
 		source = frappe._dict(asset_version="original")
 		with (
 			patch("frappe.db.get_value", return_value="/original.png"),
+			patch(
+				"joymedia.services.planning.pose_assets.original_reference",
+				return_value={"file": "/original.png", "asset_version": "original", "content_hash": "hash"},
+			),
 			patch("joymedia.services.planning.pose_assets._accept_pose_view", return_value=False),
 			patch("joymedia.services.planning.pose_assets._save_pose_view") as save,
 		):
@@ -200,31 +295,44 @@ class TestPoseCoverage(TestCase):
 
 	def test_held_heart_is_not_a_reusable_mascot_pose(self):
 		with (
-			patch("joymedia.services.planning.production._ask_planner", return_value={"answer": True}),
+			patch(
+				"joymedia.services.planning.production._ask_planner",
+				return_value={
+					"answer": True,
+					"reason": "Visible reference features and support are preserved.",
+				},
+			),
 			patch(
 				"joymedia.services.review.consistency.ask",
 				side_effect=[
 					{"pose_description": "standing on feet", "certainty": "high"},
-					{"answer": True},
+					{"answer": True, "reason": "Visible reference features and support are preserved."},
 					{"held_object_count": 1, "held_objects": ["heart"]},
 				],
 			),
 		):
-			self.assertFalse(_accept_pose_view(b"generated image"))
+			self.assertFalse(_accept_pose_view(b"generated image", b"source image"))
 		with (
-			patch("joymedia.services.planning.production._ask_planner", return_value={"answer": True}),
+			patch(
+				"joymedia.services.planning.production._ask_planner",
+				return_value={
+					"answer": True,
+					"reason": "Visible reference features and support are preserved.",
+				},
+			),
 			patch(
 				"joymedia.services.review.consistency.ask",
 				side_effect=[
 					{"pose_description": "standing on feet", "certainty": "high"},
-					{"answer": True},
+					{"answer": True, "reason": "Visible reference features and support are preserved."},
 					{"held_object_count": 0, "held_objects": []},
 					{"fused_lower_body": False},
-					{"answer": True},
+					{"answer": True, "reason": "Visible reference features and support are preserved."},
 					{"head_accessories": []},
 					{"head_accessories": []},
 					{"appearance": "smooth vinyl bear", "surface": "smooth_seamless"},
 					{"appearance": "smooth vinyl bear", "surface": "smooth_seamless"},
+					{"distortion": False, "evidence": "Visible ears and limbs retain the original topology."},
 				],
 			),
 		):
@@ -232,15 +340,21 @@ class TestPoseCoverage(TestCase):
 
 	def test_added_head_flower_is_not_a_reusable_mascot_pose(self):
 		with (
-			patch("joymedia.services.planning.production._ask_planner", return_value={"answer": True}),
+			patch(
+				"joymedia.services.planning.production._ask_planner",
+				return_value={
+					"answer": True,
+					"reason": "Visible reference features and support are preserved.",
+				},
+			),
 			patch(
 				"joymedia.services.review.consistency.ask",
 				side_effect=[
 					{"pose_description": "standing on feet", "certainty": "high"},
-					{"answer": True},
+					{"answer": True, "reason": "Visible reference features and support are preserved."},
 					{"held_object_count": 0},
 					{"fused_lower_body": False},
-					{"answer": True},
+					{"answer": True, "reason": "Visible reference features and support are preserved."},
 					{"head_accessories": []},
 					{"head_accessories": ["yellow flower"]},
 				],
@@ -263,15 +377,21 @@ class TestPoseCoverage(TestCase):
 
 	def test_front_pose_rejects_changed_eye_design(self):
 		with (
-			patch("joymedia.services.planning.production._ask_planner", return_value={"answer": True}),
+			patch(
+				"joymedia.services.planning.production._ask_planner",
+				return_value={
+					"answer": True,
+					"reason": "Visible reference features and support are preserved.",
+				},
+			),
 			patch(
 				"joymedia.services.review.consistency.ask",
 				side_effect=[
 					{"pose_description": "standing on feet", "certainty": "high"},
-					{"answer": True},
+					{"answer": True, "reason": "Visible reference features and support are preserved."},
 					{"held_object_count": 0},
 					{"fused_lower_body": False},
-					{"answer": True},
+					{"answer": True, "reason": "Visible reference features and support are preserved."},
 					{"head_accessories": []},
 					{"head_accessories": []},
 					{"appearance": "smooth vinyl bear", "surface": "smooth_seamless"},
@@ -287,18 +407,25 @@ class TestPoseCoverage(TestCase):
 
 	def test_fused_weight_support_is_not_promoted_as_character_reference(self):
 		with (
-			patch("joymedia.services.planning.production._ask_planner", return_value={"answer": True}),
+			patch(
+				"joymedia.services.planning.production._ask_planner",
+				return_value={
+					"answer": True,
+					"reason": "Visible reference features and support are preserved.",
+				},
+			),
 			patch(
 				"joymedia.services.review.consistency.ask",
 				side_effect=[
 					{"pose_description": "standing on feet", "certainty": "high"},
-					{"answer": True},
+					{"answer": True, "reason": "Visible reference features and support are preserved."},
 					{"held_object_count": 0, "held_objects": []},
 					{"fused_lower_body": True},
+					{"fused_lower_body": False, "visible_leg_count": 2, "visible_foot_count": 2},
 				],
 			),
 		):
-			self.assertFalse(_accept_pose_view(b"generated image"))
+			self.assertFalse(_accept_pose_view(b"generated image", b"source image"))
 
 	def test_a_fused_looking_lower_body_with_two_legs_and_feet_is_the_design_not_a_stump(self):
 		cases = (
@@ -319,7 +446,11 @@ class TestPoseCoverage(TestCase):
 		)
 		for candidate, source, expected_gate in cases:
 			gates = []
-			answers = [{"answer": True}, {"held_object_count": 0}, candidate]
+			answers = [
+				{"answer": True, "reason": "Visible reference features and support are preserved."},
+				{"held_object_count": 0},
+				candidate,
+			]
 			answers += [source] if source else []
 			answers.append({"answer": False})
 			with (
@@ -349,7 +480,9 @@ class TestPoseCoverage(TestCase):
 			patch("joymedia.services.planning.production._ask_planner", return_value={"answer": False}),
 			patch("joymedia.services.planning.pose_assets._target_pose_matches", return_value=False),
 		):
-			self.assertFalse(_accept_pose_view(b"seated image", pose_description="kneeling on both knees"))
+			self.assertFalse(
+				_accept_pose_view(b"seated image", b"source image", pose_description="kneeling on both knees")
+			)
 
 	def test_target_led_agreement_cannot_override_failed_blind_pose_observation(self):
 		with (
@@ -358,7 +491,9 @@ class TestPoseCoverage(TestCase):
 				"joymedia.services.planning.pose_assets._target_pose_matches", return_value=True
 			) as target_led,
 		):
-			self.assertFalse(_accept_pose_view(b"neutral image", pose_description="one paw extended"))
+			self.assertFalse(
+				_accept_pose_view(b"neutral image", b"source image", pose_description="one paw extended")
+			)
 		target_led.assert_not_called()
 
 	def test_default_pose_renderer_uses_existing_h3_workflow(self):

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import frappe
 
+from joymedia.services.project.reference_lineage import original_reference
 from joymedia.services.scene.references import identity_key, value
 
 _VIEW_PATTERNS = (
@@ -31,7 +32,7 @@ _VIEW_PATTERNS = (
 )
 _PRODUCT_NOUN = r"(?:product|pack|packet|package|box|bottle)"
 _VIEW_NOUN = r"(?:view|angle|shot|panel|face|profile|orientation)"
-PRODUCT_IDENTITY_QUALIFICATION_VERSION = 2
+PRODUCT_IDENTITY_QUALIFICATION_VERSION = 3
 
 
 def _explicit_product_view_text(text):
@@ -224,6 +225,7 @@ def _view_candidate_qualified(row):
 			status == "ai_extrapolated_candidate"
 			and analysis.get("view_geometry_verified") is True
 			and analysis.get("visible_source_retained") is True
+			and analysis.get("view_physical_plausibility_verified") is True
 			and analysis.get("product_identity_qualification_version")
 			== PRODUCT_IDENTITY_QUALIFICATION_VERSION
 		)
@@ -404,8 +406,30 @@ def _candidate_matches_visible_source(source_url, candidate):
 	)
 
 
+def _candidate_physically_plausible(source_url, candidate):
+	"""Plausibility is independent of branding similarity and the requested camera angle."""
+	from joymedia.services.planning.pose_assets import BINARY_REVIEW_SCHEMA, _affirmed
+	from joymedia.services.review.consistency import ask
+
+	return _affirmed(
+		ask(
+			[source_url, candidate],
+			"Image 1 is the original product. Inspect only physical plausibility in image 2: exactly one "
+			"complete object, connected components, coherent volume and perspective, stable visible support, "
+			"and the original type of material and construction. A soft wrapped package must not become a "
+			"rigid carton, nor may a rigid object melt or fuse. Do not assume every object is a rectangular box. "
+			"An isolated transparent cutout need not include a scene or ground; a removed background is not evidence of floating. "
+			"Ignore printed branding for this independent check. Return answer true only with clear physical "
+			"evidence, false for a defect, null when uncertain, and reason.",
+			max_edge=768,
+			schema=BINARY_REVIEW_SCHEMA,
+		)
+	)
+
+
 def _candidate_matches_requested_view(candidate, view):
 	"""Check observable camera geometry separately from package identity."""
+	from joymedia.services.planning.pose_assets import BINARY_REVIEW_SCHEMA, _affirmed
 	from joymedia.services.review.consistency import ask
 
 	if view in {"front_left", "front_right", "left", "right"}:
@@ -415,26 +439,54 @@ def _candidate_matches_requested_view(candidate, view):
 			"beside its broad printed front face: the viewer-left end, viewer-right end, neither, "
 			"or unclear? Return JSON visible_end exactly one of left, right, neither, unclear; reason.",
 			max_edge=768,
+			schema={
+				"type": "object",
+				"additionalProperties": False,
+				"required": ["visible_end", "reason"],
+				"properties": {
+					"visible_end": {"type": "string", "enum": ["left", "right", "neither", "unclear"]},
+					"reason": {"type": "string", "minLength": 1},
+				},
+			},
 		)
 		expected = "left" if view in {"front_left", "left"} else "right"
-		return result.get("visible_end") == expected
+		return (
+			result.get("visible_end") == expected
+			and isinstance(result.get("reason"), str)
+			and bool(result["reason"].strip())
+		)
 	if view == "top_front":
 		result = ask(
 			candidate,
 			"Is the product shown from above with BOTH its top face and broad front face visibly "
 			"exposed? Return JSON answer true, false or null and reason.",
 			max_edge=768,
+			schema=BINARY_REVIEW_SCHEMA,
 		)
-		return result.get("answer") is True
+		return _affirmed(result)
 	if view == "side":
 		result = ask(
 			candidate,
 			"Is a narrow end or side face the dominant visible face of this product package, "
 			"rather than the broad printed front face? Return JSON answer true, false or null and reason.",
 			max_edge=768,
+			schema=BINARY_REVIEW_SCHEMA,
 		)
-		return result.get("answer") is True
-	return True
+		return _affirmed(result)
+	if view in {"front", "back", "three_quarter"}:
+		return _affirmed(
+			ask(
+				candidate,
+				f"Observe the product's actual camera view without assuming that it follows its prompt. "
+				f"Is it visibly a {view.replace('_', ' ')} product view? Front means the main front face "
+				"is dominant; back means the rear is dominant; three-quarter means a coherent oblique view "
+				"with multiple sides visible. Use the actual object geometry rather than assuming a cuboid. "
+				"Return JSON answer true, false or null if the viewpoint cannot be established, and reason.",
+				max_edge=768,
+				schema=BINARY_REVIEW_SCHEMA,
+			)
+		)
+	return False
 
 
 def _generate_candidate(project, source, view):
@@ -455,7 +507,8 @@ def _generate_candidate(project, source, view):
 	source_url = frappe.db.get_value("Asset Version", source.asset_version, "file")
 	if not source_url:
 		raise ValueError("The product source has no image file.")
-	source_path = frappe.get_doc("File", {"file_url": source_url}).get_full_path()
+	identity = original_reference(source.asset_version)
+	identity_path = frappe.get_doc("File", {"file_url": identity["file"]}).get_full_path()
 	product = upload_frappe_file(source_url)["server_path"]
 	width, height = preparation_dimensions(_project_settings(project))
 	direction = {
@@ -495,10 +548,11 @@ def _generate_candidate(project, source, view):
 			output_prefix=f"joymedia/product-views/{frappe.generate_hash(length=10)}",
 		)
 		content = run_workflow_to_bytes(graph, output, forget=True)
-		palette_ok = _palette_retained(source_path, content)
-		identity_ok = palette_ok and _candidate_matches_visible_source(source_url, content)
+		palette_ok = _palette_retained(identity_path, content)
+		identity_ok = palette_ok and _candidate_matches_visible_source(identity["file"], content)
 		geometry_ok = identity_ok and _candidate_matches_requested_view(content, view)
-		if palette_ok and identity_ok and geometry_ok:
+		physical_ok = geometry_ok and _candidate_physically_plausible(identity["file"], content)
+		if palette_ok and identity_ok and geometry_ok and physical_ok:
 			return content
 		# Keep evidence outside selectable Product media. A rejected artifact is
 		# useful for diagnosing a model/configuration change, but must never be
@@ -553,11 +607,20 @@ def prepare_script_product_views(project, script):
 			continue
 		try:
 			content = _generate_candidate(project, source, view)
+			identity = original_reference(source.asset_version)
 			from joymedia.services.intake.subject_cutout import cutout_studio_reference, sam2_configured
 
 			mask_evidence = None
 			if sam2_configured():
 				content, mask_evidence = cutout_studio_reference(content)
+				if not (
+					_candidate_matches_visible_source(identity["file"], content)
+					and _candidate_matches_requested_view(content, view)
+					and _candidate_physically_plausible(identity["file"], content)
+				):
+					raise ValueError(
+						"The final masked product view no longer retains its original traits and geometry."
+					)
 			frappe.db.commit()
 			from joymedia.services.intake.assets import create_media_asset
 
@@ -589,9 +652,12 @@ def prepare_script_product_views(project, script):
 							"product_view": view,
 							"product_view_status": "ai_extrapolated_candidate",
 							"source_asset_version": value(source, "asset_version"),
+							"identity_source_asset_version": identity["asset_version"],
+							"identity_source_sha256": identity["content_hash"],
 							"visible_source_retained": True,
 							"product_identity_qualification_version": PRODUCT_IDENTITY_QUALIFICATION_VERSION,
 							"view_geometry_verified": True,
+							"view_physical_plausibility_verified": True,
 							"subject_cutout": mask_evidence,
 							"unknown_panels": "inferred; unverified against real packaging",
 						}

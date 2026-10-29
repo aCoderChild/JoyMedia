@@ -10,6 +10,7 @@ from joymedia.services.planning.product_views import (
 	PRODUCT_IDENTITY_QUALIFICATION_VERSION,
 	_candidate_matches_requested_view,
 	_candidate_matches_visible_source,
+	_candidate_physically_plausible,
 	_palette_retained,
 	apply_requested_view_sequence,
 	constrain_product_views,
@@ -22,6 +23,30 @@ from joymedia.services.planning.product_views import (
 
 
 class TestProductViewContracts(TestCase):
+	def test_unobserved_front_and_back_views_are_not_assumed_correct(self):
+		for view in ("front", "back", "three_quarter", "unknown"):
+			with self.subTest(view=view), patch("joymedia.services.review.consistency.ask", return_value={}):
+				self.assertFalse(_candidate_matches_requested_view(b"candidate", view))
+		with patch(
+			"joymedia.services.review.consistency.ask",
+			return_value={"answer": True, "reason": "Broad front face is dominant."},
+		):
+			self.assertTrue(_candidate_matches_requested_view(b"candidate", "front"))
+
+	def test_physical_plausibility_does_not_follow_from_a_matching_logo(self):
+		for result in (
+			{},
+			{"answer": True},
+			{"answer": None, "reason": "Hidden support"},
+			{"answer": False, "reason": "Wrapped pack became a rigid carton."},
+		):
+			with (
+				self.subTest(result=result),
+				patch("joymedia.services.review.consistency.ask", return_value=result) as observe,
+			):
+				self.assertFalse(_candidate_physically_plausible("original", b"candidate"))
+				self.assertEqual(["original", b"candidate"], observe.call_args.args[0])
+
 	def test_opaque_photo_uses_attested_source_matte_ratio_not_canvas_crop(self):
 		import frappe
 
@@ -118,7 +143,10 @@ class TestProductViewContracts(TestCase):
 		)
 
 	def test_generated_view_label_requires_observed_end_panel(self):
-		with patch("joymedia.services.review.consistency.ask", return_value={"visible_end": "right"}):
+		with patch(
+			"joymedia.services.review.consistency.ask",
+			return_value={"visible_end": "right", "reason": "Only the viewer-right end is visible."},
+		):
 			self.assertFalse(_candidate_matches_requested_view(b"image", "front_left"))
 			self.assertTrue(_candidate_matches_requested_view(b"image", "front_right"))
 
@@ -358,6 +386,7 @@ class TestProductViewContracts(TestCase):
 						"product_view_status": "ai_extrapolated_candidate",
 						"view_geometry_verified": True,
 						"visible_source_retained": True,
+						"view_physical_plausibility_verified": True,
 						"product_identity_qualification_version": PRODUCT_IDENTITY_QUALIFICATION_VERSION,
 					},
 				},
