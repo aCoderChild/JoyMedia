@@ -9,6 +9,26 @@ from joymedia.services.generation.automation import advance_automatic_run, curre
 
 
 class TestAutomaticDelivery(TestCase):
+	def test_incompatible_package_opening_rewrites_automatically_and_preserves_history(self):
+		from joymedia.services.generation import creative_batch as cb
+
+		script = {"scenes": [{"visual_camera": "The mascot holds the pack."}]}
+		variants = [{"project": "old-project", "workbook": "old-workbook", "script": script}]
+		with (
+			patch("joymedia.services.planning.creative.requires_unheld_package_openings", return_value=True),
+			patch.object(cb, "_write"),
+			patch.object(cb, "_queue_prepare") as queue,
+			patch.object(frappe.db, "commit"),
+		):
+			self.assertTrue(
+				cb._restart_incompatible_package_openings(frappe._dict(name="batch"), variants, 0, {})
+			)
+		self.assertEqual("Queued", variants[0]["status"])
+		self.assertNotIn("project", variants[0])
+		self.assertEqual("old-project", variants[0]["history"][0]["project"])
+		self.assertEqual(script, variants[0]["history"][0]["script"])
+		queue.assert_called_once_with("batch", variants, replacement=True)
+
 	def test_screened_preview_keeps_every_observation_required(self):
 		import copy
 

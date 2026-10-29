@@ -1304,6 +1304,13 @@ def _prepare_batch_locked(batch_name, position=None):
 			# Check saved scripts on resume as well as newly generated drafts.
 			# Retries must not bypass a newly enforced physical consistency gate.
 			blocking_defects = _blocking_script_defects(script)
+			from joymedia.services.planning.creative import (
+				requires_unheld_package_openings,
+				unheld_package_opening_errors,
+			)
+
+			if requires_unheld_package_openings(project):
+				blocking_defects.extend(unheld_package_opening_errors(script))
 			if blocking_defects:
 				if _restart_automatic_script_variant(variant, script, blocking_defects):
 					_write(batch.name, variants, "Planning", changed_index=index)
@@ -2479,6 +2486,39 @@ def _select_incremental_automatic_outputs(project_name, run_name, variant, batch
 	return selected
 
 
+def _restart_incompatible_package_openings(batch, variants, index, project):
+	from joymedia.services.planning.creative import (
+		requires_unheld_package_openings,
+		unheld_package_opening_errors,
+	)
+
+	if not requires_unheld_package_openings(project):
+		return False
+	variant = variants[index]
+	defects = unheld_package_opening_errors(variant.get("script") or {})
+	if not defects:
+		return False
+	run_name = (variant.get("keyframe_request") or {}).get("run")
+	if run_name:
+		run = frappe.get_doc("Generation Run", run_name)
+		if run.status in {"Draft", "Queued", "Running"}:
+			snapshot = frappe.parse_json(run.project_snapshot_json or "{}") or {}
+			if (
+				run.media_project != project.name
+				or (snapshot.get("automatic_delivery") or {}).get("batch") != batch.name
+			):
+				raise ValueError("Refusing to stop a first-frame run outside this automatic batch.")
+			from joymedia.services.generation.orchestrator import cancel_run
+
+			cancel_run(run.name)
+	if not _restart_automatic_script_variant(variant, variant["script"], defects):
+		raise ValueError("Source-art-compatible script repair exhausted: " + " ".join(defects))
+	_write(batch.name, variants, "Planning", changed_index=index)
+	_queue_prepare(batch.name, variants, replacement=True)
+	frappe.db.commit()
+	return True
+
+
 def advance_batch(batch_name, user=None):
 	from joymedia.services.audio.plan import build_audio_plan
 	from joymedia.services.editing.export_jobs import queue_project_timeline_export
@@ -2500,6 +2540,12 @@ def advance_batch(batch_name, user=None):
 			continue
 		project = frappe.get_doc("Media Project", variant["project"])
 		try:
+			if (
+				automatic
+				and variant["status"] == "Keyframes"
+				and _restart_incompatible_package_openings(batch, variants, index, project)
+			):
+				return
 			if automatic and variant["status"] in {"Keyframes", "Rendering"}:
 				stage_request = (
 					variant.get(
@@ -2514,6 +2560,8 @@ def advance_batch(batch_name, user=None):
 
 				if is_render_alive(variant["location_job"]):
 					continue
+				if automatic and _restart_incompatible_package_openings(batch, variants, index, project):
+					return
 				shots = [
 					frappe.get_doc("Shot", name)
 					for name in frappe.get_all(
@@ -2539,6 +2587,8 @@ def advance_batch(batch_name, user=None):
 				)
 				if active:
 					continue
+				if automatic and _restart_incompatible_package_openings(batch, variants, index, project):
+					return
 				shots = frappe.get_all(
 					"Shot",
 					filters={"media_project": project.name, "is_removed": 0},

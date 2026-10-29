@@ -85,6 +85,16 @@ original product and mascot inputs. Its live evidence is recorded under
 `/workspace/development/verification/fresh-automatic-20261029`; starting it is not
 evidence that the full automatic export has completed.
 
+The automatic writer also receives the active source-pixel lock's opening-frame
+constraint: a visible package starts each new shot on its support, unobstructed
+by an actor. Held-package openings are rejected as incompatible instead of being
+silently restaged by downstream product guidance. Existing generated scripts
+receive the same preflight on resume. A bounded automatic rewrite retains the
+old script/project in history and stops only its own batch-bound first-frame run
+before starting a replacement. It never cancels an unrelated project's work.
+CRB-00103 exercised this transition from PRJ-02725 / RUN-01358 to PRJ-02726 after
+detecting incompatible openings in scenes 2 and 5. No manual approval was used.
+
 The V16 review cut, `PRJ-02593` / `ASTV-05069`, is a 30 s, 720×1280, 24 fps film
 with audio. Its source-art inserts preserve printed information. The selected
 moving takes and its stale shot-5 disposal label/source metadata do not establish

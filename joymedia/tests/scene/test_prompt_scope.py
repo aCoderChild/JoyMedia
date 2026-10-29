@@ -10,6 +10,25 @@ from joymedia.services.scene.prompt_scope import (
 
 
 class TestPromptScope(TestCase):
+	def test_package_lock_does_not_confuse_held_contents_with_a_held_package(self):
+		from joymedia.services.planning.creative import unheld_package_opening_errors
+
+		for opening in (
+			"The mascot holds the pack.",
+			"The mascot is holding a blue tissue package.",
+			"The box is held by the mascot.",
+		):
+			with self.subTest(opening=opening):
+				self.assertTrue(unheld_package_opening_errors({"scenes": [{"visual_camera": opening}]}))
+		for opening in (
+			"The mascot holds a tissue from the pack.",
+			"The mascot holds tissue from pack.",
+			"The pack is not held; it rests on the rug.",
+			"The mascot holds a sheet beside the box.",
+		):
+			with self.subTest(opening=opening):
+				self.assertEqual([], unheld_package_opening_errors({"scenes": [{"visual_camera": opening}]}))
+
 	def test_handled_sheet_keeps_paper_material_but_a_pack_is_not_a_sheet(self):
 		self.assertIn(
 			"thin, lightweight, flexible",

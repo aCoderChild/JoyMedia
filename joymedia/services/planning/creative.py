@@ -658,6 +658,44 @@ def reference_choices(inventory):
 	}
 
 
+def unheld_package_opening_errors(script):
+	"""Find explicit held-package openings incompatible with the source-pixel lock."""
+	package = r"(?:pack|packet|package|box|carton|bottle|bag|container)"
+	grip = re.compile(
+		rf"\b(?:hold\w*|held|grasp\w*|grip\w*|carr\w*|lift\w*)\s+(?:up\s+)?"
+		rf"(?:(?:a|an|the|its)\s+)?(?:(?!(?:from|of|beside|near|above|below|with|out|while|in|on|to|and)\b)[\w-]+\s+){{0,2}}{package}\b|"
+		rf"\b{package}\s+(?:is\s+)?(?:held|grasped|gripped|carried|lifted)\b",
+		re.I,
+	)
+	errors = []
+	for index, scene in enumerate(script.get("scenes") or [], 1):
+		for clause in re.split(r"[.!?;\n]+", str(scene.get("visual_camera") or "")):
+			if re.search(r"\b(?:not|never|no|without|printed|artwork|illustration)\b", clause, re.I):
+				continue
+			if grip.search(clause):
+				errors.append(
+					f"Scene {index} opens with a held package, incompatible with source-pixel package preservation. "
+					"Keep the package on its established support and manipulate only its removable contents; "
+					"update the preceding end state, this opening and the actions together."
+				)
+				break
+	return errors
+
+
+def requires_unheld_package_openings(project):
+	"""Expose the actual image-stage source-art limitation to the automatic writer."""
+	products = [r for r in project.get("selected_media") or [] if r.get("reference_role") == "Product"]
+	if not products:
+		return False
+	from joymedia.services.consistency.retention import policy
+	from joymedia.services.intake.references import preservation_modes
+
+	if not policy():
+		return False
+	modes = preservation_modes(project)
+	return any(modes.get(r.asset_version, "source_pixels") != "reference_guided" for r in products)
+
+
 def script_schema(inventory, constraints):
 	"""Constrain syntax with the existing runtime transport; validation owns meaning."""
 
@@ -1035,6 +1073,14 @@ def draft_script(
 		for r in action_observations(project)[:8]
 	]
 	constraints["action_reference_observations"] = observations
+	constraints["unheld_package_openings"] = requires_unheld_package_openings(project)
+	if constraints["unheld_package_openings"]:
+		constraints["package_opening_rule"] = (
+			"The active source-art lock requires every visible package to begin each new shot resting "
+			"unobstructed on its established support, never already held, lifted or covered by a paw. "
+			"Prefer keeping the package on that support throughout and manipulating only its removable contents. "
+			"Preserve this state across cuts; do not plan held-package openings that the image stage cannot honor."
+		)
 	authored_effect = bool(
 		AUTHORED_PHYSICAL_EFFECT.search(
 			" ".join((constraints.get("mandatories") or "", constraints.get("creative_direction") or ""))
@@ -2502,6 +2548,10 @@ def validate_script(script, inventory, constraints, advisory=None):
 		raise ValueError(
 			f"The closing scene lasts {script['scenes'][-1]['duration_seconds']:g}s; keep the final presentation brief (at most {max(6.0, 0.2 * total):g}s) and give the time to product actions."
 		)
+	if constraints.get("unheld_package_openings"):
+		opening_errors = unheld_package_opening_errors(script)
+		if opening_errors:
+			raise ValueError(" ".join(opening_errors))
 	story_error = story_logic_errors(script["scenes"])
 	if story_error:
 		raise ValueError(story_error)
