@@ -406,7 +406,7 @@ def render_place(project, setting, view=False, staging=""):
 		f"Required permanent support surfaces and grounded objects for the upcoming shots: {staging or 'none'}. "
 		"Include only the named permanent elements, at reachable scale and depth. "
 		"An unoccupied environment plate: no physical actors, products or transient working props. The main action "
-		"surface is completely bare and the foreground is clear. Wall art uses abstract shapes without faces. "
+		"surface is completely bare and the foreground is clear. "
 		+ _mood(project, avoid=False).replace(MEDIUM_LOCK, "")
 	).strip()
 	from joymedia.services.project.formats import require_dimensions

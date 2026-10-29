@@ -202,3 +202,8 @@ The historical wrong-environment run CRB-00108 is cancelled, with its records
 retained. 29 location checks and 71 script/camera/H3 checks passed. Generic idle
 source-view product endings also normalize into the existing literal source
 hold; their camera remains locked rather than acquiring a variety move.
+
+A live revised environment render removed the sofas/table and produced clear
+grey floor. The machine setting check passed, but visual inspection found
+unrequested wall art. The remaining positive wall-art instruction is removed;
+that diagnostic stays machine-qualified only, not visually approved.
