@@ -9,6 +9,38 @@ from joymedia.services.generation.automation import advance_automatic_run, curre
 
 
 class TestAutomaticDelivery(TestCase):
+	def test_script_rewrite_cannot_stop_an_unrelated_run(self):
+		from joymedia.services.generation import creative_batch as cb
+
+		variants = [
+			{
+				"project": "project",
+				"script": {"scenes": [{"visual_camera": "The mascot holds the pack."}]},
+				"keyframe_request": {"run": "other-run"},
+			}
+		]
+		with (
+			patch("joymedia.services.planning.creative.requires_unheld_package_openings", return_value=True),
+			patch(
+				"frappe.get_doc",
+				return_value=frappe._dict(
+					name="other-run",
+					status="Running",
+					media_project="other-project",
+					project_snapshot_json='{"automatic_delivery":{"batch":"batch"}}',
+				),
+			),
+			patch("joymedia.services.generation.orchestrator.cancel_run") as cancel,
+			patch.object(cb, "_queue_prepare") as queue,
+			self.assertRaisesRegex(ValueError, "outside this automatic batch"),
+		):
+			cb._restart_incompatible_package_openings(
+				frappe._dict(name="batch"), variants, 0, frappe._dict(name="project")
+			)
+		cancel.assert_not_called()
+		queue.assert_not_called()
+		self.assertEqual("project", variants[0]["project"])
+
 	def test_incompatible_package_opening_rewrites_automatically_and_preserves_history(self):
 		from joymedia.services.generation import creative_batch as cb
 
