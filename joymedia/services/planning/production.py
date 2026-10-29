@@ -94,7 +94,14 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 					if appearance:
 						pose = analysis.get("qualified_pose_and_support")
 						descriptions.append(
-							appearance + (" Qualified body state: " + str(pose) if pose else "")
+							appearance
+							+ (
+								" Reference body state: "
+								+ str(pose)
+								+ ". Empty paws describe this reusable reference only; authored scene props and contact remain required."
+								if pose
+								else ""
+							)
 						)
 				if descriptions:
 					reference["description"] = "Chosen source view: " + " | ".join(descriptions)
@@ -593,7 +600,14 @@ def _timed_sheet_plan(project, shot, beat, references, base, authored, *, previo
 		"Convert this authored timed scene into an English production plan, JSON only. "
 		"Preserve every subject and action; invent no objects, actors, packaging layers or claims. "
 		"image_prompt: ONE opening still before the first timed action, at most 60 words. "
-		+ _locked_product_opening_rule()
+		"A reusable character reference does not replace the authored opening's held objects or contact. "
+		"Do not copy its empty-paw or relaxed-arm conditions into an opening already holding, folding or placing material. "
+		"Carry the acquired material from the preceding state until its authored placement or release. "
+		+ (
+			_locked_product_opening_rule()
+			if any(r["role"] == "Product" and r["key"] in base["reference_keys"] for r in references)
+			else "No advertised package belongs in this opening. Keep authored loose materials and working props visible. "
+		)
 		+ "setting_prompt: place and lighting only, at most 30 words. video_prompt: authored motion only. "
 		"start_state and end_state: concise visible states including the actor's posture, support and held objects. "
 		"Carry unchanged posture, support and object placement from the preceding state; focusing on a new action must not silently move an actor onto furniture or move an object to a different support. Use New Scene for a direct cut. "
@@ -1237,6 +1251,15 @@ def _visible_package_words(text):
 	"""Explicitly offscreen packages and negative instructions do not add visible inventory."""
 	words = set()
 	for clause in re.split(r"[.!?;\n]+", str(text or "").split("Product orientation is locked", 1)[0]):
+		if re.match(
+			r"\s*(?:no|without|never show|do not show)\s+(?:[\w-]+\s+){0,3}"
+			r"(?:pack(?:et|age)?s?|box(?:es)?|cartons?|dispensers?|bottles?|tubes?|pouches?|containers?)\b",
+			clause,
+			re.I,
+		) and not re.search(
+			r"\b(?:but|however|yet|holds?|holding|carrying|carries|contains?)\b", clause, re.I
+		):
+			continue
 		if re.search(
 			r"\boff[- ]?screen\b|\bout of (?:the )?(?:frame|view)\b|\boutside (?:the )?(?:close[- ]?up|frame|view)\b",
 			clause,
@@ -1266,6 +1289,22 @@ def _without_unauthored_package(image_prompt, notes, *, description="opening sti
 	# The product-lock contract appended to a prompt is not the planner naming a package.
 	if not _visible_package_words(text):
 		return text
+	# Omit a standalone world-state sentence about an off-camera package.
+	# Preserve all other bytes/subjects rather than asking a model to invent
+	# another object while rewriting an otherwise correct held-material state.
+	clauses = re.split(r"(?<=[.!?;])\s+|\n+", text)
+	package_subject = re.compile(
+		r"^(?:Rules:\s*)?(?:(?:the|a|an)\s+)?"
+		r"(?:(?!mascot\b|character\b|actor\b|person\b|child\b|bear\b|woman\b|man\b)[\w'-]+\s+){0,5}"
+		r"(?:pack(?:age|et)?|box|carton|container|bottle|tube|pouch)\s+"
+		r"(?:is|are|remains?|stays?|sits?|rests?)\b",
+		re.I,
+	)
+	kept = [clause for clause in clauses if not package_subject.match(clause.strip())]
+	cleaned = " ".join(kept).strip()
+	if cleaned and len(kept) < len(clauses) and not _visible_package_words(cleaned):
+		notes.append(f"Omitted off-camera package continuity from the {description}.")
+		return cleaned
 	try:
 		answer = _ask_planner(
 			f"Rewrite this {description} without any package, pack, box or container: this scene's script "
@@ -1304,7 +1343,17 @@ def ground_visible_product_keys(project, plan, keys, references, *, beat=None):
 	# without its container. Generic product-lock instructions in the planner's
 	# prompt are not evidence that the package belongs in that opening frame.
 	if beat is not None and beat.get("products") == []:
-		authored = " ".join(str(beat.get(field) or "") for field in ("raw", "camera", "action", "rules"))
+		# Continuity may keep an off-camera pack stationary in the room. That
+		# world state is not a reason to put it inside a declared product-free
+		# close-up. Explicit visible handling still contradicts an empty roster.
+		fields = (
+			("camera", "action") if beat.get("products_declared") else ("raw", "camera", "action", "rules")
+		)
+		authored = " ".join(str(beat.get(field) or "") for field in fields)
+		if beat.get("products_declared") and _visible_package_words(authored):
+			raise ValueError(
+				"The scene declares no visible product but its opening or action shows a package; repair the scene roster or staging."
+			)
 		if not _visible_package_words(authored):
 			product_keys = {
 				reference["key"] for reference in references if reference.get("role") == "Product"

@@ -1189,6 +1189,57 @@ class TestUnauthoredPackage(FrappeTestCase):
 		self.assertIn("rug", plan["start_state"])
 		self.assertEqual("The seated mascot folds the tissue.", plan["video_prompt"])
 
+	def test_pack_continuity_does_not_override_a_declared_empty_closeup_roster(self):
+		plan = {
+			"image_prompt": "Mascot holds a tissue beside the pack.",
+			"video_prompt": "Fold the tissue. Rules: the pack remains stationary on the rug.",
+		}
+		with patch.object(
+			planner,
+			"_without_unauthored_package",
+			side_effect=lambda text, *a, **kw: "Mascot holds and folds one loose tissue.",
+		):
+			keys, _ = planner.ground_visible_product_keys(
+				frappe._dict(),
+				plan,
+				["mascot", "pack"],
+				[{"key": "pack", "role": "Product"}],
+				beat={
+					"products": [],
+					"products_declared": True,
+					"camera": "Close-up of the mascot holding one tissue.",
+					"action": "Fold the tissue.",
+					"rules": "The pack remains stationary on the rug.",
+				},
+			)
+		self.assertEqual(["mascot"], keys)
+		self.assertNotIn("pack", plan["image_prompt"])
+		self.assertNotIn("pack", plan["video_prompt"])
+
+	def test_standalone_package_world_state_is_omitted_without_rewriting_held_material(self):
+		text = "The mascot is seated on the rug, holding a tissue in one paw, the other arm remains relaxed. The Shera Facial pack is stationary on the rug."
+		with patch.object(planner, "_ask_planner", side_effect=AssertionError("No model rewrite needed")):
+			result = planner._without_unauthored_package(text, [], description="starting state")
+		self.assertEqual(text.split(" The Shera")[0], result)
+		self.assertFalse(
+			planner._visible_package_words("No facial pack or any other package is present on the rug.")
+		)
+		self.assertTrue(planner._visible_package_words("No fur on the mascot, which holds a box."))
+
+	def test_explicit_empty_product_roster_cannot_silently_add_a_handled_pack(self):
+		with self.assertRaisesRegex(ValueError, "declares no visible product"):
+			planner.ground_visible_product_keys(
+				frappe._dict(),
+				{},
+				["mascot"],
+				[{"key": "pack", "role": "Product"}],
+				beat={
+					"products": [],
+					"products_declared": True,
+					"camera": "Mascot holds the pack.",
+				},
+			)
+
 	def test_failed_package_removal_cannot_leave_unbound_boundary_objects(self):
 		from joymedia.services.planning.production import ground_visible_product_keys
 

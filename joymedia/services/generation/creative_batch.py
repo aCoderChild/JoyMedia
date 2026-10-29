@@ -97,6 +97,7 @@ PRODUCT_VIEW_FAILURES = (
 	"Product view is incompatible with the supplied source photograph.",
 	"Product is cropped at the scene edge.",
 	"Original source cannot fit the detected footprint.",
+	"Source product view changes its measured scene footprint;",
 )
 PLANNING_QUEUE = "joymedia_planning"
 
@@ -232,7 +233,14 @@ def _restart_script_after_pose_shortfall(variant):
 	variant["pose_script_redraws"] = int(variant.get("pose_script_redraws") or 0) + 1
 	# A new screenplay has new requirements. Re-evaluate both media preparation
 	# stages instead of reusing their completion flags from the rejected script.
-	for key in ("pose_prepared", "pose_views", "product_views_prepared", "product_views", "product_cutouts"):
+	for key in (
+		"reference_plan",
+		"pose_prepared",
+		"pose_views",
+		"product_views_prepared",
+		"product_views",
+		"product_cutouts",
+	):
 		variant.pop(key, None)
 	return True
 
@@ -464,6 +472,71 @@ def _product_lock_rejected(run_name, shot_name):
 	)
 
 
+def _recover_unlisted_products(batch, variants, index, project, request):
+	"""Replan legacy bindings that contradict the accepted script's empty roster."""
+	variant = variants[index]
+	scenes = (variant.get("script") or {}).get("scenes") or []
+	if not scenes or not any(scene.get("products") == [] and "products" in scene for scene in scenes):
+		return False
+	shots = [
+		frappe.get_doc("Shot", name)
+		for name in frappe.get_all(
+			"Shot",
+			filters={"media_project": project.name, "is_removed": 0},
+			pluck="name",
+			order_by="shot_number asc",
+		)
+	]
+	if len(shots) != len(scenes):
+		raise ValueError(
+			"The script-to-shot mapping changed; cannot recover references from an obsolete roster."
+		)
+	wanted = {
+		shot.name
+		for scene, shot in zip(scenes, shots, strict=False)
+		if scene.get("products") == []
+		and "products" in scene
+		and any(str(row.reference_role or "").casefold() == "product" for row in shot.generation_inputs)
+	}
+	if not wanted:
+		return False
+	if variant.get("empty_roster_replans"):
+		raise ValueError("Product-free scenes still have product conditioning after automatic replanning.")
+	from joymedia.api.storyboard import _plan_project
+	from joymedia.services.planning.reference_plan import build_reference_plan, ground_generated_inventory
+	from joymedia.services.scene.registry import project_reference_registry
+
+	_plan_project(project, wanted, apply=True)
+	for name in wanted:
+		if any(
+			str(row.reference_role or "").casefold() == "product"
+			for row in frappe.get_doc("Shot", name).generation_inputs
+		):
+			raise ValueError("Replanned product-free scene still contains product conditioning.")
+	ground_generated_inventory(variant["script"])
+	plan = build_reference_plan(variant["script"], project_reference_registry(project))
+	prior = variant.get("reference_plan") or {}
+	for key in ("pose_requirements", "prepared_poses", "prepared_products"):
+		plan[key] = prior.get(key) or []
+	variant["reference_plan"] = plan
+	source = frappe.parse_json(project.storyboard_source_json or "{}") or {}
+	source["reference_preparation_plan"] = plan
+	project.db_set("storyboard_source_json", frappe.as_json(source))
+	project.reload()
+	variant["empty_roster_replans"] = sorted(wanted)
+	variant.setdefault("recovery_events", []).append(
+		{
+			"reason": "Replanned product conditioning that contradicted explicit empty scene rosters.",
+			"shots": sorted(wanted),
+			"previous_run": (variant.get("keyframe_request") or {}).get("run"),
+		}
+	)
+	_start_keyframes(project, variant, request, batch.name)
+	frappe.db.commit()
+	_write(batch.name, variants, changed_index=index)
+	return True
+
+
 def _mark_for_corrected_redraw(shot_name, findings):
 	"""Queue a frame redraw whose prompt gets a retry correction for these findings.
 
@@ -670,6 +743,7 @@ def _restart_automatic_script_variant(
 		"automatic_scene_rewrites",
 		"frame_corrections",
 		"physical_audit",
+		"reference_plan",
 		"scene_revision",
 		"pose_prepared",
 		"pose_views",
@@ -1303,9 +1377,14 @@ def _prepare_batch_locked(batch_name, position=None):
 			script = variant["script"]
 			if not variant.get("workbook"):
 				from joymedia.services.planning.product_views import apply_requested_view_sequence
-				from joymedia.services.planning.reference_plan import build_reference_plan, script_fingerprint
+				from joymedia.services.planning.reference_plan import (
+					build_reference_plan,
+					ground_generated_inventory,
+					script_fingerprint,
+				)
 				from joymedia.services.scene.registry import project_reference_registry
 
+				ground_generated_inventory(script)
 				apply_requested_view_sequence(script, request.get("direction") or project.video_idea)
 				if (variant.get("reference_plan") or {}).get("script_sha256") != script_fingerprint(script):
 					variant["reference_plan"] = build_reference_plan(
@@ -1935,10 +2014,24 @@ def rewrite_scenes_in_place(batch_name, position):
 		# A scene rewrite can change the opening body state. Resolve its cast views
 		# again before importing the workbook; the old shot may still point at a
 		# pose whose qualification has since been revoked.
+		revised_pose_plan = []
+		if changed and variant.get("reference_plan"):
+			from joymedia.services.planning.product_views import (
+				prepare_script_product_cutouts,
+				prepare_script_product_views,
+			)
+			from joymedia.services.planning.reference_plan import ground_generated_inventory
+
+			ground_generated_inventory(script)
+			variant["product_views"] = prepare_script_product_views(project, script)
+			variant["product_cutouts"] = prepare_script_product_cutouts(project, script)
+			project.reload()
 		if changed and any(script["scenes"][i].get("cast") for i in changed):
 			from joymedia.services.planning.pose_assets import prepare_script_pose_views
 
-			variant["pose_views"] = prepare_script_pose_views(project, script)
+			variant["pose_views"] = prepare_script_pose_views(
+				project, script, on_plan=revised_pose_plan.extend
+			)
 			_admit_revised_pose_preparation(variant, script)
 			project.reload()
 		content = script_workbook(script, project)
@@ -1953,6 +2046,18 @@ def rewrite_scenes_in_place(batch_name, position):
 		source = frappe.parse_json(project.storyboard_source_json)
 		for i in changed:
 			source["selected_demo"]["scenes"][i] = parsed[i]
+		if changed and variant.get("reference_plan"):
+			from joymedia.services.planning.reference_plan import build_reference_plan
+			from joymedia.services.scene.registry import project_reference_registry
+
+			plan = build_reference_plan(script, project_reference_registry(project))
+			plan.update(
+				pose_requirements=revised_pose_plan,
+				prepared_poses=variant.get("pose_views") or [],
+				prepared_products=variant.get("product_views") or [],
+			)
+			variant["reference_plan"] = plan
+			source["reference_preparation_plan"] = plan
 		project.db_set("storyboard_source_json", frappe.as_json(source))
 		shots = frappe.get_all(
 			"Shot",
@@ -2713,6 +2818,8 @@ def advance_batch(batch_name, user=None):
 				)
 				if active:
 					continue
+				if automatic and _recover_unlisted_products(batch, variants, index, project, request):
+					return
 				if automatic and _restart_incompatible_package_openings(batch, variants, index, project):
 					return
 				shots = frappe.get_all(

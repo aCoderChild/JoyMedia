@@ -179,6 +179,8 @@ class TestInferredCameraPolicy(unittest.TestCase):
 				[{"start": 0, "end": 2, "action": "The cup remains still."}],
 			)
 		planner.assert_called_once()
+		self.assertIn("No advertised package belongs in this opening", planner.call_args.args[0])
+		self.assertNotIn(p._locked_product_opening_rule(), planner.call_args.args[0])
 		self.assertEqual("wide", plan["motion_plan"]["shot_structure"]["framing"])
 		self.assertEqual("establish", plan["motion_plan"]["shot_structure"]["stage"])
 		self.assertEqual(plan["motion_plan"]["camera_intent"]["purpose"], "hook")

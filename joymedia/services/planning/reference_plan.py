@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 
 ENVIRONMENT_KINDS = {"support", "furnishing", "background", "working_prop", "material"}
 
@@ -23,6 +24,12 @@ def environment_entities(scene):
 			raise ValueError("Environment objects need a supported kind.")
 		name = " ".join(str(row.get("name") or "").split())
 		quote = " ".join(str(row.get("source_quote") or "").split())
+		if re.search(
+			r"\b(?:mascot|character|person|people|child|adult|bear|teddy)\b", name, re.I
+		) or re.search(r"\b(?:product|retail pack|pack|package)\s*$", name, re.I):
+			raise ValueError(
+				f"Environment object {name!r} belongs in cast/products, not an empty location inventory."
+			)
 		if not name or not quote or quote.casefold() not in text or name.casefold() not in quote.casefold():
 			raise ValueError(
 				f"Environment object {name!r} is not grounded by source_quote {quote!r}. "
@@ -68,6 +75,27 @@ def ground_generated_inventory(script):
 			try:
 				environment_entities({**scene, "environment_entities": [row]})
 			except ValueError as exc:
+				# A quote is a pointer into the authored scene, not a reason to add
+				# missing furniture. Repair that pointer only when the literal name
+				# already occurs in the scene and its role still passes validation.
+				name = str(row.get("name") or "").strip() if isinstance(row, dict) else ""
+				text = " ".join(
+					str(scene.get(k) or "") for k in ("place", "visual_camera", "action", "continuity_rules")
+				)
+				match = re.search(re.escape(name), text, re.I) if name else None
+				repaired = {**row, "source_quote": match.group()} if match else None
+				if repaired:
+					try:
+						environment_entities({**scene, "environment_entities": [repaired]})
+					except ValueError:
+						pass
+					else:
+						grounded.append(repaired)
+						script.setdefault("inventory_repairs", []).append(
+							{"scene": index, "original": row, "repaired": repaired}
+						)
+						changes.append(f"Scene {index}: grounded {name!r} to its literal authored name.")
+						continue
 				script.setdefault("inventory_rejections", []).append(
 					{"scene": index, "entry": row, "reason": str(exc)}
 				)

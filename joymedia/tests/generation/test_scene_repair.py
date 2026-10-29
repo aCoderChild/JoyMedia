@@ -1,5 +1,5 @@
 from contextlib import nullcontext
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -12,6 +12,49 @@ def shot(number, status, notes=""):
 
 
 class TestAutomaticSceneRepair(FrappeTestCase):
+	def test_legacy_product_conditioning_is_replanned_only_for_explicit_empty_rosters(self):
+		project = MagicMock()
+		project.name = "project"
+		project.storyboard_source_json = "{}"
+		shots = {
+			name: frappe._dict(name=name, generation_inputs=[frappe._dict(reference_role="Product")])
+			for name in ("S1", "S2")
+		}
+		variant = {
+			"script": {"scenes": [{"products": ["pack"]}, {"products": []}]},
+			"keyframe_request": {"run": "old"},
+		}
+
+		def replan(project, wanted, apply):
+			self.assertEqual({"S2"}, wanted)
+			self.assertTrue(apply)
+			shots["S2"].generation_inputs = []
+
+		with (
+			patch("frappe.get_all", return_value=["S1", "S2"]),
+			patch("frappe.get_doc", side_effect=lambda dt, name: shots[name]),
+			patch("frappe.db.commit"),
+			patch("joymedia.api.storyboard._plan_project", side_effect=replan),
+			patch("joymedia.services.scene.registry.project_reference_registry", return_value=[]),
+			patch(
+				"joymedia.services.planning.reference_plan.build_reference_plan",
+				return_value={"environments": []},
+			),
+			patch.object(cb, "_start_keyframes") as start,
+			patch.object(cb, "_write"),
+		):
+			self.assertTrue(
+				cb._recover_unlisted_products(frappe._dict(name="batch"), [variant], 0, project, {})
+			)
+			start.assert_called_once()
+			self.assertFalse(
+				cb._recover_unlisted_products(frappe._dict(name="batch"), [variant], 0, project, {})
+			)
+		self.assertEqual(1, len(shots["S1"].generation_inputs))
+		self.assertEqual(["S2"], variant["empty_roster_replans"])
+		self.assertEqual("old", variant["recovery_events"][0]["previous_run"])
+		self.assertEqual([], variant["reference_plan"]["environments"])
+
 	def test_pose_shortfall_replans_once_and_rechecks_media_for_new_script(self):
 		variant = {
 			"script": {"scenes": [{"beat_name": "Open"}]},
@@ -318,6 +361,7 @@ class TestPackshotFallback(FrappeTestCase):
 	def test_every_product_lock_geometry_rejection_is_correctable(self):
 		self.assertIn("Original source cannot fit the detected footprint.", cb.PRODUCT_VIEW_FAILURES)
 		self.assertIn("Product is cropped at the scene edge.", cb.PRODUCT_VIEW_FAILURES)
+		self.assertIn("Source product view changes its measured scene footprint;", cb.PRODUCT_VIEW_FAILURES)
 
 
 class TestFailedSceneRewrite(FrappeTestCase):

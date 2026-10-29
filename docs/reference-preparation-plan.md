@@ -56,9 +56,45 @@ live-run evidence are in
 The fresh unattended run is CRB-00104 / PRJ-02727. Its terminal outcome must be
 recorded separately; passing unit checks does not certify a final commercial.
 
-403 targeted backend tests passed after the routing, extraction and inventory
+440 targeted backend tests passed after the routing, extraction, inventory and
+scene-binding recovery
 repairs. The production frontend build, Ruff and diff checks passed. The first
 live script attempt exposed overly coarse inventory-validation feedback and
 spent its bounded repairs repeating unsupported furniture annotations. The
 fix gives exact repair evidence and normalizes AI annotations from the actual
 scene text instead of rewriting an otherwise valid story to retain them.
+
+The live preparation panel passed browser inspection with two original
+identities and no page errors or generation mutations. The registry regression
+passed on PRJ-02726. PRJ-02724 now follows the new running child batch, so its
+old completed-script browser fixture no longer applies during script creation.
+
+The first native frame run, RUN-01370, failed without admitting an unprotected
+frame. Its evidence exposed these additional issues:
+
+- A product-free close-up inherited a pack from room-wide continuity notes.
+  Explicit empty product rosters now constrain opening, boundaries and motion;
+  continuity alone does not add a visible package. A positive authored package
+  action contradicting an empty roster is rejected for repair.
+- Product-lock instructions were included in product-free timed-shot prompts.
+  These instructions now require an actual product binding. Reusable pose
+  descriptions explicitly preserve the authored scene's props and contact.
+- A measured-footprint rejection was classified as an unusable input rather
+  than correctable staging. It now participates in bounded product restaging.
+- A package-removal rewrite introduced facial cream, and another correctly
+  negated a facial pack but triggered the presence detector. Standalone
+  off-camera package world-state sentences are now omitted deterministically;
+  other state text is preserved. Qualified negative package statements do not
+  count as visible inventory. Ambiguous mixed sentences still cannot pass with
+  an unbound visible package.
+
+Native recovery replans legacy product bindings that contradict explicit empty
+rosters, verifies their removal, and creates a new frame run. It preserves old
+attempts and stops if its replan cannot repair the mapping. Automatic scene
+rewrites also refresh product preparation, pose requirements and the stored
+preparation plan. An old inventory cannot describe a new screenplay.
+
+A live read-only replay after the fix returned a character-and-environment
+close-up with a held tissue and no product key or package sentence. The actual
+frame and final-video outcome must still be assessed separately; this is not a
+successful unattended-film claim.

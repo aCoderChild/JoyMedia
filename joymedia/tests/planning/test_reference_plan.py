@@ -11,6 +11,32 @@ from joymedia.services.planning.reference_plan import (
 
 
 class TestReferencePlan(TestCase):
+	def test_inventory_repairs_authored_support_quotes_but_excludes_named_subjects(self):
+		script = {
+			"scenes": [
+				{
+					"place": "Room with a broad rug",
+					"visual_camera": "The mascot sits beside the Shera Facial pack.",
+					"environment_entities": [
+						{"name": "rug", "kind": "support", "source_quote": "large carpet"},
+						{
+							"name": "Shera Facial pack",
+							"kind": "working_prop",
+							"source_quote": "Shera Facial pack",
+						},
+						{"name": "mascot", "kind": "background", "source_quote": "mascot"},
+					],
+				}
+			]
+		}
+		ground_generated_inventory(script)
+		self.assertEqual(
+			[{"name": "rug", "kind": "support", "source_quote": "rug"}],
+			script["scenes"][0]["environment_entities"],
+		)
+		self.assertEqual(2, len(script["inventory_rejections"]))
+		self.assertEqual(1, len(script["inventory_repairs"]))
+
 	def test_generated_inventory_drops_invented_annotations_without_changing_the_story(self):
 		scene = {
 			"place": "Living room with a rug",
