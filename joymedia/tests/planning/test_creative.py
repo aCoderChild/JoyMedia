@@ -2255,10 +2255,10 @@ class TestCreativeWorkflow(FrappeTestCase):
 		with patch("joymedia.services.review.admission.freeze_policy", return_value={"version": 1}) as policy:
 			with delivery_context({"delivery_mode": "automatic"}, "test-batch"):
 				automatic = json.loads(build_project_snapshot(self.project)[0])
-				policy.assert_not_called()
+				policy.assert_called_once()
 			assisted = json.loads(build_project_snapshot(self.project)[0])
-		self.assertEqual("deferred", automatic["automatic_delivery"]["quality_review"])
-		self.assertNotIn("visual_admission", automatic)
+		self.assertEqual("required", automatic["automatic_delivery"]["quality_review"])
+		self.assertEqual({"version": 1}, automatic["visual_admission"])
 		self.assertNotIn("automatic_delivery", assisted)
 		self.assertEqual({"version": 1}, assisted["visual_admission"])
 

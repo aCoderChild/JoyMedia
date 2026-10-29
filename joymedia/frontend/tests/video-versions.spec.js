@@ -78,3 +78,14 @@ test('assisted videos open script review in the workspace without starting rende
   await expect(review.getByRole('button', { name: 'Tạo video này', exact: true })).toBeVisible();
   expect(renders).toBe(0);
 });
+
+
+test('critical frame findings disable approval and rendering even after an old approval', async ({ page }) => {
+  await page.goto('tests/fixtures/rio-timeline.html?critical=1');
+  const first = page.locator('.rio-node').nth(0);
+  const second = page.locator('.rio-node').nth(1);
+  await expect(first.locator('[data-test="rio-frame-findings"]')).toContainText('character intersects the table');
+  await expect(first.getByRole('button', { name: 'Duyệt ảnh', exact: true })).toBeDisabled();
+  await expect(first.locator('.rio-action-render')).toBeDisabled();
+  await expect(second.locator('.rio-action-render')).toBeDisabled();
+});

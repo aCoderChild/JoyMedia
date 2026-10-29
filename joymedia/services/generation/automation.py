@@ -41,7 +41,7 @@ def delivery_context(request, batch=None):
 	previous snapshots, admission reports, or final release approval.
 	"""
 	policy = (
-		{"mode": "automatic", "batch": batch, "quality_review": "deferred", "export_purpose": "review"}
+		{"mode": "automatic", "batch": batch, "quality_review": "required", "export_purpose": "review"}
 		if is_automatic(request)
 		else None
 	)

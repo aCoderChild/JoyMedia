@@ -10,6 +10,8 @@ from joymedia.services.review.physical_audit import (
 	actor_count_findings,
 	compare,
 	frame_findings,
+	obvious_geometry_results,
+	opening_actor_support,
 )
 from joymedia.tests.planning.test_creative import sample_script
 
@@ -17,6 +19,67 @@ SCENE = {"human_cast": False, "has_product": True, "medium_locked": True, "close
 
 
 class TestPhysicalAudit(FrappeTestCase):
+	def test_support_is_extracted_only_from_explicit_unambiguous_opening(self):
+		self.assertEqual("ground", opening_actor_support("The actor is seated on the rug beside the table."))
+		self.assertEqual("work_surface", opening_actor_support("The miniature stands on the coffee table."))
+		self.assertIsNone(opening_actor_support("There is a rug and a table in the room."))
+		self.assertIsNone(opening_actor_support("One actor sits on the rug; another sits on the sofa."))
+
+	def test_obvious_defect_in_any_sample_dominates_coherent_samples(self):
+		def observe(picture, question, **kwargs):
+			return {
+				key: {
+					"present": picture == b"bad" and key == "solid_intersection",
+					"evidence": "Visible contact.",
+				}
+				for key in (
+					"solid_intersection",
+					"unsupported_load",
+					"implausible_scale",
+					"wrong_opening_support",
+				)
+			}
+
+		rows = obvious_geometry_results(
+			[b"good", b"bad", b"good"], opening="Actor seated on floor", ask=observe
+		)
+		intersection = next(r for r in rows if r["id"] == "geometry.solid_intersection")
+		self.assertEqual("violated", intersection["verdict"])
+		self.assertEqual([1], intersection["frames"])
+		opening = next(r for r in rows if r["id"] == "geometry.wrong_opening_support")
+		self.assertEqual([0], opening["frames"])
+
+	def test_observed_table_support_is_compared_in_code_with_authored_ground_support(self):
+		rows = obvious_geometry_results(
+			[b"frame"],
+			opening="Actor seated on the rug.",
+			ask=lambda *args, **kwargs: {
+				"actor_support": {"surface": "work_surface", "evidence": "Pelvis rests on tabletop."}
+			},
+		)
+		row = next(r for r in rows if r["id"] == "geometry.wrong_opening_support")
+		self.assertEqual("violated", row["verdict"])
+		self.assertEqual([0], row["frames"])
+
+	def test_malformed_or_missing_physical_evidence_is_never_a_pass(self):
+		for answer in (
+			{},
+			{"solid_intersection": {"present": 0, "evidence": "Looks fine"}},
+			{"solid_intersection": {"present": False, "evidence": ""}},
+		):
+			rows = obvious_geometry_results([b"candidate"], ask=lambda *args, **kwargs: answer)
+			self.assertTrue(all(r["verdict"] == "uncertain" for r in rows))
+
+	def test_coherent_physical_evidence_can_pass_without_fixed_furniture_dimensions(self):
+		rows = obvious_geometry_results(
+			[b"candidate"],
+			ask=lambda *args, **kwargs: {
+				key: {"present": False, "evidence": "Visible support and separated solid bodies."}
+				for key in ("solid_intersection", "unsupported_load", "implausible_scale")
+			},
+		)
+		self.assertTrue(all(r["verdict"] == "supported" for r in rows))
+
 	def test_product_front_artwork_does_not_prove_scene_angle(self):
 		def observe(images, question, **kwargs):
 			self.assertEqual(["source", "frame"], images)

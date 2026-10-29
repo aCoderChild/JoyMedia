@@ -39,6 +39,29 @@ class TestKeyframeSignature(FrappeTestCase):
 
 
 class TestApprovedKeyframe(FrappeTestCase):
+	def test_approval_endpoint_rejects_pending_checks_and_critical_findings(self):
+		from unittest.mock import Mock
+
+		project = Mock(name="project")
+		project.name = "project"
+		for status, notes in (
+			("Checking", ""),
+			("Needs Review", "Critical geometry: floating pack"),
+			("Needs Review", "Critical identity: different mascot"),
+		):
+			shot = _shot(
+				name="shot", media_project="project", consistency_status=status, consistency_notes=notes
+			)
+			with (
+				self.subTest(status=status, notes=notes),
+				patch("frappe.get_doc", side_effect=[project, shot]),
+				patch("joymedia.services.keyframes.product_review.has_product", return_value=False),
+				patch.object(frappe.db, "set_value") as write,
+				self.assertRaises(frappe.ValidationError),
+			):
+				keyframes.set_keyframe_approval("project", "shot", True)
+			write.assert_not_called()
+
 	def _task(self, shot):
 		values = {
 			("Generation Artifact", "ART", "frappe_file"): "/private/files/k.png",
@@ -64,6 +87,9 @@ class TestApprovedKeyframe(FrappeTestCase):
 		shot = self._approved()
 		shot.keyframe_status = "Pending Review"
 		self.assertIsNone(self._task(shot))
+
+	def test_existing_approval_cannot_bypass_a_critical_finding(self):
+		self.assertIsNone(self._task(self._approved(consistency_notes="Critical geometry: floating pack")))
 
 	def test_a_keyframe_drawn_for_other_inputs_is_not_used(self):
 		shot = self._approved()

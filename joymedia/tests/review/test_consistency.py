@@ -375,6 +375,19 @@ class TestConsistencyLoop(FrappeTestCase):
 		self.assertEqual(recorded, [("Redoing", "Critical geometry: unsupported prop")])
 		redo.assert_called_once()
 
+	def test_automatic_preview_does_not_defer_obvious_identity_or_style_defects(self):
+		for finding in (
+			"Critical identity: mascot changed colour",
+			"Critical style: smooth mascot became plush",
+		):
+			with (
+				self.subTest(finding=finding),
+				patch.object(consistency, "_automatic_preview_in_progress", return_value=True),
+			):
+				recorded, redo = self._run(self._shot(), [finding], kind="take")
+			self.assertEqual("Redoing", recorded[0][0])
+			redo.assert_called_once()
+
 	def test_clear_character_on_product_uses_bounded_frame_redraw(self):
 		recorded, redo = self._run(
 			self._shot(), ["Critical geometry: character stands on the advertised product"]

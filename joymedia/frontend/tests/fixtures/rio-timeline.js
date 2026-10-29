@@ -26,7 +26,7 @@ const App = defineComponent({
     const audioClips = ref(initialAudioClips);
     return () => h('div', { style: 'height:100vh;display:flex;flex-direction:column' }, [h(RioStudioWorkspace, {
       projectName: 'FIXTURE', projectTitle: 'Timeline fixture', projectStatus: 'Completed', currentLang: 'vi',
-      shots, clips, audioClips: audioClips.value, selectedShotIndex: selectedShotIndex.value, assets, frames: [],
+      shots, clips, audioClips: audioClips.value, selectedShotIndex: selectedShotIndex.value, assets, frames: new URLSearchParams(location.search).has('critical') ? shots.slice(0, 2).map((shot, i) => ({ shot: shot.name, url: '/frame.png', needs_keyframe: true, status: i ? 'Approved' : 'Pending Review', review_status: 'Needs Review', review_notes: 'Critical geometry: character intersects the table' })) : [],
       timeline: { total_seconds: 16 }, fps: 24, canEdit: true, canWork: true, canExport: true, canUndo: true, canRedo: true, storyboardApproved: true,
       onSelectShot: (_shot, index) => { selectedShotIndex.value = index; window.fixtureEvents.push(`shot:${index + 1}`); },
       onSliceStoryboard: () => { slicerOpen.value = true; },

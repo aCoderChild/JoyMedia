@@ -2180,6 +2180,8 @@ def _selected_review_outputs(project_name):
 		return False
 	for name in shots:
 		shot = frappe.get_doc("Shot", name)
+		if "Critical " in str(shot.consistency_notes or ""):
+			return False
 		selected = shot.selected_output_asset_version
 		if not selected or selected not in {row.name for row in scene_takes(project_name, name)}:
 			return False
@@ -2302,17 +2304,19 @@ def _select_automatic_outputs(project_name, run_name, variant):
 		):
 			if row.selected_output_asset_version:
 				status = frappe.db.get_value("Shot", row.name, "consistency_status")
+				if status in {"Needs Review", REDO}:
+					notes = frappe.db.get_value("Shot", row.name, "consistency_notes") or ""
+					if "Critical " in notes:
+						raise ValueError(
+							f"Scene {row.name} has unresolved physical or consistency errors: {notes}"
+						)
 				if status == "Needs Review":
-					variant.setdefault("preview_findings", {})[row.name] = (
-						frappe.db.get_value("Shot", row.name, "consistency_notes") or "visual review needed"
-					)
+					variant.setdefault("preview_findings", {})[row.name] = notes or "visual review needed"
 					continue
 				if status == REDO:
 					# A complete draft comes before editorial retries. The machine
 					# finding remains visible, while this usable take stays selected.
-					variant.setdefault("preview_findings", {})[row.name] = (
-						frappe.db.get_value("Shot", row.name, "consistency_notes") or "visual review needed"
-					)
+					variant.setdefault("preview_findings", {})[row.name] = notes or "visual review needed"
 				if status == "Checking":
 					ready = False
 				continue
@@ -2711,7 +2715,7 @@ def advance_batch(batch_name, user=None):
 				if automatic:
 					variant["frame_authorization"] = {
 						"mode": "automatic",
-						"quality_review": "deferred",
+						"quality_review": "required",
 						"artifacts": {
 							s.name: _explicit_first_frame(s.name) or s.keyframe_artifact for s in shots
 						},

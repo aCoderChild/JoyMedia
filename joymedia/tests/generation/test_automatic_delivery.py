@@ -9,6 +9,23 @@ from joymedia.services.generation.automation import advance_automatic_run, curre
 
 
 class TestAutomaticDelivery(TestCase):
+	def test_known_critical_finding_stops_automatic_finishing(self):
+		from joymedia.services.generation.creative_batch import _select_automatic_outputs
+
+		with (
+			patch(
+				"frappe.get_all",
+				side_effect=lambda doctype, **kwargs: []
+				if doctype == "Generation Run"
+				else [frappe._dict(name="shot", selected_output_asset_version="take")],
+			),
+			patch.object(
+				frappe.db, "get_value", side_effect=["Needs Review", "Critical identity: different mascot"]
+			),
+		):
+			with self.assertRaisesRegex(ValueError, "different mascot"):
+				_select_automatic_outputs("project", "run", {"automatic_origin_run": "origin"})
+
 	def test_completed_scene_enters_rough_cut_while_other_scenes_render(self):
 		from joymedia.services.generation.creative_batch import _select_incremental_automatic_outputs
 

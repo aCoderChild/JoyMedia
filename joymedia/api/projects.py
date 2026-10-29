@@ -601,8 +601,8 @@ def generate_project_video(project_name, purpose=None):
 	if purpose == "review":
 		from joymedia.services.generation.automation import delivery_context
 
-		# Preview authorization defers sampled visual qualification; it never
-		# writes machine passes or release approval. The native run freezes it.
+		# Review purpose retains visual admission; it never writes release
+		# approval. The native run freezes the delivery and screening policies.
 		with delivery_context({"delivery_mode": "automatic"}):
 			return project.generate_end_to_end()
 	return project.generate_end_to_end()

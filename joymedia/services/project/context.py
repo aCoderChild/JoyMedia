@@ -440,7 +440,9 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 	automatic_delivery = current_delivery()
 	if automatic_delivery:
 		snapshot["automatic_delivery"] = dict(automatic_delivery)
-	admission = None if automatic_delivery else freeze_policy()
+	# A review export changes release status, not whether visibly broken media
+	# may enter the timeline. Automatic and assisted runs share the same gate.
+	admission = freeze_policy()
 	if admission:
 		snapshot["visual_admission"] = admission
 		for scene in snapshot["shots"]:

@@ -19,6 +19,33 @@ def _streamed(content):
 
 
 class TestVisualTransport(TestCase):
+	def test_observation_schema_uses_the_configured_structured_transport(self):
+		import frappe
+
+		from joymedia.services.review.consistency import ask
+
+		schema = {"type": "object", "properties": {"answer": {"type": "boolean"}}}
+		response = Mock()
+		response.json.return_value = {"choices": [{"message": {"content": '{"answer": false}'}}]}
+		with (
+			patch("joymedia.services.review.consistency._post_visual_request", return_value=response) as post,
+			patch("joymedia.services.review.consistency._data_url", return_value="image"),
+		):
+			answer = ask(
+				b"frame",
+				"Observe",
+				frappe._dict(
+					base_url="endpoint",
+					model="vision",
+					timeout=120,
+					structured_output={"transport": "structured_outputs"},
+				),
+				schema=schema,
+			)
+		self.assertEqual({"answer": False}, answer)
+		self.assertEqual(schema, post.call_args.kwargs["json"]["structured_outputs"]["json"])
+		self.assertNotIn("response_format", post.call_args.kwargs["json"])
+
 	def test_later_windows_are_not_starved_by_a_single_request_deadline(self):
 		import json
 

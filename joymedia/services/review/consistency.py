@@ -193,7 +193,15 @@ def check_scene(shot_name, kind, user, subject=None):
 	from joymedia.services.scene.contract import read_contract
 
 	critical_geometry = any(
-		reason.startswith(("Critical geometry:", "Critical framing:", "Critical prop:"))
+		reason.startswith(
+			(
+				"Critical geometry:",
+				"Critical framing:",
+				"Critical prop:",
+				"Critical identity:",
+				"Critical style:",
+			)
+		)
 		for reason in failures
 	)
 	if kind == "take" and _automatic_preview_in_progress(shot.media_project) and not critical_geometry:
@@ -454,8 +462,9 @@ PRODUCT_PERSPECTIVE = (
 	"are cropped or hidden. Return JSON with answer and a reason naming visible evidence."
 )
 HELD_PRODUCT_CONTACT = (
-	"The authored opening says the actor holds the advertised product: {opening}. "
+	"Inspect the advertised product's actual support in this opening: {opening}. "
 	"Does the product have visible, credible contact with the actor's paw or another physical support? "
+	"A product visibly resting on a table or floor is supported even when no paw touches it. "
 	"Answer false when the product clearly floats in front of the actor without contact; "
 	"answer null when the contact is cropped or hidden. Return JSON with answer true, false, or null "
 	"and a reason describing the contact."
@@ -1021,7 +1030,7 @@ def _post_visual_request(url, *, json=None, timeout=(10, 120)):
 			time.sleep(5 * (attempt + 1))
 
 
-def ask(picture, question, configured=None, *, max_edge=IMAGE_EDGE):
+def ask(picture, question, configured=None, *, max_edge=IMAGE_EDGE, schema=None):
 	"""One picture, one question, a JSON answer."""
 	configured = configured or endpoint("vision")
 	pictures = picture if isinstance(picture, (list, tuple)) else [picture]
@@ -1043,7 +1052,11 @@ def ask(picture, question, configured=None, *, max_edge=IMAGE_EDGE):
 					],
 				}
 			],
-			"response_format": {"type": "json_object"},
+			**(
+				structured_response(configured, schema, "visual_observation")
+				if schema is not None
+				else {"response_format": {"type": "json_object"}}
+			),
 			**sampling("vision_observation"),
 		},
 		timeout=(10, configured.timeout),

@@ -79,6 +79,8 @@ def approved_keyframe_task(shot):
 	"""The Generation Task whose Primary Image is this scene's approved, current keyframe, else None."""
 	if shot.get("keyframe_status") != APPROVED or not shot.get("keyframe_artifact"):
 		return None
+	if "Critical " in str(shot.get("consistency_notes") or ""):
+		return None
 	if shot.keyframe_signature != keyframe_signature(shot):
 		return None
 	if not frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "frappe_file"):
@@ -241,6 +243,10 @@ def set_keyframe_approval(project_name, shot_name, approved=True):
 
 	explicit_product = explicit_first_frame(shot) if has_product(shot) else None
 	if approved:
+		if shot.consistency_status in {"Checking", "Redrawing"}:
+			frappe.throw(_("Wait for this frame's visual checks and corrections to finish."))
+		if "Critical " in str(shot.consistency_notes or ""):
+			frappe.throw(_("Resolve this frame's critical physical or consistency findings before approval."))
 		if not shot.keyframe_artifact and not explicit_product:
 			frappe.throw(_("Render this scene's keyframe before approving it."))
 		if shot.keyframe_signature != keyframe_signature(shot):

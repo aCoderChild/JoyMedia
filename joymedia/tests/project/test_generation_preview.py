@@ -13,7 +13,7 @@ class TestGenerationPreview(TestCase):
 
 		def generate():
 			self.assertEqual("review", current_delivery()["export_purpose"])
-			self.assertEqual("deferred", current_delivery()["quality_review"])
+			self.assertEqual("required", current_delivery()["quality_review"])
 			return {"run": "preview"}
 
 		project.generate_end_to_end.side_effect = generate

@@ -15,6 +15,156 @@ import re
 
 import frappe
 
+OBVIOUS_GEOMETRY = {
+	"solid_intersection": "Solid bodies do not visibly pass through or fuse with other solid bodies",
+	"unsupported_load": "Stationary weight-bearing objects have visible plausible support or a visible grip",
+	"implausible_scale": "Object scale is physically plausible against nearby objects at comparable depth",
+}
+
+SUPPORT_CLASSES = {
+	"rug": "ground",
+	"floor": "ground",
+	"ground": "ground",
+	"chair": "seat",
+	"sofa": "seat",
+	"seat": "seat",
+	"bench": "seat",
+	"table": "work_surface",
+	"coffee table": "work_surface",
+	"counter": "work_surface",
+}
+
+
+def opening_actor_support(opening):
+	"""Extract only an explicit, unambiguous authored seated/standing support.
+
+	Unrecognised prose stays unknown. This does not infer support from the
+	location, furniture inventory, or a future action.
+	"""
+	mentions = re.findall(
+		r"\b(?:seated|sitting|sits|standing|stands)\s+(?:directly\s+)?on\s+"
+		r"(?:(?:a|an|the)\s+)?(coffee table|rug|floor|ground|chair|sofa|seat|bench|table|counter)\b",
+		str(opening or ""),
+		re.I,
+	)
+	classes = {SUPPORT_CLASSES[s.casefold()] for s in mentions}
+	return next(iter(classes)) if len(classes) == 1 else None
+
+
+def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None):
+	"""Observe positive defects, then negate strict evidence in code.
+
+	These checks also run on decoded video, after source-art compositing. An
+	unknown observation cannot clear a frame; a witnessed defect cannot become
+	an advisory pass. No dimensions or furniture topology are invented here.
+	"""
+	if ask is None:
+		from joymedia.services.review.consistency import ask
+
+	observations = []
+	expected_support = opening_actor_support(opening)
+	defect_schema = {
+		"type": "object",
+		"additionalProperties": False,
+		"required": ["present", "evidence"],
+		"properties": {
+			"present": {"type": ["boolean", "null"]},
+			"evidence": {"type": "string", "minLength": 1},
+		},
+	}
+	schema = {
+		"type": "object",
+		"additionalProperties": False,
+		"required": [*OBVIOUS_GEOMETRY, "actor_support"],
+		"properties": {
+			**{key: defect_schema for key in OBVIOUS_GEOMETRY},
+			"actor_support": {
+				"type": "object",
+				"additionalProperties": False,
+				"required": ["surface", "evidence"],
+				"properties": {
+					"surface": {
+						"type": "string",
+						"enum": [
+							"ground",
+							"seat",
+							"work_surface",
+							"product",
+							"airborne",
+							"hidden",
+							"none",
+							"multiple",
+						],
+					},
+					"evidence": {"type": "string", "minLength": 1},
+				},
+			},
+		},
+	}
+	for picture in pictures:
+		question = (
+			"Observe visible geometry and fill the required JSON fields from the image. "
+			"solid_intersection means solid objects pass through or fuse with each other. "
+			"unsupported_load means a stationary object visibly floats without support or a grip. "
+			"implausible_scale means an object has clearly impossible scale relative to nearby objects. "
+			"For each defect, present=true for a clear violation, false for visibly coherent geometry, "
+			"null for hidden/ambiguous geometry; give concrete evidence. Ordinary occlusion is not "
+			"solid intersection. Jumping/flying is not unsupported stationary weight. Compare scale "
+			"only at comparable depth; miniature subjects are allowed. "
+			"Describe what actually carries the foreground actor's weight: actor_support.surface is "
+			"ground, seat, work_surface, product, airborne, hidden, none or multiple. "
+			"Use none if no physical actor exists, multiple if actors have different supports. "
+			"Printed characters are not physical actors. Do not guess hidden contact."
+		)
+		answer = ask(picture, question, configured=configured, max_edge=768, schema=schema)
+		observations.append(answer if isinstance(answer, dict) else {})
+	claims = dict(OBVIOUS_GEOMETRY)
+	if expected_support:
+		claims["wrong_opening_support"] = (
+			"Visible starting support agrees with the authored opening: " + str(opening)[:1800]
+		)
+	results = []
+	for key, claim in claims.items():
+		rows = []
+		for index, answer in enumerate(observations):
+			if key == "wrong_opening_support" and index != 0:
+				continue
+			row = answer.get(key)
+			if key == "wrong_opening_support":
+				support = answer.get("actor_support") or {}
+				support = support if isinstance(support, dict) else {}
+				actual = support.get("surface")
+				row = {
+					"present": actual != expected_support
+					if actual in {"ground", "seat", "work_surface", "product"}
+					else None,
+					"evidence": support.get("evidence"),
+				}
+			row = row if isinstance(row, dict) else {}
+			value, evidence = row.get("present"), row.get("evidence")
+			valid = type(value) is bool and isinstance(evidence, str) and bool(evidence.strip())
+			rows.append(
+				dict(frame=index, present=value if valid else None, evidence=str(evidence or "")[:500])
+			)
+		bad = [r for r in rows if r["present"] is True]
+		unknown = [r for r in rows if r["present"] is None]
+		witnesses = bad or unknown or rows
+		results.append(
+			dict(
+				id="geometry." + key,
+				dimension="physics",
+				claim=claim,
+				verdict="violated" if bad else "uncertain" if unknown or not rows else "supported",
+				frames=[r["frame"] for r in witnesses],
+				reason="; ".join(
+					r["evidence"] or "Missing or malformed physical evidence." for r in witnesses
+				)[:1000],
+				observations=rows,
+			)
+		)
+	return results
+
+
 DESCRIBE = """You are a film continuity supervisor. Describe this frame objectively; do not guess what is hidden.
 If no foreground actor or character is present, set figures to an empty array; do not add a "no figure present" placeholder.
 Return JSON:

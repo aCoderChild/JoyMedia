@@ -261,6 +261,20 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		),
 	)
 	report = run_temporal_check(check, configured=frappe._dict(policy["judge"]))
+	from joymedia.services.review.physical_audit import obvious_geometry_results
+
+	geometry = obvious_geometry_results(
+		pictures,
+		opening=(scene.get("image_prompt") or "")
+		if any(
+			str(r.get("reference_role") or "").lower() in {"character", "person", "people", "talent"}
+			for r in scene.get("references") or []
+		)
+		else "",
+		configured=frappe._dict(policy["judge"]),
+	)
+	report["results"].extend(geometry)
+	report["required_claim_ids"].extend(r["id"] for r in geometry)
 	if video:
 		from joymedia.services.review.canvas import inspect_active_canvas
 
@@ -328,8 +342,9 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 				"Image 1 is the approved reference; image 2 is the candidate scene. Compare only features visible in BOTH views. "
 				"Cropping, perspective and image scale do not establish different physical size, age or body proportions. "
 				"A close view of a body part is not a smaller whole subject. Do not invent the hidden face or body. "
-				"Does the candidate keep the reference subject's visible distinctive shape, morphology and body-part proportions, "
+				"Does the candidate keep the reference subject's visible colour, surface material, face design, defining accessories, distinctive shape, morphology and body-part proportions, "
 				"without invented human anatomy, extra parts or elongated limbs? Pose, camera and plausible occlusion may differ. "
+				"A held object is a removable prop, not a worn accessory; its removal alone is not identity drift. "
 				"Do not judge text or logos. Answer null when identity or topology cannot be compared. "
 				"Return only JSON with answer true, false or null and reason describing visible evidence.",
 				configured=frappe._dict(policy["judge"]),
