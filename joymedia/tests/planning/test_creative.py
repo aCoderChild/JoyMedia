@@ -3492,7 +3492,7 @@ class TestCameraDirection(TestCase):
 		self.assertTrue(normalize_static_final_packshot(script))
 		self.assertEqual("static", last["camera_move"])
 		last.update(
-			action="[0-3s] The product remains stationary.",
+			action="[0-3s] The Sample Brand pack remains stationary.",
 			visual_camera="An eye-level shot of the supplied pack.",
 		)
 		self.assertTrue(normalize_static_final_packshot(script))

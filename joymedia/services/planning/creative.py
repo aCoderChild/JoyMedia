@@ -1775,7 +1775,7 @@ def normalize_static_final_packshot(script):
 			and scene.get("subject_motion") == "stationary"
 			and re.fullmatch(
 				r"(?:\[[^\]]+\]\s*)?(?:(?:clean\s+)?hero product shot\b[^.]*"
-				r"|(?:the\s+)?(?:original\s+|supplied\s+)?product(?:\s+pack)?\s+(?:remains|stays)\s+(?:stationary|still))\.?",
+				r"|(?!.*\bcamera\b)[^.!?;\n]{1,120}\s+(?:remains|stays)\s+(?:stationary|still))\.?",
 				scene.get("action") or "",
 				re.I,
 			)

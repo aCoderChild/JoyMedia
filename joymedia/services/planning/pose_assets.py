@@ -858,6 +858,38 @@ def _body_only_pose(pose, cache):
 	return result
 
 
+def _opening_requires_grip(scene):
+	"""A definite single-actor opening, excluding a grip that starts later."""
+	if len(scene.get("cast") or []) != 1:
+		return False
+	text = " ".join(str(scene.get(k) or "") for k in ("visual_camera", "image_prompt", "start_state"))
+	for match in re.finditer(r"\b(?:hold(?:s|ing)?|held|gripping|carrying|clutching)\b", text, re.I):
+		if not re.search(
+			r"\b(?:not|no|without|before|later|then)\b",
+			text[max(0, match.start() - 25) : match.start()],
+			re.I,
+		):
+			return True
+	return False
+
+
+def _working_arm_pose(pose):
+	text = str(pose or "")
+	if re.search(
+		r"\b(?:both\s+)?(?:arms|paws|hands)\b[^.;,]{0,55}\b(?:resting down|hanging|at (?:the |its )?sides|against (?:the |its )?body)\b",
+		text,
+		re.I,
+	):
+		return False
+	return bool(
+		re.search(
+			r"\b(?:arms?|forearms?|paws?|hands?|elbows?)\b[^.;]{0,70}\b(?:forward|front|raised|bent|extended|ahead|chest|waist|mid.torso)\b",
+			text,
+			re.I,
+		)
+	)
+
+
 def _plan_required_states(script, selected):
 	"""Ask the existing planner for the finite opening states needed by the full script.
 
@@ -1085,6 +1117,33 @@ def _plan_required_states(script, selected):
 		from joymedia.services.planning.pose_coverage import required_pose
 
 		script_scene = script["scenes"][state["scene_index"]]
+		if _opening_requires_grip(script_scene):
+			state["opening_articulation_required"] = True
+			if not _working_arm_pose(state["opening_pose"]):
+				repaired = _ask_planner(
+					"The scene explicitly opens with an object already in this sole actor's paws/hands. "
+					"A neutral arms-down reference cannot satisfy that opening. Describe a supported, "
+					"prop-free body pose preserving the opening's actual forearm, elbow and paw positions, "
+					"including their height and forward articulation. Omit the object itself and all contact "
+					"verbs. Preserve original anatomy; do not invent human fingers or lengthen limbs. "
+					"Return JSON pose string. Scene: " + json.dumps(script_scene),
+					system="You repair a reusable opening-body pose without changing the authored action.",
+					capability="planner",
+					sampling_profile="production_plan",
+					response_schema={
+						"type": "object",
+						"additionalProperties": False,
+						"properties": {"pose": {"type": "string"}},
+						"required": ["pose"],
+					},
+				)
+				pose = str(repaired.get("pose") or "").strip()
+				if not _working_arm_pose(pose):
+					raise ValueError(
+						"Already-held opening requires a verified articulated paw/arm pose, not neutral arms down."
+					)
+				state.update(opening_pose=pose[:300], reference_key=state["cast_key"])
+				candidate = None
 		requirement = required_pose(
 			script_scene.get("action"),
 			{"subject_motion": script_scene.get("subject_motion")},
@@ -1259,6 +1318,8 @@ def _plan_required_states(script, selected):
 			# An approved view's own text is its reviewed contract; anything else
 			# is prepared and checked against a prop-free image.
 			state["opening_pose"] = _body_only_pose(state["opening_pose"], body_only)
+		if state.get("opening_articulation_required") and not _working_arm_pose(state["opening_pose"]):
+			raise ValueError("Opening grip articulation was lost during reusable pose preparation.")
 		if characters.get(state["cast_key"]):
 			previous_by_identity[characters[state["cast_key"]]] = dict(state)
 		seen.add(pair)
@@ -1470,6 +1531,7 @@ def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=Non
 			if original:
 				source = original
 		pose = " ".join(state["opening_pose"].split())[:300]
+		allow_relaxed_fallback = not state.get("opening_articulation_required")
 		angle = state["view"]
 		identity = source.get("identity_key") or source.get("reference_key")
 		key = _pose_key(identity, pose, angle)
@@ -1516,7 +1578,11 @@ def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=Non
 			):
 				choice = preferred
 		if not choice and failed_pose_keys.get(key) == len(selected):
-			choice, approved = _approved_view_with_same_support(selected, identity, pose, angle)
+			choice, approved = (
+				_approved_view_with_same_support(selected, identity, pose, angle)
+				if allow_relaxed_fallback
+				else (None, None)
+			)
 			if not choice:
 				prepared.append(
 					{
@@ -1555,6 +1621,13 @@ def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=Non
 					candidate_analysis
 				):
 					continue
+				qualified_candidate = _qualified_pose_metadata(candidate_analysis)
+				if (
+					not allow_relaxed_fallback
+					and qualified_candidate
+					and not _working_arm_pose(qualified_candidate["pose"])
+				):
+					continue
 				url = frappe.db.get_value("Asset Version", candidate.asset_version, "file")
 				try:
 					matches = bool(url and _view_matches(url, pose, angle))
@@ -1564,8 +1637,14 @@ def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=Non
 				if matches:
 					choice = candidate
 					break
-		if not choice and (key in failed_pose_keys or support_key in failed_supports):
-			choice, approved = _approved_view_with_same_support(selected, identity, pose, angle)
+		if not choice and (
+			key in failed_pose_keys or (allow_relaxed_fallback and support_key in failed_supports)
+		):
+			choice, approved = (
+				_approved_view_with_same_support(selected, identity, pose, angle)
+				if allow_relaxed_fallback
+				else (None, None)
+			)
 			if not choice:
 				prepared.append(
 					{
@@ -1594,8 +1673,14 @@ def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=Non
 					# unavailable service must not stop the other scenes' attempts.
 					failed_supports.add(support_key)
 				frappe.log_error(title=f"Pose preparation deferred for {project.name}")
-				choice, approved = _approved_view_with_same_support(selected, identity, pose, angle)
-				neutral = _neutral_pose(pose) if isinstance(exc, ValueError) else None
+				choice, approved = (
+					_approved_view_with_same_support(selected, identity, pose, angle)
+					if allow_relaxed_fallback
+					else (None, None)
+				)
+				neutral = (
+					_neutral_pose(pose) if allow_relaxed_fallback and isinstance(exc, ValueError) else None
+				)
 				if not choice and neutral and neutral != pose:
 					# The pose workflows reliably produce a relaxed body but not a held
 					# gesture. Open on the neutral pose of the same support; the first

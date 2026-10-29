@@ -34,6 +34,95 @@ from joymedia.services.project.reference_lineage import lineage_identity
 
 
 class TestPoseCoverage(TestCase):
+	def test_already_held_opening_does_not_reuse_a_neutral_arms_down_view(self):
+		neutral = "seated, both arms resting down in a relaxed position against the body"
+		working = "seated, both forearms bent forward at waist level, paws facing each other"
+		selected = [
+			frappe._dict(
+				reference_key="actor", identity_key="mascot", reference_role="Character", asset_version="A"
+			),
+			frappe._dict(
+				reference_key="neutral", identity_key="mascot", reference_role="Character", asset_version="N"
+			),
+		]
+		metadata = {
+			"source_asset_version": "A",
+			"pose_qualification_version": 2,
+			"qualified_pose_and_support": neutral,
+			"qualified_pose_view": "front",
+		}
+		planned = {
+			"scene_index": 0,
+			"cast_key": "actor",
+			"reference_key": "neutral",
+			"opening_pose": neutral,
+			"view": "front",
+		}
+		script = {
+			"scenes": [
+				{
+					"cast": ["actor"],
+					"visual_camera": "The actor holds the unfolded tissue.",
+					"action": "Fold the tissue.",
+					"opening_support": "seated",
+				}
+			]
+		}
+		with (
+			patch(
+				"frappe.db.get_value",
+				side_effect=lambda _dt, name, _field: frappe.as_json(metadata if name == "N" else {}),
+			),
+			patch(
+				"joymedia.services.planning.production._ask_planner",
+				side_effect=[{"states": [planned]}, {"pose": working}],
+			),
+			patch(
+				"joymedia.services.planning.pose_assets._body_only_pose",
+				side_effect=lambda pose, _cache: pose,
+			),
+		):
+			state = _plan_required_states(script, selected)[0]
+		self.assertTrue(state["opening_articulation_required"])
+		self.assertEqual("actor", state["reference_key"])
+		self.assertEqual(working, state["opening_pose"])
+
+	def test_required_opening_grip_cannot_fall_back_to_neutral_after_qualification_failure(self):
+		project, asset_value = self._standing_library_project("standing upright, both paws free")
+		script = {
+			"scenes": [
+				{
+					"cast": ["bear"],
+					"visual_camera": "The bear already holds a tissue.",
+					"action": "Fold the tissue.",
+				}
+			]
+		}
+		state = {
+			"scene_index": 0,
+			"cast_key": "bear",
+			"reference_key": "bear",
+			"opening_pose": "seated, both forearms bent forward at waist level",
+			"view": "front",
+			"opening_articulation_required": True,
+		}
+		with (
+			patch("joymedia.services.planning.pose_assets._plan_required_states", return_value=[state]),
+			patch("frappe.db.get_value", side_effect=asset_value),
+			patch("joymedia.services.planning.pose_assets._view_matches", return_value=False),
+			patch(
+				"joymedia.services.planning.pose_assets._register_pose_view",
+				side_effect=ValueError("gesture not qualified"),
+			) as render,
+			patch("joymedia.services.planning.pose_assets._approved_view_with_same_support") as fallback,
+			patch("frappe.log_error"),
+		):
+			prepared = prepare_script_pose_views(project, script)
+		self.assertEqual("deferred", prepared[0]["status"])
+		fallback.assert_not_called()
+		render.assert_called_once()
+		self.assertEqual(["bear"], script["scenes"][0]["cast"])
+
 	def test_masked_pose_with_lost_traits_is_not_saved_as_character_media(self):
 		from joymedia.services.planning.pose_assets import _save_pose_view
 

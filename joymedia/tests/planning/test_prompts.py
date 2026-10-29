@@ -108,6 +108,17 @@ class TestPromptCompiler(FrappeTestCase):
 		prompt = compile_prompt_for_documents(shot, project, prompt_source="image")
 		self.assertIn("no advertised product", prompt)
 		self.assertIn("retail packs", prompt)
+		shot.character_mode = "Draw in scene"
+		with (
+			patch(
+				"joymedia.services.planning.prompts._draw_prompt",
+				return_value="A mascot holds one white sheet.",
+			),
+			patch("joymedia.services.planning.prompts._character_look_text", return_value=""),
+		):
+			drawn = compile_prompt_for_documents(shot, project, prompt_source="image")
+		self.assertIn("no advertised product", drawn)
+		self.assertNotIn("Show each advertised product", drawn)
 
 	def test_pack_artwork_does_not_authorize_source_heart_in_mascot_paws(self):
 		shot = frappe._dict(
@@ -623,7 +634,7 @@ class TestAudioLineLast(FrappeTestCase):
 			"kid mascot is the character of picture 2 (mostly cream; preserve the reference palette), with the build of a kid: about half an adult's height",
 			prompt,
 		)
-		self.assertIn("not the pose or objects in their reference image", prompt)
+		self.assertIn("not the incidental pose or props in its reference", prompt)
 		self.assertIn("Keep props separate from actors' heads and bodies", prompt)
 		self.assertIn("Physical actor staging:", prompt)
 		self.assertIn("The floor or seat visibly supports its weight", prompt)

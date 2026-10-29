@@ -247,3 +247,19 @@ Boolean afterward returned the correct absence. Scalar consistency checks now
 use that schema order for Boolean/count observations and reject missing/empty
 evidence. 103 consistency, admission, material, automatic-delivery and H3-hold
 tests passed. This improves observation structure, not calibrated visual certainty.
+
+The live inventory exposed a pose-selection defect: openings already holding
+a sheet reused a qualified arms-down body. Such single-actor openings now
+require explicit working-arm articulation, repair an incompatible pose plan,
+and cannot use support-only/neutral fallbacks after a failed gesture. Failed
+qualification stays deferred. Future gestures that begin later retain their
+existing supported-neutral fallback. New tests cover both behaviors.
+
+Flux still prompts also retained generic advertised-product support paragraphs
+in actor-only DRAW scenes. Those instructions are now conditioned on actual
+Product bindings; environment and camera-margin text no longer introduces an
+undeclared package. Retry style preserves the actual source medium rather than
+forcing photographic texture. 204 pose, prompt, inventory, H3 and script/camera
+checks passed. For the next demo, the chosen backend profile is PIPE-00069:
+H3 reference preparation, Flux WF-02656 backgrounds/storyboard composition,
+and H3 WF-02695 motion. The H3-only storyboard trial remains recorded separately.

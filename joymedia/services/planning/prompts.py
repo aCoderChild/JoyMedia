@@ -279,8 +279,8 @@ def _keyframe_retry_direction(shot):
 		)
 	if "Critical style:" in note:
 		return (
-			"\n\nRetry correction: the previous image was a flat 2D drawing. Render a photorealistic scene in which "
-			"the characters and products keep the photographed three-dimensional look of their reference photos."
+			"\n\nRetry correction: preserve the reference subjects' actual rendering medium, three-dimensional "
+			"form and surface under coherent scene lighting. Smooth reference surfaces remain smooth."
 		)
 	if "the cast appears twice" in note:
 		return (
@@ -307,7 +307,7 @@ def _keyframe_retry_direction(shot):
 			"the positions specified by the scene, with solid silhouettes that do not overlap. "
 			"Keep the furniture within the authored limb's reach without placing the actor underneath "
 			"or inside it. No solid surface may run through "
-			"the actor's body. Show visible contact with the actor's own support and the product's separate support. "
+			"the actor's body. Show visible contact with the actor's own support and the authored working objects. "
 			"Keep every rigid prop on its own supporting surface, separate from the actor's head and body "
 			"unless explicitly wearable."
 		) + identity_retry
@@ -320,6 +320,22 @@ def _keyframe_retry_direction(shot):
 	if identity_retry:
 		return identity_retry
 	return ""
+
+
+def _image_physical_staging(references):
+	text = (
+		"\n\nPhysical staging: authored objects and actors have coherent visible support and reachable contact. "
+		"Keep props separate from actors' heads and bodies; only an explicitly authored wearable may touch the head. "
+	)
+	if any(_role_of(r) == "product" for r in references):
+		return (
+			text
+			+ "Show each declared product once, on its authored support. Preserve its source construction and flat printed artwork; no duplicated package or physicalized printing."
+		)
+	return (
+		text
+		+ "This opening has no advertised product. Show only the declared cast and authored working materials; do not introduce retail packs, branded boxes or merchandise."
+	)
 
 
 def _compact_geometry_retry(shot, project, references):
@@ -401,7 +417,7 @@ def compile_prompt_for_documents(
 				+ sheet_material_instruction(
 					str(shot.get("image_prompt") or "") + " " + str(shot.get("start_state") or "")
 				)
-				+ "\n\nPhysical staging: every rigid product, container and furniture item has its own visible support. Keep props separate from actors' heads and bodies unless explicitly authored as wearable. Show each advertised product as one physical object in its authored position; do not repeat it as another box, reflection, background prop or oversized printed cutout. Packaging artwork remains flat on that single object."
+				+ _image_physical_staging(references)
 				+ _keyframe_retry_direction(shot)
 			)
 		if pasted_references(references, mode):
@@ -425,14 +441,7 @@ def compile_prompt_for_documents(
 				"retail packs, branded boxes, bottles and merchandise unless the scene explicitly names them."
 			)
 		if references:
-			prompt += (
-				"\n\nPhysical staging: every rigid product, container and furniture item has its own visible "
-				"support. Keep props separate from actors' heads and bodies; only an explicitly authored "
-				"wearable accessory may touch the head. Keep the product at its stated opening location. "
-				# "Holding a tissue" was drawn twice as an invented branded snack bag.
-				"Only an approved product reference carries packaging or branding; any other named item, such "
-				"as a product's contents, is plain and unbranded, never a bag, box or wrapper."
-			)
+			prompt += _image_physical_staging(references)
 		# A product-only packshot has no actor whose hands could legitimately be
 		# visible.  Generic contact language used to make Flux invent hands even
 		# when the authored opening explicitly said that the pack was untouched.
@@ -759,7 +768,7 @@ def _image_reference_roles(references):
 		)
 	if "environment" in roles:
 		parts.append(
-			"Environment references control the setting, support texture and lighting only; do not copy their incidental foreground objects or replace the advertised product with them."
+			"Environment references control the setting, support texture and lighting only; do not copy their incidental foreground objects."
 		)
 	return "\n\nReference roles: " + " ".join(parts) if parts else ""
 
@@ -1826,7 +1835,7 @@ def _draw_prompt(shot, project):
 
 	structure = structure_for(shot)
 	move_margin = (
-		"For the planned moving wide/medium shot, reserve at least ten percent clear frame margin around the complete actor, product and their supports; keep the action area between them visible. "
+		"For the planned moving wide/medium shot, reserve at least ten percent clear frame margin around the actor, authored working objects and their supports; keep the contact area visible. "
 		if structure
 		and structure["framing"] in {"wide", "full", "medium", "medium_close_up"}
 		and (frappe.parse_json(shot.get("motion_plan_json") or "{}") or {})
@@ -1856,7 +1865,7 @@ def _draw_prompt(shot, project):
 		+ _no_outsiders(shot, project)
 		+ (f"Cast: {cast}. " if cast else "")
 		+ "Each character is exactly the subject of its picture: preserve its face, colours, markings, worn accessories, "
-		"body design, visible ear count, ear shape and attachment, eye design and surface finish (a smooth surface stays smooth; never add fur, hair or texture it does not have). A heart, toy, tool, package or other object held in the source image is a separate prop: include it only if this scene explicitly calls for it. Each character has one head and one face, with no duplicated eyes, nose or mouth elsewhere on its body. Each cast identity appears once, in the authored opening pose, not the pose or objects in their reference image. Characters printed on product packaging stay flat artwork, not additional cast. Do not perform later scene actions. "
+		"body design, visible ear count, ear shape and attachment, eye design and surface finish (a smooth surface stays smooth; never add fur, hair or texture it does not have). Separately held props are included only when authored. Each character has one head and one face, with no duplicated eyes, nose or mouth elsewhere on its body. Each cast identity appears once, in the authored opening pose, not the incidental pose or props in its reference. Do not perform later scene actions. "
 		+ (
 			f"Do not add these source-only held props to this opening: {', '.join(excluded_props)}. "
 			if excluded_props
