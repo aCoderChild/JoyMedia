@@ -762,6 +762,15 @@ def frame_findings(project, shot, frame):
 			"Exclude characters printed on product packaging, pictures and reflections. "
 			"Return JSON actor_instances integer or null, and reason. Count bodies, not heads or paws.",
 			max_edge=768,
+			schema={
+				"type": "object",
+				"additionalProperties": False,
+				"required": ["actor_instances", "reason"],
+				"properties": {
+					"actor_instances": {"type": ["integer", "null"], "minimum": 0},
+					"reason": {"type": "string"},
+				},
+			},
 		)
 		issues.extend(actor_count_findings(count, declared_actors))
 	issues.extend(reference_fit_findings(shot, frame, ask=ask))
@@ -773,6 +782,15 @@ def frame_findings(project, shot, frame):
 			"Do not count a mascot printed on product packaging. "
 			"Return JSON unexpected_humans true, false or null and reason.",
 			max_edge=768,
+			schema={
+				"type": "object",
+				"additionalProperties": False,
+				"required": ["unexpected_humans", "reason"],
+				"properties": {
+					"unexpected_humans": {"type": ["boolean", "null"]},
+					"reason": {"type": "string"},
+				},
+			},
 		)
 		if outsider.get("unexpected_humans") is True:
 			issues.append("Critical prop: an undeclared human appears in the frame foreground or edge")

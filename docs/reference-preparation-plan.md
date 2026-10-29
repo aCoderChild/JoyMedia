@@ -183,3 +183,9 @@ distinct fold/unfold and placement operations. Pronoun fallback now requires an
 actual it/them object, and result-presentation clauses do not override a real
 operation. Repeated standalone show/examine demonstrations still fail. 68
 script-validation/camera tests passed after this fix.
+
+Actor count and partial-foreground-human observations now require schema-bound
+response fields. Earlier live checks returned an unverified-people gap on a
+visibly actor-only frame; malformed keys must remain held, but the observer
+should receive an exact response contract. Existing cropped-human and duplicate-
+actor checks passed with the constrained calls.
