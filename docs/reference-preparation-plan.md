@@ -240,3 +240,10 @@ preserved; diagrams must not become new props or protruding contents. Explicit
 UI recovery now archives and resets the checker-stability refresh budget, while
 retaining every failed run/report and all visual gates. 107 focused H3, scope,
 script/camera and material tests passed.
+
+A live source-prop check returned a positive Boolean while its reason explicitly
+said no heart was visible. Requiring concrete evidence first and deriving the
+Boolean afterward returned the correct absence. Scalar consistency checks now
+use that schema order for Boolean/count observations and reject missing/empty
+evidence. 103 consistency, admission, material, automatic-delivery and H3-hold
+tests passed. This improves observation structure, not calibrated visual certainty.

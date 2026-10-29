@@ -78,10 +78,15 @@ class TestChecks(FrappeTestCase):
 			("p", consistency.COUNT, 2, "not two characters"),
 			("p", consistency.shows("A bear spills juice"), True, "the action is not shown"),
 		]
-		answers = [{"count": "2"}, {"answer": False, "reason": "no juice"}]
+		answers = [
+			{"count": "2", "reason": "Two distinct actors are visible."},
+			{"answer": False, "reason": "no juice"},
+		]
 		with patch.object(consistency, "ask", side_effect=answers):
 			self.assertEqual(["the action is not shown (no juice)"], consistency.run_checks(checks))
-		with patch.object(consistency, "ask", side_effect=[{"count": 2}, {}]):
+		with patch.object(
+			consistency, "ask", side_effect=[{"count": 2, "reason": "Two distinct actors are visible."}, {}]
+		):
 			self.assertEqual(
 				["the action is not shown"], consistency.run_checks(checks)
 			)  # no answer is not a pass
@@ -89,8 +94,20 @@ class TestChecks(FrappeTestCase):
 	def test_a_take_frame_may_show_fewer_characters_but_never_more(self):
 		check = [("p", consistency.COUNT, consistency.AtMost(2), "more characters")]
 		for count, failures in ((0, []), (2, []), (3, ["more characters"]), ("x", ["more characters"])):
-			with patch.object(consistency, "ask", return_value={"count": count}):
-				self.assertEqual(failures, consistency.run_checks(check), count)
+			with patch.object(
+				consistency, "ask", return_value={"count": count, "reason": "Observed visible actor count."}
+			):
+				self.assertEqual(
+					[message + " (Observed visible actor count.)" for message in failures],
+					consistency.run_checks(check),
+					count,
+				)
+
+	def test_scalar_checks_require_visible_evidence_before_the_result(self):
+		for answer in ({"answer": True}, {"answer": True, "reason": ""}):
+			with patch.object(consistency, "ask", return_value=answer) as observe:
+				self.assertEqual(["unverified"], consistency.run_checks([("p", "q", True, "unverified")]))
+				self.assertEqual(["reason", "answer"], list(observe.call_args.kwargs["schema"]["properties"]))
 
 	def test_a_frame_is_checked_for_its_cast_and_described_action(self):
 		shot = frappe._dict(

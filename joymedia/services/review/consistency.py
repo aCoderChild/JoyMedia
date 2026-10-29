@@ -928,8 +928,24 @@ def run_checks(checks):
 			)
 			continue
 		picture, question, expected, meaning = check
-		answer = ask(picture, question)
 		counted = isinstance(expected, int) and not isinstance(expected, bool)
+		field = "count" if counted else "answer"
+		answer = ask(
+			picture,
+			question
+			+ " First describe the concrete visible evidence in reason, then derive the result from it.",
+			schema={
+				"type": "object",
+				"additionalProperties": False,
+				"required": ["reason", field],
+				"properties": {
+					"reason": {"type": "string", "minLength": 1},
+					field: {"type": ["integer", "null"], "minimum": 0}
+					if counted
+					else {"type": ["boolean", "null"]},
+				},
+			},
+		)
 		value = _value(answer.get("count") if counted else answer.get("answer"))
 		matches = (
 			type(value) is int and value <= expected and value >= 0
@@ -940,6 +956,7 @@ def run_checks(checks):
 				else type(value) is bool and value is expected
 			)
 		)
+		matches = matches and isinstance(answer.get("reason"), str) and bool(answer["reason"].strip())
 		if not matches:
 			reason = str(answer.get("reason") or "").strip()
 			failures.append(meaning + (f" ({reason})" if reason else ""))
