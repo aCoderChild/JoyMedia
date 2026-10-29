@@ -272,3 +272,12 @@ contact verbs and neutral/unspecified geometry remain rejected. All 65 pose
 coverage tests pass with an initialized Frappe test context; Ruff passes. The
 native retry API resumed Planning while retaining rejection history. No new
 final export has passed verification at this point.
+
+Final result of this diagnostic: CRB-00110 / PRJ-02733 is Needs Attention at
+required-pose admission. Both H3 preparation clips and the bounded still-image
+fallback failed the requested working-arm qualification; no frames were manually
+approved and no new final export was produced. The UI audit passed with two
+original identities, the preparation inventory, and no page errors or generation
+writes. Full evidence and the terminal result are under
+`verification/prepared-pose-demo-20261029` in the workspace. The mixed route is
+implemented, but this run does not establish blocker-free automatic completion.
