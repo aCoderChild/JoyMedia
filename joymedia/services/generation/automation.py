@@ -14,6 +14,31 @@ def current_delivery():
 	return _delivery.get()
 
 
+def screened_preview_report(report):
+	"""Only the generic certification caveat may remain on a screened preview.
+
+	This authorizes a provisional workflow handoff, not a visual or physics pass.
+	Observed defects and missing/uncertain observations are never waived.
+	"""
+	if not report or report.get("status") != "Needs Review" or report.get("review_only") is not True:
+		return False
+	rows = report.get("results") or []
+	ids = [r.get("id") for r in rows]
+	required = set(report.get("required_claim_ids") or [])
+	if (
+		not rows
+		or len(set(ids)) != len(ids)
+		or not required.issubset(set(ids))
+		or not {"cast_inventory", "active_canvas", "geometry_qualification"}.issubset(required)
+	):
+		return False
+	return all(
+		r.get("verdict") == ("uncertain" if r.get("id") == "geometry_qualification" else "supported")
+		and bool(str(r.get("reason") or "").strip())
+		for r in rows
+	)
+
+
 def advance_automatic_run(run_name):
 	"""Use the native dispatcher without waiting behind unrelated visual checks.
 

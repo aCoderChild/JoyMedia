@@ -9,6 +9,103 @@ from joymedia.services.generation.automation import advance_automatic_run, curre
 
 
 class TestAutomaticDelivery(TestCase):
+	def test_screened_preview_keeps_every_observation_required(self):
+		import copy
+
+		from joymedia.services.generation.automation import screened_preview_report
+
+		report = {
+			"status": "Needs Review",
+			"review_only": True,
+			"required_claim_ids": ["cast_inventory", "active_canvas", "geometry_qualification", "identity"],
+			"results": [
+				{"id": key, "verdict": "supported", "reason": "Visible evidence agrees."}
+				for key in ("cast_inventory", "active_canvas", "identity")
+			]
+			+ [
+				{
+					"id": "geometry_qualification",
+					"verdict": "uncertain",
+					"reason": "Not a geometry certificate.",
+				}
+			],
+		}
+		self.assertTrue(screened_preview_report(report))
+		for verdict in ("uncertain", "violated"):
+			bad = copy.deepcopy(report)
+			bad["results"][2]["verdict"] = verdict
+			self.assertFalse(screened_preview_report(bad))
+		bad = copy.deepcopy(report)
+		bad["results"].pop(2)
+		self.assertFalse(screened_preview_report(bad))
+		bad = copy.deepcopy(report)
+		bad["results"][0]["reason"] = ""
+		self.assertFalse(screened_preview_report(bad))
+
+	def test_automatic_preview_handoff_is_bound_to_current_frame_and_run(self):
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+
+		from joymedia.services.generation import creative_batch as cb
+		from joymedia.services.review.admission import digest
+
+		with TemporaryDirectory() as folder:
+			path = Path(folder) / "frame.png"
+			path.write_bytes(b"frame")
+			shot = frappe._dict(
+				name="shot",
+				media_project="project",
+				keyframe_artifact="artifact",
+				keyframe_signature="signature",
+				consistency_status="Needs Review",
+				keyframe_status="Pending Review",
+				consistency_notes="Geometry qualification remains uncertain; this frame is suitable only for an automatic preview.",
+			)
+			artifact = frappe._dict(name="artifact", generation_attempt="attempt", frappe_file="/frame.png")
+			snapshot = json.dumps({"automatic_delivery": {"mode": "automatic", "export_purpose": "review"}})
+			run = frappe._dict(media_project="project", project_snapshot_json=snapshot)
+			report = {
+				"artifact": "artifact",
+				"snapshot_sha256": digest(snapshot.encode()),
+				"source_sha256": digest(b"frame"),
+				"policy": {"implementation_sha256": "implementation"},
+			}
+			with (
+				patch.object(cb, "_explicit_first_frame", return_value=None),
+				patch.object(cb, "_unprotected", return_value=False),
+				patch(
+					"frappe.get_doc",
+					side_effect=lambda doctype, name: {
+						"Shot": shot,
+						"Generation Artifact": artifact,
+						"Generation Run": run,
+						"File": frappe._dict(get_full_path=lambda: str(path)),
+					}[doctype],
+				),
+				patch.object(
+					frappe.db,
+					"get_value",
+					side_effect=lambda doctype, *a, **k: "task" if doctype == "Generation Attempt" else "run",
+				),
+				patch("joymedia.services.keyframes.stage.keyframe_signature", return_value="signature"),
+				patch("joymedia.services.review.admission.report_for", return_value=report),
+				patch(
+					"joymedia.services.review.admission.implementation_hash", return_value="implementation"
+				),
+				patch("joymedia.services.generation.automation.screened_preview_report", return_value=True),
+			):
+				self.assertFalse(cb._keyframe_ready(shot))
+				self.assertTrue(cb._keyframe_ready(shot, automatic=True))
+				self.assertEqual("Needs Review", shot.consistency_status)
+				shot.consistency_notes = "Critical identity: missing ears"
+				self.assertFalse(cb._keyframe_ready(shot, automatic=True))
+				shot.consistency_notes = "Geometry qualification remains uncertain; this frame is suitable only for an automatic preview."
+				path.write_bytes(b"changed")
+				self.assertFalse(cb._keyframe_ready(shot, automatic=True))
+				path.write_bytes(b"frame")
+				report["snapshot_sha256"] = "stale"
+				self.assertFalse(cb._keyframe_ready(shot, automatic=True))
+
 	def test_known_critical_finding_stops_automatic_finishing(self):
 		from joymedia.services.generation.creative_batch import _select_automatic_outputs
 

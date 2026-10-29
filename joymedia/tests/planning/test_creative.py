@@ -1146,7 +1146,12 @@ class TestGeneratedScriptValidation(TestCase):
 				"identity": "internal-id",
 				"label": "Label",
 				"keep_rule": "Keep the original connected proportions.",
-				"views": [{"description": "Blue product"}],
+				"views": [
+					{
+						"description": "Stale pose caption on a pedestal.",
+						"identity_description": "Blue package with its original printed artwork.",
+					}
+				],
 			}
 		]
 		with (
@@ -1181,6 +1186,8 @@ class TestGeneratedScriptValidation(TestCase):
 		self.assertIn("2–12 scenes", last.args[0])
 		self.assertIn("Unsupported shot_framing", last.args[0])
 		self.assertNotIn('"identity": "internal-id"', last.args[0])
+		self.assertIn("Blue package with its original printed artwork.", last.args[0])
+		self.assertNotIn("Stale pose caption on a pedestal.", last.args[0])
 		self.assertIn("Keep the original connected proportions.", last.args[0])
 		self.assertNotIn("Prior version observation.", last.args[0])
 		self.assertIn("PRIMARY USER DIRECTION:", last.kwargs["system"])

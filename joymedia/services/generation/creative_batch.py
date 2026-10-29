@@ -2141,7 +2141,48 @@ def _use_product_source_for_packshot(shot, without_frame=False):
 	return True
 
 
-def _keyframe_ready(shot):
+def _screened_automatic_preview_frame(shot):
+	"""Authorize only a current, fully observed frame for provisional delivery."""
+	from pathlib import Path
+
+	from joymedia.services.generation.automation import screened_preview_report
+	from joymedia.services.keyframes.stage import keyframe_signature
+	from joymedia.services.review.admission import digest, implementation_hash, report_for
+
+	if shot.consistency_status != "Needs Review" or not shot.get("keyframe_artifact") or _unprotected(shot):
+		return False
+	if shot.get("consistency_notes") != (
+		"Geometry qualification remains uncertain; this frame is suitable only for an automatic preview."
+	):
+		return False  # A later independent audit must not be overridden by an earlier report.
+	full_shot = frappe.get_doc("Shot", shot.name)
+	if full_shot.keyframe_signature != keyframe_signature(full_shot):
+		return False
+	artifact = frappe.get_doc("Generation Artifact", shot.keyframe_artifact)
+	report = report_for(artifact.generation_attempt)
+	if not screened_preview_report(report) or report.get("artifact") != artifact.name:
+		return False
+	task = frappe.db.get_value("Generation Attempt", artifact.generation_attempt, "generation_task")
+	run_name = frappe.db.get_value("Generation Task", task, "generation_run") if task else None
+	if not run_name:
+		return False
+	run = frappe.get_doc("Generation Run", run_name)
+	snapshot = frappe.parse_json(run.project_snapshot_json or "{}") or {}
+	if (
+		run.media_project != full_shot.media_project
+		or (snapshot.get("automatic_delivery") or {}).get("mode") != "automatic"
+		or (snapshot.get("automatic_delivery") or {}).get("export_purpose") != "review"
+		or report.get("snapshot_sha256") != digest(run.project_snapshot_json.encode())
+		or (report.get("policy") or {}).get("implementation_sha256") != implementation_hash()
+	):
+		return False
+	if not artifact.frappe_file:
+		return False
+	path = frappe.get_doc("File", {"file_url": artifact.frappe_file}).get_full_path()
+	return report.get("source_sha256") == digest(Path(path).read_bytes())
+
+
+def _keyframe_ready(shot, *, automatic=False):
 	if _explicit_first_frame(shot.name):
 		from joymedia.services.keyframes.product_review import assert_product_frame_ready, has_product
 
@@ -2155,6 +2196,8 @@ def _keyframe_ready(shot):
 				return False
 		return True
 	if shot.consistency_status == "Passed" and not _unprotected(shot):
+		return True
+	if automatic and _screened_automatic_preview_frame(shot):
 		return True
 	if shot.get("keyframe_status") != "Approved":
 		return False
@@ -2679,7 +2722,10 @@ def advance_batch(batch_name, user=None):
 							and can_auto_approve_product_frame(project, full_shot)
 						):
 							set_keyframe_approval(project.name, full_shot.name)
-					if any(_explicit_first_frame(s.name) and not _keyframe_ready(s) for s in shots):
+					if any(
+						_explicit_first_frame(s.name) and not _keyframe_ready(s, automatic=automatic)
+						for s in shots
+					):
 						variant["status"] = "Needs Attention" if automatic_pictures else "Pictures Ready"
 						if automatic_pictures:
 							variant["resume_stage"] = "Keyframes"
@@ -2690,11 +2736,11 @@ def advance_batch(batch_name, user=None):
 						variant["picture_notes"] = {
 							s.name: "Product opening needs visual review before video."
 							for s in shots
-							if _explicit_first_frame(s.name) and not _keyframe_ready(s)
+							if _explicit_first_frame(s.name) and not _keyframe_ready(s, automatic=automatic)
 						}
 						_write(batch.name, variants, changed_index=index)
 						continue
-				if any(not _keyframe_ready(s) for s in shots):
+				if any(not _keyframe_ready(s, automatic=automatic) for s in shots):
 					# A bounded automatic repair that still has an unqualified first
 					# frame must stop before animation in either delivery mode.
 					variant["status"] = "Needs Attention" if automatic_pictures else "Pictures Ready"
@@ -2707,7 +2753,7 @@ def advance_batch(batch_name, user=None):
 					variant["picture_notes"] = {
 						s.name: s.consistency_notes or ("" if s.keyframe_artifact else "No picture yet.")
 						for s in shots
-						if not s.keyframe_artifact or not _keyframe_ready(s)
+						if not s.keyframe_artifact or not _keyframe_ready(s, automatic=automatic)
 					}
 					_write(batch.name, variants, changed_index=index)
 					continue
@@ -2716,6 +2762,9 @@ def advance_batch(batch_name, user=None):
 					variant["frame_authorization"] = {
 						"mode": "automatic",
 						"quality_review": "required",
+						"provisional_frames": [
+							s.name for s in shots if s.consistency_status == "Needs Review"
+						],
 						"artifacts": {
 							s.name: _explicit_first_frame(s.name) or s.keyframe_artifact for s in shots
 						},

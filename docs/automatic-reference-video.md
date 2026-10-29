@@ -70,6 +70,21 @@ lettering or correct anatomy in every decoded frame.
 
 ## Shera qualification
 
+Automatic review delivery can authorize a current screened first frame when its
+sole unresolved admission item is the generic `geometry_qualification` caveat.
+Every actual observation must be supported, the later consistency check must
+contain only that caveat, and the artifact bytes, shot signature, run snapshot
+and implementation fingerprint must still match. This narrow handoff applies
+only to an explicit automatic **review** request. It preserves Needs Review and
+records provisional frame IDs in the batch authorization; it does not grant a
+physics pass or release approval. Defects, missing checks, uncertain visual
+observations and source-art warnings continue to hold the frame.
+
+The fresh 29 October attempt is CRB-00103 / PRJ-02725, created from PRJ-02724's
+original product and mascot inputs. Its live evidence is recorded under
+`/workspace/development/verification/fresh-automatic-20261029`; starting it is not
+evidence that the full automatic export has completed.
+
 The V16 review cut, `PRJ-02593` / `ASTV-05069`, is a 30 s, 720×1280, 24 fps film
 with audio. Its source-art inserts preserve printed information. The selected
 moving takes and its stale shot-5 disposal label/source metadata do not establish

@@ -571,6 +571,7 @@ class ReferenceAnalysisUnavailable(ValueError):
 
 def reference_inventory(project):
 	from joymedia.services.intake.vision import ensure_project_image_analysis
+	from joymedia.services.scene.prompt_scope import reference_description
 	from joymedia.services.scene.references import canonical_reference_rows, identity_key
 
 	ensure_project_image_analysis(project)
@@ -603,6 +604,7 @@ def reference_inventory(project):
 					),
 					"qualified_pose": qualified_pose,
 					"qualified_view": qualified_view,
+					"identity_description": reference_description(analysis, str(view.reference_role).lower()),
 					"description": " ".join(
 						filter(
 							None,
@@ -1016,7 +1018,10 @@ def draft_script(
 			# Only the canonical identity description reaches the Director.  Pose
 			# variants remain available to the following pose-preparation stage,
 			# but their visible support must not determine this story.
-			"identity_reference": (item.get("views") or [{}])[0].get("description", "")[:320],
+			"identity_reference": (
+				(item.get("views") or [{}])[0].get("identity_description")
+				or (item.get("views") or [{}])[0].get("description", "")
+			)[:500],
 		}
 		for item in inventory
 	]
