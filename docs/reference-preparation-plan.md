@@ -231,3 +231,12 @@ review previews. Source-product scale screening is unchanged. The prior
 mascot-larger-than-paper rejection was not a measured contradiction.
 52 admission/material/automatic-delivery tests and 23 physical-audit method
 checks passed after these changes. No failed image was manually approved.
+
+H3 opening holds now preserve the frozen keyframe retry note. The compact
+compiler had correctly removed generic image-engine boilerplate but also lost
+evidence-directed corrections, leaving redraws as seed changes alone. Product
+printing/pictograms remain flat ink and the photographed closure state is
+preserved; diagrams must not become new props or protruding contents. Explicit
+UI recovery now archives and resets the checker-stability refresh budget, while
+retaining every failed run/report and all visual gates. 107 focused H3, scope,
+script/camera and material tests passed.

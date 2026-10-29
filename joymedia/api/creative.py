@@ -635,6 +635,16 @@ def retry_product_variant(batch_name, index):
 			# and workbook, then queues only the missing shared-setting work.
 			stage = "Planning"
 		if stage == "Keyframes" and variant.get("project"):
+			refreshes = variant.get("frame_policy_refreshes") or []
+			if refreshes:
+				variant.setdefault("recovery_events", []).append(
+					{
+						"stage": "Keyframes",
+						"reason": "Explicit recovery starts a fresh bounded checker-stability budget; historical evidence is retained.",
+						"previous_policy_refreshes": refreshes,
+					}
+				)
+				variant["frame_policy_refreshes"] = []
 			# This is a fresh recovery request, often after the prompt/compiler or a
 			# workflow configuration has been corrected.  Do not let the old bounded
 			# stochastic attempts immediately re-raise the same exhausted-retries

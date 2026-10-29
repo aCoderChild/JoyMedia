@@ -9,6 +9,18 @@ from joymedia.services.planning.h3 import compile_opening_hold
 
 
 class TestH3Storyboard(TestCase):
+	def test_compact_hold_keeps_the_frozen_redraw_correction(self):
+		shot = frappe._dict(
+			image_prompt="A seated actor on its floor.",
+			keyframe_retry_note="Critical geometry: the previous actor floated above the floor.",
+			references=[frappe._dict(reference_role="Character", asset_version="actor")],
+		)
+		workflow = frappe._dict(bindings=[frappe._dict(required_input_role="character")])
+		prompt = compile_opening_hold(shot, workflow, "Expanded image-engine boilerplate.")
+		self.assertIn(shot.keyframe_retry_note, prompt)
+		self.assertIn("Do not advance a later action", prompt)
+		self.assertNotIn("Expanded image-engine boilerplate", prompt)
+
 	def test_recipe_samples_a_fixed_preparation_clip_without_using_shot_duration(self):
 		graph = {"111": {"inputs": {"value": 5}}, "10": {}, "92": {}}
 		spec = {

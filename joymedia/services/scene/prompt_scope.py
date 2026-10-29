@@ -44,6 +44,7 @@ def product_only_instruction(references):
 		"Product-only composition: the supplied product is the only physical foreground subject, "
 		"resting untouched on its authored support. The setting contains no physical actors or toys. "
 		"Figures on the package remain flat printed artwork attached to its surface throughout."
+		" All other printing, icons and diagrams also remain flat ink, never extra physical objects."
 	)
 
 

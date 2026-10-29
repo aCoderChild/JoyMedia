@@ -30,6 +30,19 @@ def compile_opening_hold(shot, workflow, composition):
 	material = sheet_material_instruction(
 		composition + " " + str(shot.get("generation_prompt") or ""), opening=True
 	)
+	retry_note = str(
+		shot.get("keyframe_retry_note")
+		or (shot.get("consistency_notes") if shot.get("consistency_status") == "Redrawing" else "")
+		or ""
+	).strip()[:1000]
+	correction = (
+		"Opening-still retry correction: the previous image was rejected because "
+		+ retry_note
+		+ ". Correct that defect while preserving this authored opening, its declared objects, original traits "
+		"and support. Do not advance a later action into this first frame. "
+		if retry_note
+		else ""
+	)
 	appearance = " ".join(
 		str(r.get("visual_description") or "")
 		for r in references
@@ -37,6 +50,8 @@ def compile_opening_hold(shot, workflow, composition):
 	)
 	scope = (
 		"Exactly one source-matching package. Its printed figures remain flat artwork. "
+		"All other printing and pictograms remain flat ink, never extra physical props or dispensed contents. "
+		"Preserve the photographed closure state; add no opening or protruding material unless authored. "
 		if "product" in roles
 		else "Only the authored loose materials and working props are visible; no retail container, wrapper, carton or box. "
 	)
@@ -56,6 +71,7 @@ def compile_opening_hold(shot, workflow, composition):
 		+ uses
 		+ " "
 		+ scope
+		+ correction
 		+ material
 		+ " "
 		+ f"Camera: {angle} {framing}. "

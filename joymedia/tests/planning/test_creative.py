@@ -946,6 +946,7 @@ class TestGeneratedScriptValidation(TestCase):
 		from joymedia.api.creative import retry_product_variant
 
 		variant = {
+			"frame_policy_refreshes": [{"run": "prior-1"}, {"run": "prior-2"}],
 			"status": "Needs Attention",
 			"resume_stage": "Keyframes",
 			"project": "PRJ-1",
@@ -971,6 +972,11 @@ class TestGeneratedScriptValidation(TestCase):
 		self.assertIn("rewrite_scenes_in_place", enqueue.call_args.args[0])
 		retried = json.loads(save.call_args.args[2]["variants_json"])[0]
 		self.assertEqual({"pose_scenes": [1], "by": "Retry"}, retried["scene_revision"])
+		self.assertEqual([], retried["frame_policy_refreshes"])
+		self.assertEqual(
+			[{"run": "prior-1"}, {"run": "prior-2"}],
+			retried["recovery_events"][0]["previous_policy_refreshes"],
+		)
 
 	def test_final_automatic_script_retry_uses_advisory_fallback_once(self):
 		from joymedia.services.generation.creative_batch import (
