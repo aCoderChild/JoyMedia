@@ -263,3 +263,12 @@ forcing photographic texture. 204 pose, prompt, inventory, H3 and script/camera
 checks passed. For the next demo, the chosen backend profile is PIPE-00069:
 H3 reference preparation, Flux WF-02656 backgrounds/storyboard composition,
 and H3 WF-02695 motion. The H3-only storyboard trial remains recorded separately.
+
+CRB-00110 / PRJ-02733 stopped before image generation because the pose planner
+repeated “as if holding an object” after complete forward-arm geometry, even
+after two repairs. A narrow normalization now removes that trailing hypothetical
+purpose clause only when explicit working-arm geometry already exists. Actual
+contact verbs and neutral/unspecified geometry remain rejected. All 65 pose
+coverage tests pass with an initialized Frappe test context; Ruff passes. The
+native retry API resumed Planning while retaining rejection history. No new
+final export has passed verification at this point.

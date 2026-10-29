@@ -1301,6 +1301,12 @@ def _plan_required_states(script, selected):
 					},
 				)
 				candidate_pose = str(repaired.get("pose") or "").strip() if isinstance(repaired, dict) else ""
+				# Some planners repeat a hypothetical object after already giving
+				# complete limb geometry. Remove only that trailing purpose clause;
+				# an actual grip or an unspecified neutral pose still fails below.
+				body_geometry = re.split(r"\bas if\b", candidate_pose, maxsplit=1, flags=re.I)[0]
+				if _working_arm_pose(body_geometry):
+					candidate_pose = body_geometry.rstrip(" ,;.")
 				if candidate_pose and not re.search(
 					r"\b(?:hold|holding|carry|carrying|grip|gripping|clutch|clutching|presenting)\b",
 					candidate_pose,

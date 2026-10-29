@@ -34,6 +34,43 @@ from joymedia.services.project.reference_lineage import lineage_identity
 
 
 class TestPoseCoverage(TestCase):
+	def test_hypothetical_prop_clause_does_not_discard_explicit_working_limbs(self):
+		selected = [frappe._dict(reference_key="actor", identity_key="mascot", reference_role="Character")]
+		script = {
+			"scenes": [
+				{
+					"cast": ["actor"],
+					"visual_camera": "The actor holds a tissue.",
+					"opening_support": "seated",
+					"action": "Fold the tissue.",
+				}
+			]
+		}
+		planned = {
+			"scene_index": 0,
+			"cast_key": "actor",
+			"reference_key": "actor",
+			"opening_pose": "seated, both forearms bent forward at waist height, holding a tissue",
+			"view": "front",
+		}
+		with (
+			patch("frappe.db.get_value", return_value="{}"),
+			patch(
+				"joymedia.services.planning.production._ask_planner",
+				side_effect=[
+					{"states": [planned]},
+					{
+						"pose": "seated, both forearms bent forward at waist height, paws positioned apart as if they were holding an object but with no object present"
+					},
+				],
+			),
+		):
+			state = _plan_required_states(script, selected)[0]
+		self.assertEqual(
+			"seated, both forearms bent forward at waist height, paws positioned apart", state["opening_pose"]
+		)
+		self.assertTrue(state["opening_articulation_required"])
+
 	def test_already_held_opening_does_not_reuse_a_neutral_arms_down_view(self):
 		neutral = "seated, both arms resting down in a relaxed position against the body"
 		working = "seated, both forearms bent forward at waist level, paws facing each other"
