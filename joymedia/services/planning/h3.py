@@ -11,6 +11,27 @@ from joymedia.services.planning.camera import camera_plan
 from joymedia.services.planning.camera import without_camera as _without_camera
 
 
+def compile_opening_hold(shot, workflow, composition):
+	"""A preparation clip holds one opening state; it does not perform later actions."""
+	definitions, retention, uses = _reference_sections(shot, workflow, True)
+	return (
+		"For the target video, at 0.00 seconds into the target video, the supplied reference pictures are fully referenced for [Shot 1].\n"
+		+ definitions
+		+ "\n"
+		+ retention
+		+ "\n\nintegrated_multimodal_description: [Shot 1] "
+		+ uses
+		+ " "
+		+ composition
+		+ " Hold exactly this opening pose, camera, props and composition throughout this preparation clip. "
+		"Do not perform the later scripted action or change state. Reusable identity references do not replace "
+		"authored scene props or contact. Keep the original anatomy, material, proportions and visible traits. "
+		"Do not transfer packaging illustrations or branding onto loose materials unless explicitly authored. "
+		"No new actor, duplicate subject, human hand or unauthored package."
+		"\n\noverall_soundscape: N/A\n\nnon_diegetic_music: N/A"
+	)
+
+
 def h3_kind(workflow):
 	if not workflow:
 		return None

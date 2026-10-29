@@ -1250,7 +1250,11 @@ PRODUCT_CONTAINER_WORDS = frozenset(
 def _visible_package_words(text):
 	"""Explicitly offscreen packages and negative instructions do not add visible inventory."""
 	words = set()
-	for clause in re.split(r"[.!?;\n]+", str(text or "").split("Product orientation is locked", 1)[0]):
+	for clause in re.split(
+		r"[.!?;,\n]+|\b(?:but|while)\b",
+		str(text or "").split("Product orientation is locked", 1)[0],
+		flags=re.I,
+	):
 		if re.match(
 			r"\s*(?:no|without|never show|do not show)\s+(?:[\w-]+\s+){0,3}"
 			r"(?:pack(?:et|age)?s?|box(?:es)?|cartons?|dispensers?|bottles?|tubes?|pouches?|containers?)\b",
@@ -1261,7 +1265,7 @@ def _visible_package_words(text):
 		):
 			continue
 		if re.search(
-			r"\boff[- ]?screen\b|\bout of (?:the )?(?:frame|view)\b|\boutside (?:the )?(?:close[- ]?up|frame|view)\b",
+			r"\boff[- ]?(?:screen|camera)\b|\bout of (?:the )?(?:frame|view|shot)\b|\boutside (?:the )?(?:close[- ]?up|frame|view)\b",
 			clause,
 			re.I,
 		):

@@ -125,6 +125,58 @@ def frame_provenance(project, content):
 	return json.loads(path.read_text()) if path.exists() else None
 
 
+def retain_storyboard_bridge(attempt, workflow, history):
+	"""Keep a sampled H3 scene clip as Intermediate, never a selectable take."""
+	raw = getattr(workflow, "execution_spec", None)
+	spec = (frappe.parse_json(raw or "{}") or {}) if isinstance(raw, (str, dict)) else {}
+	bridge = (spec.get("outputs") or {}).get("preparation_bridge")
+	if not bridge:
+		return
+	key = attempt.name + ":storyboard_bridge"
+	if frappe.db.exists("Generation Artifact", {"artifact_key": key}):
+		return
+	outputs = (history.get("outputs") or {}).get(str(bridge["node_key"])) or {}
+	files = [*outputs.get("videos", []), *outputs.get("gifs", []), *outputs.get("images", [])]
+	output = next((f for f in files if str(f.get("filename") or "").lower().endswith(".mp4")), None)
+	if not output:
+		raise ValueError("The H3 storyboard stage returned no traceable preparation clip.")
+	from joymedia.services.workflows.comfyui import download_output
+
+	content = download_output(
+		output["filename"],
+		output.get("subfolder", ""),
+		output.get("type", "output"),
+		base_url=attempt.comfyui_endpoint_url,
+	)
+	checksum = hashlib.sha256(content).hexdigest()
+	task = frappe.get_doc("Generation Task", attempt.generation_task)
+	project = frappe.db.get_value("Generation Run", task.generation_run, "media_project")
+	file = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"reference-bridge-storyboard-{attempt.name}-{checksum[:12]}.mp4",
+			"content": content,
+			"is_private": 1,
+			"attached_to_doctype": "Media Project",
+			"attached_to_name": project,
+		}
+	).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Generation Artifact",
+			"artifact_key": key,
+			"artifact_role": "Intermediate",
+			"generation_attempt": attempt.name,
+			"media_type": "Video",
+			"frappe_file": file.file_url,
+			"provider_locator": json.dumps(
+				{"node": str(bridge["node_key"]), "sha256": checksum, "frame": bridge["frame_index"]},
+				separators=(",", ":"),
+			),
+		}
+	).insert(ignore_permissions=True)
+
+
 def product_view_from_h3(project, source, view, accepts):
 	from PIL import Image
 

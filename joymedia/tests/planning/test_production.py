@@ -1225,6 +1225,12 @@ class TestUnauthoredPackage(FrappeTestCase):
 			planner._visible_package_words("No facial pack or any other package is present on the rug.")
 		)
 		self.assertTrue(planner._visible_package_words("No fur on the mascot, which holds a box."))
+		self.assertFalse(
+			planner._visible_package_words(
+				"The mascot is seated on the rug, the pack is stationary off-camera."
+			)
+		)
+		self.assertTrue(planner._visible_package_words("The pack is off-camera, but a bottle is visible."))
 
 	def test_explicit_empty_product_roster_cannot_silently_add_a_handled_pack(self):
 		with self.assertRaisesRegex(ValueError, "declares no visible product"):

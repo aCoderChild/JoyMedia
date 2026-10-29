@@ -226,6 +226,72 @@ TOPOLOGY_SCHEMA = {
 }
 
 
+RETAIL_FORMS = {
+	"enclosed_retail_volume",
+	"single_loose_sheet",
+	"folded_loose_material",
+	"other_noncontainer",
+	"unclear",
+}
+RETAIL_FORM_PROMPT = (
+	"Observe each foreground inanimate object held by or near the character. Exclude the character and room furniture. "
+	"Classify physical form from visible geometry alone. enclosed_retail_volume is a retail wrapper/carton enclosing a stack "
+	"or volume, with visible container faces, closure/seams or package thickness. A single thin flexible sheet, even "
+	"folded/crumpled/printed, is single_loose_sheet or folded_loose_material, never enclosed_retail_volume merely because "
+	"of a drawing or brand context. Report objects [{physical_form,visible_evidence}]. Use unclear if form cannot be resolved."
+)
+RETAIL_FORM_SCHEMA = {
+	"type": "object",
+	"additionalProperties": False,
+	"required": ["objects"],
+	"properties": {
+		"objects": {
+			"type": "array",
+			"maxItems": 20,
+			"items": {
+				"type": "object",
+				"additionalProperties": False,
+				"required": ["physical_form", "visible_evidence"],
+				"properties": {
+					"physical_form": {"type": "string", "enum": sorted(RETAIL_FORMS)},
+					"visible_evidence": {"type": "string", "minLength": 10},
+				},
+			},
+		}
+	},
+}
+REFERENCE_FIT_SCHEMA = {
+	"type": "object",
+	"additionalProperties": False,
+	"required": ["comparable", "identity_match", "proportions_match", "anatomy_connected", "reason"],
+	"properties": {
+		"comparable": {"type": "boolean"},
+		**{
+			key: {"type": ["boolean", "null"]}
+			for key in ("identity_match", "proportions_match", "anatomy_connected")
+		},
+		"reason": {"type": "string", "minLength": 1},
+	},
+}
+
+
+def retail_container_count(observation):
+	"""Derive counts from explicit object forms, not a contradictory model total."""
+	rows = observation.get("objects") if isinstance(observation, dict) else None
+	if not isinstance(rows, list):
+		return None
+	for row in rows:
+		if (
+			not isinstance(row, dict)
+			or row.get("physical_form") not in RETAIL_FORMS
+			or row["physical_form"] == "unclear"
+			or not isinstance(row.get("visible_evidence"), str)
+			or len(row["visible_evidence"].strip()) < 10
+		):
+			return None
+	return sum(row["physical_form"] == "enclosed_retail_volume" for row in rows)
+
+
 def _product_placement_issues(description):
 	"""Return only clear product/environment conflicts reported by the visual reviewer.
 
@@ -384,6 +450,7 @@ def reference_fit_findings(shot, frame, ask=None):
 			+ "If the subject is too small or hidden for a reliable comparison, comparable=false "
 			+ "and use null for unknown findings. Never treat an uncertain match as true.",
 			max_edge=768,
+			schema=REFERENCE_FIT_SCHEMA,
 		)
 		if role in {"character", "person"}:
 			from joymedia.services.planning.pose_assets import (
@@ -580,6 +647,20 @@ def frame_findings(project, shot, frame):
 	if not isinstance(description, dict):
 		return ["Physical staging review: the visual observer returned no usable description."]
 	gaps = []
+	objects = ask(frame, RETAIL_FORM_PROMPT, max_edge=1024, schema=RETAIL_FORM_SCHEMA)
+	containers = retail_container_count(objects)
+	description["broad_package_counts"] = {
+		key: description.get(key) for key in ("product_packages", "other_retail_packages")
+	}
+	description["retail_object_observations"] = objects
+	# This narrow observation owns the count. Unknown form remains a blocker;
+	# it must not manufacture a claim that an authored sheet is a retail pack.
+	description["product_packages"] = (containers or 0) if "product" in roles else 0
+	description["other_retail_packages"] = (containers or 0) if "product" not in roles else 0
+	if containers is None:
+		gaps.append(
+			"Critical prop: retail container form remains unverified; do not remove authored loose materials by guessing."
+		)
 	if not isinstance(description.get("figures"), list):
 		gaps.append(
 			"Physical staging review: the visual observer did not describe the figures; support remains unverified."

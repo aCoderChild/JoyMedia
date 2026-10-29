@@ -313,7 +313,7 @@ def _ensure_close_views(project, shots):
 	return frappe.get_doc("Media Project", project.name) if added else project
 
 
-def _keyframe_workflow(project=None):
+def _keyframe_workflow(project=None, purpose=None):
 	from joymedia.services.workflows.pipeline import (
 		get_active_generation_pipeline,
 		get_pinned_generation_pipeline,
@@ -324,6 +324,10 @@ def _keyframe_workflow(project=None):
 	pipeline = (get_pinned_generation_pipeline(name) if name else None) or get_active_generation_pipeline()
 	steps = get_pipeline_steps(pipeline.name)
 	workflow = frappe.get_doc("Generation Workflow", steps[0].workflow) if steps else None
+	if workflow and purpose == "environment":
+		spec = frappe.parse_json(workflow.execution_spec or "{}") or {}
+		if spec.get("environment_workflow"):
+			workflow = frappe.get_doc("Generation Workflow", spec["environment_workflow"])
 	if not workflow or workflow.output_media_type != "Image":
 		frappe.throw(_("The production pipeline has no image stage to draw the places with."))
 	return workflow
@@ -370,7 +374,7 @@ def render_place(project, setting, view=False, staging=""):
 	from joymedia.services.workflows.resolver import build_execution_workflow
 	from joymedia.workflow_adapters import get_workflow_adapter
 
-	workflow_version = _keyframe_workflow(project)
+	workflow_version = _keyframe_workflow(project, purpose="environment")
 	settings = _project_settings(project)
 	from joymedia.services.planning.prompts import MEDIUM_LOCK, _mood
 

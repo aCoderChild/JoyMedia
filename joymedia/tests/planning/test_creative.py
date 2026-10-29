@@ -3305,6 +3305,37 @@ class TestAutomaticScriptContracts(TestCase):
 
 
 class TestReviewerRevision(TestCase):
+	def test_revision_uses_canonical_identities_without_changing_stored_pose_and_angle_bindings(self):
+		from joymedia.services.planning.creative import _keep_unnoted_scenes, canonical_writer_script
+
+		original = {
+			"scenes": [
+				{
+					"cast": ["pose_seated"],
+					"products": ["pack_side"],
+					"product_view": "side",
+					"action": "Fold the tissue.",
+				},
+				{"cast": ["unknown_child"], "products": []},
+			]
+		}
+		inventory = [
+			{"key": "mascot", "identity": "actor", "role": "Character", "views": [{"key": "pose_seated"}]},
+			{"key": "pack", "identity": "product", "role": "Product", "views": [{"key": "pack_side"}]},
+		]
+		canonical = canonical_writer_script(original, inventory)
+		self.assertEqual(["mascot"], canonical["scenes"][0]["cast"])
+		self.assertEqual(["pack"], canonical["scenes"][0]["products"])
+		self.assertEqual("side", canonical["scenes"][0]["product_view"])
+		self.assertEqual(["unknown_child"], canonical["scenes"][1]["cast"])
+		kept = _keep_unnoted_scenes(
+			{"scenes": [{}, {}]},
+			{"script": canonical, "notes": [{"scene": 2, "text": "Revise only this scene."}]},
+		)
+		self.assertEqual(["mascot"], kept["scenes"][0]["cast"])
+		self.assertEqual(["pose_seated"], original["scenes"][0]["cast"])
+		self.assertEqual(["pack_side"], original["scenes"][0]["products"])
+
 	def test_notes_on_one_scene_keep_every_other_scene_verbatim(self):
 		from joymedia.services.planning.creative import _keep_unnoted_scenes
 

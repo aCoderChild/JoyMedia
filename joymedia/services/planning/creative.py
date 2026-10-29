@@ -658,6 +658,27 @@ def reference_choices(inventory):
 	}
 
 
+def canonical_writer_script(script, inventory):
+	"""Give revisions canonical identities while keeping stored view bindings intact."""
+	result = copy.deepcopy(script)
+	for scene in result.get("scenes") or []:
+		for field, roles in (("cast", {"character", "person"}), ("products", {"product"})):
+			keys = []
+			for key in scene.get(field) or []:
+				matches = {
+					item["key"]
+					for item in inventory
+					if str(item.get("role") or "").casefold() in roles
+					and key
+					in {item["key"], item.get("identity"), *(view["key"] for view in item.get("views") or [])}
+				}
+				canonical = next(iter(matches)) if len(matches) == 1 else key
+				if canonical not in keys:
+					keys.append(canonical)
+			scene[field] = keys
+	return result
+
+
 def unheld_package_opening_errors(script):
 	"""Find explicit held-package openings incompatible with the source-pixel lock."""
 	package = r"(?:pack|packet|package|box|carton|bottle|bag|container)"
@@ -1004,6 +1025,8 @@ def draft_script(
 	# The Director sees canonical identities only.  It writes the required body
 	# states into the screenplay; pose preparation runs after script validation.
 	inventory = reference_inventory(project)
+	if revision:
+		revision = {**revision, "script": canonical_writer_script(revision["script"], inventory)}
 	from joymedia.services.workflows.capabilities import capacity
 
 	workflow = frappe.get_doc("Generation Workflow", project.workflow) if project.get("workflow") else None

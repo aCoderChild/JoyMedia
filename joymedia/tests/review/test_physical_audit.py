@@ -19,6 +19,43 @@ SCENE = {"human_cast": False, "has_product": True, "medium_locked": True, "close
 
 
 class TestPhysicalAudit(FrappeTestCase):
+	def test_retail_counts_come_from_physical_forms_and_unknown_forms_do_not_pass(self):
+		from joymedia.services.review.physical_audit import retail_container_count
+
+		self.assertEqual(
+			0,
+			retail_container_count(
+				{
+					"retail_container_count": 1,
+					"objects": [
+						{
+							"physical_form": "single_loose_sheet",
+							"visible_evidence": "One crumpled flexible paper sheet, with no enclosure.",
+						}
+					],
+				}
+			),
+		)
+		self.assertEqual(
+			1,
+			retail_container_count(
+				{
+					"objects": [
+						{
+							"physical_form": "enclosed_retail_volume",
+							"visible_evidence": "A sealed wrapper encloses a thick stack of sheets.",
+						}
+					]
+				}
+			),
+		)
+		for observation in (
+			{},
+			{"objects": [{"physical_form": "unclear", "visible_evidence": "The object is partly hidden."}]},
+			{"objects": [{"physical_form": "single_loose_sheet", "visible_evidence": ""}]},
+		):
+			self.assertIsNone(retail_container_count(observation))
+
 	def test_support_is_extracted_only_from_explicit_unambiguous_opening(self):
 		self.assertEqual("ground", opening_actor_support("The actor is seated on the rug beside the table."))
 		self.assertEqual("work_surface", opening_actor_support("The miniature stands on the coffee table."))
@@ -131,7 +168,21 @@ class TestPhysicalAudit(FrappeTestCase):
 		with (
 			patch.object(frappe, "get_all", return_value=["Product"]),
 			patch.object(
-				consistency, "ask", side_effect=[observation, {"answer": False}, {"unexpected_humans": True}]
+				consistency,
+				"ask",
+				side_effect=[
+					observation,
+					{
+						"objects": [
+							{
+								"physical_form": "enclosed_retail_volume",
+								"visible_evidence": "A sealed package with visible thickness.",
+							}
+						]
+					},
+					{"answer": False},
+					{"unexpected_humans": True},
+				],
 			),
 			patch.object(shot_structure, "structure_for", return_value={}),
 			patch.object(prompts, "_mood", return_value=""),
@@ -159,7 +210,21 @@ class TestPhysicalAudit(FrappeTestCase):
 		with (
 			patch.object(frappe, "get_all", return_value=["Product"]),
 			patch.object(
-				consistency, "ask", side_effect=[observation, {"answer": True}, {"unexpected_humans": False}]
+				consistency,
+				"ask",
+				side_effect=[
+					observation,
+					{
+						"objects": [
+							{
+								"physical_form": "enclosed_retail_volume",
+								"visible_evidence": "A sealed package with visible thickness.",
+							}
+						]
+					},
+					{"answer": True},
+					{"unexpected_humans": False},
+				],
 			),
 			patch.object(shot_structure, "structure_for", return_value={}),
 			patch.object(prompts, "_mood", return_value=""),

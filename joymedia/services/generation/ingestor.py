@@ -277,6 +277,10 @@ def _fail_attempt(attempt, error_summary, error_details, failure_class, *, histo
 
 def _ingest_completed_output(attempt, history, output):
 	workflow = _attempt_workflow(attempt)
+	if workflow:
+		from joymedia.services.planning.reference_bridges import retain_storyboard_bridge
+
+		retain_storyboard_bridge(attempt, workflow, history)
 	artifact = _create_primary_artifact(attempt, workflow)
 	_store_artifact_file_in_frappe(artifact, attempt, output)
 	if not workflow or workflow.output_media_type != "Video":

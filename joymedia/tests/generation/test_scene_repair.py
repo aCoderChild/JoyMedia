@@ -12,6 +12,28 @@ def shot(number, status, notes=""):
 
 
 class TestAutomaticSceneRepair(FrappeTestCase):
+	def test_source_art_cutaway_preserves_material_actions_and_refuses_package_handling(self):
+		script = {
+			"scenes": [
+				{"cast": ["mascot"], "products": ["pack"], "action": "Pick up the loose tissue."},
+				{"cast": ["mascot"], "products": [], "action": "Fold the tissue."},
+				{"cast": ["mascot"], "products": [], "action": "Examine the tissue crease."},
+				{
+					"cast": ["mascot"],
+					"products": ["pack"],
+					"action": "The mascot places the tissue on the rug and looks at the pack.",
+				},
+			]
+		}
+		notes = cb._source_art_cutaway_notes(script)
+		self.assertEqual([1, 3, 4], [n["scene"] for n in notes])
+		self.assertIn(script["scenes"][-1]["action"], notes[-2]["text"])
+		self.assertIn("exact original supplied product photograph", notes[-1]["text"])
+		script["scenes"][0]["action"] = "The mascot lifts the pack and takes a tissue."
+		self.assertEqual([], cb._source_art_cutaway_notes(script))
+		script["scenes"][0]["action"] = "The mascot lifts it while holding a tissue."
+		self.assertEqual([], cb._source_art_cutaway_notes(script))
+
 	def test_legacy_product_conditioning_is_replanned_only_for_explicit_empty_rosters(self):
 		project = MagicMock()
 		project.name = "project"

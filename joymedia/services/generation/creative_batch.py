@@ -5,6 +5,7 @@ candidate selection and release gates are never silently overridden.
 """
 
 import copy
+import re
 import time
 import uuid
 
@@ -535,6 +536,95 @@ def _recover_unlisted_products(batch, variants, index, project, request):
 	frappe.db.commit()
 	_write(batch.name, variants, changed_index=index)
 	return True
+
+
+def _source_art_cutaway_notes(script):
+	"""Separate a stationary package from a loose-material demonstration.
+
+	This cannot replace authored package handling or ambiguous pronoun actions.
+	The writer must preserve the demonstrated actions and their chronology.
+	"""
+	scenes = script.get("scenes") or []
+	if len(scenes) < 3 or not scenes[-1].get("products"):
+		return []
+	package = r"\b(?:pack(?:age|et)?|box|carton|bottle|tube|pouch|container|dispenser|product)\b"
+	for scene in scenes:
+		action = re.sub(
+			r"\b(?:and\s+)?(?:looks?|glances?)\s+at\s+(?:the\s+)?(?:pack(?:age|et)?|product)\b",
+			"",
+			str(scene.get("action") or ""),
+			flags=re.I,
+		)
+		if scene.get("cast"):
+			if re.search(package, action, re.I):
+				return []
+			if not re.search(r"\b(?:paper|tissue|sheet|cloth|napkin|fabric)\b", action, re.I):
+				return []  # No evidence that the action belongs to a loose material.
+			if scene.get("products") and re.search(r"\b(?:it|this|that)\b", action, re.I):
+				return []  # An ambiguous referent could be the advertised package.
+	notes = [
+		{
+			"scene": index + 1,
+			"text": "Keep every authored loose-material action and the original mascot. Crop the stationary advertised package out of this actor shot: products=[], and no package in the opening or visible boundaries. The package can remain stationary off camera in continuity. Do not add package handling, props or actors. Preserve actual acquisition/contact/result, not a static substitute.",
+		}
+		for index, scene in enumerate(scenes[:-1])
+		if scene.get("products") and scene.get("cast")
+	]
+	if not notes:
+		return []
+	if scenes[-1].get("cast"):
+		notes.append(
+			{
+				"scene": len(scenes) - 1,
+				"text": "Before the final product-only shot, visibly finish the preceding material demonstration and all actor actions from the current final shot, in chronological order. Move the original final actor action here rather than omitting it: "
+				+ str(scenes[-1].get("action") or ""),
+			}
+		)
+	notes.append(
+		{
+			"scene": len(scenes),
+			"text": "Use a separate product-only closing shot from the exact original supplied product photograph. cast=[]; keep the product roster. The original pack is stationary, in its supplied orientation with all original artwork. Use a neutral source-photo setting rather than asking an image model to restage the pack in a furnished room. No package manipulation, actor, hand or loose material; all actual demonstration actions must finish in the preceding shots. Preserve the brief and original identity, and do not claim a contact action was rendered by this static packshot.",
+		}
+	)
+	return notes
+
+
+def _try_source_art_cutaway(batch, variants, index, project):
+	variant = variants[index]
+	if int(variant.get("source_art_cutaway_version") or 0) >= 3:
+		return False
+	notes = _source_art_cutaway_notes(variant.get("script") or {})
+	if not notes:
+		return False
+	from joymedia.services.consistency.retention import policy
+
+	if not (policy() or {}).get("source_hold_pipeline"):
+		return False
+	for shot in frappe.get_all(
+		"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"
+	):
+		tasks = frappe.get_all("Generation Task", filters={"shot": shot}, pluck="name")
+		attempts = (
+			frappe.get_all(
+				"Generation Attempt",
+				filters={"generation_task": ["in", tasks], "status": "Failed"},
+				fields=["error_details"],
+				order_by="creation desc",
+				limit=2,
+			)
+			if tasks
+			else []
+		)
+		if len(attempts) == 2 and all(
+			any(cause in (row.error_details or "") for cause in PRODUCT_VIEW_FAILURES) for row in attempts
+		):
+			variant["source_art_cutaway_attempted"] = True
+			variant["source_art_cutaway_version"] = 3
+			if _start_automatic_scene_repair(batch.name, variants, index, notes):
+				return True
+			variant.pop("source_art_cutaway_attempted", None)
+			variant.pop("source_art_cutaway_version", None)
+	return False
 
 
 def _mark_for_corrected_redraw(shot_name, findings):
@@ -2819,6 +2909,8 @@ def advance_batch(batch_name, user=None):
 				if active:
 					continue
 				if automatic and _recover_unlisted_products(batch, variants, index, project, request):
+					return
+				if automatic and _try_source_art_cutaway(batch, variants, index, project):
 					return
 				if automatic and _restart_incompatible_package_openings(batch, variants, index, project):
 					return

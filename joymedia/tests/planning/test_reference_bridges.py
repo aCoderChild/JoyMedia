@@ -4,15 +4,55 @@ import subprocess
 import tempfile
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 
 from joymedia.services.planning.product_views import _generate_candidate, _prepared_view_result
-from joymedia.services.planning.reference_bridges import frame_provenance, record_sample, sample_bridge
+from joymedia.services.planning.reference_bridges import (
+	frame_provenance,
+	record_sample,
+	retain_storyboard_bridge,
+	sample_bridge,
+)
 
 
 class TestReferenceBridges(TestCase):
+	def test_storyboard_clip_is_private_intermediate_evidence_never_a_selectable_take(self):
+		attempt = frappe._dict(name="attempt", generation_task="task", comfyui_endpoint_url="endpoint")
+		workflow = frappe._dict(
+			execution_spec=json.dumps(
+				{"outputs": {"preparation_bridge": {"node_key": "92", "frame_index": 68}}}
+			)
+		)
+		created = []
+
+		def document(dt, name=None):
+			if dt == "Generation Task":
+				return frappe._dict(generation_run="run")
+			created.append(dt)
+			doc = MagicMock()
+			doc.insert.return_value = doc
+			doc.file_url = "/private/bridge.mp4"
+			return doc
+
+		with (
+			patch("frappe.db.exists", side_effect=[False, True]),
+			patch("frappe.db.get_value", return_value="project"),
+			patch("frappe.get_doc", side_effect=document),
+			patch("joymedia.services.workflows.comfyui.download_output", return_value=b"clip") as download,
+		):
+			for _ in range(2):
+				retain_storyboard_bridge(
+					attempt, workflow, {"outputs": {"92": {"videos": [{"filename": "bridge.mp4"}]}}}
+				)
+			download.assert_called_once()
+		self.assertEqual(["File", "Generation Artifact"], [d["doctype"] for d in created])
+		self.assertEqual(1, created[0]["is_private"])
+		self.assertEqual("project", created[0]["attached_to_name"])
+		self.assertEqual("Intermediate", created[1]["artifact_role"])
+		self.assertEqual(68, json.loads(created[1]["provider_locator"])["frame"])
+
 	def test_h3_product_preparation_does_not_require_an_image_fallback_workflow(self):
 		with (
 			patch.dict(frappe.conf, {"joymedia_product_view_workflow": None}),

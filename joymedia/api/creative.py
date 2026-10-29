@@ -75,6 +75,7 @@ def create_product_batch(
 	example_workbooks=None,
 	language=None,
 	delivery_mode=None,
+	generation_pipeline=None,
 ):
 	"""Queue `count` AI-written videos. Each video features ONE hero product so its
 	packaging never changes between shots; several heroes rotate across the videos.
@@ -211,6 +212,19 @@ def create_product_batch(
 	)
 	if not isinstance(direction or "", str) or len(direction or "") > 4000:
 		raise ValueError("Creative direction must be a short optional description.")
+	chosen_pipeline, chosen_workflow = project.generation_pipeline, project.workflow
+	if generation_pipeline:
+		from joymedia.services.workflows.pipeline import get_pipeline_steps
+
+		pipeline = frappe.get_doc("Generation Pipeline", generation_pipeline)
+		pipeline.check_permission("read")
+		steps = get_pipeline_steps(pipeline.name)
+		if (
+			not steps
+			or frappe.db.get_value("Generation Workflow", steps[-1].workflow, "output_media_type") != "Video"
+		):
+			raise ValueError("Choose a registered video delivery pipeline.")
+		chosen_pipeline, chosen_workflow = pipeline.name, steps[-1].workflow
 	request = {
 		"version": 1,
 		"review_notes": _review_context(project),
@@ -233,8 +247,8 @@ def create_product_batch(
 		# Explicit choice, else the example scripts' language (detected when writing), else the user's.
 		"language": _named(language) or (None if examples else _named(frappe.local.lang)),
 		"example_workbooks": examples,
-		"workflow": project.workflow,
-		"generation_pipeline": project.generation_pipeline,
+		"workflow": chosen_workflow,
+		"generation_pipeline": chosen_pipeline,
 		"render_profile": {
 			key: project.get(key)
 			for key in ("export_quality", "quality_mode", "character_mode", "show_captions")

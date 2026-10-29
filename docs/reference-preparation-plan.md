@@ -98,3 +98,39 @@ A live read-only replay after the fix returned a character-and-environment
 close-up with a held tissue and no product key or package sentence. The actual
 frame and final-video outcome must still be assessed separately; this is not a
 successful unattended-film claim.
+
+## H3 storyboard image route
+
+`register_h3_storyboard_pipeline.execute` installs an opt-in pipeline from the
+existing H3 reference-only workflow. It does not promote a global default.
+Its image stage holds the authored opening for 73 preparation frames, selects
+frame 68 through ImageFromBatch and saves an ordinary Primary Image. The
+separate final H3 stage performs the authored timed actions; a preparation hold
+never substitutes for an action. The full preparation clip is retained as a
+private Intermediate artifact, attached to the project and visible with the
+other preparation clips, never as a selectable take. Frozen workflow/snapshot
+lineage and a clip SHA-256 identify the selected frame.
+
+The registered local route is PIPE-00071: WF-02700 storyboard images, WF-02695
+animation, with independent WF-02656 empty environments. Its product default
+remains source_pixels. `create_product_batch` accepts an explicit registered
+generation_pipeline without changing the source project's settings.
+
+The live isolated H3 trial followed a tight paws-and-plain-tissue composition
+more closely than the repeated full-body Flux results. Its clip and six samples
+remain candidates, not admitted film footage. This supports testing the route,
+not a general claim that all H3 output is physically or commercially correct.
+
+Additional integration repairs normalize a copied revision screenplay back to
+canonical identities before writer validation; stored pose/view bindings stay
+untouched. Off-camera package continuity no longer counts as visible inventory.
+Native geometry review now derives container counts from constrained object-form
+observations, keeps unknown form unverified, uses a schema for reference-fit
+decisions, and defines smooth matte surfaces separately from visible fur/pile.
+The original source bytes and appearance metadata are unchanged. Admission hashes
+now include the trait/lineage implementation dependencies; changed judges require
+new run evidence rather than silently reusing old reports.
+
+622 targeted backend test executions passed before the clean H3-route test.
+The historical CRB-00104 run is diagnostic evidence and does not establish a
+successful automatic final export.

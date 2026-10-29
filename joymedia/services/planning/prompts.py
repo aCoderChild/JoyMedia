@@ -166,6 +166,13 @@ def compile_segment_prompt_from_snapshot(
 				else float(shot.get("duration_seconds") or 5),
 			)
 		text = _unheld_product_staging(shot, text)
+		if prompt_source == "image" and workflow:
+			from joymedia.services.workflows.capabilities import controls
+
+			if "storyboard_hold" in controls(workflow):
+				from joymedia.services.planning.h3 import compile_opening_hold
+
+				return compile_opening_hold(shot, workflow, text)
 		if prompt_source != "image":
 			text = _grounded_cast_staging(shot, text, project)
 		# Continuation segments are written from the creative text, so they need the cast and audio rules too.

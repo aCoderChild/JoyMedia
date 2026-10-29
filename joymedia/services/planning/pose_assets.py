@@ -44,7 +44,11 @@ CHARACTER_LOOK_QUESTION = (
 	"Describe only the main physical character's fixed appearance, ignoring its pose, any object it holds, "
 	"packaging artwork and the background. In at most 40 words cover its surface material and texture, "
 	"colour, body shape, head, visible ear count, ear shape and attachment, muzzle proportions, and the exact eye drawing. Return JSON appearance "
-	"string and surface exactly one of smooth_seamless, fur_or_plush, fabric, other, unclear."
+	"string and surface exactly one of smooth_seamless, fur_or_plush, fabric, other, unclear. "
+	"Use visible surface evidence: smooth_seamless includes smooth matte rubber/clay-like rendered surfaces "
+	"and diffuse soft shading without textile structure. Fine render grain alone is not fur. "
+	"fur_or_plush requires visible hair, pile or plush fibres; fabric requires visible weave, stitching or "
+	"textile structure. Use unclear when surface evidence cannot be resolved."
 )
 KNOWN_SURFACES = frozenset({"smooth_seamless", "fur_or_plush", "fabric", "other"})
 BINARY_REVIEW_SCHEMA = {
@@ -70,7 +74,7 @@ def character_look(image):
 
 	cache_key = None
 	if isinstance(image, str):
-		cache_key = "joymedia:character-look:v2:" + hashlib.sha256(image.encode()).hexdigest()
+		cache_key = "joymedia:character-look:v3:" + hashlib.sha256(image.encode()).hexdigest()
 		cached = frappe.cache.get_value(cache_key)
 		if cached:
 			return cached
