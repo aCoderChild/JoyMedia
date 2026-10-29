@@ -54,6 +54,13 @@ def compile_h3(
 	from joymedia.services.project.context import scene_direction
 	from joymedia.services.project.formats import composition_instruction
 	from joymedia.services.scene.contract import instruction
+	from joymedia.services.scene.prompt_scope import (
+		ACTOR_ROLES,
+		assert_product_only_direction,
+		product_only_instruction,
+		sheet_material_instruction,
+	)
+	from joymedia.services.scene.prompt_scope import roles as reference_roles
 	from joymedia.services.workflows.capabilities import controls
 
 	reference_only = bool(workflow and "reference_only" in controls(workflow))
@@ -72,6 +79,11 @@ def compile_h3(
 		shot, project, is_final=is_final, framing_safety=framing, generated_composition=reference_only
 	)
 	text = str(shot.get("generation_prompt") or shot.get("image_prompt") or "").strip()
+	if (
+		"product" in reference_roles(shot.get("references"))
+		and not reference_roles(shot.get("references")) & ACTOR_ROLES
+	):
+		assert_product_only_direction(text)
 	if not text:
 		raise ValueError("The scene needs an action prompt.")
 	# Accept an authored H3 field block without nesting another set of fields.
@@ -135,6 +147,10 @@ def compile_h3(
 			refs += " Use the separate character reference only for the original character's face, markings, worn accessories, body proportions, limb and hand shape, and colours. A held heart or other object is a separate prop, never part of the character; include it only when the scene requests it. Retain the opening frame's pose and placement; do not add the reference image as a cutaway or duplicate actor."
 	if reference_only:
 		refs = _direct_reference_roles(shot, workflow)
+	ref_definitions, ref_retention, ref_use = ("", "", "")
+	if kind == "reference":
+		ref_definitions, ref_retention, ref_use = _reference_sections(shot, workflow, reference_only)
+		refs = ref_use
 	opening = (
 		"Continue from the preceding segment's exact last frame without restarting the action."
 		if segment_index > 1
@@ -204,31 +220,107 @@ def compile_h3(
 	)
 	if camera["closing"]:
 		ending += " Settle into a stable final hold; CTA lettering is added by the editor."
-	anchor = ""
 	if kind == "image":
 		last = any(
 			str(r.get("reference_role") or r.get("input_role") or "").lower() == "last_frame"
 			for r in shot.get("references") or []
 		)
 		if last:
-			anchor = f"Picture 1 aligns with 0.00 s of the target video and Picture 2 with {duration:.2f} s."
 			ending += " Reach the final pose and composition established by Picture 2 at the end of the shot."
-		else:
-			anchor = "At 0.00 s of the target video, <Picture 1> is fully referenced."
-	return five_layers(
-		camera=[camera["direction"], composition_instruction(project)],
-		subject=[anchor, refs, subject_identities(shot), opening, guard, unheld_product(shot), never],
-		motion=[action, physical, rules, ending],
-		lighting=[style],
-		audio=[
-			sound or "Only sounds caused by the visible action.",
-			" ".join(f'Speech: "{line}"' for line in speech_parts),
-			"No speech, no narration, no singing."
-			if sfx_only and not re.search(r"no speech", sound or "", re.I)
-			else "",
-			"No music." if music == "N/A" else "Music: " + music,
-		],
+	# The five authoring concerns are not the model's wire format. H3's
+	# official base guide requires an alignment line followed by three fields;
+	# full-reference mode has six different fields. The local text encoder
+	# forwards raw text and does not translate custom headings for us.
+	visual = " ".join(
+		p
+		for p in [
+			style,
+			opening,
+			refs,
+			subject_identities(shot),
+			guard,
+			product_only_instruction(shot.get("references")),
+			never,
+			camera["direction"],
+			composition_instruction(project),
+			action,
+			sheet_material_instruction(action),
+			physical,
+			rules,
+			ending,
+			*speech_parts,
+		]
+		if p
 	)
+	soundscape = sound or "Only sounds caused by the visible action."
+	if sfx_only:
+		visual += " No speech, no narration, no singing."
+		soundscape += " No speech, no narration, no singing."
+	if kind == "reference":
+		return (
+			f"subject_definitions:\n{ref_definitions}\n\n"
+			+ f"summary: [{'reference generation' if reference_only else 'keyframe completion + reference generation'}] One continuous shot using only the supplied references in their declared roles.\n\n"
+			+ f"retention_analysis:\n{ref_retention}\n\n"
+			+ f"detailed_description: {style}\n[Shot 1] {visual.removeprefix(style).strip()}\n\n"
+			+ f"overall_soundscape: {soundscape}\n\nnon_diegetic_music: {music}"
+		)
+	if kind == "image":
+		if last:
+			alignment = (
+				"How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; "
+				f"Picture 2 (from Shot 1) aligns with the {duration:.2f}-second mark of the target video."
+			)
+		else:
+			alignment = "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced."
+	else:
+		alignment = ""
+	return (
+		(alignment + "\n\n" if alignment else "")
+		+ f"integrated_multimodal_description: [Shot 1] {visual}\n\n"
+		+ f"overall_soundscape: {soundscape}\n\nnon_diegetic_music: {music}"
+	)
+
+
+def _reference_sections(shot, workflow, reference_only):
+	"""Number only image references carried by the executable bindings."""
+	descriptions = {
+		"character": "the exact physical character identity, visible ear/eye design, proportions, colour and surface material",
+		"person": "the exact person identity, clothing and visible anatomy",
+		"product": "the single advertised product, its construction, proportions and original printed artwork; printed figures remain flat artwork",
+		"environment": "the setting, furniture, supports and light, without introducing foreground actors",
+		"general": "the authored material or detail reference, without introducing additional subjects",
+	}
+	definitions, retention, uses = [], [], []
+	index = 0
+	if not reference_only:
+		index = 1
+		definitions.append("<Picture 1> is the supplied opening frame of [Shot 1].")
+		retention.append(
+			"<Picture 1> ([Shot 1] first frame): fully_preserved - begin from its actual composition and state."
+		)
+		uses.append("The shot begins from <Picture 1>.")
+	seen = set()
+	subject = 0
+	for binding in (workflow or {}).get("bindings") or []:
+		role = str(binding.get("required_input_role") or "").lower()
+		if role not in descriptions or role in seen:
+			continue
+		seen.add(role)
+		for reference in shot.get("references") or []:
+			if (
+				not reference.get("asset_version")
+				or str(reference.get("reference_role") or reference.get("input_role") or "").lower() != role
+			):
+				continue
+			index += 1
+			subject += 1
+			label = f"<Subject {subject}>"
+			definitions.append(f"{label} is {descriptions[role]}, supplied by <Picture {index}>.")
+			retention.append(
+				f"{label} (appears in [Shot 1]): fully_preserved - retain its declared {role} attributes; perform only the authored action."
+			)
+			uses.append(f"Use {label} for its declared {role} role.")
+	return "\n".join(definitions), "\n".join(retention), " ".join(uses)
 
 
 def subject_identities(shot):
@@ -245,10 +337,17 @@ def subject_identities(shot):
 		if role not in {"character", "person", "product"} or row.get("asset_version") in seen:
 			continue
 		seen.add(row.get("asset_version"))
-		analysis = frappe.parse_json(
-			frappe.db.get_value("Asset Version", row.get("asset_version"), "analysis_json") or "{}"
-		)
-		description = " ".join(str((analysis or {}).get("description") or "").split())
+		if "visual_description" in row:
+			description = " ".join(str(row.get("visual_description") or "").split())
+		else:
+			# Compatibility for older snapshots only. New snapshots carry their
+			# exact appearance text and never reinterpret a mutable caption.
+			from joymedia.services.scene.prompt_scope import reference_description
+
+			analysis = frappe.parse_json(
+				frappe.db.get_value("Asset Version", row.get("asset_version"), "analysis_json") or "{}"
+			)
+			description = reference_description(analysis, role)
 		description = re.sub(r"^Visible construction:[^.]*\.\s*", "", description)
 		if role == "product":
 			# Vision descriptions are useful for geometry, but OCR-like prose can invent

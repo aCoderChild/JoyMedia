@@ -27,7 +27,7 @@ class TestReferenceFit(FrappeTestCase):
 			return {"POSE": "/pose.png", "SOURCE": "/source.png"}.get(name)
 
 		def observe(images, prompt, **_kwargs):
-			if "Compare ONLY mascot/person arm and leg topology" in prompt:
+			if "Compare ONLY mascot/person anatomy" in prompt:
 				return {"distortion": False}
 			if isinstance(images, list):
 				seen_pairs.append(images)
@@ -55,7 +55,7 @@ class TestReferenceFit(FrappeTestCase):
 		)
 
 		def observe(_images, prompt, **_kwargs):
-			if "Compare ONLY mascot/person arm and leg topology" in prompt:
+			if "Compare ONLY mascot/person anatomy" in prompt:
 				return {"distortion": True, "evidence": "The forelimb is longer than in the selected pose."}
 			return {
 				"comparable": True,
@@ -79,7 +79,7 @@ class TestReferenceFit(FrappeTestCase):
 		)
 
 		def observe(_images, prompt, **_kwargs):
-			if "Compare ONLY mascot/person arm and leg topology" in prompt:
+			if "Compare ONLY mascot/person anatomy" in prompt:
 				return {"distortion": None, "evidence": "The arm is hidden."}
 			return {
 				"comparable": True,
@@ -94,6 +94,19 @@ class TestReferenceFit(FrappeTestCase):
 		):
 			findings = reference_fit_findings(shot, "/frame.png", ask=observe)
 		self.assertTrue(any("limb topology remains unverified" in item for item in findings))
+
+	def test_topology_boolean_without_evidence_does_not_clear_the_review(self):
+		shot = frappe._dict(
+			generation_inputs=[frappe._dict(reference_role="Character", asset_version="CHAR")]
+		)
+		with patch(
+			"frappe.db.get_value",
+			side_effect=lambda _dt, _name, field: "/character.png" if field == "file" else "{}",
+		):
+			findings = reference_fit_findings(
+				shot, "/frame.png", ask=lambda *args, **kwargs: {"distortion": False, "evidence": ""}
+			)
+		self.assertTrue(any("topology remains unverified" in item for item in findings))
 
 	def test_distorted_character_part_ratio_is_critical(self):
 		shot = frappe._dict(
@@ -145,7 +158,7 @@ class TestReferenceFit(FrappeTestCase):
 			return {"POSE": "/pose.png", "SOURCE": "/source.png"}.get(name)
 
 		def observe(images, prompt, **_kwargs):
-			if "Compare ONLY mascot/person arm and leg topology" in prompt:
+			if "Compare ONLY mascot/person anatomy" in prompt:
 				return {"distortion": False}
 			if isinstance(images, list):
 				return {

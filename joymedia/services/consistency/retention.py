@@ -304,6 +304,34 @@ def allows_automatic_finishing(run):
 	)
 
 
+def authored_static_product_hold(scene):
+	"""Recognise the application's literal stationary product action, not a motion label."""
+	references = scene.get("references") or []
+	roles = {str(r.get("reference_role") or "").lower() for r in references}
+	if roles & {"character", "person", "people", "talent"} or not required_sources(references):
+		return False
+	from joymedia.services.scene.prompt_scope import assert_product_only_direction
+
+	try:
+		assert_product_only_direction(
+			"\n".join(str(scene.get(k) or "") for k in ("generation_prompt", "start_state", "end_state"))
+		)
+	except ValueError:
+		return False
+	plan = scene.get("motion_plan_json") or {}
+	plan = json.loads(plan) if isinstance(plan, str) else plan
+	actions = plan.get("actions") or []
+	return bool(actions) and all(
+		re.fullmatch(
+			r"The original product (?:remains|stays) in its (?:established|opening) position "
+			r"(?:with its printed artwork intact|with unchanged visible artwork and support)\.?",
+			str(row.get("action") or "").strip(),
+			re.I,
+		)
+		for row in actions
+	)
+
+
 def is_static_presentation(scene):
 	"""Use exact source frames only when the plan explicitly forbids subject/camera motion."""
 	from joymedia.services.scene.contract import read_contract
@@ -324,6 +352,8 @@ def is_static_presentation(scene):
 	plan = scene.get("motion_plan_json") or {}
 	plan = json.loads(plan) if isinstance(plan, str) else plan
 	contract = read_contract(plan, scene.get("duration_seconds"))
+	if scene.get("effective_camera_behavior") == "locked" and authored_static_product_hold(scene):
+		return True
 	if not contract or contract.get("events") or plan.get("camera_motion") != "locked":
 		return False
 	motion = {

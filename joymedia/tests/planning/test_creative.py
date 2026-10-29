@@ -500,6 +500,8 @@ class TestGeneratedScriptValidation(TestCase):
 
 	def test_preparatory_reach_cannot_consume_an_entire_action_shot(self):
 		script = sample_script()
+		inventory = [*self.inventory, {"key": "mascot", "role": "Character"}]
+		script["scenes"][0]["cast"] = ["mascot"]
 		for action in (
 			"[0-6s] The mascot reaches toward the product.",
 			"[0-6s] The mascot reaches toward the table where the product is placed.",
@@ -509,13 +511,13 @@ class TestGeneratedScriptValidation(TestCase):
 				self.assertRaisesRegex(ValueError, "no completed object or material action"),
 			):
 				script["scenes"][0]["action"] = action
-				validate_script(script, self.inventory, self.constraints)
+				validate_script(script, inventory, self.constraints)
 		script["scenes"][0]["action"] = (
 			"[0-1s] The mascot reaches toward the product.\n[1-6s] The mascot grips and lifts the product."
 		)
-		self.assertEqual(script, validate_script(script, self.inventory, self.constraints))
+		self.assertEqual(script, validate_script(script, inventory, self.constraints))
 		script["scenes"][0]["action"] = "[0-6s] The mascot grasps the product with both paws."
-		self.assertEqual(script, validate_script(script, self.inventory, self.constraints))
+		self.assertEqual(script, validate_script(script, inventory, self.constraints))
 
 	def test_middle_reaction_shot_requires_product_progress(self):
 		script = sample_script()
@@ -2844,14 +2846,16 @@ class TestAutomaticScriptContracts(TestCase):
 
 	def test_a_rule_that_keeps_a_subject_still_cannot_contradict_its_movement(self):
 		script = sample_script()
+		inventory = [*self.inventory, {"key": "bear", "role": "Character"}]
+		script["scenes"][0]["cast"] = ["bear"]
 		script["scenes"][0]["action"] = (
 			"[0-1s] The bear grips the product.\n[1-6s] The bear walks it along the table."
 		)
 		script["scenes"][0]["continuity_rules"] = "Bear remains seated."
 		with self.assertRaisesRegex(ValueError, "contradicts the action"):
-			validate_script(script, self.inventory, self.constraints)
+			validate_script(script, inventory, self.constraints)
 		script["scenes"][0]["continuity_rules"] = "The product remains on the table."
-		self.assertTrue(validate_script(script, self.inventory, self.constraints))
+		self.assertTrue(validate_script(script, inventory, self.constraints))
 
 	def test_display_names_use_the_clients_product_name_and_never_block(self):
 		from joymedia.services.planning import creative

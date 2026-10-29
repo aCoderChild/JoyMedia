@@ -19,8 +19,10 @@ actor drifts out. Close handling coverage retains the required working area and
 does not demand a whole actor. These are requests to the generator; inspect the
 decoded footage for compliance.
 
-H3 serialization keeps visual direction, reference roles, opening, chronological
-action, camera, sound and ending in that order. Timed actions appear once;
+H3 serialization uses the official base three-field or reference six-field format,
+with alignment for supplied first/last frames and labels from actual reference
+bindings. Visual direction contains the opening, references, camera, chronological
+action and ending; sound and music have separate fields. Timed actions appear once;
 event-specific physical checks remain attached to their time window. Reference
 fidelity rules preserve existing lettering instead of banning all printed words.
 Style appears once. Global style should describe light, materials and mood;

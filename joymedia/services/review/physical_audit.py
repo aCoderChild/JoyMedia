@@ -200,19 +200,29 @@ ABSENT_FIGURE = re.compile(
 	r"^(?:no|none|zero)\s+(?:figure|person|people|character|actor|mascot|bear)s?\b", re.I
 )
 LIMB_TOPOLOGY_PROMPT = (
-	"Compare ONLY mascot/person arm and leg topology in these two images. "
+	"Compare ONLY mascot/person anatomy in these two images, including visible ears and limbs. "
 	"Image 1 is the selected source pose; image 2 is a rendered scene. "
 	"Determine whether the rendered subject has any visibly elongated or narrowed "
 	"limb relative to its torso compared with source, any extra or fused paw/hand, "
-	"or any limb attached at an impossible place. Ignore normal perspective and "
-	"ordinary occlusion, and never infer hidden limbs. A different arm position "
+	"or any limb attached at an impossible place. "
+	"Check that visible ears retain the source count, shape and attachment: do not accept a clearly missing ear in a comparable unobstructed front view. "
+	"Ignore normal perspective and ordinary occlusion, and never infer hidden ears or limbs. A different arm position "
 	"(raised, bent, extended forward, wrapped around or holding an object) is not "
 	"elongation: compare each limb's length and thickness relative to the torso, "
 	"not where the limb points. Return one JSON object "
 	"with exactly these top-level keys: distortion (true, false, or null), "
-	"evidence (string). Return false when the visible limbs keep their proportions; "
-	"use null only when the limbs are mostly hidden."
+	"evidence (string). "
+	"Return true for a clearly missing or changed visible ear too. Return false only when the comparable visible ears and limbs retain the reference anatomy; use null when those features cannot be compared."
 )
+TOPOLOGY_SCHEMA = {
+	"type": "object",
+	"additionalProperties": False,
+	"required": ["distortion", "evidence"],
+	"properties": {
+		"distortion": {"type": ["boolean", "null"]},
+		"evidence": {"type": "string", "minLength": 1},
+	},
+}
 
 
 def _product_placement_issues(description):
@@ -334,8 +344,14 @@ def reference_fit_findings(shot, frame, ask=None):
 				[url, frame],
 				LIMB_TOPOLOGY_PROMPT,
 				max_edge=768,
+				schema=TOPOLOGY_SCHEMA,
 			)
-			if not isinstance(limbs, dict) or type(limbs.get("distortion")) is not bool:
+			if (
+				not isinstance(limbs, dict)
+				or type(limbs.get("distortion")) is not bool
+				or not isinstance(limbs.get("evidence"), str)
+				or not limbs["evidence"].strip()
+			):
 				issues.append(f"Reference fit review: {role} limb topology remains unverified.")
 			elif limbs["distortion"]:
 				evidence = str(
@@ -526,14 +542,6 @@ def compare(
 		if table.get("malformed") is True:
 			issues.append(
 				"Critical geometry: a working-table leg is floating, fused or attached to the wrong surface"
-			)
-		if (
-			table.get("fully_visible") is True
-			and type(table.get("leg_count")) is int
-			and table["leg_count"] != 4
-		):
-			issues.append(
-				f"Critical geometry: the complete working table has {table['leg_count']} legs instead of four"
 			)
 	if medium_locked and str(description.get("medium") or "").lower().startswith("2d"):
 		issues.append(

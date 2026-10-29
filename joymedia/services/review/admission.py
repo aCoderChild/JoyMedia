@@ -36,6 +36,9 @@ def implementation_hash():
 				"../workflow_adapters/graphs/prompt_sampling.json",
 				"scene/evidence.py",
 				"scene/contract.py",
+				"scene/prompt_scope.py",
+				"planning/h3.py",
+				"planning/prompts.py",
 				"scene/vendor/videophy2.py",
 				"consistency/retention.py",
 				"generation/preparation.py",
@@ -98,6 +101,7 @@ def screening_claims(scene, video):
 	plan, duration = scene.get("motion_plan_json"), scene.get("duration_seconds")
 	if video:
 		from joymedia.services.project.context import scene_direction
+		from joymedia.services.scene.prompt_scope import sheet_material_instruction
 
 		# Judge the visible action only, as the scene check does: rules, required
 		# end states and audio cues in the prompt cannot be confirmed from frames.
@@ -110,6 +114,13 @@ def screening_claims(scene, video):
 					"mode": "occurrence",
 					"claim": scene["authored_action"],
 				}
+			)
+		material = sheet_material_instruction(
+			str(scene.get("authored_action") or "") + " " + str(scene.get("generation_prompt") or "")
+		)
+		if material:
+			claims.append(
+				{"id": "handled_material", "dimension": "identity", "mode": "invariant", "claim": material}
 			)
 	else:
 		claims = [
@@ -330,11 +341,24 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		raise ValueError("Split scenes with more than four identity-reference views for visual screening.")
 	witnesses = _identity_witnesses(counts)
 	for source in sources:
-		asset = frappe.get_doc("Asset Version", source["asset_version"])
+		pose_asset = frappe.get_doc("Asset Version", source["asset_version"])
+		asset = (
+			frappe.get_doc("Asset Version", source["identity_asset_version"])
+			if source.get("identity_asset_version")
+			else pose_asset
+		)
 		source_path = frappe.get_doc("File", {"file_url": asset.file}).get_full_path()
 		reference = Path(source_path).read_bytes()
 		if digest(reference) != asset.content_hash:
 			raise ValueError("Approved identity reference bytes changed.")
+		if source.get("identity_content_hash") and digest(reference) != source["identity_content_hash"]:
+			raise ValueError("Canonical identity bytes differ from the frozen source.")
+		pose_reference = reference
+		if pose_asset.name != asset.name:
+			pose_path = frappe.get_doc("File", {"file_url": pose_asset.file}).get_full_path()
+			pose_reference = Path(pose_path).read_bytes()
+			if digest(pose_reference) != pose_asset.content_hash:
+				raise ValueError("Selected pose reference bytes changed.")
 		observations = []
 		for i in witnesses:
 			answer = ask(
@@ -343,6 +367,7 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 				"Cropping, perspective and image scale do not establish different physical size, age or body proportions. "
 				"A close view of a body part is not a smaller whole subject. Do not invent the hidden face or body. "
 				"Does the candidate keep the reference subject's visible colour, surface material, face design, defining accessories, distinctive shape, morphology and body-part proportions, "
+				"including visible ear count, ear shape and attachment and the exact eye design, "
 				"without invented human anatomy, extra parts or elongated limbs? Pose, camera and plausible occlusion may differ. "
 				"A held object is a removable prop, not a worn accessory; its removal alone is not identity drift. "
 				"Do not judge text or logos. Answer null when identity or topology cannot be compared. "
@@ -374,20 +399,23 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		# The broad identity question can approve a recognisable face while
 		# missing an invented or stretched limb. A separate source-paired
 		# topology observation must pass before this frame can be promoted.
-		from joymedia.services.review.physical_audit import LIMB_TOPOLOGY_PROMPT
+		from joymedia.services.review.physical_audit import LIMB_TOPOLOGY_PROMPT, TOPOLOGY_SCHEMA
 
 		limb_observations = []
 		for i in witnesses:
 			answer = ask(
-				[reference, pictures[i]],
+				[pose_reference, pictures[i]],
 				LIMB_TOPOLOGY_PROMPT,
 				configured=frappe._dict(policy["judge"]),
+				schema=TOPOLOGY_SCHEMA,
 			)
 			value = answer.get("distortion") if isinstance(answer, dict) else None
+			evidence = answer.get("evidence") if isinstance(answer, dict) else None
+			valid = type(value) is bool and isinstance(evidence, str) and bool(evidence.strip())
 			limb_observations.append(
 				dict(
 					frame=i,
-					distortion=value if type(value) is bool else None,
+					distortion=value if valid else None,
 					evidence=str(answer.get("evidence") or "")[:500] if isinstance(answer, dict) else "",
 				)
 			)
@@ -396,9 +424,9 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 			unknowns = [r for r in limb_observations if r["distortion"] is None]
 			report["results"].append(
 				dict(
-					id="limb_topology." + asset.name,
+					id="limb_topology." + pose_asset.name,
 					dimension="identity",
-					claim="Visible limbs retain the selected reference's topology and relative proportions",
+					claim="Visible ears and limbs retain the selected reference's topology and relative proportions",
 					verdict="violated" if violations else "uncertain" if unknowns else "supported",
 					frames=[r["frame"] for r in (violations or unknowns or limb_observations)],
 					reason="; ".join(r["evidence"] for r in (violations or unknowns or limb_observations))[
@@ -407,7 +435,7 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 					observations=limb_observations,
 				)
 			)
-			report["required_claim_ids"].append("limb_topology." + asset.name)
+			report["required_claim_ids"].append("limb_topology." + pose_asset.name)
 	if no_human:
 		from joymedia.services.review.consistency import OUTSIDER, ask
 

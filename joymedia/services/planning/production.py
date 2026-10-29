@@ -60,6 +60,10 @@ def plan_production_shot(project, shot, *, previous_end_state="", references=Non
 	"""Ask the planner for one shot's production plan and return it validated (nothing is saved)."""
 	references = references if references is not None else project_reference_options(project)
 	beat = creative_beat(project, shot)
+	if beat.get("cast_declared") and not beat.get("cast") and beat.get("products"):
+		from joymedia.services.scene.prompt_scope import assert_product_only_direction
+
+		assert_product_only_direction("\n".join(str(beat.get(k) or "") for k in ("action", "rules")))
 	if project.get("planning_mode") == "Follow the sheet":
 		from joymedia.services.scene.references import identity_key, named_reference_views
 
@@ -867,12 +871,20 @@ def project_reference_options(project):
 			"character",
 			"person",
 		}
-		if isinstance(analysis, dict) and analysis.get("description") and not several_character_views:
-			option["description"] = " ".join(
-				filter(
-					None, (option.get("description"), " ".join(str(analysis["description"]).split())[:200])
-				)
+		from joymedia.services.scene.prompt_scope import reference_description
+
+		appearance = (
+			reference_description(
+				{"identity_appearance": analysis.get("identity_appearance")}
+				if several_character_views
+				else analysis,
+				str(row.reference_role or "").casefold(),
 			)
+			if isinstance(analysis, dict)
+			else ""
+		)
+		if appearance:
+			option["description"] = " ".join(filter(None, (option.get("description"), appearance[:400])))
 		options.append(option)
 	return options
 
@@ -1122,12 +1134,12 @@ def build_planning_prompt(project, shot, beat, references, previous_end_state):
 		"RULES (write everything in English, whatever language the beat uses; describe each reference by what it "
 		"is in plain words, for example 'the mascot' or 'the product pack', never by its file label or "
 		"brand name, and never copy the beat's wording or the role in brackets):",
-		f"- The advertised product is: {project.product_name or project.project_name}. Generic words in the beat "
-		"for it (paper, bottle, bag...) mean this product; never substitute a different product.",
+		f"- The advertised product is: {project.product_name or project.project_name}. "
+		"Distinguish the referenced retail package from its removable contents and from printed artwork. "
+		"When the action handles a paper or tissue sheet, keep it a thin flexible sheet; never substitute "
+		"the package or a toy for its contents. Bind only the actual advertised package to the package reference.",
 		"- image_prompt: English, at most 60 words. Describe only the first frame: subjects, setting, framing, "
-		"lighting. Include only what must appear. Preserve existing product artwork; add no captions or invented logos. Characters behave like people in a "
-		"natural place (stand, hold something, look at each other, use the room), never posed side by side in the "
-		"middle of an empty space.",
+		"lighting. Include only what must appear. Preserve existing product artwork; add no captions or invented logos. Referenced subjects perform only the authored action with their own anatomy, proportions and physically supported pose; do not substitute human anatomy for a nonhuman reference.",
 		"- setting_prompt: English, at most 30 words. Only the place, light and camera framing of the first frame: "
 		"no character, animal, hand, product, object in action or text.",
 		"- sound_effects: English, at most 15 words: the physical, non-vocal sounds this action makes (rustling, "

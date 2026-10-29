@@ -200,9 +200,9 @@ class TestPhysicalAudit(FrappeTestCase):
 		)
 		self.assertTrue(any("unreferenced retail packages" in note for note in issues))
 
-	def test_complete_table_requires_four_attached_legs(self):
-		bad = {"main_table": {"fully_visible": True, "leg_count": 3, "malformed": False}}
-		self.assertTrue(any("instead of four" in note for note in compare(bad, **SCENE)))
+	def test_table_topology_is_not_invented_from_a_fixed_leg_count(self):
+		tripod = {"main_table": {"fully_visible": True, "leg_count": 3, "malformed": False}}
+		self.assertEqual([], compare(tripod, **SCENE))
 		occluded = {"main_table": {"fully_visible": False, "leg_count": None, "malformed": False}}
 		self.assertEqual([], compare(occluded, **SCENE))
 		floating = {"main_table": {"fully_visible": False, "leg_count": None, "malformed": True}}

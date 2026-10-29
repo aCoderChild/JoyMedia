@@ -13,6 +13,26 @@ from joymedia.services.planning.prompts import (
 
 
 class TestPromptCompiler(FrappeTestCase):
+	def test_paper_material_is_preserved_in_its_opening_and_handling(self):
+		shot = frappe._dict(
+			name="SHOT-TEST",
+			shot_number=1,
+			start_state="The mascot holds a single tissue.",
+			image_prompt="The mascot holds a single tissue above the table.",
+			generation_prompt="The mascot places the tissue flat on the table.",
+		)
+		project = frappe._dict(generation_mode="Multi-shot", global_instructions="")
+		for stage in ("image", "motion"):
+			with self.subTest(stage=stage):
+				prompt = compile_prompt_for_documents(shot, project, prompt_source=stage)
+				self.assertIn("thin, lightweight, flexible paper or tissue sheet", prompt)
+		shot.image_prompt = "The unopened tissue pack rests on the table."
+		shot.start_state = "No sheet has been extracted."
+		self.assertNotIn(
+			"Whenever the handled sheet is visible",
+			compile_prompt_for_documents(shot, project, prompt_source="image"),
+		)
+
 	def test_standing_opening_keeps_feet_and_forbids_a_supporting_chair(self):
 		shot = frappe._dict(
 			name="SHOT-TEST",

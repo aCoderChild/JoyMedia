@@ -26,6 +26,7 @@ Describe this reference image for a video director who cannot see it. Return onl
 {"kind": "person|place|product|other",
  "scene_type": "exterior|interior|amenity|landscape|portrait|product|other",
  "description": "at most 45 words of concrete visible details: layout, architecture, materials, furniture, colours, and what is seen through any windows",
+ "identity_appearance": "for a physical character only: fixed colour, material, silhouette, visible ear count/shape/attachment, muzzle, eye design and limb proportions; exclude held props, pose and background; otherwise empty",
  "pose_and_support": "visible pose and support: standing, seated, lying, airborne or uncertain; name only the supporting surface actually visible",
  "outfit": "for a person: the exact garment type (name traditional dress such as a Vietnamese ao dai), colour, hair; otherwise empty",
  "lighting": "a few words"}
@@ -57,7 +58,7 @@ that an item rests on a table when the image only shows its isolated package.
 """.strip()
 
 # Stored with each analysis; analyses made with an older prompt are redone.
-ANALYSIS_VERSION = 5
+ANALYSIS_VERSION = 6
 
 
 def is_configured():
@@ -140,6 +141,7 @@ def analyse_asset_version(asset_version_name, as_product=False):
 		"pose_qualification_version",
 		"qualified_pose_and_support",
 		"qualified_pose_view",
+		"identity_appearance",
 	):
 		if stored.get(key):
 			analysis[key] = stored[key]
@@ -193,6 +195,7 @@ def normalize_analysis(result, as_product=False):
 		"outfit": str(result.get("outfit") or "").strip()[:200],
 		"lighting": str(result.get("lighting") or "").strip()[:100],
 		"pose_and_support": str(result.get("pose_and_support") or "").strip()[:240],
+		"identity_appearance": str(result.get("identity_appearance") or "").strip()[:500],
 		"version": ANALYSIS_VERSION,
 	}
 	if as_product:

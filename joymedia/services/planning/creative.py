@@ -26,6 +26,7 @@ from joymedia.services.planning.shot_structure import (
 from joymedia.services.planning.timed_actions import normalize_action_separators, read_timed_actions
 
 CREATIVE_INVARIANTS = (
+	"The cast declaration governs every field of its scene: an empty cast means no physical actor in action, continuity, camera, opening or ending. Never carry an actor's posture into an actor-free closing shot. Characters printed on a product remain flat artwork, not physical cast. "
 	"Preserve reference identities, observed product construction, explicit format/duration and approved claims. "
 	"Write the story for canonical character identities, never for a photographed pose or an alternate reference view. "
 	"A separate object a character holds in its reference photo (a toy, a heart, a cup) belongs to that photo, not to the character: show it only where the story uses it. "
@@ -33,7 +34,7 @@ CREATIVE_INVARIANTS = (
 	"Do not change, limit or simplify an action merely because the supplied identity photograph shows a different pose. Change body state where the story gains from it, not in every scene. "
 	"For a multi-scene character commercial, do not keep the actor in the source photograph's pose for every action by default. Plan a visible, physically supported change of body state or orientation when it advances the story; name that change in the timed action and maintain its support across subsequent shots. A different camera crop of the same seated body is not an action or pose change. "
 	"Keep one coherent interaction per shot, chronological prerequisites and persistent object/support states. "
-	"Before each grasp, put the actor and target within a natural paw or hand reach in the opening visual_camera; state their support and relative position there, before the timed action starts. If the original body position cannot reach, establish a visible move first or choose a different interaction. Check that a paw is free. These checks are for you: the timed action states only what visibly happens, never an assurance that a rule is met (that a paw is free, a pose is possible or something is positioned correctly).An actor carrying two objects must explicitly set one down before taking a third. Track each object's supporting surface between shots; show any transfer rather than silently moving it. Keep furniture load bearing, with a fully visible ordinary table supported by four connected floor-contacting legs. "
+	"Before each grasp, put the actor and target within a natural paw or hand reach in the opening visual_camera; state their support and relative position there, before the timed action starts. If the original body position cannot reach, establish a visible move first or choose a different interaction. Check that a paw is free. These checks are for you: the timed action states only what visibly happens, never an assurance that a rule is met (that a paw is free, a pose is possible or something is positioned correctly). An actor carrying two objects must explicitly set one down before taking a third. Track each object's supporting surface between shots; show any transfer rather than silently moving it. Keep furniture load bearing and its visible supports connected coherently to the floor; preserve its authored or referenced construction instead of inventing a fixed leg count. "
 	"Fit each support to the character's build and size in its reference photos: a large or round-bodied figure sits on the floor, a rug, a sofa or a bench, or stands beside low furniture, rather than perching on an ordinary chair or squeezing under or behind a tabletop it cannot fit. "
 	"Tell a story a viewer wants to finish: a surprising or relatable hook in the first seconds, a small everyday problem, the product as the turning point with a visible cause and result, an emotional payoff, then the brand. Every scene adds something new; never show the same demonstration twice. "
 	"Give the film rhythm: scene durations are relative weights, so make the hook quick, give the key proof the most time, keep detail cutaways and the closing brand shot short. Never put more than two close handling details in a row; follow them with a reaction, a visible result or a wider shot. "
@@ -1643,6 +1644,19 @@ def normalize_static_final_packshot(script):
 	if not scenes:
 		return []
 	scene = scenes[-1]
+	if not scene.get("cast") and scene.get("products"):
+		from joymedia.services.scene.prompt_scope import assert_product_only_direction
+
+		try:
+			assert_product_only_direction(scene.get("continuity_rules"))
+		except ValueError:
+			# This is the AI draft normalizer, not an imported client workbook.
+			# Empty cast already declares the intended inventory; stale continuity
+			# from the preceding actor shot cannot create another physical subject.
+			scene["continuity_rules"] = (
+				"Preserve the product's established support and original artwork. No physical actor appears in this shot."
+			)
+			return ["Final packshot: removed stale actor continuity from the declared product-only scene."]
 	if (
 		not scene.get("cast")
 		or not scene.get("products")
@@ -2486,6 +2500,13 @@ def validate_script(script, inventory, constraints, advisory=None):
 	story_error = story_logic_errors(script["scenes"])
 	if story_error:
 		raise ValueError(story_error)
+	for scene in script["scenes"]:
+		if not scene.get("cast") and scene.get("products"):
+			from joymedia.services.scene.prompt_scope import assert_product_only_direction
+
+			assert_product_only_direction(
+				"\n".join(str(scene.get(k) or "") for k in ("action", "continuity_rules"))
+			)
 	cast = {key for scene in script["scenes"] for key in scene["cast"]}
 	characters = [item for item in inventory if item["role"] in {"Character", "Person"}]
 	if characters and not any(

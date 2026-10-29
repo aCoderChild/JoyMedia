@@ -11,6 +11,7 @@ import frappe
 from frappe import _
 
 from joymedia.services.scene.contract import instruction as physical_instruction
+from joymedia.services.scene.prompt_scope import sheet_material_instruction
 
 PROMPT_SOURCES = {"image", "motion", "creative"}
 
@@ -384,6 +385,10 @@ def compile_prompt_for_documents(
 				+ _image_reference_roles(references)
 				+ _character_look_text(references)
 				+ _product_viewpoint_text(references)
+				+ "\n\n"
+				+ sheet_material_instruction(
+					str(shot.get("image_prompt") or "") + " " + str(shot.get("start_state") or "")
+				)
 				+ "\n\nPhysical staging: every rigid product, container and furniture item has its own visible support. Keep props separate from actors' heads and bodies unless explicitly authored as wearable. Show each advertised product as one physical object in its authored position; do not repeat it as another box, reflection, background prop or oversized printed cutout. Packaging artwork remains flat on that single object."
 				+ _keyframe_retry_direction(shot)
 			)
@@ -436,6 +441,9 @@ def compile_prompt_for_documents(
 				+ ". If a reference contains that shape as flat artwork, keep it flat; never turn it into a separate prop."
 			)
 		prompt += _keyframe_retry_direction(shot)
+		material = sheet_material_instruction(prompt + " " + str(shot.get("start_state") or ""))
+		if material:
+			prompt += "\n\n" + material
 
 	global_instructions = str(project.get("global_instructions") or "").strip()
 	if global_instructions and include_global_instructions:
@@ -471,6 +479,9 @@ def compile_prompt_for_documents(
 			plan = json.loads(plan)
 		prompt = f"{prompt}\n\n{_identity_guard(shot, project, include_camera=not (structure_for(shot) or plan.get('camera_intent')))}"
 	if prompt_source == "motion":
+		material = sheet_material_instruction(prompt + " " + str(shot.get("authored_action") or ""))
+		if material:
+			prompt += "\n\n" + material
 		timing = temporal_timing_instruction(shot, is_final=is_final)
 		if timing:
 			prompt = f"{prompt}\n\n{timing}"
@@ -543,10 +554,18 @@ def _identity_guard(shot, project, include_camera=True, include_style=True, conc
 	"""
 	if concise:
 		rules = keep_rules(shot, project)
+		actor_rule = (
+			"Each referenced character retains its visible ear count, ear shape and attachment, eye design, one head and one face. "
+			if any(
+				_role_of(r) in {"character", "person", "people", "talent"}
+				for r in shot.get("references") or []
+			)
+			else ""
+		)
 		return (
 			"Preserve the supplied subjects' identity, anatomy, proportions, colours and materials. "
-			"Each character has one head and one face in the same place as its identity reference; never add a second face or duplicate facial features. "
-			"No extra physical subjects; pictures printed on a surface remain flat artwork. "
+			+ actor_rule
+			+ "No extra physical subjects; pictures printed on a surface remain flat artwork. "
 			"Preserve existing printed quantities, names and artwork; add no new markings. "
 			+ (f"Reference constraints: {rules}." if rules else "")
 		)
@@ -735,6 +754,12 @@ def _character_look_text(references):
 	looks = []
 	for reference in references or []:
 		if _role_of(reference) not in {"character", "person"}:
+			continue
+		if "visual_description" in reference:
+			# New run snapshots own these observations. Re-querying vision here
+			# could silently change an approved character while compiling a retry.
+			if reference.get("visual_description"):
+				looks.append(str(reference["visual_description"]))
 			continue
 		version = _ref_field(reference, "asset_version")
 		if not version:
@@ -1420,9 +1445,10 @@ RENDER_MEDIUM = re.compile(
 	re.I,
 )
 MEDIUM_LOCK = (
-	"Rendering medium: match the supplied reference photographs. Characters and products keep their "
-	"photographed three-dimensional look, materials and proportions inside a photorealistic scene; never "
-	"redraw them, or the room, as a flat 2D illustration, cartoon, anime or painting."
+	"Rendering medium: preserve the supplied reference images' visual design, three-dimensional geometry, "
+	"materials and proportions under coherent scene lighting. Smooth reference surfaces remain smooth. "
+	"Do not add fur, stitching or textile texture to a smooth source, or flatten three-dimensional subjects "
+	"into a 2D illustration."
 )
 
 
@@ -1708,6 +1734,7 @@ def _draw_prompt(shot, project):
 		)
 		return (
 			f"{usable_setting(getattr(shot, 'setting_prompt', None))} {action}\n\n"
+			+ _product_only_scope(shot)
 			+ (person if has_person else "")
 			+ product_identity(project, shows="product" in raw_roles)
 			+ (
@@ -1761,7 +1788,7 @@ def _draw_prompt(shot, project):
 		+ _no_outsiders(shot, project)
 		+ (f"Cast: {cast}. " if cast else "")
 		+ "Each character is exactly the subject of its picture: preserve its face, colours, markings, worn accessories, "
-		"body design and surface finish (a smooth surface stays smooth; never add fur, hair or texture it does not have). A heart, toy, tool, package or other object held in the source image is a separate prop: include it only if this scene explicitly calls for it. Each character has one head and one face, with no duplicated eyes, nose or mouth elsewhere on its body. Each cast identity appears once, in the authored opening pose, not the pose or objects in their reference image. Characters printed on product packaging stay flat artwork, not additional cast. Do not perform later scene actions. "
+		"body design, visible ear count, ear shape and attachment, eye design and surface finish (a smooth surface stays smooth; never add fur, hair or texture it does not have). A heart, toy, tool, package or other object held in the source image is a separate prop: include it only if this scene explicitly calls for it. Each character has one head and one face, with no duplicated eyes, nose or mouth elsewhere on its body. Each cast identity appears once, in the authored opening pose, not the pose or objects in their reference image. Characters printed on product packaging stay flat artwork, not additional cast. Do not perform later scene actions. "
 		+ (
 			f"Do not add these source-only held props to this opening: {', '.join(excluded_props)}. "
 			if excluded_props
@@ -1782,6 +1809,12 @@ def _draw_prompt(shot, project):
 		+ _mood(project)
 		+ "Natural, coherent lighting and composition."
 	)
+
+
+def _product_only_scope(shot):
+	from joymedia.services.scene.prompt_scope import product_only_instruction
+
+	return product_only_instruction(shot.get("references") or [])
 
 
 def _character_names(shot, project):

@@ -6,7 +6,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from joymedia.services.planning.camera import camera_plan
-from joymedia.services.planning.h3 import LAYERS, _without_camera, compile_h3, h3_kind
+from joymedia.services.planning.h3 import _without_camera, compile_h3, h3_kind
 from joymedia.services.planning.prompts import compile_segment_prompt_from_snapshot
 
 
@@ -64,18 +64,14 @@ class TestH3(FrappeTestCase):
 		s = self.shot()
 		s.generation_prompt = 'The woman lifts the cup and says, "Take the morning with you."\n\nAudio: soft footsteps; music: sparse piano, slow tempo.'
 		p = compile_h3(s, self.project())
-		# Input-standards-H3: [Camera Direction] + [Subject Identity] + [Motion & Physics]
-		# + [Lighting & Atmosphere] + [Audio SFX], in this order.
-		layers = [p.index(label + ":") for label in LAYERS]
-		self.assertEqual(sorted(layers), layers)
-		self.assertLess(p.index("The camera makes"), p.index("Subject Identity:"))
-		self.assertLess(p.index("first frame controls"), p.index("Motion & Physics:"))
+		self.assertTrue(p.startswith("For the target video, at 0.00 seconds"))
+		fields = ["integrated_multimodal_description:", "overall_soundscape:", "non_diegetic_music:"]
+		self.assertEqual(sorted(p.index(f) for f in fields), [p.index(f) for f in fields])
 		self.assertLess(p.index("Begin with"), p.index("The woman lifts"))
 		self.assertLess(p.index("The woman lifts"), p.index("End with"))
-		self.assertLess(p.index("Lighting & Atmosphere:"), p.index("Warm cinematic"))
 		self.assertIn('"Take the morning with you."', p)
-		self.assertTrue(p.endswith("Music: sparse piano, slow tempo."))
-		self.assertNotIn("piano", p.split("Audio SFX:")[0])
+		self.assertTrue(p.endswith("non_diegetic_music: sparse piano, slow tempo."))
+		self.assertNotIn("piano", p.split("overall_soundscape:")[0])
 		self.assertNotIn("<Picture 2>", p)
 		self.assertNotIn("Video 1", p)
 
@@ -185,7 +181,7 @@ class TestH3(FrappeTestCase):
 		s = self.shot()
 		s.generation_prompt = "The woman lifts the cup.\n\nAudio: cup tap; music: piano; singing and speech."
 		p = compile_h3(s, self.project(soundtrack_mode="Sound effects only"))
-		self.assertIn("No music.", p.split("Audio SFX:")[1])
+		self.assertTrue(p.endswith("non_diegetic_music: N/A"))
 		self.assertNotIn("piano", p)
 		self.assertIn("cup tap", p)
 		self.assertIn("no speech", p)
@@ -217,7 +213,7 @@ class TestH3(FrappeTestCase):
 		s.references = [{"reference_role": "last_frame", "asset_version": "LAST"}]
 		with patch("joymedia.services.planning.prompts._identity_guard", return_value="Reference fidelity."):
 			p = compile_h3(s, self.project())
-		self.assertIn("Picture 2 with 5.00 s", p)
+		self.assertIn("Picture 2 (from Shot 1) aligns with the 5.00-second mark", p)
 		s.references = []
 		p = compile_h3(s, self.project())
 		self.assertNotIn("Picture 2", p)
@@ -229,7 +225,7 @@ class TestH3(FrappeTestCase):
 		s = self.shot()
 		s.image_prompt = "One cup on a table."
 		p = compile_segment_prompt_from_snapshot(s, self.project(), 1, 1, workflow=w)
-		self.assertTrue(p.startswith("Camera Direction:"))
+		self.assertTrue(p.startswith("For the target video, at 0.00 seconds"))
 		self.assertEqual(
 			compile_segment_prompt_from_snapshot(s, self.project(), 1, 1, prompt_source="image", workflow=w),
 			"One cup on a table.",
@@ -241,11 +237,11 @@ class TestH3(FrappeTestCase):
 		s = self.shot()
 		s.generation_prompt = "The woman lifts the cup.\n\nAudio: SFX: a cup tap; Dialogue: Maya (S1) says: <d>[English] Take the morning; keep it yours.</d>; music: slow guitar."
 		p = compile_h3(s, self.project())
-		visual, audio = p.split("Audio SFX:")
+		visual, audio = p.split("overall_soundscape:")
 		# The line is spoken audio: it stays whole and separate from the sound effects.
-		self.assertIn('Speech: "Maya (S1) says: <d>[English] Take the morning; keep it yours.</d>"', audio)
-		self.assertIn("a cup tap", audio.split("Speech:")[0])
-		self.assertNotIn("Take the morning", visual)
+		self.assertIn("Maya (S1) says: <d>[English] Take the morning; keep it yours.</d>", visual)
+		self.assertIn("a cup tap", audio)
+		self.assertNotIn("Take the morning", audio)
 
 	def test_inline_camera_removal_keeps_the_subject_action(self):
 		self.assertEqual(
@@ -284,7 +280,9 @@ class TestH3(FrappeTestCase):
 	@patch("joymedia.services.planning.prompts._mood", return_value="Cinematic.")
 	def test_reference_format_does_not_pretend_the_library_was_uploaded(self, mood):
 		p = compile_h3(self.shot(), self.project(), kind="reference")
-		self.assertEqual([label for label in LAYERS if f"{label}:" in p], list(LAYERS))
+		self.assertIn("subject_definitions:", p)
+		self.assertIn("detailed_description:", p)
+		self.assertNotIn("integrated_multimodal_description:", p)
 		self.assertNotIn("Picture 2", p)
 		self.assertNotIn("Video 1", p)
 
@@ -294,9 +292,7 @@ class TestH3(FrappeTestCase):
 		s.generation_prompt = "integrated_multimodal_description: [Shot 1] A woman lifts a cup.\n\noverall_soundscape: A soft cup tap.\n\nnon_diegetic_music: Sparse piano at slow tempo."
 		p = compile_h3(s, self.project())
 		for field in ["integrated_multimodal_description:", "overall_soundscape:", "non_diegetic_music:"]:
-			self.assertNotIn(field, p)
-		for label in LAYERS:
-			self.assertEqual(p.count(f"{label}:"), 1)
+			self.assertEqual(p.count(field), 1)
 		self.assertIn("A woman lifts a cup.", p)
 		self.assertIn("Sparse piano at slow tempo.", p)
 

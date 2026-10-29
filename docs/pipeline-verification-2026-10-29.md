@@ -1,5 +1,9 @@
 # Local UI to final-video verification — 29 October 2026
 
+Later identity, ears, paper material and prompt-format findings are recorded in
+[the prompt-guide audit](prompt-guide-audit-2026-10-29.md). The historical review
+export below remains evidence of execution, not corrected visual quality.
+
 Deadline: noon, Asia/Ho_Chi_Minh. Verification started around 09:20 local time.
 
 ## Acceptance criteria

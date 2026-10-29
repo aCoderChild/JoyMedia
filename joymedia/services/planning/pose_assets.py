@@ -41,7 +41,7 @@ KNOWN_EYE_SHAPES = frozenset(
 CHARACTER_LOOK_QUESTION = (
 	"Describe only the main physical character's fixed appearance, ignoring its pose, any object it holds, "
 	"packaging artwork and the background. In at most 40 words cover its surface material and texture, "
-	"colour, body shape, head, ear and muzzle proportions, and the exact eye drawing. Return JSON appearance "
+	"colour, body shape, head, visible ear count, ear shape and attachment, muzzle proportions, and the exact eye drawing. Return JSON appearance "
 	"string and surface exactly one of smooth_seamless, fur_or_plush, fabric, other, unclear."
 )
 KNOWN_SURFACES = frozenset({"smooth_seamless", "fur_or_plush", "fabric", "other"})
@@ -53,11 +53,27 @@ def character_look(image):
 
 	cache_key = None
 	if isinstance(image, str):
-		cache_key = "joymedia:character-look:v1:" + hashlib.sha256(image.encode()).hexdigest()
+		cache_key = "joymedia:character-look:v2:" + hashlib.sha256(image.encode()).hexdigest()
 		cached = frappe.cache.get_value(cache_key)
 		if cached:
 			return cached
-	answer = ask(image, CHARACTER_LOOK_QUESTION, max_edge=768) or {}
+	answer = (
+		ask(
+			image,
+			CHARACTER_LOOK_QUESTION,
+			max_edge=768,
+			schema={
+				"type": "object",
+				"additionalProperties": False,
+				"required": ["appearance", "surface"],
+				"properties": {
+					"appearance": {"type": "string", "minLength": 20, "maxLength": 500},
+					"surface": {"type": "string", "enum": [*sorted(KNOWN_SURFACES), "unclear"]},
+				},
+			},
+		)
+		or {}
+	)
 	appearance = " ".join(str(answer.get("appearance") or "").split())[:300]
 	surface = answer.get("surface") if answer.get("surface") in KNOWN_SURFACES else None
 	if not surface and appearance.casefold() in KNOWN_SURFACES:
@@ -418,7 +434,7 @@ def _accept_pose_view(
 		[source_image, content],
 		"Image 1 is the source character; image 2 is a generated pose. Ignoring pose, camera angle, "
 		"lighting, plain background and removable held objects, does image 2 preserve the same "
-		"character identity: body proportions and silhouette, face, colour, material and head-worn accessories? "
+		"character identity: body proportions and silhouette, face, colour, material, visible ear count/shape/attachment, eye design and head-worn accessories? "
 		"Preserve the source's characteristic anatomy and relative proportions; do not introduce "
 		"or elongate limbs, alter body shape, or change distinctive features. "
 		"Return JSON answer true only if recognizably the same character, false if different, "
@@ -541,12 +557,12 @@ def _h3_start_view(project, source, target_pose, angle, exclude_asset_versions=(
 def _h3_pose_prompt(pose_description, angle, eye_instruction):
 	"""Request a pose without imposing anatomy that may contradict the source."""
 	angle_text = {"side": "side profile", "back": "rear view", "front": "front view"}[angle]
-	return (
+	visual = (
 		"One continuous studio shot of exactly the subject in the first frame. "
 		"It smoothly changes from its current pose into this final body state: "
 		f"{pose_description}. End in a clear {angle_text} and hold the final pose. "
 		"Preserve the source subject's face, body shape, limb proportions, colour, material, "
-		"markings and worn accessories. Do not add accessories absent from the source. "
+		"markings, ear count, ear shape and attachment, eye design and worn accessories. Keep source-visible ears visible in an unobstructed front view. Do not add accessories absent from the source. "
 		"Any separate object held in the source is a removable prop: set it aside out of "
 		"frame before the final pose. End with empty paws or hands and no held objects. "
 		+ eye_instruction
@@ -554,6 +570,11 @@ def _h3_pose_prompt(pose_description, angle, eye_instruction):
 		"appropriate to the requested pose. Do not add limbs, props, other subjects, "
 		"furniture unrelated to the requested support, text or a scene change. "
 		"Plain neutral studio background, full body, fixed camera."
+	)
+	return (
+		"For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\n"
+		f"integrated_multimodal_description: [Shot 1] {visual}\n\n"
+		"overall_soundscape: N/A\n\nnon_diegetic_music: N/A"
 	)
 
 
@@ -1267,6 +1288,8 @@ def register_pose_candidate(project, source, cast_key, pose, angle, content):
 def _save_pose_view(project, source, cast_key, pose, angle, content):
 	"""Persist bytes already admitted by the generation or recovery path."""
 	key = _pose_key(source.get("identity_key") or source.get("reference_key"), pose, angle)
+	source_url = frappe.db.get_value("Asset Version", source.asset_version, "file")
+	identity_appearance = character_look(source_url) if source_url else {}
 	from joymedia.services.intake.subject_cutout import cutout_studio_reference, sam2_configured
 
 	mask_evidence = None
@@ -1301,6 +1324,7 @@ def _save_pose_view(project, source, cast_key, pose, angle, content):
 				{
 					"kind": "character",
 					"description": f"Same character in {pose}; {angle} view",
+					"identity_appearance": identity_appearance,
 					"pose_and_support": pose,
 					"view": angle,
 					"qualified_pose_and_support": pose,

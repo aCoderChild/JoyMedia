@@ -68,7 +68,8 @@ class TestReferenceOnly(TestCase):
 		self.assertIn("not a fixed opening frame", text)
 		self.assertNotIn("WRONG FIXED FRAME GUARD", text)
 		self.assertNotIn("Begin with the supplied opening frame", text)
-		self.assertIn("Camera Direction:", text)
+		self.assertIn("detailed_description:", text)
+		self.assertNotIn("integrated_multimodal_description:", text)
 		self.assertIn("authored oblique close-up starting position", text)
 
 	def test_reference_only_skips_the_unused_image_stage(self):

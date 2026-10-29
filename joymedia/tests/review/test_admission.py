@@ -9,6 +9,76 @@ from joymedia.services.review import admission as a
 
 
 class TestVisualAdmission(unittest.TestCase):
+	def test_identity_uses_frozen_original_while_anatomy_uses_the_selected_pose(self):
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+
+		with TemporaryDirectory() as folder:
+			files = {}
+			for key in ("original", "pose", "candidate"):
+				files[key] = Path(folder) / key
+				files[key].write_bytes(key.encode())
+			assets = {
+				key: SimpleNamespace(name=key, file="/" + key, content_hash=a.digest(key.encode()))
+				for key in ("original", "pose")
+			}
+			scene = dict(
+				self.scene(["Character"]),
+				references=[
+					{
+						"reference_role": "character",
+						"asset_version": "pose",
+						"identity_asset_version": "original",
+						"identity_content_hash": assets["original"].content_hash,
+					}
+				],
+			)
+
+			def observe(images, question, **kwargs):
+				from joymedia.services.review.consistency import COUNT
+
+				if question == COUNT:
+					return {"count": 1, "reason": "One visible actor."}
+				if "Image 1 is the approved reference" in question:
+					self.assertEqual(b"original", images[0])
+					return {"answer": False, "reason": "The face and ears differ from the original."}
+				if "Compare ONLY" in question:
+					self.assertEqual(b"pose", images[0])
+					return {"distortion": False, "evidence": "Visible limbs match the selected pose."}
+				return {"answer": False, "reason": "No human."}
+
+			with (
+				patch(
+					"joymedia.services.review.consistency.run_temporal_check",
+					return_value={"results": [], "required_claim_ids": []},
+				),
+				patch("joymedia.services.review.physical_audit.obvious_geometry_results", return_value=[]),
+				patch("joymedia.services.review.consistency.ask", side_effect=observe),
+				patch.object(
+					a.frappe,
+					"get_doc",
+					side_effect=lambda doctype, name: assets[name]
+					if doctype == "Asset Version"
+					else SimpleNamespace(get_full_path=lambda: str(files[name["file_url"].lstrip("/")])),
+				),
+			):
+				report = a.inspect_file(files["candidate"], "Image", scene, {"judge": {}}, "artifact")
+			self.assertFalse(report["review_only"])
+			self.assertEqual(
+				"violated", next(r for r in report["results"] if r["id"] == "reference.original")["verdict"]
+			)
+
+	def test_handled_tissue_identity_is_required_in_motion_and_not_in_a_packshot(self):
+		scene = dict(
+			duration_seconds=3, generation_prompt="Extract a single tissue from the pack and unfold it."
+		)
+		claim = next(r for r in a.screening_claims(scene, True) if r["id"] == "handled_material")
+		self.assertEqual("identity", claim["dimension"])
+		self.assertIn("thin, lightweight, flexible", claim["claim"])
+		self.assertNotIn("handled_material", [r["id"] for r in a.screening_claims(scene, False)])
+		scene["generation_prompt"] = "The tissue pack remains in its opening position."
+		self.assertNotIn("handled_material", [r["id"] for r in a.screening_claims(scene, True)])
+
 	def scene(self, roles=()):
 		return dict(
 			duration_seconds=4,

@@ -258,11 +258,45 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 	visual_assets = [asset for asset in _get_project_selected_assets(project) if asset.media_type == "Image"]
 	visual_asset_versions = {asset.asset_version for asset in visual_assets}
 	visual_descriptions = {}
+	identity_sources = {}
+	from joymedia.services.scene.prompt_scope import reference_description
+
+	asset_roles = {r.asset_version: str(r.reference_role or "").lower() for r in project.selected_media or []}
 	for asset in visual_assets:
 		if asset.get("analysis_status") == "Ready":
 			analysis = frappe.parse_json(asset.get("analysis_json") or "{}") or {}
 			if isinstance(analysis, dict):
-				visual_descriptions[asset.asset_version] = str(analysis.get("description") or "")
+				if asset_roles.get(asset.asset_version) in {"character", "person", "people", "talent"}:
+					# Older qualified poses contain only a staging caption. Resolve
+					# fixed appearance from their canonical source once, at freezing,
+					# without inheriting that source's pose or held props.
+					ancestor, seen, identity_version = analysis, {asset.asset_version}, asset.asset_version
+					for _lineage_depth in range(4):
+						if ancestor.get("identity_appearance"):
+							analysis = {**analysis, "identity_appearance": ancestor["identity_appearance"]}
+						parent = ancestor.get("source_asset_version")
+						if not parent or parent in seen:
+							break
+						seen.add(parent)
+						identity_version = parent
+						ancestor = (
+							frappe.parse_json(
+								frappe.db.get_value("Asset Version", parent, "analysis_json") or "{}"
+							)
+							or {}
+						)
+						if not isinstance(ancestor, dict):
+							break
+					if identity_version != asset.asset_version:
+						identity_sources[asset.asset_version] = {
+							"identity_asset_version": identity_version,
+							"identity_content_hash": frappe.db.get_value(
+								"Asset Version", identity_version, "content_hash"
+							),
+						}
+				visual_descriptions[asset.asset_version] = reference_description(
+					analysis, asset_roles.get(asset.asset_version, "")
+				)
 	snapshot = {
 		"media_project": project.name,
 		"project_name": project.project_name or "",
@@ -349,9 +383,11 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 				{
 					"reference_role": row.reference_role or "",
 					"asset_version": row.asset_version,
+					**identity_sources.get(row.asset_version, {}),
 					**(
 						{"visual_description": visual_descriptions[row.asset_version]}
-						if row.reference_role == "Product" and visual_descriptions.get(row.asset_version)
+						if row.reference_role in {"Product", "Character", "Person", "People", "Talent"}
+						and row.asset_version in visual_descriptions
 						else {}
 					),
 				}
@@ -403,7 +439,7 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 			from joymedia.services.consistency.retention import route_presentation
 
 			route_presentation(scene, retention_policy)
-	_compose_end_card(snapshot["shots"], keyframe_stage=keyframe_stage)
+	_compose_end_card(snapshot["shots"], keyframe_stage=keyframe_stage, project=snapshot)
 	from joymedia.services.editing.graphics import requested_graphics
 
 	for scene in snapshot["shots"]:
@@ -451,7 +487,7 @@ def build_project_snapshot(project, *, require_production_pipeline=False, keyfra
 	return serialized, hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def _compose_end_card(shots, *, keyframe_stage=False):
+def _compose_end_card(shots, *, keyframe_stage=False, project=None):
 	"""Keep explicit static source presentations still; preserve authored performances.
 
 	A fixed editorial tail must not truncate a timed wave, placement or invitation.
@@ -468,12 +504,24 @@ def _compose_end_card(shots, *, keyframe_stage=False):
 	if any(
 		frappe.scrub(row.get("reference_role") or "") == "product" for row in last.get("references") or []
 	):
-		from joymedia.services.consistency.retention import is_static_presentation
+		from joymedia.services.consistency.retention import (
+			authored_static_product_hold,
+			is_static_presentation,
+			route_presentation,
+		)
+		from joymedia.services.planning.camera import camera_plan
+
+		if (
+			authored_static_product_hold(last)
+			and camera_plan(last, project or {}, is_final=True)["behavior"] == "locked"
+		):
+			last["effective_camera_behavior"] = "locked"
 
 		if not is_static_presentation(last):
 			return
 		last["closing_hold_seconds"] = float(last.get("duration_seconds") or 0)
 		last["closing_hold_mode"] = "source_artwork"
+		route_presentation(last, last.get("reference_retention"))
 		if not last.get("character_mode"):
 			last["character_mode"] = "Paste exact art"
 
