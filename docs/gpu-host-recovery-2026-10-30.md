@@ -67,3 +67,11 @@ Neither batch is asserted to have completed export by this incident report.
 Do not infer model readiness from `/models`, `/health` or `/system_stats` alone.
 For a similar incident, preserve the queue/history, inspect memory and actual
 inference, then distinguish an outage from visual rejection before retrying.
+
+At 11:09 Asia/Saigon the resumed native PRJ-02742 product-view bridge was
+ingested as `reference-bridge-product-8610baf0e97d.mp4`; a full FFmpeg decode
+passed. Successful bridge history is intentionally removed by the application,
+so absence from ComfyUI history alone does not mean a job is still running.
+By 11:10 the ComfyUI queue was empty and CRB-00117 had advanced from Rewriting
+to Keyframes / Drawing places, with ready pose references. Planner and vision
+also passed real requests during the native workload, within 26 seconds.
