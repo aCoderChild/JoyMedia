@@ -98,6 +98,7 @@ jobs:
           pip install ruff==0.14.10
           python scripts/verify_app_layout.py
           bash -n deploy/gpu-release.sh
+          for script in deploy/demo-systemd/*.sh; do bash -n "$script"; done
           bash -n deploy/joymedia-tunnel.sh deploy/joymedia-comfyui-tunnel.sh
           ruff check joymedia scripts deploy
           ruff format --check joymedia scripts deploy

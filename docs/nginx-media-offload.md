@@ -47,6 +47,16 @@ is restored and reloaded. Backups are named
 The installer targets this demo's existing paths and site name; adapt them
 before using it for another Bench or site.
 
+The demo's `install-recovery.sh` calls this installer first, so subsequent demo
+setup/recovery deployments include the same proxy and realtime routing. The
+deployment bundle is installed with the demo app under
+`/home/ubuntu/joymedia-demo-staging/app/deploy/demo-systemd`; it is not dependent
+on temporary files under `/tmp`. Reapply the demo infrastructure with:
+
+```sh
+bash /home/ubuntu/joymedia-demo-staging/app/deploy/demo-systemd/install-recovery.sh
+```
+
 To restore a chosen backup manually, copy it to a temporary file beside
 `nginx.conf`, run `nginx -t -c` against that file, atomically rename it over
 `nginx.conf`, then run `sudo systemctl reload joymedia-demo-proxy.service`.

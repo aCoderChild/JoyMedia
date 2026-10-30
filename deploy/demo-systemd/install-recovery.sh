@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd -- "$(dirname -- "$0")"
+# Keep the demo proxy and realtime routes part of every installer run.
+bash ./install-nginx.sh
 sudo install -m 644 healthcheck.py /usr/local/lib/joymedia-demo-healthcheck.py
 sudo install -m 644 health.service /etc/systemd/system/joymedia-demo-health.service
 sudo install -m 644 health.timer /etc/systemd/system/joymedia-demo-health.timer
