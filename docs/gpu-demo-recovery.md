@@ -93,3 +93,9 @@ sudo cat /var/lib/joymedia-demo-health/state.json
 sudo tailscale status
 sudo tailscale funnel status
 ```
+
+## Nginx file transfer and realtime routes
+
+The proxy's static/public/private-media offload and Socket.IO routing are now
+versioned under `deploy/demo-systemd`; see [Nginx media offload](nginx-media-offload.md)
+for the installer, permission checks, live evidence and rollback procedure.

@@ -1,0 +1,19 @@
+[Unit]
+Description=JoyMedia demo Frappe realtime server
+After=network.target redis-server.service joymedia-demo-web.service
+Wants=redis-server.service joymedia-demo-web.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/joymedia-demo-staging/bench
+Environment=FRAPPE_BENCH_ROOT=/home/ubuntu/joymedia-demo-staging/bench
+Environment=FRAPPE_SITE=demo.localhost
+Environment=FRAPPE_SOCKETIO_UDS=/home/ubuntu/joymedia-demo-staging/socketio.sock
+UMask=0077
+ExecStartPre=/usr/bin/rm -f /home/ubuntu/joymedia-demo-staging/socketio.sock
+ExecStart=/home/ubuntu/joymedia-demo-staging/node-v20.19.5-linux-x64/bin/node /home/ubuntu/joymedia-demo-staging/frappe/socketio.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
