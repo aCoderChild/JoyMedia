@@ -77,3 +77,17 @@ node_modules
 
 # Local research clones are not application dependencies.
 upstream/
+
+# Handover outputs and machine-specific secrets
+/handover-dist/
+.env.*
+!.env.example
+*.local.json
+site_config.json
+common_site_config.json
+*.pem
+*.key
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml

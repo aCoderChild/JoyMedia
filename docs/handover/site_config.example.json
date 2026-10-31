@@ -1,0 +1,29 @@
+{
+  "developer_mode": 0,
+  "allow_tests": false,
+  "joymedia_allow_demo_data": false,
+  "comfyui_base_url": "http://127.0.0.1:8188",
+  "comfyui_input_dir": "/srv/ComfyUI/input",
+  "comfyui_api_key": "",
+  "joymedia_planner": {
+    "base_url": "http://127.0.0.1:8001/v1",
+    "model": "REPLACE_WITH_SERVED_PLANNER_MODEL",
+    "timeout": 600,
+    "max_model_len": 8192
+  },
+  "joymedia_vision": {
+    "base_url": "http://127.0.0.1:8002/v1",
+    "model": "REPLACE_WITH_SERVED_VISION_MODEL",
+    "timeout": 120
+  },
+  "joymedia_translator": {
+    "base_url": "http://127.0.0.1:8001/v1",
+    "model": "REPLACE_WITH_SERVED_TRANSLATOR_MODEL",
+    "timeout": 300
+  },
+  "joymedia_writer": {
+    "base_url": "http://127.0.0.1:8001/v1",
+    "model": "REPLACE_WITH_SERVED_WRITER_MODEL",
+    "timeout": 600
+  }
+}
