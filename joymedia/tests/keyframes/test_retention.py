@@ -184,6 +184,56 @@ class TestReferenceRetention(TestCase):
 			with self.assertRaises(ValueError):
 				validate_prepared(png(canvas), patch_bytes, {**report, **changed}, "SOURCE", frozen)
 
+	def test_a_slightly_flatter_drawn_pack_keeps_its_registered_base_and_sides(self):
+		import io
+
+		from PIL import Image
+
+		from joymedia.services.consistency.retention import validate_prepared
+
+		def png(image):
+			b = io.BytesIO()
+			image.save(b, "PNG")
+			return b.getvalue()
+
+		canvas = Image.new("RGB", (200, 200), "white")
+		canvas.paste((100, 20, 40), (20, 80, 180, 180))
+		patch_bytes = png(Image.new("RGBA", (160, 100), (100, 20, 40, 255)))
+		frozen = {"recipe_sha256": "RECIPE"}
+		report = {
+			"source_sha256": "SOURCE",
+			"recipe_sha256": "RECIPE",
+			"source_rgb_unchanged": True,
+			"box": [20, 80, 160, 100],
+		}
+		# Drawn top 15% lower than the photographed pack: accepted.
+		validate_prepared(
+			png(canvas),
+			patch_bytes,
+			{**report, "detections": [{"box": [20, 93, 180, 180]}]},
+			"SOURCE",
+			frozen,
+		)
+		# Drawn 15% narrower, same base and top: the source spreads evenly past both sides.
+		validate_prepared(
+			png(canvas),
+			patch_bytes,
+			{**report, "detections": [{"box": [32, 80, 168, 180]}]},
+			"SOURCE",
+			frozen,
+		)
+		for drawn in (
+			[20, 110, 180, 180],  # Much flatter than the photograph.
+			[20, 70, 180, 180],  # Drawn taller: the source would sink below its top.
+			[50, 80, 150, 180],  # Much narrower than the photograph.
+			[20, 80, 140, 180],  # Spread to one side only.
+			[20, 93, 180, 170],  # Base moved off the drawn support.
+		):
+			with self.subTest(drawn=drawn), self.assertRaises(ValueError):
+				validate_prepared(
+					png(canvas), patch_bytes, {**report, "detections": [{"box": drawn}]}, "SOURCE", frozen
+				)
+
 	def test_first_multi_segment_candidate_can_complete_without_becoming_selected(self):
 		from joymedia.services.generation import run_state
 

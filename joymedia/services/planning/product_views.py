@@ -365,6 +365,123 @@ def _palette_retained(source_file, candidate):
 	return float(np.minimum(source_hue, generated_hue).sum()) >= 0.35
 
 
+# The user enabled product angles "as long as the colour and the information of the
+# product are not distorted" (2026-10-31). Both are measured, not judged in a pair.
+STRICT_HUE_OVERLAP = 0.7
+FRONT_VISIBLE_VIEWS = {"front", "front_left", "front_right", "top_front", "three_quarter"}
+PRINT_TRANSCRIPTION = (
+	"Read every piece of printed text visible on the product package, exactly as printed, including brand name, "
+	"product name, numbers, units and small lines. Do not translate or correct spelling. Return JSON lines: an "
+	"array of strings, one per printed line."
+)
+PRINT_SCHEMA = {
+	"type": "object",
+	"additionalProperties": False,
+	"required": ["lines"],
+	"properties": {"lines": {"type": "array", "items": {"type": "string"}}},
+}
+
+
+def _hue_histogram(image):
+	import cv2
+
+	hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+	chromatic = ((hsv[:, :, 1] > 65) & (hsv[:, :, 2] > 65)).astype("uint8") * 255
+	hue = cv2.calcHist([hsv], [0], chromatic, [36], [0, 180]).ravel()
+	return hue / hue.sum() if hue.sum() else hue
+
+
+def _colour_retained(source_file, candidate):
+	"""The pack's colours, background ignored, overlap strongly and keep the same dominant hue."""
+	import cv2
+	import numpy as np
+
+	source = cv2.imread(str(source_file))
+	generated = cv2.imdecode(np.frombuffer(candidate, dtype=np.uint8), cv2.IMREAD_COLOR)
+	if source is None or generated is None:
+		return False
+	source_hue = _hue_histogram(cv2.resize(source, (256, 256), interpolation=cv2.INTER_AREA))
+	generated_hue = _hue_histogram(cv2.resize(generated, (256, 256), interpolation=cv2.INTER_AREA))
+	if not source_hue.any() or not generated_hue.any():
+		return _palette_retained(source_file, candidate)  # A monochrome pack keeps the tonal check.
+	shift = abs(int(source_hue.argmax()) - int(generated_hue.argmax()))
+	return (
+		float(np.minimum(source_hue, generated_hue).sum()) >= STRICT_HUE_OVERLAP
+		and min(shift, 36 - shift) <= 1
+	)
+
+
+def _printed_words(image):
+	"""The words printed on the pack, read on their own (never beside another picture)."""
+	from joymedia.services.review.consistency import ask
+
+	if isinstance(image, str | Path) and Path(image).is_file():
+		image = Path(image).read_bytes()  # A filesystem path (the identity photo) is read directly.
+	lines = (ask(image, PRINT_TRANSCRIPTION, max_edge=1024, schema=PRINT_SCHEMA) or {}).get("lines")
+	if not isinstance(lines, list):
+		return None
+	return {word for line in lines for word in re.findall(r"\w+", str(line).casefold())}
+
+
+def _information_retained(source_file, candidate, view):
+	"""No new or changed printed word, and every word kept while the front face is in view."""
+	source, generated = _printed_words(source_file), _printed_words(candidate)
+	if not source or generated is None:
+		return False
+	if generated - source:
+		return False
+	return view not in FRONT_VISIBLE_VIEWS or not (source - generated)
+
+
+MIN_FACE_MATCHES, MIN_FACE_INLIERS = 12, 15
+
+
+def restore_printed_face(source_file, candidate):
+	"""Put the photograph's real print back on a generated angle of the same pack.
+
+	The video model redrew small print as nonsense at every new angle ("900" for
+	"400", 13 of 13 candidates on 2026-10-31) while the logo, mascot and stripes
+	stayed recognisable. Those features locate the pack's printed face; the
+	photograph's pack (not its backdrop) is warped onto it in perspective, so the
+	angle keeps its shape and the words are the photograph's own. None when the
+	face cannot be located reliably.
+	"""
+	import cv2
+	import numpy as np
+
+	source = cv2.imread(str(source_file))
+	generated = cv2.imdecode(np.frombuffer(candidate, dtype=np.uint8), cv2.IMREAD_COLOR)
+	if source is None or generated is None:
+		return None
+	sift = cv2.SIFT_create(4000)
+	source_points, source_features = sift.detectAndCompute(cv2.cvtColor(source, cv2.COLOR_BGR2GRAY), None)
+	points, features = sift.detectAndCompute(cv2.cvtColor(generated, cv2.COLOR_BGR2GRAY), None)
+	if source_features is None or features is None or len(source_points) < 2 or len(points) < 2:
+		return None
+	pairs = cv2.BFMatcher().knnMatch(source_features, features, k=2)
+	good = [p[0] for p in pairs if len(p) == 2 and p[0].distance < 0.75 * p[1].distance]
+	if len(good) < MIN_FACE_MATCHES:
+		return None
+	homography, inliers = cv2.findHomography(
+		np.float32([source_points[m.queryIdx].pt for m in good]),
+		np.float32([points[m.trainIdx].pt for m in good]),
+		cv2.RANSAC,
+		5.0,
+	)
+	if homography is None or int(inliers.sum()) < MIN_FACE_INLIERS:
+		return None
+	height, width = generated.shape[:2]
+	pack = (cv2.cvtColor(source, cv2.COLOR_BGR2GRAY) < 245).astype(np.uint8) * 255  # not the white backdrop
+	pack = cv2.morphologyEx(pack, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+	mask = cv2.erode(cv2.warpPerspective(pack, homography, (width, height)), np.ones((5, 5), np.uint8))
+	alpha = cv2.GaussianBlur(mask, (7, 7), 0)[..., None] / 255.0
+	restored = (
+		cv2.warpPerspective(source, homography, (width, height)) * alpha + generated * (1 - alpha)
+	).astype(np.uint8)
+	ok, encoded = cv2.imencode(".png", restored)
+	return encoded.tobytes() if ok else None
+
+
 def _candidate_matches_visible_source(source_url, candidate):
 	"""Require an observer to preserve observable, rather than hidden, facts."""
 	from joymedia.services.review.consistency import ask
@@ -489,7 +606,25 @@ def _candidate_matches_requested_view(candidate, view):
 	return False
 
 
-def _generate_candidate(project, source, view):
+def _observed_hero_view(candidate, requested):
+	"""The view a candidate actually shows; None when it fits no acceptable view.
+
+	The video model zoomed and tilted the pack rather than rotating it (2026-10-31).
+	For a requested angle that keeps the print in view, the view it really shows is
+	recorded and used (a top-down or front detail is still a new view of the exact
+	pack); a side or back request stays strict.
+	"""
+	if _candidate_matches_requested_view(candidate, requested):
+		return requested
+	if requested not in FRONT_VISIBLE_VIEWS:
+		return None
+	for other in ("top_front", "three_quarter", "front_left", "front_right"):
+		if other != requested and _candidate_matches_requested_view(candidate, other):
+			return other
+	return "front"
+
+
+def _generate_candidate(project, source, view, observed=None):
 	"""Try H3 product-view candidates, respecting an explicit image-workflow override."""
 	from joymedia.services.keyframes.locations import _keyframe_workflow
 	from joymedia.services.project.context import _project_settings
@@ -506,12 +641,29 @@ def _generate_candidate(project, source, view):
 	identity_path = frappe.get_doc("File", {"file_url": identity["file"]}).get_full_path()
 
 	def accepts(content):
-		return (
-			_palette_retained(identity_path, content)
-			and _candidate_matches_visible_source(identity["file"], content)
-			and _candidate_matches_requested_view(content, view)
-			and _candidate_physically_plausible(identity["file"], content)
-		)
+		"""The picture to use (the candidate, or it with the photograph's print restored), or False."""
+		try:
+			if not (_palette_retained(identity_path, content) and _colour_retained(identity_path, content)):
+				return False
+			if not _information_retained(identity_path, content, view):
+				restored = restore_printed_face(identity_path, content)
+				if restored and _colour_retained(identity_path, restored):
+					content = restored
+				# Otherwise the candidate stays as drawn: accepted on colour, its print unverified (user).
+			if not (
+				_candidate_matches_visible_source(identity["file"], content)
+				and _candidate_physically_plausible(identity["file"], content)
+			):
+				return False
+			shown = _observed_hero_view(content, view)
+			if not shown:
+				return False
+			if observed is not None:
+				observed["view"] = shown
+			return content
+		except Exception:
+			frappe.log_error(title=f"Product angle observation failed; {view} sample rejected")
+			return False
 
 	if not configured:
 		from joymedia.services.planning.reference_bridges import product_view_from_h3
@@ -564,8 +716,9 @@ def _generate_candidate(project, source, view):
 			output_prefix=f"joymedia/product-views/{frappe.generate_hash(length=10)}",
 		)
 		content = run_workflow_to_bytes(graph, output, forget=True)
-		if accepts(content):
-			return content
+		accepted = accepts(content)
+		if accepted:
+			return accepted if isinstance(accepted, bytes | bytearray) else content
 		# Keep evidence outside selectable Product media. A rejected artifact is
 		# useful for diagnosing a model/configuration change, but must never be
 		# accidentally used by the storyboard as if it were client-approved.
@@ -622,7 +775,9 @@ def prepare_script_product_views(project, script):
 			prepared.append(_prepared_view_result(source_key, view, candidate_key, strict))
 			continue
 		try:
-			content = _generate_candidate(project, source, view)
+			observed = {}
+			content = _generate_candidate(project, source, view, observed)
+			shown = observed.get("view", view)
 			identity = original_reference(source.asset_version)
 			from joymedia.services.planning.reference_bridges import frame_provenance
 
@@ -632,14 +787,20 @@ def prepare_script_product_views(project, script):
 			mask_evidence = None
 			if sam2_configured():
 				content, mask_evidence = cutout_studio_reference(content)
+				identity_path = frappe.get_doc("File", {"file_url": identity["file"]}).get_full_path()
 				if not (
 					_candidate_matches_visible_source(identity["file"], content)
-					and _candidate_matches_requested_view(content, view)
+					and _observed_hero_view(content, view)
 					and _candidate_physically_plausible(identity["file"], content)
+					and _colour_retained(identity_path, content)
 				):
 					raise ValueError(
 						"The final masked product view no longer retains its original traits and geometry."
 					)
+			# Recorded, not required: a print that could not be restored is shown for review (user).
+			information_verified = _information_retained(
+				frappe.get_doc("File", {"file_url": identity["file"]}).get_full_path(), content, view
+			)
 			frappe.db.commit()
 			from joymedia.services.intake.assets import create_media_asset
 
@@ -654,7 +815,7 @@ def prepare_script_product_views(project, script):
 				}
 			).insert(ignore_permissions=True)
 			asset = create_media_asset(
-				f"{value(source, 'label') or source_key} {view} AI candidate",
+				f"{value(source, 'label') or source_key} {shown} AI candidate",
 				"Product",
 				file_url=image.file_url,
 				file_name=image.name,
@@ -668,7 +829,8 @@ def prepare_script_product_views(project, script):
 					"analysis_json": frappe.as_json(
 						{
 							"kind": "product",
-							"product_view": view,
+							"product_view": shown,
+							"requested_view": view,
 							"product_view_status": "ai_extrapolated_candidate",
 							"source_asset_version": value(source, "asset_version"),
 							"identity_source_asset_version": identity["asset_version"],
@@ -678,6 +840,8 @@ def prepare_script_product_views(project, script):
 							"product_identity_qualification_version": PRODUCT_IDENTITY_QUALIFICATION_VERSION,
 							"view_geometry_verified": True,
 							"view_physical_plausibility_verified": True,
+							"colour_verified": True,
+							"information_verified": information_verified,
 							"subject_cutout": mask_evidence,
 							"unknown_panels": "inferred; unverified against real packaging",
 						}
@@ -693,10 +857,10 @@ def prepare_script_product_views(project, script):
 					"reference_key": candidate_key,
 					"identity_key": identity_key(source),
 					"reference_role": "Product",
-					"label": f"{value(source, 'label') or source_key} {view} (AI candidate)",
+					"label": f"{value(source, 'label') or source_key} {shown} (AI candidate)",
 					"relative_size": value(source, "relative_size"),
 					"keep_rule": value(source, "keep_rule"),
-					"product_view": view,
+					"product_view": shown,
 				},
 			)
 			project.save(ignore_permissions=True)
@@ -832,7 +996,12 @@ def _choose_view(rows, desired, *, allow_extrapolated=True):
 		)
 		if not exact:
 			exact = next(
-				(row for row in rows if product_view_kind(row) == desired and _view_candidate_qualified(row)),
+				(
+					row
+					for row in rows
+					if (product_view_kind(row) == desired or _analysis(row).get("requested_view") == desired)
+					and _view_candidate_qualified(row)
+				),
 				None,
 			)
 		if exact:
@@ -964,6 +1133,15 @@ def _source_pixels_locked(project, view_keys, rows):
 	)
 
 
+def _product_only(plan, rows):
+	"""A shot whose references include no character or person."""
+	return not any(
+		str(value(rows[key], "reference_role") or "").casefold() in {"character", "person"}
+		for key in plan.get("reference_keys") or []
+		if rows.get(key)
+	)
+
+
 def constrain_product_views(project, plan, required_view=None):
 	"""Constrain each visible product identity to one truthful source view.
 
@@ -989,9 +1167,18 @@ def constrain_product_views(project, plan, required_view=None):
 		variants = _product_rows(project, key)
 		if not variants:
 			continue
-		chosen, supported = _choose_view(
-			variants, desired, allow_extrapolated=not _source_pixels_locked(project, [key], rows)
-		)
+		locked = _source_pixels_locked(project, [key], rows)
+		if locked and _product_only(plan, rows):
+			# A product-only shot shows the product image itself (no drawn product for the
+			# source lock to replace): a generated angle whose colour and printed words were
+			# measured against the photo may be used; any other candidate may not.
+			variants = [
+				row
+				for row in variants
+				if not is_extrapolated_product_view(row) or _analysis(row).get("colour_verified")
+			]
+			locked = False
+		chosen, supported = _choose_view(variants, desired, allow_extrapolated=not locked)
 		selected_views.append(value(chosen, "reference_key"))
 		available = ", ".join(dict.fromkeys(product_view_kind(row) for row in variants))
 		chosen_text = (

@@ -575,16 +575,23 @@ def get_project_batches(project_name):
 	from joymedia.services.project.versions import family, members
 
 	project_family = members(family(project))
-	return [
-		get_product_batch(name)
-		for name in frappe.get_all(
-			"Creative Batch",
-			filters={"source_project": ["in", project_family], "owner": project.owner},
-			pluck="name",
-			order_by="creation desc",
-			limit=10,
-		)
-	]
+	names = frappe.get_all(
+		"Creative Batch",
+		filters={"source_project": ["in", project_family], "owner": project.owner},
+		pluck="name",
+		order_by="creation desc",
+		limit=10,
+	)
+	# A video created by a batch is its own project, outside the source family:
+	# find the batch that produced it, so its page shows the automatic progress.
+	producing = frappe.get_all(
+		"Creative Batch",
+		filters={"variants_json": ["like", f'%"project": "{project.name}"%'], "owner": project.owner},
+		pluck="name",
+		order_by="creation desc",
+		limit=1,
+	)
+	return [get_product_batch(name) for name in dict.fromkeys(producing + names)]
 
 
 @frappe.whitelist(methods=["POST"])
@@ -675,9 +682,21 @@ def retry_product_variant(batch_name, index):
 		if stage == "Rendering" and variant.get("project"):
 			from joymedia.services.generation.creative_batch import rerender_failed_scenes
 
-			# Re-reading the failed run would stop again: render new takes of the
-			# scenes that have none, keeping every finished take and approved picture.
-			rerender_failed_scenes(variant, frappe.parse_json(batch.request_json))
+			run = (variant.get("generation_request") or {}).get("run")
+			if run and frappe.db.get_value("Generation Run", run, "status") in {"Draft", "Queued", "Running"}:
+				# The render is still going (a stop caused by a lock or link hiccup):
+				# follow it rather than starting a second render of the same scenes.
+				pass
+			else:
+				# Re-reading the failed run would stop again: render new takes of the
+				# scenes that have none, keeping every finished take and approved picture.
+				rerender_failed_scenes(variant, frappe.parse_json(batch.request_json))
+		if stage in {"Finishing", "Exporting"}:
+			# Explicit recovery after a fixed cause (a restored model, a service back) gets a
+			# fresh bounded budget; otherwise the spent count stops the stage before it runs.
+			variant.pop("automatic_finishing_retries", None)
+			variant.pop("automatic_export_retries", None)
+			variant.pop("automatic_voiceover_retries", None)
 		if stage == "Planning" and not variant.get("script"):
 			# Explicit recovery receives a fresh bounded image-analysis retry budget.
 			variant.pop("reference_analysis_attempts", None)

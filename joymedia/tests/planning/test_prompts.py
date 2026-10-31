@@ -106,8 +106,8 @@ class TestPromptCompiler(FrappeTestCase):
 		)
 		project = frappe._dict(generation_mode="Multi-shot", global_instructions="")
 		prompt = compile_prompt_for_documents(shot, project, prompt_source="image")
-		self.assertIn("no advertised product", prompt)
-		self.assertIn("retail packs", prompt)
+		self.assertIn("Everything in view is the declared cast", prompt)
+		self.assertNotIn("retail pack", prompt)
 		shot.character_mode = "Draw in scene"
 		with (
 			patch(
@@ -117,7 +117,7 @@ class TestPromptCompiler(FrappeTestCase):
 			patch("joymedia.services.planning.prompts._character_look_text", return_value=""),
 		):
 			drawn = compile_prompt_for_documents(shot, project, prompt_source="image")
-		self.assertIn("no advertised product", drawn)
+		self.assertIn("Everything in view is the declared cast", drawn)
 		self.assertNotIn("Show each advertised product", drawn)
 
 	def test_pack_artwork_does_not_authorize_source_heart_in_mascot_paws(self):
@@ -139,7 +139,8 @@ class TestPromptCompiler(FrappeTestCase):
 				frappe._dict(generation_mode="Multi-shot", global_instructions=""),
 				prompt_source="image",
 			)
-			self.assertIn("Do not add these source-only held props to the live actor: heart", compiled)
+			self.assertIn("holds only the objects named in the opening", compiled)
+			self.assertNotIn("heart.", compiled.split("holds only")[1])
 		shot.start_state = "The mascot holds a heart beside the pack."
 		with (
 			patch("frappe.db.get_value", return_value='{"source_asset_version":"SOURCE"}'),
@@ -178,7 +179,7 @@ class TestPromptCompiler(FrappeTestCase):
 			),
 		)
 		shot.consistency_notes = "Critical prop: extra printed package"
-		self.assertIn("undeclared retail package", _keyframe_retry_direction(shot))
+		self.assertIn("hold only the physical object", _keyframe_retry_direction(shot))
 		shot.consistency_notes = (
 			"Critical geometry: arm crosses the table; "
 			"Critical identity: character eye design changed from the original reference"

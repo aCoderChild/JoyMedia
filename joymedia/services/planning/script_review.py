@@ -74,6 +74,10 @@ def review_script_actions(script, roster=(), review_notes=(), requirements=None)
 	]
 	prompt = (
 		"First check the creative_direction in REQUIREMENTS. Report explicit contradictions as brief_contradiction, quoting the contradictory scene text and the required correction. "
+		"When REQUIREMENTS has a film_structure, it is the intended layout: its product-only opening and closing shots are not idle or missing action, and never ask to add an actor or package to them or to put a package into a character scene. "
+		"Roster verified_body_states are poses already prepared, not the only allowed poses: the script decides "
+		"the poses and any clear, physically supported pose is prepared automatically. Never report a reach, "
+		"gesture or seated/standing pose as missing_prerequisite because it is not in verified_body_states. "
 		"Check the causal sequence of the complete screenplay, across ALL scenes in order. "
 		"A prerequisite written in a later scene cannot justify an earlier use. Compare voice_over and on_screen_text to what the visible action demonstrates; report a concrete contradiction as brief_contradiction, without treating an ordinary brand statement as an action claim. "
 		"Different shots perform different jobs: acquisition need not also demonstrate use; a later use shot can show contact and its result. "

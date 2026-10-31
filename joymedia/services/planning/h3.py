@@ -309,6 +309,8 @@ def compile_h3(
 	# official base guide requires an alignment line followed by three fields;
 	# full-reference mode has six different fields. The local text encoder
 	# forwards raw text and does not translate custom headings for us.
+	# The I2VA guide orders the description as first-frame anchor, camera, action
+	# onset and development, then result; constraints follow the story.
 	visual = " ".join(
 		p
 		for p in [
@@ -316,17 +318,17 @@ def compile_h3(
 			opening,
 			refs,
 			subject_identities(shot),
-			guard,
-			product_only_instruction(shot.get("references")),
-			never,
 			camera["direction"],
-			composition_instruction(project),
 			action,
 			sheet_material_instruction(action),
 			physical,
-			rules,
 			ending,
 			*speech_parts,
+			guard,
+			product_only_instruction(shot.get("references")),
+			never,
+			composition_instruction(project),
+			rules,
 		]
 		if p
 	)

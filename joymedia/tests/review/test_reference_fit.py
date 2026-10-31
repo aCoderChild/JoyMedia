@@ -15,7 +15,7 @@ class TestReferenceFit(FrappeTestCase):
 		patcher.start()
 		self.addCleanup(patcher.stop)
 
-	def test_generated_pose_still_checks_original_identity_and_eye_design(self):
+	def test_generated_pose_still_checks_original_identity_not_eye_expression(self):
 		shot = frappe._dict(
 			generation_inputs=[frappe._dict(reference_role="Character", asset_version="POSE")]
 		)
@@ -46,7 +46,10 @@ class TestReferenceFit(FrappeTestCase):
 		with patch("frappe.db.get_value", side_effect=asset_value):
 			findings = reference_fit_findings(shot, "/frame.png", ask=observe)
 		self.assertIn(["/source.png", "/frame.png"], seen_pairs)
-		self.assertIn("Critical identity: character eye design changed from the original reference", findings)
+		# Open dots and smiling arcs are expressions of the same mascot (user, 2026-10-31).
+		self.assertNotIn(
+			"Critical identity: character eye design changed from the original reference", findings
+		)
 		self.assertTrue(any("stale or missing pose qualification" in item for item in findings))
 
 	def test_limb_topology_is_checked_independently_of_identity(self):

@@ -138,6 +138,8 @@ def check_scene(shot_name, kind, user, subject=None):
 				)
 			return _record(shot, "Not Checked", "No visual evidence was available for this check.")
 		failures = run_checks(checks)
+		if kind == "frame":
+			failures = _confirm_cast_on_product(failures, shot)
 	except Exception as exc:
 		frappe.logger("joymedia.consistency").warning("Consistency check of %s failed: %s", shot_name, exc)
 		return _record(shot, "Not Checked", f"The automatic check could not run: {str(exc)[:200]}")
@@ -232,9 +234,48 @@ def check_scene(shot_name, kind, user, subject=None):
 	limit = MAX_FRAME_REDOS if kind == "frame" else MAX_TAKE_REDOS
 	if int(shot.consistency_retries or 0) >= limit:
 		return _record(shot, "Needs Review", notes)
+	if kind == "frame" and _repeats_redraw_reason(shot, failures):
+		# This frame is itself a redraw and failed for the same reason: the same inputs
+		# mostly reproduce it, so the batch restages the scene instead of redrawing.
+		return _record(shot, "Needs Review", notes)
 	if _record(shot, REDRAW if kind == "frame" else REDO, notes) is False:
 		return
 	redo_waiting(shot.media_project)
+
+
+def _finding_kind(text):
+	"""The heading of a critical finding ("Critical framing: full character body ..."), for comparison."""
+	match = re.match(r"\s*(Critical [a-z ]+:[^(;.]{0,60})", str(text or ""))
+	return match.group(1).strip() if match else None
+
+
+def _repeats_redraw_reason(shot, failures):
+	"""Whether the finding that caused this frame's redraw is found again on the redrawn frame."""
+	if not shot.get("keyframe_artifact"):
+		return False
+	attempt = frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "generation_attempt")
+	task = frappe.db.get_value("Generation Attempt", attempt, "generation_task") if attempt else None
+	run = frappe.db.get_value("Generation Task", task, "generation_run") if task else None
+	try:
+		snapshot = (
+			frappe.parse_json(frappe.db.get_value("Generation Run", run, "project_snapshot_json") or "{}")
+			if run
+			else {}
+		)
+	except ValueError:
+		return False  # No readable record of why this frame was redrawn.
+	if not isinstance(snapshot, dict):
+		return False
+	previous = next(
+		(
+			str(row.get("keyframe_retry_note") or "")
+			for row in (snapshot or {}).get("shots") or []
+			if row.get("shot") == shot.name
+		),
+		"",
+	)
+	before = {_finding_kind(part) for part in previous.split(";")} - {None}
+	return bool(before & {_finding_kind(reason) for reason in failures})
 
 
 REDRAW, REDO = "Redrawing", "Redoing"
@@ -421,6 +462,12 @@ UNSUPPORTED_CAST = (
 	"clearly visible violation. If support is cropped, hidden or uncertain, answer false. "
 	"Return JSON with answer boolean and reason."
 )
+CAST_ON_PRODUCT = "Critical geometry: character stands on the advertised product"
+CAST_BASE_SUPPORT = (
+	"Observe only what is directly beneath the foreground actor's pelvis or body base and carries its "
+	"weight. A package standing in front of the actor, or overlapping its feet in the picture, is not "
+	"beneath it. Use unclear if the base is hidden. First give concrete visible evidence, then the surface."
+)
 ACTOR_SUPPORT = (
 	"The required opening is: {opening}. Is the actor visibly and plausibly supported by the "
 	"authored seat or floor, at a height that permits the stated interaction? Answer true when the "
@@ -444,10 +491,14 @@ PRODUCT_TABLE_SCALE = (
 	"false when proportionate, or null when the table is cropped or perspective prevents comparison. "
 	"Return a JSON object with answer set to true, false, or null and a reason with estimated ratio."
 )
+# "Entire or nearly entire body" made the judge call a paw close-up full-body whenever a
+# seated character's feet were in frame. A full body has the top of the head AND both
+# feet inside the frame; a frame edge cutting either off makes it a detail.
 FULL_BODY_IN_DETAIL = (
-	"Does this image clearly show the entire or nearly entire character body including both feet? "
-	"Return a JSON object with answer set to true, false, or null for uncertainty, "
-	"and reason explaining visible evidence."
+	"Is the top of the character's head fully inside this image AND are both of its feet fully inside "
+	"this image? Answer true only when both are inside the frame; answer false when the image edge cuts "
+	"off the top of the head or a foot. Return a JSON object with answer set to true, false, or null for "
+	"uncertainty, and reason naming what the image edges cut off."
 )
 PRODUCT_SUPPORT = (
 	"Judge ONLY the advertised retail product package, not the actor. Does that package have a physically credible "
@@ -686,7 +737,7 @@ def frame_checks(shot):
 					file_url,
 					UNSUPPORTED_CAST,
 					False,
-					"Critical geometry: character stands on the advertised product",
+					CAST_ON_PRODUCT,
 				)
 			)
 		opening = shot.get("start_state") or shot.get("image_prompt") or ""
@@ -907,6 +958,36 @@ def sample_frames(video_path, count):
 
 class AtMost(int):
 	"""An expected count that may be lower but not higher."""
+
+
+def _confirm_cast_on_product(failures, shot):
+	"""Keep "actor on the package" only when a blind support observation agrees.
+
+	A package standing in front of a seated actor overlaps its feet in the picture,
+	and a single yes/no reading repeatedly took that for the actor sitting on it.
+	"""
+	if not any(failure.startswith(CAST_ON_PRODUCT) for failure in failures):
+		return failures
+	observed = ask(
+		frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "frappe_file"),
+		CAST_BASE_SUPPORT,
+		max_edge=896,
+		schema={
+			"type": "object",
+			"additionalProperties": False,
+			"required": ["evidence", "surface"],
+			"properties": {
+				"evidence": {"type": "string", "minLength": 1},
+				"surface": {
+					"type": "string",
+					"enum": ["floor_or_rug", "seat", "product_package", "other", "unclear"],
+				},
+			},
+		},
+	)
+	if isinstance(observed, dict) and observed.get("surface") == "product_package":
+		return failures
+	return [failure for failure in failures if not failure.startswith(CAST_ON_PRODUCT)]
 
 
 def run_checks(checks):

@@ -115,12 +115,26 @@ HEAD_ACCESSORY_QUESTION = (
 )
 
 
+MEASURED_EYE_INSTRUCTION = {
+	"open_dots": "Keep both eyes as open round dots exactly as the source; never close them into arcs. ",
+	"closed_arcs": "Keep both eyes as closed arcs exactly as the source; do not open them. ",
+}
+
+
 def _eye_design_instruction(source_image, angle):
 	if angle != "front":
 		return ""
 	from joymedia.services.review.consistency import ask
+	from joymedia.services.review.eye_shape import measured_eye_shape
 
+	# A measured eye drawing outranks the vision model, which named open dots
+	# "closed smiling arcs" and so told the generator to close the eyes.
+	measured = measured_eye_shape(source_image)
+	if measured == "open_dots":
+		return MEASURED_EYE_INSTRUCTION[measured]
 	shape = ask(source_image, EYE_DESIGN_QUESTION, max_edge=768).get("eye_shape")
+	if measured == "closed_arcs" and not str(shape or "").startswith("closed"):
+		return MEASURED_EYE_INSTRUCTION[measured]
 	return {
 		"closed_smiling_arcs": "Keep both eyes as closed arcs curving upward like a smile, exactly as the source; do not open them. ",
 		"closed_sleeping_arcs": "Keep both eyes as closed downward-curving arcs exactly as the source; do not open them. ",
@@ -394,6 +408,49 @@ def _rejected(gate, *evidence):
 	return False
 
 
+def character_accessories(project, identity_key):
+	"""Head accessories seen on the customer's own uploads of one character.
+
+	The customer's mascot appears with and without its flower across its own
+	references; either look is the mascot (user, 2026-10-31), so any of these may
+	be worn or left off. An accessory on none of the uploads is still off-model.
+	"""
+	from joymedia.services.project.reference_lineage import original_reference
+	from joymedia.services.review.consistency import ask
+
+	files = {
+		original_reference(row.asset_version)["file"]
+		for row in project.get("selected_media") or []
+		if (row.get("identity_key") or row.get("reference_key")) == identity_key
+		and str(row.get("reference_role") or "").lower() in {"character", "person"}
+		and row.get("asset_version")
+	}
+	seen = set()
+	for file in sorted(f for f in files if f):
+		key = "joymedia-head-accessories:" + hashlib.sha256(file.encode()).hexdigest()[:16]
+		found = frappe.cache.get_value(key)
+		if found is None:
+			found = ask(file, HEAD_ACCESSORY_QUESTION, max_edge=768).get("head_accessories")
+			found = found if isinstance(found, list) else []
+			frappe.cache.set_value(key, found)
+		seen.update(str(item).strip().casefold() for item in found if str(item).strip())
+	return frozenset(seen)
+
+
+def accessories_allowed(source_head, frame_head, allowed_accessories=frozenset()):
+	"""Whether a drawn character's head accessories are ones this mascot may wear.
+
+	Wearing or leaving off an accessory of the customer's own references is the same
+	mascot. ``allowed_accessories`` may be a callable, asked only when one is added.
+	"""
+	drawn = {str(item).strip().casefold() for item in frame_head}
+	source = {str(item).strip().casefold() for item in source_head}
+	if drawn <= source:
+		return True
+	allowed = allowed_accessories() if callable(allowed_accessories) else allowed_accessories
+	return drawn <= source | set(allowed)
+
+
 def _accept_pose_view(
 	content,
 	source_image=None,
@@ -401,6 +458,7 @@ def _accept_pose_view(
 	angle=None,
 	*,
 	identity_image=None,
+	allowed_accessories=frozenset(),
 ):
 	from joymedia.services.review.consistency import ask
 
@@ -476,9 +534,7 @@ def _accept_pose_view(
 	generated_head = ask(content, HEAD_ACCESSORY_QUESTION, max_edge=768).get("head_accessories")
 	if not isinstance(source_head, list) or not isinstance(generated_head, list):
 		return _rejected("head accessories unreadable")
-	if sorted(str(item).strip().casefold() for item in source_head) != sorted(
-		str(item).strip().casefold() for item in generated_head
-	):
+	if not accessories_allowed(source_head, generated_head, allowed_accessories):
 		return _rejected("head accessories", source_head, generated_head)
 	source_surface = character_look(identity_image).get("surface")
 	generated_surface = character_look(content).get("surface")
@@ -486,22 +542,8 @@ def _accept_pose_view(
 		return _rejected("surface unverified", source_surface, generated_surface)
 	if source_surface != generated_surface:
 		return _rejected("surface", source_surface, generated_surface)
-	# A broad identity judgement can miss a small but defining facial mark.
-	# Ask each image independently: paired-image comparisons have repeatedly
-	# described this Shera source's closed eyes as open in both pictures.
-	if angle in {"front", "side", "back"}:
-		source_eyes = ask(identity_image, EYE_DESIGN_QUESTION, max_edge=768).get("eye_shape")
-		generated_eyes = ask(content, EYE_DESIGN_QUESTION, max_edge=768).get("eye_shape")
-		if (
-			source_eyes in KNOWN_EYE_SHAPES
-			and generated_eyes in KNOWN_EYE_SHAPES
-			and generated_eyes != source_eyes
-		):
-			return _rejected("eye design", source_eyes, generated_eyes)
-		if angle == "front" and (
-			source_eyes not in KNOWN_EYE_SHAPES or generated_eyes not in KNOWN_EYE_SHAPES
-		):
-			return _rejected("eye design unverified", source_eyes, generated_eyes)
+	# Open, closed or smiling eyes are expressions of the same mascot (user, 2026-10-31);
+	# they are not identity differences, so a pose is not rejected for its eye drawing.
 	from joymedia.services.review.physical_audit import LIMB_TOPOLOGY_PROMPT, TOPOLOGY_SCHEMA
 
 	topology = ask([identity_image, content], LIMB_TOPOLOGY_PROMPT, max_edge=768, schema=TOPOLOGY_SCHEMA)
@@ -705,7 +747,12 @@ def _pose_view_from_h3(project, source, pose_description, angle):
 		for content, second in sample_bridge(bridge):
 			try:
 				qualified = _accept_pose_view(
-					content, file_url, pose_description, angle, identity_image=identity["file"]
+					content,
+					file_url,
+					pose_description,
+					angle,
+					identity_image=identity["file"],
+					allowed_accessories=lambda: character_accessories(project, source.get("identity_key")),
 				)
 			except Exception:
 				frappe.log_error(title="H3 pose observation unavailable; candidate not accepted")
@@ -799,7 +846,12 @@ def _pose_view(project, source, pose_description, angle):
 		content = run_workflow_to_bytes(graph, output, forget=True)
 		try:
 			if not _accept_pose_view(
-				content, file_url, pose_description, angle, identity_image=identity["file"]
+				content,
+				file_url,
+				pose_description,
+				angle,
+				identity_image=identity["file"],
+				allowed_accessories=lambda: character_accessories(project, source.get("identity_key")),
 			):
 				continue
 		except Exception:
@@ -871,6 +923,87 @@ def _opening_requires_grip(scene):
 		):
 			return True
 	return False
+
+
+RESTAGED_OPENING_FIELDS = ("visual_camera", "continuity_rules", "action", "visible_change")
+
+
+def restage_held_openings(script, scene_numbers):
+	"""Start a held-object scene from a verifiable pose when its grip cannot be prepared.
+
+	The object begins at rest within reach and the clip performs the grasp, so
+	the opening can bind an approved relaxed view of the same support. Cast,
+	products, place, framing and duration are unchanged. Returns the restaged
+	scene numbers; a scene whose restaging fails validation keeps its text.
+	"""
+	from joymedia.services.planning.production import _ask_planner
+	from joymedia.services.planning.timed_actions import read_timed_actions
+
+	restaged = []
+	for number in scene_numbers:
+		scene = script["scenes"][number - 1]
+		if not _opening_requires_grip(scene):
+			continue
+		try:
+			answer = _ask_planner(
+				"No verified character pose can show this scene opening with an object already in the "
+				"actor's paws or hands. Restage only the opening: the object starts at rest on a visible "
+				"support within the actor's reach, the paws or hands start empty, and the action first "
+				"takes or touches that object, then performs the authored interaction. Keep the same "
+				"object, cast, place and framing. Keep the action's [start-end s] phases covering exactly "
+				"the same duration. Do not describe the object as held at the start. Return JSON with "
+				+ ", ".join(RESTAGED_OPENING_FIELDS)
+				+ ". Scene: "
+				+ json.dumps(scene),
+				system="You restage a shot opening without changing its story.",
+				capability="planner",
+				sampling_profile="production_plan",
+				response_schema={
+					"type": "object",
+					"properties": {field: {"type": "string"} for field in RESTAGED_OPENING_FIELDS},
+					"required": list(RESTAGED_OPENING_FIELDS),
+					"additionalProperties": False,
+				},
+			)
+			revised = {
+				**scene,
+				**{field: str(answer.get(field) or "").strip() for field in RESTAGED_OPENING_FIELDS},
+			}
+			timed = read_timed_actions(scene.get("action") or "", scene.get("duration_seconds"))
+			retimed = read_timed_actions(revised["action"], scene.get("duration_seconds"))
+		except Exception:
+			frappe.log_error(title=f"Opening restaging unavailable for scene {number}")
+			continue
+		if (
+			not all(revised[field] for field in RESTAGED_OPENING_FIELDS)
+			or _opening_requires_grip(revised)
+			or (timed is None) != (retimed is None)
+		):
+			_rejected("opening restaging", number, {f: revised[f] for f in RESTAGED_OPENING_FIELDS})
+			continue
+		scene.update({field: revised[field] for field in RESTAGED_OPENING_FIELDS})
+		restaged.append(number)
+	return restaged
+
+
+def _without_object_clauses(pose):
+	"""Keep explicit working-limb geometry, dropping the object it was meant for.
+
+	Planners phrase the purpose many ways ("as if holding", "where they would be if
+	holding", "ready to grip"). Remove the "as if" tail and any clause that still
+	names a grip; without that purpose the text also fits paws resting on the body,
+	so state the visible difference instead. A pose that loses its working
+	articulation is returned unchanged and is rejected by the caller.
+	"""
+	grip = r"\b(?:hold|holding|carry|carrying|grip|gripping|clutch|clutching|presenting)\b"
+	body = re.split(r"\bas if\b", pose, maxsplit=1, flags=re.I)[0].rstrip(" ,;.")
+	clauses = re.split(r"(?<=[,;.])\s+", body)
+	body = " ".join(c for c in clauses if not re.search(grip, c, re.I)).rstrip(" ,;.")
+	if body == pose.rstrip(" ,;.") or not _working_arm_pose(body):
+		return pose
+	if not re.search(r"\bclear of the (?:torso|body)\b", body, re.I):
+		body += ", empty and held clear of the torso"
+	return body
 
 
 def _working_arm_pose(pose):
@@ -970,13 +1103,16 @@ def _plan_required_states(script, selected):
 	}
 	prompt = (
 		"Read ALL scenes before planning. Return one state for every (scene_index, cast_key) pair, "
-		"with no extras. Describe the character's OPENING body pose and visible weight support "
+		"with no extras; a scene whose cast is empty gets no state. Describe the character's OPENING body pose and visible weight support "
 		"in one concise English sentence, including limb placement and orientation. The supplied "
 		"photo is an identity anchor, not a restriction on poses or actions. Infer the first "
 		"state from the explicit start_state when present, otherwise the earliest timed "
 		"action and continuity from preceding scenes. "
-		"If available_views contains a same-identity qualified view that can begin the opening action, "
-		"return its exact key as reference_key and copy its exact pose text and view. "
+		"Each scene's opening pose comes from THAT scene's own start_state, visual_camera and first "
+		"action, never from another scene: two scenes with different openings get different poses. "
+		"If available_views contains a same-identity qualified view whose pose and gesture match this "
+		"scene's described opening, return its exact key as reference_key and copy its exact pose text "
+		"and view. "
 		"For example, a stand-up action opens in a seated qualified view; an already-walking "
 		"shot opens in a standing qualified view. If none can begin the action, set reference_key "
 		"to cast_key and describe the missing body state. Preserve action-defining gestures "
@@ -1010,6 +1146,7 @@ def _plan_required_states(script, selected):
 	)
 	states = result.get("states") if isinstance(result, dict) else None
 	expected = {(scene["scene_index"], key) for scene in scenes for key in scene["cast"]}
+	cast_free = {scene["scene_index"] for scene in scenes if not scene["cast"]}
 	if not isinstance(states, list):
 		raise ValueError("Pose planner did not cover every character in the script.")
 
@@ -1027,6 +1164,10 @@ def _plan_required_states(script, selected):
 				invalid.append(row)
 				continue
 			index, key = row.get("scene_index"), row.get("cast_key")
+			if not str(key or "").strip() or index in cast_free:
+				# The planner pads product-only scenes with blank or invented characters;
+				# a scene without a cast has no pose to plan.
+				continue
 			pair = (index, key)
 			exact = pair in expected
 			if not exact:
@@ -1288,6 +1429,8 @@ def _plan_required_states(script, selected):
 					"Rewrite this reusable character pose without objects, products, furniture, "
 					"contact verbs, or phrases like 'as if holding something'. Preserve its "
 					"body support, view, and the spatial position of EVERY paw and arm. "
+					"Where an object was held, state that those paws or hands are empty and held "
+					"clear of the torso, so the pose differs visibly from limbs resting on the body. "
 					"Describe only visible body articulation; do not invent limbs. "
 					"Return JSON pose string. Source: " + candidate_pose,
 					system="You preserve a character pose while removing scene props.",
@@ -1301,12 +1444,7 @@ def _plan_required_states(script, selected):
 					},
 				)
 				candidate_pose = str(repaired.get("pose") or "").strip() if isinstance(repaired, dict) else ""
-				# Some planners repeat a hypothetical object after already giving
-				# complete limb geometry. Remove only that trailing purpose clause;
-				# an actual grip or an unspecified neutral pose still fails below.
-				body_geometry = re.split(r"\bas if\b", candidate_pose, maxsplit=1, flags=re.I)[0]
-				if _working_arm_pose(body_geometry):
-					candidate_pose = body_geometry.rstrip(" ,;.")
+				candidate_pose = _without_object_clauses(candidate_pose)
 				if candidate_pose and not re.search(
 					r"\b(?:hold|holding|carry|carrying|grip|gripping|clutch|clutching|presenting)\b",
 					candidate_pose,
@@ -1365,6 +1503,79 @@ def _neutral_pose(pose):
 	}.get(source_pose_state([pose]))
 
 
+def attach_verified_views(project, limit=8):
+	"""Offer this project every verified view of its supplied characters.
+
+	A view generated for an earlier project from the same original image passed
+	the same identity and pose qualification. Reusing it gives the script real
+	body-state variety without another generation. Returns how many were added.
+	"""
+	selected = list(project.get("selected_media") or [])
+	have = {row.asset_version for row in selected}
+	keys = {row.reference_key for row in selected}
+	added = 0
+	for source in selected:
+		if added >= limit or str(source.reference_role or "").casefold() not in {"character", "person"}:
+			continue
+		analysis = frappe.parse_json(
+			frappe.db.get_value("Asset Version", source.asset_version, "analysis_json") or "{}"
+		)
+		if (analysis or {}).get("source_asset_version"):
+			continue  # Only an original image anchors its verified views.
+		for row in frappe.db.sql(
+			"""select name, analysis_json from `tabAsset Version`
+			where json_unquote(json_extract(analysis_json, '$.source_asset_version')) = %s
+			order by creation desc""",
+			source.asset_version,
+			as_dict=True,
+		):
+			qualified = _qualified_pose_metadata(frappe.parse_json(row.analysis_json or "{}"))
+			if not qualified or row.name in have:
+				continue
+			view = qualified["view"] or "front"
+			key = _pose_key(source.identity_key or source.reference_key, qualified["pose"], view)
+			if key in keys:
+				continue
+			project.append(
+				"selected_media",
+				{
+					"asset_version": row.name,
+					"reference_key": key,
+					"identity_key": source.identity_key,
+					"reference_role": source.reference_role,
+					"label": f"{source.label or source.reference_key} {qualified['pose'][:60]} {view} (verified)",
+					"relative_size": source.relative_size,
+					"keep_rule": "",
+				},
+			)
+			have.add(row.name)
+			keys.add(key)
+			added += 1
+			if added >= limit:
+				break
+	if added:
+		project.save(ignore_permissions=True)
+	return added
+
+
+def verified_body_states(project, identity_key):
+	"""Distinct verified pose descriptions available for one identity."""
+	states = []
+	for row in project.get("selected_media") or []:
+		if row.identity_key != identity_key:
+			continue
+		qualified = _qualified_pose_metadata(
+			frappe.parse_json(
+				frappe.db.get_value("Asset Version", row.asset_version, "analysis_json") or "{}"
+			)
+		)
+		if qualified:
+			state = f"{qualified['pose']} ({qualified['view'] or 'front'} view)"
+			if state not in states:
+				states.append(state)
+	return states
+
+
 def _pose_key(identity, pose, angle):
 	return "pose_" + hashlib.sha256(f"{identity}:{pose.casefold()}:{angle}".encode()).hexdigest()[:12]
 
@@ -1380,7 +1591,14 @@ def register_pose_candidate(project, source, cast_key, pose, angle, content):
 	project._require_write_access()
 	file_url = frappe.db.get_value("Asset Version", source.asset_version, "file")
 	identity = original_reference(source.asset_version)
-	if not _accept_pose_view(content, file_url, pose, angle, identity_image=identity["file"]):
+	if not _accept_pose_view(
+		content,
+		file_url,
+		pose,
+		angle,
+		identity_image=identity["file"],
+		allowed_accessories=lambda: character_accessories(project, source.get("identity_key")),
+	):
 		raise ValueError("The generated pose candidate did not pass qualification.")
 	return _save_pose_view(project, source, cast_key, pose, angle, content)
 
@@ -1400,7 +1618,14 @@ def _save_pose_view(project, source, cast_key, pose, angle, content):
 	if sam2_configured():
 		content, mask_evidence = cutout_studio_reference(content)
 		motion_source = frappe.db.get_value("Asset Version", source.asset_version, "file")
-		if not _accept_pose_view(content, motion_source, pose, angle, identity_image=source_url):
+		if not _accept_pose_view(
+			content,
+			motion_source,
+			pose,
+			angle,
+			identity_image=source_url,
+			allowed_accessories=lambda: character_accessories(project, source.get("identity_key")),
+		):
 			raise ValueError("The final masked pose no longer passes original-reference qualification.")
 	frappe.db.commit()  # Do not hold a transaction across GPU rendering.
 	from joymedia.services.intake.assets import create_media_asset
@@ -1466,7 +1691,7 @@ def _save_pose_view(project, source, cast_key, pose, angle, content):
 	return project.selected_media[-1]
 
 
-def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=None):
+def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=None, _known_failures=None):
 	"""Resolve script-required character states before importing the storyboard."""
 	from joymedia.services.project.reference_lineage import lineage_identity
 
@@ -1489,15 +1714,24 @@ def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=Non
 	# The storyboard must not start from an unknown body state.  Retry the planner
 	# once, then return explicit deferred evidence for the batch gate instead of
 	# silently falling back to the uploaded seated reference.
+	from joymedia.services.planning.production import PlannerUnavailableError
+
+	reason = "pose plan unavailable"
 	for attempt in range(2):
 		try:
 			states = _plan_required_states(script, selected)
 			break
-		except Exception:
+		except Exception as exc:
 			frappe.log_error(title=f"Pose planner attempt {attempt + 1} deferred for {project.name}")
+			# Only an unreachable service is an outage to wait out; a rejected plan is not.
+			reason = (
+				"pose plan unavailable"
+				if isinstance(exc, PlannerUnavailableError)
+				else f"pose plan rejected: {str(exc)[:200]}"
+			)
 	else:
 		return [
-			{"scene": i + 1, "source": key, "status": "deferred", "reason": "pose plan unavailable"}
+			{"scene": i + 1, "source": key, "status": "deferred", "reason": reason}
 			for i, scene in enumerate(script.get("scenes") or [])
 			for key in scene.get("cast") or []
 			if key in by_key
@@ -1507,11 +1741,12 @@ def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=Non
 	if on_plan:
 		on_plan(states)
 	prepared = []
-	failed_pose_keys = {}
+	# A later pass inherits poses that already failed instead of generating them again.
+	failed_pose_keys = _known_failures[0] if _known_failures else {}
 	# Gesture variants of one body support (a paw near a pack, near a tissue) fail
 	# for the same reason. After one failed generation, the rest bind the closest
 	# approved view of that support instead of spending another GPU pass each.
-	failed_supports = set()
+	failed_supports = _known_failures[1] if _known_failures else set()
 	for state in states:
 		scene = script["scenes"][state["scene_index"]]
 		cast_key = state["cast_key"]
@@ -1768,4 +2003,25 @@ def prepare_script_pose_views(project, script, _retry_deferred=True, on_plan=Non
 			if isinstance(exc, ComfyJobLostError):
 				raise
 			frappe.log_error(title=f"Pose retry pass deferred for {project.name}")
+	# A grip already in place at the opening cannot use a relaxed view. When no
+	# working-arm view qualified, move the grasp into the clip and prepare once more.
+	if _retry_deferred:
+		restaged = restage_held_openings(
+			script, [row["scene"] for row in prepared if row["status"] == "deferred" and row.get("scene")]
+		)
+		if restaged:
+			from joymedia.services.planning.reference_plan import ground_generated_inventory
+
+			ground_generated_inventory(script)
+			project.reload()
+			prepared = prepare_script_pose_views(
+				project,
+				script,
+				_retry_deferred=False,
+				on_plan=on_plan,
+				_known_failures=(failed_pose_keys, failed_supports),
+			)
+			for row in prepared:
+				if row.get("scene") in restaged:
+					row["restaged_opening"] = True
 	return prepared

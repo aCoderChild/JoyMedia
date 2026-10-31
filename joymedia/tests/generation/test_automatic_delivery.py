@@ -69,11 +69,14 @@ class TestAutomaticDelivery(TestCase):
 				return_value={"run": "new-run", "status": "Queued"},
 			) as generate,
 			patch.object(cb, "pinned_execution", return_value=nullcontext()),
+			patch("frappe.get_all", return_value=["SHOT-PHOTO", "SHOT-DRAWN"]),
+			patch.object(cb, "_explicit_first_frame", side_effect=lambda name: name == "SHOT-PHOTO"),
 			patch.object(cb, "_write"),
 		):
 			self.assertTrue(cb._refresh_automatic_frame_policy(batch, variants, 0, project))
 		cancel.assert_called_once_with("old-run")
-		generate.assert_called_once_with("project", draw_places=False, automatic=True)
+		# Scenes that open on the product photograph are not redrawn by a checker update.
+		generate.assert_called_once_with("project", ["SHOT-DRAWN"], draw_places=False, automatic=True)
 		self.assertEqual(snapshot, run.project_snapshot_json)
 		self.assertEqual("new-run", variants[0]["keyframe_request"]["run"])
 		self.assertEqual("old-run", variants[0]["frame_policy_refreshes"][0]["run"])

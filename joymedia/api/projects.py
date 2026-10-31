@@ -18,6 +18,7 @@ from joymedia.services.project.context import (
 	_get_latest_project_generation_run,
 	_get_project_selected_assets,
 	_normalize_generation_mode,
+	_project_inputs,
 	_project_settings,
 	_remaining_render_minutes,
 	_storyboard_payload,
@@ -360,6 +361,7 @@ def get_project_workspace(name):
 			),
 		},
 		"assets": _get_project_selected_assets(project),
+		"inputs": _project_inputs(project),
 		"video_settings": (
 			{
 				"name": project.name,

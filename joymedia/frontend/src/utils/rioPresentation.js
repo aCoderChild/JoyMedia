@@ -29,6 +29,15 @@ export function referenceCategory(reference, assets = []) {
 	return asset?.display_category || asset?.reference_role || reference.reference_role || 'Other';
 }
 
+// Generated poses/angles and crops of a view sheet are derived from an original
+// upload; marking them keeps the customer's own images recognisable.
+export function derivedReference(asset) {
+	const key = asset?.reference_key || '';
+	if (/^(pose_|product_view_)/.test(key) || /\((generated|verified)\)/i.test(asset?.label || '')) return 'generated';
+	if (/_view\d+$/.test(key)) return 'sheet';
+	return null;
+}
+
 export function categoryOptions(asset) {
 	if (asset.media_type === 'Audio') return ['Audio'];
 	return asset.media_type === 'Video'

@@ -550,6 +550,55 @@ def _valid_character_mode(value):
 	return value if value in ("Draw in scene", "Paste exact art") else None
 
 
+def _project_inputs(project):
+	"""The customer's own uploads behind this project, whole view sheets included.
+
+	A video made by a batch lists the references its request supplied; ``used``
+	says whether this video draws from that upload, since its script may keep
+	only one design of a character.
+	"""
+	from joymedia.services.intake.view_sheet import sheet_of
+	from joymedia.services.project.reference_lineage import original_reference
+
+	def upload(version):
+		sheet = sheet_of(version)
+		if sheet:
+			return sheet
+		try:
+			return original_reference(version)["asset_version"]
+		except Exception:
+			return version
+
+	used = {upload(row.asset_version) for row in project.selected_media or [] if row.asset_version}
+	batch = frappe.get_all(
+		"Creative Batch",
+		filters={"variants_json": ["like", f'%"project": "{project.name}"%']},
+		pluck="request_json",
+		order_by="creation desc",
+		limit=1,
+	)
+	rows = (frappe.parse_json(batch[0]) or {}).get("references") if batch else None
+	rows = rows or [row.as_dict() for row in project.selected_media or []]
+	inputs = {}
+	for row in rows:
+		if not row.get("asset_version"):
+			continue
+		version = upload(row["asset_version"])
+		if version in inputs:
+			continue
+		record = frappe.db.get_value("Asset Version", version, ["file", "source"], as_dict=True)
+		if not record or not record.file or record.source == "Generated":
+			continue
+		inputs[version] = {
+			"asset_version": version,
+			"file": record.file,
+			"file_name": record.file.rsplit("/", 1)[-1],
+			"reference_role": row.get("reference_role"),
+			"used": version in used,
+		}
+	return list(inputs.values())
+
+
 def _get_project_selected_assets(project):
 	"""Return project ingredients as immutable Asset Versions, regardless of media type."""
 	if isinstance(project, str):

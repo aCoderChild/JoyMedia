@@ -9,6 +9,7 @@ from joymedia.services.review.physical_audit import (
 	_product_angle_fit_findings,
 	actor_count_findings,
 	compare,
+	fictional_cast_unsized,
 	frame_findings,
 	obvious_geometry_results,
 	opening_actor_support,
@@ -144,6 +145,38 @@ class TestPhysicalAudit(FrappeTestCase):
 		):
 			rows = obvious_geometry_results([b"candidate"], ask=lambda *args, **kwargs: answer)
 			self.assertTrue(all(r["verdict"] == "uncertain" for r in rows))
+
+	def test_an_unsized_fictional_actor_is_not_a_scale_violation_but_objects_are(self):
+		def rows_for(scale):
+			def observe(picture, question, **kwargs):
+				self.assertIn("object", kwargs["schema"]["properties"]["implausible_scale"]["required"])
+				return {
+					"solid_intersection": {"present": False, "evidence": "Separate bodies."},
+					"unsupported_load": {"present": False, "evidence": "Pack rests on the rug."},
+					"implausible_scale": scale,
+				}
+
+			rows = obvious_geometry_results([b"frame"], ask=observe, fictional_cast=True)
+			return next(r for r in rows if r["id"] == "geometry.implausible_scale")
+
+		actor = rows_for({"present": True, "evidence": "Bear larger than the sofa.", "object": "actor"})
+		self.assertEqual("supported", actor["verdict"])
+		self.assertIn("Uncalibrated fictional actor", actor["reason"])
+		furniture = rows_for(
+			{"present": True, "evidence": "Pack larger than the table.", "object": "product"}
+		)
+		self.assertEqual("violated", furniture["verdict"])
+		missing = rows_for({"present": True, "evidence": "Something is huge."})
+		self.assertEqual("uncertain", missing["verdict"])
+
+	def test_only_an_unsized_fictional_cast_skips_actor_scale(self):
+		def scene(*roles, prompt=""):
+			return {"references": [{"reference_role": r} for r in roles], "image_prompt": prompt}
+
+		self.assertTrue(fictional_cast_unsized(scene("Character", "Product")))
+		self.assertFalse(fictional_cast_unsized(scene("Character", "Person")))
+		self.assertFalse(fictional_cast_unsized(scene("Product")))
+		self.assertFalse(fictional_cast_unsized(scene("Character", prompt="The mascot is 1.2 m tall.")))
 
 	def test_coherent_physical_evidence_can_pass_without_fixed_furniture_dimensions(self):
 		rows = obvious_geometry_results(
@@ -427,6 +460,28 @@ class TestPhysicalAudit(FrappeTestCase):
 		}
 		self.assertTrue(any("table or work surface" in note for note in compare(bad, **SCENE)))
 
+	def test_a_large_actor_seated_on_a_rug_is_not_outsizing_furniture(self):
+		def description(support):
+			return {
+				"figures": [
+					{
+						"who": "bear",
+						"supported_by": support,
+						"passes_through": "empty",
+						"size_vs_support": "larger",
+					}
+				],
+				"product_packages": 1,
+			}
+
+		for support in ("rug", "the living room carpet", "a floor mat"):
+			with self.subTest(support=support):
+				self.assertEqual([], compare(description(support), **SCENE))
+		self.assertIn(
+			"Critical geometry: bear is larger than the furniture it uses",
+			compare(description("a small armchair"), **SCENE),
+		)
+
 	def test_product_placement_is_checked_against_any_visible_environment(self):
 		# These are reviewer observations, not a table- or brand-specific heuristic.
 		# A package can be staged on any supplied support, provided its projective
@@ -493,3 +548,28 @@ class TestRenderingMedium(FrappeTestCase):
 		changes = normalize_product_wording(script, [])
 		self.assertEqual("Warm layered practical light.", script["visual_style"])
 		self.assertTrue(any("flat drawing medium" in change for change in changes))
+
+
+class TestHeldTissueIsNotAPackage(FrappeTestCase):
+	def test_only_a_described_container_counts_as_a_package(self):
+		from joymedia.services.review.physical_audit import describes_package
+
+		# Recorded descriptions of frames the audit had flagged (2026-10-30).
+		self.assertFalse(
+			describes_package("The character holds a rectangular tissue paper with rounded corners.")
+		)
+		self.assertFalse(
+			describes_package(
+				"The character holds a small, rectangular tissue box with rounded corners. The box appears to be made of a soft, possibly paper-like material."
+			)
+		)
+		self.assertFalse(
+			describes_package(
+				"A small, rectangular object with rounded corners and thin edges, possibly plastic."
+			)
+		)
+		self.assertTrue(
+			describes_package(
+				"The character holds a rectangular tissue box. The box appears to be made of cardboard with a printed label."
+			)
+		)

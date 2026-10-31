@@ -284,7 +284,11 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		),
 	)
 	report = run_temporal_check(check, configured=frappe._dict(policy["judge"]))
-	from joymedia.services.review.physical_audit import obvious_geometry_results, scale_is_calibrated
+	from joymedia.services.review.physical_audit import (
+		fictional_cast_unsized,
+		obvious_geometry_results,
+		scale_is_calibrated,
+	)
 	from joymedia.services.review.sheet_observation import sheet_marking_results
 
 	calibrated_scale = scale_is_calibrated(scene)
@@ -298,12 +302,21 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		else "",
 		configured=frappe._dict(policy["judge"]),
 		scale_calibrated=calibrated_scale,
+		fictional_cast=fictional_cast_unsized(scene),
 	)
 	report["scale_calibration"] = {
 		"available": calibrated_scale,
 		"limitation": "Absolute height of an unspecified fictional actor is not inferred from an image crop. Reference proportions, support and contact remain separately screened.",
 	}
-	material = sheet_marking_results(pictures, scene, configured=frappe._dict(policy["judge"]))
+	has_cast = any(
+		str(r.get("role") or r.get("reference_role") or "").lower()
+		in {"character", "person", "people", "talent"}
+		for r in ((scene.get("consistency_plan") or {}).get("identities") or scene.get("references") or [])
+	)
+	# A product-only shot handles no loose sheet; its product name ("Facial Tissue") is not one.
+	material = (
+		sheet_marking_results(pictures, scene, configured=frappe._dict(policy["judge"])) if has_cast else []
+	)
 	report["results"].extend(material)
 	report["required_claim_ids"].extend(r["id"] for r in material)
 	report["results"].extend(geometry)
@@ -337,7 +350,28 @@ def inspect_file(path, media_type, scene, policy, evidence_name):
 		value, reason = answer.get("count"), answer.get("reason")
 		valid = type(value) is int and value >= 0 and isinstance(reason, str) and bool(reason.strip())
 		counts.append(dict(frame=i, count=value if valid else None, reason=str(reason or "")[:500]))
-	excess = [r for r in counts if r["count"] is not None and r["count"] > len(cast)]
+	allowed = len(cast)
+	opening = next(
+		(
+			r.get("asset_version")
+			for r in scene.get("references") or []
+			if str(r.get("reference_role") or "").lower() == "first_frame" and r.get("asset_version")
+		),
+		None,
+	)
+	if not cast and opening:
+		# The approved opening is the source photo: characters printed on its pack are
+		# artwork the judge may count. Only figures beyond that photo are extra actors.
+		asset = frappe.get_doc("Asset Version", opening)
+		baseline = ask(
+			Path(frappe.get_doc("File", {"file_url": asset.file}).get_full_path()).read_bytes(),
+			COUNT,
+			configured=frappe._dict(policy["judge"]),
+		).get("count")
+		if type(baseline) is int and baseline > 0:
+			allowed = baseline
+			report["cast_baseline"] = {"opening": opening, "count": baseline}
+	excess = [r for r in counts if r["count"] is not None and r["count"] > allowed]
 	unknown = [r for r in counts if r["count"] is None]
 	report["results"].append(
 		dict(

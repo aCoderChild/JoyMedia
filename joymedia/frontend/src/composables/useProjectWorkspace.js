@@ -95,6 +95,7 @@ export function useProjectWorkspace(projectName) {
   const projectTitle = computed(() => workspace.value?.family?.project_name || workspace.value?.project?.project_name || project());
   const projectStatus = computed(() => workspace.value?.project?.status || "Draft");
   const projectAssets = computed(() => workspace.value?.assets || []);
+  const projectInputs = computed(() => workspace.value?.inputs || []);
   const storyboard = computed(() => workspace.value?.storyboard || null);
   const storyboardShots = computed(() => {
     if (Array.isArray(storyboard.value)) {
@@ -140,6 +141,7 @@ export function useProjectWorkspace(projectName) {
     projectTitle,
     projectStatus,
     projectAssets,
+    projectInputs,
     storyboard,
     storyboardShots,
     currentOutputAssetVersion,

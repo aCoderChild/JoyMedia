@@ -122,6 +122,7 @@
 			:can-restore="Boolean(workspace?.family?.archived) && !access.reviewer"
 			:current-lang="currentLang"
 			:assets="projectAssets"
+			:inputs="projectInputs"
 			:selected-asset="selectedAsset"
 			:shots="storyboardShots"
 			:selected-shot-index="selectedShotIndex"
@@ -972,6 +973,7 @@ const {
 	projectTitle,
 	projectStatus,
 	projectAssets,
+	projectInputs,
 	storyboard,
 	storyboardShots,
 	currentOutputAssetVersion,

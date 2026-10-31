@@ -90,6 +90,32 @@ def _view_name(crop, index):
 	return view if view in {"front", "three-quarter front", "side", "back"} else f"view {index}"
 
 
+TURNAROUND_ORDER = ("front", "three-quarter front", "side", "back")
+
+
+def _view_names(crops):
+	"""Name each crop; a four-view sheet the observer cannot tell apart follows turnaround order.
+
+	The observer often calls a three-quarter view "front", which would leave two
+	"front" views. Character turnaround sheets conventionally run front,
+	three-quarter, side, back.
+	"""
+	names = [_view_name(crop, index) for index, crop in enumerate(crops, start=1)]
+	if len(crops) == len(TURNAROUND_ORDER) and len(set(names)) < len(names):
+		return list(TURNAROUND_ORDER)
+	return names
+
+
+def sheet_of(asset_version):
+	"""The uploaded view sheet an asset was cropped from, else None."""
+	manifest = frappe.parse_json(
+		frappe.db.get_value("Asset Version", asset_version, "edit_manifest_json") or "{}"
+	)
+	if isinstance(manifest, dict) and manifest.get("operation") == "view_sheet_crop":
+		return manifest.get("source_asset_version")
+	return None
+
+
 def split_project_view_sheets(project_name):
 	"""Replace each character sheet among the project's references with its separate views. Idempotent."""
 	from frappe.utils.file_manager import save_file
@@ -118,8 +144,9 @@ def split_project_view_sheets(project_name):
 		# "Gấu Shera (round cream body, ...)" -> "Gấu Shera"; the description stays on the original.
 		label = (row.label or row.reference_key or "Character").split(" (")[0].strip()[:80]
 		stem = frappe.scrub(row.reference_key or "character")
+		names = _view_names(crops)
 		for index, crop in enumerate(crops, start=1):
-			view = _view_name(crop, index)
+			view = names[index - 1]
 			file_doc = save_file(
 				f"{stem}-{frappe.scrub(view)}.png",
 				crop,
@@ -128,6 +155,17 @@ def split_project_view_sheets(project_name):
 				is_private=1,
 			)
 			asset = create_media_asset(f"{label} {view}", category, file_url=file_doc.file_url)
+			# The crop is one view of the sheet the customer uploaded; that sheet stays
+			# their reference. Identity lineage deliberately does not follow this link.
+			frappe.db.set_value(
+				"Asset Version",
+				asset["asset_version"],
+				"edit_manifest_json",
+				frappe.as_json(
+					{"operation": "view_sheet_crop", "source_asset_version": row.asset_version, "view": view}
+				),
+				update_modified=False,
+			)
 			project.append(
 				"selected_media",
 				{

@@ -53,7 +53,7 @@ const activeIndex=computed(()=>props.shots.findIndex(shot=>shot.name===activeSho
 const activeDraft=computed(()=>drafts[activeShot.value?.name]);
 const blocked=computed(()=>!props.canEdit || props.busy || saving.value);
 const totalDuration=computed(()=>Number(props.shots.reduce((sum,shot)=>sum+Number(shot.duration_seconds||0),0).toFixed(2)));
-const secondsLabel=value=>Number(Number(value||0).toFixed(2));
+const secondsLabel=value=>Number(Number(value||0).toFixed(1));
 const secondsInput=value=>Number(Number(value||0).toFixed(3));
 const signature=draft=>JSON.stringify(draft && [draft.title,draft.description,draft.duration,draft.continuity,draft.caption]);
 const dirty=name=>Boolean(drafts[name] && signature(drafts[name])!==baselines[name]);

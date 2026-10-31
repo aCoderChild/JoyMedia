@@ -489,9 +489,12 @@ def _store_artifact_file_in_frappe(artifact, attempt, output=None):
 	lock = {}
 	precheck = None
 	if artifact.media_type == "Image":
+		from joymedia.services.keyframes.detail_crop import crop_to_detail
 		from joymedia.services.keyframes.overlay import paste_subjects_into_keyframe
 		from joymedia.services.review.admission import precheck_image
 
+		# Every check judges the delivered close-up, never the double-size wide drawing.
+		video_bytes = crop_to_detail(attempt, video_bytes)
 		precheck = precheck_image(attempt, artifact, video_bytes)
 		if not precheck:
 			video_bytes = paste_subjects_into_keyframe(attempt, video_bytes, lock=lock)

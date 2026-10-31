@@ -89,6 +89,62 @@ class TestLocationPlates(FrappeTestCase):
 			locations.location_key("Cozy living room"), locations.place_key(project, "Cozy living room")
 		)
 
+	def test_a_place_for_floor_and_table_scenes_keeps_the_open_floor(self):
+		prompts = []
+
+		def capture(*args, inputs=None, **kwargs):
+			prompts.append(inputs["generation_prompt"])
+			raise RuntimeError("captured")
+
+		with (
+			patch.object(
+				locations,
+				"_keyframe_workflow",
+				return_value=frappe._dict(workflow_hash="H", workflow_json="{}"),
+			),
+			patch("joymedia.workflow_adapters.get_workflow_adapter"),
+			patch("joymedia.services.project.context._project_settings", return_value={}),
+			patch("joymedia.services.project.formats.require_dimensions", return_value=(720, 1280)),
+			patch("joymedia.services.planning.prompts._mood", return_value=""),
+			patch("joymedia.services.workflows.resolver.build_execution_workflow", side_effect=capture),
+			patch.object(locations.Path, "exists", return_value=False),
+		):
+			with self.assertRaises(RuntimeError):
+				locations.render_place(
+					frappe._dict(name="P"),
+					"Neutral background",
+					staging="clear foreground floor work area and rug; reachable working table",
+				)
+		self.assertIn("open, empty rug floor area", prompts[0])
+		self.assertIn("low, empty side table stands at the edge of that rug", prompts[0])
+		self.assertNotIn("The main subject is a COMPLETELY EMPTY action tabletop", prompts[0])
+
+	def test_a_neutral_setting_whose_scenes_need_furniture_is_judged_with_that_furniture(self):
+		answers = [
+			{"answer": False},
+			{"answer": False},
+			{"answer": True},
+			{"bbox": [100, 300, 800, 600]},
+			{"answer": False},
+			{"answer": True},
+			{"answer": True, "reason": "A neutral room with a rug and a table."},
+			{"answer": True, "reason": "Open rug beside the table."},
+		]
+		with (
+			patch("joymedia.services.review.consistency.ask", side_effect=answers) as ask,
+			patch.object(locations, "_tabletop_crop", return_value=b"crop"),
+		):
+			self.assertTrue(
+				locations._location_supports_staging(
+					b"plate",
+					"Neutral background",
+					"clear foreground floor work area and rug; reachable working table",
+				)
+			)
+		setting_question = ask.call_args_list[6].args[1]
+		self.assertIn("furnished with a rug and a table", setting_question)
+		self.assertNotIn("does not match a plain studio", setting_question)
+
 	def test_floor_location_rejects_a_table_occupying_its_action_space(self):
 		with patch(
 			"joymedia.services.review.consistency.ask",
@@ -256,6 +312,13 @@ class TestLocationPlates(FrappeTestCase):
 			"Cozy living room with a table",
 			locations._architectural_setting("Cozy living room with a table and the mascot seated."),
 		)
+		self.assertEqual(
+			"Cozy living room with a rug",
+			locations._architectural_setting(
+				"Cozy living room with a rug and a Shera Facial Tissue box nearby."
+			),
+		)
+		self.assertEqual("Table", locations._architectural_setting("Table with tissue visible."))
 
 	def test_location_plate_rejects_missing_action_support(self):
 		with patch(

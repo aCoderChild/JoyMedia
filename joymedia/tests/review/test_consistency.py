@@ -428,6 +428,12 @@ class TestConsistencyLoop(FrappeTestCase):
 			redo.assert_called_once()
 
 	def test_clear_character_on_product_uses_bounded_frame_redraw(self):
+		# The blind support observation independently confirms the package seat.
+		confirmed = patch.object(
+			consistency, "_confirm_cast_on_product", side_effect=lambda failures, shot: failures
+		)
+		confirmed.start()
+		self.addCleanup(confirmed.stop)
 		recorded, redo = self._run(
 			self._shot(), ["Critical geometry: character stands on the advertised product"]
 		)
@@ -762,3 +768,50 @@ class TestTemporalEvidenceRead(FrappeTestCase):
 			patch.object(frappe.db, "get_value", return_value="HASH"),
 		):
 			self.assertIsNone(consistency.get_scene_check_evidence("PROJECT", "SHOT", "TAKE"))
+
+
+class TestCastOnProductConfirmation(FrappeTestCase):
+	def confirm(self, surface):
+		failures = [consistency.CAST_ON_PRODUCT + " (sits on the box)", "Critical prop: other"]
+		with (
+			patch.object(consistency.frappe.db, "get_value", return_value="/frame.png"),
+			patch.object(
+				consistency, "ask", return_value={"evidence": "Base on the rug.", "surface": surface}
+			) as ask,
+		):
+			result = consistency._confirm_cast_on_product(failures, frappe._dict(keyframe_artifact="A"))
+		ask.assert_called_once()
+		return result
+
+	def test_a_package_in_front_of_the_feet_is_not_a_seat(self):
+		self.assertEqual(["Critical prop: other"], self.confirm("floor_or_rug"))
+		self.assertEqual(["Critical prop: other"], self.confirm("unclear"))
+
+	def test_an_independently_confirmed_package_seat_stays_critical(self):
+		self.assertEqual(2, len(self.confirm("product_package")))
+
+
+class TestRepeatedRedrawReason(FrappeTestCase):
+	def test_a_redraw_failing_for_its_own_reason_is_not_redrawn_again(self):
+		from joymedia.services.review import consistency as c
+
+		shot = frappe._dict(name="S3", keyframe_artifact="GART-1")
+		snapshot = '{"shots": [{"shot": "S3", "keyframe_retry_note": "Critical framing: full character body appears in a close product/action detail (bear)"}]}'
+		values = {
+			"generation_attempt": "ATT",
+			"generation_task": "TASK",
+			"generation_run": "RUN",
+			"project_snapshot_json": snapshot,
+		}
+		with patch("frappe.db.get_value", side_effect=lambda doctype, name, field: values[field]):
+			self.assertTrue(
+				c._repeats_redraw_reason(
+					shot,
+					[
+						"Critical framing: full character body appears in a close product/action detail (again)"
+					],
+				)
+			)
+			self.assertFalse(
+				c._repeats_redraw_reason(shot, ["Critical identity: character eye design changed"])
+			)

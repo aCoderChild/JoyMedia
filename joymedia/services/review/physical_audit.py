@@ -57,6 +57,20 @@ def scale_is_calibrated(scene):
 	roles = {str(r.get("reference_role") or "").lower() for r in scene.get("references") or []}
 	if roles & {"product", "person", "people", "talent"}:
 		return True
+	return _authored_dimensions(scene)
+
+
+def fictional_cast_unsized(scene):
+	"""A product anchors object scale, but not the size of a fictional character."""
+	roles = {str(r.get("reference_role") or "").lower() for r in scene.get("references") or []}
+	return (
+		"character" in roles
+		and not roles & {"person", "people", "talent"}
+		and not _authored_dimensions(scene)
+	)
+
+
+def _authored_dimensions(scene):
 	text = " ".join(
 		str(scene.get(k) or "") for k in ("image_prompt", "generation_prompt", "motion_plan_json")
 	)
@@ -69,7 +83,9 @@ def scale_is_calibrated(scene):
 	)
 
 
-def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None, scale_calibrated=True):
+def obvious_geometry_results(
+	pictures, *, opening="", configured=None, ask=None, scale_calibrated=True, fictional_cast=False
+):
 	"""Observe positive defects, then negate strict evidence in code.
 
 	These checks also run on decoded video, after source-art compositing. An
@@ -93,12 +109,25 @@ def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None,
 			"evidence": {"type": "string", "minLength": 1},
 		},
 	}
+	# Name the object whose scale looks wrong, so an unsized fictional actor's
+	# size can be excluded in code rather than by asking the judge to ignore it.
+	scale_schema = {
+		**defect_schema,
+		"required": ["present", "evidence", "object"],
+		"properties": {
+			**defect_schema["properties"],
+			"object": {"type": "string", "enum": ["actor", "product", "furniture", "other", "none"]},
+		},
+	}
 	schema = {
 		"type": "object",
 		"additionalProperties": False,
 		"required": [*defects, "actor_support"],
 		"properties": {
-			**{key: defect_schema for key in defects},
+			**{
+				key: scale_schema if key == "implausible_scale" and fictional_cast else defect_schema
+				for key in defects
+			},
 			"actor_support": {
 				"type": "object",
 				"additionalProperties": False,
@@ -129,6 +158,12 @@ def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None,
 			"unsupported_load means a stationary object visibly floats without support or a grip. "
 			+ (
 				"implausible_scale means an object has clearly impossible scale relative to nearby objects. "
+				+ (
+					"For implausible_scale, object names the object whose scale is wrong: actor for the "
+					"foreground fictional actor, otherwise product, furniture or other; none if no defect. "
+					if fictional_cast
+					else ""
+				)
 				if scale_calibrated
 				else "The fictional actor has no calibrated absolute height; do not invent a world-space size from its reference crop. "
 			)
@@ -167,6 +202,13 @@ def obvious_geometry_results(pictures, *, opening="", configured=None, ask=None,
 				}
 			row = row if isinstance(row, dict) else {}
 			value, evidence = row.get("present"), row.get("evidence")
+			if key == "implausible_scale" and fictional_cast:
+				if row.get("object") not in {"actor", "product", "furniture", "other", "none"}:
+					value = None
+				elif value is True and row.get("object") == "actor":
+					# The fictional actor has no calibrated size to violate.
+					value = False
+					evidence = "Uncalibrated fictional actor size, not judged: " + str(evidence or "")
 			valid = type(value) is bool and isinstance(evidence, str) and bool(evidence.strip())
 			rows.append(
 				dict(frame=index, present=value if valid else None, evidence=str(evidence or "")[:500])
@@ -264,6 +306,29 @@ RETAIL_FORM_PROMPT = (
 	"folded/crumpled/printed, is single_loose_sheet or folded_loose_material, never enclosed_retail_volume merely because "
 	"of a drawing or brand context. Report objects [{physical_form,visible_evidence}]. Use unclear if form cannot be resolved."
 )
+# A fixed list of answers made the judge copy a label; a free description of the held
+# object separates a tissue from a printed carton, and code reads it.
+PACKAGE_DESCRIBE = (
+	"Describe, in two or three sentences, each object the character holds or that lies near it: its shape, "
+	"edges, thickness and material. Return JSON description string."
+)
+PACKAGE_DESCRIBE_SCHEMA = {
+	"type": "object",
+	"additionalProperties": False,
+	"required": ["description"],
+	"properties": {"description": {"type": "string", "minLength": 10}},
+}
+CONTAINER_WORD = re.compile(r"\b(?:box|carton|package|packet|pack|wrapper|container)s?\b", re.I)
+CONTAINER_EVIDENCE = re.compile(
+	r"\b(?:cardboard|printed|print|label|logo|brand\w*|text|lettering|slot|dispens\w*|sealed|lid)\b", re.I
+)
+
+
+def describes_package(description):
+	"""A container word plus physical container evidence; "tissue box" alone is often a held tissue."""
+	return bool(CONTAINER_WORD.search(description) and CONTAINER_EVIDENCE.search(description))
+
+
 RETAIL_FORM_SCHEMA = {
 	"type": "object",
 	"additionalProperties": False,
@@ -488,19 +553,8 @@ def reference_fit_findings(shot, frame, ask=None):
 			# Observe each image independently so the source traits are not copied
 			# into a description of a changed frame. The eye question explicitly
 			# excludes characters printed on the product package.
-			source_eyes = (ask(identity_url, EYE_DESIGN_QUESTION, max_edge=1024) or {}).get("eye_shape")
-			frame_eyes = (ask(frame, EYE_DESIGN_QUESTION, max_edge=1024) or {}).get("eye_shape")
-			# A smiling (^ ^) and a sleeping closed-eye drawing are different designs.
-			closed_drawings = {"closed_smiling_arcs", "closed_sleeping_arcs"}
-			if (
-				source_eyes in KNOWN_EYE_SHAPES
-				and frame_eyes in KNOWN_EYE_SHAPES
-				and (
-					source_eyes.startswith("closed") != frame_eyes.startswith("closed")
-					or ({source_eyes, frame_eyes} <= closed_drawings and source_eyes != frame_eyes)
-				)
-			):
-				issues.append(f"Critical identity: {role} eye design changed from the original reference")
+			# Open, closed or smiling eyes are expressions of the same mascot (user, 2026-10-31),
+			# not an identity change, so the eye drawing is not compared.
 			# Every check passed a smooth vinyl mascot redrawn as a fluffy plush teddy.
 			source_surface = character_look(identity_url).get("surface")
 			frame_surface = character_look(frame).get("surface")
@@ -512,12 +566,27 @@ def reference_fit_findings(shot, frame, ask=None):
 				"head_accessories"
 			)
 			frame_head = (ask(frame, HEAD_ACCESSORY_QUESTION, max_edge=768) or {}).get("head_accessories")
-			# Additions are observable even if the original has no accessory.
-			# Absence in a frame can merely mean that the head is out of view.
-			if source_head == [] and isinstance(frame_head, list) and frame_head:
-				issues.append(
-					f"Critical identity: {role} has new head accessories absent from the original reference"
-				)
+			# Additions are observable even if the original has no accessory. An accessory on
+			# any of the customer's own references of this character (the flower) may be worn
+			# or left off; absence can also mean the head is out of view.
+			if isinstance(source_head, list) and isinstance(frame_head, list) and frame_head:
+				from joymedia.services.planning.pose_assets import accessories_allowed, character_accessories
+
+				if not accessories_allowed(
+					source_head,
+					frame_head,
+					lambda: character_accessories(
+						frappe.get_doc("Media Project", shot.media_project),
+						frappe.db.get_value(
+							"Project Reference",
+							{"parent": shot.media_project, "asset_version": row.asset_version},
+							"identity_key",
+						),
+					),
+				):
+					issues.append(
+						f"Critical identity: {role} has new head accessories absent from the original reference"
+					)
 		if not isinstance(answer, dict) or answer.get("comparable") is not True:
 			issues.append(
 				f"Reference fit review: {role} identity and proportions are not visible well enough to verify."
@@ -656,7 +725,8 @@ def compare(
 		if (
 			str(figure.get("size_vs_support") or "").lower().startswith("larger")
 			and support not in NOTHING
-			and not re.search(r"\b(?:floor|ground|earth)\b", support)
+			# A rug, carpet or mat covers the floor; it is not furniture to outsize.
+			and not re.search(r"\b(?:floor|ground|earth|rug|carpet|mat)\b", support)
 		):
 			issues.append(f"Critical geometry: {who} is larger than the furniture it uses")
 	if description.get("human_body_parts") is True and not human_cast:
@@ -721,6 +791,17 @@ def frame_findings(project, shot, frame):
 	gaps = []
 	objects = ask(frame, RETAIL_FORM_PROMPT, max_edge=1024, schema=RETAIL_FORM_SCHEMA)
 	containers = retail_container_count(objects)
+	if containers and "product" not in roles:
+		# The judge repeatedly copied the container definition as "evidence" for a tissue
+		# held in the paws. A product-free scene keeps the finding only when a free
+		# description of the object also shows a container.
+		seen = str(
+			ask(frame, PACKAGE_DESCRIBE, max_edge=1024, schema=PACKAGE_DESCRIBE_SCHEMA).get("description")
+			or ""
+		)
+		description["package_confirmation"] = seen
+		if not describes_package(seen):
+			containers = 0
 	description["broad_package_counts"] = {
 		key: description.get(key) for key in ("product_packages", "other_retail_packages")
 	}

@@ -28,6 +28,16 @@ FREE_HANDS = re.compile(
 HELD_OBJECT = re.compile(r"\b(?:hold(?:s|ing)?|carr(?:y|ies|ying)|grip(?:s|ping)?|clutch(?:es|ing)?)\b", re.I)
 
 
+LIMB_SUBJECT = re.compile(
+	r"\b(?:paws?|hands?|arms?|fingers?|head|feet|foot|legs?|tail)\W*(?:\w+\W+){0,2}$", re.I
+)
+
+
+def _whole_body_upright(text):
+	"""An upright or locomotion word whose subject is the character, not a limb ("its paw moves towards ...")."""
+	return any(not LIMB_SUBJECT.search(text[: m.start()]) for m in UPRIGHT.finditer(text))
+
+
 def required_pose(action, structure=None):
 	"""Return the opening-body state that makes a shot's first action feasible."""
 	text = str(action or "")
@@ -35,9 +45,9 @@ def required_pose(action, structure=None):
 		r"\b(?:walk|run|travel)\b", text[: STAND_UP.search(text).start()], re.I
 	):
 		return "seated_supported"
-	if SEATED.search(text) and not UPRIGHT.search(text):
+	if SEATED.search(text) and not _whole_body_upright(text):
 		return "seated_supported"
-	if UPRIGHT.search(text) or (structure or {}).get("subject_motion") == "locomotion":
+	if _whole_body_upright(text) or (structure or {}).get("subject_motion") == "locomotion":
 		return "upright_supported"
 	if LOW_SUPPORT.search(text):
 		return "low_supported"

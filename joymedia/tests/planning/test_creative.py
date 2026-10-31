@@ -2233,11 +2233,12 @@ class TestCreativeWorkflow(FrappeTestCase):
 		variant = frappe.parse_json(batch.variants_json)[0]
 		from joymedia.services.generation import creative_batch
 
-		# Scene repairs are spent: a remaining critical frame cannot be animated.
+		# Scene repairs and new concepts are spent: a remaining critical frame cannot be animated.
 		variant.update(
 			project=self.project.name,
 			status="Keyframes",
 			automatic_scene_rewrites=creative_batch.AUTOMATIC_SCENE_REWRITES,
+			automatic_script_redraws=creative_batch.AUTOMATIC_SCRIPT_REDRAWS,
 		)
 		batch.db_set(
 			{
@@ -2652,6 +2653,94 @@ class TestCreativeWorkflow(FrappeTestCase):
 			advance_batch(batch.name)
 		voice.assert_called_once_with(self.project.name, "SHOT-VOICE")
 		export.assert_called_once_with(self.project.name, purpose="review")
+
+	def automatic_finishing_batch(self):
+		batch = self.batch()
+		request = frappe.parse_json(batch.request_json)
+		request.update(auto_render=True, delivery_mode="automatic")
+		variant = frappe.parse_json(batch.variants_json)[0]
+		variant.update(project=self.project.name, status="Finishing")
+		batch.db_set(
+			{
+				"status": "Finishing",
+				"request_json": frappe.as_json(request),
+				"variants_json": frappe.as_json([variant]),
+			}
+		)
+		return batch
+
+	def test_dropped_automatic_narration_is_retried_before_stopping(self):
+		from joymedia.services.generation import creative_batch
+		from joymedia.services.generation.creative_batch import advance_batch
+
+		batch = self.automatic_finishing_batch()
+		self.project.db_set("post_production_status", "Completed")
+		cue = {"role": "Voiceover", "scheduled": False, "shot": "SHOT-VOICE"}
+		with (
+			patch("joymedia.services.audio.plan.build_audio_plan", return_value=[cue]),
+			patch(
+				"joymedia.services.audio.speech.generate_voiceover", side_effect=RuntimeError("speech lost")
+			),
+			patch("joymedia.services.editing.export_jobs.queue_project_timeline_export") as export,
+			patch("frappe.log_error"),
+			patch.object(frappe.db, "rollback"),
+			patch.object(frappe.db, "commit"),
+		):
+			for _ in range(creative_batch.AUTOMATIC_VOICEOVER_RETRIES):
+				advance_batch(batch.name)
+				variant = frappe.parse_json(batch.reload().variants_json)[0]
+				self.assertEqual("Finishing", variant["status"])
+			advance_batch(batch.name)
+		export.assert_not_called()
+		variant = frappe.parse_json(batch.reload().variants_json)[0]
+		self.assertEqual("Needs Attention", variant["status"])
+		self.assertIn("speech lost", variant["error"])
+
+	def test_a_location_job_that_died_is_resubmitted_within_its_budget(self):
+		from joymedia.services.generation import creative_batch
+		from joymedia.services.generation.creative_batch import advance_batch
+
+		batch = self.automatic_finishing_batch()
+		variant = frappe.parse_json(batch.variants_json)[0]
+		variant.update(status="Locations", location_job="dead-job")
+		batch.db_set({"status": "Rendering", "variants_json": frappe.as_json([variant])})
+		with (
+			patch.object(creative_batch, "is_render_alive", return_value=False),
+			patch.object(creative_batch, "_restart_incompatible_package_openings", return_value=False),
+			patch("joymedia.services.keyframes.locations.missing_places", return_value={"room": "Room"}),
+			patch("joymedia.services.keyframes.locations.missing_views", return_value={}),
+			patch("frappe.enqueue") as enqueue,
+			patch.object(frappe.db, "rollback"),
+			patch.object(frappe.db, "commit"),
+		):
+			for _ in range(creative_batch.AUTOMATIC_LOCATION_RETRIES):
+				advance_batch(batch.name)
+				self.assertEqual("Locations", frappe.parse_json(batch.reload().variants_json)[0]["status"])
+			advance_batch(batch.name)
+		located = [c for c in enqueue.call_args_list if "draw_project_places" in c.args[0]]
+		self.assertEqual(creative_batch.AUTOMATIC_LOCATION_RETRIES, len(located))
+		variant = frappe.parse_json(batch.reload().variants_json)[0]
+		self.assertEqual("Needs Attention", variant["status"])
+		self.assertIn("Shared-setting preparation", variant["error"])
+
+	def test_failed_automatic_finishing_is_requeued_within_its_budget(self):
+		from joymedia.services.generation import creative_batch
+		from joymedia.services.generation.creative_batch import advance_batch
+
+		batch = self.automatic_finishing_batch()
+		self.project.db_set({"post_production_status": "Failed", "post_production_error": "ffmpeg died"})
+		with (
+			patch("joymedia.services.editing.post_production.queue_post_production_internal") as finish,
+			patch.object(frappe.db, "rollback"),
+			patch.object(frappe.db, "commit"),
+		):
+			for _ in range(creative_batch.AUTOMATIC_FINISHING_RETRIES):
+				advance_batch(batch.name)
+			advance_batch(batch.name)
+		self.assertEqual(creative_batch.AUTOMATIC_FINISHING_RETRIES, finish.call_count)
+		variant = frappe.parse_json(batch.reload().variants_json)[0]
+		self.assertEqual("Needs Attention", variant["status"])
+		self.assertEqual("ffmpeg died", variant["error"])
 
 	def test_failed_render_resumes_only_after_complete_native_selection_and_not_cancellation(self):
 		from joymedia.services.generation.creative_batch import advance_batch
@@ -3819,3 +3908,141 @@ class TestViewerTranslation(TestCase):
 			self.assertRaisesRegex(ValueError, "could not be translated"),
 		):
 			localize_viewer_text(sample_script(), "Vietnamese")
+
+
+class TestProductHeroStructure(TestCase):
+	def scenes(self):
+		return [
+			{"cast": [], "products": ["pack"], "duration_seconds": 2.5, "action": "[0-2.5s] The pack rests."},
+			{
+				"cast": ["mascot"],
+				"products": [],
+				"duration_seconds": 3.5,
+				"action": "[0-1.5s] The mascot lifts the tissue.\n[1.5-3.5s] The mascot unfolds it.",
+			},
+			{
+				"cast": ["mascot"],
+				"products": [],
+				"duration_seconds": 3.5,
+				"action": "[0-3.5s] The mascot folds it.",
+			},
+			{"cast": [], "products": ["pack"], "duration_seconds": 2.5, "action": "[0-2.5s] The pack rests."},
+		]
+
+	def test_product_open_and_close_with_paced_character_scenes_pass(self):
+		from joymedia.services.planning.creative import product_hero_defects
+
+		product_hero_defects(self.scenes())
+
+	def test_structure_and_pacing_violations_name_each_scene(self):
+		from joymedia.services.planning.creative import product_hero_defects
+
+		scenes = self.scenes()
+		scenes[0]["cast"] = ["mascot"]
+		scenes[1]["products"] = ["pack"]
+		scenes[2].update(duration_seconds=1.5, action="[0-0.5s] Lift.\n[0.5-1.5s] Fold.")
+		scenes[3]["duration_seconds"] = 4.2
+		scenes[1]["action"] = (
+			"[0-1.5s] The mascot reaches towards the pack.\n[1.5-3.5s] It pulls out a tissue."
+		)
+		with self.assertRaises(ValueError) as raised:
+			product_hero_defects(scenes)
+		message = str(raised.exception)
+		for expected in (
+			"scene 1 must be product-only",
+			"scene 2 must be a character scene",
+			"character scene 3 lasts 1.5s",
+			"scene 3 has a 0.5s action phase",
+			"product scene 4 lasts 4.2s",
+		):
+			self.assertIn(expected, message)
+
+	def test_a_character_scene_may_not_take_material_from_the_package(self):
+		from joymedia.services.planning.creative import product_hero_defects
+
+		scenes = self.scenes()
+		scenes[1]["action"] = (
+			"[0-1.5s] The mascot reaches towards the pack.\n[1.5-3.5s] It pulls out a tissue."
+		)
+		with self.assertRaisesRegex(ValueError, "character scene 2 mentions 'pack'"):
+			product_hero_defects(scenes)
+
+	def test_the_first_character_scene_picks_up_material_resting_on_its_support(self):
+		from joymedia.services.planning.creative import product_hero_defects
+
+		scenes = self.scenes()
+		scenes[1]["action"] = "[0-1.5s] The mascot rubs the tissue.\n[1.5-3.5s] The mascot unfolds it."
+		with self.assertRaisesRegex(ValueError, "first phase must pick it up"):
+			product_hero_defects(scenes)
+		scenes[1]["visual_camera"] = "The mascot is seated, holding a tissue in its paws."
+		product_hero_defects(scenes)
+
+	def test_product_hero_shots_are_set_in_code_to_the_exact_source_presentation(self):
+		from joymedia.services.planning.creative import (
+			SOURCE_HOLD_ACTION,
+			normalize_product_hero_edges,
+			product_hero_defects,
+		)
+
+		scenes = self.scenes()
+		scenes[0].update(cast=["mascot"], action="[0-2.5s] A tissue is extracted from the pack.")
+		script = {"scenes": scenes}
+		changes = normalize_product_hero_edges(
+			script, {"product_hero_structure": True, "hero_product": "pack"}
+		)
+		self.assertEqual(2, len(changes))
+		for scene in (scenes[0], scenes[-1]):
+			self.assertEqual(
+				([], ["pack"], "static"), (scene["cast"], scene["products"], scene["camera_move"])
+			)
+			self.assertIn(SOURCE_HOLD_ACTION, scene["action"])
+		product_hero_defects(scenes)
+		self.assertEqual(
+			[], normalize_product_hero_edges({"scenes": self.scenes()}, {"hero_product": "pack"})
+		)
+
+	def test_product_hero_timing_fits_a_frame_snapped_duration(self):
+		from joymedia.services.planning.creative import normalize_product_hero_edges
+		from joymedia.services.planning.timed_actions import read_timed_actions
+
+		scenes = self.scenes()
+		scenes[0]["duration_seconds"] = 37 / 24  # 1.5416…; '{:g}' wrote 1.54167, past the end
+		normalize_product_hero_edges(
+			{"scenes": scenes}, {"product_hero_structure": True, "hero_product": "pack"}
+		)
+		self.assertEqual(1, len(read_timed_actions(scenes[0]["action"], scenes[0]["duration_seconds"])))
+
+	def test_recurring_character_scene_slips_are_repaired_in_code(self):
+		from joymedia.services.planning.creative import (
+			normalize_product_hero_characters,
+			product_hero_defects,
+		)
+
+		scenes = self.scenes()
+		scenes[1].update(
+			visual_camera="The mascot sits on the rug.",
+			action="[0-1.5s] The mascot reaches out with its right paw towards the pack.\n"
+			"[1.5-3.5s] The mascot touches a single tissue from the product pack.",
+		)
+		scenes[2]["action"] = "[0-3.5s] The mascot folds the tissue taken out of the box."
+		changes = normalize_product_hero_characters({"scenes": scenes}, {"product_hero_structure": True})
+		self.assertTrue(changes)
+		self.assertEqual(
+			# The pickup goes into the first phase that handles the tissue.
+			"[0-1.5s] The mascot reaches out with its right paw.\n"
+			"[1.5-3.5s] The character picks up the tissue and then touches a single tissue.",
+			scenes[1]["action"],
+		)
+		self.assertEqual("[0-3.5s] The mascot folds the tissue.", scenes[2]["action"])
+		product_hero_defects(scenes)
+
+	def test_twelve_seconds_allows_at_most_four_scenes_and_states_the_rule(self):
+		from joymedia.services.planning.creative import product_hero_rule, script_schema
+
+		constraints = {"product_hero_structure": True, "duration_seconds": 12.0, "fps": 24}
+		schema = script_schema([], constraints)
+		self.assertEqual(
+			(3, 4), (schema["properties"]["scenes"]["minItems"], schema["properties"]["scenes"]["maxItems"])
+		)
+		self.assertIn("at most 4 scenes", product_hero_rule(constraints))
+		self.assertEqual("", product_hero_rule({"duration_seconds": 12.0}))

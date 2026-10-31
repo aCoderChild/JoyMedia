@@ -17,6 +17,13 @@ from frappe.utils.synchronization import filelock
 
 from joymedia.services.workflows import comfyui
 
+# The drawn pack only proposes where the photograph goes. When the model draws
+# it in slightly different proportions, the photograph may rise above the drawn
+# top (as a fraction of drawn height) or spread evenly past each drawn side (as a
+# fraction of drawn width), provided its base stays on the drawn support line.
+SOURCE_RISE_ABOVE_DRAWN_TOP = 0.2
+SOURCE_SPREAD_PAST_DRAWN_SIDE = 0.1
+
 
 class RetentionRejected(ValueError):
 	"""Prepared output is unusable; never retry it as a transient GPU error."""
@@ -145,13 +152,31 @@ def validate_prepared(image_bytes, patch_bytes, report, source_hash, frozen):
 	# A uniform resize preserves source RGB but can still enlarge the package
 	# beyond its generated support/shadow. This is an image registration tolerance,
 	# not a claim about real-world dimensions or sufficient perspective evidence.
-	for actual, expected, extent in zip(
-		(x, y, x + w, y + h),
-		measured,
-		(measured[2] - measured[0], measured[3] - measured[1]) * 2,
-		strict=True,
-	):
-		if abs(actual - expected) > max(2, 0.05 * extent):
+	extents = (measured[2] - measured[0], measured[3] - measured[1]) * 2
+	registered = [
+		abs(actual - expected) <= max(2, 0.05 * extent)
+		for actual, expected, extent in zip((x, y, x + w, y + h), measured, extents, strict=True)
+	]
+	# A pack drawn a little flatter or narrower than its photograph: the source,
+	# grounded on the drawn base, rises above the drawn top or spreads evenly
+	# past both sides. Its base and support stay registered. A pack drawn in
+	# clearly different proportions is still rejected.
+	rises = (
+		registered[0]
+		and registered[2]
+		and registered[3]
+		and 0 <= measured[1] - y <= SOURCE_RISE_ABOVE_DRAWN_TOP * extents[1]
+	)
+	spreads = (
+		registered[1]
+		and registered[3]
+		and all(
+			0 <= past <= SOURCE_SPREAD_PAST_DRAWN_SIDE * extents[0]
+			for past in (measured[0] - x, x + w - measured[2])
+		)
+	)
+	for matched in registered:
+		if not matched and not (rises or spreads):
 			raise ValueError(
 				"Source product view changes its measured scene footprint; replan the package angle and support instead of enlarging the overlay."
 			)

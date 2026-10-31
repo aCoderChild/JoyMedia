@@ -356,7 +356,19 @@ def _architectural_setting(setting):
 	match = re.search(
 		r"\b(?:mascot|character|actor|person|people|product|package|pack|tissue|box)\b", text, re.I
 	)
-	if match and match.start() >= 12:
+	if match:
+		# Cut at the start of the clause naming the subject, so a product's brand
+		# words ("a Shera Facial Tissue box") or a working prop ("Table with
+		# tissue visible") do not remain as a room object.
+		boundaries = [
+			boundary
+			for boundary in re.finditer(
+				r",|;|\b(?:and|with|where|while|featuring)\b", text[: match.start()], re.I
+			)
+			if text[: boundary.start()].strip()
+		]
+		match = boundaries[-1] if boundaries else (match if match.start() >= 12 else None)
+	if match:
 		text = re.sub(
 			r"\s*(?:(?:,|and|with|where|while|featuring)\s+)?(?:the|a|an|no)?\s*$",
 			"",
@@ -366,7 +378,7 @@ def _architectural_setting(setting):
 	return text.rstrip(" ,.;") or "A neutral setting"
 
 
-def render_place(project, setting, view=False, staging=""):
+def render_place(project, setting, view=False, staging="", variation=0):
 	"""PNG bytes of the empty place (or, `view`, the close view of a split-screen panel's place), drawn by the keyframe
 	workflow from its text alone (no reference images)."""
 	from joymedia.services.project.context import _project_settings
@@ -386,7 +398,15 @@ def render_place(project, setting, view=False, staging=""):
 			"and unobstructed. Keep any explicitly authored furniture outside this working area. "
 			"Do not add furniture, rugs or raised surfaces that the setting does not request. "
 		)
-	if "working table" in staging:
+	if "working table" in staging and "floor work area" in staging:
+		# One room serves a floor scene and a table scene: the floor guidance must survive.
+		table_guidance = (
+			"The foreground is an open, empty rug floor area for a seated actor, fully visible. "
+			"A low, empty side table stands at the edge of that rug, beside the open floor and within arm's "
+			"reach of it; its top is one continuous bare surface and its legs meet the floor. "
+			"Decorative accents belong on background walls or cabinets. "
+		)
+	elif "working table" in staging:
 		table_guidance = (
 			"The main subject is a COMPLETELY EMPTY action tabletop: its entire upper surface "
 			"is one continuous exposed material, edge to edge, with only the surface texture visible. "
@@ -428,7 +448,13 @@ def render_place(project, setting, view=False, staging=""):
 		workflow = build_execution_workflow(
 			workflow_version,
 			inputs={"generation_prompt": prompt},
-			seed=int(hashlib.sha256(f"{prompt}:{attempt}".encode()).hexdigest()[:12], 16),
+			# A resubmitted location job must draw new rooms, not repeat rejected ones.
+			seed=int(
+				hashlib.sha256(
+					(f"{prompt}:{attempt}" + (f":{variation}" if variation else "")).encode()
+				).hexdigest()[:12],
+				16,
+			),
 			width=width,
 			height=height,
 			fps=float(workflow_version.output_fps or 24),
@@ -640,12 +666,25 @@ def _location_supports_staging(content, setting, staging):
 				fit_answer = True
 			if fit_answer is not True:
 				return False
+		# Scenes that need a rug, table or seat need a furnished place, whatever the setting's wording.
+		# The layout checks above already judged placement; name only the pieces here.
+		furnished = sorted(set(re.findall(r"\b(table|rug|sofa|couch|chair|bed|shelf)\b", staging or "")))
 		setting_fit = ask(
 			content,
-			f"Compare this empty environment with the requested setting: {_architectural_setting(setting)}. "
-			"Does it depict that setting, including its stated surfaces and permanent objects, rather than a "
-			"different type of location? A furnished room does not match a plain studio or neutral source-photo "
-			"setting. Judge the location only; actors and advertised products must be absent. "
+			f"Compare this empty environment with the requested setting: {_architectural_setting(setting)}"
+			+ (f", furnished with a {' and a '.join(furnished)}" if furnished else "")
+			+ ". Does it depict that setting, including its stated surfaces and permanent objects, rather than a "
+			"different type of location? "
+			# Only a studio request needs this; elsewhere the judge applied it to correct rooms.
+			+ (
+				"A furnished room does not match a plain studio or neutral source-photo setting. "
+				if not furnished
+				and re.search(
+					r"\b(?:studio|neutral|plain|backdrop|source.photo|seamless)\b", setting or "", re.I
+				)
+				else ""
+			)
+			+ "Judge the location only; actors and advertised products must be absent. "
 			"Return answer true only for a visible match, false for a contradiction, null if uncertain, with evidence.",
 			max_edge=1024,
 			schema={
@@ -746,7 +785,7 @@ def draw_places_then_frames(project_name, shot_names, user):
 	generate_keyframes(project_name, shot_names, draw_places=False)
 
 
-def draw_project_places(project_name, shot_names, user):
+def draw_project_places(project_name, shot_names, user, variation=0):
 	"""Reuse native shared-setting generation without requiring an image-guided video workflow."""
 	frappe.set_user(user)
 	project = frappe.get_doc("Media Project", project_name)
@@ -780,10 +819,15 @@ def draw_project_places(project_name, shot_names, user):
 					project,
 					key,
 					f"Split-screen view: {setting[:80]}",
-					render_place(project, setting, view=True, staging=staging),
+					render_place(project, setting, view=True, staging=staging, variation=variation),
 				)
 			else:
-				add_place(project, key, setting, render_place(project, setting, staging=staging))
+				add_place(
+					project,
+					key,
+					setting,
+					render_place(project, setting, staging=staging, variation=variation),
+				)
 		except Exception:
 			frappe.log_error(title=f"Could not draw the place for {project_name}")
 			# A scene without its verified environment reference can invent or distort

@@ -5,6 +5,7 @@ candidate selection and release gates are never silently overridden.
 """
 
 import copy
+import hashlib
 import re
 import time
 import uuid
@@ -63,6 +64,12 @@ def _write(batch, variants, status=None, error="", changed_index=None):
 
 
 AUTOMATIC_PICTURE_REDRAWS = 3
+# Failed location plates, scene renders, editing passes and narration requests are retried within
+# these bounds before an automatic video stops for a person.
+AUTOMATIC_RENDER_RETRIES = 2
+AUTOMATIC_FINISHING_RETRIES = 2
+AUTOMATIC_VOICEOVER_RETRIES = 5
+AUTOMATIC_LOCATION_RETRIES = 2
 # A screenplay which the Director has explicitly marked incomplete must never
 # consume GPU work. Give the writer two new, grounded concepts before the
 # normal failure path records the evidence. This is intentionally separate
@@ -110,6 +117,14 @@ class UnverifiedPoseRequirements(ValueError):
 def _require_verified_pose_views(views):
 	unverified = [row for row in views or [] if row.get("status") != "ready" and row.get("scene")]
 	missing = sorted({int(row["scene"]) for row in unverified})
+	if missing and all(row.get("reason") == "pose plan unavailable" for row in unverified):
+		# The planner or vision service timed out: nothing was judged, so wait and retry
+		# like any other service outage instead of stopping the video.
+		from joymedia.services.planning.production import PlannerUnavailableError
+
+		raise PlannerUnavailableError(
+			"The pose planner was unavailable for scenes " + ", ".join(map(str, missing)) + "; retrying."
+		)
 	if missing:
 		requirements = list(
 			dict.fromkeys(str(row.get("pose") or "").strip()[:140] for row in unverified if row.get("pose"))
@@ -124,7 +139,13 @@ def _require_verified_pose_views(views):
 
 def _admit_pose_preparation(variant):
 	"""Do not turn a failed reusable pose into a rendered character reference."""
-	_require_verified_pose_views(variant.get("pose_views"))
+	from joymedia.services.planning.production import PlannerUnavailableError
+
+	try:
+		_require_verified_pose_views(variant.get("pose_views"))
+	except PlannerUnavailableError:
+		variant["pose_prepared"] = False  # Prepare the poses again once the service is back.
+		raise
 
 
 def _pose_transition_defects(script, pose_views):
@@ -546,6 +567,21 @@ def _recover_unlisted_products(batch, variants, index, project, request):
 	return True
 
 
+FINISH_BEFORE_PRODUCT_CLOSE = (
+	"Before the final product-only shot, visibly finish the preceding material demonstration and all "
+	"actor actions from the current final shot, in chronological order. Move the original final actor "
+	"action here rather than omitting it: "
+)
+PRODUCT_ONLY_CLOSE = (
+	"Use a separate product-only closing shot from the exact original supplied product photograph. "
+	"cast=[]; keep the product roster. The original pack is stationary, in its supplied orientation with "
+	"all original artwork. Use a neutral source-photo setting rather than asking an image model to "
+	"restage the pack in a furnished room. No package manipulation, actor, hand or loose material; all "
+	"actual demonstration actions must finish in the preceding shots. Preserve the brief and original "
+	"identity, and do not claim a contact action was rendered by this static packshot."
+)
+
+
 def _source_art_cutaway_notes(script):
 	"""Separate a stationary package from a loose-material demonstration.
 
@@ -584,54 +620,118 @@ def _source_art_cutaway_notes(script):
 		notes.append(
 			{
 				"scene": len(scenes) - 1,
-				"text": "Before the final product-only shot, visibly finish the preceding material demonstration and all actor actions from the current final shot, in chronological order. Move the original final actor action here rather than omitting it: "
-				+ str(scenes[-1].get("action") or ""),
+				"text": FINISH_BEFORE_PRODUCT_CLOSE + str(scenes[-1].get("action") or ""),
 			}
 		)
 	notes.append(
 		{
 			"scene": len(scenes),
-			"text": "Use a separate product-only closing shot from the exact original supplied product photograph. cast=[]; keep the product roster. The original pack is stationary, in its supplied orientation with all original artwork. Use a neutral source-photo setting rather than asking an image model to restage the pack in a furnished room. No package manipulation, actor, hand or loose material; all actual demonstration actions must finish in the preceding shots. Preserve the brief and original identity, and do not claim a contact action was rendered by this static packshot.",
+			"text": PRODUCT_ONLY_CLOSE,
 		}
 	)
 	return notes
+
+
+PACK_FREE_ACTOR_SHOT = (
+	"Pack compositing failed repeatedly: remove the advertised package from this actor shot. "
+	"products=[]; no package in the opening, the action or the visible boundaries. Keep the original "
+	"mascot and every authored material action and its result. If the action took material out of "
+	"the package, open with that one item already out, resting on a visible support within the "
+	"actor's reach, and have the actor take it from there. The package may stay off camera in "
+	"continuity. Do not add props or actors."
+)
+PACK_COMPOSITING_FINDINGS = (
+	"advertised product camera angle conflicts",
+	"character stands on the advertised product",
+	"product retains a rectangular studio-background matte",
+	"advertised product is not on its authored support",
+	"held product lacks visible paw or surface contact",
+)
+
+
+def _pack_free_actor_notes(script):
+	"""Keep the exact package out of actor shots and show it only in the source-photo close.
+
+	Used when compositing the photographed package beside the actor keeps failing.
+	Unlike ``_source_art_cutaway_notes`` it also replaces on-screen package handling,
+	so the authored story changes: the actor works with the material alone.
+	"""
+	scenes = script.get("scenes") or []
+	if len(scenes) < 2:
+		return []
+	notes = [
+		{"scene": index + 1, "text": PACK_FREE_ACTOR_SHOT}
+		for index, scene in enumerate(scenes[:-1])
+		if scene.get("cast") and scene.get("products")
+	]
+	if scenes[-1].get("cast") and scenes[-2].get("cast"):
+		notes.append(
+			{
+				"scene": len(scenes) - 1,
+				"text": FINISH_BEFORE_PRODUCT_CLOSE + str(scenes[-1].get("action") or ""),
+			}
+		)
+	# Every actor scene, including one only receiving moved actions, stays package-free.
+	noted = {note["scene"] for note in notes if note["text"] == PACK_FREE_ACTOR_SHOT}
+	notes.extend(
+		{"scene": index + 1, "text": PACK_FREE_ACTOR_SHOT}
+		for index, scene in enumerate(scenes[:-1])
+		if scene.get("cast") and index + 1 not in noted and any(n["scene"] == index + 1 for n in notes)
+	)
+	notes.append({"scene": len(scenes), "text": PRODUCT_ONLY_CLOSE})
+	return notes
+
+
+def _pack_compositing_failures(shot):
+	"""Count recent failures of placing the photographed package in this frame."""
+	tasks = frappe.get_all("Generation Task", filters={"shot": shot.name}, pluck="name")
+	attempts = (
+		frappe.get_all(
+			"Generation Attempt",
+			filters={"generation_task": ["in", tasks], "status": "Failed"},
+			fields=["error_details"],
+			order_by="creation desc",
+			limit=2,
+		)
+		if tasks
+		else []
+	)
+	count = sum(
+		any(cause in (row.error_details or "") for cause in PRODUCT_VIEW_FAILURES) for row in attempts
+	)
+	return count + any(finding in (shot.consistency_notes or "") for finding in PACK_COMPOSITING_FINDINGS)
 
 
 def _try_source_art_cutaway(batch, variants, index, project):
 	variant = variants[index]
 	if int(variant.get("source_art_cutaway_version") or 0) >= 3:
 		return False
-	notes = _source_art_cutaway_notes(variant.get("script") or {})
+	script = variant.get("script") or {}
+	notes = _source_art_cutaway_notes(script) or _pack_free_actor_notes(script)
 	if not notes:
 		return False
 	from joymedia.services.consistency.retention import policy
 
 	if not (policy() or {}).get("source_hold_pipeline"):
 		return False
+	scenes = script.get("scenes") or []
 	for shot in frappe.get_all(
-		"Shot", filters={"media_project": project.name, "is_removed": 0}, pluck="name"
+		"Shot",
+		filters={"media_project": project.name, "is_removed": 0},
+		fields=["name", "shot_number", "consistency_notes"],
 	):
-		tasks = frappe.get_all("Generation Task", filters={"shot": shot}, pluck="name")
-		attempts = (
-			frappe.get_all(
-				"Generation Attempt",
-				filters={"generation_task": ["in", tasks], "status": "Failed"},
-				fields=["error_details"],
-				order_by="creation desc",
-				limit=2,
-			)
-			if tasks
-			else []
-		)
-		if len(attempts) == 2 and all(
-			any(cause in (row.error_details or "") for cause in PRODUCT_VIEW_FAILURES) for row in attempts
-		):
+		number = int(shot.shot_number or 0)
+		if not 0 < number <= len(scenes) or not scenes[number - 1].get("cast"):
+			continue  # A product-only shot already falls back to its source photo.
+		if _pack_compositing_failures(shot) >= 2:
 			variant["source_art_cutaway_attempted"] = True
 			variant["source_art_cutaway_version"] = 3
-			if _start_automatic_scene_repair(batch.name, variants, index, notes):
+			# Its own allowance: the ordinary scene rewrites may be spent already.
+			if _start_automatic_scene_repair(batch.name, variants, index, notes, extra_budget=1):
 				return True
 			variant.pop("source_art_cutaway_attempted", None)
 			variant.pop("source_art_cutaway_version", None)
+			return False
 	return False
 
 
@@ -735,11 +835,118 @@ def _start_frame_corrections(batch, variants, index, project, corrections):
 	return True
 
 
-def _start_automatic_scene_repair(batch_name, variants, index, notes):
+def _scene_failure_evidence(shot):
+	"""The review notes and recent failed attempts recorded for one scene."""
+	tasks = frappe.get_all("Generation Task", filters={"shot": shot.name}, pluck="name")
+	errors = (
+		frappe.get_all(
+			"Generation Attempt",
+			filters={"generation_task": ["in", tasks], "status": "Failed"},
+			pluck="error_details",
+			order_by="creation desc",
+			limit=2,
+		)
+		if tasks
+		else []
+	)
+	return " ".join([str(shot.consistency_notes or ""), *(str(error or "") for error in errors)])
+
+
+def _previous_failure(shot):
+	"""The finding that made the current frame a redraw, from the run that drew it."""
+	if not shot.get("keyframe_artifact"):
+		return ""
+	attempt = frappe.db.get_value("Generation Artifact", shot.keyframe_artifact, "generation_attempt")
+	task = frappe.db.get_value("Generation Attempt", attempt, "generation_task") if attempt else None
+	run = frappe.db.get_value("Generation Task", task, "generation_run") if task else None
+	snapshot = (
+		frappe.parse_json(frappe.db.get_value("Generation Run", run, "project_snapshot_json") or "{}")
+		if run
+		else {}
+	)
+	return next(
+		(
+			str(row.get("keyframe_retry_note") or "")
+			for row in (snapshot or {}).get("shots") or []
+			if row.get("shot") == shot.name
+		),
+		"",
+	)
+
+
+def _spent_repeats(shots, applied):
+	"""Scenes whose failure repeated after its targeted change was already applied."""
+	from joymedia.services.generation.failure_repair import classify
+
+	spent = set()
+	for shot in shots:
+		if shot.consistency_status != "Needs Review":
+			continue
+		kinds = set(classify(_scene_failure_evidence(shot))) & set(classify(_previous_failure(shot)))
+		if any(f"{int(shot.shot_number or 0)}:{kind}" in applied for kind in kinds):
+			spent.add(shot.name)
+	return spent
+
+
+def _start_failure_edits(batch_name, variants, index, shots, *, repeated_only=False):
+	"""Change failing scenes from their classified failures, once per scene and kind.
+
+	Mechanical slips are edited in code; pose, support and framing go back to the
+	writer with their attributed cause, so the script still decides the staging.
+	``repeated_only`` acts only on a failure the previous redraw already had: a
+	redraw with the same inputs mostly repeats it, so it is not spent again.
+	"""
+	from joymedia.services.generation.failure_repair import apply_edits, classify, writer_notes
+
+	variant = variants[index]
+	script = copy.deepcopy(variant.get("script") or {})
+	if not script.get("scenes"):
+		return False
+	failures = {}
+	for shot in shots:
+		if shot.consistency_status in {"Passed", "Checking", "Redrawing"} and shot.keyframe_artifact:
+			continue
+		kinds = classify(_scene_failure_evidence(shot))
+		if repeated_only:
+			kinds = [kind for kind in kinds if kind in classify(_previous_failure(shot))]
+		if kinds:
+			failures[int(shot.shot_number or 0)] = kinds
+	applied = set(variant.get("failure_edits") or [])
+	changed = apply_edits(script, failures, applied)
+	if not changed:
+		notes = writer_notes(failures, applied)
+		if not notes:
+			return False
+		before = variant.get("failure_edits")
+		variant["failure_edits"] = sorted(applied)
+		if _start_automatic_scene_repair(batch_name, variants, index, notes, extra_budget=1):
+			return True
+		variant["failure_edits"] = before
+		return False
+	variant.setdefault("history", []).append(
+		{
+			k: copy.deepcopy(variant.get(k))
+			for k in ("project", "workbook", "script", "title")
+			if variant.get(k)
+		}
+	)
+	variant.update(
+		script=script,
+		failure_edits=sorted(applied),
+		scene_revision={"edited_scenes": changed, "by": "Automatic failure repair"},
+		status="Rewriting",
+	)
+	_write(batch_name, variants, changed_index=index)
+	_queue_rewrite(batch_name, index)
+	frappe.db.commit()
+	return True
+
+
+def _start_automatic_scene_repair(batch_name, variants, index, notes, *, extra_budget=0):
 	"""Queue an in-place rewrite of the failing scenes, within the repair budget."""
 	variant = variants[index]
 	rounds = int(variant.get("automatic_scene_rewrites") or 0)
-	if not notes or rounds >= AUTOMATIC_SCENE_REWRITES:
+	if not notes or rounds >= AUTOMATIC_SCENE_REWRITES + extra_budget:
 		return False
 	variant.setdefault("history", []).append(
 		{
@@ -754,18 +961,37 @@ def _start_automatic_scene_repair(batch_name, variants, index, notes):
 		status="Rewriting",
 	)
 	_write(batch_name, variants, changed_index=index)
+	_queue_rewrite(batch_name, index)
+	frappe.db.commit()
+	return True
+
+
+def _rewrite_job_id(batch_name, index):
+	return f"joymedia-creative-rewrite:{batch_name}:{index}"
+
+
+def _queue_rewrite(batch_name, index):
 	frappe.enqueue(
 		"joymedia.services.generation.creative_batch.rewrite_scenes_in_place",
 		queue=_planning_queue(),
 		timeout=3600,
 		batch_name=batch_name,
 		position=index,
-		job_id=f"joymedia-creative-rewrite:{batch_name}:{index}",
+		job_id=_rewrite_job_id(batch_name, index),
 		deduplicate=True,
 		enqueue_after_commit=True,
 	)
-	frappe.db.commit()
-	return True
+
+
+def _resume_lost_rewrites(batch_name, variants):
+	"""Requeue a Rewriting video whose job never started or died with its worker.
+
+	The rewrite exits at once unless the video is still Rewriting, so a
+	duplicate submission cannot repeat work.
+	"""
+	for index, variant in enumerate(variants):
+		if variant.get("status") == "Rewriting" and not is_render_alive(_rewrite_job_id(batch_name, index)):
+			_queue_rewrite(batch_name, index)
 
 
 def _restart_automatic_script_variant(
@@ -840,6 +1066,10 @@ def _restart_automatic_script_variant(
 		# A new concept has new scenes: its targeted repairs start with a full budget.
 		"automatic_scene_rewrites",
 		"frame_corrections",
+		"failure_edits",
+		"repair_failures",
+		"source_art_cutaway_version",
+		"source_art_cutaway_attempted",
 		"physical_audit",
 		"reference_plan",
 		"scene_revision",
@@ -873,6 +1103,34 @@ def _stale_keyframe(shot_name):
 	return bool(shot.keyframe_artifact) and shot.keyframe_signature != keyframe_signature(shot)
 
 
+def _admission_findings(shot_name):
+	"""The unsupported claims that got this scene's latest first frame rejected by the picture gate."""
+	from joymedia.services.review.admission import report_for
+
+	tasks = frappe.get_all("Generation Task", filters={"shot": shot_name}, pluck="name")
+	attempt = (
+		frappe.get_all(
+			"Generation Attempt",
+			filters={
+				"generation_task": ["in", tasks],
+				"status": "Failed",
+				"error_details": ["like", "Visual admission rejected%"],
+			},
+			pluck="name",
+			order_by="creation desc",
+			limit=1,
+		)
+		if tasks
+		else []
+	)
+	report = report_for(attempt[0]) if attempt else None
+	return [
+		f"{row.get('claim') or row.get('id')}: {str(row.get('reason') or '')[:200]}"
+		for row in (report or {}).get("results") or []
+		if row.get("verdict") != "supported" and row.get("id") != "geometry_qualification"
+	]
+
+
 def _nonretryable_scene_failure(run_name, shot_names):
 	"""Return a grounded blocker before an automatic rerender of unchanged inputs."""
 	from joymedia.services.generation.failures import classify_failure
@@ -903,6 +1161,11 @@ def _nonretryable_scene_failure(run_name, shot_names):
 		# An execution interrupted on the GPU was once labelled a workflow defect;
 		# its recorded evidence shows it only needs another render.
 		if latest and classify_failure(latest[0].error_details, latest[0].failure_class) == "Infrastructure":
+			continue
+		details = str(latest[0].error_details or "") if latest else ""
+		if details.startswith("Visual admission rejected") or "Final visual admission held" in details:
+			# A drawn picture the gate turned down is not an input defect: it is redrawn
+			# within budget, then the scene is restaged from the gate's findings.
 			continue
 		if latest and latest[0].status == "Failed" and latest[0].failure_class in {"Input", "Workflow"}:
 			return {
@@ -967,6 +1230,17 @@ def _prepare_position(variants, position):
 	return None
 
 
+def _service_outage(exc):
+	"""The remote text or vision service was unreachable: no repair was attempted.
+
+	A lost GPU job keeps its own bounded handling.
+	"""
+	from joymedia.services.planning.creative import ReferenceAnalysisUnavailable
+	from joymedia.services.planning.production import PlannerUnavailableError
+
+	return isinstance(exc, (PlannerUnavailableError, ReferenceAnalysisUnavailable))
+
+
 def _transient(exc):
 	# MariaDB's optimistic-read conflict is emitted by either MySQLdb or
 	# PyMySQL, depending on the worker connection. Frappe's helpers recognize
@@ -982,12 +1256,18 @@ def _transient(exc):
 	# The remote GPU's network link drops briefly; the next scheduler tick tries again
 	# instead of stopping an automatic video for something no person can fix.
 	render_link = "Unable to connect to ComfyUI" in str(exc)
+	# Two workers composing the same clip: the second waits out the first's file lock
+	# (2026-10-31, CRB-00127). The next tick finds the clip composed, so retry, do not stop.
+	from frappe.utils.file_lock import LockTimeoutError
+
+	held_lock = isinstance(exc, LockTimeoutError)
 	return (
 		frappe.db.is_deadlocked(exc)
 		or frappe.db.is_timedout(exc)
 		or series_conflict
 		or busy_scene
 		or render_link
+		or held_lock
 	)
 
 
@@ -1078,6 +1358,26 @@ def _finish_previous_concept(variant):
 	return False
 
 
+EMPTY_ROSTER_PACKAGE = "The scene declares no visible product but its opening or action shows a package"
+
+
+def _empty_roster_package_defect(script):
+	from joymedia.services.planning.production import _visible_package_words
+
+	scenes = [
+		number
+		for number, scene in enumerate(script.get("scenes") or [], 1)
+		if scene.get("products") == []
+		and _visible_package_words(" ".join(str(scene.get(key) or "") for key in ("visual_camera", "action")))
+	]
+	where = ("Scenes " + ", ".join(map(str, scenes))) if scenes else "A scene"
+	return (
+		f"{where} declare products=[] but describe a visible package. For each, either list the "
+		"product in that scene's products, or keep the package out of frame and remove it from the "
+		"opening and action text."
+	)
+
+
 def _redraw_invalid_automatic_script(variant, exc):
 	"""Give an invalid screenplay a fresh concept, then retain the best safe draft.
 
@@ -1154,6 +1454,85 @@ def _queue_prepare(batch_name, variants, *, replacement=False):
 		)
 
 
+def _face_family(row, sheet_views):
+	"""The design a character reference shows: its view sheet, else its original image."""
+	from joymedia.services.intake.view_sheet import VIEW_SUFFIX
+
+	key = row.get("reference_key") or ""
+	match = VIEW_SUFFIX.search(key)
+	if match:
+		return "sheet:" + key[: match.start()]
+	try:
+		from joymedia.services.project.reference_lineage import original_reference
+
+		original = original_reference(row["asset_version"])["asset_version"]
+	except Exception:
+		original = row.get("asset_version")
+	return sheet_views.get(original) or "image:" + str(original)
+
+
+TURNED_VIEW = re.compile(
+	r"\b(?:side|profile|from behind|rear|back view|turns? (?:away|around)|three[- ]quarter|3/4|"
+	r"over (?:its|the|his|her) shoulder)\b",
+	re.I,
+)
+
+
+def _choose_face_for_script(project, script):
+	"""Keep one design of each character for the whole video, chosen from its script.
+
+	Two supplied images of one character may draw it differently (eyes, head
+	accessory); every scene copies the face of its bound reference, so a video
+	keeps one family. A script showing the character's side, back or a turned
+	view needs the family with those real drawings; otherwise the family with
+	the most verified poses. Other families leave this video, and scene casts
+	move to the kept family. Returns the kept family names.
+	"""
+	from joymedia.services.intake.view_sheet import VIEW_SUFFIX
+
+	characters = [row for row in project.selected_media if row.reference_role in {"Character", "Person"}]
+	sheet_views = {
+		row.asset_version: "sheet:" + row.reference_key[: VIEW_SUFFIX.search(row.reference_key).start()]
+		for row in characters
+		if VIEW_SUFFIX.search(row.reference_key or "")
+	}
+	families = {}
+	for row in characters:
+		identity = row.identity_key or row.reference_key
+		families.setdefault(identity, {}).setdefault(_face_family(row, sheet_views), []).append(row)
+	turned = any(
+		scene.get("cast")
+		and (
+			scene.get("shot_angle") in {"over_shoulder", "oblique"}
+			or TURNED_VIEW.search(" ".join(str(scene.get(k) or "") for k in ("visual_camera", "action")))
+		)
+		for scene in script.get("scenes") or []
+	)
+	moved, kept = {}, []
+	for options in families.values():
+		if len(options) < 2:
+			continue
+
+		def has_turned_views(rows):
+			return any(re.search(r"\b(?:side|back|three-quarter)\b", row.label or "", re.I) for row in rows)
+
+		keep = max(
+			sorted(options), key=lambda name: (turned and has_turned_views(options[name]), len(options[name]))
+		)
+		kept.append(keep)
+		primary = options[keep][0].reference_key
+		for name, rows in options.items():
+			if name != keep:
+				moved.update({row.reference_key: primary for row in rows})
+	if not moved:
+		return kept
+	project.set("selected_media", [row for row in project.selected_media if row.reference_key not in moved])
+	project.save(ignore_permissions=True)
+	for scene in script.get("scenes") or []:
+		scene["cast"] = list(dict.fromkeys(moved.get(key, key) for key in scene.get("cast") or []))
+	return kept
+
+
 def _create_variant(batch, request, index, hero=None):
 	from joymedia.api.projects import create_project
 	from joymedia.services.project.versions import (
@@ -1188,10 +1567,15 @@ def _create_variant(batch, request, index, hero=None):
 	project.delivery_preset = request.get("delivery_preset")
 	project.video_idea = request.get("direction") or ""
 	project.storyboard_source_json = frappe.as_json({"brand": request["brand"]})
-	project.soundtrack_mode = "Effects + music"
+	# Scene sound effects only. The music bed came from MMAudio, a sound-effects model
+	# that produced noisy, garbled "music" (user, 2026-10-31); no music bed is generated.
+	project.soundtrack_mode = "Sound effects only"
 	reference_map = {}
 	sheet_references = []
-	for row in request["references"]:
+	# Both designs of a character stay available while the script is written;
+	# _choose_face_for_script keeps one per video once its needs are known.
+	references = request["references"]
+	for row in references:
 		if (
 			hero
 			and row["reference_role"] == "Product"
@@ -1218,7 +1602,7 @@ def _create_variant(batch, request, index, hero=None):
 	# identity from the source project before asking the Director to plan shots.
 	# These are generated Character references, never additional cast members.
 	selected_characters = {}
-	for row in request["references"]:
+	for row in references:
 		if row.get("reference_role") not in {"Character", "Person"}:
 			continue
 		identity = row.get("identity_key") or row.get("reference_key")
@@ -1430,6 +1814,12 @@ def _prepare_batch_locked(batch_name, position=None):
 				# The batch brief is authoritative even when resuming an older
 				# variant whose project description predates a revised request.
 				project.video_idea = request.get("direction") or project.video_idea
+				from joymedia.services.planning.pose_assets import attach_verified_views
+
+				# Earlier verified views of the same mascot give the script pose variety.
+				if attach_verified_views(project):
+					project.reload()
+					project.video_idea = request.get("direction") or project.video_idea
 				prior_script_errors = [
 					{"scope": "Current", "category": "Rejected screenplay", "text": row["error"][-1800:]}
 					for row in (variant.get("script_attempts") or [])[
@@ -1564,6 +1954,8 @@ def _prepare_batch_locked(batch_name, position=None):
 					variant["reference_plan"]["pose_requirements"] = states
 					_write(batch.name, variants, "Planning", changed_index=index)
 
+				variant["face_families"] = _choose_face_for_script(project, script)
+				project.reload()
 				variant["pose_views"] = prepare_script_pose_views(project, script, on_plan=record_pose_plan)
 				variant["reference_plan"]["prepared_poses"] = variant["pose_views"]
 				variant["pose_prepared"] = True
@@ -1650,6 +2042,19 @@ def _prepare_batch_locked(batch_name, position=None):
 				_queue_prepare(batch.name, variants, replacement=True)
 				frappe.db.commit()
 				return
+			# A screenplay whose product roster contradicts its own text is a
+			# text-only defect found before any picture: rewrite it within budget.
+			if (
+				str(exc).startswith(EMPTY_ROSTER_PACKAGE)
+				and variant.get("script")
+				and _restart_automatic_script_variant(
+					variant, variant["script"], [_empty_roster_package_defect(variant["script"])]
+				)
+			):
+				_write(batch.name, variants, "Planning", changed_index=index)
+				_queue_prepare(batch.name, variants, replacement=True)
+				frappe.db.commit()
+				return
 			# A rejected screenplay has not produced any media yet.  Retry it in
 			# both delivery modes: assisted mode controls review after pictures are
 			# made, not whether the Director may recover from a text-only failure.
@@ -1726,16 +2131,7 @@ def revise_variant(batch_name, position, notes):
 			variant["status"] = "Queued"
 	if in_place:
 		_write(batch_name, variants, changed_index=position)
-		frappe.enqueue(
-			"joymedia.services.generation.creative_batch.rewrite_scenes_in_place",
-			queue=_planning_queue(),
-			timeout=3600,
-			batch_name=batch_name,
-			position=position,
-			job_id=f"joymedia-creative-rewrite:{batch_name}:{position}",
-			deduplicate=True,
-			enqueue_after_commit=True,
-		)
+		_queue_rewrite(batch_name, position)
 	else:
 		_write(batch_name, variants, "Planning", changed_index=position)
 		_queue_prepare(batch_name, variants)
@@ -2071,11 +2467,13 @@ def rewrite_scenes_in_place(batch_name, position):
 		project = frappe.get_doc("Media Project", variant["project"])
 		old = variant["script"]
 		pose_scenes = variant["scene_revision"].get("pose_scenes")
-		if pose_scenes:
-			# A retry after a pose stop: the script stands. Only those scenes' opening
-			# poses are resolved again, rebound and redrawn below.
+		edited_scenes = variant["scene_revision"].get("edited_scenes")
+		if pose_scenes or edited_scenes:
+			# A retry after a pose stop, or scenes already edited in code from their
+			# classified failures: the script stands. Only those scenes are resolved
+			# again, rebound and redrawn below.
 			script = copy.deepcopy(old)
-			changed = sorted(n - 1 for n in pose_scenes if 0 < n <= len(old["scenes"]))
+			changed = sorted(n - 1 for n in (pose_scenes or edited_scenes) if 0 < n <= len(old["scenes"]))
 		else:
 			notes = variant["scene_revision"]["notes"]
 			script = draft_script(
@@ -2164,11 +2562,26 @@ def rewrite_scenes_in_place(batch_name, position):
 			order_by="shot_number asc",
 		)
 		wanted = {shots[i] for i in changed}
+		# Findings about the replaced frame no longer describe the rewritten scene, and its
+		# redraw allowances start again: a rewritten scene is a new scene.
+		for name in wanted:
+			frappe.db.set_value(
+				"Shot",
+				name,
+				{"consistency_status": "", "consistency_notes": "", "consistency_retries": 0},
+				update_modified=False,
+			)
+			(variant.get("frame_corrections") or {}).pop(name, None)
 		project.reload()
 		_plan_project(project, wanted, apply=True)
 		approve_project_storyboard(project.name)
-		with pinned_execution(project.name, request["generation_pipeline"]):
-			request_run = generate_keyframes(project.name, sorted(wanted))
+		# Same delivery policy as every other automatic redraw: without it these frames
+		# could never qualify for the automatic review cut.
+		with (
+			pinned_execution(project.name, request["generation_pipeline"]),
+			delivery_context(request, batch_name),
+		):
+			request_run = generate_keyframes(project.name, sorted(wanted), automatic=is_automatic(request))
 		variant.update(
 			script=script,
 			workbook=file.file_url,
@@ -2180,8 +2593,8 @@ def rewrite_scenes_in_place(batch_name, position):
 		variant["auto_redraws"] = [s for s in variant.get("auto_redraws", []) if s not in wanted]
 	except Exception as exc:
 		frappe.db.rollback()
-		if _transient(exc):
-			return
+		if _transient(exc) or _service_outage(exc):
+			return  # Still Rewriting: advance_batches resubmits it on a later tick.
 		frappe.log_error(title=f"Scene rewrite failed: {batch_name}/{position + 1}")
 		if isinstance(exc, UnverifiedPoseRequirements) or (variant.get("scene_revision") or {}).get(
 			"pose_scenes"
@@ -2229,9 +2642,22 @@ def start_variant_render(batch_name, position):
 
 def _select_variant(batch, request, project_name):
 	"""Navigate only to a ready script/export, preserving a newer user choice."""
-	from joymedia.services.project.versions import set_working_edit
+	from joymedia.services.project.versions import next_video_number, organize_edits, set_working_edit
 
 	root = request["root_project"]
+	if frappe.db.get_value("Media Project", project_name, "version_of") != root:
+		# Videos made since 2026-10-30 had lost their family link (cause not found), so the
+		# finished video could not become the working edit. Re-link it to the source family.
+		organize_edits(
+			root,
+			[
+				{
+					"project": project_name,
+					"label": f"Video {next_video_number(frappe.get_doc('Media Project', root))}",
+					"kind": "Creative",
+				}
+			],
+		)
 	with frappe.cache.lock(f"joymedia-creative:{batch.name}", timeout=180, blocking_timeout=10):
 		frappe.db.commit()
 		if frappe.db.get_value("Creative Batch", batch.name, "status") == "Cancelled":
@@ -2261,21 +2687,26 @@ def _start_keyframes(project, variant, request=None, batch_name=None):
 	]
 	assign_places(project, shots)
 	if missing_places(project, shots) or missing_views(project, shots):
-		job_id = f"joymedia-creative-locations:{project.name}"
-		frappe.enqueue(
-			"joymedia.services.keyframes.locations.draw_project_places",
-			queue="long",
-			timeout=3600,
-			project_name=project.name,
-			shot_names=[s.name for s in shots],
-			user=frappe.session.user,
-			job_id=job_id,
-			deduplicate=True,
-			enqueue_after_commit=True,
-		)
-		variant.update(status="Locations", location_job=job_id)
+		variant.update(status="Locations", location_job=_queue_locations(project, shots))
 		return
 	_submit_visual_stage(project, variant, request, batch_name)
+
+
+def _queue_locations(project, shots, variation=0):
+	job_id = f"joymedia-creative-locations:{project.name}"
+	frappe.enqueue(
+		"joymedia.services.keyframes.locations.draw_project_places",
+		queue="long",
+		timeout=3600,
+		project_name=project.name,
+		shot_names=[s.name for s in shots],
+		user=frappe.session.user,
+		variation=variation,
+		job_id=job_id,
+		deduplicate=True,
+		enqueue_after_commit=True,
+	)
+	return job_id
 
 
 def _submit_visual_stage(project, variant, request=None, batch_name=None):
@@ -2289,8 +2720,23 @@ def _submit_visual_stage(project, variant, request=None, batch_name=None):
 		if "reference_only" in controls(frappe.get_doc("Generation Workflow", project.workflow)):
 			variant.update(status="Rendering", generation_request=project.generate_video())
 		else:
+			shots = frappe.get_all(
+				"Shot",
+				filters={"media_project": project.name, "is_removed": 0},
+				fields=["name", "consistency_status", "motion_plan_json"],
+			)
+			if is_automatic(request or {}):
+				# A product-only shot opens on the exact product photograph: nothing
+				# to draw, paste or judge, so it cannot fail like a generated frame.
+				if any([_use_product_source_for_packshot(shot, without_frame=True) for shot in shots]):
+					# Binding the photograph edits approved scenes; reseal before drawing.
+					_seal_automatic_plan(project.name)
+			drawn = [shot.name for shot in shots if not _explicit_first_frame(shot.name)]
 			variant.update(
-				status="Keyframes", keyframe_request=generate_keyframes(project.name, draw_places=False)
+				status="Keyframes",
+				keyframe_request=generate_keyframes(project.name, drawn, draw_places=False)
+				if drawn
+				else {"status": "Source frames"},
 			)
 
 
@@ -2306,6 +2752,7 @@ def advance_batches():
 			continue
 		variants = frappe.parse_json(batch.variants_json)
 		_queue_prepare(batch.name, variants)
+		_resume_lost_rewrites(batch.name, variants)
 		if not any(
 			v["status"] in {"Locations", "Keyframes", "Rendering", "Finishing", "Exporting"} for v in variants
 		):
@@ -2373,6 +2820,32 @@ def _use_product_source_for_packshot(shot, without_frame=False):
 	return True
 
 
+# A still frame cannot show motion: an opening claim phrased as movement is always
+# "uncertain" there. Only such claims may stay unconfirmed on an automatic preview.
+MOTION_CLAIM = re.compile(
+	r"\b(?:mov(?:e|es|ing)|reach(?:es|ing)?|turn(?:s|ing)|lift(?:s|ing)|rais(?:es|ing)|lower(?:s|ing)|"
+	r"bring(?:s|ing)|pull(?:s|ing)|push(?:es|ing)|toward|towards|approach(?:es|ing)?)\b",
+	re.I,
+)
+
+
+def _screened_with_motion(report, screened_preview_report):
+	"""The screened-preview report, with unconfirmable motion claims set aside."""
+	if not report:
+		return False
+	rows = [
+		row
+		for row in report.get("results") or []
+		if not (
+			str(row.get("id") or "").startswith("opening.")
+			and row.get("verdict") == "uncertain"
+			and MOTION_CLAIM.search(str(row.get("claim") or ""))
+		)
+	]
+	required = [i for i in report.get("required_claim_ids") or [] if i in {row.get("id") for row in rows}]
+	return screened_preview_report({**report, "results": rows, "required_claim_ids": required})
+
+
 def _screened_automatic_preview_frame(shot):
 	"""Authorize only a current, fully observed frame for provisional delivery."""
 	from pathlib import Path
@@ -2383,8 +2856,15 @@ def _screened_automatic_preview_frame(shot):
 
 	if shot.consistency_status != "Needs Review" or not shot.get("keyframe_artifact") or _unprotected(shot):
 		return False
-	if shot.get("consistency_notes") != (
-		"Geometry qualification remains uncertain; this frame is suitable only for an automatic preview."
+	note = str(shot.get("consistency_notes") or "")
+	unconfirmed = re.fullmatch(
+		r"Check that the picture shows: (.+)\. Automatic screening could not confirm it\.", note
+	)
+	motion_only = bool(unconfirmed) and all(MOTION_CLAIM.search(c) for c in unconfirmed.group(1).split("; "))
+	if (
+		note
+		!= "Geometry qualification remains uncertain; this frame is suitable only for an automatic preview."
+		and not motion_only
 	):
 		return False  # A later independent audit must not be overridden by an earlier report.
 	full_shot = frappe.get_doc("Shot", shot.name)
@@ -2392,7 +2872,7 @@ def _screened_automatic_preview_frame(shot):
 		return False
 	artifact = frappe.get_doc("Generation Artifact", shot.keyframe_artifact)
 	report = report_for(artifact.generation_attempt)
-	if not screened_preview_report(report) or report.get("artifact") != artifact.name:
+	if not _screened_with_motion(report, screened_preview_report) or report.get("artifact") != artifact.name:
 		return False
 	task = frappe.db.get_value("Generation Attempt", artifact.generation_attempt, "generation_task")
 	run_name = frappe.db.get_value("Generation Task", task, "generation_run") if task else None
@@ -2412,6 +2892,104 @@ def _screened_automatic_preview_frame(shot):
 		return False
 	path = frappe.get_doc("File", {"file_url": artifact.frappe_file}).get_full_path()
 	return report.get("source_sha256") == digest(Path(path).read_bytes())
+
+
+def _shorten_narration(shot_name, variant):
+	"""Fit an overlong narration line to its scene's time, keeping its meaning; at most twice per scene."""
+	from joymedia.services.planning.creative import narration_word_budget
+	from joymedia.services.planning.production import _ask_planner
+
+	used = variant.setdefault("narration_shortened", {})
+	if int(used.get(shot_name) or 0) >= 2:
+		return False
+	from joymedia.services.audio.plan import _shot_frame_range
+
+	shot = frappe.get_doc("Shot", shot_name)
+	start, end = _shot_frame_range(shot.media_project, shot_name)
+	seconds = (end - start) / 24 if start is not None else float(shot.duration_seconds or 0)
+	budget = narration_word_budget(seconds) - int(used.get(shot_name) or 0)
+	answer = _ask_planner(
+		"Shorten this advertisement narration line to at most "
+		f"{budget} words so it fits a {seconds:.1f}-second scene. Keep its meaning, brand name if present, "
+		f"and language; no new claims. Return JSON text. LINE: {frappe.as_json(shot.voice_over)}",
+		system="You edit advertisement narration to fit its timing.",
+		response_schema={
+			"type": "object",
+			"additionalProperties": False,
+			"required": ["text"],
+			"properties": {"text": {"type": "string", "minLength": 1}},
+		},
+	)
+	text = str((answer or {}).get("text") or "").strip()
+	if not text or len(re.findall(r"[\w']+", text)) > budget:
+		return False
+	shot.db_set("voice_over", text, update_modified=False)
+	used[shot_name] = int(used.get(shot_name) or 0) + 1
+	return True
+
+
+def _settle_source_photo_scenes(project, shots, variant):
+	"""Approve scenes that open on the unaltered product photo before any repair step.
+
+	A generated frame of such a scene is never used, yet its findings were redrawn,
+	corrected and could restart the whole concept. Its findings are cleared, a frame
+	run drawing only such scenes is cancelled, and the photo is approved. Returns
+	True when anything changed.
+	"""
+	from joymedia.services.keyframes.stage import keyframe_signature, set_keyframe_approval
+
+	photo = []
+	for row in shots:
+		if not _explicit_first_frame(row.name):
+			continue
+		shot = frappe.get_doc("Shot", row.name)
+		if _is_source_product_photo(shot):
+			photo.append(shot)
+	unsettled = [
+		s for s in photo if s.keyframe_status != "Approved" or s.consistency_status or s.keyframe_artifact
+	]
+	if not unsettled:
+		return False
+	run = (variant.get("keyframe_request") or {}).get("run")
+	if run and frappe.db.get_value("Generation Run", run, "status") in {"Draft", "Queued", "Running"}:
+		drawing = set(frappe.get_all("Generation Task", filters={"generation_run": run}, pluck="shot"))
+		if drawing and drawing <= {s.name for s in photo}:
+			from joymedia.services.generation.orchestrator import cancel_run
+
+			cancel_run(run)
+	for shot in unsettled:
+		shot.db_set(
+			{
+				"keyframe_signature": keyframe_signature(shot),
+				"keyframe_artifact": None,
+				"consistency_status": "",
+				"consistency_notes": "",
+			},
+			update_modified=False,
+		)
+		set_keyframe_approval(project.name, shot.name)
+	variant.setdefault("source_frame_fallbacks", {}).update(
+		{s.name: "Opens on the original product photo." for s in unsettled}
+	)
+	frappe.db.commit()
+	return True
+
+
+def _is_source_product_photo(shot):
+	"""A product-only scene that opens on its own product reference, unaltered."""
+	from joymedia.services.keyframes.product_review import explicit_first_frame
+
+	roles = [frappe.scrub(r.reference_role or "") for r in shot.generation_inputs or []]
+	products = {
+		r.asset_version
+		for r in shot.generation_inputs or []
+		if frappe.scrub(r.reference_role or "") == "product"
+	}
+	return (
+		not {"character", "person", "people", "talent"} & set(roles)
+		and len(products) == 1
+		and explicit_first_frame(shot) in products
+	)
 
 
 def _keyframe_ready(shot, *, automatic=False):
@@ -2478,6 +3056,28 @@ def _selected_review_outputs(project_name):
 		):
 			return False
 	return True
+
+
+def _compose_source_photo_scenes(project, variant, batch_name, variant_index):
+	"""Make product-only source-photo scenes from the photo itself, before any video job.
+
+	Generated video of the exact pack animated its printed artwork (hearts left the
+	printed bear, 2026-10-30). A stationary hold or push-in composed from the photo
+	keeps every pixel. Returns the scenes still without a clip and the scene count.
+	"""
+	try:
+		if _compose_product_insert_fallbacks(project.name, variant, batch_name, variant_index):
+			frappe.db.commit()
+	except Exception:
+		frappe.log_error(title=f"Source-photo scene composition failed for {project.name}")
+		frappe.db.rollback()
+	shots = frappe.get_all(
+		"Shot",
+		filters={"media_project": project.name, "is_removed": 0},
+		fields=["name", "selected_output_asset_version"],
+		order_by="shot_number asc",
+	)
+	return [s.name for s in shots if not s.selected_output_asset_version], len(shots)
 
 
 def _compose_product_insert_fallbacks(project_name, variant, batch_name, variant_index):
@@ -2783,8 +3383,19 @@ def _refresh_automatic_frame_policy(batch, variants, index, project):
 	if run.status not in {"Completed", "Failed", "Cancelled"}:
 		cancel_run(run.name)
 	request = frappe.parse_json(batch.request_json)
+	# Scenes that open on the source photograph have no generated frame to re-check.
+	drawn = [
+		name
+		for name in frappe.get_all(
+			"Shot",
+			filters={"media_project": project.name, "is_removed": 0},
+			pluck="name",
+			order_by="shot_number asc",
+		)
+		if not _explicit_first_frame(name)
+	]
 	with pinned_execution(project.name, project.generation_pipeline), delivery_context(request, batch.name):
-		replacement = generate_keyframes(project.name, draw_places=False, automatic=True)
+		replacement = generate_keyframes(project.name, drawn, draw_places=False, automatic=True)
 	refreshes.append(
 		{
 			"run": run.name,
@@ -2898,6 +3509,15 @@ def advance_batch(batch_name, user=None):
 					)
 				]
 				if missing_places(project, shots) or missing_views(project, shots):
+					# A location job can die without a result (worker restart, host
+					# suspend, GPU stall). Resubmit it within a bound before stopping.
+					attempts = int(variant.get("automatic_location_retries") or 0)
+					if automatic and attempts < AUTOMATIC_LOCATION_RETRIES:
+						variant["location_job"] = _queue_locations(project, shots, variation=attempts + 1)
+						variant["automatic_location_retries"] = attempts + 1
+						_write(batch.name, variants, changed_index=index)
+						frappe.db.commit()
+						continue
 					raise ValueError(
 						"Shared-setting preparation did not complete. Inspect the native location job before retrying."
 					)
@@ -2957,6 +3577,10 @@ def advance_batch(batch_name, user=None):
 								+ "; the previous invalid frame was not reused."
 							)
 						continue
+				# Before any redraw: scenes opening on the product photo never use a drawn frame.
+				if automatic_pictures and _settle_source_photo_scenes(project, shots, variant):
+					_write(batch.name, variants, changed_index=index)
+					continue
 				redrawing = []
 				for shot in shots:
 					if shot.consistency_status != "Redrawing":
@@ -3005,8 +3629,18 @@ def advance_batch(batch_name, user=None):
 					)
 					# Cheapest fix first: redraw a frame the picture model got wrong, then
 					# restage a scene, and only then write a whole new concept.
-					if _start_frame_corrections(batch, variants, index, project, _frame_corrections(shots)):
+					if _start_failure_edits(batch.name, variants, index, shots, repeated_only=True):
+						return
+					# A failure that repeats after its targeted change was already made gets no
+					# more redraws: the same inputs mostly reproduce it, so the scene is restaged.
+					spent = _spent_repeats(shots, variant.get("failure_edits") or [])
+					redrawable = [s for s in shots if s.name not in spent]
+					if _start_frame_corrections(
+						batch, variants, index, project, _frame_corrections(redrawable)
+					):
 						continue
+					if _start_failure_edits(batch.name, variants, index, shots):
+						return
 					if _start_automatic_scene_repair(batch.name, variants, index, _scene_repair_notes(shots)):
 						return
 					critical = _critical_frame_defects(shots)
@@ -3085,7 +3719,30 @@ def advance_batch(batch_name, user=None):
 						frappe.db.commit()
 					_write(batch.name, variants, changed_index=index)
 					continue
-				if any(not s.keyframe_artifact and not _explicit_first_frame(s.name) for s in shots):
+				# No usable picture: none drawn, or only one drawn for the scene's earlier text.
+				unframed = [
+					s
+					for s in shots
+					if (not s.keyframe_artifact or _stale_keyframe(s.name))
+					and not _explicit_first_frame(s.name)
+				]
+				if unframed and automatic_pictures:
+					notes = [
+						{
+							"scene": int(s.shot_number),
+							"text": "Every first frame of this scene was rejected before use: "
+							+ "; ".join(findings)
+							+ ". Restage only this scene so its opening shows exactly what it describes, "
+							"inside its framing.",
+						}
+						for s in unframed
+						if (findings := _admission_findings(s.name))
+					]
+					if notes and _start_automatic_scene_repair(
+						batch.name, variants, index, notes, extra_budget=1
+					):
+						return
+				if any(not s.keyframe_artifact for s in unframed):
 					raise ValueError(
 						"First-frame generation exhausted its retries without producing an image."
 					)
@@ -3099,12 +3756,25 @@ def advance_batch(batch_name, user=None):
 						if not _explicit_first_frame(selected_shot.name):
 							continue
 						full_shot = frappe.get_doc("Shot", selected_shot.name)
-						if (
-							has_product(full_shot)
-							and full_shot.keyframe_status != "Approved"
-							and can_auto_approve_product_frame(project, full_shot)
-						):
-							set_keyframe_approval(project.name, full_shot.name)
+						if has_product(full_shot) and full_shot.keyframe_status != "Approved":
+							if can_auto_approve_product_frame(project, full_shot):
+								set_keyframe_approval(project.name, full_shot.name)
+							elif _is_source_product_photo(full_shot):
+								# The customer's own unaltered photo: nothing was generated to check.
+								# Findings about a generated frame it does not use do not describe it.
+								from joymedia.services.keyframes.stage import keyframe_signature
+
+								full_shot.db_set(
+									{
+										"keyframe_signature": keyframe_signature(full_shot),
+										"keyframe_artifact": None,
+										"consistency_status": "",
+										"consistency_notes": "",
+									},
+									update_modified=False,
+								)
+								full_shot.reload()
+								set_keyframe_approval(project.name, full_shot.name)
 					if any(
 						_explicit_first_frame(s.name) and not _keyframe_ready(s, automatic=automatic)
 						for s in shots
@@ -3123,7 +3793,27 @@ def advance_batch(batch_name, user=None):
 						}
 						_write(batch.name, variants, changed_index=index)
 						continue
-				if any(not _keyframe_ready(s, automatic=automatic) for s in shots):
+				unready = [s for s in shots if not _keyframe_ready(s, automatic=automatic)]
+				if unready and automatic_pictures:
+					# Every scene-level repair is spent: write a new concept that avoids
+					# what these scenes could not show, within the concept budget.
+					defects = [
+						f"Scene {s.shot_number} could not be drawn as written: "
+						+ str(
+							s.consistency_notes
+							or "; ".join(_admission_findings(s.name))
+							or "no usable first frame"
+						)[:400]
+						for s in unready
+					]
+					if variant.get("script") and _restart_automatic_script_variant(
+						variant, variant["script"], defects
+					):
+						_write(batch.name, variants, "Planning", changed_index=index)
+						_queue_prepare(batch.name, variants, replacement=True)
+						frappe.db.commit()
+						return
+				if unready:
 					# A bounded automatic repair that still has an unqualified first
 					# frame must stop before animation in either delivery mode.
 					variant["status"] = "Needs Attention" if automatic_pictures else "Pictures Ready"
@@ -3184,7 +3874,16 @@ def advance_batch(batch_name, user=None):
 								project, repair_shots, retry_reason="Manual Retry"
 							)
 						else:
-							generation_request = project.generate_video()
+							remaining, total = _compose_source_photo_scenes(
+								project, variant, batch.name, index
+							)
+							if remaining and len(remaining) < total:
+								# Scenes that already have a clip (composed or kept) are not rendered again.
+								from joymedia.services.generation.takes import _start_takes_run
+
+								generation_request = _start_takes_run(project, remaining)
+							else:
+								generation_request = project.generate_video()
 						variant.update(status="Rendering", generation_request=generation_request)
 					# The first complete, silent film is available as soon as all first
 					# frames exist.  It gives the customer a real 30-second timeline
@@ -3221,11 +3920,44 @@ def advance_batch(batch_name, user=None):
 				if status != "Completed" and not (
 					status == "Failed" and _selected_review_outputs(project.name)
 				):
-					if automatic and status == "Failed" and not variant.get("automatic_render_retry"):
+					# Older variants recorded a single retry as True.
+					render_retries = int(
+						variant.get("automatic_render_retries") or variant.get("automatic_render_retry") or 0
+					)
+					if automatic and status == "Failed" and render_retries < AUTOMATIC_RENDER_RETRIES:
 						rerender_failed_scenes(variant, request)
-						variant["automatic_render_retry"] = True
+						variant["automatic_render_retries"] = render_retries + 1
 						_write(batch.name, variants, changed_index=index)
 						continue
+					if automatic and status == "Failed":
+						# The same action keeps failing on video: the writer restages the scenes
+						# still without a clip, choosing an action the video model can show.
+						notes = [
+							{
+								"scene": int(s.shot_number),
+								"text": "The video model could not show this scene's action on screen in repeated "
+								"takes: "
+								+ "; ".join(findings)
+								+ ". Replace that action with a clearly visible physical action the character "
+								"performs, keeping the scene's purpose.",
+							}
+							for s in frappe.get_all(
+								"Shot",
+								filters={
+									"media_project": project.name,
+									"is_removed": 0,
+									"selected_output_asset_version": ["is", "not set"],
+								},
+								fields=["name", "shot_number"],
+							)
+							if (findings := _admission_findings(s.name))
+						]
+						variant["automatic_render_retries"] = 0  # the restaged scenes get fresh retries
+						if notes and _start_automatic_scene_repair(
+							batch.name, variants, index, notes, extra_budget=1
+						):
+							return
+						variant["automatic_render_retries"] = render_retries
 					raise ValueError(
 						"Rendered scenes need attention. Inspect native generation evidence; quality gates remain in effect."
 					)
@@ -3258,12 +3990,36 @@ def advance_batch(batch_name, user=None):
 				# generated after this stage, never immediately after scene rendering.
 				from joymedia.services.audio.speech import generate_voiceover
 
+				narrated = True
 				for cue in build_audio_plan(project.name):
 					if cue["role"] == "Voiceover" and not cue["scheduled"]:
 						frappe.db.commit()
 						if frappe.db.get_value("Creative Batch", batch.name, "status") == "Cancelled":
 							return
-						generate_voiceover(project.name, cue["shot"])
+						try:
+							generate_voiceover(project.name, cue["shot"])
+						except Exception as exc:
+							if (
+								automatic
+								and "narration is too long" in str(exc)
+								and _shorten_narration(cue["shot"], variant)
+							):
+								frappe.db.commit()
+								narrated = False
+								break
+							# Speech runs on a remote service; a dropped request is retried
+							# on later ticks. Cues already placed are kept.
+							attempts = int(variant.get("automatic_voiceover_retries") or 0)
+							if not automatic or attempts >= AUTOMATIC_VOICEOVER_RETRIES:
+								raise
+							frappe.db.rollback()
+							frappe.log_error(title=f"Narration deferred for {project.name}")
+							variant["automatic_voiceover_retries"] = attempts + 1
+							narrated = False
+							break
+				if not narrated:
+					_write(batch.name, variants, changed_index=index)
+					continue
 				with frappe.cache.lock(f"joymedia-creative:{batch.name}", timeout=180, blocking_timeout=10):
 					frappe.db.commit()
 					if frappe.db.get_value("Creative Batch", batch.name, "status") == "Cancelled":
@@ -3286,7 +4042,14 @@ def advance_batch(batch_name, user=None):
 					video=frappe.db.get_value("Asset Version", project.current_output_asset_version, "file"),
 				)
 			elif project.post_production_status in {"Failed", "Cancelled"}:
-				raise ValueError(project.post_production_error or "Finishing did not complete.")
+				attempts = int(variant.get("automatic_finishing_retries") or 0)
+				if automatic and variant["status"] == "Finishing" and attempts < AUTOMATIC_FINISHING_RETRIES:
+					frappe.db.commit()
+					queue_post_production_internal(project.name)
+					variant["automatic_finishing_retries"] = attempts + 1
+					variant.pop("error", None)
+				else:
+					raise ValueError(project.post_production_error or "Finishing did not complete.")
 			elif variant["status"] == "Exporting" and project.export_status == "Failed":
 				attempts = int(variant.get("automatic_export_retries") or 0)
 				if automatic and attempts < 2:

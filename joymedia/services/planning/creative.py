@@ -872,6 +872,13 @@ def script_schema(inventory, constraints):
 	)
 	if minimum_scenes > 12:
 		raise ValueError("The requested duration exceeds this workflow's automatic storyboard scene budget.")
+	maximum_scenes = 12
+	if constraints.get("product_hero_structure"):
+		minimum_scenes = max(3, minimum_scenes)
+		if constraints.get("duration_seconds"):
+			maximum_scenes = max(
+				minimum_scenes, math.floor(constraints["duration_seconds"] / SECONDS_PER_PACED_SCENE)
+			)
 	root.update(
 		format={"const": constraints["aspect_ratio"]}
 		if constraints.get("aspect_ratio")
@@ -880,7 +887,12 @@ def script_schema(inventory, constraints):
 		if constraints.get("duration_seconds")
 		else {"type": "number", "minimum": 1, "maximum": 60},
 		features={"type": "array", "items": text, "minItems": 1, "maxItems": 12},
-		scenes={"type": "array", "items": object_schema(scene), "minItems": minimum_scenes, "maxItems": 12},
+		scenes={
+			"type": "array",
+			"items": object_schema(scene),
+			"minItems": minimum_scenes,
+			"maxItems": maximum_scenes,
+		},
 	)
 	return object_schema(root)
 
@@ -1091,6 +1103,8 @@ def draft_script(
 			if r.get("scope") == "Historical" and r.get("text")
 		][:12],
 	}
+	from joymedia.services.planning.pose_assets import verified_body_states
+
 	roster = [
 		{
 			"key": item["key"],
@@ -1104,9 +1118,25 @@ def draft_script(
 				(item.get("views") or [{}])[0].get("identity_description")
 				or (item.get("views") or [{}])[0].get("description", "")
 			)[:500],
+			# Body states already verified for this identity: prefer them, and vary
+			# them between scenes. Other states still go through pose preparation.
+			**(
+				{
+					"verified_body_states": verified_body_states(
+						project, item.get("identity") or item["key"]
+					)[:8]
+				}
+				if item["role"] in {"Character", "Person"}
+				else {}
+			),
 		}
 		for item in inventory
 	]
+	# A product and an actor together: the exact photographed product is the hero
+	# at the open and close; the actor demonstrates the material alone in between.
+	# Compositing the photograph beside an actor proved unreliable.
+	roles = {item["role"] for item in inventory}
+	constraints["product_hero_structure"] = "Product" in roles and bool(roles & {"Character", "Person"})
 	observations = [
 		{
 			**r,
@@ -1165,7 +1195,8 @@ def draft_script(
 		"8) action is timed phases '[0-1.5s] ...' from 0 to the scene end, no gaps and no camera words. visual_camera is the opening composition only: a state one still picture can show. Preserve any grip, material location and support established by the preceding scene; never reset a carried product onto a table without placement. A new acquisition begins before its first contact, while an ongoing use begins in its retained state. Broad shots establish connected anatomy and support. Product close-ups show the focal material, original limb shape and contact area; the rest of the body may remain naturally outside the frame. Vary coverage with purpose. "
 		"9) State only approved_claims from this product's brief; example scripts supply style, never product facts, certifications or performance claims. Sounds follow visible actions. Music must name concrete instruments, tempo and arrangement changes tied to visible beats, with a resolved ending; 'lively music' alone is insufficient. "
 		"10) Give action scenes chronological beats completing one interaction and show each demonstration once. Choose scene count and phase timings from the requested duration, visible action and workflow frame capacity. If duration is Auto, choose it from the number of distinct feasible actions for these identities, objects and approved claims, not from an example video's length or the photographed pose alone. Open with a supplied subject already completing a tangible product interaction; a camera moving toward a static product is not an action hook. Do not spend the hook on noticing, walking or waiting. Never pad with filler. Scene durations are relative weights. Write a different premise from PRIOR CONCEPTS. "
-		"Historical failure patterns are warnings from older renders: avoid the same failure only if its action or object appears in this new concept. They do not authorize copying old scenes, props, claims or actors. "
+		+ product_hero_rule(constraints)
+		+ "Historical failure patterns are warnings from older renders: avoid the same failure only if its action or object appears in this new concept. They do not authorize copying old scenes, props, claims or actors. "
 		"Preserve explicit format/duration; if absent, propose them with a reason.\nCONSTRAINTS: "
 		+ json.dumps({k: v for k, v in constraints.items() if k != "example_voice_lines"}, ensure_ascii=False)
 		+ "\nREFERENCE KEY ROSTER: "
@@ -1348,6 +1379,8 @@ def draft_script(
 				english_production_text(script, viewer_language)
 				+ normalize_product_wording(script, inventory)
 				+ normalize_product_camera_inserts(script)
+				+ normalize_product_hero_edges(script, constraints)
+				+ normalize_product_hero_characters(script, constraints)
 				+ normalize_static_final_packshot(script)
 				+ normalize_early_closing_beat(script)
 				+ fresh_example_copies(script, constraints)
@@ -1376,7 +1409,8 @@ def draft_script(
 							"action_reference_observations",
 							"historical_failure_patterns",
 						)
-					},
+					}
+					| {"film_structure": product_hero_rule(constraints)},
 				)
 			except ValueError as exc:
 				# The reviewer failing its own quoting protocol is not a script defect.
@@ -1422,7 +1456,11 @@ def draft_script(
 			"reason": "Later optional rewrites failed structural validation; retained the best structurally valid draft.",
 			"quality_review": "deferred",
 		}
-		return finish(script, findings, advisory, wording, _attempt + 1)
+		try:
+			return finish(script, findings, advisory, wording, _attempt + 1)
+		except ValueError as exc:
+			# Still text only: let the batch draw a fresh concept within its budget.
+			raise ValueError("Automatic script remained invalid after bounded repair: " + str(exc)) from exc
 	raise ValueError("Automatic script remained invalid after bounded repair: " + error)
 
 
@@ -1735,6 +1773,157 @@ def normalize_product_camera_inserts(script):
 	return changes
 
 
+SOURCE_HOLD_ACTION = (
+	"The original product remains in its established position with its printed artwork intact."
+)
+
+
+def _seconds(value):
+	"""A phase end that never exceeds the frame-snapped duration ('{:g}' rounds 1.5416… up)."""
+	return f"{float(value or 0):.9f}".rstrip("0").rstrip(".")
+
+
+PACKAGE_PHRASE = re.compile(
+	r"(?:\s+(?:taken|pulled|removed|drawn|lifted|extracted))?"
+	r"\s+(?:from|out of|towards?|into|beside|next to|near|inside)\s+(?:the\s+|a\s+|its\s+)?"
+	r"(?:product\s+)?(?:pack(?:age|et)?|box|carton|dispenser|wrapper)s?\b",
+	re.I,
+)
+MATERIAL = re.compile(r"\b(?:tissue|sheet|paper|napkin|cloth|towel)s?\b", re.I)
+
+
+SEATED = re.compile(r"\b(seated|sitting|sits)\b(?!\s+(?:on|at|in|upon)\b)", re.I)
+FURNITURE_SEAT = re.compile(
+	r"\b(?:on|at|in)\s+(?:the\s+|a\s+|its\s+)?(?:\w+\s+)?(?:chair|sofa|couch|stool|bench|armchair|seat)\b",
+	re.I,
+)
+ON_TABLE = re.compile(
+	r"\b(on|from|off|onto)\s+(?:a|the|its)\s+(?:(?:small|low|coffee|side|wooden|nearby|little)\s+)*table\b",
+	re.I,
+)
+BODY_SUPPORT = re.compile(
+	r"\b(?:seated|sitting|sits|standing|stands|kneel\w*|lying|upright|full[- ]body|feet|on the (?:ground|floor))\b",
+	re.I,
+)
+
+
+def _describes_body_support(opening):
+	"""A whole-body posture or support word that is about the character, not the material ("tissue lying on")."""
+	return any(
+		not MATERIAL.search(opening[max(0, m.start() - 25) : m.start()])
+		for m in BODY_SUPPORT.finditer(opening)
+	)
+
+
+VAGUE_SUPPORT = re.compile(
+	r"\b(?:a|an|its|the)\s+(?:visible\s+|nearby\s+|flat\s+)?(?:support|surface)\b", re.I
+)
+GROUND = re.compile(r"\b(rug|carpet|mat|floor)\b", re.I)
+
+
+def normalize_product_hero_characters(script, constraints):
+	"""Repair the writer's two recurring character-scene slips in code.
+
+	The writer kept taking the material "from the pack" inside package-free
+	scenes and kept handling material it never picked up, even when told each
+	time. Both are mechanical: drop the package phrase, and start the first
+	character scene by picking the material up.
+	"""
+	scenes = script.get("scenes") or []
+	if not constraints.get("product_hero_structure") or len(scenes) < 3:
+		return []
+	changes = []
+	first = True
+	for number, scene in enumerate(scenes[1:-1], 2):
+		if not scene.get("cast"):
+			continue
+		for field in ("visual_camera", "action", "continuity_rules"):
+			text = str(scene.get(field) or "")
+			cleaned = PACKAGE_PHRASE.sub("", text)
+			if cleaned != text:
+				scene[field] = cleaned
+				changes.append(f"Scene {number}: removed a package reference from {field}.")
+		if first:
+			first = False
+			material = MATERIAL.search(" ".join(str(scene.get(k) or "") for k in ("visual_camera", "action")))
+			action = str(scene.get("action") or "")
+			if (
+				material
+				and not HELD.search(str(scene.get("visual_camera") or ""))
+				and not ACQUIRE.search(action)
+			):
+				# Pick the material up in the first phase that handles it; a preceding
+				# stand-up or turn is not handling it.
+				lines = action.split("\n")
+				first_use = next((i for i, line in enumerate(lines) if MATERIAL.search(line)), 0)
+				match = re.match(
+					r"(\s*\[[^\]]+\]\s*)(?:the\s+mascot\s+|the\s+character\s+|it\s+|he\s+|she\s+)?(.*)",
+					lines[first_use],
+					re.I | re.S,
+				)
+				if match:
+					rest = match.group(2)
+					lines[first_use] = (
+						f"{match.group(1)}The character picks up the {material.group().lower()} and then "
+						+ rest[:1].lower()
+						+ rest[1:]
+					)
+					scene["action"] = "\n".join(lines)
+					changes.append(
+						f"Scene {number}: the character now picks up the material before handling it."
+					)
+	return changes
+
+
+HERO_PRODUCT_VIEWS = {"front_left", "front_right", "three_quarter", "top_front"}
+
+
+def normalize_product_hero_edges(script, constraints):
+	"""Write the opening and closing product shots as the exact source presentation.
+
+	Their content is fixed by the product-hero structure, so code sets it rather
+	than asking the writer: no actor, the hero product photographed, stationary,
+	camera locked. The writer then only has to get the character scenes right.
+	"""
+	scenes = script.get("scenes") or []
+	hero = constraints.get("hero_product")
+	if not constraints.get("product_hero_structure") or not hero or len(scenes) < 3:
+		return []
+	changes = []
+	for number in (1, len(scenes)):
+		scene = scenes[number - 1]
+		# The writer may choose an angle that keeps the printed front in view; it is
+		# verified against the photograph later, which is shown if it fails.
+		view = str(scene.get("product_view") or "").strip().casefold()
+		view = view if view in HERO_PRODUCT_VIEWS else "source"
+		scene.update(
+			cast=[],
+			products=[hero],
+			product_view=view,
+			subject_motion="stationary",
+			camera_move="static",
+			place="Neutral source-photo setting",
+			visual_camera=(
+				"The original product stands stationary in its supplied orientation on a neutral "
+				"source-photo setting, its printed front toward the camera."
+				if view == "source"
+				# The angle sits beside "product": the planner reads the view from this text
+				# because the storyboard workbook does not carry product_view.
+				else f"The original product, seen in a {view.replace('_', '-')} view, stands stationary on a "
+				"neutral source-photo setting with its printed front in view."
+			),
+			action=f"[0-{_seconds(scene.get('duration_seconds'))}s] {SOURCE_HOLD_ACTION}",
+			visible_change=SOURCE_HOLD_ACTION,
+			continuity_rules=(
+				"Preserve the product's established support and original artwork. "
+				"No physical actor appears in this shot."
+			),
+			environment_entities=[],
+		)
+		changes.append(f"Scene {number}: product hero shot set to the {view} presentation.")
+	return changes
+
+
 def normalize_static_final_packshot(script):
 	"""Keep an inactive actor out of a product-only closing presentation."""
 	scenes = script.get("scenes") or []
@@ -1781,9 +1970,7 @@ def normalize_static_final_packshot(script):
 			)
 		):
 			duration = float(scene["duration_seconds"])
-			scene["action"] = (
-				f"[0-{duration:g}s] The original product remains in its established position with its printed artwork intact."
-			)
+			scene["action"] = f"[0-{_seconds(duration)}s] {SOURCE_HOLD_ACTION}"
 			scene["visible_change"] = (
 				"The original product remains in its established position with its printed artwork intact."
 			)
@@ -1804,7 +1991,7 @@ def normalize_static_final_packshot(script):
 	scene.update(
 		cast=[],
 		visual_camera="A close view of the original product in its established location; its printed front faces the camera and no actor is visible.",
-		action=f"[0-{duration:g}s] The original product remains in its established position with its printed artwork intact.",
+		action=f"[0-{_seconds(duration)}s] {SOURCE_HOLD_ACTION}",
 		visible_change="The original product remains in its established position with its printed artwork intact.",
 		continuity_rules="Preserve the product's established physical support and original artwork. No actor appears in this shot.",
 		shot_framing="close_up",
@@ -2250,6 +2437,225 @@ def _save_rejected_drafts(project, nonce, rejected):
 		frappe.log_error(title="Could not keep rejected script drafts")
 
 
+# In a character scene of a product-hero film (products=[]), "the product" can only mean the pack.
+PACKAGE_WORD = re.compile(
+	r"\b(?:pack(?:age|et)?s?|box(?:es)?|cartons?|dispensers?|wrappers?|products?)\b", re.I
+)
+HELD = re.compile(r"\b(?:holds?|holding|held|in (?:its|his|her|their) (?:paws?|hands?))\b", re.I)
+ACQUIRE = re.compile(
+	# "picks it up" and "picks the tissue up" are pickups too.
+	r"\b(?:pick(?:s|ing)?\s+(?:[\w']+\s+){0,3}?up|lifts?|lifting|takes?|taking|grabs?|grabbing|collects?)\b",
+	re.I,
+)
+SECONDS_PER_PACED_SCENE = 3
+MIN_ACTOR_SCENE_SECONDS = 2.5
+MIN_ACTION_PHASE_SECONDS = 1.2
+MAX_PRODUCT_HERO_SECONDS = 3.5
+
+
+def product_hero_rule(constraints):
+	"""Writer instruction for the product-hero structure and its pacing."""
+	if not constraints.get("product_hero_structure"):
+		return ""
+	seconds = constraints.get("duration_seconds")
+	count = (
+		f"Use at most {max(3, math.floor(seconds / SECONDS_PER_PACED_SCENE))} scenes for {seconds:g} seconds. "
+		if seconds
+		else ""
+	)
+	return (
+		"11) PRODUCT HERO STRUCTURE (overrides the opening-hook part of rule 3 and extends rule 7): "
+		"the FIRST and the LAST scene are product-only hero shots of the supplied product: cast=[], "
+		"products=[the hero product], the product stationary on a neutral source-photo setting, camera locked. "
+		"Each chooses product_view: source (the supplied photograph) or one angle of the same pack that keeps "
+		"its printed front in view (front_left, front_right, three_quarter or top_front); give the two shots "
+		"different views. An angle is used only if its colours and printed words match the photograph; "
+		"otherwise the photograph is shown. The first introduces the product; the last carries the CTA. Every scene in between is a character scene: the supplied character performs one "
+		"tangible interaction with the loose material only, products=[], and no package, box or carton anywhere "
+		"in the opening, action or frame; the material starts already out of its package on a visible support. "
+		"PACING: " + count + f"Each character scene lasts at least {MIN_ACTOR_SCENE_SECONDS:g} seconds and "
+		f"each timed phase at least {MIN_ACTION_PHASE_SECONDS:g} seconds; give every distinct action its own "
+		f"time rather than squeezing two into one short scene. Product hero shots last 2 to "
+		f"{MAX_PRODUCT_HERO_SECONDS:g} seconds. VARIETY: consecutive character scenes differ in framing or "
+		"camera view AND open on a different paw/hand gesture or body pose. With three or more character "
+		"scenes, use at least two body states (for example seated and standing), and perform each change "
+		"on screen (the character rises, sits down or steps over). verified_body_states are poses already "
+		"prepared; any other clear pose is prepared automatically. Keep the body support (seated or "
+		"standing) across a cut unless the earlier scene visibly performs that change. The first character "
+		"scene opens with the material already visible on its support before any reach or touch, and its first "
+		"timed phase picks the material up. A close_up or extreme_close_up opening describes only what the "
+		"close frame shows (the paws, the face or the material and their contact), never the whole body, its "
+		"seat or its feet. Name the material's support (the rug, the floor, the table) and keep it in frame. "
+		"Each narration line has at most 2.5 words per second of its scene. "
+	)
+
+
+VIEW_WORD = re.compile(
+	r"\b(front|side|profile|three-quarter|back|rear|overhead|top-down|low[- ]angle|high[- ]angle|"
+	r"over-the-shoulder)\b",
+	re.I,
+)
+BODY_STATES = (
+	("lying", re.compile(r"\b(?:lying|lies|reclin\w*)\b", re.I)),
+	("standing", re.compile(r"\b(?:stand\w*|walk\w*|step\w*)\b", re.I)),
+	("seated", re.compile(r"\b(?:seated|sit\w*|kneel\w*)\b", re.I)),
+)
+
+
+def _body_state(text):
+	return next((state for state, pattern in BODY_STATES if pattern.search(text)), None)
+
+
+def _opening_pose_words(scene):
+	"""The opening's pose and gesture words, without the shared material, support and cast name."""
+	text = ON_TABLE.sub(" ", GROUND.sub(" ", MATERIAL.sub(" ", str(scene.get("visual_camera") or ""))))
+	return [
+		w for w in re.findall(r"[a-z]+", text.lower()) if w not in {"the", "a", "an", "mascot", "character"}
+	]
+
+
+NARRATION_WORDS_PER_SECOND = 2.5  # a natural ad read; speech is fitted at most 1.35x faster
+
+
+def narration_word_budget(seconds):
+	"""The most narration words a scene of this length carries at a natural pace."""
+	return max(2, int(float(seconds or 0) * NARRATION_WORDS_PER_SECOND))
+
+
+def variety_defects(scenes):
+	"""Character scenes that repeat the previous one's look, or a film held in one body state.
+
+	Only requested of the writer, variety collapsed into one seated pose whenever a single pose was
+	verified. Measured in code, a repeat goes back to the writer before any picture is drawn.
+	"""
+	from difflib import SequenceMatcher
+	from itertools import pairwise
+
+	characters = [(n, s) for n, s in enumerate(scenes, 1) if s.get("cast")]
+	problems = []
+	for (before_number, before), (number, scene) in pairwise(characters):
+		views = [
+			{v.lower() for v in VIEW_WORD.findall(str(s.get("visual_camera") or ""))} for s in (before, scene)
+		]
+		if (
+			scene.get("shot_framing")
+			and before.get("shot_framing") == scene.get("shot_framing")
+			and views[0] == views[1]
+		):
+			problems.append(
+				f"character scenes {before_number} and {number} share the {scene.get('shot_framing')} framing "
+				"and camera view; change one of them"
+			)
+		poses = _opening_pose_words(before), _opening_pose_words(scene)
+		if all(poses) and SequenceMatcher(None, *poses).ratio() >= 0.8:
+			problems.append(
+				f"character scene {number} opens in the same pose and gesture as scene {before_number}; give it "
+				"a different paw/hand gesture or body pose"
+			)
+	states = {_body_state(str(s.get("visual_camera") or "")) for _, s in characters}
+	if len(characters) >= 3 and len(states - {None}) < 2:
+		problems.append(
+			"every character scene keeps one body state; use at least two (for example seated and standing) "
+			"and perform the change on screen"
+		)
+	return problems
+
+
+def product_hero_defects(scenes):
+	"""Raise for a screenplay that breaks the product-hero structure or its pacing."""
+	from joymedia.services.planning.timed_actions import read_timed_actions
+
+	problems = []
+	first_character = next(
+		(number for number, scene in enumerate(scenes, 1) if 1 < number < len(scenes)), None
+	)
+	for number, scene in enumerate(scenes, 1):
+		edge = number in {1, len(scenes)}
+		cast, products = scene.get("cast") or [], scene.get("products") or []
+		seconds = float(scene.get("duration_seconds") or 0)
+		if edge and (cast or not products):
+			problems.append(f"scene {number} must be product-only: cast=[] and the hero product listed")
+		elif edge and seconds > MAX_PRODUCT_HERO_SECONDS + 1e-6:
+			problems.append(
+				f"product scene {number} lasts {seconds:.1f}s; keep it within {MAX_PRODUCT_HERO_SECONDS:g}s"
+			)
+		elif not edge and (not cast or products):
+			problems.append(f"scene {number} must be a character scene with products=[]")
+		elif not edge:
+			named = PACKAGE_WORD.search(
+				" ".join(str(scene.get(k) or "") for k in ("visual_camera", "action", "continuity_rules"))
+			)
+			if named:
+				problems.append(
+					f"character scene {number} mentions '{named.group()}'; the material must already be out "
+					"of any package, resting on a visible support, with no package in the scene or its action"
+				)
+			if seconds < MIN_ACTOR_SCENE_SECONDS - 1e-6:
+				problems.append(
+					f"character scene {number} lasts {seconds:.1f}s; give it at least {MIN_ACTOR_SCENE_SECONDS:g}s"
+				)
+			try:
+				phases = read_timed_actions(scene.get("action") or "", seconds) or []
+			except ValueError:
+				phases = []
+			held = HELD.search(str(scene.get("visual_camera") or ""))
+			first_use = next(
+				(row for row in phases if MATERIAL.search(row["action"])), phases[0] if phases else None
+			)
+			if (
+				number == first_character
+				and not held
+				and not (first_use and ACQUIRE.search(first_use["action"]))
+			):
+				problems.append(
+					f"character scene {number} starts with the material resting on its support, so its first "
+					"phase must pick it up before any other handling, e.g. '[0-1.2s] The mascot picks up the "
+					"tissue from the rug'"
+				)
+			opening = str(scene.get("visual_camera") or "")
+			if scene.get("shot_framing") in {"close_up", "extreme_close_up"} and _describes_body_support(
+				opening
+			):
+				# A close opening that states the whole body's support is drawn as a full-body picture.
+				problems.append(
+					f"character scene {number} is a {scene['shot_framing']} but its opening describes the whole "
+					"body's support; describe only what the close frame shows (the paws, the material and their "
+					"contact), or choose a wider framing"
+				)
+			if MATERIAL.search(opening) and VAGUE_SUPPORT.search(opening):
+				# Left unnamed, a later planning step picks a support (often a table) that a
+				# close frame then leaves out, taking the material with it.
+				problems.append(
+					f"character scene {number} rests the material on '{VAGUE_SUPPORT.search(opening).group()}'; "
+					"name the actual support (for example the rug, the floor or the table) and keep it inside "
+					"the framing"
+				)
+			if SEATED.search(opening) and ON_TABLE.search(opening) and not FURNITURE_SEAT.search(opening):
+				# Left unstated, the picture model seats the character on the table itself.
+				problems.append(
+					f"character scene {number} seats the character without saying on what while its material "
+					"rests on a table; state what the character sits or stands on and keep the material within "
+					"reach of that pose"
+				)
+			short = [row for row in phases if row["end"] - row["start"] < MIN_ACTION_PHASE_SECONDS - 1e-6]
+			if short:
+				problems.append(
+					f"scene {number} has a {short[0]['end'] - short[0]['start']:.1f}s action phase; give each "
+					f"action at least {MIN_ACTION_PHASE_SECONDS:g}s or move it to its own scene"
+				)
+	for number, scene in enumerate(scenes, 1):
+		words = len(re.findall(r"[\w']+", str(scene.get("voice_over") or "")))
+		budget = narration_word_budget(scene.get("duration_seconds"))
+		if words > budget:
+			problems.append(
+				f"scene {number} narration has {words} words for {float(scene.get('duration_seconds') or 0):g}s; "
+				f"keep it to at most {budget} words"
+			)
+	problems += variety_defects(scenes)
+	if problems:
+		raise ValueError("Product hero structure: " + "; ".join(problems) + ".")
+
+
 def validate_script(script, inventory, constraints, advisory=None):
 	"""Structural errors always raise. Pass a list as `advisory` to collect the
 	heuristic story findings (idle beats, unanchored effects) instead of raising;
@@ -2268,6 +2674,8 @@ def validate_script(script, inventory, constraints, advisory=None):
 		or not 2 <= len(script["scenes"]) <= 12
 	):
 		raise ValueError("A script requires 2–12 scenes.")
+	if constraints.get("product_hero_structure"):
+		product_hero_defects(script["scenes"])
 	# A client's explicit shot count is a delivery constraint, even when the
 	# automatic writer is allowed to retain non-critical quality notes.
 	direction = str(constraints.get("creative_direction") or "")

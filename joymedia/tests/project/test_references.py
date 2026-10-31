@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 
 from joymedia.services.project.references import (
 	canonical_reference_rows,
@@ -48,3 +49,17 @@ class TestCanonicalProjectReferences(unittest.TestCase):
 		self.rows[1]["label"] = "Approved subject side (the approved side photograph)"
 		self.assertEqual(["mascot_side"], named_reference_views(self.rows, ["Approved subject side"]))
 		self.assertEqual([], named_reference_views(self.rows, ["subject turns sideways"]))
+
+
+class TestTurnaroundViewNames(unittest.TestCase):
+	def test_a_four_view_sheet_with_repeated_names_follows_turnaround_order(self):
+		from joymedia.services.intake import view_sheet
+
+		with unittest.mock.patch.object(
+			view_sheet, "_view_name", side_effect=["front", "front", "side", "back"]
+		):
+			self.assertEqual(
+				list(view_sheet.TURNAROUND_ORDER), view_sheet._view_names([b"1", b"2", b"3", b"4"])
+			)
+		with unittest.mock.patch.object(view_sheet, "_view_name", side_effect=["front", "side"]):
+			self.assertEqual(["front", "side"], view_sheet._view_names([b"1", b"2"]))

@@ -37,3 +37,13 @@ test('scene reference lines never show technical media keys', () => {
 	assert.equal(referenceLabel({ reference_key: 'mascot_front', label: 'mascot_front', reference_role: 'Character' }), 'mascot front');
 	assert.equal(referenceLabel({ reference_key: 'room' }, [{ reference_key: 'room', display_name: 'Living room' }]), 'Living room');
 });
+
+test('derived references are told apart from the customer uploads', async () => {
+	const { derivedReference } = await import('../src/utils/rioPresentation.js');
+	assert.equal(derivedReference({ reference_key: 'mascot_front', label: 'mascot front' }), null);
+	assert.equal(derivedReference({ reference_key: 'product' }), null);
+	assert.equal(derivedReference({ reference_key: 'pose_c836448df484' }), 'generated');
+	assert.equal(derivedReference({ reference_key: 'product_view_b005066f2c4a' }), 'generated');
+	assert.equal(derivedReference({ reference_key: 'mascot_front', label: 'mascot seated (verified)' }), 'generated');
+	assert.equal(derivedReference({ reference_key: 'mascot_sheet_view3' }), 'sheet');
+});

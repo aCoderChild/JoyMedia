@@ -296,7 +296,7 @@ class TestAutomaticSceneRepair(FrappeTestCase):
 
 		for note, words in (
 			("Critical geometry: bear passes through the tabletop", "No solid surface may run through"),
-			("Critical style: the frame is a flat 2D illustration", "photorealistic scene"),
+			("Critical style: the frame is a flat 2D illustration", "actual rendering medium"),
 			(
 				"Product lock: Product view is incompatible with the supplied source photograph.",
 				"same orientation",
@@ -324,6 +324,27 @@ class TestAutomaticSceneRepair(FrappeTestCase):
 			"joymedia.services.generation.creative_batch.rewrite_scenes_in_place", enqueue.call_args.args[0]
 		)
 
+	def test_scheduler_requeues_a_rewrite_whose_job_was_lost(self):
+		batch = frappe._dict(
+			name="CRB-LOST",
+			owner="user@example.invalid",
+			variants_json='[{"status":"Rewriting"},{"status":"Rewriting"}]',
+		)
+		with (
+			patch.object(cb.frappe, "get_all", return_value=[batch.name]),
+			patch.object(cb.frappe, "get_doc", return_value=batch),
+			patch.object(cb, "partner_batch_waits_for_gpu", return_value=False),
+			patch.object(cb, "_queue_prepare"),
+			patch.object(cb, "is_render_alive", side_effect=lambda job: job.endswith(":1")),
+			patch.object(cb.frappe, "enqueue") as enqueue,
+		):
+			cb.advance_batches()
+		enqueue.assert_called_once()
+		self.assertEqual(
+			"joymedia.services.generation.creative_batch.rewrite_scenes_in_place", enqueue.call_args.args[0]
+		)
+		self.assertEqual(0, enqueue.call_args.kwargs["position"])
+
 	def test_a_new_concept_starts_with_a_full_repair_budget(self):
 		variant = {
 			"status": "Keyframes",
@@ -332,9 +353,16 @@ class TestAutomaticSceneRepair(FrappeTestCase):
 			"automatic_scene_rewrites": cb.AUTOMATIC_SCENE_REWRITES,
 			"frame_corrections": {"S1": cb.AUTOMATIC_FRAME_CORRECTIONS},
 			"physical_audit": {"S1": "GART-1"},
+			"source_art_cutaway_version": 3,
 		}
 		self.assertTrue(cb._restart_automatic_script_variant(variant, {"scenes": []}, ["Scene 1 failed."]))
-		for key in ("automatic_scene_rewrites", "frame_corrections", "physical_audit", "project"):
+		for key in (
+			"automatic_scene_rewrites",
+			"frame_corrections",
+			"physical_audit",
+			"project",
+			"source_art_cutaway_version",
+		):
 			self.assertNotIn(key, variant)
 
 
@@ -509,3 +537,185 @@ class TestStaleKeyframe(FrappeTestCase):
 			patch("joymedia.services.keyframes.stage.keyframe_signature", return_value="y"),
 		):
 			self.assertFalse(cb._stale_keyframe("S2"))
+
+
+class TestEmptyRosterPackageRepair(FrappeTestCase):
+	def test_the_rewrite_names_each_scene_whose_text_shows_an_unlisted_package(self):
+		script = {
+			"scenes": [
+				{"products": ["product"], "visual_camera": "The pack sits on the rug."},
+				{"products": [], "visual_camera": "The paw holds a tissue, the pack visible behind it."},
+				{"products": [], "visual_camera": "A close-up of the tissue; no pack in frame."},
+			]
+		}
+		defect = cb._empty_roster_package_defect(script)
+		self.assertTrue(defect.startswith("Scenes 2 declare products=[]"))
+		self.assertIn("list the product", defect)
+
+
+class TestPackFreeActorCutaway(FrappeTestCase):
+	def script(self):
+		return {
+			"scenes": [
+				{
+					"cast": ["mascot"],
+					"products": ["pack"],
+					"action": "The mascot pulls a tissue from the pack.",
+				},
+				{"cast": ["mascot"], "products": [], "action": "The mascot feels the tissue."},
+				{"cast": ["mascot"], "products": ["pack"], "action": "The mascot sets the tissue down."},
+			]
+		}
+
+	def test_package_handling_moves_out_of_actor_shots_into_a_source_photo_close(self):
+		script = self.script()
+		self.assertEqual([], cb._source_art_cutaway_notes(script))
+		notes = cb._pack_free_actor_notes(script)
+		self.assertEqual([1, 2, 2, 3], [n["scene"] for n in notes])
+		self.assertIn("already out", notes[0]["text"])
+		self.assertIn(script["scenes"][-1]["action"], notes[1]["text"])
+		self.assertEqual(cb.PRODUCT_ONLY_CLOSE, notes[-1]["text"])
+		# The scene receiving the moved actions is told to stay package-free too.
+		self.assertIn(cb.PACK_FREE_ACTOR_SHOT, [n["text"] for n in notes if n["scene"] == 2])
+
+	def test_repeated_pack_compositing_failures_in_an_actor_shot_trigger_the_cutaway(self):
+		script = self.script()
+		script["scenes"][2]["cast"] = []  # A product-only close is not an actor shot.
+		variants = [{"status": "Keyframes", "script": script, "automatic_scene_rewrites": 2}]
+		shots = [
+			frappe._dict(name="PACKSHOT", shot_number=3, consistency_notes=""),
+			frappe._dict(
+				name="ACTOR",
+				shot_number=1,
+				consistency_notes="Critical geometry: advertised product camera angle conflicts with its support plane",
+			),
+		]
+		failed = [frappe._dict(error_details="Expected one unambiguous product; detected 2.")]
+		with (
+			patch(
+				"joymedia.services.consistency.retention.policy", return_value={"source_hold_pipeline": "P"}
+			),
+			patch.object(cb.frappe, "get_all", side_effect=[shots, ["TASK"], failed]),
+			patch.object(cb, "_start_automatic_scene_repair", return_value=True) as repair,
+		):
+			self.assertTrue(
+				cb._try_source_art_cutaway(frappe._dict(name="CRB"), variants, 0, frappe._dict(name="P"))
+			)
+		self.assertEqual(1, repair.call_args.kwargs["extra_budget"])
+		self.assertEqual([1, 3], [n["scene"] for n in repair.call_args.args[3]])
+		self.assertEqual(3, variants[0]["source_art_cutaway_version"])
+
+	def test_the_cutaway_has_one_rewrite_beyond_the_ordinary_budget(self):
+		variants = [
+			{"status": "Keyframes", "project": "P", "automatic_scene_rewrites": cb.AUTOMATIC_SCENE_REWRITES}
+		]
+		note = [{"scene": 1, "text": "Remove the pack."}]
+		with patch.object(cb, "_write"), patch("frappe.enqueue"), patch("frappe.db.commit"):
+			self.assertFalse(cb._start_automatic_scene_repair("CRB", variants, 0, note))
+			self.assertTrue(cb._start_automatic_scene_repair("CRB", variants, 0, note, extra_budget=1))
+
+	def test_a_service_outage_during_the_rewrite_keeps_it_queued_for_retry(self):
+		from joymedia.services.planning.production import PlannerUnavailableError
+
+		self.assertTrue(cb._service_outage(PlannerUnavailableError("The planner is unavailable")))
+		self.assertFalse(cb._service_outage(ValueError("Scene 2 still shows a package.")))
+
+
+class TestFaceChosenByScript(FrappeTestCase):
+	def project(self):
+		def row(key, version, label):
+			return frappe._dict(
+				reference_key=key,
+				asset_version=version,
+				label=label,
+				reference_role="Character",
+				identity_key="mascot",
+			)
+
+		project = frappe._dict(
+			selected_media=[
+				frappe._dict(
+					reference_key="product",
+					asset_version="P",
+					reference_role="Product",
+					identity_key="product",
+				),
+				row("mascot_front", "F", "mascot front"),
+				row("pose_a", "G1", "seated (verified)"),
+				row("pose_b", "G2", "standing (verified)"),
+				row("mascot_sheet_view1", "V1", "mascot front"),
+				row("mascot_sheet_view3", "V3", "mascot side"),
+			],
+			save=lambda **kwargs: None,
+		)
+		project.set = lambda field, value: project.__setitem__(field, value)
+		return project
+
+	def choose(self, script):
+		project = self.project()
+		originals = {"F": "F", "G1": "F", "G2": "F"}
+		with patch(
+			"joymedia.services.project.reference_lineage.original_reference",
+			side_effect=lambda version: {"asset_version": originals.get(version, version)},
+		):
+			kept = cb._choose_face_for_script(project, script)
+		return kept, [row.reference_key for row in project.selected_media], script
+
+	def test_front_scenes_keep_the_family_with_most_verified_poses(self):
+		script = {
+			"scenes": [{"cast": ["mascot_sheet_view1"], "action": "[0-3s] The mascot lifts the tissue."}]
+		}
+		kept, keys, script = self.choose(script)
+		self.assertEqual(["image:F"], kept)
+		self.assertEqual(["product", "mascot_front", "pose_a", "pose_b"], keys)
+		self.assertEqual(["mascot_front"], script["scenes"][0]["cast"])
+
+	def test_a_side_view_in_the_script_keeps_the_family_with_side_drawings(self):
+		script = {
+			"scenes": [
+				{"cast": ["mascot_front"], "visual_camera": "Side view of the mascot holding the tissue."}
+			]
+		}
+		kept, keys, script = self.choose(script)
+		self.assertEqual(["sheet:mascot_sheet"], kept)
+		self.assertEqual(["product", "mascot_sheet_view1", "mascot_sheet_view3"], keys)
+		self.assertEqual(["mascot_sheet_view1"], script["scenes"][0]["cast"])
+
+	def test_a_single_face_is_left_unchanged(self):
+		project = self.project()
+		project.selected_media = project.selected_media[:3]
+		with patch(
+			"joymedia.services.project.reference_lineage.original_reference",
+			side_effect=lambda version: {"asset_version": "F"},
+		):
+			self.assertEqual([], cb._choose_face_for_script(project, {"scenes": []}))
+		self.assertEqual(3, len(project.selected_media))
+
+
+class TestProductShotsUseTheSourcePhoto(FrappeTestCase):
+	def test_automatic_product_only_shots_skip_generation(self):
+		shots = [
+			frappe._dict(name="S1", consistency_status="", motion_plan_json="{}"),
+			frappe._dict(name="S2", consistency_status="", motion_plan_json="{}"),
+			frappe._dict(name="S3", consistency_status="", motion_plan_json="{}"),
+		]
+		sourced = {"S1", "S3"}
+		project = frappe._dict(name="P", workflow="W", generation_pipeline="PIPE")
+		variant = {}
+		with (
+			patch.object(cb, "pinned_execution", return_value=nullcontext()),
+			patch.object(cb, "delivery_context", return_value=nullcontext()),
+			patch("joymedia.services.workflows.capabilities.controls", return_value=set()),
+			patch.object(cb.frappe, "get_doc", return_value=frappe._dict()),
+			patch.object(cb.frappe, "get_all", return_value=shots),
+			patch.object(cb, "is_automatic", return_value=True),
+			patch.object(cb, "_use_product_source_for_packshot", return_value=True) as use_source,
+			patch.object(cb, "_seal_automatic_plan") as seal,
+			patch.object(cb, "_explicit_first_frame", side_effect=lambda name: name in sourced),
+			patch("joymedia.services.keyframes.stage.generate_keyframes", return_value={"run": "R"}) as draw,
+		):
+			cb._submit_visual_stage(project, variant, {"delivery_mode": "automatic"}, "CRB")
+		self.assertEqual(3, use_source.call_count)
+		seal.assert_called_once_with("P")
+		draw.assert_called_once_with("P", ["S2"], draw_places=False)
+		self.assertEqual({"run": "R"}, variant["keyframe_request"])

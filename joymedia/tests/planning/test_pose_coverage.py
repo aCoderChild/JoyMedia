@@ -19,7 +19,9 @@ from joymedia.services.planning.pose_assets import (
 	_pose_view,
 	_view_matches,
 	_visible_change,
+	_without_object_clauses,
 	prepare_script_pose_views,
+	restage_held_openings,
 )
 from joymedia.services.planning.pose_coverage import (
 	annotate_shots,
@@ -67,7 +69,9 @@ class TestPoseCoverage(TestCase):
 		):
 			state = _plan_required_states(script, selected)[0]
 		self.assertEqual(
-			"seated, both forearms bent forward at waist height, paws positioned apart", state["opening_pose"]
+			"seated, both forearms bent forward at waist height, paws positioned apart, "
+			"empty and held clear of the torso",
+			state["opening_pose"],
 		)
 		self.assertTrue(state["opening_articulation_required"])
 
@@ -152,13 +156,59 @@ class TestPoseCoverage(TestCase):
 				side_effect=ValueError("gesture not qualified"),
 			) as render,
 			patch("joymedia.services.planning.pose_assets._approved_view_with_same_support") as fallback,
+			patch("joymedia.services.planning.pose_assets.restage_held_openings", return_value=[]) as restage,
 			patch("frappe.log_error"),
 		):
 			prepared = prepare_script_pose_views(project, script)
 		self.assertEqual("deferred", prepared[0]["status"])
 		fallback.assert_not_called()
 		render.assert_called_once()
+		restage.assert_called_once_with(script, [1])
 		self.assertEqual(["bear"], script["scenes"][0]["cast"])
+
+	def test_a_restaged_held_opening_binds_the_relaxed_view_of_its_support(self):
+		project, asset_value = self._standing_library_project("standing upright, both paws free")
+		project.reload = lambda: None
+		script = {
+			"scenes": [
+				{"cast": ["bear"], "visual_camera": "The bear already holds a tissue.", "action": "Fold it."}
+			]
+		}
+		gesture = "seated, both forearms bent forward at waist level"
+		held = {
+			"scene_index": 0,
+			"cast_key": "bear",
+			"reference_key": "bear",
+			"opening_pose": gesture,
+			"view": "front",
+			"opening_articulation_required": True,
+		}
+		reach = {key: value for key, value in held.items() if key != "opening_articulation_required"}
+		relaxed = frappe._dict(reference_key="bear_view", identity_key="bear")
+		with (
+			patch(
+				"joymedia.services.planning.pose_assets._plan_required_states", side_effect=[[held], [reach]]
+			),
+			patch("frappe.db.get_value", side_effect=asset_value),
+			patch("joymedia.services.planning.pose_assets._view_matches", return_value=False),
+			patch(
+				"joymedia.services.planning.pose_assets._register_pose_view",
+				side_effect=ValueError("gesture not qualified"),
+			),
+			patch(
+				"joymedia.services.planning.pose_assets._approved_view_with_same_support",
+				return_value=(relaxed, {"pose": "seated, both paws resting"}),
+			),
+			patch("joymedia.services.planning.pose_assets.restage_held_openings", return_value=[1]),
+			patch("joymedia.services.planning.reference_plan.ground_generated_inventory"),
+			patch("joymedia.services.intake.subject_cutout.sam2_configured", return_value=False),
+			patch("frappe.log_error"),
+		):
+			prepared = prepare_script_pose_views(project, script)
+		self.assertEqual("ready", prepared[0]["status"])
+		self.assertTrue(prepared[0]["restaged_opening"])
+		self.assertEqual(gesture, prepared[0]["requested_pose"])
+		self.assertEqual(["bear_view"], script["scenes"][0]["cast"])
 
 	def test_masked_pose_with_lost_traits_is_not_saved_as_character_media(self):
 		from joymedia.services.planning.pose_assets import _save_pose_view
@@ -1840,3 +1890,143 @@ class TestPoseCoverage(TestCase):
 		)
 		self.assertEqual("not_applicable", result["opening_pose"])
 		self.assertEqual([], result["constraints"])
+
+
+class TestHeldOpeningRestaging(TestCase):
+	def scene(self):
+		return {
+			"cast": ["actor"],
+			"place": "Living room with a rug.",
+			"visual_camera": "The actor is seated on the rug, holding the tissue.",
+			"continuity_rules": "The actor is seated and holding the tissue.",
+			"action": "[0-2.5s] The actor gently touches the tissue.",
+			"visible_change": "The paw touches the tissue.",
+			"duration_seconds": 2.5,
+		}
+
+	def restage(self, answer):
+		script = {"scenes": [self.scene()]}
+		with patch("joymedia.services.planning.production._ask_planner", return_value=answer):
+			return restage_held_openings(script, [1]), script["scenes"][0]
+
+	def test_grasp_moves_into_the_clip(self):
+		answer = {
+			"visual_camera": "The actor is seated on the rug; a tissue lies on the rug within reach.",
+			"continuity_rules": "The actor stays seated; the tissue starts on the rug.",
+			"action": "[0-1s] The actor picks up the tissue from the rug.\n[1-2.5s] The actor gently touches it.",
+			"visible_change": "The tissue is lifted and touched.",
+		}
+		restaged, scene = self.restage(answer)
+		self.assertEqual([1], restaged)
+		self.assertEqual(answer["action"], scene["action"])
+		self.assertEqual("Living room with a rug.", scene["place"])
+
+	def test_an_opening_still_holding_the_object_is_not_applied(self):
+		answer = {
+			"visual_camera": "The actor is seated, holding the tissue.",
+			"continuity_rules": "Seated.",
+			"action": "[0-2.5s] The actor touches the tissue.",
+			"visible_change": "Touched.",
+		}
+		restaged, scene = self.restage(answer)
+		self.assertEqual([], restaged)
+		self.assertEqual(self.scene(), scene)
+
+	def test_a_restaging_that_breaks_the_timing_is_not_applied(self):
+		answer = {
+			"visual_camera": "A tissue lies on the rug within reach.",
+			"continuity_rules": "Seated.",
+			"action": "[0-4s] The actor picks up the tissue.",
+			"visible_change": "Lifted.",
+		}
+		restaged, scene = self.restage(answer)
+		self.assertEqual([], restaged)
+		self.assertEqual(self.scene(), scene)
+
+
+class TestObjectClauseRemoval(TestCase):
+	def test_any_phrasing_of_a_hypothetical_object_is_removed_from_working_geometry(self):
+		pose = (
+			"The mascot is seated with its forearms extended forward at a slight angle, elbows bent. "
+			"The paws are open, held clear of the torso, not touching anything, maintaining a "
+			"position where they would be if holding an object."
+		)
+		self.assertEqual(
+			"The mascot is seated with its forearms extended forward at a slight angle, elbows bent. "
+			"The paws are open, held clear of the torso, not touching anything",
+			_without_object_clauses(pose),
+		)
+
+	def test_a_pose_without_working_articulation_keeps_its_grip_for_rejection(self):
+		pose = "seated, both arms resting down against the body, holding a tissue"
+		self.assertEqual(pose, _without_object_clauses(pose))
+
+
+class TestPosePlanForProductOnlyScenes(TestCase):
+	def test_blank_rows_for_scenes_without_a_character_are_not_counted(self):
+		# Recorded from CRB-00125: the planner padded the two product-only scenes with blank rows.
+		selected = [frappe._dict(reference_key="actor", identity_key="mascot", reference_role="Character")]
+		script = {
+			"scenes": [
+				{"cast": [], "visual_camera": "The product stands still.", "action": "[0-2s] It rests."},
+				{
+					"cast": ["actor"],
+					"visual_camera": "The actor sits on the rug.",
+					"opening_support": "seated",
+					"action": "[0-3s] The actor picks up the tissue.",
+				},
+				{"cast": [], "visual_camera": "The product stands still.", "action": "[0-2s] It rests."},
+			]
+		}
+		blank = {"cast_key": "", "reference_key": "", "opening_pose": "", "view": "front"}
+		planned = {
+			"scene_index": 1,
+			"cast_key": "actor",
+			"reference_key": "actor",
+			"opening_pose": "seated on the floor, both paws resting on the knees",
+			"view": "front",
+		}
+		with (
+			patch("frappe.db.get_value", return_value="{}"),
+			patch(
+				"joymedia.services.planning.production._ask_planner",
+				return_value={
+					"states": [
+						{**blank, "scene_index": 0},
+						planned,
+						{**blank, "scene_index": 2, "opening_pose": "no character present"},
+						{
+							"scene_index": 2,
+							"cast_key": "mascot",
+							"reference_key": "mascot",
+							"opening_pose": "standing upright with arms at sides",
+							"view": "front",
+						},
+					]
+				},
+			),
+		):
+			states = _plan_required_states(script, selected)
+		self.assertEqual([1], [s["scene_index"] for s in states])
+
+
+class TestLimbMovementIsNotStanding(TestCase):
+	def test_a_paw_moving_towards_the_material_does_not_require_standing(self):
+		from joymedia.services.planning.pose_coverage import required_pose
+
+		# Recorded from CRB-00125 (PRJ-02753) scene 3.
+		reach = "The mascot's paw moves towards the tissue resting on the rug and gently touches it."
+		self.assertNotEqual("upright_supported", required_pose(reach))
+		self.assertEqual("upright_supported", required_pose("The mascot moves towards the table."))
+		self.assertEqual("upright_supported", required_pose("The mascot walks to the rug."))
+
+
+class TestMascotLooks(TestCase):
+	def test_an_accessory_from_the_customers_own_references_may_be_worn_or_left_off(self):
+		from joymedia.services.planning.pose_assets import accessories_allowed
+
+		self.assertTrue(accessories_allowed([], ["Flower"], lambda: {"flower"}))
+		self.assertTrue(accessories_allowed(["flower"], [], lambda: {"flower"}))
+		self.assertFalse(accessories_allowed([], ["hat"], lambda: {"flower"}))
+		# The customer's references are only consulted when something was added.
+		self.assertTrue(accessories_allowed(["flower"], ["flower"], lambda: 1 / 0))

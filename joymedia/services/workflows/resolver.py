@@ -103,8 +103,12 @@ def resolve_attempt(attempt_name: str, staged_inputs=None):
 		frappe.throw(
 			_("Generation Run {0} has no valid delivery dimensions in its snapshot.").format(run.name)
 		)
+	from joymedia.services.keyframes.detail_crop import detail_scale
 	from joymedia.services.review.admission import retry_prompt
 
+	# A character close-up is drawn wide at double size, then cropped (keyframes.detail_crop).
+	scale = detail_scale(job, workflow_version)
+	width, height = int(width) * scale, int(height) * scale
 	workflow = build_execution_workflow(
 		workflow_version,
 		inputs={PROMPT_BINDING_KEY: retry_prompt(attempt, job.prompt_text), **staged_inputs},

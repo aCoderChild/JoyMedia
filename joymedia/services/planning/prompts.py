@@ -313,13 +313,23 @@ def _keyframe_retry_direction(shot):
 		) + identity_retry
 	if note.startswith("Critical prop:"):
 		return (
-			"\n\nRetry correction: the previous image added an undeclared retail package. "
-			"Show only the physical object in the authored opening direction in the actor's hands; "
-			"do not substitute or add a printed container."
+			"\n\nRetry correction: the actor's hands hold only the physical object named in the authored "
+			"opening, exactly as authored, and the area around the actor shows only the setting's furniture."
 		)
 	if identity_retry:
 		return identity_retry
 	return ""
+
+
+def _product_free_inventory(shot, project, prompt):
+	from joymedia.services.planning.creative import MATERIAL
+
+	names = [n.split(" (")[0] for n in _character_names(shot, project)]
+	material = MATERIAL.search(prompt + " " + str(shot.get("start_state") or ""))
+	inventory = [" and ".join(names)] if names else []
+	if material:
+		inventory.append(f"the {material.group().lower()} named in the scene")
+	return f"\n\nThe complete opening inventory is {' and '.join(inventory)}." if inventory else ""
 
 
 def _image_physical_staging(references):
@@ -334,7 +344,7 @@ def _image_physical_staging(references):
 		)
 	return (
 		text
-		+ "This opening has no advertised product. Show only the declared cast and authored working materials; do not introduce retail packs, branded boxes or merchandise."
+		+ "Everything in view is the declared cast, its authored working materials, the furniture and the setting."
 	)
 
 
@@ -436,10 +446,8 @@ def compile_prompt_for_documents(
 		references = getattr(shot, "references", None) or []
 		roles = {_role_of(reference) for reference in references}
 		if references and "product" not in roles and not (shot.get("products") or []):
-			prompt += (
-				"\n\nThis opening has no advertised product. Keep the working surface clear of "
-				"retail packs, branded boxes, bottles and merchandise unless the scene explicitly names them."
-			)
+			# BFL guidance: naming unwanted objects primes them; state the complete inventory instead.
+			prompt += _product_free_inventory(shot, project, prompt)
 		if references:
 			prompt += _image_physical_staging(references)
 		# A product-only packshot has no actor whose hands could legitimately be
@@ -457,9 +465,8 @@ def compile_prompt_for_documents(
 		excluded_props = source_prop_exclusions(shot, project)
 		if excluded_props:
 			prompt += (
-				"\n\nDo not add these source-only held props to the live actor: "
-				+ ", ".join(excluded_props)
-				+ ". If a reference contains that shape as flat artwork, keep it flat; never turn it into a separate prop."
+				"\n\nThe live actor holds only the objects named in the opening. Any shape printed in a reference "
+				"stays flat artwork on that reference."
 			)
 		prompt += _keyframe_retry_direction(shot)
 		material = sheet_material_instruction(prompt + " " + str(shot.get("start_state") or ""))
@@ -1867,7 +1874,7 @@ def _draw_prompt(shot, project):
 		+ "Each character is exactly the subject of its picture: preserve its face, colours, markings, worn accessories, "
 		"body design, visible ear count, ear shape and attachment, eye design and surface finish (a smooth surface stays smooth; never add fur, hair or texture it does not have). Separately held props are included only when authored. Each character has one head and one face, with no duplicated eyes, nose or mouth elsewhere on its body. Each cast identity appears once, in the authored opening pose, not the incidental pose or props in its reference. Do not perform later scene actions. "
 		+ (
-			f"Do not add these source-only held props to this opening: {', '.join(excluded_props)}. "
+			"The live actor holds only the objects named in the opening; shapes printed in a reference stay flat artwork. "
 			if excluded_props
 			else ""
 		)

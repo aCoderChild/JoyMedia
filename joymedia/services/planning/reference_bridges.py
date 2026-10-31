@@ -239,8 +239,9 @@ def product_view_from_h3(project, source, view, accepts):
 			project, source, identity, workflow, video, prompt=prompt, seed=seed, purpose="product"
 		)
 		for content, second in sample_bridge(bridge):
-			qualified = accepts(content)
-			record_sample(bridge, content, second, qualified)
-			if qualified:
-				return content
+			accepted = accepts(content)
+			record_sample(bridge, content, second, bool(accepted))
+			if accepted:
+				# ``accepts`` may return the sample with the photograph's print restored.
+				return accepted if isinstance(accepted, bytes | bytearray) else content
 	raise ValueError("H3 product angle did not retain the verified source traits and geometry.")
