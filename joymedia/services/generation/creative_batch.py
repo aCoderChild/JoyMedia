@@ -3518,6 +3518,28 @@ def advance_batch(batch_name, user=None):
 						_write(batch.name, variants, changed_index=index)
 						frappe.db.commit()
 						continue
+					# The place itself could not be drawn as a location these scenes can use
+					# (a bare "Rug" was drawn as an empty studio, 2026-10-31): the writer
+					# restages it within the scene-rewrite budget instead of the video stopping.
+					from joymedia.services.keyframes.locations import place_key
+
+					unplaced = set(missing_places(project, shots))
+					notes = [
+						{
+							"scene": int(shot.shot_number),
+							"text": f"The place '{shot.setting_prompt}' could not be drawn as a location that supports "
+							"this scene (the picture model drew an empty backdrop). Name the actual location (the "
+							"room or outdoor place) and the floor or furniture the character uses there.",
+						}
+						for shot in shots
+						if place_key(project, shot.setting_prompt) in unplaced
+					]
+					if (
+						automatic
+						and notes
+						and _start_automatic_scene_repair(batch.name, variants, index, notes, extra_budget=1)
+					):
+						return
 					raise ValueError(
 						"Shared-setting preparation did not complete. Inspect the native location job before retrying."
 					)

@@ -1815,6 +1815,10 @@ def _describes_body_support(opening):
 	)
 
 
+OBJECT_ONLY_PLACE = re.compile(
+	r"(?:an?\s+|the\s+)?(?:\w+\s+){0,2}?(?:rug|floor|carpet|mat|table|sofa|couch|chair|bed|ground|cushion)s?\.?",
+	re.I,
+)
 VAGUE_SUPPORT = re.compile(
 	r"\b(?:a|an|its|the)\s+(?:visible\s+|nearby\s+|flat\s+)?(?:support|surface)\b", re.I
 )
@@ -2486,7 +2490,8 @@ def product_hero_rule(constraints):
 		"timed phase picks the material up. A close_up or extreme_close_up opening describes only what the "
 		"close frame shows (the paws, the face or the material and their contact), never the whole body, its "
 		"seat or its feet. Name the material's support (the rug, the floor, the table) and keep it in frame. "
-		"Each narration line has at most 2.5 words per second of its scene. "
+		"Each narration line has at most 2.5 words per second of its scene. A character scene's place names "
+		"the location (for example a bright living room), never only the rug, floor or furniture. "
 	)
 
 
@@ -2611,6 +2616,13 @@ def product_hero_defects(scenes):
 					f"character scene {number} starts with the material resting on its support, so its first "
 					"phase must pick it up before any other handling, e.g. '[0-1.2s] The mascot picks up the "
 					"tissue from the rug'"
+				)
+			place = str(scene.get("place") or "")
+			if OBJECT_ONLY_PLACE.fullmatch(place.strip()):
+				# A bare support ("Rug") was drawn as an empty studio backdrop (2026-10-31).
+				problems.append(
+					f"character scene {number} names its place as '{place}', an object; name the location "
+					"(the room or outdoor place) and keep the rug, floor or furniture in the opening"
 				)
 			opening = str(scene.get("visual_camera") or "")
 			if scene.get("shot_framing") in {"close_up", "extreme_close_up"} and _describes_body_support(

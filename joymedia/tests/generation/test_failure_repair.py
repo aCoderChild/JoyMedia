@@ -480,3 +480,25 @@ class TestHeldLockIsTransient(TestCase):
 
 		self.assertTrue(cb._transient(LockTimeoutError("joymedia-compose-shot-RUN-01514-SHOT-03075")))
 		self.assertFalse(cb._transient(ValueError("Rendered scenes need attention.")))
+
+
+class TestPlaceNamesALocation(TestCase):
+	def test_an_object_as_the_place_goes_back_to_the_writer(self):
+		from joymedia.services.planning.creative import OBJECT_ONLY_PLACE, product_hero_defects
+
+		self.assertTrue(OBJECT_ONLY_PLACE.fullmatch("Rug"))
+		self.assertTrue(OBJECT_ONLY_PLACE.fullmatch("a soft woven rug"))
+		self.assertFalse(OBJECT_ONLY_PLACE.fullmatch("Bright living room with a soft rug"))
+		product = {"cast": [], "products": ["p"], "duration_seconds": 2.5, "action": "[0-2.5s] Rests."}
+		scene = {
+			"cast": ["m"],
+			"products": [],
+			"duration_seconds": 3,
+			# Recorded from CRB-00128.
+			"place": "Rug",
+			"visual_camera": "The mascot sits on the rug, paw raised, a tissue on the rug.",
+			"action": "[0-1.5s] The mascot picks up the tissue.\n[1.5-3s] It waves it.",
+		}
+		with self.assertRaises(ValueError) as raised:
+			product_hero_defects([product, scene, dict(product)])
+		self.assertIn("names its place as 'Rug'", str(raised.exception))
